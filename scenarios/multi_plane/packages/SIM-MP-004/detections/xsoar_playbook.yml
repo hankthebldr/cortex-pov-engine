@@ -1,0 +1,104 @@
+id: simmp004-auto-contain
+version: 1
+name: "SIM-MP-004 — APT29 Cloud Cred Theft Auto-Contain"
+description: >
+  Triggers on the stitched XSIAM incident from SIM-MP-004. Enriches the endpoint
+  and cloud-principal sides, then isolates the endpoint and rotates the IAM
+  credential if severity >= High.
+starttaskid: "0"
+tasks:
+  "0":
+    id: "0"
+    taskid: start
+    type: start
+    task:
+      id: start
+      name: "Start"
+    nexttasks:
+      "#none#": ["1"]
+  "1":
+    id: "1"
+    taskid: enrich-host
+    type: regular
+    task:
+      id: enrich-host
+      name: "Enrich endpoint"
+      script: "XDR|||get-endpoint-details"
+      arguments:
+        endpoint_id: "${incident.agent_id}"
+    nexttasks:
+      "#none#": ["2"]
+  "2":
+    id: "2"
+    taskid: enrich-principal
+    type: regular
+    task:
+      id: enrich-principal
+      name: "Enrich AWS principal"
+      script: "CortexCloud|||iam-user-details"
+      arguments:
+        arn: "${incident.cloud_principal_arn}"
+    nexttasks:
+      "#none#": ["3"]
+  "3":
+    id: "3"
+    taskid: severity-gate
+    type: condition
+    task:
+      id: severity-gate
+      name: "Severity >= High?"
+    conditions:
+      - label: "yes"
+        condition:
+          - accessor: "severity"
+            operator: ">="
+            right:
+              value: "3"
+    nexttasks:
+      "yes": ["4", "5"]
+      "#default#": ["6"]
+  "4":
+    id: "4"
+    taskid: isolate-endpoint
+    type: regular
+    task:
+      id: isolate-endpoint
+      name: "Isolate endpoint via XDR"
+      script: "XDR|||isolate-endpoint"
+      arguments:
+        endpoint_id: "${incident.agent_id}"
+    nexttasks:
+      "#none#": ["6"]
+  "5":
+    id: "5"
+    taskid: rotate-key
+    type: regular
+    task:
+      id: rotate-key
+      name: "Disable leaked IAM access key"
+      script: "AWS-IAM|||update-access-key"
+      arguments:
+        access_key_id: "${incident.access_key_id}"
+        status: "Inactive"
+    nexttasks:
+      "#none#": ["6"]
+  "6":
+    id: "6"
+    taskid: notify-soc
+    type: regular
+    task:
+      id: notify-soc
+      name: "Notify SOC"
+      script: "Slack|||post-message"
+      arguments:
+        channel: "#cortex-pov-soc"
+        text: "SIM-MP-004 incident auto-contained — host=${incident.agent_hostname} principal=${incident.cloud_principal_arn}"
+    nexttasks:
+      "#none#": ["done"]
+  "done":
+    id: "done"
+    taskid: done
+    type: title
+    task:
+      id: done
+      name: "Done"

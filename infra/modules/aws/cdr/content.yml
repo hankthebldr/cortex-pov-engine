@@ -1,0 +1,44 @@
+tools:
+  attack_simulation:
+    - name: deepce
+      repo: stealthcopter/deepce
+      install: git-clone
+      install_path: /opt/cortexsim/content/cdr/deepce
+    - name: botb
+      repo: brompwnie/botb
+      install: git-clone
+      install_path: /opt/cortexsim/content/cdr/botb
+    - name: kube-hunter
+      repo: aquasecurity/kube-hunter
+      install: pip-install
+    - name: light-k8s-attack-simulations
+      repo: lightspin-tech/light-k8s-attack-simulations
+      install: git-clone
+      install_path: /opt/cortexsim/content/cdr/light-k8s-attack-simulations
+    - name: kubehound
+      repo: DataDog/KubeHound
+      install: git-clone
+      install_path: /opt/cortexsim/content/cdr/kubehound
+  defensive_tools:
+    - name: falco
+      repo: falcosecurity/falco
+      install: docker-pull
+      image: falcosecurity/falco:latest
+    - name: falco-rules
+      repo: falcosecurity/rules
+      install: git-clone
+      install_path: /opt/cortexsim/content/cdr/falco-rules
+    - name: tetragon
+      repo: cilium/tetragon
+      install: docker-pull
+      image: quay.io/cilium/tetragon:latest
+    - name: tracee
+      repo: aquasecurity/tracee
+      install: docker-pull
+      image: aquasec/tracee:latest
+    - name: trivy
+      repo: aquasecurity/trivy
+      install: binary-release
+    - name: grype
+      repo: anchore/grype
+      install: binary-release

@@ -1,0 +1,33 @@
+tools:
+  cortex:
+    - name: xql-hub
+      repo: intrusus-dev/xql-hub
+      install: git-clone
+      install_path: /opt/cortexsim/content/content-library/xql-hub
+    - name: cortex-xql-queries
+      repo: PaloAltoNetworks/cortex-xql-queries
+      install: git-clone
+      install_path: /opt/cortexsim/content/content-library/cortex-xql-queries
+    - name: xdr-scripts
+      repo: k4nfr3/XDR_scripts
+      install: git-clone
+      install_path: /opt/cortexsim/content/content-library/xdr-scripts
+    - name: cortexxdr-bioc
+      repo: Data-Equipment-AS/CortexXDR-BIOC
+      install: git-clone
+      install_path: /opt/cortexsim/content/content-library/cortexxdr-bioc
+  splunk:
+    - name: splunk-security-content
+      repo: splunk/security_content
+      install: git-clone
+      install_path: /opt/cortexsim/content/content-library/splunk-security-content
+  elastic:
+    - name: elastic-detection-rules
+      repo: elastic/detection-rules
+      install: git-clone
+      install_path: /opt/cortexsim/content/content-library/elastic-detection-rules
+  chronicle:
+    - name: chronicle-detection-rules
+      repo: chronicle/detection-rules
+      install: git-clone
+      install_path: /opt/cortexsim/content/content-library/chronicle-detection-rules

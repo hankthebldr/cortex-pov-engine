@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  simcore:
+    build: ./core
+    ports:
+      - "${CORTEXSIM_PORT:-8888}:8888"
+    volumes:
+      - ./scenarios:/app/scenarios:ro
+      - ./sources:/app/sources:ro
+      - ./scripts:/app/scripts
+      - simcore_db:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - CORTEXSIM_ENV=${CORTEXSIM_ENV:-production}
+      - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:-changeme}
+    restart: unless-stopped
+
+volumes:
+  simcore_db:

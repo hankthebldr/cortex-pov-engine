@@ -1,0 +1,1814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1440, initial-scale=1" />
+<title>CortexSim Console · design mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Funnel+Display:wght@400;500;600&family=Fraunces:ital,wght@0,300;0,400;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   CortexSim Console · Mission Ops mockup (static, self-contained)
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --c-void:            #050A14;
+  --c-surface:         #0A1420;
+  --c-surface-raised:  #101A28;
+  --c-surface-modal:   #18243A;
+  --c-hairline:        #1F2E46;
+  --c-hairline-strong: #2B3E5E;
+  --c-signal:          #00C0E8;
+  --c-signal-soft:     rgba(0, 192, 232, 0.12);
+  --c-signal-glow:     rgba(0, 192, 232, 0.45);
+  --c-detected:        #4FD1A1;
+  --c-detected-soft:   rgba(79, 209, 161, 0.14);
+  --c-missed:          #F97066;
+  --c-missed-soft:     rgba(249, 112, 102, 0.14);
+  --c-pending:         #F5A524;
+  --c-pending-soft:    rgba(245, 165, 36, 0.14);
+  --c-text:            #E8EEF5;
+  --c-text-secondary:  #8FA3BE;
+  --c-text-muted:      #5A6B84;
+  --c-text-disabled:   #3D4A60;
+  --c-panw-orange:     #FA582D;
+  --c-accent-violet:   #8E7CFF;
+
+  --font-display:   'Funnel Display', ui-serif, Georgia, serif;
+  --font-ui:        'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-mono:      'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --font-narrative: 'Fraunces', ui-serif, Georgia, serif;
+
+  --tracking-mono:  0.04em;
+  --tracking-wide:  0.08em;
+
+  --h-header:       56px;
+  --h-telemetry:    40px;
+  --h-commandstrip: 32px;
+  --w-rail:         240px;
+  --w-inspector:    420px;
+
+  --ease-out:       cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out:    cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast:       120ms;
+  --dur-base:       240ms;
+  --dur-stitch:     800ms;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--c-void);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  font-feature-settings: 'tnum', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+code, kbd, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  letter-spacing: var(--tracking-mono);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+/* ═══ Shell layout ═══ */
+.shell {
+  display: grid;
+  grid-template-rows: var(--h-header) var(--h-telemetry) 1fr var(--h-commandstrip);
+  height: 100vh;
+}
+
+/* ═══ HEADER ═══ */
+.header {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-void) 100%);
+  border-bottom: 1px solid var(--c-hairline);
+  position: relative;
+  z-index: 10;
+}
+.header::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--c-signal) 20%,
+    var(--c-signal) 80%,
+    transparent 100%);
+  opacity: 0.35;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.brand__wordmark {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--c-text);
+}
+.brand__wordmark em {
+  font-style: normal;
+  color: var(--c-signal);
+  font-weight: 600;
+}
+.brand__subtitle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+
+.env-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+}
+.env-pill__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--c-detected);
+  box-shadow: 0 0 6px var(--c-detected);
+}
+.env-pill__label { color: var(--c-text); }
+.env-pill__meta { color: var(--c-text-muted); }
+
+.cmd-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 10px;
+  font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.cmd-trigger:hover { border-color: var(--c-signal); color: var(--c-signal); }
+
+.user-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--c-text-secondary);
+}
+
+.panw-mark {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  padding-left: 14px;
+  border-left: 1px solid var(--c-hairline);
+}
+.panw-mark span { color: var(--c-panw-orange); }
+
+/* ═══ TELEMETRY STRIP ═══ */
+.telemetry {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-hairline);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+}
+.tel-label { color: var(--c-text-muted); text-transform: uppercase; }
+.tel-value { color: var(--c-text); }
+.tel-value--signal { color: var(--c-signal); }
+.tel-value--pending { color: var(--c-pending); }
+.tel-sep { color: var(--c-hairline-strong); }
+
+.tel-progress {
+  flex: 1;
+  height: 4px;
+  background: var(--c-surface-raised);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+  max-width: 360px;
+}
+.tel-progress__fill {
+  position: absolute;
+  inset: 0;
+  width: 60%;
+  background: linear-gradient(90deg, var(--c-signal), var(--c-detected));
+  border-radius: 2px;
+  transition: width 600ms var(--ease-out);
+}
+.tel-progress__fill::after {
+  content: '';
+  position: absolute; right: 0; top: -2px; bottom: -2px;
+  width: 2px;
+  background: var(--c-signal);
+  box-shadow: 0 0 8px var(--c-signal-glow);
+}
+
+.btn-abort {
+  height: 24px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text-secondary);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.btn-abort:hover {
+  color: var(--c-missed);
+  border-color: var(--c-missed);
+}
+
+/* ═══ WORKSPACE ═══ */
+.workspace {
+  display: grid;
+  grid-template-columns: var(--w-rail) 1fr;
+  min-height: 0;
+}
+
+/* ── Left rail ── */
+.rail {
+  border-right: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  padding: 16px 0;
+  overflow-y: auto;
+}
+.rail__section-title {
+  padding: 0 16px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+.rail__group { margin-bottom: 20px; }
+
+.plane-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+}
+.plane-item:hover { background: var(--c-surface-raised); color: var(--c-text); }
+.plane-item--active {
+  background: var(--c-signal-soft);
+  border-left-color: var(--c-signal);
+  color: var(--c-signal);
+}
+.plane-item__code { font-weight: 600; }
+.plane-item__name { color: var(--c-text-muted); flex: 1; text-transform: none; }
+.plane-item--active .plane-item__name { color: var(--c-text-secondary); }
+.plane-item__count {
+  font-size: 10px;
+  color: var(--c-text-muted);
+}
+
+/* ── Main column ── */
+.main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  position: relative;
+}
+
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+}
+.tab {
+  height: 40px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.tab:hover { color: var(--c-text-secondary); }
+.tab--active {
+  color: var(--c-signal);
+  border-bottom-color: var(--c-signal);
+}
+.tab__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  font-size: 9px;
+  color: var(--c-text-muted);
+  background: var(--c-surface-raised);
+  border-radius: 2px;
+}
+.tab--active .tab__badge {
+  color: var(--c-signal);
+  background: var(--c-signal-soft);
+}
+
+.view {
+  overflow-y: auto;
+  padding: 24px;
+  position: relative;
+  display: none;
+}
+.view--active { display: block; }
+
+/* ═══ Operations: scenario grid ═══ */
+.view-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  margin-bottom: 24px;
+}
+.view-head h1 {
+  font-size: 28px;
+  font-weight: 400;
+}
+.view-head__meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+.view-head__meta strong { color: var(--c-text); font-weight: 500; }
+
+.grid-bg {
+  position: relative;
+  isolation: isolate;
+}
+.grid-bg::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--c-hairline) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-hairline) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.18;
+  pointer-events: none;
+  z-index: -1;
+  mask-image: radial-gradient(ellipse at top left, black 10%, transparent 70%);
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+.scenario-card {
+  position: relative;
+  padding: 16px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+}
+.scenario-card:hover {
+  border-color: var(--c-hairline-strong);
+  transform: translateY(-1px);
+}
+.scenario-card--selected {
+  border-color: var(--c-signal);
+  background: linear-gradient(180deg, var(--c-surface-raised), var(--c-surface));
+}
+.scenario-card--selected::before {
+  content: '';
+  position: absolute; left: -1px; top: -1px; bottom: -1px;
+  width: 2px;
+  background: var(--c-signal);
+  box-shadow: 0 0 8px var(--c-signal-glow);
+}
+
+.sc-id {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-signal);
+  margin-bottom: 6px;
+}
+.sc-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--c-text);
+  margin-bottom: 10px;
+  line-height: 1.3;
+}
+.sc-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-secondary);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+}
+.chip--plane-edr { color: var(--c-signal); border-color: var(--c-signal-soft); background: var(--c-signal-soft); }
+.chip--plane-cdr { color: var(--c-detected); border-color: var(--c-detected-soft); background: var(--c-detected-soft); }
+.chip--plane-ndr { color: var(--c-pending); border-color: var(--c-pending-soft); background: var(--c-pending-soft); }
+.chip--plane-itdr { color: var(--c-accent-violet); border-color: rgba(142,124,255,0.14); background: rgba(142,124,255,0.10); }
+.chip--plane-analytics { color: var(--c-signal); border-color: var(--c-signal); background: transparent; }
+
+.sc-tids {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-bottom: 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+.sc-tids span { padding: 1px 0; }
+.sc-tids span::after { content: '·'; margin-left: 4px; color: var(--c-hairline-strong); }
+.sc-tids span:last-child::after { content: ''; }
+
+.sc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-hairline);
+}
+.sc-actor {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+.sc-actor strong { color: var(--c-text-secondary); font-weight: 500; }
+
+.sc-planes {
+  display: flex; gap: 4px;
+}
+
+.plane-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--c-hairline-strong);
+  transition: background var(--dur-base) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out);
+}
+.plane-dot--on {
+  background: var(--c-signal);
+  box-shadow: 0 0 6px var(--c-signal-glow);
+}
+.plane-dot--detected {
+  background: var(--c-detected);
+  box-shadow: 0 0 6px var(--c-detected);
+}
+.plane-dot--pending {
+  background: var(--c-pending);
+  animation: pulse-pending 1.4s var(--ease-in-out) infinite;
+}
+@keyframes pulse-pending {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* ═══ Inspector drawer ═══ */
+.inspector {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: var(--w-inspector);
+  background: var(--c-surface-modal);
+  border-left: 1px solid var(--c-hairline-strong);
+  box-shadow: -16px 0 48px -8px rgba(0,0,0,0.6);
+  transform: translateX(100%);
+  transition: transform var(--dur-base) var(--ease-out);
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  z-index: 5;
+}
+.inspector--open { transform: translateX(0); }
+
+.insp-launch {
+  padding: 16px 20px 16px;
+  border-bottom: 1px solid var(--c-hairline);
+  background: linear-gradient(180deg, var(--c-surface-raised), transparent);
+}
+.insp-launch__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-signal);
+  margin-bottom: 8px;
+}
+.insp-launch__title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  margin-bottom: 14px;
+  line-height: 1.2;
+}
+.insp-launch__actions {
+  display: flex; gap: 8px;
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.btn:hover { border-color: var(--c-signal); color: var(--c-signal); }
+.btn--primary {
+  background: var(--c-signal);
+  color: var(--c-void);
+  border-color: var(--c-signal);
+  box-shadow: 0 0 0 0 var(--c-signal-glow);
+}
+.btn--primary:hover {
+  background: #33d0ee;
+  color: var(--c-void);
+  box-shadow: 0 0 0 4px var(--c-signal-soft);
+}
+
+.insp-section {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--c-hairline);
+}
+.insp-section__title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  margin-bottom: 10px;
+}
+.insp-kv {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.insp-kv dt { color: var(--c-text-muted); }
+.insp-kv dd { color: var(--c-text); }
+
+.insp-detection-matrix {
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.dmx-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--c-hairline);
+  align-items: center;
+}
+.dmx-row:last-child { border-bottom: 0; }
+.dmx-step {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-signal);
+  text-align: center;
+}
+.dmx-body__tid {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  margin-bottom: 2px;
+}
+.dmx-body__desc {
+  font-size: 12px;
+  color: var(--c-text);
+  line-height: 1.4;
+}
+.dmx-planes {
+  display: flex; gap: 6px;
+  align-items: center;
+}
+
+.insp-footer {
+  padding: 12px 20px;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-hairline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+/* ═══ In-Flight: Attack Narrative Timeline ═══ */
+.narrative {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.narrative__header {
+  margin-bottom: 32px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--c-hairline);
+}
+.narrative__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-signal);
+  margin-bottom: 8px;
+}
+.narrative__title {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.narrative__summary {
+  font-family: var(--font-narrative);
+  font-size: 16px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--c-text-secondary);
+  max-width: 720px;
+}
+.narrative__summary em { color: var(--c-signal); font-style: normal; }
+
+.narrative__timeline {
+  position: relative;
+  padding: 40px 0 80px;
+}
+
+.tl-track {
+  position: absolute;
+  top: 96px;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--c-hairline-strong) 20%, var(--c-hairline-strong) 80%, transparent);
+}
+.tl-track-progress {
+  position: absolute;
+  top: 96px;
+  left: 0;
+  height: 1px;
+  width: 60%;
+  background: linear-gradient(90deg, var(--c-signal), var(--c-detected));
+  box-shadow: 0 0 8px var(--c-signal-glow);
+}
+
+.tl-steps {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 20px;
+  position: relative;
+}
+
+.tl-step { position: relative; }
+.tl-step__time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  margin-bottom: 6px;
+}
+.tl-step__tid {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-signal);
+  margin-bottom: 4px;
+}
+.tl-step__name {
+  font-size: 12px;
+  color: var(--c-text);
+  line-height: 1.3;
+  margin-bottom: 20px;
+  min-height: 32px;
+}
+
+.tl-step__node {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--c-surface-raised);
+  border: 2px solid var(--c-signal);
+  margin: 0 auto;
+  position: relative;
+  box-shadow: 0 0 0 4px var(--c-surface);
+}
+.tl-step__node::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--c-signal);
+  box-shadow: 0 0 8px var(--c-signal-glow);
+}
+.tl-step--pending .tl-step__node {
+  border-color: var(--c-pending);
+  animation: pulse-ring 1.6s var(--ease-in-out) infinite;
+}
+.tl-step--pending .tl-step__node::after {
+  background: var(--c-pending);
+  box-shadow: 0 0 8px var(--c-pending);
+}
+.tl-step--idle .tl-step__node {
+  border-color: var(--c-hairline-strong);
+}
+.tl-step--idle .tl-step__node::after {
+  background: var(--c-hairline-strong);
+  box-shadow: none;
+}
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 4px var(--c-surface), 0 0 0 0 var(--c-pending-soft); }
+  50%      { box-shadow: 0 0 0 4px var(--c-surface), 0 0 0 8px transparent; }
+}
+
+.tl-step__detections {
+  margin-top: 28px;
+  display: flex; justify-content: center; gap: 6px;
+}
+.tl-det {
+  min-width: 56px;
+  padding: 6px 8px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  transition: border-color var(--dur-base) var(--ease-out);
+}
+.tl-det__plane { display: block; color: var(--c-text-secondary); margin-bottom: 3px; }
+.tl-det--detected {
+  border-color: var(--c-detected);
+  background: var(--c-detected-soft);
+}
+.tl-det--detected .tl-det__plane { color: var(--c-detected); }
+.tl-det--pending {
+  border-color: var(--c-pending);
+  background: var(--c-pending-soft);
+  animation: pulse-pending 1.4s var(--ease-in-out) infinite;
+}
+.tl-det--pending .tl-det__plane { color: var(--c-pending); }
+.tl-det--missed {
+  border-color: var(--c-missed);
+  background: var(--c-missed-soft);
+  color: var(--c-missed);
+}
+.tl-det--missed .tl-det__plane { color: var(--c-missed); }
+
+/* Stitch SVG overlay */
+.stitch-svg {
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.stitch-path {
+  stroke: var(--c-signal);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 4;
+  fill: none;
+  filter: drop-shadow(0 0 4px var(--c-signal-glow));
+  animation: draw-stitch var(--dur-stitch) var(--ease-out) forwards;
+}
+@keyframes draw-stitch {
+  from { stroke-dashoffset: 300; opacity: 0; }
+  to   { stroke-dashoffset: 0;   opacity: 0.9; }
+}
+
+.narrative__stitch-label {
+  position: absolute;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-signal);
+  background: var(--c-void);
+  padding: 2px 6px;
+  border: 1px solid var(--c-signal-soft);
+  border-radius: 2px;
+}
+
+.narrative__footer {
+  margin-top: 48px;
+  padding: 24px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 20px;
+  align-items: center;
+}
+.narrative__footer p {
+  font-family: var(--font-narrative);
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--c-text-secondary);
+  line-height: 1.6;
+}
+.narrative__footer strong { color: var(--c-signal); font-weight: 400; }
+
+/* ═══ Evidence view ═══ */
+.evidence {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 32px;
+}
+.kpi {
+  padding: 20px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.kpi__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  margin-bottom: 10px;
+}
+.kpi__value {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.kpi__value--signal { color: var(--c-signal); }
+.kpi__value--detected { color: var(--c-detected); }
+.kpi__value--pending { color: var(--c-pending); }
+.kpi__meta {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+
+.scorecard {
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.scorecard__head {
+  display: grid;
+  grid-template-columns: 80px 80px 1fr 80px 200px 90px;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-hairline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+.scorecard__row {
+  display: grid;
+  grid-template-columns: 80px 80px 1fr 80px 200px 90px;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px dashed var(--c-hairline);
+  align-items: center;
+  font-size: 12px;
+}
+.scorecard__row:last-child { border-bottom: 0; }
+.scorecard__row:hover { background: var(--c-signal-soft); }
+.scorecard__tid {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-signal);
+}
+.scorecard__plane { font-family: var(--font-mono); font-size: 10px; color: var(--c-text-secondary); text-transform: uppercase; letter-spacing: var(--tracking-mono); }
+.scorecard__alert { color: var(--c-text); }
+.scorecard__mttd { font-family: var(--font-mono); font-size: 11px; color: var(--c-text); text-align: right; }
+.scorecard__status { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-mono); text-transform: uppercase; }
+.scorecard__status--detected { color: var(--c-detected); }
+.scorecard__status--pending { color: var(--c-pending); }
+.scorecard__status--missed { color: var(--c-missed); }
+.scorecard__id { font-family: var(--font-mono); font-size: 10px; color: var(--c-text-muted); }
+
+.export-row {
+  margin-top: 24px;
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+
+/* ═══ Command strip (bottom) ═══ */
+.command-strip {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-hairline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+}
+.cs-hints { display: flex; gap: 16px; }
+.cs-hint { display: inline-flex; align-items: center; gap: 6px; }
+.kbd {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  color: var(--c-text-secondary);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-bottom-width: 2px;
+  border-radius: 2px;
+  font-size: 9px;
+}
+.cs-ticker { color: var(--c-text-secondary); }
+.cs-ticker::before {
+  content: '▸';
+  color: var(--c-signal);
+  margin-right: 6px;
+}
+
+/* ═══ Command palette (⌘K) ═══ */
+.cmd-palette-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(5, 10, 20, 0.75);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+  z-index: 100;
+}
+.cmd-palette-backdrop.is-open { display: flex; }
+.cmd-palette {
+  width: min(640px, 90vw);
+  background: var(--c-surface-modal);
+  border: 1px solid var(--c-hairline-strong);
+  border-radius: 6px;
+  box-shadow: 0 40px 80px -20px rgba(0,0,0,0.8);
+  overflow: hidden;
+}
+.cmd-palette__input {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--c-hairline);
+}
+.cmd-palette__input input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--c-text);
+  letter-spacing: var(--tracking-mono);
+}
+.cmd-palette__input input::placeholder { color: var(--c-text-muted); }
+.cmd-palette__prompt { color: var(--c-signal); font-family: var(--font-mono); font-size: 14px; }
+
+.cmd-palette__results { max-height: 420px; overflow-y: auto; padding: 6px 0; }
+.cmd-section-label {
+  padding: 10px 20px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+.cmd-result {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 20px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+.cmd-result:hover, .cmd-result--active {
+  background: var(--c-signal-soft);
+  border-left-color: var(--c-signal);
+}
+.cmd-result__icon {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--c-signal);
+  text-align: center;
+}
+.cmd-result__body { display: flex; flex-direction: column; gap: 2px; }
+.cmd-result__title { font-size: 13px; color: var(--c-text); }
+.cmd-result__meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-mono); color: var(--c-text-muted); }
+.cmd-result__shortcut { display: flex; gap: 4px; }
+
+.cmd-palette__footer {
+  display: flex; justify-content: space-between;
+  padding: 10px 20px;
+  border-top: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+
+/* scrollbar refinement */
+.theme-console ::-webkit-scrollbar, body ::-webkit-scrollbar { width: 10px; height: 10px; }
+.theme-console ::-webkit-scrollbar-thumb, body ::-webkit-scrollbar-thumb {
+  background: var(--c-hairline-strong); border-radius: 5px;
+  border: 2px solid var(--c-void);
+}
+.theme-console ::-webkit-scrollbar-track, body ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ═══ HEADER ═══ -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand__wordmark">cortex<em>sim</em></div>
+      <div class="brand__subtitle">Detection Simulation Engine · v1.2</div>
+    </div>
+
+    <div></div><!-- spacer -->
+
+    <div class="env-pill">
+      <span class="env-pill__dot"></span>
+      <span class="env-pill__label">LAB-WEST-03</span>
+      <span class="env-pill__meta">/ xdr · cdr · ngfw healthy</span>
+    </div>
+
+    <button class="cmd-trigger" id="cmd-trigger">
+      <span>⌘K</span>
+      <span style="color:var(--c-text-muted);">search · launch · export</span>
+    </button>
+
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div class="user-avatar">HR</div>
+      <div class="panw-mark">palo alto <span>networks</span></div>
+    </div>
+  </header>
+
+  <!-- ═══ TELEMETRY STRIP ═══ -->
+  <div class="telemetry">
+    <span class="tel-label">Active</span>
+    <span class="tel-value mono tel-value--signal">SIM-MP-004</span>
+    <span class="tel-sep">/</span>
+    <span class="tel-label">Step</span>
+    <span class="tel-value mono">3 / 5</span>
+    <span class="tel-sep">/</span>
+    <span class="tel-label">Elapsed</span>
+    <span class="tel-value mono">02:17</span>
+    <span class="tel-sep">/</span>
+    <span class="tel-label">Detected</span>
+    <span class="tel-value mono tel-value--pending">4 / 12</span>
+
+    <div class="tel-progress"><div class="tel-progress__fill"></div></div>
+
+    <span class="tel-label">Next</span>
+    <span class="tel-value mono">T1530</span>
+    <button class="btn-abort">Abort</button>
+  </div>
+
+  <!-- ═══ WORKSPACE ═══ -->
+  <div class="workspace">
+
+    <!-- Left rail -->
+    <aside class="rail">
+      <div class="rail__group">
+        <div class="rail__section-title">Detection Planes</div>
+        <div class="plane-item">
+          <span class="plane-item__code">EDR</span>
+          <span class="plane-item__name">Endpoint</span>
+          <span class="plane-item__count">5</span>
+        </div>
+        <div class="plane-item">
+          <span class="plane-item__code">CDR</span>
+          <span class="plane-item__name">Cloud</span>
+          <span class="plane-item__count">5</span>
+        </div>
+        <div class="plane-item">
+          <span class="plane-item__code">NDR</span>
+          <span class="plane-item__name">Network</span>
+          <span class="plane-item__count">0</span>
+        </div>
+        <div class="plane-item">
+          <span class="plane-item__code">ITDR</span>
+          <span class="plane-item__name">Identity</span>
+          <span class="plane-item__count">0</span>
+        </div>
+        <div class="plane-item plane-item--active">
+          <span class="plane-item__code">MP</span>
+          <span class="plane-item__name">Multi-plane</span>
+          <span class="plane-item__count">4</span>
+        </div>
+      </div>
+
+      <div class="rail__group">
+        <div class="rail__section-title">Pinned</div>
+        <div class="plane-item" style="font-size:10px;">
+          <span class="plane-item__code">MP-004</span>
+          <span class="plane-item__name">APT29 Cloud</span>
+        </div>
+        <div class="plane-item" style="font-size:10px;">
+          <span class="plane-item__code">MP-002</span>
+          <span class="plane-item__name">Kerberoast</span>
+        </div>
+        <div class="plane-item" style="font-size:10px;">
+          <span class="plane-item__code">EDR-001</span>
+          <span class="plane-item__name">Cred Dump</span>
+        </div>
+      </div>
+
+      <div class="rail__group">
+        <div class="rail__section-title">Filters · MITRE</div>
+        <div class="plane-item" style="font-size:10px;">
+          <span class="plane-item__code">TA0006</span>
+          <span class="plane-item__name">Cred Access</span>
+          <span class="plane-item__count">6</span>
+        </div>
+        <div class="plane-item" style="font-size:10px;">
+          <span class="plane-item__code">TA0011</span>
+          <span class="plane-item__name">C2</span>
+          <span class="plane-item__count">3</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main column -->
+    <section class="main">
+      <!-- Tabs -->
+      <nav class="tabs">
+        <button class="tab tab--active" data-view="operations">Operations <span class="tab__badge">19</span></button>
+        <button class="tab" data-view="inflight">In-Flight <span class="tab__badge" style="color:var(--c-pending);background:var(--c-pending-soft);">LIVE</span></button>
+        <button class="tab" data-view="evidence">Evidence <span class="tab__badge">4/12</span></button>
+        <button class="tab" data-view="lab">Lab</button>
+        <button class="tab" data-view="coverage">ATT&amp;CK Coverage</button>
+      </nav>
+
+      <!-- ─── OPERATIONS ─── -->
+      <div class="view view--active grid-bg" data-view-panel="operations">
+        <div class="view-head">
+          <div>
+            <h1>Operations</h1>
+            <div class="view-head__meta">
+              Plane: <strong>Multi-plane</strong>
+              · <span class="mono">4 scenarios</span>
+              · last updated <span class="mono">12:41:07Z</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn">
+              <span>Filter</span>
+              <span class="kbd">F</span>
+            </button>
+            <button class="btn">
+              <span>New Scenario</span>
+              <span class="kbd">N</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="scenario-grid">
+
+          <!-- Selected card -->
+          <article class="scenario-card scenario-card--selected" onclick="openInspector()">
+            <div class="sc-id">SIM-MP-004</div>
+            <div class="sc-title">APT29 Cloud Credential Theft → Lateral → Exfil</div>
+            <div class="sc-meta">
+              <span class="chip chip--plane-edr">EDR</span>
+              <span class="chip chip--plane-cdr">CDR</span>
+              <span class="chip chip--plane-analytics">Analytics</span>
+              <span class="chip">Intermediate</span>
+            </div>
+            <div class="sc-tids">
+              <span>T1552.001</span><span>T1078.004</span><span>T1580</span><span>T1530</span><span>T1537</span>
+            </div>
+            <div class="sc-footer">
+              <div class="sc-actor">Anchor · <strong>G0016 APT29</strong></div>
+              <div class="sc-planes">
+                <div class="plane-dot plane-dot--detected" title="XDR detected"></div>
+                <div class="plane-dot plane-dot--pending"  title="CDR pending"></div>
+                <div class="plane-dot plane-dot--on"       title="XSIAM stitched"></div>
+                <div class="plane-dot"                     title="XSOAR n/a"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="scenario-card">
+            <div class="sc-id">SIM-MP-001</div>
+            <div class="sc-title">C2 Beacon — NGFW + XDR Stitch Validation</div>
+            <div class="sc-meta">
+              <span class="chip chip--plane-edr">EDR</span>
+              <span class="chip chip--plane-ndr">NDR</span>
+              <span class="chip chip--plane-analytics">Analytics</span>
+            </div>
+            <div class="sc-tids"><span>T1071.001</span><span>T1059.004</span><span>T1105</span><span>T1572</span></div>
+            <div class="sc-footer">
+              <div class="sc-actor">Anchor · <strong>Cobalt Strike</strong></div>
+              <div class="sc-planes">
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="scenario-card">
+            <div class="sc-id">SIM-MP-002</div>
+            <div class="sc-title">Kerberoast → Pass-the-Hash → DCSync</div>
+            <div class="sc-meta">
+              <span class="chip chip--plane-itdr">ITDR</span>
+              <span class="chip chip--plane-edr">EDR</span>
+              <span class="chip chip--plane-ndr">NDR</span>
+            </div>
+            <div class="sc-tids"><span>T1558.003</span><span>T1550.002</span><span>T1003.006</span></div>
+            <div class="sc-footer">
+              <div class="sc-actor">Anchor · <strong>Impacket / CME</strong></div>
+              <div class="sc-planes">
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot"></div>
+                <div class="plane-dot"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="scenario-card">
+            <div class="sc-id">SIM-MP-003</div>
+            <div class="sc-title">Staged Exfil via DNS Tunnel + Stage-Detection Stitching</div>
+            <div class="sc-meta">
+              <span class="chip chip--plane-edr">EDR</span>
+              <span class="chip chip--plane-ndr">NDR</span>
+              <span class="chip chip--plane-analytics">Analytics</span>
+            </div>
+            <div class="sc-tids"><span>T1071.004</span><span>T1048.003</span><span>T1041</span></div>
+            <div class="sc-footer">
+              <div class="sc-actor">Anchor · <strong>iodine / dnscat2</strong></div>
+              <div class="sc-planes">
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="scenario-card">
+            <div class="sc-id">SIM-EDR-003</div>
+            <div class="sc-title">LSASS Memory Dump via Mimikatz (report-only)</div>
+            <div class="sc-meta">
+              <span class="chip chip--plane-edr">EDR</span>
+              <span class="chip">Advanced</span>
+            </div>
+            <div class="sc-tids"><span>T1003.001</span></div>
+            <div class="sc-footer">
+              <div class="sc-actor">Anchor · <strong>LSASS</strong></div>
+              <div class="sc-planes">
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot"></div>
+                <div class="plane-dot"></div>
+                <div class="plane-dot"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="scenario-card">
+            <div class="sc-id">SIM-CDR-002</div>
+            <div class="sc-title">Container Escape via Privileged Pod</div>
+            <div class="sc-meta">
+              <span class="chip chip--plane-cdr">CDR</span>
+            </div>
+            <div class="sc-tids"><span>T1611</span><span>T1068</span></div>
+            <div class="sc-footer">
+              <div class="sc-actor">Anchor · <strong>K8s Linux runtime</strong></div>
+              <div class="sc-planes">
+                <div class="plane-dot"></div>
+                <div class="plane-dot plane-dot--detected"></div>
+                <div class="plane-dot"></div>
+                <div class="plane-dot"></div>
+              </div>
+            </div>
+          </article>
+
+        </div>
+      </div>
+
+      <!-- ─── IN-FLIGHT ─── -->
+      <div class="view" data-view-panel="inflight">
+        <div class="narrative">
+          <div class="narrative__header">
+            <div class="narrative__eyebrow">SIM-MP-004 · In progress · ETA 02:41</div>
+            <h1 class="narrative__title">APT29 Cloud Credential Theft</h1>
+            <p class="narrative__summary">
+              A web-facing service on <code>web-linux-03</code> is running with the privileges of the
+              <code>www-data</code> identity. The attacker sweeps the filesystem for AWS access keys,
+              pivots into the customer's AWS tenancy, enumerates the environment, accesses a
+              sensitivity-tagged bucket, and initiates a cross-account copy to an
+              attacker-controlled destination. Cortex stitches the hybrid path into
+              <em>one incident with a five-step timeline.</em>
+            </p>
+          </div>
+
+          <div class="narrative__timeline">
+            <div class="tl-track"></div>
+            <div class="tl-track-progress"></div>
+
+            <!-- stitch arcs (SVG overlay) -->
+            <svg class="stitch-svg" viewBox="0 0 1180 260" preserveAspectRatio="none" aria-hidden="true">
+              <!-- curve between step 1 (XDR dot) and step 2 (CDR dot) -->
+              <path class="stitch-path" d="M 140 130 C 220 180, 280 180, 360 130" />
+              <!-- curve between step 2 (CDR) and step 3 (CDR) -->
+              <path class="stitch-path" d="M 360 130 C 440 180, 500 180, 580 130" style="animation-delay:200ms;" />
+            </svg>
+
+            <div class="tl-steps">
+              <div class="tl-step">
+                <div class="tl-step__time">12:41:07Z</div>
+                <div class="tl-step__tid">T1552.001</div>
+                <div class="tl-step__name">Recursive AWS-key grep from www-data context</div>
+                <div class="tl-step__node"></div>
+                <div class="tl-step__detections">
+                  <div class="tl-det tl-det--detected"><span class="tl-det__plane">XDR</span>BIOC</div>
+                </div>
+              </div>
+              <div class="tl-step">
+                <div class="tl-step__time">12:41:42Z</div>
+                <div class="tl-step__tid">T1078.004</div>
+                <div class="tl-step__name">sts:GetCallerIdentity from compromised host</div>
+                <div class="tl-step__node"></div>
+                <div class="tl-step__detections">
+                  <div class="tl-det tl-det--detected"><span class="tl-det__plane">XDR</span>BIOC</div>
+                  <div class="tl-det tl-det--detected"><span class="tl-det__plane">CDR</span>Analytics</div>
+                </div>
+              </div>
+              <div class="tl-step tl-step--pending">
+                <div class="tl-step__time">12:43:24Z</div>
+                <div class="tl-step__tid">T1580</div>
+                <div class="tl-step__name">Multi-service enumeration burst</div>
+                <div class="tl-step__node"></div>
+                <div class="tl-step__detections">
+                  <div class="tl-det tl-det--pending"><span class="tl-det__plane">CDR</span>Wait</div>
+                  <div class="tl-det tl-det--pending"><span class="tl-det__plane">UEBA</span>Wait</div>
+                </div>
+              </div>
+              <div class="tl-step tl-step--idle">
+                <div class="tl-step__time">—</div>
+                <div class="tl-step__tid">T1530</div>
+                <div class="tl-step__name">Sensitivity-tagged bucket access</div>
+                <div class="tl-step__node"></div>
+                <div class="tl-step__detections">
+                  <div class="tl-det"><span class="tl-det__plane">CDR</span>BIOC</div>
+                  <div class="tl-det"><span class="tl-det__plane">XSIAM</span>IOC</div>
+                </div>
+              </div>
+              <div class="tl-step tl-step--idle">
+                <div class="tl-step__time">—</div>
+                <div class="tl-step__tid">T1537</div>
+                <div class="tl-step__name">Cross-account S3 copy to attacker bucket</div>
+                <div class="tl-step__node"></div>
+                <div class="tl-step__detections">
+                  <div class="tl-det"><span class="tl-det__plane">CDR</span>BIOC</div>
+                  <div class="tl-det"><span class="tl-det__plane">XSIAM</span>Stitch</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="narrative__stitch-label" style="top: 170px; left: 18%;">XSIAM · stitched</div>
+            <div class="narrative__stitch-label" style="top: 170px; left: 48%;">XSIAM · same principal</div>
+          </div>
+
+          <div class="narrative__footer">
+            <p>
+              In two minutes <strong>Cortex has already stitched three events</strong> across two
+              detection planes into a single incident. The next two steps will complete the
+              narrative: bucket access (CDR BIOC) and the cross-account exfil copy (CDR + XSIAM).
+              Total expected MTTD: <strong>under 5 minutes end-to-end.</strong>
+            </p>
+            <div style="display:flex;gap:8px;">
+              <button class="btn">Screenshot</button>
+              <button class="btn btn--primary">Export</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── EVIDENCE ─── -->
+      <div class="view" data-view-panel="evidence">
+        <div class="evidence">
+          <div class="view-head">
+            <div>
+              <h1>Evidence</h1>
+              <div class="view-head__meta">
+                Run <strong class="mono">RUN-2f8c9e</strong>
+                · started <span class="mono">12:41:07Z</span>
+                · <span class="mono">SIM-MP-004</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn">Validate All</button>
+              <button class="btn btn--primary">Export POV Report</button>
+            </div>
+          </div>
+
+          <div class="kpi-row">
+            <div class="kpi">
+              <div class="kpi__label">Coverage</div>
+              <div class="kpi__value kpi__value--detected">33<span style="font-size:22px;color:var(--c-text-muted);">%</span></div>
+              <div class="kpi__meta">4 / 12 detections confirmed</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__label">MTTD · median</div>
+              <div class="kpi__value kpi__value--signal">41<span style="font-size:22px;color:var(--c-text-muted);">s</span></div>
+              <div class="kpi__meta">across confirmed detections</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__label">XSIAM Stitch</div>
+              <div class="kpi__value">1<span style="font-size:22px;color:var(--c-text-muted);"> / 1</span></div>
+              <div class="kpi__meta">5 alerts → 1 incident</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__label">Pending</div>
+              <div class="kpi__value kpi__value--pending">8</div>
+              <div class="kpi__meta">awaiting validation</div>
+            </div>
+          </div>
+
+          <div class="scorecard">
+            <div class="scorecard__head">
+              <div>TID</div>
+              <div>Plane</div>
+              <div>Alert</div>
+              <div style="text-align:right;">MTTD</div>
+              <div>Alert ID</div>
+              <div>Status</div>
+            </div>
+            <div class="scorecard__row">
+              <div class="scorecard__tid">T1552.001</div>
+              <div class="scorecard__plane">EDR · BIOC</div>
+              <div class="scorecard__alert">Recursive AWS-key grep by www-data</div>
+              <div class="scorecard__mttd">0:38</div>
+              <div class="scorecard__id">a9f4-21c8</div>
+              <div class="scorecard__status scorecard__status--detected">Detected</div>
+            </div>
+            <div class="scorecard__row">
+              <div class="scorecard__tid">T1078.004</div>
+              <div class="scorecard__plane">EDR · BIOC</div>
+              <div class="scorecard__alert">Cloud CLI invoked by service account</div>
+              <div class="scorecard__mttd">0:51</div>
+              <div class="scorecard__id">a9f4-21d2</div>
+              <div class="scorecard__status scorecard__status--detected">Detected</div>
+            </div>
+            <div class="scorecard__row">
+              <div class="scorecard__tid">T1078.004</div>
+              <div class="scorecard__plane">CDR · Analytics</div>
+              <div class="scorecard__alert">sts:GetCallerIdentity from odd source IP</div>
+              <div class="scorecard__mttd">1:02</div>
+              <div class="scorecard__id">a9f4-21ef</div>
+              <div class="scorecard__status scorecard__status--detected">Detected</div>
+            </div>
+            <div class="scorecard__row">
+              <div class="scorecard__tid">T1078.004</div>
+              <div class="scorecard__plane">Analytics · Stitch</div>
+              <div class="scorecard__alert">XSIAM — endpoint + cloud events stitched on principal</div>
+              <div class="scorecard__mttd">1:08</div>
+              <div class="scorecard__id">inc-004a2</div>
+              <div class="scorecard__status scorecard__status--detected">Detected</div>
+            </div>
+            <div class="scorecard__row">
+              <div class="scorecard__tid">T1580</div>
+              <div class="scorecard__plane">CDR · BIOC</div>
+              <div class="scorecard__alert">Multi-service enumeration burst (EC2+IAM+S3 &lt; 30s)</div>
+              <div class="scorecard__mttd">—</div>
+              <div class="scorecard__id">—</div>
+              <div class="scorecard__status scorecard__status--pending">Pending</div>
+            </div>
+            <div class="scorecard__row">
+              <div class="scorecard__tid">T1580</div>
+              <div class="scorecard__plane">CDR · UEBA</div>
+              <div class="scorecard__alert">Principal first-time broad discovery pattern</div>
+              <div class="scorecard__mttd">—</div>
+              <div class="scorecard__id">—</div>
+              <div class="scorecard__status scorecard__status--pending">Pending</div>
+            </div>
+            <div class="scorecard__row">
+              <div class="scorecard__tid">T1530</div>
+              <div class="scorecard__plane">CDR · BIOC</div>
+              <div class="scorecard__alert">Sensitivity-tagged bucket access by unauthorized principal</div>
+              <div class="scorecard__mttd">—</div>
+              <div class="scorecard__id">—</div>
+              <div class="scorecard__status scorecard__status--pending">Pending</div>
+            </div>
+            <div class="scorecard__row">
+              <div class="scorecard__tid">T1537</div>
+              <div class="scorecard__plane">CDR · BIOC</div>
+              <div class="scorecard__alert">Cross-account S3 copy from sensitivity-tagged source</div>
+              <div class="scorecard__mttd">—</div>
+              <div class="scorecard__id">—</div>
+              <div class="scorecard__status scorecard__status--pending">Pending</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Inspector drawer (overlays Operations) ─── -->
+      <aside class="inspector" id="inspector">
+        <div class="insp-launch">
+          <div class="insp-launch__label mono">SIM-MP-004 · ready to launch</div>
+          <div class="insp-launch__title">APT29 Cloud Credential Theft → Lateral → Exfil</div>
+          <div class="insp-launch__actions">
+            <button class="btn btn--primary">
+              <span>Launch</span>
+              <span class="kbd" style="background:rgba(5,10,20,0.25);border-color:rgba(5,10,20,0.25);color:var(--c-void);">⌘L</span>
+            </button>
+            <button class="btn">Push bundle</button>
+            <button class="btn" onclick="closeInspector()">Close</button>
+          </div>
+        </div>
+
+        <div class="insp-section">
+          <div class="insp-section__title">Metadata</div>
+          <dl class="insp-kv">
+            <dt>Scenario ID</dt>   <dd>SIM-MP-004</dd>
+            <dt>Plane</dt>         <dd>ANALYTICS</dd>
+            <dt>Tactic</dt>        <dd>TA0006 · Credential Access</dd>
+            <dt>Technique</dt>     <dd>T1552.001 · Credentials In Files</dd>
+            <dt>Actor anchor</dt>  <dd>G0016 APT29 · Midnight Blizzard</dd>
+            <dt>Threat report</dt> <dd style="color:var(--c-signal);">Unit42 — APT29 Cloud TTPs ↗</dd>
+            <dt>Identity</dt>      <dd>www-data</dd>
+            <dt>Difficulty</dt>    <dd>Intermediate</dd>
+          </dl>
+        </div>
+
+        <div class="insp-detection-matrix">
+          <div class="insp-section__title">Expected Detection Matrix</div>
+
+          <div class="dmx-row">
+            <div class="dmx-step">01</div>
+            <div class="dmx-body">
+              <div class="dmx-body__tid">T1552.001 · www-data</div>
+              <div class="dmx-body__desc">Recursive AKIA grep from service account</div>
+            </div>
+            <div class="dmx-planes">
+              <div class="plane-dot plane-dot--on" title="XDR BIOC"></div>
+            </div>
+          </div>
+          <div class="dmx-row">
+            <div class="dmx-step">02</div>
+            <div class="dmx-body">
+              <div class="dmx-body__tid">T1078.004 · www-data</div>
+              <div class="dmx-body__desc">AWS CLI pivot from endpoint (stitched)</div>
+            </div>
+            <div class="dmx-planes">
+              <div class="plane-dot plane-dot--on" title="XDR"></div>
+              <div class="plane-dot plane-dot--on" title="CDR"></div>
+              <div class="plane-dot plane-dot--on" title="XSIAM stitch"></div>
+            </div>
+          </div>
+          <div class="dmx-row">
+            <div class="dmx-step">03</div>
+            <div class="dmx-body">
+              <div class="dmx-body__tid">T1580 · www-data</div>
+              <div class="dmx-body__desc">Multi-service enumeration burst (EC2+IAM+S3 &lt; 30s)</div>
+            </div>
+            <div class="dmx-planes">
+              <div class="plane-dot plane-dot--on" title="CDR BIOC"></div>
+              <div class="plane-dot plane-dot--on" title="CDR UEBA"></div>
+            </div>
+          </div>
+          <div class="dmx-row">
+            <div class="dmx-step">04</div>
+            <div class="dmx-body">
+              <div class="dmx-body__tid">T1530 · www-data</div>
+              <div class="dmx-body__desc">Sensitivity-tagged bucket access</div>
+            </div>
+            <div class="dmx-planes">
+              <div class="plane-dot plane-dot--on" title="CDR BIOC"></div>
+              <div class="plane-dot plane-dot--on" title="XSIAM IOC"></div>
+            </div>
+          </div>
+          <div class="dmx-row">
+            <div class="dmx-step">05</div>
+            <div class="dmx-body">
+              <div class="dmx-body__tid">T1537 · www-data</div>
+              <div class="dmx-body__desc">Cross-account S3 copy (exfil)</div>
+            </div>
+            <div class="dmx-planes">
+              <div class="plane-dot plane-dot--on" title="CDR BIOC"></div>
+              <div class="plane-dot plane-dot--on" title="CDR Analytics"></div>
+              <div class="plane-dot plane-dot--on" title="XSIAM stitch"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="insp-footer">
+          <div>5 steps · 12 expected detections · intermediate</div>
+          <div>pull · push · docker</div>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <!-- ═══ COMMAND STRIP ═══ -->
+  <div class="command-strip">
+    <div class="cs-hints">
+      <span class="cs-hint"><span class="kbd">⌘</span><span class="kbd">K</span> search</span>
+      <span class="cs-hint"><span class="kbd">⌘</span><span class="kbd">L</span> launch</span>
+      <span class="cs-hint"><span class="kbd">⌘</span><span class="kbd">E</span> export</span>
+      <span class="cs-hint"><span class="kbd">⌘</span><span class="kbd">/</span> help</span>
+    </div>
+    <div class="cs-ticker">12:43:24Z · CDR · pending · T1580 multi-service enumeration burst</div>
+  </div>
+</div>
+
+<!-- ═══ COMMAND PALETTE OVERLAY ═══ -->
+<div class="cmd-palette-backdrop" id="cmd-palette-backdrop">
+  <div class="cmd-palette">
+    <div class="cmd-palette__input">
+      <span class="cmd-palette__prompt">▸</span>
+      <input type="text" placeholder="Search scenarios, TIDs, actors · type 'launch SIM-' to run" autofocus />
+      <span class="kbd">esc</span>
+    </div>
+    <div class="cmd-palette__results">
+      <div class="cmd-section-label">Scenarios</div>
+      <div class="cmd-result cmd-result--active">
+        <span class="cmd-result__icon">▸</span>
+        <div class="cmd-result__body">
+          <div class="cmd-result__title">APT29 Cloud Credential Theft → Lateral → Exfil</div>
+          <div class="cmd-result__meta">SIM-MP-004 · G0016 APT29 · MP · 5 steps · 12 detections</div>
+        </div>
+        <div class="cmd-result__shortcut"><span class="kbd">↵</span></div>
+      </div>
+      <div class="cmd-result">
+        <span class="cmd-result__icon">▸</span>
+        <div class="cmd-result__body">
+          <div class="cmd-result__title">Kerberoast → Pass-the-Hash → DCSync</div>
+          <div class="cmd-result__meta">SIM-MP-002 · Impacket · MP · 4 steps · 9 detections</div>
+        </div>
+      </div>
+      <div class="cmd-result">
+        <span class="cmd-result__icon">▸</span>
+        <div class="cmd-result__body">
+          <div class="cmd-result__title">LSASS Memory Dump via Mimikatz</div>
+          <div class="cmd-result__meta">SIM-EDR-003 · T1003.001 · EDR · 1 step · 1 detection</div>
+        </div>
+      </div>
+      <div class="cmd-section-label">Actions</div>
+      <div class="cmd-result">
+        <span class="cmd-result__icon" style="color:var(--c-pending);">⟳</span>
+        <div class="cmd-result__body">
+          <div class="cmd-result__title">Launch SIM-MP-004 with default identity</div>
+          <div class="cmd-result__meta">pull mode · www-data · lab-west-03</div>
+        </div>
+        <div class="cmd-result__shortcut"><span class="kbd">⌘</span><span class="kbd">L</span></div>
+      </div>
+      <div class="cmd-result">
+        <span class="cmd-result__icon" style="color:var(--c-detected);">↗</span>
+        <div class="cmd-result__body">
+          <div class="cmd-result__title">Export POV report for RUN-2f8c9e</div>
+          <div class="cmd-result__meta">markdown · cortex-branded · 4/12 observed</div>
+        </div>
+        <div class="cmd-result__shortcut"><span class="kbd">⌘</span><span class="kbd">E</span></div>
+      </div>
+      <div class="cmd-result">
+        <span class="cmd-result__icon" style="color:var(--c-signal);">⊞</span>
+        <div class="cmd-result__body">
+          <div class="cmd-result__title">Generate IaC bundle · AWS · edr+cdr+tim</div>
+          <div class="cmd-result__meta">terraform · base module auto-included</div>
+        </div>
+      </div>
+    </div>
+    <div class="cmd-palette__footer">
+      <span>↑↓ navigate · ↵ select · esc close</span>
+      <span>4 scenarios · 3 actions</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// simple view + inspector + palette toggles
+(function() {
+  const tabs = document.querySelectorAll('.tab');
+  const panels = document.querySelectorAll('[data-view-panel]');
+  tabs.forEach(t => t.addEventListener('click', () => {
+    const v = t.dataset.view;
+    if (!v) return;
+    tabs.forEach(x => x.classList.remove('tab--active'));
+    t.classList.add('tab--active');
+    panels.forEach(p => p.classList.toggle('view--active', p.dataset.viewPanel === v));
+    closeInspector();
+  }));
+})();
+
+function openInspector() {
+  document.getElementById('inspector').classList.add('inspector--open');
+}
+function closeInspector() {
+  document.getElementById('inspector').classList.remove('inspector--open');
+}
+
+// ⌘K palette
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    document.getElementById('cmd-palette-backdrop').classList.add('is-open');
+  }
+  if (e.key === 'Escape') {
+    document.getElementById('cmd-palette-backdrop').classList.remove('is-open');
+  }
+});
+document.getElementById('cmd-trigger').addEventListener('click', () => {
+  document.getElementById('cmd-palette-backdrop').classList.add('is-open');
+});
+document.getElementById('cmd-palette-backdrop').addEventListener('click', (e) => {
+  if (e.target.id === 'cmd-palette-backdrop') {
+    e.target.classList.remove('is-open');
+  }
+});
+</script>
+</body>
+</html>

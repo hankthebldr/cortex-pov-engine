@@ -1,0 +1,707 @@
+/* ═══════════════════════════════════════════════════════════════════
+   cortex-console.css — Mission Ops Console token system
+   CortexSim · DC2 GTM NAM Cortex · Palo Alto Networks
+   Drop-in dark theme. Scope under .theme-console to co-exist with the
+   existing light theme during migration.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console {
+  /* ── Color field ─────────────────────────────────────────────────── */
+  --c-void:            #050A14;
+  --c-surface:         #0A1420;
+  --c-surface-raised:  #101A28;
+  --c-surface-modal:   #18243A;
+  --c-hairline:        #1F2E46;
+  --c-hairline-strong: #2B3E5E;
+
+  /* ── Signal (Cortex teal — active color) ─────────────────────────── */
+  --c-signal:          #00C0E8;
+  --c-signal-soft:     rgba(0, 192, 232, 0.12);
+  --c-signal-glow:     rgba(0, 192, 232, 0.45);
+
+  /* ── Detection states ─────────────────────────────────────────────── */
+  --c-detected:        #4FD1A1;
+  --c-detected-soft:   rgba(79, 209, 161, 0.14);
+  --c-missed:          #F97066;
+  --c-missed-soft:     rgba(249, 112, 102, 0.14);
+  --c-pending:         #F5A524;
+  --c-pending-soft:    rgba(245, 165, 36, 0.14);
+  --c-stitched:        #00C0E8;
+
+  /* ── Text ────────────────────────────────────────────────────────── */
+  --c-text:            #E8EEF5;
+  --c-text-secondary:  #8FA3BE;
+  --c-text-muted:      #5A6B84;
+  --c-text-disabled:   #3D4A60;
+
+  /* ── PANW / accents (use sparingly) ──────────────────────────────── */
+  --c-panw-orange:     #FA582D;
+  --c-accent-violet:   #8E7CFF;
+
+  /* ── Typography ──────────────────────────────────────────────────── */
+  --font-display:   'Funnel Display', ui-serif, Georgia, serif;
+  --font-ui:        'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-mono:      'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --font-narrative: 'Fraunces', ui-serif, Georgia, serif;
+
+  --fs-display-xl:  48px;
+  --fs-display-lg:  32px;
+  --fs-h1:          20px;
+  --fs-h2:          16px;
+  --fs-body:        13px;
+  --fs-body-lg:     15px;
+  --fs-label:       11px;
+  --fs-tiny:        10px;
+
+  --tracking-mono:  0.04em;
+  --tracking-tight: -0.01em;
+
+  --lh-tight:       1.2;
+  --lh-body:        1.5;
+  --lh-narrative:   1.6;
+
+  /* ── Spacing / radius ────────────────────────────────────────────── */
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  20px;
+  --s-6:  24px;
+  --s-8:  32px;
+  --s-10: 40px;
+  --s-12: 48px;
+
+  --r-chip:   4px;
+  --r-input:  2px;
+  --r-modal:  6px;
+
+  /* ── Layout ──────────────────────────────────────────────────────── */
+  --h-header:      56px;
+  --h-telemetry:   40px;
+  --h-commandstrip:32px;
+  --w-rail:        240px;
+  --w-rail-collapsed: 56px;
+  --w-inspector:   420px;
+
+  /* ── Motion ──────────────────────────────────────────────────────── */
+  --ease-out:      cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out:   cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast:      120ms;
+  --dur-base:      240ms;
+  --dur-stitch:    800ms;
+
+  /* ── Shadows (sparse) ────────────────────────────────────────────── */
+  --shadow-modal:  0 16px 48px -8px rgba(0, 0, 0, 0.6),
+                   0 0 0 1px var(--c-hairline);
+  --shadow-signal: 0 0 24px -4px var(--c-signal-glow);
+
+  /* ── Base surface ────────────────────────────────────────────────── */
+  background: var(--c-void);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-feature-settings: 'tnum', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Base element overrides under .theme-console
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console *, .theme-console *::before, .theme-console *::after {
+  box-sizing: border-box;
+}
+
+.theme-console h1,
+.theme-console h2,
+.theme-console h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--c-text);
+  line-height: var(--lh-tight);
+}
+
+.theme-console h1 { font-size: var(--fs-display-lg); }
+.theme-console h2 { font-size: var(--fs-h1); }
+.theme-console h3 { font-size: var(--fs-h2); }
+
+.theme-console code,
+.theme-console kbd,
+.theme-console .mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  letter-spacing: var(--tracking-mono);
+}
+
+.theme-console a {
+  color: var(--c-signal);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.theme-console a:hover { border-bottom-color: var(--c-signal); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Chips, pills, and label primitives
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: 20px;
+  padding: 0 var(--s-2);
+  border-radius: var(--r-chip);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  background: var(--c-surface-raised);
+  color: var(--c-text-secondary);
+  border: 1px solid var(--c-hairline);
+}
+
+.theme-console .chip--signal {
+  background: var(--c-signal-soft);
+  color: var(--c-signal);
+  border-color: transparent;
+}
+.theme-console .chip--detected {
+  background: var(--c-detected-soft);
+  color: var(--c-detected);
+  border-color: transparent;
+}
+.theme-console .chip--missed {
+  background: var(--c-missed-soft);
+  color: var(--c-missed);
+  border-color: transparent;
+}
+.theme-console .chip--pending {
+  background: var(--c-pending-soft);
+  color: var(--c-pending);
+  border-color: transparent;
+}
+
+.theme-console .kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  color: var(--c-text-secondary);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-bottom-width: 2px;
+  border-radius: var(--r-input);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Grid atmosphere (optional — applies to hero surfaces)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .grid-bg {
+  position: relative;
+  isolation: isolate;
+}
+.theme-console .grid-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--c-hairline) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-hairline) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.18;
+  pointer-events: none;
+  z-index: -1;
+  mask-image: radial-gradient(ellipse at top, black 10%, transparent 70%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Buttons
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 32px;
+  padding: 0 var(--s-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-input);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.theme-console .btn:hover {
+  border-color: var(--c-signal);
+  color: var(--c-signal);
+}
+.theme-console .btn--primary {
+  background: var(--c-signal);
+  color: var(--c-void);
+  border-color: var(--c-signal);
+}
+.theme-console .btn--primary:hover {
+  background: color-mix(in srgb, var(--c-signal) 92%, white);
+  color: var(--c-void);
+}
+.theme-console .btn--danger:hover {
+  border-color: var(--c-missed);
+  color: var(--c-missed);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Detection plane dots (used in narrative timeline + scenario cards)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .plane-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-hairline-strong);
+  transition: background var(--dur-base) var(--ease-out),
+              box-shadow var(--dur-base) var(--ease-out);
+}
+.theme-console .plane-dot--pending {
+  background: var(--c-pending);
+  animation: pulse-pending 1.4s var(--ease-in-out) infinite;
+}
+.theme-console .plane-dot--detected {
+  background: var(--c-detected);
+  box-shadow: 0 0 8px -1px var(--c-detected);
+}
+.theme-console .plane-dot--missed {
+  background: var(--c-missed);
+}
+.theme-console .plane-dot--stitched {
+  background: var(--c-signal);
+  box-shadow: 0 0 10px -1px var(--c-signal-glow);
+}
+
+@keyframes pulse-pending {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Stitch line — draws between nodes when XSIAM correlates
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .stitch-line {
+  stroke: var(--c-stitched);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 3;
+  opacity: 0.8;
+  filter: drop-shadow(0 0 3px var(--c-signal-glow));
+  animation: draw-stitch var(--dur-stitch) var(--ease-out) forwards;
+}
+@keyframes draw-stitch {
+  from { stroke-dashoffset: 200; opacity: 0; }
+  to   { stroke-dashoffset: 0;   opacity: 0.8; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Shell layout (AppShell component)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .shell {
+  display: grid;
+  grid-template-rows: var(--h-header) auto 1fr var(--h-commandstrip);
+  height: 100vh;
+  overflow: hidden;
+}
+.theme-console .shell--no-telemetry {
+  grid-template-rows: var(--h-header) 1fr var(--h-commandstrip);
+}
+
+/* ─── Header ─── */
+.theme-console .header {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-void) 100%);
+  border-bottom: 1px solid var(--c-hairline);
+  position: relative;
+  z-index: 10;
+}
+.theme-console .header::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--c-signal) 20%, var(--c-signal) 80%, transparent 100%);
+  opacity: 0.35;
+}
+
+.theme-console .brand { display: flex; align-items: baseline; gap: 10px; }
+.theme-console .brand__wordmark {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--c-text);
+}
+.theme-console .brand__wordmark em { font-style: normal; color: var(--c-signal); font-weight: 600; }
+.theme-console .brand__subtitle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+
+.theme-console .env-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+}
+.theme-console .env-pill__dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--c-detected);
+  box-shadow: 0 0 6px var(--c-detected);
+}
+.theme-console .env-pill__dot--warn { background: var(--c-pending); box-shadow: 0 0 6px var(--c-pending); }
+.theme-console .env-pill__dot--bad  { background: var(--c-missed);  box-shadow: 0 0 6px var(--c-missed); }
+.theme-console .env-pill__label { color: var(--c-text); }
+.theme-console .env-pill__meta  { color: var(--c-text-muted); }
+
+.theme-console .cmd-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 10px;
+  font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.theme-console .cmd-trigger:hover { border-color: var(--c-signal); color: var(--c-signal); }
+
+.theme-console .user-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--c-text-secondary);
+}
+
+.theme-console .panw-mark {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  padding-left: 14px;
+  border-left: 1px solid var(--c-hairline);
+}
+.theme-console .panw-mark span { color: var(--c-panw-orange); }
+
+/* ─── Telemetry strip ─── */
+.theme-console .telemetry {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: var(--h-telemetry);
+  padding: 0 20px;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-hairline);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .tel-label   { color: var(--c-text-muted); text-transform: uppercase; }
+.theme-console .tel-value   { color: var(--c-text); }
+.theme-console .tel-value--signal  { color: var(--c-signal); }
+.theme-console .tel-value--pending { color: var(--c-pending); }
+.theme-console .tel-value--detected{ color: var(--c-detected); }
+.theme-console .tel-sep     { color: var(--c-hairline-strong); }
+.theme-console .tel-progress {
+  flex: 1; max-width: 360px;
+  height: 4px;
+  background: var(--c-surface-raised);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.theme-console .tel-progress__fill {
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, var(--c-signal), var(--c-detected));
+  border-radius: 2px;
+  transition: width 600ms var(--ease-out);
+}
+.theme-console .tel-progress__fill::after {
+  content: '';
+  position: absolute; right: 0; top: -2px; bottom: -2px;
+  width: 2px;
+  background: var(--c-signal);
+  box-shadow: 0 0 8px var(--c-signal-glow);
+}
+.theme-console .btn-abort {
+  height: 24px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-secondary);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.theme-console .btn-abort:hover { color: var(--c-missed); border-color: var(--c-missed); }
+
+/* ─── Workspace (rail + main) ─── */
+.theme-console .workspace {
+  display: grid;
+  grid-template-columns: var(--w-rail) 1fr;
+  min-height: 0;
+}
+.theme-console .workspace--no-rail { grid-template-columns: 1fr; }
+
+.theme-console .rail {
+  border-right: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  padding: 16px 0;
+  overflow-y: auto;
+}
+.theme-console .rail__section-title {
+  padding: 0 16px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+.theme-console .rail__group { margin-bottom: 20px; }
+
+.theme-console .plane-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  background: transparent;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  text-align: left;
+  width: 100%;
+}
+.theme-console .plane-item:hover { background: var(--c-surface-raised); color: var(--c-text); }
+.theme-console .plane-item--active {
+  background: var(--c-signal-soft);
+  border-left-color: var(--c-signal);
+  color: var(--c-signal);
+}
+.theme-console .plane-item__code { font-weight: 600; }
+.theme-console .plane-item__name {
+  color: var(--c-text-muted);
+  flex: 1;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.theme-console .plane-item--active .plane-item__name { color: var(--c-text-secondary); }
+.theme-console .plane-item__count { font-size: 10px; color: var(--c-text-muted); }
+
+/* ─── Tabs ─── */
+.theme-console .main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+.theme-console .tabs {
+  display: flex;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+}
+.theme-console .tab {
+  height: 40px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.theme-console .tab:hover { color: var(--c-text-secondary); }
+.theme-console .tab--active { color: var(--c-signal); border-bottom-color: var(--c-signal); }
+.theme-console .tab__badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 16px;
+  padding: 0 5px;
+  font-size: 9px;
+  color: var(--c-text-muted);
+  background: var(--c-surface-raised);
+  border-radius: 2px;
+}
+.theme-console .tab__badge--live {
+  color: var(--c-pending);
+  background: var(--c-pending-soft);
+  animation: pulse-pending 1.4s var(--ease-in-out) infinite;
+}
+.theme-console .tab--active .tab__badge { color: var(--c-signal); background: var(--c-signal-soft); }
+
+/* ─── View / tab panel container ─── */
+.theme-console .view {
+  overflow-y: auto;
+  padding: 24px;
+  position: relative;
+}
+
+/* ─── Command strip (bottom) ─── */
+.theme-console .command-strip {
+  display: flex; align-items: center; justify-content: space-between;
+  height: var(--h-commandstrip);
+  padding: 0 20px;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-hairline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+}
+.theme-console .cs-hints { display: flex; gap: 16px; }
+.theme-console .cs-hint { display: inline-flex; align-items: center; gap: 6px; }
+.theme-console .cs-ticker { color: var(--c-text-secondary); text-transform: none; letter-spacing: 0; font-family: var(--font-mono); }
+.theme-console .cs-ticker::before { content: '▸'; color: var(--c-signal); margin-right: 6px; }
+
+/* ─── Command palette (⌘K) ─── */
+.theme-console .cmd-palette-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(5, 10, 20, 0.75);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+  z-index: 100;
+}
+.theme-console .cmd-palette-backdrop.is-open { display: flex; }
+.theme-console .cmd-palette {
+  width: min(640px, 90vw);
+  background: var(--c-surface-modal);
+  border: 1px solid var(--c-hairline-strong);
+  border-radius: 6px;
+  box-shadow: 0 40px 80px -20px rgba(0,0,0,0.8);
+  overflow: hidden;
+}
+.theme-console .cmd-palette__input {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--c-hairline);
+}
+.theme-console .cmd-palette__input input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--c-text);
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .cmd-palette__input input::placeholder { color: var(--c-text-muted); }
+.theme-console .cmd-palette__prompt { color: var(--c-signal); font-family: var(--font-mono); font-size: 14px; }
+.theme-console .cmd-palette__results { max-height: 420px; overflow-y: auto; padding: 6px 0; }
+.theme-console .cmd-section-label {
+  padding: 10px 20px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+.theme-console .cmd-result {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 20px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  background: transparent;
+  border-top: 0; border-right: 0; border-bottom: 0;
+  width: 100%;
+  text-align: left;
+}
+.theme-console .cmd-result:hover,
+.theme-console .cmd-result--active {
+  background: var(--c-signal-soft);
+  border-left-color: var(--c-signal);
+}
+.theme-console .cmd-result__icon { font-family: var(--font-mono); font-size: 12px; color: var(--c-signal); text-align: center; }
+.theme-console .cmd-result__body { display: flex; flex-direction: column; gap: 2px; }
+.theme-console .cmd-result__title { font-size: 13px; color: var(--c-text); font-family: var(--font-ui); }
+.theme-console .cmd-result__meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-mono); color: var(--c-text-muted); }
+.theme-console .cmd-result__shortcut { display: flex; gap: 4px; }
+.theme-console .cmd-palette__footer {
+  display: flex; justify-content: space-between;
+  padding: 10px 20px;
+  border-top: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+
+/* ─── Scrollbar refinement scoped to console theme ─── */
+.theme-console ::-webkit-scrollbar { width: 10px; height: 10px; }
+.theme-console ::-webkit-scrollbar-thumb {
+  background: var(--c-hairline-strong);
+  border-radius: 5px;
+  border: 2px solid var(--c-void);
+}
+.theme-console ::-webkit-scrollbar-track { background: transparent; }

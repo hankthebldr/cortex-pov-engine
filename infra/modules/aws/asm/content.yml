@@ -1,0 +1,37 @@
+tools:
+  vulnerable_apps:
+    - name: gocortexbrokenbank
+      repo: gocortexio/gocortexbrokenbank
+      install: git-clone
+      install_path: /opt/cortexsim/content/asm/gocortexbrokenbank
+      purpose: "Intentionally vulnerable CI/CD app for ASPM validation"
+  honeypots:
+    - name: cowrie
+      repo: micheloosterhof/cowrie
+      install: git-clone
+      install_path: /opt/cortexsim/content/asm/cowrie
+      purpose: "Interactive SSH honeypot - brute force capture"
+    - name: dionaea
+      repo: DinoTools/dionaea
+      install: git-clone
+      install_path: /opt/cortexsim/content/asm/dionaea
+      purpose: "Low-interaction honeypot for malware capture"
+    - name: conpot
+      repo: mushorg/conpot
+      install: pip-install
+      purpose: "ICS/SCADA honeypot"
+    - name: glastopf
+      repo: mushorg/glastopf
+      install: git-clone
+      install_path: /opt/cortexsim/content/asm/glastopf
+      purpose: "Web application honeypot"
+    - name: honeytrap
+      repo: honeytrap/honeytrap
+      install: git-clone
+      install_path: /opt/cortexsim/content/asm/honeytrap
+      purpose: "Managed honeypot framework"
+  surface_discovery:
+    - name: shells
+      repo: CodeMonkeyCybersecurity/shells
+      install: binary-release
+      purpose: "Automated asset discovery and bug-bounty payload toolkit"

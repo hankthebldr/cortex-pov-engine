@@ -1,0 +1,7 @@
+type,value,context,notes
+iam_user_pattern,AKIA[0-9A-Z]{16},T1552.001 cred discovery,regex seeded into XDR BIOC
+s3_bucket,cortexsim-sensitive-demo,T1530 source bucket,tag Sensitivity=High
+s3_bucket,cortexsim-attacker-drop,T1537 exfil destination,attacker-controlled (or AttackerControlled=true tag)
+aws_api,sts:GetCallerIdentity,T1078.004 pivot signal,first cloud API call post-compromise
+aws_api,s3:CopyObject,T1537 exfil,cross-account copy pattern
+user_context,www-data,EDR BIOC actor,service account expected to not invoke aws-cli

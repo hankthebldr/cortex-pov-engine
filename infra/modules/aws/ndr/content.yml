@@ -1,0 +1,38 @@
+tools:
+  network_simulation:
+    - name: testmynids
+      repo: 3CORESec/testmynids.org
+      install: git-clone
+      install_path: /opt/cortexsim/content/ndr/testmynids
+      purpose: "NIDS trigger test script collection"
+    - name: redirect-rules
+      repo: 0xZDH/redirect.rules
+      install: git-clone
+      install_path: /opt/cortexsim/content/ndr/redirect-rules
+      purpose: "Malleable C2 redirect rule generator for NGFW deep inspection testing"
+    - name: c3
+      repo: FSecureLABS/C3
+      install: git-clone
+      install_path: /opt/cortexsim/content/ndr/c3
+      purpose: "Esoteric C2 channels for heuristic network analytics"
+    - name: chameleon
+      repo: mdsecactivebreach/Chameleon
+      install: git-clone
+      install_path: /opt/cortexsim/content/ndr/chameleon
+      purpose: "Proxy evasion / firewall categorisation testing"
+  packet_replay:
+    - name: tcpreplay-examples
+      repo: appneta/tcpreplay
+      install: git-clone
+      install_path: /opt/cortexsim/content/ndr/tcpreplay
+  telemetry_samples:
+    - name: redelk
+      repo: outflanknl/RedELK
+      install: git-clone
+      install_path: /opt/cortexsim/content/ndr/redelk
+  threat_intel:
+    - name: mocktaxii
+      repo: gocortexio/mocktaxii
+      install: git-clone
+      install_path: /opt/cortexsim/content/ndr/mocktaxii
+      purpose: "STIX/TAXII 2.1 server — feeds IOCs into XSIAM for stitching"

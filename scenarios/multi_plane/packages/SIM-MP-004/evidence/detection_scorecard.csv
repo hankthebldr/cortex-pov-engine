@@ -1,0 +1,8 @@
+tid,technique,plane,expected_alert,status,alert_id,timestamp_utc
+T1552.001,Credentials In Files (AWS key grep),EDR,Credential Access — recursive AKIA grep by www-data,PENDING,,
+T1078.004,Valid Accounts: Cloud (aws-cli invocation),EDR,Cloud CLI invoked by service account,PENDING,,
+T1078.004,Valid Accounts: Cloud (sts:GetCallerIdentity),CDR,Odd-source sts:GetCallerIdentity,PENDING,,
+T1580,Cloud Infrastructure Discovery,CDR,Multi-service enumeration burst,PENDING,,
+T1530,Data from Cloud Storage,CDR,Sensitivity-tagged bucket access,PENDING,,
+T1537,Transfer Data to Cloud Account,CDR,Cross-account S3 copy from sensitive source,PENDING,,
+T1537,Full stitched kill chain,ANALYTICS,XSIAM stitched incident (5 alerts → 1 incident),PENDING,,

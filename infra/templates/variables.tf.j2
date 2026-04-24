@@ -1,0 +1,53 @@
+variable "region" {
+  description = "AWS region"
+  type        = string
+  default     = "{{ region }}"
+}
+
+variable "project_name" {
+  description = "Resource prefix / tag"
+  type        = string
+  default     = "{{ project_name }}"
+}
+
+variable "dc_ssh_cidr" {
+  description = "DC's CIDR for SSH + SimCore UI access"
+  type        = string
+  default     = "{{ dc_ssh_cidr }}"
+}
+
+variable "jumpbox_size" {
+  description = "Jumpbox instance type"
+  type        = string
+  default     = "{{ jumpbox_size }}"
+}
+
+variable "k8s_node_count" {
+  description = "CDR module worker node count"
+  type        = number
+  default     = {{ k8s_node_count }}
+}
+
+variable "edr_target_count" {
+  description = "EDR module target host count"
+  type        = number
+  default     = {{ edr_target_count }}
+}
+
+variable "tags" {
+  description = "Additional tags applied to all resources"
+  type        = map(string)
+  default     = {{ tags | tojson }}
+}
+
+variable "itdr_workstation_count" {
+  description = "ITDR module domain-joined workstation count"
+  type        = number
+  default     = 1
+}
+
+variable "ndr_stitching_pattern" {
+  description = "NDR module NGFW stitching pattern: marketplace_vmseries | external_ngfw_forward | suricata_lab"
+  type        = string
+  default     = "external_ngfw_forward"
+}

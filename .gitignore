@@ -1,0 +1,47 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Node
+ui/node_modules/
+ui/dist/
+
+# Build artifacts
+bin/cortexsim-agent
+core/static/assets/
+core/static/index.html
+
+# Data
+data/
+*.db
+
+# Logs
+logs/*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Environment
+.env
+
+# IaC generator
+infra/blueprints/*
+!infra/blueprints/.gitkeep
+
+# pytest
+.pytest_cache/
+
+# Terraform (local validation artifacts — do not ship in bundles)
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+
+

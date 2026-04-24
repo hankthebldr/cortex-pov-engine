@@ -1,0 +1,50 @@
+tools:
+  threat_intel_sources:
+    - name: mocktaxii
+      repo: gocortexio/mocktaxii
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/mocktaxii
+      purpose: "STIX/TAXII 2.1 server for TIM feed validation"
+    - name: unit42-timely-threat-intel
+      repo: PaloAltoNetworks/Unit42-timely-threat-intel
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/unit42-timely-threat-intel
+      purpose: "Unit 42 IOC feeds keyed to social media posts"
+    - name: pan-unit42-public-tools
+      repo: pan-unit42/public_tools
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/pan-unit42-public-tools
+  ioc_samples:
+    - name: malware-samples-feed
+      repo: MalwareSamples/Malware-Feed
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/malware-samples-feed
+      purpose: "Live malware files for AV/IOC matching"
+    - name: thezoo
+      repo: ytisf/theZoo
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/thezoo
+      purpose: "Live malware repository for detection validation"
+    - name: malware-souk
+      repo: saferwall/malware-souk
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/malware-souk
+  yara_rules:
+    - name: yara-rules
+      repo: yara-rules/rules
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/yara-rules
+    - name: reversinglabs-yara
+      repo: reversinglabs/reversinglabs-yara-rules
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/reversinglabs-yara
+    - name: awesome-yara
+      repo: InQuest/awesome-yara
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/awesome-yara
+  malware_source_code:
+    - name: vxunderground-malware
+      repo: vxunderground/MalwareSourceCode
+      install: git-clone
+      install_path: /opt/cortexsim/content/tim/vxunderground-malware
+      purpose: "Raw malware source code across platforms"

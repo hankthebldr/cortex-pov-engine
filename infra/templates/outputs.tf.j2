@@ -1,0 +1,96 @@
+output "jumpbox_public_ip" {
+  description = "Public IP of the jumpbox"
+  value       = module.base.jumpbox_public_ip
+}
+
+output "ssh_private_key_ssm_path" {
+  description = "SSM parameter storing the jumpbox SSH key"
+  value       = module.base.ssh_private_key_ssm_path
+}
+
+output "simcore_url" {
+  description = "URL to reach SimCore UI"
+  value       = "http://${module.base.jumpbox_public_ip}:8888"
+}
+{% if "edr" in modules %}
+output "edr_target_private_ips" {
+  description = "Private IPs of EDR target hosts (reachable from jumpbox)"
+  value       = module.edr.target_private_ips
+}
+{% endif %}
+{% if "cdr" in modules %}
+output "cdr_kubeconfig_command" {
+  description = "Command to configure kubectl for the EKS cluster"
+  value       = module.cdr.kubeconfig_command
+}
+{% endif %}
+{% if "itdr" in modules %}
+output "itdr_dc_private_ip" {
+  description = "Private IP of the ITDR domain controller"
+  value       = module.itdr.dc_private_ip
+}
+
+output "itdr_ad_domain_name" {
+  description = "Fully-qualified AD domain name"
+  value       = module.itdr.ad_domain_name
+}
+
+output "itdr_ad_admin_password_ssm_path" {
+  description = "SSM path to the AD Domain Admin password"
+  value       = module.itdr.ad_admin_password_ssm_path
+}
+{% endif %}
+{% if "ndr" in modules %}
+output "ndr_collector_private_ip" {
+  description = "Private IP of the NGFW log collector - forward NGFW logs here"
+  value       = module.ndr.collector_private_ip
+}
+
+output "ndr_attack_endpoint_public_ip" {
+  description = "Public IP of the DMZ attack endpoint"
+  value       = module.ndr.attack_endpoint_public_ip
+}
+
+output "ndr_stitching_guidance" {
+  description = "Next-step guidance for wiring the chosen NGFW pattern"
+  value       = module.ndr.stitching_guidance
+}
+{% endif %}
+{% if "cspm" in modules %}
+output "cspm_findings_summary" {
+  description = "Summary of intentional CSPM findings planted"
+  value       = module.cspm.findings_summary
+}
+
+output "cspm_public_bucket_url" {
+  description = "Public S3 bucket URL (should be reachable without auth)"
+  value       = module.cspm.public_bucket_url
+}
+{% endif %}
+{% if "asm" in modules %}
+output "asm_exposed_host_public_ip" {
+  description = "Public IP of the multi-service exposed host for ASM discovery"
+  value       = module.asm.exposed_host_public_ip
+}
+
+output "asm_findings_summary" {
+  description = "Summary of intentional ASM findings planted"
+  value       = module.asm.findings_summary
+}
+{% endif %}
+{% if "tim" in modules %}
+output "tim_taxii_endpoint" {
+  description = "TAXII 2.1 server URL for XSIAM TIM feed configuration"
+  value       = module.tim.taxii_endpoint_url
+}
+
+output "tim_fake_c2_url" {
+  description = "Fake C2 endpoint - endpoint beacons here should fire TIM IOC detections"
+  value       = module.tim.fake_c2_url
+}
+
+output "tim_planted_ioc_domains" {
+  description = "Route53 private zone records that resolve to the fake C2"
+  value       = module.tim.planted_ioc_domains
+}
+{% endif %}

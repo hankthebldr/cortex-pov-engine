@@ -1,0 +1,154 @@
+scenario_id: SIM-EDR-004
+name: "Defense Evasion — Log Tampering, Timestomping, and Process Hiding"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-EDR-04
+tc_ref: TC-EDR-04
+uc_name: "Defense Evasion Detection"
+tc_name: "Anti-Forensics and Log Tampering"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1070.002"
+mitre_technique_name: "Indicator Removal: Clear Linux or Mac System Logs"
+additional_techniques:
+  - technique: "T1070.006"
+    name: "Indicator Removal: Timestomp"
+  - technique: "T1562.001"
+    name: "Impair Defenses: Disable or Modify Tools"
+  - technique: "T1036.005"
+    name: "Masquerading: Match Legitimate Name or Location"
+
+threat_report: "Unit42 - xHunt Campaign: Attacks on Kuwait Shipping and Transportation"
+threat_report_url: "https://unit42.paloaltonetworks.com/xhunt-campaign-attacks-on-kuwait-shipping/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+    - www-data
+    - svc-backup
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Clear bash history to hide command traces"
+    command: |
+      echo '[*] Simulating bash history evasion techniques';
+      export HISTFILE=/dev/null;
+      export HISTSIZE=0;
+      unset HISTFILE;
+      history -c 2>/dev/null;
+      echo '' > ~/.bash_history 2>/dev/null || echo '[*] History clear simulated';
+      echo '[*] History evasion techniques executed'
+    identity: root
+    mitre_technique: "T1070.003"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Bash history clearing — HISTFILE manipulation and history -c execution detected"
+      - plane: EDR
+        type: Analytics
+        description: "Multiple history evasion commands in sequence — anti-forensics behavior pattern"
+
+  - id: step-02
+    name: "Tamper with system log files"
+    command: |
+      echo '[*] Simulating log tampering';
+      cp /var/log/auth.log /tmp/cortexsim_auth_backup 2>/dev/null;
+      echo '' > /tmp/cortexsim_fake_auth.log;
+      wc -l /var/log/syslog /var/log/auth.log 2>/dev/null;
+      echo '[*] Log tampering simulation complete — real logs NOT modified'
+    identity: root
+    mitre_technique: "T1070.002"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "System log file access and truncation attempt — log tampering to hide intrusion evidence"
+      - plane: EDR
+        type: Analytics
+        description: "Auth.log and syslog access from non-syslog process — unauthorized log manipulation"
+
+  - id: step-03
+    name: "Timestomp files to evade forensic timeline analysis"
+    command: |
+      echo '[*] Simulating timestomping';
+      touch -t 202301010000 /tmp/cortexsim_timestomp_test 2>/dev/null;
+      touch -r /usr/bin/ls /tmp/cortexsim_timestomp_test 2>/dev/null;
+      stat /tmp/cortexsim_timestomp_test 2>/dev/null;
+      echo '[*] Timestomping simulation complete'
+    identity: root
+    mitre_technique: "T1070.006"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "File timestamp modification via touch -t — timestomping to evade forensic analysis"
+      - plane: EDR
+        type: Analytics
+        description: "Timestamp manipulation using reference file (-r flag) — anti-forensics file metadata spoofing"
+
+  - id: step-04
+    name: "Masquerade malicious process as legitimate system binary"
+    command: |
+      echo '[*] Simulating process name masquerading';
+      cp /bin/sh /tmp/cortexsim_masq_test;
+      mv /tmp/cortexsim_masq_test /tmp/[kworker/0:1] 2>/dev/null || \
+        mv /tmp/cortexsim_masq_test '/tmp/systemd-journald' 2>/dev/null || \
+        echo '[*] Masquerade target created as /tmp/cortexsim_masq';
+      ls -la /tmp/cortexsim_masq* /tmp/\[kworker* /tmp/systemd-journal* 2>/dev/null;
+      echo '[*] Process masquerading simulation complete'
+    identity: root
+    mitre_technique: "T1036.005"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Binary copied and renamed to match kernel thread name — process masquerading as kworker"
+      - plane: EDR
+        type: Analytics
+        description: "Shell binary copied to /tmp with system process name — masquerading to evade process listing"
+
+  - id: step-05
+    name: "Attempt to disable security tooling"
+    command: |
+      echo '[*] Simulating security tool interference';
+      systemctl status cortex-xdr 2>/dev/null || echo '[*] Cortex XDR service not found (expected on non-managed host)';
+      iptables -L INPUT 2>/dev/null | head -5;
+      echo '[*] Checking for monitoring agents...';
+      ps aux | grep -E 'falcon|crowd|cortex|sentinel|cylance|carbon' | grep -v grep | head -5 || echo '[*] No EDR agents detected';
+      echo '[*] Security tooling reconnaissance complete'
+    identity: root
+    mitre_technique: "T1562.001"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Security product enumeration — process search for EDR/AV agent names indicates evasion preparation"
+      - plane: EDR
+        type: Analytics
+        description: "Systematic security tool discovery via process listing — pre-evasion reconnaissance behavior"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim_auth_backup /tmp/cortexsim_fake_auth.log /tmp/cortexsim_timestomp_test"
+    - "rm -f '/tmp/[kworker/0:1]' '/tmp/systemd-journald' /tmp/cortexsim_masq*"
+    - "echo '[CortexSim] SIM-EDR-004 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-04-14"
+last_updated: "2026-04-14"
+tags:
+  - defense-evasion
+  - log-tampering
+  - timestomping
+  - masquerading
+  - anti-forensics
+  - endpoint-security

@@ -1,0 +1,101 @@
+# scripts/k8s/cdr_base.yml
+# CortexSim CDR Kubernetes Job Base Template
+#
+# This template is used by push_generator.py as the base for all CDR K8s bundles.
+# Extends the pattern established in sources/CDR/cdr.yml.
+#
+# Placeholders (substituted by push_generator.py at generation time):
+#   {{SCENARIO_ID}}    - e.g. SIM-CDR-001
+#   {{SCENARIO_NAME}}  - e.g. container-enumeration-via-deepce
+#   {{IMAGE}}          - default: ubuntu:22.04
+#   {{COMMANDS}}       - ordered list of step commands (injected as initContainers)
+#   {{TIMESTAMP}}      - ISO 8601 generation timestamp
+#   {{CLEANUP_CMD}}    - cleanup commands joined as a single shell expression
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cortexsim-{{SCENARIO_NAME}}
+  namespace: default
+  labels:
+    app: cortexsim
+    scenario-id: "{{SCENARIO_ID}}"
+    plane: cdr
+    generated-at: "{{TIMESTAMP}}"
+  annotations:
+    cortexsim/scenario-id: "{{SCENARIO_ID}}"
+    cortexsim/uc-ref: "{{UC_REF}}"
+    cortexsim/tc-ref: "{{TC_REF}}"
+    cortexsim/mitre-technique: "{{MITRE_TECHNIQUE}}"
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: cortexsim
+        scenario-id: "{{SCENARIO_ID}}"
+    spec:
+      restartPolicy: Never
+      # initContainers execute scenario phases in strict order
+      # Each init container = one scenario step
+      initContainers:
+        - name: step-01
+          image: "{{IMAGE}}"
+          # Default image: ubuntu:22.04
+          # Override per scenario in generated manifests
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "[CortexSim] {{SCENARIO_ID}} step-01 starting..."
+              # {{STEP_01_COMMAND}}
+              echo "[CortexSim] step-01 complete"
+          env:
+            - name: CORTEXSIM_SCENARIO
+              value: "{{SCENARIO_ID}}"
+            - name: CORTEXSIM_STEP
+              value: "step-01"
+          securityContext:
+            # Privileged mode enabled for CDR escape scenarios
+            # Set to false for non-escape scenarios in generated manifests
+            privileged: false
+            allowPrivilegeEscalation: false
+
+      # Main container: cleanup and final reporting
+      containers:
+        - name: cleanup
+          image: "{{IMAGE}}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "[CortexSim] {{SCENARIO_ID}} all steps complete — running cleanup"
+              # {{CLEANUP_CMD}}
+              echo "[CortexSim] {{SCENARIO_ID}} simulation complete at $(date -u)"
+          env:
+            - name: CORTEXSIM_SCENARIO
+              value: "{{SCENARIO_ID}}"
+            - name: CORTEXSIM_STEP
+              value: "cleanup"
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+
+      # Tolerate any node for simulation workloads
+      tolerations:
+        - operator: Exists
+
+---
+# Supporting ServiceAccount for scenarios requiring K8s API access (e.g. SIM-CDR-004)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cortexsim-{{SCENARIO_NAME}}
+  namespace: default
+  labels:
+    app: cortexsim
+    scenario-id: "{{SCENARIO_ID}}"

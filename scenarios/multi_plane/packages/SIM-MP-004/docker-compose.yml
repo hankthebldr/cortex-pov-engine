@@ -1,0 +1,48 @@
+services:
+  attacker:
+    image: kalilinux/kali-rolling:latest
+    container_name: simmp004-attacker
+    working_dir: /opt/scenario
+    volumes:
+      - ./:/opt/scenario:ro
+      - ./evidence:/opt/scenario/evidence
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      TARGET_BUCKET: ${TARGET_BUCKET:-cortexsim-sensitive-demo}
+      ATTACKER_BUCKET: ${ATTACKER_BUCKET:-cortexsim-attacker-drop}
+    command: >
+      bash -c "apt-get update -qq &&
+               apt-get install -y -qq awscli curl ca-certificates &&
+               ./run.sh --mode full --delay 90"
+    networks: [attacker_net]
+    restart: "no"
+
+  c2server:
+    image: ghcr.io/bishopfox/sliver-server:latest
+    container_name: simmp004-c2
+    ports:
+      - "443:443"
+      - "8888:8888"
+    volumes:
+      - ./c2:/home/sliver/c2-config:ro
+    networks: [attacker_net]
+    restart: unless-stopped
+    profiles: ["c2-variant"]
+
+  scenario-ui:
+    image: python:3.11-slim
+    container_name: simmp004-ui
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+    ports:
+      - "8080:8080"
+    command: python3 -m http.server 8080 --directory evidence
+    networks: [attacker_net]
+    depends_on: [attacker]
+
+networks:
+  attacker_net:
+    driver: bridge

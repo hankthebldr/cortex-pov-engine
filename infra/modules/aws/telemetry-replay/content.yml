@@ -1,0 +1,73 @@
+tools:
+  attack_mapped_evtx:
+    - name: evtx-attack-samples
+      repo: sbousseaden/EVTX-ATTACK-SAMPLES
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/evtx-attack-samples
+      purpose: "Raw Windows event logs keyed to ATT&CK techniques"
+    - name: evtx-to-mitre-attack
+      repo: mdecrevoisier/EVTX-to-MITRE-Attack
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/evtx-to-mitre-attack
+      purpose: "270+ IOC EVTX samples classified per tactic/technique"
+    - name: hayabusa-sample-evtx
+      repo: Yamato-Security/hayabusa-sample-evtx
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/hayabusa-sample-evtx
+  enterprise_simulations:
+    - name: mordor
+      repo: OTRF/mordor
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/mordor
+      purpose: "Malicious + benign telemetry datasets for analytic validation"
+    - name: cyber-simulation
+      repo: gregdiy/cyber_simulation
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/cyber-simulation
+      purpose: "7.9M-log multi-user pivot campaign for signal-to-noise testing"
+  ml_datasets:
+    - name: malbehavd
+      repo: mpasco/MalbehavD-V1
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/malbehavd
+    - name: awesome-malware-benign-datasets
+      repo: 0xh3xa/awesome-malware-benign-datasets
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/awesome-malware-benign-datasets
+    - name: mh-100k-dataset
+      repo: Malware-Hunter/MH-100K-dataset
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/mh-100k-dataset
+    - name: dikedataset
+      repo: iosifache/DikeDataset
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/dikedataset
+    - name: markov-malware-images
+      repo: julismail/Markov
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/markov-malware-images
+    - name: nlp-pdf-malware
+      repo: bliutech/nlp-pdf-malware-detection
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/nlp-pdf-malware
+  edr_coverage_data:
+    - name: edr-telemetry
+      repo: tsale/EDR-Telemetry
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/edr-telemetry
+      purpose: "Commercial EDR coverage comparison maps"
+  replay_tooling:
+    - name: chainsaw
+      repo: WithSecureLabs/chainsaw
+      install: binary-release
+      purpose: "EVTX triage with in-place Sigma rule application"
+    - name: sigma-rules-crawler
+      repo: SimoneCagol/sigma-rules-crawler
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/sigma-rules-crawler
+      purpose: "Outputs Elastic NDJSON for rapid SIEM ingestion"
+    - name: tcpreplay
+      repo: appneta/tcpreplay
+      install: git-clone
+      install_path: /opt/cortexsim/content/telemetry-replay/tcpreplay
+      purpose: "PCAP replay onto test networks"

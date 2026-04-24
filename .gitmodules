@@ -1,0 +1,40 @@
+[submodule "sources/signalbench"]
+	path = sources/signalbench
+	url = https://github.com/gocortexio/signalbench.git
+
+[submodule "sources/gocortexbrokenbank"]
+	path = sources/gocortexbrokenbank
+	url = https://github.com/gocortexio/gocortexbrokenbank.git
+
+[submodule "sources/mocktaxii"]
+	path = sources/mocktaxii
+	url = https://github.com/gocortexio/mocktaxii.git
+
+[submodule "sources/gcgit"]
+	path = sources/gcgit
+	url = https://github.com/gocortexio/gcgit.git
+
+[submodule "sources/xdrtop"]
+	path = sources/xdrtop
+	url = https://github.com/gocortexio/xdrtop.git
+
+[submodule "sources/ackbarx"]
+	path = sources/ackbarx
+	url = https://github.com/gocortexio/ackbarx.git
+
+[submodule "sources/CDR"]
+	path = sources/CDR
+	url = https://github.com/hankthebldr/CDR.git
+
+[submodule "sources/xsiam-prisma-cdr-lab"]
+	path = sources/xsiam-prisma-cdr-lab
+	url = https://github.com/hankthebldr/xsiam-prisma-cdr-lab.git
+	branch = 1.1
+
+[submodule "sources/MITRE-Turla-Carbon"]
+	path = sources/MITRE-Turla-Carbon
+	url = https://github.com/Palo-Cortex/MITRE-Turla-Carbon.git
+
+[submodule "sources/atomic-red-team"]
+	path = sources/atomic-red-team
+	url = https://github.com/redcanaryco/atomic-red-team.git

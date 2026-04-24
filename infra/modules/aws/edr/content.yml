@@ -1,0 +1,44 @@
+tools:
+  attack_simulation:
+    - name: atomic-red-team
+      repo: redcanaryco/atomic-red-team
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/atomic-red-team
+    - name: edr-testing-script
+      repo: op7ic/EDR-Testing-Script
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/edr-testing-script
+    - name: lolbas
+      repo: api0cradle/LOLBAS
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/lolbas
+    - name: sliver
+      repo: bishopfox/sliver
+      install: binary-release
+  ransomware_simulation:
+    - name: cipherstrike
+      repo: Cursed271/CipherStrike
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/cipherstrike
+    - name: ransim
+      repo: lawndoc/RanSim
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/ransim
+    - name: simulate-black-basta
+      repo: skandler/simulate-black-basta
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/simulate-black-basta
+    - name: simulate-akira
+      repo: skandler/simulate-akira
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/simulate-akira
+  telemetry_samples:
+    - name: evtx-attack-samples
+      repo: sbousseaden/EVTX-ATTACK-SAMPLES
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/evtx-attack-samples
+      purpose: "Replay into XSIAM for parser validation"
+    - name: mordor
+      repo: OTRF/mordor
+      install: git-clone
+      install_path: /opt/cortexsim/content/edr/mordor

@@ -1,0 +1,14 @@
+region           = "{{ region }}"
+project_name     = "{{ project_name }}"
+dc_ssh_cidr      = "{{ dc_ssh_cidr }}"
+jumpbox_size     = "{{ jumpbox_size }}"
+k8s_node_count   = {{ k8s_node_count }}
+edr_target_count = {{ edr_target_count }}
+tags = {{ tags | tojson }}
+{% if "itdr" in modules %}
+itdr_workstation_count = 1
+{% endif %}
+{% if "ndr" in modules %}
+# NDR stitching_pattern: marketplace_vmseries | external_ngfw_forward | suricata_lab
+ndr_stitching_pattern = "external_ngfw_forward"
+{% endif %}

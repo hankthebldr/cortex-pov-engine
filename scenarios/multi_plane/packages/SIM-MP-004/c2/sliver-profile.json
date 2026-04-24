@@ -1,0 +1,25 @@
+{
+  "name": "SIM-MP-004-https-beacon",
+  "note": "Optional C2 profile for the SIM-MP-004-B variant. Not used by the default SIM-MP-004 flow (which emulates hybrid cloud-pivot without implant). Enable with `docker compose --profile c2-variant up`.",
+  "listener": {
+    "type": "https",
+    "lhost": "0.0.0.0",
+    "lport": 443,
+    "cert_mode": "self-signed",
+    "note": "Self-signed is intentional — we want Cortex certificate-reputation BIOC to fire."
+  },
+  "implant": {
+    "os": "linux",
+    "arch": "amd64",
+    "format": "executable",
+    "sleep_jitter_percent": 30,
+    "callback_interval_seconds": 60,
+    "http_profile": {
+      "user_agent": "Mozilla/5.0 (compatible; CortexSimBeacon/1.0)",
+      "uri_paths": ["/healthz", "/metrics", "/v1/ping"],
+      "method_distribution": {"GET": 0.7, "POST": 0.3}
+    }
+  },
+  "mitre_mapping": ["T1071.001", "T1573.002"],
+  "detection_notes": "Pairs with NDR scenarios that expect repetitive HTTPS beacon patterns. Not required for the default MP-004 kill chain."
+}

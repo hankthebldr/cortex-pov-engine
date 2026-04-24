@@ -1,0 +1,21 @@
+{
+  "scenario_id": "SIM-MP-004",
+  "rules": [
+    {
+      "name": "CortexSim SIM-MP-004 — Recursive AWS Key Grep by Service Account",
+      "description": "Detects www-data (or other non-interactive service identities) executing a recursive filesystem search for AWS access-key patterns. Anchor: APT29 post-compromise credential harvesting.",
+      "severity": "high",
+      "mitre_attack": ["T1552.001"],
+      "xql_query": "dataset = xdr_data\n| filter event_type = PROCESS\n| filter action_process_image_name in (\"grep\", \"egrep\", \"rgrep\")\n| filter action_process_command_line contains \"AKIA\" or action_process_command_line contains \"aws_secret_access_key\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"nginx\", \"apache\")\n| fields agent_hostname, actor_effective_username, action_process_image_command_line, event_timestamp",
+      "tags": ["POV", "SIM-MP-004", "apt29", "credential-access"]
+    },
+    {
+      "name": "CortexSim SIM-MP-004 — AWS CLI Invoked by Web Service Account",
+      "description": "Detects aws-cli execution by service identities that have no business reason to interact with cloud APIs. Pairs with CDR sts:GetCallerIdentity event for stitching.",
+      "severity": "high",
+      "mitre_attack": ["T1078.004"],
+      "xql_query": "dataset = xdr_data\n| filter event_type = PROCESS\n| filter action_process_image_name = \"aws\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"nginx\", \"apache\", \"postgres\")\n| fields agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name, event_timestamp",
+      "tags": ["POV", "SIM-MP-004", "apt29", "cloud-pivot"]
+    }
+  ]
+}

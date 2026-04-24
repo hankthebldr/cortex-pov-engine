@@ -1,0 +1,16 @@
+# Content installed on the jumpbox for the base module — detection content repos
+# that DCs hand to customers. Pure git clones — no binaries, no services.
+tools:
+  detection_rules:
+    - name: sigma
+      repo: SigmaHQ/sigma
+      install: git-clone
+      install_path: /opt/cortexsim/content/base/sigma
+    - name: mitre-car
+      repo: mitre/car
+      install: git-clone
+      install_path: /opt/cortexsim/content/base/mitre-car
+    - name: sigma-detection-rules
+      repo: mdecrevoisier/SIGMA-detection-rules
+      install: git-clone
+      install_path: /opt/cortexsim/content/base/sigma-detection-rules

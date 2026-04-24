@@ -1,0 +1,8 @@
+tools:
+  category_a:
+    - name: tool-one
+      repo: example/tool-one
+      install: git-clone
+    - name: tool-two
+      repo: example/tool-two
+      install: binary-release

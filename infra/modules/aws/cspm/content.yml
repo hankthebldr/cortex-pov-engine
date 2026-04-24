@@ -1,0 +1,50 @@
+tools:
+  cspm_attack_labs:
+    - name: cloudgoat
+      repo: RhinoSecurityLabs/cloudgoat
+      install: pip-install
+      purpose: "Vulnerable-by-design AWS deployment scenarios"
+    - name: aws-detonation-lab
+      repo: sonofagl1tch/AWSDetonationLab
+      install: git-clone
+      install_path: /opt/cortexsim/content/cspm/aws-detonation-lab
+      purpose: "Targeted malicious telemetry generator for AWS"
+    - name: stratus-red-team
+      repo: DataDog/stratus-red-team
+      install: binary-release
+      purpose: "Atomic Red Team for the Cloud - AWS/Azure/GCP/K8s"
+    - name: leonidas
+      repo: WithSecureLabs/leonidas
+      install: git-clone
+      install_path: /opt/cortexsim/content/cspm/leonidas
+      purpose: "Serverless cloud API exploitation framework"
+    - name: endgame
+      repo: DavidDikker/endgame
+      install: git-clone
+      install_path: /opt/cortexsim/content/cspm/endgame
+      purpose: "AWS account backdoor commands"
+    - name: aurelian
+      repo: praetorian-inc/aurelian
+      install: git-clone
+      install_path: /opt/cortexsim/content/cspm/aurelian
+      purpose: "OPSEC-safe cloud privilege escalation enumeration"
+  agentless_scanning:
+    - name: openclarity
+      repo: openclarity/openclarity
+      install: git-clone
+      install_path: /opt/cortexsim/content/cspm/openclarity
+    - name: threatmapper
+      repo: deepfence/threatmapper
+      install: git-clone
+      install_path: /opt/cortexsim/content/cspm/threatmapper
+    - name: trivy
+      repo: aquasecurity/trivy
+      install: binary-release
+    - name: grype
+      repo: anchore/grype
+      install: binary-release
+  iac_scanners:
+    - name: lambdaguard
+      repo: Skyscanner/lambdaguard
+      install: pip-install
+      purpose: "Lambda function security auditor"

