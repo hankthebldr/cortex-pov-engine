@@ -1,15 +1,24 @@
+# ---- Builder stage: compile wheels (psutil etc. need gcc) ----
+FROM python:3.11-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY core/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.txt
+
+# ---- Runtime stage: slim image with only the installed packages ----
 FROM python:3.11-slim
 
-# Minimal runtime deps — the heavy build toolchains (cargo/rustc/golang/npm) that
-# were previously bundled belong in the jumpbox image, not the shipped SimCore image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+# Bring in the compiled site-packages from the builder.
+COPY --from=builder /install /usr/local
 
-COPY core/requirements.txt /app/core/requirements.txt
-RUN pip install --no-cache-dir -r /app/core/requirements.txt
+WORKDIR /app
 
 # Bundle application code + content so the image is self-contained (no host mounts required).
 COPY core/      /app/core/
