@@ -60,7 +60,10 @@
       "Bash(git branch *)",
       "Bash(mv installer *)",
       "Bash(mv tests/installer /tmp/cortexsim-tests-installer-stash)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(mv /tmp/cortexsim-installer-stash installer)",
+      "Bash(mv /tmp/cortexsim-tests-installer-stash tests/installer)"
     ]
   }
 }
