@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import AppShell from './components/console/AppShell.jsx'
-import ScenarioBrowser from './components/ScenarioBrowser.jsx'
-import UCTCMapper from './components/UCTCMapper.jsx'
-import LaunchPanel from './components/LaunchPanel.jsx'
+import OperationsView from './components/console/OperationsView.jsx'
+import InflightView from './components/console/InflightView.jsx'
 import ResultsViewer from './components/ResultsViewer.jsx'
 import MitreHeatmap from './components/MitreHeatmap.jsx'
 import InfraGenerator from './components/InfraGenerator.jsx'
@@ -35,13 +34,12 @@ const PLANE_META = [
 ]
 
 export default function AppConsole() {
-  const [activeTab, setActiveTab]               = useState('operations')
-  const [selectedPlane, setSelectedPlane]       = useState(null)
-  const [selectedScenario, setSelectedScenario] = useState(null)
-  const [runs, setRuns]                         = useState([])
-  const [scenarioList, setScenarioList]         = useState([])
-  const [health, setHealth]                     = useState({})
-  const [toast, setToast]                       = useState(null)
+  const [activeTab, setActiveTab]         = useState('operations')
+  const [selectedPlane, setSelectedPlane] = useState(null)
+  const [runs, setRuns]                   = useState([])
+  const [scenarioList, setScenarioList]   = useState([])
+  const [health, setHealth]               = useState({})
+  const [toast, setToast]                 = useState(null)
 
   // ── Health fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -104,13 +102,27 @@ export default function AppConsole() {
     const total = running.expected_detections ?? 0
     const nextStep = running.next_technique ?? running.next_step ?? null
     return {
-      scenarioId: running.scenario_id || running.id,
+      runId: running.id || running.run_id,
+      scenarioId: running.scenario_id,
       step: currentStep,
       totalSteps,
       elapsed: elapsedSec,
       detected,
       total,
       nextStep,
+    }
+  }, [runs])
+
+  // ── Derive last completed run (fallback for InflightView) ───────────────
+  const lastRun = useMemo(() => {
+    const finished = runs.find(
+      (r) => r && (r.status === 'completed' || r.status === 'failed' || r.status === 'aborted')
+    )
+    if (!finished) return null
+    return {
+      runId: finished.id || finished.run_id,
+      scenarioId: finished.scenario_id,
+      status: finished.status,
     }
   }, [runs])
 
@@ -148,7 +160,7 @@ export default function AppConsole() {
       }`,
       icon: '\u25b8',
       onSelect: () => {
-        setSelectedScenario(s)
+        // jump to operations tab; the OperationsView manages its own selection
         setActiveTab('operations')
       },
     }))
@@ -227,11 +239,6 @@ export default function AppConsole() {
   // ── Callbacks ───────────────────────────────────────────────────────────
   const handleSelectPlane = useCallback((planeCode) => {
     setSelectedPlane((prev) => (prev === planeCode ? null : planeCode))
-    setSelectedScenario(null)
-  }, [])
-
-  const handleSelectScenario = useCallback((scenario) => {
-    setSelectedScenario(scenario)
   }, [])
 
   const handleRunComplete = useCallback((run) => {
@@ -251,31 +258,25 @@ export default function AppConsole() {
   let tabContent = null
   if (activeTab === 'operations') {
     tabContent = (
-      <div>
-        <ScenarioBrowser
-          selectedPlane={selectedPlane}
-          selectedScenario={selectedScenario}
-          onSelectScenario={handleSelectScenario}
-        />
-        {selectedScenario && (
-          <>
-            <UCTCMapper scenario={selectedScenario} />
-            <LaunchPanel
-              scenario={selectedScenario}
-              onRunComplete={handleRunComplete}
-              onError={(msg) => setToast({ message: msg, type: 'error' })}
-            />
-          </>
-        )}
-      </div>
+      <OperationsView
+        selectedPlane={selectedPlane}
+        onRunComplete={handleRunComplete}
+        onError={(msg) => setToast({ message: msg, type: 'error' })}
+      />
     )
   } else if (activeTab === 'inflight') {
-    tabContent = activeRun ? (
-      <InflightPlaceholder run={activeRun} />
-    ) : (
-      <EmptyState
-        title="No run in progress"
-        body="Launch a scenario from the Operations tab. The attack narrative timeline will render here as steps execute."
+    tabContent = (
+      <InflightView
+        activeRun={activeRun}
+        lastRun={lastRun}
+        onScreenshot={() => setToast({
+          message: 'Screenshot export — pending step 7',
+          type: 'warn',
+        })}
+        onExport={() => setToast({
+          message: 'POV report export — pending step 7',
+          type: 'warn',
+        })}
       />
     )
   } else if (activeTab === 'evidence') {

@@ -1,0 +1,60 @@
+{
+  "name": "Cortex POV - Linux + NGFW + SaaS",
+  "versions": {
+    "attack": "14",
+    "navigator": "4.9.1",
+    "layer": "4.5"
+  },
+  "domain": "enterprise-attack",
+  "description": "Coverage layer for Cortex XDR/XSIAM lab simulation.",
+  "techniques": [
+    {
+      "techniqueID": "T1059.004",
+      "color": "#e60d0d",
+      "comment": "DETECTED - Agent Analytics",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1071.001",
+      "color": "#e60d0d",
+      "comment": "DETECTED - NGFW Analytics",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1046",
+      "color": "#e60d0d",
+      "comment": "DETECTED - NGFW EAL",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1021.002",
+      "color": "#e60d0d",
+      "comment": "DETECTED - Agent + NGFW EAL Correlation",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1048",
+      "color": "#e60d0d",
+      "comment": "DETECTED - NGFW EAL",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1078",
+      "color": "#e60d0d",
+      "comment": "DETECTED - ITDR SaaS",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1528",
+      "color": "#e60d0d",
+      "comment": "DETECTED - ITDR SaaS",
+      "enabled": true
+    },
+    {
+      "techniqueID": "T1530",
+      "color": "#e60d0d",
+      "comment": "DETECTED - ITDR SaaS",
+      "enabled": true
+    }
+  ]
+}
