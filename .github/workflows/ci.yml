@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  lint-shell:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Shellcheck installer scripts
+        run: |
+          shopt -s globstar nullglob
+          if compgen -G "installer/bootstrap/*.sh" > /dev/null; then
+            shellcheck installer/bootstrap/*.sh
+          fi
+          if compgen -G "installer/stage2/common/*.sh" > /dev/null; then
+            shellcheck installer/stage2/common/*.sh
+          fi
+          if compgen -G "installer/stage2/linux/*.sh" > /dev/null; then
+            shellcheck installer/stage2/linux/*.sh
+          fi
