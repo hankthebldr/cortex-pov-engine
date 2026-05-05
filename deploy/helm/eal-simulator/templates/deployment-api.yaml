@@ -1,0 +1,96 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eal-simulator.fullname" . }}-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "eal-simulator.labels" . | nindent 4 }}
+    cortexsim.paloaltonetworks.com/role: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "eal-simulator.selectorLabels" . | nindent 6 }}
+      cortexsim.paloaltonetworks.com/role: api
+  template:
+    metadata:
+      labels:
+        {{- include "eal-simulator.selectorLabels" . | nindent 8 }}
+        cortexsim.paloaltonetworks.com/role: api
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "eal-simulator.fullname" . }}-config
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.env.CORTEXSIM_PORT | int }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          {{- if or .Values.persistence.enabled .Values.audit.file.enabled }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- if .Values.audit.file.enabled }}
+            - name: audit
+              mountPath: {{ .Values.audit.file.path | dir }}
+            {{- end }}
+          {{- end }}
+        {{- if .Values.tailscale.enabled }}
+        - name: tailscale
+          image: "{{ .Values.tailscale.image.repository }}:{{ .Values.tailscale.image.tag }}"
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tailscale.authKeySecret.name }}
+                  key: {{ .Values.tailscale.authKeySecret.key }}
+            - name: TS_HOSTNAME
+              value: {{ .Values.tailscale.hostname | quote }}
+            - name: TS_ACCEPT_DNS
+              value: "true"
+            - name: TS_KUBE_SECRET
+              value: {{ include "eal-simulator.fullname" . }}-tailscale-state
+            - name: TS_USERSPACE
+              value: "true"
+            - name: TS_EXTRA_ARGS
+              value: "--advertise-tags={{- range $i, $tag := .Values.tailscale.advertiseTags -}}{{- if $i -}},{{- end -}}{{- $tag -}}{{- end -}}"
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+        {{- end }}
+      {{- if or .Values.persistence.enabled .Values.audit.file.enabled }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "eal-simulator.fullname" . }}-data
+        {{- end }}
+        {{- if .Values.audit.file.enabled }}
+        - name: audit
+          emptyDir: {}
+        {{- end }}
+      {{- end }}
+{{- end }}

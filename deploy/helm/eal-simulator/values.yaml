@@ -1,0 +1,136 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CortexSim EAL Traffic Simulator — Helm values
+# ─────────────────────────────────────────────────────────────────────────────
+# Minimal-config defaults; override for production POV deployments.
+
+namespace: eal-simulator
+createNamespace: true
+
+image:
+  repository: ghcr.io/hankthebldr/cortex-pov-engine
+  tag: latest
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+# API gateway — control plane the operator interacts with.
+# Binds to the Tailscale interface only (see service.bindAddress).
+# ─────────────────────────────────────────────────────────────────────────────
+api:
+  enabled: true
+  replicaCount: 2
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits:   {cpu: 500m, memory: 512Mi}
+  env:
+    CORTEXSIM_ENV: production
+    CORTEXSIM_PORT: "8888"
+  # The API gateway should NEVER bind to 0.0.0.0 in production.
+  # On a K3s cluster running Tailscale as a daemonset, override this to the
+  # Tailscale-issued 100.x.y.z address per node and front it with the Tailscale
+  # ingress controller.
+  bindAddress: "0.0.0.0"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Worker pods — actually emit the simulation traffic. These pods need direct
+# routing to the customer's Palo Alto Networks NGFW. Auto-scaled by queue depth.
+# ─────────────────────────────────────────────────────────────────────────────
+worker:
+  enabled: true
+  replicaCount: 1
+  command: ["python", "-m", "scripts.eal_simulator.cli", "worker"]
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits:   {cpu: 1000m, memory: 1Gi}
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    metric:
+      name: redis_queue_depth
+      targetAverageValue: "5"
+  # Allocate worker pods to nodes with the simulator role so traffic flows
+  # through the configured NGFW gateway instead of the default cluster CNI.
+  nodeSelector:
+    cortexsim.paloaltonetworks.com/role: simulator
+  tolerations:
+    - key: cortexsim.paloaltonetworks.com/dedicated
+      operator: Equal
+      value: simulator
+      effect: NoSchedule
+  # When the customer's CNI supports DHCP (e.g. Multus + macvlan), switching
+  # this on lets each worker pull its own MAC/IP — useful for hostname-based
+  # EALs.
+  dhcp:
+    enabled: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Redis — message broker for the (optional) Celery task queue. The default
+# in-memory queue does not require Redis; only enable this when running
+# Celery workers across multiple replicas.
+# ─────────────────────────────────────────────────────────────────────────────
+redis:
+  enabled: false
+  image:
+    repository: redis
+    tag: "7-alpine"
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits:   {cpu: 200m, memory: 128Mi}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tailscale sidecar — recommended deployment pattern. The simulator API must
+# only be reachable on the Tailscale tailnet; never expose to public internet.
+# Set tailscale.enabled=true and provide an authkey via secret.
+# ─────────────────────────────────────────────────────────────────────────────
+tailscale:
+  enabled: false
+  image:
+    repository: ghcr.io/tailscale/tailscale
+    tag: latest
+  authKeySecret:
+    name: tailscale-auth
+    key: TS_AUTHKEY
+  hostname: cortexsim-eal
+  acceptRoutes: true
+  advertiseTags:
+    - "tag:cortexsim"
+    - "tag:eal-simulator"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Persistent campaign DB — by default the SQLite file ships inside the API
+# pod. For multi-replica deployments, point this at a PVC backed by ReadWrite
+# Many storage (NFS, Longhorn).
+# ─────────────────────────────────────────────────────────────────────────────
+persistence:
+  enabled: false
+  storageClass: ""
+  size: 1Gi
+  accessMode: ReadWriteMany
+  mountPath: /app/data
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Audit log shipping — by default audit lines stream to stdout (consumed by
+# fluent-bit / Cortex XSIAM Broker VM). When auditFile.enabled=true, lines
+# also land at the configured path so a sidecar can ship them.
+# ─────────────────────────────────────────────────────────────────────────────
+audit:
+  stdout: true
+  file:
+    enabled: false
+    path: /var/log/cortexsim/eal-audit.json
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Service exposure — internal ClusterIP by default; override only if the
+# customer mandates a NodePort/LoadBalancer behind their own perimeter.
+# ─────────────────────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 8888
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []

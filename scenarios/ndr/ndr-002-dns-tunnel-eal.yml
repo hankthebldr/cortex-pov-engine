@@ -1,0 +1,141 @@
+scenario_id: SIM-NDR-002
+name: "NDR — DNS Tunneling EAL Validation"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-02
+uc_name: "DNS Anomaly Detection via NGFW EAL"
+tc_name: "High-Entropy Subdomain Burst Detection"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1048.003"
+mitre_technique_name: "Exfiltration Over Unencrypted Non-C2 Protocol"
+additional_techniques:
+  - technique: "T1572"
+    name: "Protocol Tunneling"
+
+threat_report: "Unit42 - DNS Tunneling Tradecraft Survey"
+threat_report_url: "https://unit42.paloaltonetworks.com/dns-tunneling/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ndr
+  - tim
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Inspect DNS tunnel plugin params schema"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe dns_tunnel_exfil
+    identity: container-runtime
+    mitre_technique: "T1572"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "Pre-flight: dns_tunnel_exfil plugin exposes expected params schema"
+
+  - id: step-02
+    name: "Launch live DNS tunneling campaign — A queries with high-entropy labels"
+    command: |
+      cat > /tmp/dns-tunnel-live.yml <<'YML'
+      campaign_id: CMP-NDR-002
+      name: "NDR validation — DNS tunnel live"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - testmynids.org
+      dry_run: false
+      tags: [ndr, dns-tunnel, eal]
+      steps:
+        - step_id: step-01
+          plugin: dns_tunnel_exfil
+          params:
+            base_domain: testmynids.org
+            chunks: 30
+            chunk_size_bytes: 24
+            sleep_seconds: 1.0
+            encoding: base32
+            query_type: A
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/dns-tunnel-live.yml --live
+    identity: container-runtime
+    mitre_technique: "T1048.003"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — anomalous DNS query volume from single source"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — high-entropy DNS labels (base32 character profile)"
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — long FQDN exceeding host baseline"
+
+  - id: step-03
+    name: "Repeat with TXT query type to exercise TXT-burst analytics"
+    command: |
+      cat > /tmp/dns-tunnel-txt.yml <<'YML'
+      campaign_id: CMP-NDR-002
+      name: "NDR validation — DNS tunnel TXT"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - testmynids.org
+      dry_run: false
+      tags: [ndr, dns-tunnel, eal]
+      steps:
+        - step_id: step-01
+          plugin: dns_tunnel_exfil
+          params:
+            base_domain: testmynids.org
+            chunks: 25
+            chunk_size_bytes: 32
+            sleep_seconds: 0.5
+            encoding: base64
+            query_type: TXT
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/dns-tunnel-txt.yml --live
+    identity: container-runtime
+    mitre_technique: "T1572"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — TXT query burst from single host"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — DNS exfil + endpoint process lineage correlated"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/dns-tunnel-live.yml /tmp/dns-tunnel-txt.yml"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ndr
+  - eal
+  - dns-tunnel
+  - exfiltration

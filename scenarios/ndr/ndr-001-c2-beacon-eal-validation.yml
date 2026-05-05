@@ -1,0 +1,138 @@
+scenario_id: SIM-NDR-001
+name: "NDR — C2 Beaconing EAL Validation"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-NDR-01
+tc_ref: TC-NDR-01
+uc_name: "NGFW Enhanced Application Log Validation"
+tc_name: "Periodic HTTP Beacon Detection via EAL Analytics"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1071.001"
+mitre_technique_name: "Application Layer Protocol: Web Protocols"
+additional_techniques:
+  - technique: "T1568"
+    name: "Dynamic Resolution"
+
+threat_report: "Unit42 - Cobalt Strike Malleable C2 Profile Analysis"
+threat_report_url: "https://unit42.paloaltonetworks.com/cobalt-strike-malleable-c2-profile/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "3CORESec/testmynids.org"
+
+infra_modules_needed:
+  - base
+  - ndr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Deploy EAL traffic simulator pod and confirm registry"
+    command: |
+      python3 -m scripts.eal_simulator.cli list-plugins | jq -e '.total >= 4'
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "Pre-flight: simulator manifest visible to operator"
+
+  - id: step-02
+    name: "Launch dry-run campaign — confirm safety policy holds"
+    command: |
+      cat > /tmp/c2-beacon-dry.yml <<'YML'
+      campaign_id: CMP-NDR-001
+      name: "NDR validation — C2 beacon dry run"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: false
+      target_allowlist: []
+      dry_run: true
+      tags: [ndr, c2-beacon, eal]
+      steps:
+        - step_id: step-01
+          plugin: c2_http_beacon
+          params:
+            target_url: http://testmynids.org/uid/index.html
+            iterations: 5
+            sleep_seconds: 2
+            jitter_pct: 25
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-dry.yml
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "Dry-run: no NGFW EAL fires (safety policy active)"
+
+  - id: step-03
+    name: "Live campaign — periodic beacon to authorised test endpoint"
+    command: |
+      cat > /tmp/c2-beacon-live.yml <<'YML'
+      campaign_id: CMP-NDR-001
+      name: "NDR validation — C2 beacon live"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - testmynids.org
+      dry_run: false
+      tags: [ndr, c2-beacon, eal]
+      steps:
+        - step_id: step-01
+          plugin: c2_http_beacon
+          params:
+            target_url: http://testmynids.org/uid/index.html
+            iterations: 12
+            sleep_seconds: 30
+            jitter_pct: 25
+            method: GET
+            dga_query_param: true
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-live.yml --live
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — periodic HTTP beacon (regular interval, anomalous User-Agent)"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — DGA-style URI parameter on outbound HTTP"
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — outbound HTTP carrying X-Simulation-Run-ID header (operator filter)"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/c2-beacon-dry.yml /tmp/c2-beacon-live.yml"
+    - "echo '[CortexSim] SIM-NDR-001 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ndr
+  - eal
+  - c2-beacon
+  - http

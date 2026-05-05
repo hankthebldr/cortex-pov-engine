@@ -1,0 +1,105 @@
+scenario_id: SIM-NDR-003
+name: "NDR — Cryptojacking Stratum App-ID Validation"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - Analytics
+  - IOC
+
+uc_ref: UCS-NDR-03
+tc_ref: TC-NDR-03
+uc_name: "Cryptojacking App-ID Detection"
+tc_name: "Stratum JSON-RPC Mining Pool Connection"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1496"
+mitre_technique_name: "Resource Hijacking"
+
+threat_report: "Unit42 - Large-Scale Monero Cryptomining Operation"
+threat_report_url: "https://unit42.paloaltonetworks.com/cryptojacking-additional-techniques/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ndr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Stand up sinkhole TCP listener inside lab CIDR"
+    command: |
+      # Operator must pre-deploy a sinkhole on 10.50.0.42:3333 (any TCP listener)
+      # to absorb the simulator's Stratum frames. Confirm reachability:
+      nc -zv 10.50.0.42 3333 || echo "[CortexSim] sinkhole reachable check (best-effort)"
+    identity: container-runtime
+    mitre_technique: "T1496"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "Pre-flight: sinkhole port 3333 reachable"
+
+  - id: step-02
+    name: "Launch Stratum JSON-RPC sessions against sinkhole"
+    command: |
+      cat > /tmp/stratum-live.yml <<'YML'
+      campaign_id: CMP-NDR-003
+      name: "NDR validation — Stratum App-ID"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - 10.50.0.0/24
+      dry_run: false
+      tags: [ndr, cryptojacking, stratum, eal]
+      steps:
+        - step_id: step-01
+          plugin: stratum_tcp_connect
+          params:
+            target_host: "10.50.0.42"
+            target_port: 3333
+            iterations: 5
+            sleep_seconds: 15
+            wallet: "cortexsim-test-wallet"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/stratum-live.yml --live
+    identity: container-runtime
+    mitre_technique: "T1496"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW App-ID — Stratum/cryptocurrency-mining identified on outbound TCP"
+      - plane: NDR
+        type: IOC
+        description: "NGFW EAL — JSON-RPC mining.subscribe payload observed in session"
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — repeated short-lived TCP sessions to mining pool port"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/stratum-live.yml"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ndr
+  - eal
+  - cryptojacking
+  - stratum
+  - app-id

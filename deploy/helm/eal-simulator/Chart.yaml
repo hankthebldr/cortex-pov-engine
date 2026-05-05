@@ -1,0 +1,23 @@
+apiVersion: v2
+name: eal-simulator
+description: |
+  Enterprise EAL Traffic Simulator — emulates threat actor network behaviour
+  to validate Palo Alto Networks NGFW Enhanced Application Logs (EALs) and
+  Cortex XDR / XSIAM NDR analytics. Deploys as part of CortexSim.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - cortexsim
+  - eal
+  - ndr
+  - cortex-xdr
+  - xsiam
+  - paloalto-networks
+  - simulation
+maintainers:
+  - name: Henry Reed
+    email: hank@paloaltonetworks.com
+home: https://github.com/hankthebldr/cortex-pov-engine
+sources:
+  - https://github.com/hankthebldr/cortex-pov-engine
