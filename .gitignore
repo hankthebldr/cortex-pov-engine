@@ -44,4 +44,14 @@ infra/blueprints/*
 *.tfstate
 *.tfstate.*
 
+# installer build artifacts
+installer/dist/
+installer/**/*.tar.gz
+installer/**/*.zip
+manifest.json
+SHA256SUMS
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
+
 

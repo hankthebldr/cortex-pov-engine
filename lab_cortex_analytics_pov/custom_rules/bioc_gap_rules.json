@@ -1,0 +1,9 @@
+{
+  "name": "Custom — T1059.004 Unix Shell via Non-Standard Port [Lab POV]",
+  "description": "Fires if the native analytics misses the reverse shell pattern.",
+  "severity": "high",
+  "type": "BIOC",
+  "xql_query": "dataset = xdr_data | filter event_type = PROCESS | filter action_process_image_name = \"bash\" | filter action_process_command_line contains \"/dev/tcp/\" | fields agent_hostname, actor_process_image_name, action_process_command_line, event_timestamp",
+  "mitre_attack_ids": ["T1059.004"],
+  "tags": ["custom", "pov", "lab", "ds01_agent"]
+}

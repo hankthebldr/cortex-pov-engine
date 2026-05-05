@@ -2,10 +2,14 @@ version: '3.8'
 
 services:
   simcore:
-    build: ./core
+    build:
+      context: .
+      dockerfile: core/Dockerfile
     ports:
       - "${CORTEXSIM_PORT:-8888}:8888"
     volumes:
+      # Bind-mount scenarios/sources/scripts at runtime so dev edits are live-reloadable.
+      # The production image also bundles these, so the installer path (no mounts) works too.
       - ./scenarios:/app/scenarios:ro
       - ./sources:/app/sources:ro
       - ./scripts:/app/scripts

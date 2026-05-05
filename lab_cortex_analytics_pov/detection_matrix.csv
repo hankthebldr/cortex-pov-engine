@@ -1,0 +1,10 @@
+Alert Name,Source(s),Status,Alert Type,ATT&CK TID,Severity
+Unix Shell Execution Anomaly,DS-01 (Agent),ENABLED,Analytics,T1059.004,High
+C2 over HTTPS/Non-standard Port,DS-02 (NGFW),ENABLED,Analytics,T1071.001,High
+Internal Port Scan / Recon,DS-02 (NGFW EAL),ENABLED,Analytics,T1046,Medium
+Unusual SMB/RPC Lateral Movement,DS-01 + DS-02 (EAL),ENHANCED,Analytics,T1021.002,High
+Data Exfiltration over Alt Protocol,DS-02 (NGFW EAL),ENABLED,Analytics,T1048,High
+Impossible Travel (SaaS),DS-07 (SaaS),ENABLED,ITDR,T1078,Medium
+Session Token Theft Pattern,DS-07 (Okta),ENABLED,ITDR,T1528,High
+Mass File Download / Exfil,DS-07 (M365),ENABLED,ITDR,T1530,High
+Cross-source Identity Threat,DS-01 + DS-07,ENHANCED,Correlation,TA0006,Critical

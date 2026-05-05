@@ -1,8 +1,38 @@
-FROM python:3.11-slim
-WORKDIR /app
+# ---- Builder stage: compile wheels (psutil etc. need gcc) ----
+FROM python:3.11-slim AS builder
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl git cargo rustc golang-go nodejs npm && rm -rf /var/lib/apt/lists/*
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--workers", "2"]
+        gcc build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY core/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.txt
+
+# ---- Runtime stage: slim image with only the installed packages ----
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Bring in the compiled site-packages from the builder.
+COPY --from=builder /install /usr/local
+
+WORKDIR /app
+
+# Bundle application code + content so the image is self-contained (no host mounts required).
+COPY core/      /app/core/
+COPY scenarios/ /app/scenarios/
+COPY infra/     /app/infra/
+
+ENV CORTEXSIM_BASE_DIR=/app
+ENV CORTEXSIM_ENV=production
+ENV CORTEXSIM_PORT=8888
+ENV PYTHONPATH=/app/core
+
+# core/main.py uses flat imports (config, database, engine.*) — CWD must be /app/core
+WORKDIR /app/core
+
+EXPOSE 8888
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888"]
