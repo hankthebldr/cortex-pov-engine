@@ -140,6 +140,28 @@ def test_in_memory_task_queue_runs_in_background(make_executor, sample_campaign)
     assert isinstance(tid, str) and tid
 
 
+def test_caller_supplied_run_id_is_preserved(make_executor, sample_campaign):
+    """Regression: API layer pre-allocates run_id; executor must use it.
+
+    Before this fix, ``execute()`` always generated a fresh UUID, so the
+    DB row and the executor/audit events held different run_ids — clients
+    polling /api/eal/runs/{id} could not correlate to the audit log.
+    """
+    executor = make_executor()
+    state = _run(executor.execute(sample_campaign, run_id="caller-supplied-run-1"))
+    assert state.run_id == "caller-supplied-run-1"
+    assert state.status == "complete"
+
+
+def test_run_id_default_is_unique_uuid(make_executor, sample_campaign):
+    """When no run_id is supplied, executor still generates a fresh UUID."""
+    executor = make_executor()
+    a = _run(executor.execute(sample_campaign))
+    b = _run(executor.execute(sample_campaign))
+    assert a.run_id != b.run_id
+    assert len(a.run_id) >= 32  # UUID-shaped
+
+
 def test_step_result_to_dict_round_trip():
     now = datetime.now(timezone.utc)
     r = SimulationResult(

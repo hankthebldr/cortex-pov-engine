@@ -87,8 +87,14 @@ class SmbRpcSweep(BaseSimulation):
         params: SmbRpcSweepParams = ctx.params  # type: ignore[assignment]
         started_at = self.utcnow()
 
-        # Authorise the CIDR (the safety policy understands networks).
-        getattr(ctx, "authorise")(params.target_cidr.split("/", 1)[0])
+        # Pre-authorise the network base so a misconfigured campaign fails
+        # fast before we expand the host list. We then re-check every
+        # individual host below — a partial-overlap allowlist that admits
+        # the base IP must NOT permit out-of-scope sweeps.
+        from ..safety import SafetyError  # local to avoid top-level cycle
+
+        authorise = getattr(ctx, "authorise")
+        authorise(params.target_cidr.split("/", 1)[0])
 
         net = ipaddress.ip_network(params.target_cidr, strict=False)
         # Skip network and broadcast for /<31 nets; small subnets keep all hosts.
@@ -133,10 +139,34 @@ class SmbRpcSweep(BaseSimulation):
             except Exception:
                 logger.warning("probe_ntlm requested but impacket not available")
 
+        skipped: list[str] = []
         for ip in hosts:
+            ip_str = str(ip)
+            # Authorise EACH host independently. A partial-overlap allowlist
+            # may admit the base IP but exclude the rest of the swept range;
+            # we must skip those hosts rather than emit real connect attempts.
+            try:
+                authorise(ip_str)
+            except SafetyError as exc:
+                skipped.append(ip_str)
+                await ctx.emit_event(ecs_event(
+                    action="smb_sweep_skipped",
+                    outcome="failure",
+                    category="iam",
+                    type_="denied",
+                    message=f"host {ip_str} skipped: {exc}",
+                    campaign_id=ctx.campaign_id,
+                    run_id=ctx.run_id,
+                    step_id=ctx.step_id,
+                    plugin=self.Meta.name,
+                    target=ip_str,
+                    extra={"reason": "not_in_allowlist"},
+                ))
+                continue
+
             for port in params.ports:
                 opened = await asyncio.to_thread(
-                    self._tcp_probe, str(ip), port, params.connect_timeout
+                    self._tcp_probe, ip_str, port, params.connect_timeout
                 )
                 events_emitted += 1
                 if opened:
@@ -148,17 +178,17 @@ class SmbRpcSweep(BaseSimulation):
                     outcome=outcome,
                     category="network",
                     type_="connection",
-                    message=f"probe {ip}:{port} {'OPEN' if opened else 'CLOSED'}",
+                    message=f"probe {ip_str}:{port} {'OPEN' if opened else 'CLOSED'}",
                     campaign_id=ctx.campaign_id,
                     run_id=ctx.run_id,
                     step_id=ctx.step_id,
                     plugin=self.Meta.name,
-                    target=f"{ip}:{port}",
+                    target=f"{ip_str}:{port}",
                     extra={"opened": opened},
                 ))
 
                 if opened and port == 445 and ntlm_module is not None:
-                    self._probe_ntlm(ntlm_module, str(ip), ctx)
+                    self._probe_ntlm(ntlm_module, ip_str, ctx)
 
             if params.inter_host_delay > 0:
                 await asyncio.sleep(params.inter_host_delay)
@@ -171,7 +201,8 @@ class SmbRpcSweep(BaseSimulation):
             completed_at=self.utcnow(),
             events_emitted=events_emitted,
             detail={
-                "hosts_probed": len(hosts),
+                "hosts_probed": len(hosts) - len(skipped),
+                "hosts_skipped_unauthorised": len(skipped),
                 "ports_probed": params.ports,
                 "open_ports_observed": successes,
             },
