@@ -221,3 +221,86 @@ class Agent(Base):
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "status": self.status,
         }
+
+
+# ---------------------------------------------------------------------------
+# EAL Traffic Simulator persistence (campaign history + run audit trail)
+# ---------------------------------------------------------------------------
+
+
+class EalCampaign(Base):
+    """Persisted declarative campaign — equivalent of a Scenario for the EAL
+    simulator subsystem. Stored so the UI can render history without re-reading
+    the original YAML."""
+
+    __tablename__ = "eal_campaigns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    spec: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    authorized_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    simulation_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    target_allowlist: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    runs: Mapped[list["EalCampaignRun"]] = relationship(
+        "EalCampaignRun", back_populates="campaign_rel",
+        primaryjoin="EalCampaign.campaign_id == EalCampaignRun.campaign_id",
+        foreign_keys="[EalCampaignRun.campaign_id]",
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "campaign_id": self.campaign_id,
+            "name": self.name,
+            "description": self.description,
+            "spec": self.spec,
+            "authorized_by": self.authorized_by,
+            "simulation_authorized": self.simulation_authorized,
+            "target_allowlist": self.target_allowlist,
+            "tags": self.tags,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class EalCampaignRun(Base):
+    """One execution of an EAL campaign. Step-level results are stored as a
+    JSON list to keep the schema flat — granular querying lives in the audit
+    log rather than the relational store."""
+
+    __tablename__ = "eal_campaign_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    campaign_id: Mapped[str] = mapped_column(
+        String, ForeignKey("eal_campaigns.campaign_id"), nullable=False, index=True,
+    )
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    operator: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    step_results: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    campaign_rel: Mapped["EalCampaign"] = relationship(
+        "EalCampaign", back_populates="runs", foreign_keys=[campaign_id],
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "campaign_id": self.campaign_id,
+            "status": self.status,
+            "dry_run": self.dry_run,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "operator": self.operator,
+            "step_results": self.step_results,
+            "error": self.error,
+        }

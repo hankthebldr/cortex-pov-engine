@@ -1,0 +1,48 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eal-simulator.fullname" . }}-worker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "eal-simulator.labels" . | nindent 4 }}
+    cortexsim.paloaltonetworks.com/role: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "eal-simulator.selectorLabels" . | nindent 6 }}
+      cortexsim.paloaltonetworks.com/role: worker
+  template:
+    metadata:
+      labels:
+        {{- include "eal-simulator.selectorLabels" . | nindent 8 }}
+        cortexsim.paloaltonetworks.com/role: worker
+      annotations:
+        # Disable kube-dns rewriting so DNS-tunnel plugins reach the customer
+        # NGFW directly instead of being short-circuited by the cluster CNI.
+        cortexsim.paloaltonetworks.com/dns-policy: "ClusterFirst"
+    spec:
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ toJson .Values.worker.command }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "eal-simulator.fullname" . }}-config
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+{{- end }}

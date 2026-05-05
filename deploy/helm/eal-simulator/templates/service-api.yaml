@@ -1,0 +1,18 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "eal-simulator.fullname" . }}-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "eal-simulator.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+  selector:
+    {{- include "eal-simulator.selectorLabels" . | nindent 4 }}
+    cortexsim.paloaltonetworks.com/role: api
+{{- end }}

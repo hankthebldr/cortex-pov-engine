@@ -1,0 +1,24 @@
+{{- if and .Values.worker.enabled .Values.worker.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "eal-simulator.fullname" . }}-worker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "eal-simulator.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "eal-simulator.fullname" . }}-worker
+  minReplicas: {{ .Values.worker.hpa.minReplicas }}
+  maxReplicas: {{ .Values.worker.hpa.maxReplicas }}
+  metrics:
+    - type: External
+      external:
+        metric:
+          name: {{ .Values.worker.hpa.metric.name | quote }}
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.worker.hpa.metric.targetAverageValue | quote }}
+{{- end }}

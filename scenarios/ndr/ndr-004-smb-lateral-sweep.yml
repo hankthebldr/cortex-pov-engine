@@ -1,0 +1,128 @@
+scenario_id: SIM-NDR-004
+name: "NDR — SMB/RPC Lateral Sweep EAL Validation"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-NDR-04
+tc_ref: TC-NDR-04
+uc_name: "Lateral Reconnaissance Detection via NGFW EAL"
+tc_name: "Host Sweeping Across SMB/RPC Ports"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1046"
+mitre_technique_name: "Network Service Discovery"
+additional_techniques:
+  - technique: "T1018"
+    name: "Remote System Discovery"
+  - technique: "T1021.002"
+    name: "SMB/Windows Admin Shares"
+
+threat_report: "Unit42 - Lateral Movement Tradecraft 2025"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ndr
+  - itdr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Dry-run: verify CIDR coverage and authorisation"
+    command: |
+      cat > /tmp/smb-sweep-dry.yml <<'YML'
+      campaign_id: CMP-NDR-004
+      name: "NDR validation — SMB sweep dry"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - 10.50.10.0/24
+      dry_run: true
+      tags: [ndr, lateral, eal]
+      steps:
+        - step_id: step-01
+          plugin: smb_rpc_sweep
+          params:
+            target_cidr: "10.50.10.0/24"
+            ports: [445, 139, 135]
+            connect_timeout: 1.0
+            inter_host_delay: 0.05
+            max_hosts: 64
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-dry.yml
+    identity: container-runtime
+    mitre_technique: "T1046"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "Dry-run report shows planned host count and ports"
+
+  - id: step-02
+    name: "Live SMB/RPC sweep against ITDR lab subnet"
+    command: |
+      cat > /tmp/smb-sweep-live.yml <<'YML'
+      campaign_id: CMP-NDR-004
+      name: "NDR validation — SMB sweep live"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - 10.50.10.0/24
+      dry_run: false
+      tags: [ndr, lateral, eal]
+      steps:
+        - step_id: step-01
+          plugin: smb_rpc_sweep
+          params:
+            target_cidr: "10.50.10.0/28"
+            ports: [445, 139, 135]
+            connect_timeout: 1.0
+            inter_host_delay: 0.1
+            max_hosts: 16
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-live.yml --live
+    identity: container-runtime
+    mitre_technique: "T1018"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — host sweeping pattern (1 src → many dst on TCP/445)"
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — anomalous SMB traffic outside admin baseline"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM correlation — sweep src host stitched with workstation context"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/smb-sweep-dry.yml /tmp/smb-sweep-live.yml"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ndr
+  - eal
+  - lateral
+  - smb
+  - rpc
