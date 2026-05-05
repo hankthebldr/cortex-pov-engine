@@ -81,5 +81,7 @@ annotate() {
 
     mkdir -p "$(dirname "$ANNOTATE_LOG_PATH")" 2>/dev/null || true
     printf '%s\n' "$line" >> "$ANNOTATE_LOG_PATH"
-    command -v logger >/dev/null 2>&1 && logger -t cortexsim-install "$line" || true
+    if command -v logger >/dev/null 2>&1; then
+        logger -t cortexsim-install "$line" || true
+    fi
 }
