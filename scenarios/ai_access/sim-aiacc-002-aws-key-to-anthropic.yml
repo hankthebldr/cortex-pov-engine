@@ -1,0 +1,123 @@
+scenario_id: SIM-AIACC-002
+name: "AI Access — AWS Access Key Leaked to Anthropic API"
+version: "1.0"
+status: active
+
+plane: AI_ACCESS
+detection_types:
+  - Analytics
+  - BIOC
+  - IOC
+
+uc_ref: UCS-AIACC-02
+tc_ref: TC-AIACC-02
+uc_name: "Cloud Credential Disclosure to External LLM"
+tc_name: "AWS Access Key in Prompt Body to api.anthropic.com"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1552"
+mitre_technique_name: "Unsecured Credentials"
+additional_techniques:
+  - technique: "T1567"
+    name: "Exfiltration Over Web Service"
+
+threat_report: "Unit42 - Cloud Credentials in LLM Prompts"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: curl
+    source: "https://curl.se/"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Compose a help-debugging prompt that leaks an AWS access key"
+    command: |
+      cat > /tmp/aiacc-002-prompt.json <<'JSON'
+      {
+        "model": "claude-3-5-sonnet-20241022",
+        "max_tokens": 256,
+        "messages": [
+          {
+            "role": "user",
+            "content": "Help me debug this script. It keeps failing.\n\nimport boto3\ns3 = boto3.client('s3', aws_access_key_id='AKIA0000CORTEXSIMCANARY', aws_secret_access_key='CORTEXSIM/CANARY/SECRET/KEY/NOT/REAL/abcdefghi+jk')\nfor obj in s3.list_objects(Bucket='customer-prod-payments')['Contents']:\n    print(obj['Key'])"
+          }
+        ]
+      }
+      JSON
+      cat /tmp/aiacc-002-prompt.json | jq -e .
+    identity: container-runtime
+    mitre_technique: "T1552.001"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: BIOC
+        description: "Pre-flight: payload contains synthetic AKIA-prefixed canary key"
+
+  - id: step-02
+    name: "POST credential-bearing prompt to api.anthropic.com"
+    command: |
+      curl -sS -o /tmp/aiacc-002-resp.json -w 'http=%{http_code}\n' \
+        -X POST https://api.anthropic.com/v1/messages \
+        -H 'x-api-key: sk-ant-cortexsim-canary-NOT-A-REAL-KEY' \
+        -H 'anthropic-version: 2023-06-01' \
+        -H 'content-type: application/json' \
+        -H 'x-cortexsim-run-id: aiacc-002' \
+        --data @/tmp/aiacc-002-prompt.json || true
+    identity: container-runtime
+    mitre_technique: "T1552"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: IOC
+        description: "AI Access — DLP regex match: AKIA-prefixed AWS access key in outbound LLM prompt"
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — POST to api.anthropic.com from non-sanctioned user context"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — generative-ai App-ID match on outbound HTTPS to anthropic.com"
+
+  - id: step-03
+    name: "Confirm absence of post-detection block (NGFW should drop session 4)"
+    command: |
+      for i in 1 2 3 4; do
+        curl -sS -o /dev/null -w "attempt=$i http=%{http_code}\n" \
+          -X POST https://api.anthropic.com/v1/messages \
+          -H 'x-api-key: sk-ant-cortexsim-canary-NOT-A-REAL-KEY' \
+          -H 'anthropic-version: 2023-06-01' \
+          -H 'content-type: application/json' \
+          --data @/tmp/aiacc-002-prompt.json || true
+        sleep 3
+      done
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — block-action policy fires after first DLP hit, subsequent sessions denied"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/aiacc-002-prompt.json /tmp/aiacc-002-resp.json"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ai-access
+  - secrets-dlp
+  - anthropic
+  - aws-credentials

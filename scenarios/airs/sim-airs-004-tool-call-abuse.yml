@@ -1,0 +1,115 @@
+scenario_id: SIM-AIRS-004
+name: "AIRS — Excessive Agency / Tool-Call Abuse (LLM06)"
+version: "1.0"
+status: draft
+
+plane: AIRS
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-AIRS-04
+tc_ref: TC-AIRS-04
+uc_name: "OWASP LLM06 — Excessive Agency"
+tc_name: "Adversarial Prompt Triggers Unsafe Tool Invocation by Agentic LLM"
+
+mitre_tactic: "TA0002"
+mitre_tactic_name: "Execution"
+mitre_technique: "T1059"
+mitre_technique_name: "Command and Scripting Interpreter"
+additional_techniques:
+  - technique: "T1656"
+    name: "Impersonation"
+
+threat_report: "OWASP Top 10 for LLM Applications v2025 — LLM06"
+threat_report_url: "https://genai.owasp.org/llm-top-10/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-vulnerable-llm"
+  - repo: "hankthebldr/cortex-prompt-attacker"
+
+infra_modules_needed:
+  - base
+  - airs
+
+external_tools:
+  - name: cortex-prompt-attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Start vulnerable LLM with LLM06 agent endpoint exposing fake tools"
+    command: |
+      # The canary exposes send_email, delete_file, exec_shell as 'tools'
+      # the model can 'call'; canary returns a synthesized tool-call event.
+      cortex-vulnerable-llm serve --port 8089 --vuln llm06 \
+        --tools send_email,delete_file,exec_shell &
+      sleep 2
+      curl -sSf http://127.0.0.1:8089/owasp/llm06/agent/tools > /tmp/airs-004-tools.json
+      jq -e 'length == 3' /tmp/airs-004-tools.json
+    identity: container-runtime
+    mitre_technique: "T1059"
+    expected_detections:
+      - plane: AIRS
+        type: Analytics
+        description: "Pre-flight: agent endpoint advertises three tool functions"
+
+  - id: step-02
+    name: "Submit adversarial prompt that coerces unsafe tool call"
+    command: |
+      cortex-prompt-attacker run \
+        --probes scenarios/airs/probes/llm06/tool_abuse/*.yml \
+        --target-url http://127.0.0.1:8089/owasp/llm06/agent \
+        --mutators noop,role_play,indirect_injection \
+        --scorers tool_call_unsafe,exec_shell_called \
+        --out /tmp/airs-004-events.jsonl
+    identity: container-runtime
+    mitre_technique: "T1656"
+    expected_detections:
+      - plane: AIRS
+        type: BIOC
+        description: "AIRS — exec_shell tool invoked from a non-developer-context prompt — policy violation"
+      - plane: AIRS
+        type: Analytics
+        description: "AIRS — tool-call argument carries shell metacharacters (rm/curl/wget) — unsafe input"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — agentic tool-call correlates with downstream EDR process event"
+
+  - id: step-03
+    name: "Confirm AIRS detection on send_email tool used for exfil"
+    command: |
+      jq -e '[.[] | select(.outcome=="vuln" and (.detector_results.exec_shell_called or .detector_results.tool_call_unsafe))] | length >= 1' \
+        /tmp/airs-004-events.jsonl
+    identity: container-runtime
+    mitre_technique: "T1656"
+    expected_detections:
+      - plane: AIRS
+        type: BIOC
+        description: "AIRS — send_email tool argument contains exfil URL (smtp to external) — flagged"
+
+cleanup:
+  commands:
+    - "pkill -f 'cortex-vulnerable-llm serve' || true"
+    - "rm -f /tmp/airs-004-tools.json /tmp/airs-004-events.jsonl"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - airs
+  - owasp-llm06
+  - excessive-agency
+  - tool-abuse
+  - agentic

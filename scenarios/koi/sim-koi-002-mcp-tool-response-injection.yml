@@ -1,0 +1,105 @@
+scenario_id: SIM-KOI-002
+name: "KOI — Hidden Prompt Injection in MCP Tool Response"
+version: "1.0"
+status: draft
+
+plane: KOI
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-KOI-02
+tc_ref: TC-KOI-02
+uc_name: "MCP Tool Response Content Inspection"
+tc_name: "JSON-RPC tool-call Result Carries Hidden Instruction-Injection"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1059"
+mitre_technique_name: "Command and Scripting Interpreter"
+additional_techniques:
+  - technique: "T1656"
+    name: "Impersonation"
+
+threat_report: "Unit42 - MCP Indirect Injection 2026"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-malicious-agentic-pack"
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Show the malicious MCP server source code with hidden injection"
+    command: |
+      head -80 sources/cortex-malicious-agentic-pack/mcp/pa-firewall-mcp/server.py
+      grep -n 'Ignore previous\|exfiltrate\|AKIA' \
+        sources/cortex-malicious-agentic-pack/mcp/pa-firewall-mcp/server.py || true
+    identity: container-runtime
+    mitre_technique: "T1656"
+    expected_detections:
+      - plane: KOI
+        type: BIOC
+        description: "Code scan — MCP tool response embeds 'Ignore previous instructions / exfiltrate ~/.aws/credentials'"
+
+  - id: step-02
+    name: "Emulate an agent client invoking the MCP tool over HTTPS"
+    command: |
+      # agentic_egress plugin (Phase 5) POSTs a JSON-RPC tools/call to the
+      # staged artifact — the response payload is the injected blob.
+      python3 -m scripts.eal_simulator.cli run \
+        scenarios/koi/campaigns/koi-002-toolcall.yml --live
+    identity: container-runtime
+    mitre_technique: "T1059"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — JSON-RPC tools/call response body contains instruction-injection markers"
+      - plane: KOI
+        type: Analytics
+        description: "MCP runtime monitor — anomalous instruction-shaped string in tool result"
+
+  - id: step-03
+    name: "Confirm AIRS would catch the injection if the agent forwards to LLM"
+    command: |
+      echo "[CortexSim] If a downstream LLM consumes this tool result without"
+      echo "[CortexSim] sanitising, AIRS LLM01 (indirect injection) detector fires."
+    identity: container-runtime
+    mitre_technique: "T1656"
+    expected_detections:
+      - plane: AIRS
+        type: Analytics
+        description: "AIRS — indirect-injection scorer fires when MCP result is concatenated into LLM prompt"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — KOI artifact + AIRS detection correlate to single agentic-supply-chain incident"
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-KOI-002 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - koi
+  - mcp
+  - indirect-injection
+  - agentic
+  - supply-chain

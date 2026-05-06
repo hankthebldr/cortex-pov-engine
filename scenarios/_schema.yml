@@ -30,7 +30,12 @@ status: "active"
 plane: "CDR"
 # (required) Primary detection plane this scenario targets.
 # One of: EDR | CDR | NDR | ITDR | CLOUD_APP | ANALYTICS
+#       | AI_ACCESS | AIRS | BROWSER | KOI
 # ANALYTICS is reserved for multi-plane correlation scenarios.
+# AI_ACCESS — Cortex AI Access Security (employee LLM usage / DLP)
+# AIRS      — Cortex AI Runtime Security (deployed LLM app protection)
+# BROWSER   — Prisma Browser (managed browser DLP / extension / phishing)
+# KOI       — Agentic endpoint / supply-chain risk (MCP, skills, extensions)
 
 detection_types:
   - BIOC

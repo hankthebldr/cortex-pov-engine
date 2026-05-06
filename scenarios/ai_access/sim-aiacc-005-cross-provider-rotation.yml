@@ -1,0 +1,112 @@
+scenario_id: SIM-AIACC-005
+name: "AI Access — Cross-Provider Rotation (OpenAI → Gemini → Anthropic)"
+version: "1.0"
+status: active
+
+plane: AI_ACCESS
+detection_types:
+  - Analytics
+
+uc_ref: UCS-AIACC-05
+tc_ref: TC-AIACC-05
+uc_name: "Cross-Provider Behaviour Stitching"
+tc_name: "Single User Rotates Across Three AI Providers in <5 min"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1090"
+mitre_technique_name: "Proxy"
+additional_techniques:
+  - technique: "T1567"
+    name: "Exfiltration Over Web Service"
+
+threat_report: "Unit42 - AI Provider Hopping for Policy Evasion"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: curl
+    source: "https://curl.se/"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Provider 1 — OpenAI prompt with proprietary code snippet"
+    command: |
+      curl -sS -o /dev/null -w 'openai_http=%{http_code}\n' \
+        -X POST https://api.openai.com/v1/chat/completions \
+        -H 'authorization: Bearer sk-cortexsim-canary-NOT-A-REAL-KEY' \
+        -H 'content-type: application/json' \
+        -H 'x-cortexsim-run-id: aiacc-005-openai' \
+        --data '{"model":"gpt-4o","messages":[{"role":"user","content":"Refactor this for me: def settle(t): return [r for r in t if r.status==\"pending\"]"}]}' || true
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — first egress to api.openai.com, user marked active in provider matrix"
+
+  - id: step-02
+    name: "Provider 2 — Gemini prompt with overlapping content within 60s"
+    command: |
+      sleep 30
+      curl -sS -o /dev/null -w 'gemini_http=%{http_code}\n' \
+        -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSy-CORTEXSIM-CANARY-NOT-A-REAL-KEY" \
+        -H 'content-type: application/json' \
+        -H 'x-cortexsim-run-id: aiacc-005-gemini' \
+        --data '{"contents":[{"parts":[{"text":"Refactor: def settle(t): return [r for r in t if r.status==\"pending\"]"}]}]}' || true
+    identity: container-runtime
+    mitre_technique: "T1090"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — same user observed at second provider (Gemini) within rotation window"
+
+  - id: step-03
+    name: "Provider 3 — Anthropic prompt completes the rotation triangle"
+    command: |
+      sleep 30
+      curl -sS -o /dev/null -w 'anthropic_http=%{http_code}\n' \
+        -X POST https://api.anthropic.com/v1/messages \
+        -H 'x-api-key: sk-ant-cortexsim-canary-NOT-A-REAL-KEY' \
+        -H 'anthropic-version: 2023-06-01' \
+        -H 'content-type: application/json' \
+        -H 'x-cortexsim-run-id: aiacc-005-anthropic' \
+        --data '{"model":"claude-3-5-sonnet-20241022","max_tokens":256,"messages":[{"role":"user","content":"Refactor: def settle(t): return [r for r in t if r.status==\"pending\"]"}]}' || true
+    identity: container-runtime
+    mitre_technique: "T1090"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — three providers within 5 min from same user — provider-hopping policy evasion alert"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — single user identity correlates the three provider sessions into one incident"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — generative-AI App-ID across three FQDNs with shared canary header X-Cortexsim-Run-ID prefix aiacc-005"
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-AIACC-005 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ai-access
+  - cross-provider
+  - stitching
+  - policy-evasion

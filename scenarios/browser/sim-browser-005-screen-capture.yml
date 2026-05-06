@@ -1,0 +1,103 @@
+scenario_id: SIM-BROWSER-005
+name: "Browser — Screen Capture of Sensitive SaaS Page"
+version: "1.0"
+status: draft
+
+plane: BROWSER
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-BROWSER-05
+tc_ref: TC-BROWSER-05
+uc_name: "Browser Screen-Capture Policy Enforcement"
+tc_name: "Programmatic Screenshot of Sanctioned SaaS Detail Page"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1113"
+mitre_technique_name: "Screen Capture"
+
+threat_report: "Unit42 - Insider Screen-Capture Tradecraft 2026"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-browser-attacker"
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortex-browser-attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Open the sanctioned SaaS detail page under managed browser policy"
+    command: |
+      cortex-browser-attacker action navigate \
+        --target-url https://customer-records.cortexsim-test.invalid/account/AC-12345 \
+        --wait-for selector="#account-detail" \
+        --emit-event
+    identity: container-runtime
+    mitre_technique: "T1005"
+    expected_detections:
+      - plane: BROWSER
+        type: Analytics
+        description: "Pre-flight: detail page rendered with sensitive class on body"
+
+  - id: step-02
+    name: "Capture screenshot of the page"
+    command: |
+      cortex-browser-attacker action screenshot \
+        --out /tmp/browser-005-cap.png \
+        --emit-event
+      file /tmp/browser-005-cap.png
+    identity: container-runtime
+    mitre_technique: "T1113"
+    expected_detections:
+      - plane: BROWSER
+        type: BIOC
+        description: "Prisma Browser — page.screenshot() called against an origin tagged sensitive — block + alert"
+      - plane: BROWSER
+        type: Analytics
+        description: "Prisma Browser — screen-capture-attempt counter increments under sensitive-content policy"
+
+  - id: step-03
+    name: "Attempt second capture after policy block"
+    command: |
+      cortex-browser-attacker action screenshot \
+        --out /tmp/browser-005-cap-2.png \
+        --emit-event || echo "[CortexSim] second capture refused as expected"
+    identity: container-runtime
+    mitre_technique: "T1113"
+    expected_detections:
+      - plane: BROWSER
+        type: Analytics
+        description: "Prisma Browser — repeat screen-capture from same user counts toward elevated risk score"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM — user risk score elevated, conditional-access policy triggered downstream"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/browser-005-cap.png /tmp/browser-005-cap-2.png"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - browser
+  - prisma-browser
+  - screen-capture
+  - collection
