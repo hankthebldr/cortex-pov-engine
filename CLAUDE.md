@@ -107,7 +107,7 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 | TIM | Cortex Threat Intel Management | IaC module (TAXII + fake C2) |
 | Cloud App | Cortex Cloud App Security | Planned |
 | Analytics | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
-| AI_ACCESS | Cortex AI Access Security | 5 scenarios (active) — outbound to OpenAI/Gemini/Anthropic with planted DLP markers |
+| AI_ACCESS | Cortex AI Access Security | 5 scenarios (active) — outbound to OpenAI/Gemini/Anthropic via the `llm_provider_egress` EAL plugin (Phase 4) with planted DLP markers |
 | AIRS | Cortex AI Runtime Security | 5 scenarios (active) — OWASP LLM01-10 against `cortex-vulnerable-llm` driven by `cortex-prompt-attacker` + `airs_prompt_attack` EAL plugin |
 | BROWSER | Prisma Browser | 5 scenarios (draft) — Playwright-driven via `cortex-browser-attacker` (Phase 6) |
 | KOI | Agentic endpoint / supply-chain | 5 scenarios (draft) — MCP / skills / extensions / PyPI via `cortex-malicious-agentic-pack` (Phase 5) |

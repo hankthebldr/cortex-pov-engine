@@ -1,6 +1,6 @@
 scenario_id: SIM-AIACC-005
 name: "AI Access — Cross-Provider Rotation (OpenAI → Gemini → Anthropic)"
-version: "1.0"
+version: "1.1"
 status: active
 
 plane: AI_ACCESS
@@ -36,21 +36,33 @@ infra_modules_needed:
   - base
 
 external_tools:
-  - name: curl
-    source: "https://curl.se/"
-    type: binary
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
     install_inline: false
 
 steps:
   - id: step-01
-    name: "Provider 1 — OpenAI prompt with proprietary code snippet"
+    name: "Provider 1 — OpenAI"
     command: |
-      curl -sS -o /dev/null -w 'openai_http=%{http_code}\n' \
-        -X POST https://api.openai.com/v1/chat/completions \
-        -H 'authorization: Bearer sk-cortexsim-canary-NOT-A-REAL-KEY' \
-        -H 'content-type: application/json' \
-        -H 'x-cortexsim-run-id: aiacc-005-openai' \
-        --data '{"model":"gpt-4o","messages":[{"role":"user","content":"Refactor this for me: def settle(t): return [r for r in t if r.status==\"pending\"]"}]}' || true
+      cat > /tmp/aiacc-005-openai.yml <<'YML'
+      campaign_id: CMP-AIACC-005
+      name: "AI Access — rotation step 1 OpenAI"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - api.openai.com
+      dry_run: false
+      tags: [ai-access, cross-provider, rotation]
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: openai
+            payload_type: source
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-openai.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
     expected_detections:
@@ -59,14 +71,26 @@ steps:
         description: "AI Access — first egress to api.openai.com, user marked active in provider matrix"
 
   - id: step-02
-    name: "Provider 2 — Gemini prompt with overlapping content within 60s"
+    name: "Provider 2 — Gemini (overlapping content within 60s)"
     command: |
       sleep 30
-      curl -sS -o /dev/null -w 'gemini_http=%{http_code}\n' \
-        -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSy-CORTEXSIM-CANARY-NOT-A-REAL-KEY" \
-        -H 'content-type: application/json' \
-        -H 'x-cortexsim-run-id: aiacc-005-gemini' \
-        --data '{"contents":[{"parts":[{"text":"Refactor: def settle(t): return [r for r in t if r.status==\"pending\"]"}]}]}' || true
+      cat > /tmp/aiacc-005-gemini.yml <<'YML'
+      campaign_id: CMP-AIACC-005
+      name: "AI Access — rotation step 2 Gemini"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - generativelanguage.googleapis.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: gemini
+            payload_type: source
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-gemini.yml --live
     identity: container-runtime
     mitre_technique: "T1090"
     expected_detections:
@@ -75,16 +99,26 @@ steps:
         description: "AI Access — same user observed at second provider (Gemini) within rotation window"
 
   - id: step-03
-    name: "Provider 3 — Anthropic prompt completes the rotation triangle"
+    name: "Provider 3 — Anthropic completes the rotation triangle"
     command: |
       sleep 30
-      curl -sS -o /dev/null -w 'anthropic_http=%{http_code}\n' \
-        -X POST https://api.anthropic.com/v1/messages \
-        -H 'x-api-key: sk-ant-cortexsim-canary-NOT-A-REAL-KEY' \
-        -H 'anthropic-version: 2023-06-01' \
-        -H 'content-type: application/json' \
-        -H 'x-cortexsim-run-id: aiacc-005-anthropic' \
-        --data '{"model":"claude-3-5-sonnet-20241022","max_tokens":256,"messages":[{"role":"user","content":"Refactor: def settle(t): return [r for r in t if r.status==\"pending\"]"}]}' || true
+      cat > /tmp/aiacc-005-anthropic.yml <<'YML'
+      campaign_id: CMP-AIACC-005
+      name: "AI Access — rotation step 3 Anthropic"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - api.anthropic.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: anthropic
+            payload_type: source
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-anthropic.yml --live
     identity: container-runtime
     mitre_technique: "T1090"
     expected_detections:
@@ -96,17 +130,18 @@ steps:
         description: "XSIAM stitching — single user identity correlates the three provider sessions into one incident"
       - plane: NDR
         type: Analytics
-        description: "NGFW EAL — generative-AI App-ID across three FQDNs with shared canary header X-Cortexsim-Run-ID prefix aiacc-005"
+        description: "NGFW EAL — generative-AI App-ID across three FQDNs sharing X-Simulation-Run-ID prefix"
 
 cleanup:
   commands:
-    - "echo '[CortexSim] SIM-AIACC-005 cleanup complete'"
+    - "rm -f /tmp/aiacc-005-*.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-07"
 tags:
   - ai-access
   - cross-provider
   - stitching
   - policy-evasion
+  - eal-plugin

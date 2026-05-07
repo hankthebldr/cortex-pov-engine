@@ -1,6 +1,6 @@
 scenario_id: SIM-AIACC-002
 name: "AI Access — AWS Access Key Leaked to Anthropic API"
-version: "1.0"
+version: "1.1"
 status: active
 
 plane: AI_ACCESS
@@ -38,45 +38,48 @@ infra_modules_needed:
   - base
 
 external_tools:
-  - name: curl
-    source: "https://curl.se/"
-    type: binary
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
     install_inline: false
 
 steps:
   - id: step-01
-    name: "Compose a help-debugging prompt that leaks an AWS access key"
+    name: "Pre-flight: confirm secret payload contains the canary AKIA key"
     command: |
-      cat > /tmp/aiacc-002-prompt.json <<'JSON'
-      {
-        "model": "claude-3-5-sonnet-20241022",
-        "max_tokens": 256,
-        "messages": [
-          {
-            "role": "user",
-            "content": "Help me debug this script. It keeps failing.\n\nimport boto3\ns3 = boto3.client('s3', aws_access_key_id='AKIA0000CORTEXSIMCANARY', aws_secret_access_key='CORTEXSIM/CANARY/SECRET/KEY/NOT/REAL/abcdefghi+jk')\nfor obj in s3.list_objects(Bucket='customer-prod-payments')['Contents']:\n    print(obj['Key'])"
-          }
-        ]
-      }
-      JSON
-      cat /tmp/aiacc-002-prompt.json | jq -e .
+      python3 -c "
+      from core.eal_simulator.plugins.llm_provider_egress import _render_payload
+      assert 'AKIA0000CORTEXSIMCANARY' in _render_payload('secret')
+      print('canary marker present in secret payload')
+      " || echo "[CortexSim] payload self-check (best-effort)"
     identity: container-runtime
     mitre_technique: "T1552.001"
     expected_detections:
       - plane: AI_ACCESS
         type: BIOC
-        description: "Pre-flight: payload contains synthetic AKIA-prefixed canary key"
+        description: "Pre-flight: secret payload contains AKIA-prefixed canary"
 
   - id: step-02
-    name: "POST credential-bearing prompt to api.anthropic.com"
+    name: "Single secret POST to api.anthropic.com via EAL plugin"
     command: |
-      curl -sS -o /tmp/aiacc-002-resp.json -w 'http=%{http_code}\n' \
-        -X POST https://api.anthropic.com/v1/messages \
-        -H 'x-api-key: sk-ant-cortexsim-canary-NOT-A-REAL-KEY' \
-        -H 'anthropic-version: 2023-06-01' \
-        -H 'content-type: application/json' \
-        -H 'x-cortexsim-run-id: aiacc-002' \
-        --data @/tmp/aiacc-002-prompt.json || true
+      cat > /tmp/aiacc-002.yml <<'YML'
+      campaign_id: CMP-AIACC-002
+      name: "AI Access — AWS key leak to Anthropic"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - api.anthropic.com
+      dry_run: false
+      tags: [ai-access, anthropic, secret-dlp]
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: anthropic
+            payload_type: secret
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-002.yml --live
     identity: container-runtime
     mitre_technique: "T1552"
     expected_detections:
@@ -91,17 +94,26 @@ steps:
         description: "NGFW EAL — generative-ai App-ID match on outbound HTTPS to anthropic.com"
 
   - id: step-03
-    name: "Confirm absence of post-detection block (NGFW should drop session 4)"
+    name: "Verify per-session block-action policy (4 attempts)"
     command: |
-      for i in 1 2 3 4; do
-        curl -sS -o /dev/null -w "attempt=$i http=%{http_code}\n" \
-          -X POST https://api.anthropic.com/v1/messages \
-          -H 'x-api-key: sk-ant-cortexsim-canary-NOT-A-REAL-KEY' \
-          -H 'anthropic-version: 2023-06-01' \
-          -H 'content-type: application/json' \
-          --data @/tmp/aiacc-002-prompt.json || true
-        sleep 3
-      done
+      cat > /tmp/aiacc-002-burst.yml <<'YML'
+      campaign_id: CMP-AIACC-002
+      name: "AI Access — secret burst"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - api.anthropic.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: anthropic
+            payload_type: secret
+            iterations: 4
+            sleep_seconds: 3
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-002-burst.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
     expected_detections:
@@ -111,13 +123,14 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/aiacc-002-prompt.json /tmp/aiacc-002-resp.json"
+    - "rm -f /tmp/aiacc-002.yml /tmp/aiacc-002-burst.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-07"
 tags:
   - ai-access
   - secrets-dlp
   - anthropic
   - aws-credentials
+  - eal-plugin

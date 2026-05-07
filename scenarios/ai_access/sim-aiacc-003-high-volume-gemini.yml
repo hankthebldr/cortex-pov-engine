@@ -1,6 +1,6 @@
 scenario_id: SIM-AIACC-003
 name: "AI Access — High-Volume Gemini Prompt Burst from Single User"
-version: "1.0"
+version: "1.1"
 status: active
 
 plane: AI_ACCESS
@@ -33,14 +33,14 @@ infra_modules_needed:
   - base
 
 external_tools:
-  - name: curl
-    source: "https://curl.se/"
-    type: binary
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
     install_inline: false
 
 steps:
   - id: step-01
-    name: "Confirm DNS resolution for generativelanguage.googleapis.com"
+    name: "Pre-flight DNS resolution for generativelanguage.googleapis.com"
     command: |
       getent hosts generativelanguage.googleapis.com || true
       echo "[CortexSim] burst target reachable"
@@ -52,22 +52,33 @@ steps:
         description: "Pre-flight: provider host resolvable from worker"
 
   - id: step-02
-    name: "Fire 30 sequential prompt requests in <90s to trigger volume baseline"
+    name: "Fire 30 sequential prompts to trigger volume baseline"
     command: |
-      for i in $(seq 1 30); do
-        curl -sS -o /dev/null -w "i=$i http=%{http_code}\n" \
-          -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSy-CORTEXSIM-CANARY-NOT-A-REAL-KEY" \
-          -H 'content-type: application/json' \
-          -H "x-cortexsim-run-id: aiacc-003-$i" \
-          --data "{\"contents\":[{\"parts\":[{\"text\":\"Summarise quarterly results burst sample $i\"}]}]}" || true
-        sleep 2
-      done
+      cat > /tmp/aiacc-003.yml <<'YML'
+      campaign_id: CMP-AIACC-003
+      name: "AI Access — Gemini burst"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - generativelanguage.googleapis.com
+      dry_run: false
+      tags: [ai-access, gemini, volume-anomaly]
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: gemini
+            payload_type: benign
+            iterations: 30
+            sleep_seconds: 2
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-003.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
         type: Analytics
-        description: "AI Access — request rate per user exceeds rolling baseline (30 in 90s)"
+        description: "AI Access — request rate per user exceeds rolling baseline (30 in <90s)"
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — sustained generative-AI session count from single src IP"
@@ -76,14 +87,27 @@ steps:
         description: "AI Access — sanctioned-vs-unsanctioned-AI policy: Gemini classified as unsanctioned for this user"
 
   - id: step-03
-    name: "Cool-off period to validate baseline restoration"
+    name: "Cool-off window then a single probe to confirm baseline restoration"
     command: |
       echo "[CortexSim] sleeping 120s to allow baseline restoration"
       sleep 120
-      curl -sS -o /dev/null -w 'cooloff_http=%{http_code}\n' \
-        -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSy-CORTEXSIM-CANARY-NOT-A-REAL-KEY" \
-        -H 'content-type: application/json' \
-        --data '{"contents":[{"parts":[{"text":"baseline restoration probe"}]}]}' || true
+      cat > /tmp/aiacc-003-cool.yml <<'YML'
+      campaign_id: CMP-AIACC-003
+      name: "AI Access — Gemini cool-off probe"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - generativelanguage.googleapis.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: gemini
+            payload_type: benign
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-003-cool.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
     expected_detections:
@@ -93,13 +117,14 @@ steps:
 
 cleanup:
   commands:
-    - "echo '[CortexSim] SIM-AIACC-003 cleanup complete - no persistent artefacts'"
+    - "rm -f /tmp/aiacc-003.yml /tmp/aiacc-003-cool.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-07"
 tags:
   - ai-access
   - gemini
   - volume-anomaly
   - shadow-ai
+  - eal-plugin
