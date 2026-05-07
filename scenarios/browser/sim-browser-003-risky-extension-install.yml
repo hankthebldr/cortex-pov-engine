@@ -1,0 +1,103 @@
+scenario_id: SIM-BROWSER-003
+name: "Browser — Sideloaded Risky Chrome Extension"
+version: "1.0"
+status: draft
+
+plane: BROWSER
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-BROWSER-03
+tc_ref: TC-BROWSER-03
+uc_name: "Managed-Browser Extension Risk Policy"
+tc_name: "Sideloaded .crx with Overbroad Permissions Triggers Block"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1176"
+mitre_technique_name: "Browser Extensions"
+
+threat_report: "Unit42 - Browser Extension Threats 2026"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-browser-attacker"
+  - repo: "hankthebldr/cortex-malicious-agentic-pack"
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortex-browser-attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Stage a synthetic .crx with overbroad permissions"
+    command: |
+      # The malicious-agentic-pack ships a packed .crx with manifest perms:
+      # ["<all_urls>","tabs","cookies","storage","webRequest","webRequestBlocking"]
+      ls -la sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer.crx
+      sha256sum sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer.crx
+    identity: container-runtime
+    mitre_technique: "T1176"
+    expected_detections:
+      - plane: BROWSER
+        type: Analytics
+        description: "Pre-flight: sideloadable .crx artifact present with overbroad manifest"
+
+  - id: step-02
+    name: "Attempt sideload through Prisma Browser developer-mode install"
+    command: |
+      cortex-browser-attacker action install_extension \
+        --crx sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer.crx \
+        --emit-event
+    identity: container-runtime
+    mitre_technique: "T1176"
+    expected_detections:
+      - plane: BROWSER
+        type: BIOC
+        description: "Prisma Browser — sideloaded extension blocked by managed-extension policy"
+      - plane: BROWSER
+        type: Analytics
+        description: "Prisma Browser — extension permission risk score exceeds threshold (cookies + webRequest + all_urls)"
+      - plane: KOI
+        type: Analytics
+        description: "KOI — extension manifest signature does not match approved publisher list"
+
+  - id: step-03
+    name: "Confirm post-block telemetry in audit log"
+    command: |
+      jq -r 'select(.action=="install_extension") | "\(.outcome) \(.target_path)"' \
+        /tmp/browser-003-events.jsonl 2>/dev/null || true
+    identity: container-runtime
+    mitre_technique: "T1176"
+    expected_detections:
+      - plane: BROWSER
+        type: Analytics
+        description: "Browser-attacker JSONL records install_extension outcome=blocked"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/browser-003-events.jsonl"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - browser
+  - prisma-browser
+  - extension
+  - sideload
+  - persistence

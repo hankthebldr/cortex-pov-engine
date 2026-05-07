@@ -127,9 +127,20 @@ class CampaignExecutor:
     # Public API
     # ------------------------------------------------------------------
 
-    async def execute(self, campaign: Campaign) -> ExecutorState:
-        """Run the campaign synchronously; return final ExecutorState."""
-        run_id = str(uuid.uuid4())
+    async def execute(
+        self,
+        campaign: Campaign,
+        *,
+        run_id: Optional[str] = None,
+    ) -> ExecutorState:
+        """Run the campaign synchronously; return final ExecutorState.
+
+        Callers (e.g. the FastAPI launch endpoint) may pass a pre-allocated
+        ``run_id`` so the value persisted to the DB matches the one used in
+        executor and audit events. When omitted, a fresh UUID is generated.
+        """
+        if run_id is None:
+            run_id = str(uuid.uuid4())
         state = ExecutorState(
             run_id=run_id,
             campaign_id=campaign.campaign_id,
@@ -208,10 +219,16 @@ class CampaignExecutor:
         )
         return state
 
-    async def submit(self, campaign: Campaign, queue: Optional[TaskQueue] = None) -> str:
+    async def submit(
+        self,
+        campaign: Campaign,
+        queue: Optional[TaskQueue] = None,
+        *,
+        run_id: Optional[str] = None,
+    ) -> str:
         """Submit a campaign to the background task queue and return its id."""
         queue = queue or InMemoryTaskQueue()
-        return await queue.submit(lambda c=campaign: self.execute(c))
+        return await queue.submit(lambda c=campaign, r=run_id: self.execute(c, run_id=r))
 
     # ------------------------------------------------------------------
     # Step runner

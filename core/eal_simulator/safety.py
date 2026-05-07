@@ -77,7 +77,12 @@ class SafetyPolicy:
             if _looks_like_cidr(token):
                 self._cidrs.append(ipaddress.ip_network(token, strict=False))
             elif _looks_like_ip(token):
-                self._cidrs.append(ipaddress.ip_network(f"{token}/32", strict=False))
+                # Use the address family's full host length: /32 for IPv4,
+                # /128 for IPv6. Hard-coding /32 would silently broaden an
+                # IPv6 literal into an entire /32 network.
+                ip = ipaddress.ip_address(token)
+                prefix = 32 if isinstance(ip, ipaddress.IPv4Address) else 128
+                self._cidrs.append(ipaddress.ip_network(f"{token}/{prefix}", strict=False))
             else:
                 self._hostnames.append(token.lower().lstrip("."))
 

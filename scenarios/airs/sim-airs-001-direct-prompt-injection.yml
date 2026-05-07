@@ -1,0 +1,112 @@
+scenario_id: SIM-AIRS-001
+name: "AIRS — Direct Prompt Injection (LLM01)"
+version: "1.0"
+status: draft
+
+plane: AIRS
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-AIRS-01
+tc_ref: TC-AIRS-01
+uc_name: "OWASP LLM01 — Prompt Injection"
+tc_name: "Direct Injection Overrides System Prompt and Reveals Hidden Context"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1656"
+mitre_technique_name: "Impersonation"
+
+threat_report: "OWASP Top 10 for LLM Applications v2025 — LLM01"
+threat_report_url: "https://genai.owasp.org/llm-top-10/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-vulnerable-llm"
+  - repo: "hankthebldr/cortex-prompt-attacker"
+
+infra_modules_needed:
+  - base
+  - airs
+
+external_tools:
+  - name: cortex-prompt-attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Start cortex-vulnerable-llm Flask target on port 8089"
+    command: |
+      # Phase 2 — cortex-vulnerable-llm runs the canary LLM locally
+      cortex-vulnerable-llm serve --port 8089 --vuln llm01 &
+      VLLM_PID=$!
+      sleep 2
+      curl -sSf http://127.0.0.1:8089/healthz > /dev/null
+      echo "vllm_pid=$VLLM_PID" > /tmp/airs-001.env
+    identity: container-runtime
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: AIRS
+        type: Analytics
+        description: "Pre-flight: vulnerable target /healthz responds 200"
+
+  - id: step-02
+    name: "Run cortex-prompt-attacker LLM01 probe pack with mutator chain"
+    command: |
+      cortex-prompt-attacker run \
+        --probes scenarios/airs/probes/llm01/*.yml \
+        --target-url http://127.0.0.1:8089/owasp/llm01/chat \
+        --mutators noop,base64,leetspeak \
+        --scorers system_prompt_leak,instruction_override \
+        --out /tmp/airs-001-events.jsonl
+      jq '.[].outcome' /tmp/airs-001-events.jsonl | sort | uniq -c
+    identity: container-runtime
+    mitre_technique: "T1656"
+    expected_detections:
+      - plane: AIRS
+        type: Analytics
+        description: "AIRS — direct prompt-injection classifier fires on 'Ignore previous instructions' family"
+      - plane: AIRS
+        type: BIOC
+        description: "AIRS — system prompt or hidden context appears verbatim in model response"
+      - plane: AIRS
+        type: Analytics
+        description: "AIRS — base64-mutated injection evades naive filter, still caught by content classifier"
+
+  - id: step-03
+    name: "Verify the prompt-attacker JSONL conforms to garak Attempt schema"
+    command: |
+      head -1 /tmp/airs-001-events.jsonl | jq -e \
+        '.entry_type and .uuid and .probe_classname and .prompt and .outputs' > /dev/null
+      echo "[CortexSim] AIRS-001 events conform to expected schema"
+    identity: container-runtime
+    mitre_technique: "T1656"
+    expected_detections:
+      - plane: AIRS
+        type: Analytics
+        description: "Audit pipeline ingests JSONL events correctly (schema check)"
+
+cleanup:
+  commands:
+    - "if [ -f /tmp/airs-001.env ]; then . /tmp/airs-001.env && kill $vllm_pid 2>/dev/null || true; fi"
+    - "rm -f /tmp/airs-001.env /tmp/airs-001-events.jsonl"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - airs
+  - owasp-llm01
+  - prompt-injection
+  - direct

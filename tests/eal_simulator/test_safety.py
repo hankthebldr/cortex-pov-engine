@@ -112,3 +112,38 @@ def test_invalid_hostname_rejected():
     )
     with pytest.raises(SafetyError):
         policy.authorise("space disallowed")
+
+
+def test_ipv6_literal_uses_128_prefix_not_32():
+    """Regression: a single IPv6 literal must not authorise a whole /32 net.
+
+    Codex review on PR #9 flagged that ``ip_network(f"{token}/32")`` over-
+    broadens IPv6 entries. We assert that an IPv6 literal authorises only
+    that exact address.
+    """
+    policy = SafetyPolicy(
+        simulation_authorized=True,
+        authorized_by="op",
+        target_allowlist=["2001:db8::1"],
+        dry_run=False,
+    )
+    # Exact host accepted.
+    policy.authorise("2001:db8::1")
+    # Different host inside the (would-be /32) network must be rejected.
+    with pytest.raises(SafetyError):
+        policy.authorise("2001:db8::2")
+    with pytest.raises(SafetyError):
+        policy.authorise("2001:db8:dead:beef::1")
+
+
+def test_ipv4_literal_still_uses_32_prefix():
+    """IPv4 sibling of the IPv6 fix — single host literal stays /32."""
+    policy = SafetyPolicy(
+        simulation_authorized=True,
+        authorized_by="op",
+        target_allowlist=["10.0.0.5"],
+        dry_run=False,
+    )
+    policy.authorise("10.0.0.5")
+    with pytest.raises(SafetyError):
+        policy.authorise("10.0.0.6")

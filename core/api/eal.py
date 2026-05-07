@@ -267,6 +267,9 @@ async def launch_campaign(
     db.add(run_row)
     await db.commit()
 
+    # Pass the persisted run_id into the executor so audit events and the DB
+    # row share a single identifier — clients polling /api/eal/runs/{run_id}
+    # see the same id that ECS audit lines carry.
     background_tasks.add_task(_run_campaign_in_background, executor, campaign, run_id)
 
     logger.info(
@@ -288,7 +291,7 @@ async def _run_campaign_in_background(
 ) -> None:
     """Background task: execute the campaign, mirror final state to the DB."""
     try:
-        state = await executor.execute(campaign)
+        state = await executor.execute(campaign, run_id=run_id)
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("campaign execution crashed run_id=%s", run_id)
         async with AsyncSessionLocal() as session:

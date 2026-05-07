@@ -1,0 +1,110 @@
+scenario_id: SIM-AIRS-005
+name: "AIRS — Unbounded Consumption / Token-Exhaustion DoS (LLM10)"
+version: "1.0"
+status: draft
+
+plane: AIRS
+detection_types:
+  - Analytics
+
+uc_ref: UCS-AIRS-05
+tc_ref: TC-AIRS-05
+uc_name: "OWASP LLM10 — Unbounded Consumption"
+tc_name: "Repeated High-Token Requests Exhaust Cost / Latency Budget"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1499"
+mitre_technique_name: "Endpoint Denial of Service"
+
+threat_report: "OWASP Top 10 for LLM Applications v2025 — LLM10"
+threat_report_url: "https://genai.owasp.org/llm-top-10/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-vulnerable-llm"
+  - repo: "hankthebldr/cortex-prompt-attacker"
+
+infra_modules_needed:
+  - base
+  - airs
+
+external_tools:
+  - name: cortex-prompt-attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Start vulnerable LLM with LLM10 endpoint (no rate limit)"
+    command: |
+      cortex-vulnerable-llm serve --port 8089 --vuln llm10 &
+      sleep 2
+      curl -sSf http://127.0.0.1:8089/healthz > /dev/null
+    identity: container-runtime
+    mitre_technique: "T1499"
+    expected_detections:
+      - plane: AIRS
+        type: Analytics
+        description: "Pre-flight: target /owasp/llm10/chat accepts unbounded max_tokens"
+
+  - id: step-02
+    name: "Issue 50 high-token requests to drain the cost / latency budget"
+    command: |
+      cortex-prompt-attacker run \
+        --probes scenarios/airs/probes/llm10/dos/*.yml \
+        --target-url http://127.0.0.1:8089/owasp/llm10/chat \
+        --iterations 50 \
+        --scorers latency_p95,token_total \
+        --out /tmp/airs-005-events.jsonl
+      jq -s '[.[] | .detector_results.token_total] | add' /tmp/airs-005-events.jsonl
+    identity: container-runtime
+    mitre_technique: "T1499"
+    expected_detections:
+      - plane: AIRS
+        type: Analytics
+        description: "AIRS — token-usage rolling sum exceeds per-user budget (DoS-class detector)"
+      - plane: AIRS
+        type: Analytics
+        description: "AIRS — p95 latency on /owasp/llm10/chat exceeds threshold under load"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — sustained POST burst to AIRS endpoint flagged as anomalous app traffic"
+
+  - id: step-03
+    name: "Verify AIRS rate-limit / circuit-breaker engaged"
+    command: |
+      curl -sS -o /tmp/airs-005-final.json -w 'http=%{http_code}\n' \
+        -X POST http://127.0.0.1:8089/owasp/llm10/chat \
+        -H 'content-type: application/json' \
+        --data '{"prompt":"final probe","max_tokens":100000}' || true
+      jq -e '.error // .blocked' /tmp/airs-005-final.json
+    identity: container-runtime
+    mitre_technique: "T1499"
+    expected_detections:
+      - plane: AIRS
+        type: Analytics
+        description: "AIRS — circuit-breaker / cost-cap policy engaged, request rejected with 429 / blocked"
+
+cleanup:
+  commands:
+    - "pkill -f 'cortex-vulnerable-llm serve' || true"
+    - "rm -f /tmp/airs-005-events.jsonl /tmp/airs-005-final.json"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - airs
+  - owasp-llm10
+  - unbounded-consumption
+  - dos

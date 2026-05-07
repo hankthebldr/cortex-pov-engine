@@ -1,0 +1,107 @@
+scenario_id: SIM-KOI-003
+name: "KOI — Backdoored PyPI Package Consumed by Agent"
+version: "1.0"
+status: draft
+
+plane: KOI
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-KOI-03
+tc_ref: TC-KOI-03
+uc_name: "Language-Package Supply-Chain Compromise"
+tc_name: "Typosquat 'mcp-server-helpers' Package with Post-Install Hook"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1195.002"
+mitre_technique_name: "Compromise Software Supply Chain"
+additional_techniques:
+  - technique: "T1059.006"
+    name: "Python"
+
+threat_report: "Unit42 - PyPI Typosquatting in AI Agent Tooling 2026"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-malicious-agentic-pack"
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Inspect the backdoored package source"
+    command: |
+      ls -la sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/
+      cat sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/pyproject.toml | head -20
+      grep -n 'subprocess\|exec\|eval\|requests' \
+        sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/src/*.py || true
+    identity: container-runtime
+    mitre_technique: "T1195.002"
+    expected_detections:
+      - plane: KOI
+        type: BIOC
+        description: "Code scan — package __init__.py contains subprocess.run on import (post-install hook pattern)"
+      - plane: KOI
+        type: Analytics
+        description: "Code scan — package name 'mcp-server-helpers' typosquats canonical 'mcp-server-helper'"
+
+  - id: step-02
+    name: "Emulate pip install fetching the package over HTTPS"
+    command: |
+      python3 -m scripts.eal_simulator.cli run \
+        scenarios/koi/campaigns/koi-003-pip.yml --live
+    identity: container-runtime
+    mitre_technique: "T1195.002"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — outbound HTTPS to non-canonical PyPI mirror with python-requests/pip User-Agent"
+      - plane: KOI
+        type: Analytics
+        description: "URL filter — pypi-mirror domain matches typosquat-of-pypi.org rule"
+
+  - id: step-03
+    name: "Confirm Cortex Cloud SCA / SBOM scan flags the package"
+    command: |
+      echo "[CortexSim] SCA scan should flag mcp-server-helpers as typosquat,"
+      echo "[CortexSim] suspicious __init__ side-effect, and unverified publisher."
+    identity: container-runtime
+    mitre_technique: "T1195.002"
+    expected_detections:
+      - plane: KOI
+        type: Analytics
+        description: "Cortex Cloud SCA — package fails publisher allowlist + post-install hook policy"
+      - plane: KOI
+        type: BIOC
+        description: "Cortex Cloud SCA — SBOM correlates package digest with known-bad fingerprint"
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-KOI-003 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - koi
+  - pypi
+  - typosquat
+  - supply-chain
+  - sca

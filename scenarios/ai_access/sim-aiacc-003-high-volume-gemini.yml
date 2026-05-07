@@ -1,0 +1,105 @@
+scenario_id: SIM-AIACC-003
+name: "AI Access — High-Volume Gemini Prompt Burst from Single User"
+version: "1.0"
+status: active
+
+plane: AI_ACCESS
+detection_types:
+  - Analytics
+
+uc_ref: UCS-AIACC-03
+tc_ref: TC-AIACC-03
+uc_name: "Anomalous AI Provider Usage Volume"
+tc_name: "Burst of Outbound Prompts to Google Gemini API"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1567"
+mitre_technique_name: "Exfiltration Over Web Service"
+
+threat_report: "Unit42 - Generative AI Misuse Patterns"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: curl
+    source: "https://curl.se/"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Confirm DNS resolution for generativelanguage.googleapis.com"
+    command: |
+      getent hosts generativelanguage.googleapis.com || true
+      echo "[CortexSim] burst target reachable"
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "Pre-flight: provider host resolvable from worker"
+
+  - id: step-02
+    name: "Fire 30 sequential prompt requests in <90s to trigger volume baseline"
+    command: |
+      for i in $(seq 1 30); do
+        curl -sS -o /dev/null -w "i=$i http=%{http_code}\n" \
+          -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSy-CORTEXSIM-CANARY-NOT-A-REAL-KEY" \
+          -H 'content-type: application/json' \
+          -H "x-cortexsim-run-id: aiacc-003-$i" \
+          --data "{\"contents\":[{\"parts\":[{\"text\":\"Summarise quarterly results burst sample $i\"}]}]}" || true
+        sleep 2
+      done
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — request rate per user exceeds rolling baseline (30 in 90s)"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — sustained generative-AI session count from single src IP"
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — sanctioned-vs-unsanctioned-AI policy: Gemini classified as unsanctioned for this user"
+
+  - id: step-03
+    name: "Cool-off period to validate baseline restoration"
+    command: |
+      echo "[CortexSim] sleeping 120s to allow baseline restoration"
+      sleep 120
+      curl -sS -o /dev/null -w 'cooloff_http=%{http_code}\n' \
+        -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSy-CORTEXSIM-CANARY-NOT-A-REAL-KEY" \
+        -H 'content-type: application/json' \
+        --data '{"contents":[{"parts":[{"text":"baseline restoration probe"}]}]}' || true
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "AI Access — single post-cooloff request below baseline, no detection"
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-AIACC-003 cleanup complete - no persistent artefacts'"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - ai-access
+  - gemini
+  - volume-anomaly
+  - shadow-ai

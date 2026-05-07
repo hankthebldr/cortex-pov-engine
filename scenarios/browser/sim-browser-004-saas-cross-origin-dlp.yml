@@ -1,0 +1,105 @@
+scenario_id: SIM-BROWSER-004
+name: "Browser — Cross-Origin SaaS Copy-Paste DLP"
+version: "1.0"
+status: draft
+
+plane: BROWSER
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-BROWSER-04
+tc_ref: TC-BROWSER-04
+uc_name: "Cross-SaaS Data Movement Detection"
+tc_name: "User Copies from Sanctioned CRM, Pastes Into Personal Webmail"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1567"
+mitre_technique_name: "Exfiltration Over Web Service"
+
+threat_report: "Unit42 - Insider Risk via Browser Exfil 2026"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-browser-attacker"
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortex-browser-attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Open a sanctioned-SaaS-shaped origin and load synthetic record"
+    command: |
+      cortex-browser-attacker action navigate \
+        --target-url https://customer-records.cortexsim-test.invalid/account/AC-12345 \
+        --wait-for selector="#account-detail" \
+        --emit-event
+    identity: container-runtime
+    mitre_technique: "T1005"
+    expected_detections:
+      - plane: BROWSER
+        type: Analytics
+        description: "Pre-flight: managed user opens sanctioned CRM origin"
+
+  - id: step-02
+    name: "Copy customer record content from CRM to clipboard"
+    command: |
+      cortex-browser-attacker action copy \
+        --selector '#account-detail' \
+        --emit-event
+    identity: container-runtime
+    mitre_technique: "T1005"
+    expected_detections:
+      - plane: BROWSER
+        type: Analytics
+        description: "Prisma Browser — clipboard write captured with source-origin tag (sanctioned CRM)"
+
+  - id: step-03
+    name: "Navigate to personal webmail and paste copied content"
+    command: |
+      cortex-browser-attacker action navigate \
+        --target-url https://mail.cortexsim-test.invalid/compose
+      cortex-browser-attacker action paste \
+        --selector 'textarea[name="body"]' \
+        --emit-event
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: BROWSER
+        type: BIOC
+        description: "Prisma Browser — cross-origin paste from sanctioned CRM into personal webmail (DLP rule)"
+      - plane: BROWSER
+        type: Analytics
+        description: "Prisma Browser — clipboard origin tag mismatch with paste destination origin"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — copy + paste correlated by clipboard payload hash"
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-BROWSER-004 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - browser
+  - prisma-browser
+  - dlp
+  - cross-origin
+  - exfiltration

@@ -1,0 +1,118 @@
+scenario_id: SIM-BROWSER-002
+name: "Browser — Drive-by Download from Phishing Page"
+version: "1.0"
+status: draft
+
+plane: BROWSER
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-BROWSER-02
+tc_ref: TC-BROWSER-02
+uc_name: "Browser-Initiated Malware Download"
+tc_name: "Auto-Download Triggered by Phishing Landing Page"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1189"
+mitre_technique_name: "Drive-by Compromise"
+additional_techniques:
+  - technique: "T1566"
+    name: "Phishing"
+
+threat_report: "Unit42 - Drive-by Compromise Tradecraft 2026"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-browser-attacker"
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortex-browser-attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Stand up a local phishing page with an auto-download payload"
+    command: |
+      mkdir -p /tmp/phish-srv
+      cat > /tmp/phish-srv/index.html <<'HTML'
+      <!doctype html>
+      <html><body>
+      <h1>Q3 Earnings Update — Click to Verify</h1>
+      <a id="dl" href="payload.exe" download>Download report</a>
+      <script>document.getElementById('dl').click();</script>
+      </body></html>
+      HTML
+      head -c 4096 /dev/urandom > /tmp/phish-srv/payload.exe
+      python3 -m http.server --directory /tmp/phish-srv 8090 &
+      sleep 1
+      curl -sSf http://127.0.0.1:8090/ > /dev/null
+    identity: container-runtime
+    mitre_technique: "T1566"
+    expected_detections:
+      - plane: BROWSER
+        type: Analytics
+        description: "Pre-flight: phishing page hosted locally with auto-download script"
+
+  - id: step-02
+    name: "Drive Prisma Browser to the phishing landing page"
+    command: |
+      cortex-browser-attacker action navigate \
+        --target-url http://127.0.0.1:8090/index.html \
+        --wait-for download \
+        --emit-event
+    identity: container-runtime
+    mitre_technique: "T1189"
+    expected_detections:
+      - plane: BROWSER
+        type: BIOC
+        description: "Prisma Browser — auto-download initiated by JS without user gesture"
+      - plane: BROWSER
+        type: Analytics
+        description: "Prisma Browser — downloaded artifact MIME application/x-msdownload from non-SaaS origin"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — file-type download policy matches PE artifact"
+
+  - id: step-03
+    name: "Confirm WildFire submission path on the downloaded artifact"
+    command: |
+      # PB submits to WildFire via XSIAM telemetry path; we just confirm
+      # the artifact is present + has expected size signature.
+      ls -la /tmp/phish-srv/payload.exe
+      sha256sum /tmp/phish-srv/payload.exe
+    identity: container-runtime
+    mitre_technique: "T1189"
+    expected_detections:
+      - plane: BROWSER
+        type: Analytics
+        description: "PB → WildFire submission within download-policy MTTD"
+
+cleanup:
+  commands:
+    - "pkill -f 'http.server --directory /tmp/phish-srv' || true"
+    - "rm -rf /tmp/phish-srv"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - browser
+  - prisma-browser
+  - drive-by
+  - phishing
+  - download

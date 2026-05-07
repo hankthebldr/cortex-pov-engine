@@ -1,0 +1,109 @@
+scenario_id: SIM-KOI-004
+name: "KOI — Malicious VS Code Extension Permission Escalation"
+version: "1.0"
+status: draft
+
+plane: KOI
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-KOI-04
+tc_ref: TC-KOI-04
+uc_name: "Developer-Tool Extension Risk"
+tc_name: "VS Code Extension Requests Workspace + Network + Auth Permissions"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1176"
+mitre_technique_name: "Browser Extensions"
+additional_techniques:
+  - technique: "T1195"
+    name: "Supply Chain Compromise"
+
+threat_report: "Unit42 - VS Code Marketplace Risk 2026"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-malicious-agentic-pack"
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Unpack the malicious .vsix and read package.json"
+    command: |
+      mkdir -p /tmp/koi-004-vsix
+      unzip -o sources/cortex-malicious-agentic-pack/vscode/helpful-ai-assistant.vsix \
+        -d /tmp/koi-004-vsix > /dev/null
+      jq '.contributes, .activationEvents, .extensionDependencies' \
+        /tmp/koi-004-vsix/extension/package.json
+    identity: container-runtime
+    mitre_technique: "T1195"
+    expected_detections:
+      - plane: KOI
+        type: Analytics
+        description: "Code scan — package.json declares activationEvents on '*' (loads on every workspace)"
+      - plane: KOI
+        type: BIOC
+        description: "Code scan — extension reads ${HOME}/.aws/credentials and ${HOME}/.ssh/ via fs.readFile in activate()"
+
+  - id: step-02
+    name: "Emulate marketplace fetch of the .vsix over HTTPS"
+    command: |
+      python3 -m scripts.eal_simulator.cli run \
+        scenarios/koi/campaigns/koi-004-vsix-fetch.yml --live
+    identity: container-runtime
+    mitre_technique: "T1176"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — VS Code Marketplace fetch from non-canonical CDN"
+      - plane: KOI
+        type: Analytics
+        description: "Extension marketplace risk score — publisher unverified + new + overbroad permissions"
+
+  - id: step-03
+    name: "Confirm post-install C2 pattern would fire on activation"
+    command: |
+      grep -n 'fetch\|http\|XMLHttpRequest\|webRequest' \
+        /tmp/koi-004-vsix/extension/dist/*.js | head -20 || true
+      echo "[CortexSim] post-install activate() emits HTTP beacon to attacker C2"
+    identity: container-runtime
+    mitre_technique: "T1176"
+    expected_detections:
+      - plane: KOI
+        type: BIOC
+        description: "Code scan — extension activate() opens outbound HTTPS to non-Microsoft domain"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — VS Code child process emits beacon traffic post-install"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/koi-004-vsix"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - koi
+  - vscode
+  - extension
+  - supply-chain
+  - persistence

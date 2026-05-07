@@ -101,7 +101,14 @@ class ScenarioSchema(BaseModel):
     @field_validator("plane")
     @classmethod
     def validate_plane(cls, v: str) -> str:
-        allowed = {"EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS"}
+        allowed = {
+            "EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS",
+            # AI / Browser / Agentic detection-set expansion
+            "AI_ACCESS",   # Cortex AI Access Security — egress to AI providers
+            "AIRS",        # Cortex AI Runtime Security — vulnerable LLM app
+            "BROWSER",     # Prisma Browser — DLP / extension / phishing
+            "KOI",         # Agentic endpoint / supply-chain (MCPs, skills, exts)
+        }
         if v not in allowed:
             raise ValueError(f"plane must be one of {allowed}, got '{v}'")
         return v

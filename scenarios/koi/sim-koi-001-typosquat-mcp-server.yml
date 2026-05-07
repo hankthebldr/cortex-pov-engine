@@ -1,0 +1,108 @@
+scenario_id: SIM-KOI-001
+name: "KOI — Claude Desktop Installs Typosquat MCP Server"
+version: "1.0"
+status: draft
+
+plane: KOI
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-KOI-01
+tc_ref: TC-KOI-01
+uc_name: "MCP Supply-Chain Typosquat Detection"
+tc_name: "Claude Desktop Pulls 'anthroopic-calculator' (typo) MCP Manifest"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1195"
+mitre_technique_name: "Supply Chain Compromise"
+additional_techniques:
+  - technique: "T1059"
+    name: "Command and Scripting Interpreter"
+
+threat_report: "Unit42 - Agentic Supply Chain Risk 2026"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "hankthebldr/cortex-malicious-agentic-pack"
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Inspect the typosquat MCP manifest in the artifact pack"
+    command: |
+      ls -la sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/
+      jq -e '.name' sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/mcp.json
+      grep -r 'AKIA\|exfil' sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/ || true
+    identity: container-runtime
+    mitre_technique: "T1195"
+    expected_detections:
+      - plane: KOI
+        type: Analytics
+        description: "Code scan — manifest name 'anthroopic-calculator' typosquats 'anthropic-calculator'"
+      - plane: KOI
+        type: BIOC
+        description: "Code scan — tool description embeds AKIA-prefixed canary as instruction injection"
+
+  - id: step-02
+    name: "Emulate Claude Desktop fetching the manifest over HTTPS"
+    command: |
+      python3 -m scripts.eal_simulator.cli run \
+        scenarios/koi/campaigns/koi-001-fetch.yml --live
+    identity: container-runtime
+    mitre_technique: "T1059"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — Claude Desktop User-Agent fetches MCP manifest from non-canonical FQDN"
+      - plane: KOI
+        type: Analytics
+        description: "URL filtering — destination matches typosquat pattern of approved AI tool publisher"
+
+  - id: step-03
+    name: "Confirm Cortex Cloud Code scan flags the artifact in CI"
+    command: |
+      # Operator runs a Cortex Cloud Code (or equivalent SAST) scan against
+      # the artifact directory; this step records the path for the report.
+      echo "scan_path=sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/" \
+        > /tmp/koi-001-scan.env
+    identity: container-runtime
+    mitre_technique: "T1195"
+    expected_detections:
+      - plane: KOI
+        type: Analytics
+        description: "Cortex Cloud Code — typosquat package-name detector fires"
+      - plane: KOI
+        type: BIOC
+        description: "Cortex Cloud Code — instruction-injection in tool description detected"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/koi-001-scan.env"
+
+author: "Henry Reed"
+created: "2026-05-05"
+last_updated: "2026-05-05"
+tags:
+  - koi
+  - supply-chain
+  - mcp
+  - typosquat
+  - agentic

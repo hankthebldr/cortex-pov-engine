@@ -116,6 +116,43 @@ def test_stratum_metadata_marks_well_known_ports():
     assert meta["mitre_techniques"] == ["T1496"]
 
 
+def test_smb_sweep_authorises_every_host_not_just_base(executor: CampaignExecutor):
+    """Regression: a partial-overlap allowlist must NOT permit out-of-scope sweeps.
+
+    Codex review on PR #9 flagged that smb_rpc_sweep called ``authorise``
+    once on the network base and then iterated freely. We construct a
+    campaign whose allowlist only admits the base address (10.99.0.0)
+    but not the rest of the /30 sweep, and verify the plugin skips the
+    out-of-scope hosts in live mode rather than emitting connect attempts.
+    """
+    campaign = Campaign.model_validate({
+        "campaign_id": "CMP-SMB-REGRESSION-001",
+        "name": "smb sweep partial allowlist",
+        "dry_run": False,
+        "simulation_authorized": True,
+        "authorized_by": "tester",
+        # Only the network base is authorised; siblings are out of scope.
+        "target_allowlist": ["10.99.0.0"],
+        "steps": [{
+            "step_id": "step-01",
+            "plugin": "smb_rpc_sweep",
+            "params": {
+                "target_cidr": "10.99.0.0/30",
+                "ports": [445],
+                "max_hosts": 4,
+                "connect_timeout": 0.1,
+                "inter_host_delay": 0.0,
+            },
+        }],
+    })
+    state = _run(executor.execute(campaign))
+    sr = state.step_results[0]
+    assert sr.status == "success"
+    # Every host inside 10.99.0.0/30 except .0 should be skipped.
+    assert sr.detail["hosts_skipped_unauthorised"] >= 1
+    assert sr.detail["hosts_probed"] == 0
+
+
 def test_dns_tunnel_dry_run_emits_event(executor: CampaignExecutor):
     campaign = Campaign.model_validate({
         "campaign_id": "CMP-DNS-002",
