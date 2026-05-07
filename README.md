@@ -8,23 +8,52 @@ Enterprise-grade, Cortex-branded detection simulation platform for Palo Alto Net
 
 ## Quick Deploy
 
+Landing page with the latest install one-liners and verified downloads:
+**https://hankthebldr.github.io/cortexsim/**
+
 ### Prerequisites
-- Ubuntu 22.04 LTS+ or Debian 12+ jumpbox
+- Linux jumpbox (Ubuntu 22.04 LTS+ / Debian 12+ / RHEL 9+) **or** Windows 10 2004+ / Server 2022 (WSL2)
 - Internet access (for dependency installation and submodule clone)
 
-### One-command install
+### One-line install — Linux
+```bash
+curl -fsSL https://github.com/hankthebldr/cortexsim/releases/latest/download/install.sh | sudo bash
+```
+
+### One-line install — Windows (PowerShell, elevated)
+```powershell
+iex (iwr -useb https://github.com/hankthebldr/cortexsim/releases/latest/download/install.ps1)
+```
+
+### Verify before you run
+```bash
+curl -fsSLO https://github.com/hankthebldr/cortexsim/releases/latest/download/install.sh
+curl -fsSLO https://github.com/hankthebldr/cortexsim/releases/latest/download/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo bash install.sh
+```
+
+### Container only (existing Docker host)
+```bash
+docker run -d --name cortexsim -p 8888:8888 ghcr.io/hankthebldr/cortexsim:latest
+```
+
+### Build from source (developer path)
 ```bash
 git clone https://github.com/hankthebldr/cortexsim.git
 cd cortexsim
 ./install.sh
 ```
-
-Or via curl:
-```bash
-curl -sSL https://raw.githubusercontent.com/hankthebldr/cortexsim/main/install.sh | bash
-```
-
 `install.sh` handles everything: system deps, submodules, Go agent build, Rust tool builds, React UI build, Docker Compose startup.
+
+---
+
+## Releases & Packaging
+
+- **Container image:** [`ghcr.io/hankthebldr/cortexsim`](https://github.com/hankthebldr/cortexsim/pkgs/container/cortexsim) — multi-arch (`linux/amd64`, `linux/arm64`), tagged `:vX.Y.Z` and `:latest`.
+- **GitHub Releases:** https://github.com/hankthebldr/cortexsim/releases — every `v*.*.*` tag publishes the image, stage-2 installer bundles, `manifest.json`, and `SHA256SUMS` via [`.github/workflows/release.yml`](.github/workflows/release.yml).
+- **Landing page:** [`docs/site/`](docs/site/) — Cortex-branded GitHub Pages site, redeployed on every release by [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
+- **Cutting a release:** `git tag v0.1.0 && git push origin v0.1.0` (or `Actions → Release → Run workflow`).
 
 ---
 

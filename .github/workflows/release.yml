@@ -1,0 +1,283 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.0). Required for manual runs.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  resolve-tag:
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+      version: ${{ steps.t.outputs.version }}
+    steps:
+      - id: t
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+            echo "::error::Tag '$TAG' does not match v*.*.*"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+  lint-shell:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Shellcheck installer + bootstrap scripts
+        run: |
+          shopt -s globstar nullglob
+          FILES=()
+          for p in installer/bootstrap/*.sh installer/stage2/common/*.sh installer/stage2/linux/*.sh install.sh; do
+            [ -f "$p" ] && FILES+=("$p")
+          done
+          if [ ${#FILES[@]} -gt 0 ]; then
+            shellcheck "${FILES[@]}"
+          else
+            echo "No shell scripts to lint"
+          fi
+
+  build-image:
+    runs-on: ubuntu-22.04
+    needs: [resolve-tag, lint-shell]
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image refs
+        id: meta
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          IMG="ghcr.io/${OWNER}/cortexsim"
+          TAG="${{ needs.resolve-tag.outputs.tag }}"
+          {
+            echo "image=${IMG}"
+            echo "tags=${IMG}:${TAG},${IMG}:latest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: core/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  build-stage2:
+    runs-on: ubuntu-22.04
+    needs: resolve-tag
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare release dir
+        run: mkdir -p dist
+
+      - name: Package stage2-linux.tar.gz
+        run: |
+          if [ -d installer/stage2/linux ] || [ -d installer/stage2/common ]; then
+            tar -C installer/stage2 \
+                --exclude='*.zip' --exclude='*.tar.gz' \
+                -czf dist/stage2-linux.tar.gz \
+                $([ -d installer/stage2/common ] && echo common) \
+                $([ -d installer/stage2/linux ] && echo linux)
+          else
+            echo "no stage2 linux assets — skipping" && touch dist/.no-stage2-linux
+          fi
+
+      - name: Package stage2-windows.zip
+        run: |
+          if [ -d installer/stage2/windows ] || [ -d installer/stage2/common ]; then
+            sudo apt-get update && sudo apt-get install -y zip
+            ( cd installer/stage2 && \
+              zip -r "${GITHUB_WORKSPACE}/dist/stage2-windows.zip" \
+                $([ -d common ] && echo common) \
+                $([ -d windows ] && echo windows) \
+                -x '*.tar.gz' '*.zip' )
+          else
+            echo "no stage2 windows assets — skipping" && touch dist/.no-stage2-windows
+          fi
+
+      - name: Stage bootstrap scripts (or fall back to legacy install.sh)
+        run: |
+          if [ -f installer/bootstrap/install.sh ]; then
+            cp installer/bootstrap/install.sh dist/install.sh
+          elif [ -f install.sh ]; then
+            cp install.sh dist/install.sh
+          fi
+          if [ -f installer/bootstrap/install.ps1 ]; then
+            cp installer/bootstrap/install.ps1 dist/install.ps1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage2-bundles
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 7
+
+  manifest:
+    runs-on: ubuntu-22.04
+    needs: [resolve-tag, build-image, build-stage2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage2-bundles
+          path: dist/
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          rm -f .no-stage2-linux .no-stage2-windows
+          if compgen -G "*" > /dev/null; then
+            sha256sum * > SHA256SUMS
+            cat SHA256SUMS
+          else
+            echo "no artifacts to checksum"
+            : > SHA256SUMS
+          fi
+
+      - name: Generate manifest.json
+        working-directory: dist
+        env:
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+          IMAGE: ${{ needs.build-image.outputs.image }}
+          DIGEST: ${{ needs.build-image.outputs.digest }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, datetime
+          d = pathlib.Path(".")
+          tag = os.environ["TAG"]
+          artifacts = []
+          for p in sorted(d.iterdir()):
+              if p.name in ("SHA256SUMS", "manifest.json") or p.is_dir():
+                  continue
+              h = hashlib.sha256(p.read_bytes()).hexdigest()
+              artifacts.append({
+                  "name": p.name,
+                  "size": p.stat().st_size,
+                  "sha256": h,
+                  "url": f"https://github.com/{os.environ['REPO']}/releases/download/{tag}/{p.name}",
+              })
+          manifest = {
+              "schema_version": 1,
+              "release": tag,
+              "generated_at": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+              "image": {
+                  "ref": f"{os.environ['IMAGE']}:{tag}",
+                  "latest": f"{os.environ['IMAGE']}:latest",
+                  "digest": os.environ.get("DIGEST", ""),
+                  "platforms": ["linux/amd64", "linux/arm64"],
+              },
+              "artifacts": artifacts,
+          }
+          pathlib.Path("manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          print(pathlib.Path("manifest.json").read_text())
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: dist/
+          retention-days: 30
+
+  release:
+    runs-on: ubuntu-22.04
+    needs: [resolve-tag, manifest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: dist/
+
+      - name: Generate release notes
+        id: notes
+        env:
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          {
+            echo "## CortexSim ${TAG}"
+            echo
+            echo "**Container image** — \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cortexsim:${TAG}\` (linux/amd64, linux/arm64)"
+            echo
+            echo "**One-line install (Linux jumpbox):**"
+            echo
+            echo '```bash'
+            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/install.sh | sudo bash"
+            echo '```'
+            echo
+            echo "Verify artifact integrity with \`SHA256SUMS\` or \`manifest.json\`."
+            echo
+            if [ -n "$PREV" ]; then
+              echo "### Changes since ${PREV}"
+              git log --pretty='- %s (%h)' "${PREV}..${TAG}" | head -100
+            else
+              echo "### Initial release"
+            fi
+          } > NOTES.md
+          echo "path=NOTES.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          ASSETS=()
+          for f in dist/*; do
+            [ -f "$f" ] && ASSETS+=("$f")
+          done
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            gh release edit "$TAG" --notes-file NOTES.md
+          else
+            gh release create "$TAG" \
+              --title "CortexSim $TAG" \
+              --notes-file NOTES.md \
+              "${ASSETS[@]}"
+          fi
