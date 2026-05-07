@@ -1,6 +1,6 @@
 scenario_id: SIM-AIACC-001
 name: "AI Access — Source Code Paste to Public ChatGPT"
-version: "1.0"
+version: "1.1"
 status: active
 
 plane: AI_ACCESS
@@ -37,65 +37,79 @@ infra_modules_needed:
   - base
 
 external_tools:
-  - name: curl
-    source: "https://curl.se/"
-    type: binary
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
     install_inline: false
 
 steps:
   - id: step-01
-    name: "Plant a synthetic proprietary source file in /tmp"
+    name: "Pre-flight: confirm llm_provider_egress plugin is registered"
     command: |
-      cat > /tmp/cortexsim_proprietary.py <<'PY'
-      # CORTEXSIM-CANARY: synthetic proprietary file for AI Access detection
-      AWS_ACCESS_KEY_ID = "AKIA0000CORTEXSIMCANARY"
-      DB_CONN = "postgresql://prod-user:CORTEXSIM-CANARY@db.internal:5432/payments"
-      def settle_transactions(rows):
-          return [r for r in rows if r["status"] == "pending"]
-      PY
-      ls -la /tmp/cortexsim_proprietary.py
+      python3 -m scripts.eal_simulator.cli describe llm_provider_egress \
+        | jq -e '.eal_targets | length > 0'
     identity: container-runtime
-    mitre_technique: "T1005"
+    mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
         type: BIOC
-        description: "Pre-flight: synthetic source file staged with CORTEXSIM-CANARY marker"
+        description: "Pre-flight: plugin metadata visible to operator"
 
   - id: step-02
-    name: "POST source-code as a chat completion to api.openai.com"
+    name: "Single source-code POST to api.openai.com via EAL plugin"
     command: |
-      BODY=$(jq -Rs '{model:"gpt-4o", messages:[{role:"user",content:.}]}' < /tmp/cortexsim_proprietary.py)
-      curl -sS -o /tmp/aiacc-001-resp.json -w 'http=%{http_code}\n' \
-        -X POST https://api.openai.com/v1/chat/completions \
-        -H 'authorization: Bearer sk-cortexsim-canary-NOT-A-REAL-KEY' \
-        -H 'content-type: application/json' \
-        -H 'x-cortexsim-run-id: aiacc-001' \
-        --data "$BODY" || true
+      cat > /tmp/aiacc-001.yml <<'YML'
+      campaign_id: CMP-AIACC-001
+      name: "AI Access — source paste to OpenAI"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - api.openai.com
+      dry_run: false
+      tags: [ai-access, openai, source-paste]
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: openai
+            payload_type: source
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-001.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
         type: Analytics
-        description: "AI Access — outbound POST to api.openai.com containing source-code shape"
+        description: "AI Access — outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)"
       - plane: AI_ACCESS
         type: Analytics
-        description: "AI Access — DLP secret regex (AWS access key + DB connection string) in prompt body"
+        description: "AI Access — DLP regex match on source-code structure in prompt body"
       - plane: NDR
         type: Analytics
-        description: "NGFW EAL — large outbound payload to api.openai.com with non-browser User-Agent"
+        description: "NGFW EAL — generative-AI App-ID match on outbound HTTPS to api.openai.com"
 
   - id: step-03
-    name: "Repeat egress to confirm stable detection across 3 sessions"
+    name: "Repeated POSTs (x3) to confirm stable per-session detection"
     command: |
-      for i in 1 2 3; do
-        BODY=$(jq -Rs --arg i "$i" '{model:"gpt-4o", messages:[{role:"user",content:(.+"\nsession="+$i)}]}' < /tmp/cortexsim_proprietary.py)
-        curl -sS -o /dev/null -w "session=$i http=%{http_code}\n" \
-          -X POST https://api.openai.com/v1/chat/completions \
-          -H 'authorization: Bearer sk-cortexsim-canary-NOT-A-REAL-KEY' \
-          -H 'content-type: application/json' \
-          --data "$BODY" || true
-        sleep 5
-      done
+      cat > /tmp/aiacc-001-burst.yml <<'YML'
+      campaign_id: CMP-AIACC-001
+      name: "AI Access — source paste burst"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - api.openai.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: openai
+            payload_type: source
+            iterations: 3
+            sleep_seconds: 5
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/aiacc-001-burst.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
     expected_detections:
@@ -105,13 +119,14 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/cortexsim_proprietary.py /tmp/aiacc-001-resp.json"
+    - "rm -f /tmp/aiacc-001.yml /tmp/aiacc-001-burst.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-07"
 tags:
   - ai-access
   - shadow-ai
   - openai
   - source-code-dlp
+  - eal-plugin

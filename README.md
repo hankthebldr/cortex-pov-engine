@@ -90,7 +90,7 @@ docker compose down                # stop
 | **TIM** | Cortex Threat Intel Management | IaC module (TAXII + fake C2) |
 | **Cloud App** | Cortex Cloud App Security | Planned |
 | **Analytics** | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
-| **AI_ACCESS** | Cortex AI Access Security | 5 scenarios — outbound to OpenAI / Gemini / Anthropic with planted DLP markers |
+| **AI_ACCESS** | Cortex AI Access Security | 5 scenarios — outbound to OpenAI / Gemini / Anthropic via `llm_provider_egress` EAL plugin with planted DLP markers |
 | **AIRS** | Cortex AI Runtime Security | 5 scenarios driven by `cortex-prompt-attacker` against `cortex-vulnerable-llm` (OWASP LLM01–LLM10) |
 | **BROWSER** | Prisma Browser | 5 scenarios (draft) — Playwright-driven, awaits Phase 6 `cortex-browser-attacker` |
 | **KOI** | Agentic endpoint / supply-chain | 5 scenarios (draft) — MCP / skills / extensions / PyPI, awaits Phase 5 artifact pack |
@@ -149,6 +149,7 @@ Built-in plugins:
 | `stratum_tcp_connect` | Cryptojacking JSON-RPC | Cryptojacking App-ID |
 | `smb_rpc_sweep` | Lateral SMB / RPC sweep | Host sweeping, anomalous SMB / RPC |
 | `airs_prompt_attack` | AIRS validation runner | AIRS prompt-injection / tool-abuse / RAG / DoS |
+| `llm_provider_egress` | AI Access — outbound to public AI providers | AI Access — generative-AI App-ID, DLP secret/PII, jailbreak fingerprint |
 
 ```bash
 # Inspect available plugins
@@ -245,7 +246,7 @@ cortex-pov-engine/
 | 1 | Schema + 20 declarative scenarios across `AI_ACCESS / AIRS / BROWSER / KOI` | ✅ shipped |
 | 2 | `sources/cortex-vulnerable-llm/` — Flask canary, OWASP LLM01–10 | ✅ shipped |
 | 3 | `sources/cortex-prompt-attacker/` + `airs_prompt_attack` EAL plugin | ✅ shipped |
-| 4 | `llm_provider_egress` EAL plugin (replaces curl in AI_ACCESS scenarios) | pending |
+| 4 | `llm_provider_egress` EAL plugin (replaces curl in AI_ACCESS scenarios) | ✅ shipped |
 | 5 | `sources/cortex-malicious-agentic-pack/` + `agentic_egress` plugin | pending |
 | 6 | `sources/cortex-browser-attacker/` (Playwright + JSONL audit) | pending |
 
