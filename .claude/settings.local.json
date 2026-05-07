@@ -67,7 +67,10 @@
       "Bash(colima status *)",
       "Bash(open -a Docker)",
       "Bash(docker info *)",
-      "Bash(docker build *)"
+      "Bash(docker build *)",
+      "Bash(docker compose *)",
+      "Bash(gh repo *)",
+      "Bash(gh pr *)"
     ]
   }
 }
