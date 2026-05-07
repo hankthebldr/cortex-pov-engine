@@ -15,12 +15,15 @@ surfaces.
 
 ## Quick Deploy
 
+Landing page with the latest install one-liners and verified downloads:
+**https://hankthebldr.github.io/cortexsim/**
+
 ### Prerequisites
 - Ubuntu 22.04 LTS+ or Debian 12+ jumpbox (or laptop for dev mode)
 - Python 3.11+
 - Internet access (for dependency installation and submodule clone)
 
-### One-command install
+### One-line install — Linux
 ```bash
 git clone https://github.com/hankthebldr/cortex-pov-engine.git
 cd cortex-pov-engine
@@ -37,6 +40,15 @@ pip install -r core/requirements.txt
 cd core && CORTEXSIM_ENV=development CORTEXSIM_BASE_DIR=$(pwd)/.. \
   uvicorn main:app --host 0.0.0.0 --port 8888 --reload
 ```
+
+---
+
+## Releases & Packaging
+
+- **Container image:** [`ghcr.io/hankthebldr/cortexsim`](https://github.com/hankthebldr/cortexsim/pkgs/container/cortexsim) — multi-arch (`linux/amd64`, `linux/arm64`), tagged `:vX.Y.Z` and `:latest`.
+- **GitHub Releases:** https://github.com/hankthebldr/cortexsim/releases — every `v*.*.*` tag publishes the image, stage-2 installer bundles, `manifest.json`, and `SHA256SUMS` via [`.github/workflows/release.yml`](.github/workflows/release.yml).
+- **Landing page:** [`docs/site/`](docs/site/) — Cortex-branded GitHub Pages site, redeployed on every release by [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
+- **Cutting a release:** `git tag v0.1.0 && git push origin v0.1.0` (or `Actions → Release → Run workflow`).
 
 ---
 

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CortexSim — Detection Simulation Engine</title>
+  <meta name="description" content="Enterprise detection simulation engine for Palo Alto Networks Cortex (XSIAM/XDR). Validate BIOC, Analytics, IOC and stitching with high-fidelity, controlled signals." />
+  <meta name="theme-color" content="#003366" />
+  <meta property="og:title" content="CortexSim — Detection Simulation Engine" />
+  <meta property="og:description" content="Controlled, high-fidelity signal generation for Cortex XSIAM/XDR detection validation." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="preconnect" href="https://api.github.com" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="cs-header">
+    <div class="cs-header__inner">
+      <a class="cs-brand" href="./" aria-label="CortexSim home">
+        <svg class="cs-brand__mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 2 L29 9 V23 L16 30 L3 23 V9 Z" fill="none" stroke="#00C0E8" stroke-width="2"/>
+          <circle cx="16" cy="16" r="4" fill="#00C0E8"/>
+        </svg>
+        <span class="cs-brand__name">Cortex<strong>Sim</strong></span>
+      </a>
+      <nav class="cs-nav" aria-label="Primary">
+        <a href="#install">Install</a>
+        <a href="#downloads">Downloads</a>
+        <a href="#verify">Verify</a>
+        <a href="https://github.com/__GH_OWNER__/__GH_REPO__" rel="noopener">GitHub &rarr;</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="cs-hero">
+      <div class="cs-hero__inner">
+        <p class="cs-eyebrow">Palo Alto Networks &middot; Cortex Domain Consulting</p>
+        <h1>Detection simulation,<br/>engineered for the&nbsp;POV.</h1>
+        <p class="cs-lede">
+          CortexSim drives controlled, high-fidelity signal into XSIAM and XDR &mdash; so you
+          can validate BIOC, Analytics, IOC and cross-plane stitching against the same
+          UC/TC the customer is buying. No C2. No mocks. Real binaries, real causality, real telemetry.
+        </p>
+        <div class="cs-hero__cta">
+          <a class="cs-btn cs-btn--primary" href="#install">Get the install one-liner</a>
+          <a class="cs-btn cs-btn--ghost" id="cs-latest-link" href="https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest">Latest release &rarr;</a>
+        </div>
+        <dl class="cs-hero__stats">
+          <div><dt>Container image</dt><dd id="cs-image-ref">ghcr.io/&hellip;/cortexsim:latest</dd></div>
+          <div><dt>Latest version</dt><dd id="cs-version">loading&hellip;</dd></div>
+          <div><dt>Published</dt><dd id="cs-published">&mdash;</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section id="install" class="cs-section">
+      <div class="cs-section__inner">
+        <h2>One-line install</h2>
+        <p class="cs-section__lede">
+          Stage-1 cradles are tiny, hand-auditable, and verify the rest of the install against the release manifest's SHA-256 digests.
+        </p>
+
+        <div class="cs-grid cs-grid--two">
+          <article class="cs-card">
+            <header class="cs-card__head">
+              <span class="cs-pill">Linux</span>
+              <span class="cs-card__sub">Ubuntu 22.04 / Debian 12 / RHEL 9</span>
+            </header>
+            <pre class="cs-code"><button class="cs-copy" data-copy="cs-cmd-linux" aria-label="Copy">copy</button><code id="cs-cmd-linux">curl -fsSL https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest/download/install.sh | sudo bash</code></pre>
+            <p class="cs-card__note">Add <code>--demo-mode</code> after <code>bash -s --</code> to emit ATT&amp;CK-annotated install telemetry.</p>
+          </article>
+
+          <article class="cs-card">
+            <header class="cs-card__head">
+              <span class="cs-pill cs-pill--alt">Windows</span>
+              <span class="cs-card__sub">Windows 10 2004+ / Server 2022 (WSL2)</span>
+            </header>
+            <pre class="cs-code"><button class="cs-copy" data-copy="cs-cmd-win" aria-label="Copy">copy</button><code id="cs-cmd-win">iex (iwr -useb https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest/download/install.ps1)</code></pre>
+            <p class="cs-card__note">Self-elevates via UAC, enables WSL2, runs the same Linux container under a Windows service.</p>
+          </article>
+        </div>
+
+        <details class="cs-details">
+          <summary>Container only (existing Docker host)</summary>
+          <pre class="cs-code"><code id="cs-cmd-docker">docker run -d --name cortexsim -p 8888:8888 \
+  ghcr.io/__GH_OWNER__/cortexsim:latest</code></pre>
+        </details>
+      </div>
+    </section>
+
+    <section id="downloads" class="cs-section cs-section--alt">
+      <div class="cs-section__inner">
+        <h2>Release artifacts</h2>
+        <p class="cs-section__lede" id="cs-release-meta">Loading the latest release&hellip;</p>
+        <div class="cs-table-wrap">
+          <table class="cs-table" id="cs-asset-table">
+            <thead>
+              <tr><th scope="col">Artifact</th><th scope="col">Size</th><th scope="col">SHA-256</th></tr>
+            </thead>
+            <tbody><tr><td colspan="3" class="cs-empty">&hellip;</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="verify" class="cs-section">
+      <div class="cs-section__inner">
+        <h2>Verify before you run</h2>
+        <p class="cs-section__lede">Every release ships <code>SHA256SUMS</code> and a structured <code>manifest.json</code>. Audit, then execute.</p>
+        <pre class="cs-code"><code>curl -fsSLO https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest/download/install.sh
+curl -fsSLO https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest/download/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+# install.sh: OK
+sudo bash install.sh</code></pre>
+      </div>
+    </section>
+
+    <section class="cs-section cs-section--alt">
+      <div class="cs-section__inner cs-grid cs-grid--three">
+        <article class="cs-feature">
+          <h3>Plane coverage</h3>
+          <p>EDR, CDR, NDR, ITDR, CSPM, ASM, TIM, AI Access, AIRS, Browser, KOI, plus multi-plane Analytics stitching.</p>
+        </article>
+        <article class="cs-feature">
+          <h3>UC/TC aligned</h3>
+          <p>Every scenario maps to MITRE ATT&amp;CK and to the use cases your customer signed for &mdash; not a generic atomic test.</p>
+        </article>
+        <article class="cs-feature">
+          <h3>POV-ready report</h3>
+          <p>Per-run Cortex-branded markdown export with coverage, MTTD per detection, and gap callouts.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="cs-footer">
+    <div class="cs-footer__inner">
+      <p>&copy; <span id="cs-year"></span> Palo Alto Networks &middot; Cortex Domain Consulting</p>
+      <p>
+        <a href="https://github.com/__GH_OWNER__/__GH_REPO__" rel="noopener">Source</a>
+        &middot;
+        <a href="https://github.com/__GH_OWNER__/__GH_REPO__/releases" rel="noopener">Releases</a>
+        &middot;
+        <a href="https://github.com/__GH_OWNER__/__GH_REPO__/issues" rel="noopener">Issues</a>
+      </p>
+    </div>
+  </footer>
+
+  <script>window.CS_REPO = { owner: "__GH_OWNER__", name: "__GH_REPO__" };</script>
+  <script src="app.js" defer></script>
+</body>
+</html>
