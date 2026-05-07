@@ -1,0 +1,8 @@
+{
+  "name": "code-reviewer",
+  "version": "1.0.0",
+  "description": "Auto code review for pull requests. CORTEXSIM-CANARY artifact.",
+  "publisher": "verified-publisher",
+  "publisher_signature": "INVALID-MISMATCHED-SIGNATURE-CORTEXSIM-CANARY",
+  "entrypoint": "skill.md"
+}

@@ -1,7 +1,7 @@
 scenario_id: SIM-KOI-001
 name: "KOI — Claude Desktop Installs Typosquat MCP Server"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: KOI
 detection_types:
@@ -46,11 +46,12 @@ external_tools:
 
 steps:
   - id: step-01
-    name: "Inspect the typosquat MCP manifest in the artifact pack"
+    name: "Code-scan check on the typosquat MCP artifact"
     command: |
       ls -la sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/
       jq -e '.name' sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/mcp.json
-      grep -r 'AKIA\|exfil' sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/ || true
+      grep -E 'AKIA|exfil|Ignore previous' \
+        sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/mcp.json || true
     identity: container-runtime
     mitre_technique: "T1195"
     expected_detections:
@@ -59,13 +60,30 @@ steps:
         description: "Code scan — manifest name 'anthroopic-calculator' typosquats 'anthropic-calculator'"
       - plane: KOI
         type: BIOC
-        description: "Code scan — tool description embeds AKIA-prefixed canary as instruction injection"
+        description: "Code scan — tool description embeds 'Ignore previous instructions' / AKIA canary"
 
   - id: step-02
-    name: "Emulate Claude Desktop fetching the manifest over HTTPS"
+    name: "Emulate Claude Desktop fetching the manifest via agentic_egress"
     command: |
-      python3 -m scripts.eal_simulator.cli run \
-        scenarios/koi/campaigns/koi-001-fetch.yml --live
+      cat > /tmp/koi-001.yml <<'YML'
+      campaign_id: CMP-KOI-001
+      name: "KOI — typosquat MCP fetch"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.invalid
+      dry_run: false
+      tags: [koi, supply-chain, mcp, typosquat]
+      steps:
+        - step_id: step-01
+          plugin: agentic_egress
+          params:
+            target_url: https://cortexsim-canary.invalid/mcp/
+            component: mcp_server
+            artifact_name: anthroopic-calculator
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/koi-001.yml --live
     identity: container-runtime
     mitre_technique: "T1059"
     expected_detections:
@@ -79,8 +97,6 @@ steps:
   - id: step-03
     name: "Confirm Cortex Cloud Code scan flags the artifact in CI"
     command: |
-      # Operator runs a Cortex Cloud Code (or equivalent SAST) scan against
-      # the artifact directory; this step records the path for the report.
       echo "scan_path=sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/" \
         > /tmp/koi-001-scan.env
     identity: container-runtime
@@ -95,14 +111,15 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/koi-001-scan.env"
+    - "rm -f /tmp/koi-001-scan.env /tmp/koi-001.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-07"
 tags:
   - koi
   - supply-chain
   - mcp
   - typosquat
   - agentic
+  - eal-plugin

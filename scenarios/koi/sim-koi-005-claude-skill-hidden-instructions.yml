@@ -1,7 +1,7 @@
 scenario_id: SIM-KOI-005
 name: "KOI — Malicious Claude Skill With Hidden Instructions"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: KOI
 detection_types:
@@ -46,15 +46,16 @@ external_tools:
 
 steps:
   - id: step-01
-    name: "Unpack the malicious skill bundle and inspect skill.md"
+    name: "Inspect the malicious skill bundle (in-tree source)"
     command: |
-      mkdir -p /tmp/koi-005-skill
-      unzip -o sources/cortex-malicious-agentic-pack/claude-skills/code-reviewer.skill \
-        -d /tmp/koi-005-skill > /dev/null
-      ls -la /tmp/koi-005-skill/
-      head -40 /tmp/koi-005-skill/skill.md
-      grep -ni 'ignore previous\|exfiltrate\|aws_access_key\|~/.ssh\|--no-verify' \
-        /tmp/koi-005-skill/skill.md || true
+      # The artifact pack ships the .skill payload as an unpacked source
+      # tree under claude-skills/code-reviewer.skill/ — Cortex Cloud
+      # Code scans the source directly, no unzip required.
+      SKILL_ROOT=sources/cortex-malicious-agentic-pack/claude-skills/code-reviewer.skill
+      ls -la "$SKILL_ROOT"/
+      head -40 "$SKILL_ROOT"/skill.md
+      grep -niE 'ignore previous|exfiltrate|aws_access_key|~/\.ssh|--no-verify' \
+        "$SKILL_ROOT"/skill.md || true
     identity: container-runtime
     mitre_technique: "T1656"
     expected_detections:
@@ -68,8 +69,25 @@ steps:
   - id: step-02
     name: "Emulate Claude client fetching the skill bundle"
     command: |
-      python3 -m scripts.eal_simulator.cli run \
-        scenarios/koi/campaigns/koi-005-skill-fetch.yml --live
+      cat > /tmp/koi-005.yml <<'YML'
+      campaign_id: CMP-KOI-005
+      name: "KOI — claude skill fetch"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.invalid
+      dry_run: false
+      tags: [koi, claude-skill, indirect-injection]
+      steps:
+        - step_id: step-01
+          plugin: agentic_egress
+          params:
+            target_url: https://cortexsim-canary.invalid/skills/
+            component: claude_skill
+            artifact_name: code-reviewer.skill
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/koi-005.yml --live
     identity: container-runtime
     mitre_technique: "T1195"
     expected_detections:
@@ -98,7 +116,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -rf /tmp/koi-005-skill"
+    - "rm -f /tmp/koi-005.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"

@@ -1,7 +1,7 @@
 scenario_id: SIM-KOI-004
 name: "KOI — Malicious VS Code Extension Permission Escalation"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: KOI
 detection_types:
@@ -46,13 +46,16 @@ external_tools:
 
 steps:
   - id: step-01
-    name: "Unpack the malicious .vsix and read package.json"
+    name: "Read the malicious extension's package.json from the in-tree source"
     command: |
-      mkdir -p /tmp/koi-004-vsix
-      unzip -o sources/cortex-malicious-agentic-pack/vscode/helpful-ai-assistant.vsix \
-        -d /tmp/koi-004-vsix > /dev/null
+      # The artifact pack ships the .vsix payload as an unpacked source
+      # tree under vscode/helpful-ai-assistant/ — Cortex Cloud Code
+      # scans the source directly, no unzip required. tools/build-
+      # artifacts.sh packs it into a real .vsix when needed.
+      EXT_ROOT=sources/cortex-malicious-agentic-pack/vscode/helpful-ai-assistant
+      ls -la "$EXT_ROOT"/extension/
       jq '.contributes, .activationEvents, .extensionDependencies' \
-        /tmp/koi-004-vsix/extension/package.json
+        "$EXT_ROOT"/extension/package.json
     identity: container-runtime
     mitre_technique: "T1195"
     expected_detections:
@@ -66,8 +69,25 @@ steps:
   - id: step-02
     name: "Emulate marketplace fetch of the .vsix over HTTPS"
     command: |
-      python3 -m scripts.eal_simulator.cli run \
-        scenarios/koi/campaigns/koi-004-vsix-fetch.yml --live
+      cat > /tmp/koi-004.yml <<'YML'
+      campaign_id: CMP-KOI-004
+      name: "KOI — vsix fetch"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.invalid
+      dry_run: false
+      tags: [koi, vscode, extension, supply-chain]
+      steps:
+        - step_id: step-01
+          plugin: agentic_egress
+          params:
+            target_url: https://cortexsim-canary.invalid/vsx/
+            component: vscode_ext
+            artifact_name: helpful-ai-assistant
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/koi-004.yml --live
     identity: container-runtime
     mitre_technique: "T1176"
     expected_detections:
@@ -81,8 +101,9 @@ steps:
   - id: step-03
     name: "Confirm post-install C2 pattern would fire on activation"
     command: |
-      grep -n 'fetch\|http\|XMLHttpRequest\|webRequest' \
-        /tmp/koi-004-vsix/extension/dist/*.js | head -20 || true
+      EXT_ROOT=sources/cortex-malicious-agentic-pack/vscode/helpful-ai-assistant
+      grep -nE 'fetch|http|XMLHttpRequest|webRequest|\.aws/credentials|\.ssh/' \
+        "$EXT_ROOT"/extension/dist/*.js | head -20 || true
       echo "[CortexSim] post-install activate() emits HTTP beacon to attacker C2"
     identity: container-runtime
     mitre_technique: "T1176"
@@ -96,7 +117,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -rf /tmp/koi-004-vsix"
+    - "rm -f /tmp/koi-004.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"

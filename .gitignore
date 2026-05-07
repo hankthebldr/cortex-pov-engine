@@ -48,8 +48,8 @@ infra/blueprints/*
 installer/dist/
 installer/**/*.tar.gz
 installer/**/*.zip
-manifest.json
-SHA256SUMS
+installer/**/manifest.json
+installer/**/SHA256SUMS
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json

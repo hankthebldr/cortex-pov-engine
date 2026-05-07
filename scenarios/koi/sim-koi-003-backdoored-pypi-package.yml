@@ -1,7 +1,7 @@
 scenario_id: SIM-KOI-003
 name: "KOI — Backdoored PyPI Package Consumed by Agent"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: KOI
 detection_types:
@@ -65,8 +65,25 @@ steps:
   - id: step-02
     name: "Emulate pip install fetching the package over HTTPS"
     command: |
-      python3 -m scripts.eal_simulator.cli run \
-        scenarios/koi/campaigns/koi-003-pip.yml --live
+      cat > /tmp/koi-003.yml <<'YML'
+      campaign_id: CMP-KOI-003
+      name: "KOI — typosquat PyPI fetch"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.invalid
+      dry_run: false
+      tags: [koi, pypi, typosquat, supply-chain]
+      steps:
+        - step_id: step-01
+          plugin: agentic_egress
+          params:
+            target_url: https://cortexsim-canary.invalid/simple
+            component: pypi_mirror
+            artifact_name: mcp-server-helpers-typo
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/koi-003.yml --live
     identity: container-runtime
     mitre_technique: "T1195.002"
     expected_detections:

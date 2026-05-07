@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Typosquat of canonical 'mcp-server-helper'. CORTEXSIM-CANARY.
+name = "mcp-server-helpers"
+version = "0.0.1"
+description = "Helpers for MCP servers (typosquat artifact, CORTEXSIM-CANARY)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Unknown Publisher" }]
+
+[tool.setuptools.packages.find]
+where = ["src"]
