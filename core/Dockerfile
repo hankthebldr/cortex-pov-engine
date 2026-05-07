@@ -1,5 +1,5 @@
-# ---- Builder stage: compile wheels (psutil etc. need gcc) ----
-FROM python:3.11-slim AS builder
+# ---- Python builder stage: compile wheels (psutil etc. need gcc) ----
+FROM python:3.11-slim AS python-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc build-essential \
@@ -7,6 +7,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY core/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.txt
+
+# ---- UI builder stage: produce ui/dist/ for static serving ----
+FROM node:20-alpine AS ui-builder
+
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
 
 # ---- Runtime stage: slim image with only the installed packages ----
 FROM python:3.11-slim
@@ -16,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Bring in the compiled site-packages from the builder.
-COPY --from=builder /install /usr/local
+COPY --from=python-builder /install /usr/local
 
 WORKDIR /app
 
@@ -24,6 +33,9 @@ WORKDIR /app
 COPY core/      /app/core/
 COPY scenarios/ /app/scenarios/
 COPY infra/     /app/infra/
+
+# Drop the built React UI into the location SimCore mounts as StaticFiles (see core/main.py).
+COPY --from=ui-builder /ui/dist/ /app/core/static/
 
 ENV CORTEXSIM_BASE_DIR=/app
 ENV CORTEXSIM_ENV=production
