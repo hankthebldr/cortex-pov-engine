@@ -46,15 +46,16 @@ external_tools:
 
 steps:
   - id: step-01
-    name: "Unpack the malicious skill bundle and inspect skill.md"
+    name: "Inspect the malicious skill bundle (in-tree source)"
     command: |
-      mkdir -p /tmp/koi-005-skill
-      unzip -o sources/cortex-malicious-agentic-pack/claude-skills/code-reviewer.skill \
-        -d /tmp/koi-005-skill > /dev/null
-      ls -la /tmp/koi-005-skill/
-      head -40 /tmp/koi-005-skill/skill.md
-      grep -ni 'ignore previous\|exfiltrate\|aws_access_key\|~/.ssh\|--no-verify' \
-        /tmp/koi-005-skill/skill.md || true
+      # The artifact pack ships the .skill payload as an unpacked source
+      # tree under claude-skills/code-reviewer.skill/ — Cortex Cloud
+      # Code scans the source directly, no unzip required.
+      SKILL_ROOT=sources/cortex-malicious-agentic-pack/claude-skills/code-reviewer.skill
+      ls -la "$SKILL_ROOT"/
+      head -40 "$SKILL_ROOT"/skill.md
+      grep -niE 'ignore previous|exfiltrate|aws_access_key|~/\.ssh|--no-verify' \
+        "$SKILL_ROOT"/skill.md || true
     identity: container-runtime
     mitre_technique: "T1656"
     expected_detections:
@@ -115,7 +116,7 @@ steps:
 
 cleanup:
   commands:
-    - "rm -rf /tmp/koi-005-skill"
+    - "rm -f /tmp/koi-005.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
