@@ -1,7 +1,7 @@
 scenario_id: SIM-AIRS-003
 name: "AIRS — System Prompt Leakage (LLM07)"
 version: "1.0"
-status: draft
+status: active
 
 plane: AIRS
 detection_types:

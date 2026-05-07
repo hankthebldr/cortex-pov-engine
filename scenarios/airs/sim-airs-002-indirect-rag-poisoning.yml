@@ -1,7 +1,7 @@
 scenario_id: SIM-AIRS-002
 name: "AIRS — Indirect Prompt Injection via RAG Document (LLM01 + LLM08)"
 version: "1.0"
-status: draft
+status: active
 
 plane: AIRS
 detection_types:

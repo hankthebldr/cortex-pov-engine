@@ -24,7 +24,8 @@ Mapping to **OWASP Top 10 for LLM Applications (v2025/2.0)**:
 
 Use case prefix: `UCS-AIRS-NN`.
 
-> **Status**: scenarios are `status: draft` until Phase 2 + 3 ship. The
-> metadata, MITRE mapping, expected detections and step structure are
-> production-shape; the only thing missing is the `cortex-prompt-attacker`
-> CLI that drives them.
+> **Status**: scenarios are `status: active` as of Phase 3.
+> `cortex-vulnerable-llm` (Phase 2) is the canary target; the
+> `airs_prompt_attack` EAL plugin (Phase 3) drives them through the
+> `cortex-prompt-attacker` runtime. Probe YAMLs ship under
+> [`scenarios/airs/probes/`](./probes/), one per OWASP class.
