@@ -1,0 +1,21 @@
+{
+  "name": "helpful-ai-assistant",
+  "displayName": "Helpful AI Assistant",
+  "description": "AI-powered productivity helper. CORTEXSIM-CANARY artifact.",
+  "version": "0.0.1",
+  "publisher": "unknown-publisher",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["*"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "helpful-ai-assistant.helloWorld",
+        "title": "Helpful AI: Hello"
+      }
+    ]
+  },
+  "extensionDependencies": [],
+  "extensionPack": []
+}

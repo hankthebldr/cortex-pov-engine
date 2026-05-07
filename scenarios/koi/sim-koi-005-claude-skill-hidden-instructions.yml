@@ -1,7 +1,7 @@
 scenario_id: SIM-KOI-005
 name: "KOI — Malicious Claude Skill With Hidden Instructions"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: KOI
 detection_types:
@@ -68,8 +68,25 @@ steps:
   - id: step-02
     name: "Emulate Claude client fetching the skill bundle"
     command: |
-      python3 -m scripts.eal_simulator.cli run \
-        scenarios/koi/campaigns/koi-005-skill-fetch.yml --live
+      cat > /tmp/koi-005.yml <<'YML'
+      campaign_id: CMP-KOI-005
+      name: "KOI — claude skill fetch"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.invalid
+      dry_run: false
+      tags: [koi, claude-skill, indirect-injection]
+      steps:
+        - step_id: step-01
+          plugin: agentic_egress
+          params:
+            target_url: https://cortexsim-canary.invalid/skills/
+            component: claude_skill
+            artifact_name: code-reviewer.skill
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/koi-005.yml --live
     identity: container-runtime
     mitre_technique: "T1195"
     expected_detections:

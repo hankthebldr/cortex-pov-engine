@@ -110,7 +110,7 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 | AI_ACCESS | Cortex AI Access Security | 5 scenarios (active) — outbound to OpenAI/Gemini/Anthropic via the `llm_provider_egress` EAL plugin (Phase 4) with planted DLP markers |
 | AIRS | Cortex AI Runtime Security | 5 scenarios (active) — OWASP LLM01-10 against `cortex-vulnerable-llm` driven by `cortex-prompt-attacker` + `airs_prompt_attack` EAL plugin |
 | BROWSER | Prisma Browser | 5 scenarios (draft) — Playwright-driven via `cortex-browser-attacker` (Phase 6) |
-| KOI | Agentic endpoint / supply-chain | 5 scenarios (draft) — MCP / skills / extensions / PyPI via `cortex-malicious-agentic-pack` (Phase 5) |
+| KOI | Agentic endpoint / supply-chain | 5 scenarios (active) — MCP / skills / extensions / PyPI via `cortex-malicious-agentic-pack` artifact pack + `agentic_egress` EAL plugin (Phase 5) |
 
 ## Submodules (`sources/`)
 
@@ -134,6 +134,16 @@ In-tree (not submodules):
   CLI: `cortex-prompt-attacker run --probes <dir> --target-url <url> --out events.jsonl`.
   Driven by the `airs_prompt_attack` EAL plugin. Probe pack lives under
   `scenarios/airs/probes/`.
+- **cortex-malicious-agentic-pack** (`sources/cortex-malicious-agentic-pack/`) —
+  static artifact tree for KOI detection validation. Six components: typosquat
+  MCP server, malicious MCP server with hidden injection in tool replies,
+  backdoored PyPI package (post-install subprocess on import), malicious Claude
+  skill (`Ignore previous instructions` in skill.md), VS Code extension
+  (`activationEvents:["*"]` + reads `~/.aws/credentials`), Chrome extension
+  (`<all_urls>` + cookies + webRequest). All side effects are gated on
+  `CORTEXSIM_C2_URL` so static scanning is safe. Driven by the
+  `agentic_egress` EAL plugin which tarballs and POSTs the artifact against an
+  authorised staging host so the NGFW sees the egress shape.
 
 ## Cortex Branding
 

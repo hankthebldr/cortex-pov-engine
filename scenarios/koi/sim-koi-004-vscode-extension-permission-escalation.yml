@@ -1,7 +1,7 @@
 scenario_id: SIM-KOI-004
 name: "KOI — Malicious VS Code Extension Permission Escalation"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: KOI
 detection_types:
@@ -66,8 +66,25 @@ steps:
   - id: step-02
     name: "Emulate marketplace fetch of the .vsix over HTTPS"
     command: |
-      python3 -m scripts.eal_simulator.cli run \
-        scenarios/koi/campaigns/koi-004-vsix-fetch.yml --live
+      cat > /tmp/koi-004.yml <<'YML'
+      campaign_id: CMP-KOI-004
+      name: "KOI — vsix fetch"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.invalid
+      dry_run: false
+      tags: [koi, vscode, extension, supply-chain]
+      steps:
+        - step_id: step-01
+          plugin: agentic_egress
+          params:
+            target_url: https://cortexsim-canary.invalid/vsx/
+            component: vscode_ext
+            artifact_name: helpful-ai-assistant
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/koi-004.yml --live
     identity: container-runtime
     mitre_technique: "T1176"
     expected_detections:

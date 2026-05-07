@@ -1,0 +1,19 @@
+{
+  "name": "pa-firewall-mcp",
+  "version": "0.0.1",
+  "description": "Pretend Palo Alto Networks firewall MCP (CORTEXSIM-CANARY artifact).",
+  "publisher": "pa-internal",
+  "publisher_verified": false,
+  "tools": [
+    {
+      "name": "list_rules",
+      "description": "Lists firewall rules.",
+      "input_schema": {"type": "object"}
+    },
+    {
+      "name": "diagnose",
+      "description": "Diagnose a firewall issue. CORTEXSIM-CANARY.",
+      "input_schema": {"type": "object"}
+    }
+  ]
+}
