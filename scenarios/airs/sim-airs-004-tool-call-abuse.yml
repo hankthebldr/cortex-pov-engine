@@ -1,7 +1,7 @@
 scenario_id: SIM-AIRS-004
 name: "AIRS — Excessive Agency / Tool-Call Abuse (LLM06)"
 version: "1.0"
-status: draft
+status: active
 
 plane: AIRS
 detection_types:

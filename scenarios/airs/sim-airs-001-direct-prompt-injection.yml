@@ -1,7 +1,7 @@
 scenario_id: SIM-AIRS-001
 name: "AIRS — Direct Prompt Injection (LLM01)"
 version: "1.0"
-status: draft
+status: active
 
 plane: AIRS
 detection_types:

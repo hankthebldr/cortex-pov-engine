@@ -120,9 +120,15 @@ class ScenarioSchema(BaseModel):
 
 
 def _find_yaml_files(scenarios_dir: str) -> list[str]:
-    """Recursively find all *.yml files, skipping _schema.yml."""
+    """Recursively find all *.yml files, skipping _schema.yml and any
+    sub-trees that hold non-scenario YAML (e.g. cortex-prompt-attacker
+    probe packs under scenarios/airs/probes/, packaged supporting YAMLs
+    under scenarios/multi_plane/packages/)."""
+    skip_dirnames = {"probes", "packages"}
     found: list[str] = []
-    for root, _dirs, files in os.walk(scenarios_dir):
+    for root, dirs, files in os.walk(scenarios_dir):
+        # Prune sub-tree walks for non-scenario directories.
+        dirs[:] = [d for d in dirs if d not in skip_dirnames]
         for fname in files:
             if fname.endswith(".yml") and fname != "_schema.yml":
                 found.append(os.path.join(root, fname))

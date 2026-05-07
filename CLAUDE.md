@@ -108,7 +108,7 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 | Cloud App | Cortex Cloud App Security | Planned |
 | Analytics | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
 | AI_ACCESS | Cortex AI Access Security | 5 scenarios (active) — outbound to OpenAI/Gemini/Anthropic with planted DLP markers |
-| AIRS | Cortex AI Runtime Security | 5 scenarios (draft) — OWASP LLM01-10 against `cortex-vulnerable-llm` (Phase 2 shipped; awaits Phase 3 attacker) |
+| AIRS | Cortex AI Runtime Security | 5 scenarios (active) — OWASP LLM01-10 against `cortex-vulnerable-llm` driven by `cortex-prompt-attacker` + `airs_prompt_attack` EAL plugin |
 | BROWSER | Prisma Browser | 5 scenarios (draft) — Playwright-driven via `cortex-browser-attacker` (Phase 6) |
 | KOI | Agentic endpoint / supply-chain | 5 scenarios (draft) — MCP / skills / extensions / PyPI via `cortex-malicious-agentic-pack` (Phase 5) |
 
@@ -128,6 +128,12 @@ In-tree (not submodules):
   vulnerability backed by a deterministic regex canary. No real LLM calls, no API keys.
   CLI: `cortex-vulnerable-llm serve --port 8089 --vuln all`. See its README + the design
   brief at `docs/eal-simulator/research-dvllm-prompt-attacker.md`.
+- **cortex-prompt-attacker** (Python, `sources/cortex-prompt-attacker/`) — Probe →
+  Mutator → Target → Scorer pipeline for AIRS validation. promptmap-compatible YAML
+  (no GPL imports — schema only), PyRIT-shape mutator chain, garak-shape JSONL output.
+  CLI: `cortex-prompt-attacker run --probes <dir> --target-url <url> --out events.jsonl`.
+  Driven by the `airs_prompt_attack` EAL plugin. Probe pack lives under
+  `scenarios/airs/probes/`.
 
 ## Cortex Branding
 
