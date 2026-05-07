@@ -108,7 +108,7 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 | Cloud App | Cortex Cloud App Security | Planned |
 | Analytics | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
 | AI_ACCESS | Cortex AI Access Security | 5 scenarios (active) — outbound to OpenAI/Gemini/Anthropic with planted DLP markers |
-| AIRS | Cortex AI Runtime Security | 5 scenarios (draft) — OWASP LLM01-10 against `cortex-vulnerable-llm` (Phase 2) |
+| AIRS | Cortex AI Runtime Security | 5 scenarios (draft) — OWASP LLM01-10 against `cortex-vulnerable-llm` (Phase 2 shipped; awaits Phase 3 attacker) |
 | BROWSER | Prisma Browser | 5 scenarios (draft) — Playwright-driven via `cortex-browser-attacker` (Phase 6) |
 | KOI | Agentic endpoint / supply-chain | 5 scenarios (draft) — MCP / skills / extensions / PyPI via `cortex-malicious-agentic-pack` (Phase 5) |
 
@@ -121,6 +121,13 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 - **ackbarx** (Rust) — SNMP trap forwarder to XSIAM HTTP
 - **xdrtop** (Rust) — terminal live XSIAM/XDR monitor
 - **atomic-red-team** — Atomic TTP library
+
+In-tree (not submodules):
+- **cortex-vulnerable-llm** (Python/Flask, `sources/cortex-vulnerable-llm/`) — deliberately
+  vulnerable LLM target for AIRS validation. One Flask blueprint per OWASP LLM01–LLM10
+  vulnerability backed by a deterministic regex canary. No real LLM calls, no API keys.
+  CLI: `cortex-vulnerable-llm serve --port 8089 --vuln all`. See its README + the design
+  brief at `docs/eal-simulator/research-dvllm-prompt-attacker.md`.
 
 ## Cortex Branding
 
