@@ -1,0 +1,72 @@
+name: Wiki sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/wiki/**"
+      - ".github/workflows/wiki-sync.yml"
+  workflow_dispatch:
+
+# Only one wiki-sync at a time; later pushes supersede earlier ones.
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repo (for docs/wiki/ source)
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Checkout wiki
+        # The wiki is a separate git repo at <repo>.wiki.git. We use
+        # the default GITHUB_TOKEN; for private wikis or first-time
+        # publish, swap to a PAT with 'repo' scope stored in
+        # secrets.WIKI_TOKEN.
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki || {
+            echo "Wiki repo not found — create the wiki by visiting"
+            echo "https://github.com/${{ github.repository }}/wiki"
+            echo "and clicking 'Create the first page', then re-run this workflow."
+            exit 1
+          }
+
+      - name: Sync docs/wiki -> wiki repo
+        run: |
+          set -euo pipefail
+          cd wiki
+
+          # Identify the bot author for the commit.
+          git config user.name "cortexsim-wiki-bot"
+          git config user.email "wiki-bot@users.noreply.github.com"
+
+          # Drop everything tracked except .git, copy fresh.
+          git rm -rfq . 2>/dev/null || true
+          cp -r ../repo/docs/wiki/. .
+
+          # Drop our README — it's source-tree only, not a wiki page.
+          rm -f README.md
+
+          # Stage + commit + push.
+          if git status --porcelain | grep -q .; then
+            git add -A
+            COMMIT_SHA="${{ github.sha }}"
+            COMMIT_SHA_SHORT="${COMMIT_SHA:0:8}"
+            git commit -m "wiki: sync from main@${COMMIT_SHA_SHORT}
+
+            Auto-published from docs/wiki/ in
+            ${{ github.repository }}@${COMMIT_SHA_SHORT}.
+
+            Edit the source markdown — direct wiki edits are overwritten."
+            git push origin master
+            echo "wiki updated."
+          else
+            echo "no wiki changes to publish."
+          fi
