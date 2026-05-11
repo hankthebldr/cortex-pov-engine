@@ -109,7 +109,7 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 | Analytics | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
 | AI_ACCESS | Cortex AI Access Security | 5 scenarios (active) — outbound to OpenAI/Gemini/Anthropic via the `llm_provider_egress` EAL plugin (Phase 4) with planted DLP markers |
 | AIRS | Cortex AI Runtime Security | 5 scenarios (active) — OWASP LLM01-10 against `cortex-vulnerable-llm` driven by `cortex-prompt-attacker` + `airs_prompt_attack` EAL plugin |
-| BROWSER | Prisma Browser | 5 scenarios (draft) — Playwright-driven via `cortex-browser-attacker` (Phase 6) |
+| BROWSER | Prisma Browser | 5 scenarios (active) — Playwright-driven via `cortex-browser-attacker` + `browser_attack_runner` EAL plugin (Phase 6) |
 | KOI | Agentic endpoint / supply-chain | 5 scenarios (active) — MCP / skills / extensions / PyPI via `cortex-malicious-agentic-pack` artifact pack + `agentic_egress` EAL plugin (Phase 5) |
 
 ## Submodules (`sources/`)
@@ -144,6 +144,14 @@ In-tree (not submodules):
   `CORTEXSIM_C2_URL` so static scanning is safe. Driven by the
   `agentic_egress` EAL plugin which tarballs and POSTs the artifact against an
   authorised staging host so the NGFW sees the egress shape.
+- **cortex-browser-attacker** (Python/Playwright, `sources/cortex-browser-attacker/`)
+  — drives real Chromium / Prisma Browser through a YAML-declared sequence of
+  browser actions (navigate, paste, copy, click, download, install_extension,
+  screenshot). Playwright is an optional extra so unit tests use a `StubDriver`
+  that never spins up a browser. Driven by the `browser_attack_runner` EAL plugin
+  with the same shell-out-to-CLI pattern as `airs_prompt_attack`. JSONL output
+  shape rhymes with garak `Attempt` + cortex-prompt-attacker so SOC tooling
+  consumes both streams the same way.
 
 ## Cortex Branding
 

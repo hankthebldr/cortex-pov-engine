@@ -1,7 +1,7 @@
 scenario_id: SIM-BROWSER-003
 name: "Browser — Sideloaded Risky Chrome Extension"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: BROWSER
 detection_types:
@@ -44,25 +44,40 @@ external_tools:
 
 steps:
   - id: step-01
-    name: "Stage a synthetic .crx with overbroad permissions"
+    name: "Inspect the malicious extension source tree (code-scan signal)"
     command: |
-      # The malicious-agentic-pack ships a packed .crx with manifest perms:
-      # ["<all_urls>","tabs","cookies","storage","webRequest","webRequestBlocking"]
-      ls -la sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer.crx
-      sha256sum sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer.crx
+      ls -la sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer/
+      jq '.permissions, .host_permissions' \
+        sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer/manifest.json
     identity: container-runtime
     mitre_technique: "T1176"
     expected_detections:
-      - plane: BROWSER
+      - plane: KOI
         type: Analytics
-        description: "Pre-flight: sideloadable .crx artifact present with overbroad manifest"
+        description: "Code scan — extension manifest declares <all_urls> + cookies + webRequest + webRequestBlocking"
 
   - id: step-02
-    name: "Attempt sideload through Prisma Browser developer-mode install"
+    name: "Attempt sideload via browser_attack_runner; expect policy block"
     command: |
-      cortex-browser-attacker action install_extension \
-        --crx sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer.crx \
-        --emit-event
+      cat > /tmp/sim-browser-003-eal.yml <<'YML'
+      campaign_id: CMP-BROWSER-003
+      name: "Browser — risky extension install"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - chrome.cortexsim-test.invalid
+      dry_run: false
+      tags: [browser, extension, sideload]
+      steps:
+        - step_id: step-01
+          plugin: browser_attack_runner
+          params:
+            campaign_path: scenarios/browser/campaigns/risky-extension-install.yml
+            allowlist_host: chrome.cortexsim-test.invalid
+            browser_channel: prisma
+            headless: true
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-003-eal.yml --live
     identity: container-runtime
     mitre_technique: "T1176"
     expected_detections:
@@ -71,16 +86,15 @@ steps:
         description: "Prisma Browser — sideloaded extension blocked by managed-extension policy"
       - plane: BROWSER
         type: Analytics
-        description: "Prisma Browser — extension permission risk score exceeds threshold (cookies + webRequest + all_urls)"
+        description: "Prisma Browser — extension permission risk score exceeds threshold"
       - plane: KOI
         type: Analytics
         description: "KOI — extension manifest signature does not match approved publisher list"
 
   - id: step-03
-    name: "Confirm post-block telemetry in audit log"
+    name: "Confirm post-block telemetry"
     command: |
-      jq -r 'select(.action=="install_extension") | "\(.outcome) \(.target_path)"' \
-        /tmp/browser-003-events.jsonl 2>/dev/null || true
+      echo "[CortexSim] Confirm in XSIAM: extension-install-attempt event with outcome=blocked."
     identity: container-runtime
     mitre_technique: "T1176"
     expected_detections:
@@ -90,14 +104,15 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/browser-003-events.jsonl"
+    - "rm -f /tmp/sim-browser-003-eal.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-08"
 tags:
   - browser
   - prisma-browser
   - extension
   - sideload
   - persistence
+  - eal-plugin

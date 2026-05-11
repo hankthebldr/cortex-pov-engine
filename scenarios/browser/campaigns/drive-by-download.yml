@@ -1,0 +1,23 @@
+campaign_id: BC-BROWSER-002
+name: "Drive-by download from phishing page"
+description: |
+  Managed Prisma Browser navigates to a synthetic phishing page whose
+  JS auto-triggers a binary download. PB should block / log the
+  unsolicited file download and WildFire-submit the artifact.
+authorized_by: domain-consultant@paloaltonetworks.com
+simulation_authorized: true
+target_allowlist:
+  - phish.cortexsim-test.invalid
+dry_run: false
+browser_channel: prisma
+headless: true
+tags: [browser, prisma-browser, drive-by, phishing, download]
+actions:
+  - action: navigate
+    params:
+      url: https://phish.cortexsim-test.invalid/q3-earnings-update
+      expected_detection: "Prisma Browser — navigation to phishing-tagged origin"
+  - action: download
+    params:
+      timeout_seconds: 10.0
+      expected_detection: "Prisma Browser — auto-download initiated by JS without user gesture; WildFire submission"

@@ -92,7 +92,7 @@ docker compose down                # stop
 | **Analytics** | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
 | **AI_ACCESS** | Cortex AI Access Security | 5 scenarios — outbound to OpenAI / Gemini / Anthropic via `llm_provider_egress` EAL plugin with planted DLP markers |
 | **AIRS** | Cortex AI Runtime Security | 5 scenarios driven by `cortex-prompt-attacker` against `cortex-vulnerable-llm` (OWASP LLM01–LLM10) |
-| **BROWSER** | Prisma Browser | 5 scenarios (draft) — Playwright-driven, awaits Phase 6 `cortex-browser-attacker` |
+| **BROWSER** | Prisma Browser | 5 scenarios — `cortex-browser-attacker` (Playwright) + `browser_attack_runner` EAL plugin drives real Prisma Browser / Chromium |
 | **KOI** | Agentic endpoint / supply-chain | 5 scenarios — `cortex-malicious-agentic-pack` artifact tree + `agentic_egress` EAL plugin emulating Claude Desktop / pip / VS Code / Chrome consumer fetches |
 
 ---
@@ -151,6 +151,7 @@ Built-in plugins:
 | `airs_prompt_attack` | AIRS validation runner | AIRS prompt-injection / tool-abuse / RAG / DoS |
 | `llm_provider_egress` | AI Access — outbound to public AI providers | AI Access — generative-AI App-ID, DLP secret/PII, jailbreak fingerprint |
 | `agentic_egress` | KOI — agentic supply-chain artifact fetch | KOI — typosquat package fetch, extension marketplace risk, agentic skill fetch with hidden injection |
+| `browser_attack_runner` | Prisma Browser drive via Playwright | Prisma Browser — credential paste, drive-by download, risky extension install, cross-origin DLP, screen-capture |
 
 ```bash
 # Inspect available plugins
@@ -249,7 +250,7 @@ cortex-pov-engine/
 | 3 | `sources/cortex-prompt-attacker/` + `airs_prompt_attack` EAL plugin | ✅ shipped |
 | 4 | `llm_provider_egress` EAL plugin (replaces curl in AI_ACCESS scenarios) | ✅ shipped |
 | 5 | `sources/cortex-malicious-agentic-pack/` + `agentic_egress` plugin | ✅ shipped |
-| 6 | `sources/cortex-browser-attacker/` (Playwright + JSONL audit) | pending |
+| 6 | `sources/cortex-browser-attacker/` (Playwright + JSONL audit) | ✅ shipped |
 
 ---
 

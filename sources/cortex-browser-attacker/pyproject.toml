@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cortex-browser-attacker"
+version = "1.0.0"
+description = "Playwright-driven browser action runner for CortexSim Prisma Browser validation."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Henry Reed" }]
+keywords = ["cortexsim", "prisma-browser", "playwright", "browser-dlp",
+            "detection-validation", "paloaltonetworks"]
+
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+# Playwright pulls ~300MiB of browser binaries; only install when you
+# actually want to drive a real Chromium. Tests use the StubDriver.
+playwright = [
+    "playwright>=1.45,<2.0",
+]
+test = [
+    "pytest>=8.0,<9.0",
+]
+
+[project.scripts]
+cortex-browser-attacker = "cortex_browser_attacker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,7 +1,7 @@
 scenario_id: SIM-BROWSER-004
 name: "Browser — Cross-Origin SaaS Copy-Paste DLP"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: BROWSER
 detection_types:
@@ -43,40 +43,41 @@ external_tools:
 
 steps:
   - id: step-01
-    name: "Open a sanctioned-SaaS-shaped origin and load synthetic record"
+    name: "Pre-flight: confirm browser_attack_runner plugin is registered"
     command: |
-      cortex-browser-attacker action navigate \
-        --target-url https://customer-records.cortexsim-test.invalid/account/AC-12345 \
-        --wait-for selector="#account-detail" \
-        --emit-event
+      python3 -m scripts.eal_simulator.cli describe browser_attack_runner \
+        | jq -e '.eal_targets | length > 0'
     identity: container-runtime
     mitre_technique: "T1005"
     expected_detections:
       - plane: BROWSER
         type: Analytics
-        description: "Pre-flight: managed user opens sanctioned CRM origin"
+        description: "Pre-flight: plugin metadata visible to operator"
 
   - id: step-02
-    name: "Copy customer record content from CRM to clipboard"
+    name: "Drive Prisma Browser: copy from CRM, paste into webmail"
     command: |
-      cortex-browser-attacker action copy \
-        --selector '#account-detail' \
-        --emit-event
-    identity: container-runtime
-    mitre_technique: "T1005"
-    expected_detections:
-      - plane: BROWSER
-        type: Analytics
-        description: "Prisma Browser — clipboard write captured with source-origin tag (sanctioned CRM)"
-
-  - id: step-03
-    name: "Navigate to personal webmail and paste copied content"
-    command: |
-      cortex-browser-attacker action navigate \
-        --target-url https://mail.cortexsim-test.invalid/compose
-      cortex-browser-attacker action paste \
-        --selector 'textarea[name="body"]' \
-        --emit-event
+      cat > /tmp/sim-browser-004-eal.yml <<'YML'
+      campaign_id: CMP-BROWSER-004
+      name: "Browser — cross-origin DLP"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - crm.cortexsim-test.invalid
+        - mail.cortexsim-test.invalid
+      dry_run: false
+      tags: [browser, dlp, cross-origin]
+      steps:
+        - step_id: step-01
+          plugin: browser_attack_runner
+          params:
+            campaign_path: scenarios/browser/campaigns/saas-cross-origin-dlp.yml
+            allowlist_host: crm.cortexsim-test.invalid
+            browser_channel: prisma
+            headless: true
+            timeout_seconds: 120.0
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-004-eal.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
     expected_detections:
@@ -90,16 +91,28 @@ steps:
         type: Analytics
         description: "XSIAM stitching — copy + paste correlated by clipboard payload hash"
 
+  - id: step-03
+    name: "Confirm PB → XSIAM stitched alert"
+    command: |
+      echo "[CortexSim] Confirm XSIAM stitched incident: clipboard-origin mismatch."
+    identity: container-runtime
+    mitre_technique: "T1567"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM — stitched cross-origin DLP incident with both origins on the timeline"
+
 cleanup:
   commands:
-    - "echo '[CortexSim] SIM-BROWSER-004 cleanup complete'"
+    - "rm -f /tmp/sim-browser-004-eal.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-08"
 tags:
   - browser
   - prisma-browser
   - dlp
   - cross-origin
   - exfiltration
+  - eal-plugin

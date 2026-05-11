@@ -1,7 +1,7 @@
 scenario_id: SIM-BROWSER-002
 name: "Browser — Drive-by Download from Phishing Page"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: BROWSER
 detection_types:
@@ -46,35 +46,40 @@ external_tools:
 
 steps:
   - id: step-01
-    name: "Stand up a local phishing page with an auto-download payload"
+    name: "Pre-flight: confirm browser_attack_runner plugin is registered"
     command: |
-      mkdir -p /tmp/phish-srv
-      cat > /tmp/phish-srv/index.html <<'HTML'
-      <!doctype html>
-      <html><body>
-      <h1>Q3 Earnings Update — Click to Verify</h1>
-      <a id="dl" href="payload.exe" download>Download report</a>
-      <script>document.getElementById('dl').click();</script>
-      </body></html>
-      HTML
-      head -c 4096 /dev/urandom > /tmp/phish-srv/payload.exe
-      python3 -m http.server --directory /tmp/phish-srv 8090 &
-      sleep 1
-      curl -sSf http://127.0.0.1:8090/ > /dev/null
+      python3 -m scripts.eal_simulator.cli describe browser_attack_runner \
+        | jq -e '.params_schema.properties.campaign_path'
     identity: container-runtime
     mitre_technique: "T1566"
     expected_detections:
       - plane: BROWSER
         type: Analytics
-        description: "Pre-flight: phishing page hosted locally with auto-download script"
+        description: "Pre-flight: plugin metadata visible to operator"
 
   - id: step-02
-    name: "Drive Prisma Browser to the phishing landing page"
+    name: "Drive Prisma Browser to phishing page; expect auto-download"
     command: |
-      cortex-browser-attacker action navigate \
-        --target-url http://127.0.0.1:8090/index.html \
-        --wait-for download \
-        --emit-event
+      cat > /tmp/sim-browser-002-eal.yml <<'YML'
+      campaign_id: CMP-BROWSER-002
+      name: "Browser — drive-by download"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - phish.cortexsim-test.invalid
+      dry_run: false
+      tags: [browser, drive-by, download]
+      steps:
+        - step_id: step-01
+          plugin: browser_attack_runner
+          params:
+            campaign_path: scenarios/browser/campaigns/drive-by-download.yml
+            allowlist_host: phish.cortexsim-test.invalid
+            browser_channel: prisma
+            headless: true
+            timeout_seconds: 90.0
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-002-eal.yml --live
     identity: container-runtime
     mitre_technique: "T1189"
     expected_detections:
@@ -86,15 +91,13 @@ steps:
         description: "Prisma Browser — downloaded artifact MIME application/x-msdownload from non-SaaS origin"
       - plane: NDR
         type: Analytics
-        description: "NGFW EAL — file-type download policy matches PE artifact"
+        description: "NGFW EAL — file-type download policy matches downloaded artifact"
 
   - id: step-03
     name: "Confirm WildFire submission path on the downloaded artifact"
     command: |
-      # PB submits to WildFire via XSIAM telemetry path; we just confirm
-      # the artifact is present + has expected size signature.
-      ls -la /tmp/phish-srv/payload.exe
-      sha256sum /tmp/phish-srv/payload.exe
+      echo "[CortexSim] PB submits downloaded artifact to WildFire."
+      echo "[CortexSim] Confirm in XSIAM (manual): WildFire verdict appears within MTTD target."
     identity: container-runtime
     mitre_technique: "T1189"
     expected_detections:
@@ -104,15 +107,15 @@ steps:
 
 cleanup:
   commands:
-    - "pkill -f 'http.server --directory /tmp/phish-srv' || true"
-    - "rm -rf /tmp/phish-srv"
+    - "rm -f /tmp/sim-browser-002-eal.yml"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-08"
 tags:
   - browser
   - prisma-browser
   - drive-by
   - phishing
   - download
+  - eal-plugin

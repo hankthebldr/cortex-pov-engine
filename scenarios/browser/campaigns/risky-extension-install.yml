@@ -1,0 +1,24 @@
+campaign_id: BC-BROWSER-003
+name: "Sideloaded risky Chrome extension"
+description: |
+  DC attempts to sideload an unsigned .crx with overbroad manifest
+  permissions. Managed Prisma Browser policy should block the
+  install and log the attempt.
+authorized_by: domain-consultant@paloaltonetworks.com
+simulation_authorized: true
+target_allowlist:
+  - chrome.cortexsim-test.invalid
+dry_run: false
+browser_channel: prisma
+headless: true
+tags: [browser, prisma-browser, extension, sideload, persistence]
+actions:
+  - action: navigate
+    params:
+      url: https://chrome.cortexsim-test.invalid/extensions
+      expected_detection: "Prisma Browser — navigation to chrome://extensions in managed context"
+  - action: install_extension
+    params:
+      crx_path: sources/cortex-malicious-agentic-pack/chrome/ai-page-summarizer
+      cortex_canary: "CANARY-EXT-001"
+      expected_detection: "Prisma Browser — sideloaded extension blocked by managed-extension policy"

@@ -1,0 +1,26 @@
+campaign_id: BC-BROWSER-001
+name: "Credential paste into untrusted origin"
+description: |
+  DC drives the managed Prisma Browser to a non-sanctioned phishing
+  origin and types a credential-shaped string. PB DLP should fire on
+  the paste source vs. destination origin mismatch.
+authorized_by: domain-consultant@paloaltonetworks.com
+simulation_authorized: true
+target_allowlist:
+  - login.cortexsim-test.invalid
+dry_run: false
+browser_channel: prisma
+headless: true
+tags: [browser, prisma-browser, dlp, credential]
+actions:
+  - action: navigate
+    params:
+      url: https://login.cortexsim-test.invalid/signin
+      wait_for: 'input[name="password"]'
+      expected_detection: "Prisma Browser — managed user navigates to non-sanctioned origin"
+  - action: paste
+    params:
+      selector: 'input[name="password"]'
+      content: "MyCorpSSO!@#-CORTEXSIM-CANARY-2026"
+      cortex_canary: "CANARY-CRED-001"
+      expected_detection: "Prisma Browser — credential-shape paste into non-sanctioned origin (DLP rule)"
