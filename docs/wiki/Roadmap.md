@@ -12,12 +12,11 @@
 | 4 | `llm_provider_egress` EAL plugin (replaces curl in AI_ACCESS scenarios) | #18 | 2026-05-07 |
 | 5 | `sources/cortex-malicious-agentic-pack/` + `agentic_egress` EAL plugin | #19 | 2026-05-08 |
 
-## Pending
+## Shipped (continued)
 
-### Phase 6 — `cortex-browser-attacker` (BROWSER plane)
+### Phase 6 — `cortex-browser-attacker` (BROWSER plane) ✅
 
-Playwright-driven runner that exercises the deployed Prisma Browser
-against:
+Playwright-driven runner that exercises the deployed Prisma Browser:
 
 - credential paste into untrusted origin
 - drive-by download from phishing site
@@ -25,9 +24,12 @@ against:
 - copy-paste DLP from sanctioned SaaS to webmail
 - screen capture of sensitive page
 
-Will flip `scenarios/browser/sim-browser-001..005` from `draft` to
-`active`. PB → XSIAM is the customer's existing data path; we just
-emit the activity.
+`scenarios/browser/sim-browser-001..005` flipped from `draft` to `active`.
+Driven by the `browser_attack_runner` EAL plugin (shell-out-to-CLI pattern,
+same as `airs_prompt_attack`). Playwright is an optional install extra so
+unit tests use a `StubDriver` and never spin up a real browser.
+
+## Pending
 
 ## Beyond Phase 6 — gap analysis + resolution strategy
 

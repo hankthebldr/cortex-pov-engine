@@ -1,0 +1,34 @@
+campaign_id: BC-BROWSER-004
+name: "Cross-origin SaaS copy-paste DLP"
+description: |
+  Managed user copies a record from a sanctioned CRM origin then
+  pastes it into a personal webmail origin. PB DLP should fire on
+  the clipboard-origin mismatch.
+authorized_by: domain-consultant@paloaltonetworks.com
+simulation_authorized: true
+target_allowlist:
+  - crm.cortexsim-test.invalid
+  - mail.cortexsim-test.invalid
+dry_run: false
+browser_channel: prisma
+headless: true
+tags: [browser, prisma-browser, dlp, cross-origin, exfiltration]
+actions:
+  - action: navigate
+    params:
+      url: https://crm.cortexsim-test.invalid/account/AC-12345
+      wait_for: "#account-detail"
+      expected_detection: "Prisma Browser — managed user navigates to sanctioned CRM origin"
+  - action: copy
+    params:
+      selector: "#account-detail"
+      expected_detection: "Prisma Browser — clipboard write tagged with sanctioned-CRM origin"
+  - action: navigate
+    params:
+      url: https://mail.cortexsim-test.invalid/compose
+      expected_detection: "Prisma Browser — navigation to personal webmail origin"
+  - action: paste
+    params:
+      selector: 'textarea[name="body"]'
+      content: "(clipboard from CRM)"
+      expected_detection: "Prisma Browser — cross-origin paste from sanctioned CRM into personal webmail (DLP rule)"

@@ -1,7 +1,7 @@
 scenario_id: SIM-BROWSER-005
 name: "Browser — Screen Capture of Sensitive SaaS Page"
-version: "1.0"
-status: draft
+version: "1.1"
+status: active
 
 plane: BROWSER
 detection_types:
@@ -43,42 +43,54 @@ external_tools:
 
 steps:
   - id: step-01
-    name: "Open the sanctioned SaaS detail page under managed browser policy"
+    name: "Pre-flight: confirm browser_attack_runner plugin is registered"
     command: |
-      cortex-browser-attacker action navigate \
-        --target-url https://customer-records.cortexsim-test.invalid/account/AC-12345 \
-        --wait-for selector="#account-detail" \
-        --emit-event
+      python3 -m scripts.eal_simulator.cli describe browser_attack_runner \
+        | jq -e '.eal_targets | length > 0'
     identity: container-runtime
-    mitre_technique: "T1005"
+    mitre_technique: "T1113"
     expected_detections:
       - plane: BROWSER
         type: Analytics
-        description: "Pre-flight: detail page rendered with sensitive class on body"
+        description: "Pre-flight: plugin metadata visible to operator"
 
   - id: step-02
-    name: "Capture screenshot of the page"
+    name: "Drive Prisma Browser to sensitive page and attempt screen captures"
     command: |
-      cortex-browser-attacker action screenshot \
-        --out /tmp/browser-005-cap.png \
-        --emit-event
-      file /tmp/browser-005-cap.png
+      cat > /tmp/sim-browser-005-eal.yml <<'YML'
+      campaign_id: CMP-BROWSER-005
+      name: "Browser — screen capture"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - crm.cortexsim-test.invalid
+      dry_run: false
+      tags: [browser, screen-capture]
+      steps:
+        - step_id: step-01
+          plugin: browser_attack_runner
+          params:
+            campaign_path: scenarios/browser/campaigns/screen-capture.yml
+            allowlist_host: crm.cortexsim-test.invalid
+            browser_channel: prisma
+            headless: true
+            timeout_seconds: 90.0
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-005-eal.yml --live
     identity: container-runtime
     mitre_technique: "T1113"
     expected_detections:
       - plane: BROWSER
         type: BIOC
-        description: "Prisma Browser — page.screenshot() called against an origin tagged sensitive — block + alert"
+        description: "Prisma Browser — page.screenshot() called against origin tagged sensitive — block + alert"
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — screen-capture-attempt counter increments under sensitive-content policy"
 
   - id: step-03
-    name: "Attempt second capture after policy block"
+    name: "Confirm repeat-capture risk-score elevation"
     command: |
-      cortex-browser-attacker action screenshot \
-        --out /tmp/browser-005-cap-2.png \
-        --emit-event || echo "[CortexSim] second capture refused as expected"
+      echo "[CortexSim] Confirm XSIAM: user risk score elevated after repeat screen-capture attempt."
     identity: container-runtime
     mitre_technique: "T1113"
     expected_detections:
@@ -91,13 +103,14 @@ steps:
 
 cleanup:
   commands:
-    - "rm -f /tmp/browser-005-cap.png /tmp/browser-005-cap-2.png"
+    - "rm -f /tmp/sim-browser-005-eal.yml /tmp/browser-005-cap*.png"
 
 author: "Henry Reed"
 created: "2026-05-05"
-last_updated: "2026-05-05"
+last_updated: "2026-05-08"
 tags:
   - browser
   - prisma-browser
   - screen-capture
   - collection
+  - eal-plugin

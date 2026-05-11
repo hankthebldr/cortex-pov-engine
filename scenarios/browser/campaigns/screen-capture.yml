@@ -1,0 +1,27 @@
+campaign_id: BC-BROWSER-005
+name: "Screen capture of sensitive SaaS page"
+description: |
+  Programmatic screenshot of a sanctioned CRM detail page. PB
+  screen-capture policy should block or alert on the action.
+authorized_by: domain-consultant@paloaltonetworks.com
+simulation_authorized: true
+target_allowlist:
+  - crm.cortexsim-test.invalid
+dry_run: false
+browser_channel: prisma
+headless: true
+tags: [browser, prisma-browser, screen-capture, collection]
+actions:
+  - action: navigate
+    params:
+      url: https://crm.cortexsim-test.invalid/account/AC-12345
+      wait_for: "#account-detail"
+      expected_detection: "Prisma Browser — managed user navigates to sanctioned CRM origin"
+  - action: screenshot
+    params:
+      out_path: /tmp/browser-005-cap.png
+      expected_detection: "Prisma Browser — page.screenshot() called against origin tagged sensitive; block + alert"
+  - action: screenshot
+    params:
+      out_path: /tmp/browser-005-cap-2.png
+      expected_detection: "Prisma Browser — repeat screen-capture from same user elevates user risk score"
