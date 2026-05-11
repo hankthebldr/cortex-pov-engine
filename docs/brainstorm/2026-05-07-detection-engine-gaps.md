@@ -4,6 +4,10 @@
 > Audience: CortexSim maintainers + Domain Consultants running POVs.
 > Goal: identify what's still missing **after Phases 1–5** to make CortexSim
 > a complete enterprise-grade Cortex POV detection-validation platform.
+>
+> **Companion doc:** [`2026-05-08-resolution-strategy.md`](./2026-05-08-resolution-strategy.md)
+> turns these 21 gaps into a phased plan (Phases 6–13), workstream model,
+> success criteria, risk register, and decision points.
 
 ## Where we are
 

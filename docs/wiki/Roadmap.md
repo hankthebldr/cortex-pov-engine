@@ -29,10 +29,14 @@ Will flip `scenarios/browser/sim-browser-001..005` from `draft` to
 `active`. PB → XSIAM is the customer's existing data path; we just
 emit the activity.
 
-## Beyond Phase 6 — gap analysis
+## Beyond Phase 6 — gap analysis + resolution strategy
 
-A full gap analysis lives at
-[`docs/brainstorm/2026-05-07-detection-engine-gaps.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/brainstorm/2026-05-07-detection-engine-gaps.md).
+Two companion docs in the repo:
+
+- [`docs/brainstorm/2026-05-07-detection-engine-gaps.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/brainstorm/2026-05-07-detection-engine-gaps.md) — 21-gap inventory
+- [`docs/brainstorm/2026-05-08-resolution-strategy.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/brainstorm/2026-05-08-resolution-strategy.md) — Phases 6–13 sequencing, workstream model, success criteria, risk register, decision points
+
+The brainstorm names **what** is missing. The strategy names **how** we close it.
 
 Highlights (in rough priority order):
 
