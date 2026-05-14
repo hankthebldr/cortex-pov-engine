@@ -650,3 +650,278 @@ code, pre {
   from { transform: translateY(12px); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Phase 7 — EAL Simulator console + Validation wizard
+ * ───────────────────────────────────────────────────────────────────────── */
+
+.eal-console,
+.results-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.eal-console__head,
+.results-wizard__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--cortex-border);
+}
+
+.eal-console__tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.eal-console__body { flex: 1; min-height: 0; }
+
+/* ── Pills ─────────────────────────────────────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+.pill-success { background: rgba(0, 184, 148, 0.16); color: var(--cortex-success); }
+.pill-info    { background: rgba(0, 192, 232, 0.16); color: var(--cortex-teal-deep, #009DBF); }
+.pill-warn    { background: rgba(255, 176, 32, 0.18); color: #c97a00; }
+.pill-error   { background: rgba(220, 53, 69, 0.16); color: var(--cortex-danger); }
+.pill-neutral { background: rgba(107, 126, 142, 0.16); color: var(--cortex-steel, #6B7E8E); }
+
+.badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255,255,255,0.18);
+  color: inherit;
+}
+
+/* ── Tables ────────────────────────────────────────────────────────────── */
+.cs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.cs-table th,
+.cs-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--cortex-border);
+  vertical-align: middle;
+}
+.cs-table th {
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cortex-ink-muted, #4A5A6B);
+  background: rgba(0, 51, 102, 0.04);
+}
+.cs-table td.right,
+.cs-table th.right { text-align: right; }
+.row-clickable { cursor: pointer; }
+.row-clickable:hover { background: rgba(0, 192, 232, 0.04); }
+.row-selected { background: rgba(0, 192, 232, 0.08); }
+.row-observed { background: rgba(0, 184, 148, 0.04); }
+
+/* ── Form fields ───────────────────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.form-field--full { grid-column: 1 / -1; }
+.form-field__label { font-weight: 600; font-size: 12px; }
+.form-field__required { color: var(--cortex-danger); }
+.form-field__help { display: block; font-size: 11px; color: var(--cortex-ink-muted, #4A5A6B); }
+.form-field__error {
+  display: block;
+  font-size: 11px;
+  color: var(--cortex-danger, #C0392B);
+  margin-top: 2px;
+}
+.input--error {
+  border-color: var(--cortex-danger, #C0392B);
+  background: rgba(192, 57, 43, 0.04);
+}
+
+.input {
+  font-family: var(--font-primary);
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 4px;
+  background: var(--cortex-white, #fff);
+  color: var(--cortex-ink, #0F1E2E);
+  width: 100%;
+}
+.input.mono   { font-family: var(--font-mono); font-size: 12px; }
+.input.small  { font-size: 11px; }
+.input:focus  { outline: none; border-color: var(--cortex-teal, #00C0E8); box-shadow: 0 0 0 2px rgba(0,192,232,0.18); }
+.input:disabled { background: rgba(0,0,0,0.04); color: rgba(0,0,0,0.5); }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.toggle input[type="checkbox"] { width: 14px; height: 14px; }
+
+/* ── Eal builder fieldset ──────────────────────────────────────────────── */
+.eal-builder__fieldset {
+  border: 1px solid var(--cortex-border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.eal-builder__fieldset > legend {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cortex-navy, #003366);
+  padding: 0 6px;
+}
+
+ul.bullet { margin: 4px 0 0 0; padding-left: 18px; font-size: 12px; }
+
+/* ── Warning banner ────────────────────────────────────────────────────── */
+.warning-banner {
+  background: rgba(255, 176, 32, 0.12);
+  border: 1px solid rgba(255, 176, 32, 0.35);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #8a5a00;
+}
+.warning-banner ul { margin: 4px 0 0 0; padding-left: 18px; }
+
+.error-banner {
+  background: rgba(220, 53, 69, 0.08);
+  border: 1px solid rgba(220, 53, 69, 0.3);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--cortex-danger);
+}
+
+/* ── Empty + muted ─────────────────────────────────────────────────────── */
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  border: 1px dashed var(--cortex-border);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.02);
+}
+.muted { color: var(--cortex-ink-muted, #4A5A6B); }
+.muted.small { font-size: 11px; }
+.small { font-size: 11px; }
+.mono  { font-family: var(--font-mono); }
+.error { color: var(--cortex-danger, #DC3545); }
+
+/* ── Modal ─────────────────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 31, 63, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: var(--cortex-white, #fff);
+  border-radius: 8px;
+  padding: 20px 24px;
+  max-width: 520px;
+  width: calc(100% - 32px);
+  box-shadow: 0 20px 60px rgba(0, 31, 63, 0.3);
+}
+
+/* ── Validation wizard ─────────────────────────────────────────────────── */
+.results-wizard__summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--cortex-border);
+}
+.kpi { display: flex; flex-direction: column; gap: 2px; }
+.kpi__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cortex-ink-muted, #4A5A6B);
+}
+.kpi__value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--cortex-navy, #003366);
+}
+
+.results-wizard__step { margin-top: 16px; }
+.results-wizard__step-head {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--cortex-navy, #003366);
+}
+
+.xql-block {
+  position: relative;
+  background: rgba(0, 31, 63, 0.04);
+  border: 1px solid var(--cortex-border);
+  border-radius: 4px;
+  padding: 6px 30px 6px 8px;
+}
+.xql-block pre {
+  margin: 0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.xql-block__copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 10px;
+  padding: 2px 6px;
+}
+
+/* ── EAL run progress ──────────────────────────────────────────────────── */
+.eal-run-progress {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 6px;
+  background: rgba(0, 51, 102, 0.02);
+}
+.eal-run-progress__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}

@@ -322,3 +322,82 @@ export async function getMitreCoverage() {
 export async function getAgents() {
   return request('/api/agents')
 }
+
+// ─── EAL Traffic Simulator ───────────────────────────────────────────────────
+//
+// API surface for the plugin-based EAL simulator (core/eal_simulator/).
+// See core/api/eal.py and docs/wiki/EAL-Simulator.md for the contract.
+
+/**
+ * GET /api/eal/plugins
+ * @returns {Promise<{plugins: Array, total: number}>}
+ */
+export async function getEalPlugins() {
+  return request('/api/eal/plugins')
+}
+
+/**
+ * GET /api/eal/plugins/:name
+ * Returns the plugin's metadata + Pydantic JSON schema for its params model.
+ * @param {string} name  Plugin Meta.name (e.g. "c2_http_beacon")
+ */
+export async function getEalPlugin(name) {
+  return request(`/api/eal/plugins/${encodeURIComponent(name)}`)
+}
+
+/**
+ * POST /api/eal/campaigns
+ * @param {Object} campaign  Full Campaign object (see core/eal_simulator/campaign.py)
+ */
+export async function postEalCampaign(campaign) {
+  return request('/api/eal/campaigns', {
+    method: 'POST',
+    body: JSON.stringify(campaign),
+  })
+}
+
+/**
+ * GET /api/eal/campaigns
+ * @returns {Promise<{campaigns: Array, total: number}>}
+ */
+export async function getEalCampaigns() {
+  return request('/api/eal/campaigns')
+}
+
+/**
+ * GET /api/eal/campaigns/:id
+ */
+export async function getEalCampaign(campaignId) {
+  return request(`/api/eal/campaigns/${encodeURIComponent(campaignId)}`)
+}
+
+/**
+ * POST /api/eal/campaigns/:id/launch
+ * @param {string} campaignId
+ * @param {Object} [opts]  { dry_run?: boolean, operator?: string }
+ * @returns {Promise<{run_id, campaign_id, status, dry_run}>}
+ */
+export async function launchEalCampaign(campaignId, opts = {}) {
+  return request(`/api/eal/campaigns/${encodeURIComponent(campaignId)}/launch`, {
+    method: 'POST',
+    body: JSON.stringify(opts),
+  })
+}
+
+/**
+ * GET /api/eal/runs[?campaign_id=...]
+ */
+export async function getEalRuns(params = {}) {
+  const qs = new URLSearchParams()
+  if (params.campaign_id) qs.set('campaign_id', params.campaign_id)
+  const query = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/eal/runs${query}`)
+}
+
+/**
+ * GET /api/eal/runs/:run_id
+ * Single run detail (status, dry_run, step_results, error, operator, timestamps).
+ */
+export async function getEalRun(runId) {
+  return request(`/api/eal/runs/${encodeURIComponent(runId)}`)
+}

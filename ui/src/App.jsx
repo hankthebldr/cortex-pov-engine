@@ -7,7 +7,33 @@ import ToolStatusPanel from './components/ToolStatusPanel.jsx'
 import ResultsViewer from './components/ResultsViewer.jsx'
 import MitreHeatmap from './components/MitreHeatmap.jsx'
 import InfraGenerator from './components/InfraGenerator.jsx'
-import { getHealth, getRuns } from './api/client.js'
+import EalConsole from './components/EalConsole.jsx'
+import ResultsValidationWizard from './components/ResultsValidationWizard.jsx'
+import { getHealth, getRuns, getEalRuns } from './api/client.js'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Pick the most recent run_id across classic /api/runs and EAL
+ * /api/eal/runs. Both record types expose ``run_id`` and ``started_at``.
+ * Returns ``null`` if both lists are empty.
+ */
+function pickFreshestRunId(classicRuns, ealRuns) {
+  const candidates = []
+  for (const r of classicRuns || []) {
+    if (r?.run_id) candidates.push({ id: r.run_id, ts: r.started_at })
+  }
+  for (const r of ealRuns || []) {
+    if (r?.run_id) candidates.push({ id: r.run_id, ts: r.started_at })
+  }
+  if (candidates.length === 0) return null
+  candidates.sort((a, b) => {
+    const ta = a.ts ? Date.parse(a.ts) : 0
+    const tb = b.ts ? Date.parse(b.ts) : 0
+    return tb - ta
+  })
+  return candidates[0].id
+}
 
 // ─── Cortex Logo SVG ─────────────────────────────────────────────────────────
 
@@ -33,7 +59,8 @@ function CortexLogo() {
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 function AppHeader({ hostname, version, onToggleResults, showResults,
-                   onToggleMitre, showMitre, onToggleDeploy, showDeploy }) {
+                   onToggleMitre, showMitre, onToggleDeploy, showDeploy,
+                   onToggleEal, showEal, onToggleValidate, showValidate }) {
   return (
     <header className="app-header">
       <CortexLogo />
@@ -109,6 +136,28 @@ function AppHeader({ hostname, version, onToggleResults, showResults,
         &#x2630; Deploy
       </button>
       <button
+        className={`btn btn-sm ${showEal ? 'btn-navy' : 'btn-secondary'}`}
+        onClick={onToggleEal}
+        style={{
+          border: '1px solid rgba(255,255,255,0.15)',
+          background: showEal ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
+          color: 'var(--cortex-white)',
+        }}
+      >
+        &#9881; EAL
+      </button>
+      <button
+        className={`btn btn-sm ${showValidate ? 'btn-navy' : 'btn-secondary'}`}
+        onClick={onToggleValidate}
+        style={{
+          border: '1px solid rgba(255,255,255,0.15)',
+          background: showValidate ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
+          color: 'var(--cortex-white)',
+        }}
+      >
+        &#10003; Validate
+      </button>
+      <button
         className={`btn btn-sm ${showResults ? 'btn-navy' : 'btn-secondary'}`}
         onClick={onToggleResults}
         style={{
@@ -142,9 +191,13 @@ export default function App() {
   const [selectedPlane, setSelectedPlane]         = useState(null)   // string | null
   const [selectedScenario, setSelectedScenario]   = useState(null)   // object | null
   const [runs, setRuns]                           = useState([])
+  const [ealRuns, setEalRuns]                     = useState([])
   const [showResults, setShowResults]             = useState(false)
   const [showMitre, setShowMitre]                 = useState(false)
   const [showDeploy, setShowDeploy]               = useState(false)
+  const [showEal, setShowEal]                     = useState(false)
+  const [showValidate, setShowValidate]           = useState(false)
+  const [validateRunId, setValidateRunId]         = useState(null)
 
   // ── Meta state ─────────────────────────────────────────────────────────────
   const [hostname, setHostname]   = useState(window.location.hostname)
@@ -162,9 +215,16 @@ export default function App() {
   }, [])
 
   // ── Fetch run history ─────────────────────────────────────────────────────
+  // Classic scenarios run via /api/runs; EAL campaigns run via /api/eal/runs.
+  // Both are needed so the Validate toggle can find the freshest run from
+  // either source — without this an EAL-only POV environment opens the
+  // wizard with "No run to validate yet" even when EAL runs exist.
   const refreshRuns = useCallback(() => {
     getRuns()
       .then(data => setRuns(Array.isArray(data) ? data : []))
+      .catch(() => {})
+    getEalRuns()
+      .then(data => setEalRuns(Array.isArray(data?.runs) ? data.runs : []))
       .catch(() => {})
   }, [])
 
@@ -202,12 +262,33 @@ export default function App() {
       <AppHeader
         hostname={hostname}
         version={version}
-        onToggleResults={() => { setShowResults(v => !v); setShowMitre(false); setShowDeploy(false) }}
+        onToggleResults={() => {
+          setShowResults(v => !v); setShowMitre(false); setShowDeploy(false); setShowEal(false); setShowValidate(false)
+        }}
         showResults={showResults}
-        onToggleMitre={() => { setShowMitre(v => !v); setShowResults(false); setShowDeploy(false) }}
+        onToggleMitre={() => {
+          setShowMitre(v => !v); setShowResults(false); setShowDeploy(false); setShowEal(false); setShowValidate(false)
+        }}
         showMitre={showMitre}
-        onToggleDeploy={() => { setShowDeploy(v => !v); setShowResults(false); setShowMitre(false) }}
+        onToggleDeploy={() => {
+          setShowDeploy(v => !v); setShowResults(false); setShowMitre(false); setShowEal(false); setShowValidate(false)
+        }}
         showDeploy={showDeploy}
+        onToggleEal={() => {
+          setShowEal(v => !v); setShowResults(false); setShowMitre(false); setShowDeploy(false); setShowValidate(false)
+        }}
+        showEal={showEal}
+        onToggleValidate={() => {
+          // Validate needs a run_id; if none chosen yet, fall back to the
+          // most recent run across BOTH classic /api/runs and EAL
+          // /api/eal/runs (EAL-only environments have empty classic list).
+          if (!showValidate && !validateRunId) {
+            const freshest = pickFreshestRunId(runs, ealRuns)
+            if (freshest) setValidateRunId(freshest)
+          }
+          setShowValidate(v => !v); setShowResults(false); setShowMitre(false); setShowDeploy(false); setShowEal(false)
+        }}
+        showValidate={showValidate}
       />
 
       {/* LEFT RAIL — Detection Plane Selector */}
@@ -220,12 +301,41 @@ export default function App() {
 
       {/* MAIN PANEL */}
       <main className="app-main-panel">
-        {showDeploy ? (
+        {showEal ? (
+          <EalConsole
+            onMessage={showToast}
+            onClose={() => setShowEal(false)}
+          />
+        ) : showValidate ? (
+          validateRunId ? (
+            <ResultsValidationWizard
+              runId={validateRunId}
+              onClose={() => setShowValidate(false)}
+              onMessage={showToast}
+            />
+          ) : (
+            <div className="empty-state" style={{ padding: '24px' }}>
+              <p>No run to validate yet.</p>
+              <p className="muted small">
+                Launch a campaign from the <strong>EAL</strong> view first,
+                then pick a run from the <strong>Runs</strong> list.
+              </p>
+            </div>
+          )
+        ) : showDeploy ? (
           <InfraGenerator />
         ) : showMitre ? (
           <MitreHeatmap />
         ) : showResults ? (
-          <ResultsViewer runs={runs} onClose={() => setShowResults(false)} />
+          <ResultsViewer
+            runs={runs}
+            onClose={() => setShowResults(false)}
+            onValidate={(runId) => {
+              setValidateRunId(runId)
+              setShowResults(false)
+              setShowValidate(true)
+            }}
+          />
         ) : (
           <>
             <ScenarioBrowser
