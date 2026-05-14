@@ -754,6 +754,16 @@ code, pre {
 .form-field__label { font-weight: 600; font-size: 12px; }
 .form-field__required { color: var(--cortex-danger); }
 .form-field__help { display: block; font-size: 11px; color: var(--cortex-ink-muted, #4A5A6B); }
+.form-field__error {
+  display: block;
+  font-size: 11px;
+  color: var(--cortex-danger, #C0392B);
+  margin-top: 2px;
+}
+.input--error {
+  border-color: var(--cortex-danger, #C0392B);
+  background: rgba(192, 57, 43, 0.04);
+}
 
 .input {
   font-family: var(--font-primary);

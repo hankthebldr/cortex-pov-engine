@@ -9,7 +9,31 @@ import MitreHeatmap from './components/MitreHeatmap.jsx'
 import InfraGenerator from './components/InfraGenerator.jsx'
 import EalConsole from './components/EalConsole.jsx'
 import ResultsValidationWizard from './components/ResultsValidationWizard.jsx'
-import { getHealth, getRuns } from './api/client.js'
+import { getHealth, getRuns, getEalRuns } from './api/client.js'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Pick the most recent run_id across classic /api/runs and EAL
+ * /api/eal/runs. Both record types expose ``run_id`` and ``started_at``.
+ * Returns ``null`` if both lists are empty.
+ */
+function pickFreshestRunId(classicRuns, ealRuns) {
+  const candidates = []
+  for (const r of classicRuns || []) {
+    if (r?.run_id) candidates.push({ id: r.run_id, ts: r.started_at })
+  }
+  for (const r of ealRuns || []) {
+    if (r?.run_id) candidates.push({ id: r.run_id, ts: r.started_at })
+  }
+  if (candidates.length === 0) return null
+  candidates.sort((a, b) => {
+    const ta = a.ts ? Date.parse(a.ts) : 0
+    const tb = b.ts ? Date.parse(b.ts) : 0
+    return tb - ta
+  })
+  return candidates[0].id
+}
 
 // ─── Cortex Logo SVG ─────────────────────────────────────────────────────────
 
@@ -167,6 +191,7 @@ export default function App() {
   const [selectedPlane, setSelectedPlane]         = useState(null)   // string | null
   const [selectedScenario, setSelectedScenario]   = useState(null)   // object | null
   const [runs, setRuns]                           = useState([])
+  const [ealRuns, setEalRuns]                     = useState([])
   const [showResults, setShowResults]             = useState(false)
   const [showMitre, setShowMitre]                 = useState(false)
   const [showDeploy, setShowDeploy]               = useState(false)
@@ -190,9 +215,16 @@ export default function App() {
   }, [])
 
   // ── Fetch run history ─────────────────────────────────────────────────────
+  // Classic scenarios run via /api/runs; EAL campaigns run via /api/eal/runs.
+  // Both are needed so the Validate toggle can find the freshest run from
+  // either source — without this an EAL-only POV environment opens the
+  // wizard with "No run to validate yet" even when EAL runs exist.
   const refreshRuns = useCallback(() => {
     getRuns()
       .then(data => setRuns(Array.isArray(data) ? data : []))
+      .catch(() => {})
+    getEalRuns()
+      .then(data => setEalRuns(Array.isArray(data?.runs) ? data.runs : []))
       .catch(() => {})
   }, [])
 
@@ -248,9 +280,11 @@ export default function App() {
         showEal={showEal}
         onToggleValidate={() => {
           // Validate needs a run_id; if none chosen yet, fall back to the
-          // most recent run.
-          if (!showValidate && !validateRunId && runs[0]?.run_id) {
-            setValidateRunId(runs[0].run_id)
+          // most recent run across BOTH classic /api/runs and EAL
+          // /api/eal/runs (EAL-only environments have empty classic list).
+          if (!showValidate && !validateRunId) {
+            const freshest = pickFreshestRunId(runs, ealRuns)
+            if (freshest) setValidateRunId(freshest)
           }
           setShowValidate(v => !v); setShowResults(false); setShowMitre(false); setShowDeploy(false); setShowEal(false)
         }}

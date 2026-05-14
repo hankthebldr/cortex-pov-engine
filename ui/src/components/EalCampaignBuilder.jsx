@@ -382,20 +382,14 @@ function SchemaField({ name, schema, required, value, onChange }) {
   }
 
   if (type === 'object' || schema.additionalProperties) {
-    const text = value != null ? JSON.stringify(value, null, 2) : ''
     return (
-      <Field label={name} required={required} full
-             help={`${help}${help ? ' · ' : ''}JSON object`}>
-        <textarea
-          className="input mono small"
-          rows={4}
-          value={text}
-          onChange={(e) => {
-            try { onChange(e.target.value.trim() ? JSON.parse(e.target.value) : {}) }
-            catch { /* leave invalid intermediate state; submit will fail-fast */ }
-          }}
-        />
-      </Field>
+      <ObjectParamField
+        name={name}
+        required={required}
+        help={`${help}${help ? ' · ' : ''}JSON object`}
+        value={value}
+        onChange={onChange}
+      />
     )
   }
 
@@ -418,4 +412,88 @@ function initialParamsFromSchema(schema) {
     if (p.default !== undefined) out[k] = p.default
   }
   return out
+}
+
+/**
+ * ObjectParamField — JSON-object schema field that preserves the raw
+ * textarea text while the user is typing.
+ *
+ * Why this exists: a naive controlled textarea fed from
+ * ``JSON.stringify(value)`` snaps back to the last-valid stringified
+ * form on every keystroke that produces invalid intermediate JSON. The
+ * user can't type ``{ "foo": "bar" }`` one character at a time because
+ * each intermediate state (``{``, ``{ "``, …) is unparseable, parent
+ * state never updates, and the controlled value reverts to ``""`` /
+ * ``{}``.
+ *
+ * Solution: hold the raw text in local state. Push parsed values to the
+ * parent only when ``JSON.parse`` succeeds. Mirror external changes to
+ * the parent value (e.g. when the user picks a different plugin and
+ * the form resets) via an effect.
+ */
+function ObjectParamField({ name, required, help, value, onChange }) {
+  const stringified = React.useMemo(
+    () => (value != null ? JSON.stringify(value, null, 2) : ''),
+    [value],
+  )
+  const [rawText, setRawText] = useState(stringified)
+  const [parseError, setParseError] = useState(null)
+
+  // Mirror external value changes (e.g. plugin swap resets the form).
+  // We deliberately only sync when the parent value would *parse* to
+  // something different from our current local text — that avoids
+  // fighting the user mid-keystroke.
+  useEffect(() => {
+    if (rawText.trim() === '') {
+      if (stringified !== '') setRawText(stringified)
+      return
+    }
+    try {
+      const localParsed = JSON.parse(rawText)
+      if (JSON.stringify(localParsed) !== JSON.stringify(value)) {
+        setRawText(stringified)
+      }
+    } catch {
+      // Local text is invalid; let the user keep editing — do not sync.
+    }
+    // We don't want this to re-fire on every rawText change — only when
+    // the external `stringified` actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stringified])
+
+  const handleChange = (e) => {
+    const next = e.target.value
+    setRawText(next)
+    if (next.trim() === '') {
+      setParseError(null)
+      onChange({})
+      return
+    }
+    try {
+      const parsed = JSON.parse(next)
+      setParseError(null)
+      onChange(parsed)
+    } catch (err) {
+      // Hold the raw text so the user can keep typing; surface the error
+      // inline. Submit-time validation also catches this.
+      setParseError(err.message)
+    }
+  }
+
+  return (
+    <Field label={name} required={required} full help={help}>
+      <textarea
+        className={`input mono small ${parseError ? 'input--error' : ''}`}
+        rows={4}
+        value={rawText}
+        onChange={handleChange}
+        spellCheck="false"
+      />
+      {parseError && (
+        <span className="form-field__error">
+          Invalid JSON ({parseError}); fix before save.
+        </span>
+      )}
+    </Field>
+  )
 }
