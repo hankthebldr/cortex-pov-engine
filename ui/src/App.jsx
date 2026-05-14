@@ -7,6 +7,8 @@ import ToolStatusPanel from './components/ToolStatusPanel.jsx'
 import ResultsViewer from './components/ResultsViewer.jsx'
 import MitreHeatmap from './components/MitreHeatmap.jsx'
 import InfraGenerator from './components/InfraGenerator.jsx'
+import EalConsole from './components/EalConsole.jsx'
+import ResultsValidationWizard from './components/ResultsValidationWizard.jsx'
 import { getHealth, getRuns } from './api/client.js'
 
 // ─── Cortex Logo SVG ─────────────────────────────────────────────────────────
@@ -33,7 +35,8 @@ function CortexLogo() {
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 function AppHeader({ hostname, version, onToggleResults, showResults,
-                   onToggleMitre, showMitre, onToggleDeploy, showDeploy }) {
+                   onToggleMitre, showMitre, onToggleDeploy, showDeploy,
+                   onToggleEal, showEal, onToggleValidate, showValidate }) {
   return (
     <header className="app-header">
       <CortexLogo />
@@ -109,6 +112,28 @@ function AppHeader({ hostname, version, onToggleResults, showResults,
         &#x2630; Deploy
       </button>
       <button
+        className={`btn btn-sm ${showEal ? 'btn-navy' : 'btn-secondary'}`}
+        onClick={onToggleEal}
+        style={{
+          border: '1px solid rgba(255,255,255,0.15)',
+          background: showEal ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
+          color: 'var(--cortex-white)',
+        }}
+      >
+        &#9881; EAL
+      </button>
+      <button
+        className={`btn btn-sm ${showValidate ? 'btn-navy' : 'btn-secondary'}`}
+        onClick={onToggleValidate}
+        style={{
+          border: '1px solid rgba(255,255,255,0.15)',
+          background: showValidate ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
+          color: 'var(--cortex-white)',
+        }}
+      >
+        &#10003; Validate
+      </button>
+      <button
         className={`btn btn-sm ${showResults ? 'btn-navy' : 'btn-secondary'}`}
         onClick={onToggleResults}
         style={{
@@ -145,6 +170,9 @@ export default function App() {
   const [showResults, setShowResults]             = useState(false)
   const [showMitre, setShowMitre]                 = useState(false)
   const [showDeploy, setShowDeploy]               = useState(false)
+  const [showEal, setShowEal]                     = useState(false)
+  const [showValidate, setShowValidate]           = useState(false)
+  const [validateRunId, setValidateRunId]         = useState(null)
 
   // ── Meta state ─────────────────────────────────────────────────────────────
   const [hostname, setHostname]   = useState(window.location.hostname)
@@ -202,12 +230,31 @@ export default function App() {
       <AppHeader
         hostname={hostname}
         version={version}
-        onToggleResults={() => { setShowResults(v => !v); setShowMitre(false); setShowDeploy(false) }}
+        onToggleResults={() => {
+          setShowResults(v => !v); setShowMitre(false); setShowDeploy(false); setShowEal(false); setShowValidate(false)
+        }}
         showResults={showResults}
-        onToggleMitre={() => { setShowMitre(v => !v); setShowResults(false); setShowDeploy(false) }}
+        onToggleMitre={() => {
+          setShowMitre(v => !v); setShowResults(false); setShowDeploy(false); setShowEal(false); setShowValidate(false)
+        }}
         showMitre={showMitre}
-        onToggleDeploy={() => { setShowDeploy(v => !v); setShowResults(false); setShowMitre(false) }}
+        onToggleDeploy={() => {
+          setShowDeploy(v => !v); setShowResults(false); setShowMitre(false); setShowEal(false); setShowValidate(false)
+        }}
         showDeploy={showDeploy}
+        onToggleEal={() => {
+          setShowEal(v => !v); setShowResults(false); setShowMitre(false); setShowDeploy(false); setShowValidate(false)
+        }}
+        showEal={showEal}
+        onToggleValidate={() => {
+          // Validate needs a run_id; if none chosen yet, fall back to the
+          // most recent run.
+          if (!showValidate && !validateRunId && runs[0]?.run_id) {
+            setValidateRunId(runs[0].run_id)
+          }
+          setShowValidate(v => !v); setShowResults(false); setShowMitre(false); setShowDeploy(false); setShowEal(false)
+        }}
+        showValidate={showValidate}
       />
 
       {/* LEFT RAIL — Detection Plane Selector */}
@@ -220,12 +267,41 @@ export default function App() {
 
       {/* MAIN PANEL */}
       <main className="app-main-panel">
-        {showDeploy ? (
+        {showEal ? (
+          <EalConsole
+            onMessage={showToast}
+            onClose={() => setShowEal(false)}
+          />
+        ) : showValidate ? (
+          validateRunId ? (
+            <ResultsValidationWizard
+              runId={validateRunId}
+              onClose={() => setShowValidate(false)}
+              onMessage={showToast}
+            />
+          ) : (
+            <div className="empty-state" style={{ padding: '24px' }}>
+              <p>No run to validate yet.</p>
+              <p className="muted small">
+                Launch a campaign from the <strong>EAL</strong> view first,
+                then pick a run from the <strong>Runs</strong> list.
+              </p>
+            </div>
+          )
+        ) : showDeploy ? (
           <InfraGenerator />
         ) : showMitre ? (
           <MitreHeatmap />
         ) : showResults ? (
-          <ResultsViewer runs={runs} onClose={() => setShowResults(false)} />
+          <ResultsViewer
+            runs={runs}
+            onClose={() => setShowResults(false)}
+            onValidate={(runId) => {
+              setValidateRunId(runId)
+              setShowResults(false)
+              setShowValidate(true)
+            }}
+          />
         ) : (
           <>
             <ScenarioBrowser

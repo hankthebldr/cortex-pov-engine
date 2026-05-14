@@ -14,6 +14,32 @@
 
 ## Shipped (continued)
 
+### Phase 7 — UI for EAL Simulator + Validation Wizard ✅
+
+Three React components that turn the EAL simulator from API-only into a
+DC-driveable experience:
+
+- **`EalConsole.jsx`** — orchestrator with Campaigns / + New / Runs tabs;
+  campaign list with one-click dry-run + confirm-modal live launch;
+  drill-in to run detail
+- **`EalCampaignBuilder.jsx`** — plugin picker + dynamic form rendered
+  from each plugin's Pydantic JSON schema (`/api/eal/plugins/{name}`);
+  supports `string`, `integer`, `number`, `boolean`, `array<string>`,
+  `enum`, and `object` (JSON textarea) types
+- **`EalRunProgress.jsx`** — 2-second polling tail of `EalCampaignRun`,
+  stops polling on terminal status, surfaces step results + run-level
+  error
+- **`ResultsValidationWizard.jsx`** — guided "mark each detection
+  observed" flow with copy-paste XQL templates per plane (NDR / EDR /
+  CDR / AIRS / AI_ACCESS / BROWSER / KOI / ANALYTICS), inline notes,
+  bulk "mark all observed", filter (all / pending / observed), MTTD
+  KPI summary
+
+Two new toggle buttons in the header — **EAL** + **Validate** —
+mutually exclusive with the existing MITRE / Deploy / Runs toggles.
+
+UI bundle: 76 KiB gzipped JS, 8 KiB gzipped CSS.
+
 ### Phase 6 — `cortex-browser-attacker` (BROWSER plane) ✅
 
 Playwright-driven runner that exercises the deployed Prisma Browser:

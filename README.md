@@ -251,6 +251,7 @@ cortex-pov-engine/
 | 4 | `llm_provider_egress` EAL plugin (replaces curl in AI_ACCESS scenarios) | ✅ shipped |
 | 5 | `sources/cortex-malicious-agentic-pack/` + `agentic_egress` plugin | ✅ shipped |
 | 6 | `sources/cortex-browser-attacker/` (Playwright + JSONL audit) | ✅ shipped |
+| 7 | UI for EAL Simulator + Validation Wizard | ✅ shipped |
 
 ---
 
