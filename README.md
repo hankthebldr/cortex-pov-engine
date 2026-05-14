@@ -252,6 +252,7 @@ cortex-pov-engine/
 | 5 | `sources/cortex-malicious-agentic-pack/` + `agentic_egress` plugin | ✅ shipped |
 | 6 | `sources/cortex-browser-attacker/` (Playwright + JSONL audit) | ✅ shipped |
 | 7 | UI for EAL Simulator + Validation Wizard | ✅ shipped |
+| 8 | POV report generator + ATT&CK Navigator export | ✅ shipped |
 
 ---
 

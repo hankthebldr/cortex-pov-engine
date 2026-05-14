@@ -10,6 +10,7 @@
 - [[EAL Simulator]]
 - [[AIRS Validation]]
 - [[KOI Validation]]
+- [[Detection Coverage Lab]]
 
 ### Tools
 

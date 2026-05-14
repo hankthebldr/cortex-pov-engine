@@ -249,6 +249,33 @@ export async function downloadReport(runId) {
 }
 
 /**
+ * Phase 8 — POV deliverable artifacts.
+ *
+ * Three endpoints emit the worked-example shape from
+ * lab_cortex_analytics_pov/.
+ */
+export async function downloadReportMatrix(runId) {
+  const response = await request(`/api/runs/${runId}/report/matrix`, {
+    _returnBlob: true,
+  })
+  return response.blob()
+}
+
+export async function downloadReportNavigator(runId) {
+  const response = await request(`/api/runs/${runId}/report/navigator`, {
+    _returnBlob: true,
+  })
+  return response.blob()
+}
+
+export async function downloadReportBundle(runId) {
+  const response = await request(`/api/runs/${runId}/report/bundle`, {
+    _returnBlob: true,
+  })
+  return response.blob()
+}
+
+/**
  * GET /api/runs/:runId/report?format=json
  * Returns structured report data.
  * @param {string} runId

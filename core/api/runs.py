@@ -2,12 +2,15 @@
 CortexSim API — /api/runs router.
 
 Endpoints:
-  POST /api/run                         — launch a scenario run
-  GET  /api/runs                        — list all runs
-  GET  /api/runs/{run_id}               — run detail + status
-  GET  /api/runs/{run_id}/report        — POV report (markdown or JSON)
-  POST /api/runs/{run_id}/output        — agent streams output
-  POST /api/runs/{run_id}/complete      — agent reports completion
+  POST /api/run                                 — launch a scenario run
+  GET  /api/runs                                — list all runs
+  GET  /api/runs/{run_id}                       — run detail + status
+  GET  /api/runs/{run_id}/report                — POV report (markdown or JSON)
+  GET  /api/runs/{run_id}/report/matrix         — detection_matrix.csv (Phase 8)
+  GET  /api/runs/{run_id}/report/navigator      — ATT&CK Navigator layer JSON
+  GET  /api/runs/{run_id}/report/bundle         — tar.gz of all three artifacts
+  POST /api/runs/{run_id}/output                — agent streams output
+  POST /api/runs/{run_id}/complete              — agent reports completion
 """
 
 from __future__ import annotations
@@ -17,12 +20,13 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from engine import report_generator
 from engine.orchestrator import orchestrator
 from models import Result, Run, Scenario
 
@@ -281,6 +285,117 @@ async def get_report(
         media_type="text/markdown",
         headers={
             "Content-Disposition": f'attachment; filename="cortexsim-report-{run.scenario_id}-{run_id[:8]}.md"',
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 — POV report artifacts (detection matrix, Navigator layer, bundle)
+# ---------------------------------------------------------------------------
+#
+# Shape modelled on the worked example under lab_cortex_analytics_pov/.
+# All three endpoints are read-only and sourced from existing Run / Result /
+# Scenario rows — no schema changes.
+
+
+async def _load_report_inputs(run_id: str, db: AsyncSession):
+    """Shared loader for the three Phase 8 endpoints."""
+    run_result = await db.execute(select(Run).where(Run.run_id == run_id))
+    run: Optional[Run] = run_result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Run not found", "code": "RUN_NOT_FOUND",
+                    "detail": f"run_id='{run_id}'"},
+        )
+    scen_result = await db.execute(
+        select(Scenario).where(Scenario.scenario_id == run.scenario_id),
+    )
+    scenario: Optional[Scenario] = scen_result.scalar_one_or_none()
+    res_result = await db.execute(
+        select(Result).where(Result.run_id == run_id)
+                       .order_by(Result.step_id, Result.id),
+    )
+    results = res_result.scalars().all()
+    return run, scenario, results
+
+
+@router.get("/runs/{run_id}/report/matrix")
+async def get_report_matrix(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Detection matrix CSV — one row per expected detection.
+
+    Header matches the worked example at
+    ``lab_cortex_analytics_pov/detection_matrix.csv``.
+    """
+    run, scenario, results = await _load_report_inputs(run_id, db)
+    rows = report_generator.build_detection_matrix(
+        run.to_dict(),
+        scenario.to_dict() if scenario else None,
+        [r.to_dict() for r in results],
+    )
+    csv_text = report_generator.render_detection_matrix_csv(rows)
+    logger.info("report.matrix run_id=%s rows=%d", run_id, len(rows))
+    return PlainTextResponse(
+        content=csv_text,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="cortexsim-detection-matrix-{run_id[:8]}.csv"'
+            ),
+        },
+    )
+
+
+@router.get("/runs/{run_id}/report/navigator")
+async def get_report_navigator(run_id: str, db: AsyncSession = Depends(get_db)):
+    """ATT&CK Navigator v4.5 layer JSON for this run.
+
+    Importable directly into https://mitre-attack.github.io/attack-navigator/
+    — DETECTED techniques colour-coded red, missed / pending grey.
+    """
+    run, scenario, results = await _load_report_inputs(run_id, db)
+    layer = report_generator.render_attack_navigator_layer(
+        run.to_dict(),
+        scenario.to_dict() if scenario else None,
+        [r.to_dict() for r in results],
+    )
+    logger.info("report.navigator run_id=%s techniques=%d",
+                run_id, len(layer.get("techniques", [])))
+    return Response(
+        content=__import__("json").dumps(layer, indent=2),
+        media_type="application/json",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="cortexsim-navigator-{run_id[:8]}.json"'
+            ),
+        },
+    )
+
+
+@router.get("/runs/{run_id}/report/bundle")
+async def get_report_bundle(run_id: str, db: AsyncSession = Depends(get_db)):
+    """All three POV artifacts in one gzipped tarball.
+
+    Layout (matches ``lab_cortex_analytics_pov/`` example):
+
+        detection_matrix.csv
+        attack_navigator_layer.json
+        pov_narrative/exec_summary.md
+    """
+    run, scenario, results = await _load_report_inputs(run_id, db)
+    blob = report_generator.build_bundle(
+        run.to_dict(),
+        scenario.to_dict() if scenario else None,
+        [r.to_dict() for r in results],
+    )
+    logger.info("report.bundle run_id=%s bytes=%d", run_id, len(blob))
+    return Response(
+        content=blob,
+        media_type="application/gzip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="cortexsim-pov-bundle-{run_id[:8]}.tar.gz"'
+            ),
         },
     )
 

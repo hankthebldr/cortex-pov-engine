@@ -14,6 +14,25 @@
 
 ## Shipped (continued)
 
+### Phase 8 — POV report generator + ATT&CK Navigator export ✅
+
+Three new endpoints under `/api/runs/{run_id}/report/*` emit the exact
+artifact shape demonstrated by the worked example in
+[[Detection Coverage Lab]]:
+
+- `GET .../report/matrix` — `detection_matrix.csv` (one row per
+  expected detection)
+- `GET .../report/navigator` — ATT&CK Navigator v4.5 layer JSON
+  (DETECTED red, missed/pending grey)
+- `GET .../report/bundle` — all three artifacts (matrix + navigator +
+  `pov_narrative/exec_summary.md`) in one `tar.gz`
+
+Generator lives at `core/engine/report_generator.py`; sourced from the
+existing `Run` / `Result` / `Scenario` rows — no schema changes. 26
+unit tests cover matrix shape, navigator round-trip, exec-summary
+verdict tiers, bundle layout, and edge cases (no scenario, no results,
+missing technique).
+
 ### Phase 7 — UI for EAL Simulator + Validation Wizard ✅
 
 Three React components that turn the EAL simulator from API-only into a
