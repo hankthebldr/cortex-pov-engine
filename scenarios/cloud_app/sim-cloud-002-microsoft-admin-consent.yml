@@ -1,0 +1,136 @@
+scenario_id: SIM-CLOUD-002
+name: "Cloud App — Microsoft Admin-Consent-Required Scope Request"
+version: "1.0"
+status: active
+
+plane: CLOUD_APP
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-CAPP-02
+tc_ref: TC-CAPP-02
+uc_name: "Admin-Consent OAuth Abuse"
+tc_name: "Microsoft 365 — App Requests Directory.ReadWrite.All Without Consent"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1078.004"
+mitre_technique_name: "Valid Accounts: Cloud Accounts"
+additional_techniques:
+  - technique: "T1098"
+    name: "Account Manipulation"
+  - technique: "T1528"
+    name: "Steal Application Access Token"
+
+threat_report: "Microsoft - Volt Typhoon OAuth Persistence Patterns"
+threat_report_url: "https://www.microsoft.com/en-us/security/blog/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm Microsoft provider supported"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe oauth_grant_emulator \
+        | jq -e '.params_schema.properties.provider'
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: BIOC
+        description: "Pre-flight: provider list includes microsoft"
+
+  - id: step-02
+    name: "Single admin-consent grant request to Microsoft Identity Platform"
+    command: |
+      cat > /tmp/cloud-002.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-002
+      name: "Cloud App — Microsoft admin-consent grant"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - login.microsoftonline.com
+      dry_run: false
+      tags: [cloud-app, microsoft, oauth, admin-consent]
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: microsoft
+            scope_preset: admin_consent
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-002.yml --live
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — Directory.ReadWrite.All scope request from non-admin user"
+      - plane: CLOUD_APP
+        type: BIOC
+        description: "Cloud App — Application.ReadWrite.All in same grant body"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — outbound v2.0/authorize App-ID match to login.microsoftonline.com"
+
+  - id: step-03
+    name: "Confirm a second attempt produces same alert deterministically"
+    command: |
+      cat > /tmp/cloud-002-rep.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-002
+      name: "Cloud App — Microsoft admin-consent repeat"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - login.microsoftonline.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: microsoft
+            scope_preset: admin_consent
+            iterations: 2
+            sleep_seconds: 10
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-002-rep.yml --live
+    identity: container-runtime
+    mitre_technique: "T1098"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — repeat admin-consent attempt confirms persistence intent"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cloud-002.yml /tmp/cloud-002-rep.yml"
+
+author: "Henry Reed"
+created: "2026-05-15"
+last_updated: "2026-05-15"
+tags:
+  - cloud-app
+  - casb
+  - microsoft
+  - oauth
+  - admin-consent
+  - persistence
+  - eal-plugin

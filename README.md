@@ -84,11 +84,11 @@ docker compose down                # stop
 | **CDR** | Cortex Cloud / Prisma Cloud Compute | 5 scenarios + IaC module (EKS) |
 | **EDR** | Cortex XDR Agent | 5 scenarios + IaC module (diverse Linux targets) |
 | **NDR** | Network Security / Firewall Analytics | 5 scenarios + IaC module + EAL simulator |
-| **ITDR** | Cortex ITDR | IaC module (AD lab w/ seeded roastable accounts) |
+| **ITDR** | Cortex ITDR | 5 scenarios — synthetic IdP audit-log emission via `idp_signin_emulator` EAL plugin (impossible travel, MFA fatigue, credential stuffing, token replay, lockout) — plus IaC module (AD lab w/ seeded roastable accounts) |
 | **CSPM** | Cortex Cloud Posture Management | IaC module (intentional misconfigs) |
 | **ASM** | Cortex Attack Surface Management | IaC module (multi-service exposed host) |
 | **TIM** | Cortex Threat Intel Management | IaC module (TAXII + fake C2) |
-| **Cloud App** | Cortex Cloud App Security | Planned |
+| **Cloud App** | Cortex Cloud App Security | 5 scenarios — outbound OAuth 2.0 authorize requests to Okta / Microsoft / Google with planted risky scopes via `oauth_grant_emulator` EAL plugin |
 | **Analytics** | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
 | **AI_ACCESS** | Cortex AI Access Security | 5 scenarios — outbound to OpenAI / Gemini / Anthropic via `llm_provider_egress` EAL plugin with planted DLP markers |
 | **AIRS** | Cortex AI Runtime Security | 5 scenarios driven by `cortex-prompt-attacker` against `cortex-vulnerable-llm` (OWASP LLM01–LLM10) |
@@ -253,6 +253,7 @@ cortex-pov-engine/
 | 6 | `sources/cortex-browser-attacker/` (Playwright + JSONL audit) | ✅ shipped |
 | 7 | UI for EAL Simulator + Validation Wizard | ✅ shipped |
 | 8 | POV report generator + ATT&CK Navigator export | ✅ shipped |
+| 9 | Cloud App (CASB) plane + Identity (ITDR) plane — `oauth_grant_emulator` + `idp_signin_emulator` EAL plugins, 10 scenarios | ✅ shipped |
 
 ---
 

@@ -1,0 +1,150 @@
+scenario_id: SIM-CLOUD-004
+name: "Cloud App — Cross-Provider OAuth Grant Rotation (Okta → MS → Google)"
+version: "1.0"
+status: active
+
+plane: CLOUD_APP
+detection_types:
+  - Analytics
+
+uc_ref: UCS-CAPP-04
+tc_ref: TC-CAPP-04
+uc_name: "Cross-Provider OAuth Behaviour Stitching"
+tc_name: "Single Identity Solicits Risky Grants Across 3 IdPs in <5 min"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1090"
+mitre_technique_name: "Proxy"
+additional_techniques:
+  - technique: "T1550.001"
+    name: "Use Alternate Authentication Material: Application Access Token"
+  - technique: "T1528"
+    name: "Steal Application Access Token"
+
+threat_report: "Unit42 - Multi-IdP OAuth Phishing Campaigns"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Provider 1 — Okta risky drive grant"
+    command: |
+      cat > /tmp/cloud-004-okta.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-004
+      name: "Cloud App — rotation step 1 Okta"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.okta.com
+      dry_run: false
+      tags: [cloud-app, cross-provider, rotation]
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: okta
+            scope_preset: risky_drive
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-okta.yml --live
+    identity: container-runtime
+    mitre_technique: "T1550.001"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — first risky grant to Okta, identity marked active in IdP matrix"
+
+  - id: step-02
+    name: "Provider 2 — Microsoft admin-consent grant within 60s"
+    command: |
+      sleep 30
+      cat > /tmp/cloud-004-ms.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-004
+      name: "Cloud App — rotation step 2 Microsoft"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - login.microsoftonline.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: microsoft
+            scope_preset: admin_consent
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-ms.yml --live
+    identity: container-runtime
+    mitre_technique: "T1090"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — same identity solicits admin-consent grant at second IdP within rotation window"
+
+  - id: step-03
+    name: "Provider 3 — Google risky drive grant completes triangle"
+    command: |
+      sleep 30
+      cat > /tmp/cloud-004-google.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-004
+      name: "Cloud App — rotation step 3 Google"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - accounts.google.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: google
+            scope_preset: risky_drive
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-google.yml --live
+    identity: container-runtime
+    mitre_technique: "T1090"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — three IdPs within 5 min from same identity — provider-hopping policy evasion alert"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — single identity correlates the three IdP sessions into one incident via X-Simulation-Run-ID prefix"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — three /authorize App-ID hits across three FQDNs sharing run marker"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cloud-004-*.yml"
+
+author: "Henry Reed"
+created: "2026-05-15"
+last_updated: "2026-05-15"
+tags:
+  - cloud-app
+  - casb
+  - cross-provider
+  - stitching
+  - policy-evasion
+  - eal-plugin

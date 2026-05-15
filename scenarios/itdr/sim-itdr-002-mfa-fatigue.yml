@@ -1,0 +1,139 @@
+scenario_id: SIM-ITDR-002
+name: "ITDR — MFA Fatigue / Push-Bombing (Okta)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-ITDR-02
+tc_ref: TC-ITDR-02
+uc_name: "MFA Fatigue Detection"
+tc_name: "User Receives N MFA Pushes In <60s Then Approves"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1621"
+mitre_technique_name: "Multi-Factor Authentication Request Generation"
+additional_techniques:
+  - technique: "T1556.006"
+    name: "Modify Authentication Process: Multi-Factor Authentication"
+
+threat_report: "CISA AA22-074A - Russian SVR Targeting MFA"
+threat_report_url: "https://www.cisa.gov/news-events/cybersecurity-advisories/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm mfa_fatigue pattern is supported"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe idp_signin_emulator \
+        | jq -e '.params_schema.properties.event_pattern.description | test("mfa_fatigue")'
+    identity: container-runtime
+    mitre_technique: "T1621"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "Pre-flight: mfa_fatigue advertised in plugin metadata"
+
+  - id: step-02
+    name: "Burst of 8 push attempts ending in approval — Okta shape"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-002.yml <<YML
+      campaign_id: CMP-ITDR-002
+      name: "ITDR — Okta MFA fatigue"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [itdr, okta, mfa-fatigue]
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: okta
+            event_pattern: mfa_fatigue
+            target_user: "alice.singh@cortexsim-canary.invalid"
+            iterations: 1
+            burst_count: 8
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-002.yml --live
+    identity: container-runtime
+    mitre_technique: "T1621"
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — MFA-fatigue alert: 7 push denials followed by 1 approval within burst window"
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — fatigue_marker boolean fires explicit pattern detection"
+
+  - id: step-03
+    name: "Heavier burst (16 attempts) to confirm threshold sensitivity"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-002-heavy.yml <<YML
+      campaign_id: CMP-ITDR-002
+      name: "ITDR — Okta MFA fatigue heavy"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: okta
+            event_pattern: mfa_fatigue
+            target_user: "alice.singh@cortexsim-canary.invalid"
+            iterations: 1
+            burst_count: 16
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-002-heavy.yml --live
+    identity: container-runtime
+    mitre_technique: "T1621"
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — MFA-fatigue alert severity escalates above 16-event threshold"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/itdr-002.yml /tmp/itdr-002-heavy.yml"
+
+author: "Henry Reed"
+created: "2026-05-15"
+last_updated: "2026-05-15"
+tags:
+  - itdr
+  - okta
+  - mfa-fatigue
+  - push-bombing
+  - eal-plugin

@@ -1,6 +1,6 @@
 # Roadmap
 
-> Last updated: Phase 5 just merged (`PR #19`).
+> Last updated: Phase 9 in progress (Cloud App + ITDR planes).
 
 ## Shipped
 
@@ -13,6 +13,42 @@
 | 5 | `sources/cortex-malicious-agentic-pack/` + `agentic_egress` EAL plugin | #19 | 2026-05-08 |
 
 ## Shipped (continued)
+
+### Phase 9 — Cloud App (CASB) plane + Identity (ITDR) plane ✅
+
+Two new EAL plugins and 10 new scenarios that close the largest single
+coverage gap from the brainstorm — `G5` (Cloud App / CASB) and `G6`
+(Identity / ITDR).
+
+**Track A — Cloud App (CASB) — `oauth_grant_emulator`:**
+
+- HTTP GET against the public OAuth 2.0 authorize endpoints of three
+  IdPs (Okta, Microsoft Identity Platform, Google Identity)
+- Four scope presets: `benign` (FP control), `risky_drive`,
+  `admin_consent`, `full_mailbox`
+- 5 scenarios `scenarios/cloud_app/sim-cloud-001..005.yml` covering
+  every preset + cross-provider rotation + benign baseline
+- MITRE: T1550.001, T1528, T1078.004, T1098
+
+**Track B — Identity (ITDR) — `idp_signin_emulator`:**
+
+- POSTs synthetic IdP audit-log events (Okta system-log shape, Microsoft
+  Entra signInLogs shape, Google Workspace login activity shape) at an
+  operator-supplied collector URL — never touches the real tenant
+- Five behavioural patterns: `impossible_travel`, `mfa_fatigue`,
+  `credential_stuffing`, `token_replay`, `brute_force_lockout`
+- 5 scenarios `scenarios/itdr/sim-itdr-001..005.yml`
+- MITRE: T1078.004, T1110.003, T1110.004, T1539, T1550.004, T1556.006,
+  T1621
+
+Both plugins follow the same design rules as `llm_provider_egress`:
+shell-out-free, target-allowlist enforced via `SafetyPolicy`, per-iteration
+`X-Simulation-Run-ID` header for SOC filtering, ECS-formatted audit events,
+stdlib + httpx only.
+
+**Test coverage**: 37 tests for `oauth_grant_emulator`, 32 tests for
+`idp_signin_emulator`. Both plugins use a `_RecordingClient` httpx stub —
+no real outbound traffic during CI.
 
 ### Phase 8 — POV report generator + ATT&CK Navigator export ✅
 

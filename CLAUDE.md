@@ -101,11 +101,11 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 | CDR | Cortex Cloud / Prisma Cloud Compute | 5 scenarios + IaC module (EKS) |
 | EDR | Cortex XDR Agent | 5 scenarios + IaC module (diverse Linux targets) |
 | NDR | Network Security / Firewall Analytics | 5 scenarios + IaC module (3 stitching patterns) + EAL simulator |
-| ITDR | Cortex ITDR | IaC module (AD lab with seeded roastable accounts) |
+| ITDR | Cortex ITDR | 5 scenarios (active) — synthetic IdP audit-log emission via the `idp_signin_emulator` EAL plugin (Phase 9) — impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout — plus IaC module (AD lab with seeded roastable accounts) |
 | CSPM | Cortex Cloud Posture Management | IaC module (intentional misconfigs) |
 | ASM | Cortex Attack Surface Management | IaC module (multi-service exposed host) |
 | TIM | Cortex Threat Intel Management | IaC module (TAXII + fake C2) |
-| Cloud App | Cortex Cloud App Security | Planned |
+| Cloud App | Cortex Cloud App Security | 5 scenarios (active) — outbound OAuth 2.0 authorize requests against Okta / Microsoft / Google with planted risky scopes via the `oauth_grant_emulator` EAL plugin (Phase 9) |
 | Analytics | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
 | AI_ACCESS | Cortex AI Access Security | 5 scenarios (active) — outbound to OpenAI/Gemini/Anthropic via the `llm_provider_egress` EAL plugin (Phase 4) with planted DLP markers |
 | AIRS | Cortex AI Runtime Security | 5 scenarios (active) — OWASP LLM01-10 against `cortex-vulnerable-llm` driven by `cortex-prompt-attacker` + `airs_prompt_attack` EAL plugin |

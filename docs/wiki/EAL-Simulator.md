@@ -4,7 +4,7 @@ A plugin-based subsystem under `core/eal_simulator/` that emits
 controlled network telemetry to validate Palo Alto Networks NGFW
 **Enhanced Application Logs** and Cortex XDR / XSIAM NDR analytics.
 
-## Plugin catalog (7 built-ins)
+## Plugin catalog (11 built-ins)
 
 | Plugin | Purpose | EAL targets |
 |---|---|---|
@@ -16,6 +16,9 @@ controlled network telemetry to validate Palo Alto Networks NGFW
 | `airs_prompt_attack` | AIRS validation runner | AIRS prompt-injection / tool-abuse / RAG / DoS |
 | `llm_provider_egress` | AI Access — outbound to public AI providers | AI Access — generative-AI App-ID, DLP secret/PII, jailbreak fingerprint |
 | `agentic_egress` | KOI — agentic supply-chain artifact fetch | KOI — typosquat package fetch, extension marketplace risk, agentic skill fetch with hidden injection |
+| `browser_attack_runner` | BROWSER — Playwright-driven Prisma Browser attacks | Credential paste, drive-by download, risky extension install, copy-paste DLP, screen capture |
+| `oauth_grant_emulator` | CLOUD_APP — outbound OAuth authorize requests carrying risky scopes | CASB risky-scope grant, admin-consent-required grant, full-mailbox + offline_access, NGFW EAL `/authorize` App-ID |
+| `idp_signin_emulator` | ITDR — synthetic IdP audit-log events to a collector URL | Impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout |
 
 ## Campaign model
 

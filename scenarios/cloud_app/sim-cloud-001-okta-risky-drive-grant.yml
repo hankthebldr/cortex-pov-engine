@@ -1,0 +1,130 @@
+scenario_id: SIM-CLOUD-001
+name: "Cloud App — Okta Risky OAuth Drive-Scope Grant"
+version: "1.0"
+status: active
+
+plane: CLOUD_APP
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-CAPP-01
+tc_ref: TC-CAPP-01
+uc_name: "Risky OAuth Scope Grant Detection"
+tc_name: "Okta — User Grants Drive-Wide Scope to Untrusted App"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1550.001"
+mitre_technique_name: "Use Alternate Authentication Material: Application Access Token"
+additional_techniques:
+  - technique: "T1528"
+    name: "Steal Application Access Token"
+
+threat_report: "Unit42 - OAuth Phishing Apps in the Enterprise"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm oauth_grant_emulator plugin is registered"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe oauth_grant_emulator \
+        | jq -e '.eal_targets | length > 0'
+    identity: container-runtime
+    mitre_technique: "T1550.001"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: BIOC
+        description: "Pre-flight: oauth_grant_emulator metadata visible to operator"
+
+  - id: step-02
+    name: "Single risky-drive grant request to Okta authorize endpoint"
+    command: |
+      cat > /tmp/cloud-001.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-001
+      name: "Cloud App — Okta risky drive grant"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.okta.com
+      dry_run: false
+      tags: [cloud-app, okta, oauth, risky-scope]
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: okta
+            scope_preset: risky_drive
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-001.yml --live
+    identity: container-runtime
+    mitre_technique: "T1550.001"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — outbound OAuth authorize to Okta carrying drive-wide scope"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — outbound /oauth2/v1/authorize App-ID match to *.okta.com"
+
+  - id: step-03
+    name: "Repeated grant attempts (x3) to confirm rate-pattern detection"
+    command: |
+      cat > /tmp/cloud-001-burst.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-001
+      name: "Cloud App — Okta risky grant burst"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.okta.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: okta
+            scope_preset: risky_drive
+            iterations: 3
+            sleep_seconds: 5
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-001-burst.yml --live
+    identity: container-runtime
+    mitre_technique: "T1550.001"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — repeated risky grant attempts (3 in <60s) flagged as enumeration pattern"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cloud-001.yml /tmp/cloud-001-burst.yml"
+
+author: "Henry Reed"
+created: "2026-05-15"
+last_updated: "2026-05-15"
+tags:
+  - cloud-app
+  - casb
+  - okta
+  - oauth
+  - risky-scope
+  - eal-plugin
