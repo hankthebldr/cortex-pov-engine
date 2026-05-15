@@ -61,20 +61,22 @@ steps:
   - id: step-02
     name: "Issue token from US-West Chrome, replay from EU-Central curl"
     command: |
-      cat > /tmp/itdr-004.yml <<'YML'
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-004.yml <<YML
       campaign_id: CMP-ITDR-004
       name: "ITDR — Okta token replay"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
-        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+        - "$COLLECTOR_HOST"
       dry_run: false
       tags: [itdr, okta, token-replay]
       steps:
         - step_id: step-01
           plugin: idp_signin_emulator
           params:
-            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            collector_url: "$COLLECTOR_URL"
             provider: okta
             event_pattern: token_replay
             target_user: "ada.lovelace@cortexsim-canary.invalid"
@@ -94,19 +96,21 @@ steps:
   - id: step-03
     name: "Replay 3 iterations to confirm rule deterministically fires"
     command: |
-      cat > /tmp/itdr-004-rep.yml <<'YML'
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-004-rep.yml <<YML
       campaign_id: CMP-ITDR-004
       name: "ITDR — Okta token replay repeat"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
-        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+        - "$COLLECTOR_HOST"
       dry_run: false
       steps:
         - step_id: step-01
           plugin: idp_signin_emulator
           params:
-            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            collector_url: "$COLLECTOR_URL"
             provider: okta
             event_pattern: token_replay
             target_user: "ada.lovelace@cortexsim-canary.invalid"

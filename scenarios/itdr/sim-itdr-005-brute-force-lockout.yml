@@ -59,20 +59,22 @@ steps:
   - id: step-02
     name: "10 failed sign-ins triggering account lockout — Microsoft shape"
     command: |
-      cat > /tmp/itdr-005.yml <<'YML'
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-005.yml <<YML
       campaign_id: CMP-ITDR-005
       name: "ITDR — Microsoft brute-force lockout"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
-        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+        - "$COLLECTOR_HOST"
       dry_run: false
       tags: [itdr, microsoft, brute-force, lockout]
       steps:
         - step_id: step-01
           plugin: idp_signin_emulator
           params:
-            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            collector_url: "$COLLECTOR_URL"
             provider: microsoft
             event_pattern: brute_force_lockout
             target_user: "alice.singh@cortexsim-canary.invalid"
@@ -93,19 +95,21 @@ steps:
   - id: step-03
     name: "Same target user, second source IP — password spray pattern"
     command: |
-      cat > /tmp/itdr-005-spray.yml <<'YML'
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-005-spray.yml <<YML
       campaign_id: CMP-ITDR-005
       name: "ITDR — Microsoft password spray"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
-        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+        - "$COLLECTOR_HOST"
       dry_run: false
       steps:
         - step_id: step-01
           plugin: idp_signin_emulator
           params:
-            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            collector_url: "$COLLECTOR_URL"
             provider: microsoft
             event_pattern: brute_force_lockout
             target_user: "alice.singh@cortexsim-canary.invalid"

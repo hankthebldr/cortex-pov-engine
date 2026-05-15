@@ -59,20 +59,22 @@ steps:
   - id: step-02
     name: "Burst of 8 push attempts ending in approval — Okta shape"
     command: |
-      cat > /tmp/itdr-002.yml <<'YML'
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-002.yml <<YML
       campaign_id: CMP-ITDR-002
       name: "ITDR — Okta MFA fatigue"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
-        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+        - "$COLLECTOR_HOST"
       dry_run: false
       tags: [itdr, okta, mfa-fatigue]
       steps:
         - step_id: step-01
           plugin: idp_signin_emulator
           params:
-            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            collector_url: "$COLLECTOR_URL"
             provider: okta
             event_pattern: mfa_fatigue
             target_user: "alice.singh@cortexsim-canary.invalid"
@@ -93,19 +95,21 @@ steps:
   - id: step-03
     name: "Heavier burst (16 attempts) to confirm threshold sensitivity"
     command: |
-      cat > /tmp/itdr-002-heavy.yml <<'YML'
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-002-heavy.yml <<YML
       campaign_id: CMP-ITDR-002
       name: "ITDR — Okta MFA fatigue heavy"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
-        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+        - "$COLLECTOR_HOST"
       dry_run: false
       steps:
         - step_id: step-01
           plugin: idp_signin_emulator
           params:
-            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            collector_url: "$COLLECTOR_URL"
             provider: okta
             event_pattern: mfa_fatigue
             target_user: "alice.singh@cortexsim-canary.invalid"

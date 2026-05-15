@@ -59,20 +59,22 @@ steps:
   - id: step-02
     name: "Emit two successful Okta sign-in events from US-West then APAC-East"
     command: |
-      cat > /tmp/itdr-001.yml <<'YML'
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-001.yml <<YML
       campaign_id: CMP-ITDR-001
       name: "ITDR — Okta impossible travel"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
-        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+        - "$COLLECTOR_HOST"
       dry_run: false
       tags: [itdr, okta, impossible-travel]
       steps:
         - step_id: step-01
           plugin: idp_signin_emulator
           params:
-            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            collector_url: "$COLLECTOR_URL"
             provider: okta
             event_pattern: impossible_travel
             target_user: "ada.lovelace@cortexsim-canary.invalid"
@@ -92,19 +94,21 @@ steps:
   - id: step-03
     name: "Repeat the pattern with Microsoft event shape — confirm parser works for both"
     command: |
-      cat > /tmp/itdr-001-ms.yml <<'YML'
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-001-ms.yml <<YML
       campaign_id: CMP-ITDR-001
       name: "ITDR — Microsoft impossible travel"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
-        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+        - "$COLLECTOR_HOST"
       dry_run: false
       steps:
         - step_id: step-01
           plugin: idp_signin_emulator
           params:
-            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            collector_url: "$COLLECTOR_URL"
             provider: microsoft
             event_pattern: impossible_travel
             target_user: "ada.lovelace@cortexsim-canary.invalid"
