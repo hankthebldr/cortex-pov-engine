@@ -1,0 +1,139 @@
+scenario_id: SIM-CLOUD-005
+name: "Cloud App — Benign OAuth Baseline (control / FP-suppression validation)"
+version: "1.0"
+status: active
+
+plane: CLOUD_APP
+detection_types:
+  - Analytics
+
+uc_ref: UCS-CAPP-05
+tc_ref: TC-CAPP-05
+uc_name: "OAuth Baseline / False-Positive Validation"
+tc_name: "openid+email+profile Grant Should NOT Trigger Risky-Scope Alerts"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1078.004"
+mitre_technique_name: "Valid Accounts: Cloud Accounts"
+
+threat_report: "CortexSim - OAuth Detection Baseline Control"
+threat_report_url: "https://github.com/hankthebldr/cortex-pov-engine"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Benign OIDC grant to Okta — must NOT alert"
+    command: |
+      cat > /tmp/cloud-005-okta.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-005
+      name: "Cloud App — benign baseline Okta"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - cortexsim-canary.okta.com
+      dry_run: false
+      tags: [cloud-app, baseline, fp-validation]
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: okta
+            scope_preset: benign
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-005-okta.yml --live
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — benign OIDC grant to Okta logged informationally (NO risky-scope alert expected)"
+
+  - id: step-02
+    name: "Benign OIDC grant to Microsoft — must NOT alert"
+    command: |
+      cat > /tmp/cloud-005-ms.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-005
+      name: "Cloud App — benign baseline Microsoft"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - login.microsoftonline.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: microsoft
+            scope_preset: benign
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-005-ms.yml --live
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — benign User.Read grant to Microsoft logged informationally (NO risky-scope alert expected)"
+
+  - id: step-03
+    name: "Benign OIDC grant to Google — must NOT alert"
+    command: |
+      cat > /tmp/cloud-005-google.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-005
+      name: "Cloud App — benign baseline Google"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - accounts.google.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: google
+            scope_preset: benign
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-005-google.yml --live
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — benign OIDC grant to Google logged informationally (NO risky-scope alert expected)"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — three /authorize App-ID hits classified informational, NOT promoted to incident"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cloud-005-*.yml"
+
+author: "Henry Reed"
+created: "2026-05-15"
+last_updated: "2026-05-15"
+tags:
+  - cloud-app
+  - casb
+  - baseline
+  - fp-validation
+  - eal-plugin

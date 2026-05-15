@@ -1,0 +1,133 @@
+scenario_id: SIM-ITDR-001
+name: "ITDR — Impossible Travel (Okta sign-ins from US-West and APAC-East)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+uc_name: "Geo-Anomaly Sign-In Detection"
+tc_name: "Two Successful Sign-Ins From Geographically Impossible Locations Within 5 min"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1078.004"
+mitre_technique_name: "Valid Accounts: Cloud Accounts"
+additional_techniques:
+  - technique: "T1539"
+    name: "Steal Web Session Cookie"
+
+threat_report: "Okta - Identity Threat Trends 2025"
+threat_report_url: "https://www.okta.com/identity-101/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm idp_signin_emulator plugin is registered"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe idp_signin_emulator \
+        | jq -e '.eal_targets | length > 0'
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "Pre-flight: idp_signin_emulator metadata visible to operator"
+
+  - id: step-02
+    name: "Emit two successful Okta sign-in events from US-West then APAC-East"
+    command: |
+      cat > /tmp/itdr-001.yml <<'YML'
+      campaign_id: CMP-ITDR-001
+      name: "ITDR — Okta impossible travel"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+      dry_run: false
+      tags: [itdr, okta, impossible-travel]
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            provider: okta
+            event_pattern: impossible_travel
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-001.yml --live
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — impossible-travel alert: same user signed in from two distant geos within travel-impossibility window"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — outbound POST burst to identity log-collector App-ID match"
+
+  - id: step-03
+    name: "Repeat the pattern with Microsoft event shape — confirm parser works for both"
+    command: |
+      cat > /tmp/itdr-001-ms.yml <<'YML'
+      campaign_id: CMP-ITDR-001
+      name: "ITDR — Microsoft impossible travel"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            provider: microsoft
+            event_pattern: impossible_travel
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-001-ms.yml --live
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — impossible-travel alert fires identically for Microsoft signInLogs shape"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/itdr-001.yml /tmp/itdr-001-ms.yml"
+
+author: "Henry Reed"
+created: "2026-05-15"
+last_updated: "2026-05-15"
+tags:
+  - itdr
+  - okta
+  - microsoft
+  - impossible-travel
+  - eal-plugin

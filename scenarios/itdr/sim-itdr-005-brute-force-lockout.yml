@@ -1,0 +1,139 @@
+scenario_id: SIM-ITDR-005
+name: "ITDR — Brute-Force Causing Account Lockout (Microsoft)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-ITDR-05
+tc_ref: TC-ITDR-05
+uc_name: "Account-Lockout State Transition"
+tc_name: "Repeated Failed Sign-Ins Trigger Lockout, Lockout Event Logged"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1110.003"
+mitre_technique_name: "Brute Force: Password Spraying"
+additional_techniques:
+  - technique: "T1110.001"
+    name: "Brute Force: Password Guessing"
+
+threat_report: "Microsoft - Midnight Blizzard Password Spray Campaigns"
+threat_report_url: "https://www.microsoft.com/en-us/security/blog/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm brute_force_lockout pattern is supported"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe idp_signin_emulator \
+        | jq -e '.eal_targets'
+    identity: container-runtime
+    mitre_technique: "T1110.003"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "Pre-flight: idp_signin_emulator metadata visible to operator"
+
+  - id: step-02
+    name: "10 failed sign-ins triggering account lockout — Microsoft shape"
+    command: |
+      cat > /tmp/itdr-005.yml <<'YML'
+      campaign_id: CMP-ITDR-005
+      name: "ITDR — Microsoft brute-force lockout"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+      dry_run: false
+      tags: [itdr, microsoft, brute-force, lockout]
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            provider: microsoft
+            event_pattern: brute_force_lockout
+            target_user: "alice.singh@cortexsim-canary.invalid"
+            iterations: 1
+            burst_count: 10
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-005.yml --live
+    identity: container-runtime
+    mitre_technique: "T1110.003"
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — 10 consecutive failed sign-ins from same IP detected as brute-force"
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — user.account.lock state-transition event recorded"
+
+  - id: step-03
+    name: "Same target user, second source IP — password spray pattern"
+    command: |
+      cat > /tmp/itdr-005-spray.yml <<'YML'
+      campaign_id: CMP-ITDR-005
+      name: "ITDR — Microsoft password spray"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "${COLLECTOR_HOST:-collector.cortexsim-canary.invalid}"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "${COLLECTOR_URL:-https://collector.cortexsim-canary.invalid/idp/events}"
+            provider: microsoft
+            event_pattern: brute_force_lockout
+            target_user: "alice.singh@cortexsim-canary.invalid"
+            iterations: 1
+            burst_count: 5
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-005-spray.yml --live
+    identity: container-runtime
+    mitre_technique: "T1110.003"
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — second lockout within 1h on same identity escalates incident severity"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — repeat-lockout pattern grouped under single password-spray incident"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/itdr-005.yml /tmp/itdr-005-spray.yml"
+
+author: "Henry Reed"
+created: "2026-05-15"
+last_updated: "2026-05-15"
+tags:
+  - itdr
+  - microsoft
+  - brute-force
+  - account-lockout
+  - password-spray
+  - eal-plugin

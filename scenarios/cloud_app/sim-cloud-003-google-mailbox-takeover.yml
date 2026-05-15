@@ -1,0 +1,135 @@
+scenario_id: SIM-CLOUD-003
+name: "Cloud App — Google Full-Mailbox + Offline Token Replay Risk"
+version: "1.0"
+status: active
+
+plane: CLOUD_APP
+detection_types:
+  - Analytics
+  - BIOC
+
+uc_ref: UCS-CAPP-03
+tc_ref: TC-CAPP-03
+uc_name: "Mailbox Takeover via OAuth"
+tc_name: "Google — App Requests https://mail.google.com/ Plus Long-Lived Token"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1114.002"
+mitre_technique_name: "Email Collection: Remote Email Collection"
+additional_techniques:
+  - technique: "T1528"
+    name: "Steal Application Access Token"
+  - technique: "T1550.001"
+    name: "Use Alternate Authentication Material: Application Access Token"
+
+threat_report: "Mandiant - OAuth Mailbox Hijack via Phishing Apps"
+threat_report_url: "https://cloud.google.com/blog/topics/threat-intelligence/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm google provider supported"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe oauth_grant_emulator \
+        | jq -e '.eal_targets'
+    identity: container-runtime
+    mitre_technique: "T1114.002"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: BIOC
+        description: "Pre-flight: oauth_grant_emulator metadata visible to operator"
+
+  - id: step-02
+    name: "Single full-mailbox grant request to Google OAuth endpoint"
+    command: |
+      cat > /tmp/cloud-003.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-003
+      name: "Cloud App — Google full-mailbox grant"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - accounts.google.com
+      dry_run: false
+      tags: [cloud-app, google, oauth, mailbox]
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: google
+            scope_preset: full_mailbox
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-003.yml --live
+    identity: container-runtime
+    mitre_technique: "T1528"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — full mail.google.com scope grant attempt detected"
+      - plane: NDR
+        type: Analytics
+        description: "NGFW EAL — outbound /o/oauth2/v2/auth App-ID match to accounts.google.com"
+
+  - id: step-03
+    name: "Microsoft mailbox grant in parallel — cross-provider mailbox-collection pattern"
+    command: |
+      cat > /tmp/cloud-003-ms.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-003
+      name: "Cloud App — cross-provider mailbox-collection"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - login.microsoftonline.com
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: oauth_grant_emulator
+          params:
+            provider: microsoft
+            scope_preset: full_mailbox
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-003-ms.yml --live
+    identity: container-runtime
+    mitre_technique: "T1114.002"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Cloud App — Mail.ReadWrite + offline_access grant to Microsoft within 5 min of Google attempt"
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM stitching — same identity targeting two mail providers within rotation window"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cloud-003.yml /tmp/cloud-003-ms.yml"
+
+author: "Henry Reed"
+created: "2026-05-15"
+last_updated: "2026-05-15"
+tags:
+  - cloud-app
+  - casb
+  - google
+  - microsoft
+  - oauth
+  - mailbox-takeover
+  - eal-plugin
