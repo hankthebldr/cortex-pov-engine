@@ -304,3 +304,103 @@ class EalCampaignRun(Base):
             "step_results": self.step_results,
             "error": self.error,
         }
+
+
+# ---------------------------------------------------------------------------
+# Credentials layer (Phase 9 foundation)
+#
+# Hybrid model per the 2026-05-15 design decision:
+#   * Secret  — opaque encrypted blob, addressed by (name, type_hint).
+#   * IntegrationCredential — typed metadata for an external integration that
+#     references a Secret by FK. Future per-integration tables (xsiam_tenant,
+#     aws_credential, slack_webhook, ...) follow the same pattern.
+#
+# All reads/writes go through core/security/credentials.py so encryption and
+# decryption stay in one place; ORM rows never touch plaintext.
+# ---------------------------------------------------------------------------
+
+
+class Secret(Base):
+    """Encrypted opaque value addressed by name.
+
+    `ciphertext` holds a Fernet token (urlsafe base64). Plaintext never lives
+    on disk and is never logged. See core/security/credentials.py.
+    """
+
+    __tablename__ = "secrets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+
+    type_hint: Mapped[str] = mapped_column(String, nullable=False, default="generic")
+
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+
+    preview_tail: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    last_accessed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    rotation_reminder_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Public dict — NEVER includes ciphertext or plaintext."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type_hint": self.type_hint,
+            "preview_tail": self.preview_tail,
+            "description": self.description,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_accessed_at": self.last_accessed_at.isoformat() if self.last_accessed_at else None,
+            "rotation_reminder_at": self.rotation_reminder_at.isoformat() if self.rotation_reminder_at else None,
+        }
+
+
+class IntegrationCredential(Base):
+    """Typed metadata for an external-integration credential.
+
+    Each row is one configured integration (e.g. one XSIAM tenant, one AWS
+    account, one Slack workspace). The actual secret value lives in the Secret
+    table referenced by `secret_id` so encryption stays in one place.
+
+    `config` holds non-sensitive JSON metadata specific to the integration kind
+    (XSIAM tenant URL + region + auth_mode; AWS access key ID + region; etc.).
+    Anything sensitive belongs in the referenced Secret.
+    """
+
+    __tablename__ = "integration_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+
+    kind: Mapped[str] = mapped_column(String, nullable=False, index=True)
+
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    secret_id: Mapped[int] = mapped_column(Integer, ForeignKey("secrets.id"), nullable=False)
+
+    last_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_verified_ok: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    last_verified_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    secret_rel: Mapped["Secret"] = relationship("Secret", foreign_keys=[secret_id])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "kind": self.kind,
+            "config": self.config,
+            "secret_id": self.secret_id,
+            "last_verified_at": self.last_verified_at.isoformat() if self.last_verified_at else None,
+            "last_verified_ok": self.last_verified_ok,
+            "last_verified_error": self.last_verified_error,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

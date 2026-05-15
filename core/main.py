@@ -83,6 +83,12 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan context — runs startup logic before yielding."""
     logger.info("CortexSim starting up — env=%s port=%d", settings.CORTEXSIM_ENV, settings.CORTEXSIM_PORT)
 
+    # 0. Validate master key before anything else.  Refuses to boot production
+    #    with default/empty/short CORTEXSIM_SECRET — the credentials layer
+    #    would otherwise be cryptographically worthless.
+    from config import validate_master_key  # noqa: PLC0415
+    validate_master_key(settings.CORTEXSIM_SECRET, env=settings.CORTEXSIM_ENV)
+
     # 1. Initialize database (create tables)
     await init_db()
     logger.info("Database initialized at %s/data/cortexsim.db", settings.CORTEXSIM_BASE_DIR)
@@ -163,6 +169,25 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     )
 
 
+from security.crypto import CryptoError  # noqa: E402
+
+
+@app.exception_handler(CryptoError)
+async def crypto_error_handler(request: Request, exc: CryptoError) -> JSONResponse:
+    """Crypto failures (bad ciphertext, wrong master key) get a structured
+    500 without a stack trace so we don't accidentally leak ciphertext slices
+    in error bodies."""
+    logger.error("CryptoError on %s %s: %s", request.method, request.url, exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Credential decryption failed",
+            "code": "CRYPTO_ERROR",
+            "detail": "Master key rotation or ciphertext corruption suspected. See server logs.",
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Health endpoint
 # ---------------------------------------------------------------------------
@@ -185,6 +210,7 @@ from api.agents import router as agents_router          # noqa: E402
 from api.mitre import router as mitre_router            # noqa: E402
 from api.infra import router as infra_router            # noqa: E402
 from api.eal import router as eal_router                # noqa: E402
+from api.credentials import router as credentials_router  # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -194,6 +220,7 @@ app.include_router(agents_router, prefix="/api")
 app.include_router(mitre_router, prefix="/api")
 app.include_router(infra_router, prefix="/api")
 app.include_router(eal_router, prefix="/api")
+app.include_router(credentials_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------
