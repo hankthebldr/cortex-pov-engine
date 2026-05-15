@@ -3,6 +3,9 @@ import {
   getResultsForRun,
   validateResult,
   updateResultNotes,
+  downloadReportMatrix,
+  downloadReportNavigator,
+  downloadReportBundle,
 } from '../api/client.js'
 
 /**
@@ -140,6 +143,14 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
             run {runId?.slice?.(0, 12) || runId}…
           </span>
         </h2>
+        <div className="flex-row" style={{ gap: '6px', marginLeft: 'auto' }}>
+          <DownloadBtn label="Matrix CSV" fetcher={downloadReportMatrix}
+                       runId={runId} ext="csv" onMessage={onMessage} />
+          <DownloadBtn label="Navigator JSON" fetcher={downloadReportNavigator}
+                       runId={runId} ext="json" onMessage={onMessage} />
+          <DownloadBtn label="POV bundle (.tar.gz)" fetcher={downloadReportBundle}
+                       runId={runId} ext="tar.gz" onMessage={onMessage} />
+        </div>
         {onClose && (
           <button className="btn btn-sm btn-secondary" onClick={onClose}>Close</button>
         )}
@@ -312,5 +323,44 @@ function CopyableCode({ value }) {
         {copied ? '✓ copied' : 'copy'}
       </button>
     </div>
+  )
+}
+
+/**
+ * Phase-8 download button — fetches a Blob from the report endpoint and
+ * triggers a same-page download via a temporary <a> + objectURL. Filename
+ * pattern matches the worked example under lab_cortex_analytics_pov/.
+ */
+function DownloadBtn({ label, fetcher, runId, ext, onMessage }) {
+  const [busy, setBusy] = useState(false)
+  const handleClick = useCallback(async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const blob = await fetcher(runId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cortexsim-${ext === 'csv' ? 'detection-matrix'
+                              : ext === 'json' ? 'navigator'
+                              : 'pov-bundle'}-${runId?.slice?.(0, 8) || runId}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      // Small delay so the browser commits the download before revoke.
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (err) {
+      onMessage?.(`Download failed: ${err.message}`, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }, [busy, fetcher, runId, ext, onMessage])
+  return (
+    <button className="btn btn-sm btn-secondary"
+            disabled={busy || !runId}
+            onClick={handleClick}
+            title={`Download ${label}`}>
+      {busy ? '…' : label}
+    </button>
   )
 }
