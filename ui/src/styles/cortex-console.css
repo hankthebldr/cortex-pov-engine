@@ -1347,3 +1347,598 @@
   font-weight: 400;
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════
+   Evidence view — KPI row + scorecard
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .evidence {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.theme-console .kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 32px;
+}
+.theme-console .kpi {
+  padding: 20px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.theme-console .kpi__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  margin-bottom: 10px;
+}
+.theme-console .kpi__value {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--c-text);
+  display: inline-flex;
+  align-items: baseline;
+}
+.theme-console .kpi__value--signal   { color: var(--c-signal); }
+.theme-console .kpi__value--detected { color: var(--c-detected); }
+.theme-console .kpi__value--pending  { color: var(--c-pending); }
+.theme-console .kpi__value--missed   { color: var(--c-missed); }
+
+.theme-console .kpi__meta {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+
+/* ─── Scorecard table ────────────────────────────────────────────────── */
+
+.theme-console .scorecard {
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.theme-console .scorecard__head,
+.theme-console .scorecard__row {
+  display: grid;
+  grid-template-columns: 90px 110px 1fr 80px 130px 220px;
+  gap: 16px;
+  padding: 12px 20px;
+  align-items: center;
+}
+
+.theme-console .scorecard__head {
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-hairline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+
+.theme-console .scorecard__row {
+  border-bottom: 1px dashed var(--c-hairline);
+  font-size: 12px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.theme-console .scorecard__row:last-child { border-bottom: 0; }
+.theme-console .scorecard__row:hover { background: var(--c-signal-soft); }
+
+.theme-console .scorecard__tid {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-signal);
+}
+.theme-console .scorecard__plane {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--c-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .scorecard__alert { color: var(--c-text); line-height: 1.4; }
+.theme-console .scorecard__mttd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-text);
+  text-align: right;
+}
+.theme-console .scorecard__id {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--c-text-muted);
+}
+
+/* status pill */
+.theme-console .scorecard__status-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.theme-console .scorecard__status {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+.theme-console .scorecard__status--detected {
+  color: var(--c-detected);
+  background: var(--c-detected-soft);
+  border-color: rgba(79, 209, 161, 0.32);
+}
+.theme-console .scorecard__status--missed {
+  color: var(--c-missed);
+  background: var(--c-missed-soft);
+  border-color: rgba(249, 112, 102, 0.32);
+}
+.theme-console .scorecard__status--pending {
+  color: var(--c-pending);
+  background: var(--c-pending-soft);
+  border-color: rgba(245, 165, 36, 0.32);
+}
+
+/* per-row validate buttons */
+.theme-console .scorecard__row-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.theme-console .scorecard__row:hover .scorecard__row-actions { opacity: 1; }
+
+.theme-console .row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--c-text-secondary);
+  background: var(--c-surface);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.theme-console .row-action:hover {
+  color: var(--c-signal);
+  border-color: var(--c-signal);
+}
+.theme-console .row-action--detected:hover {
+  color: var(--c-detected);
+  border-color: var(--c-detected);
+}
+.theme-console .row-action--missed:hover {
+  color: var(--c-missed);
+  border-color: var(--c-missed);
+}
+
+/* ─── Inflight: capture wrapper for screenshot ─────────────────────── */
+.theme-console .narrative__capture {
+  /* nothing visible; just a stable target for html-to-image */
+  background: var(--c-void);
+  padding: 0;
+  border-radius: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Pin button + pinned-state visuals
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Card-corner pin (small, hover-revealed unless pinned) */
+.theme-console .scenario-card__corner {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+}
+.theme-console .pin-btn--card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.theme-console .scenario-card:hover .pin-btn--card,
+.theme-console .scenario-card:focus-within .pin-btn--card,
+.theme-console .pin-btn--card.is-pinned { opacity: 1; }
+.theme-console .pin-btn--card:hover {
+  color: var(--c-signal);
+  border-color: var(--c-signal);
+  background: var(--c-signal-soft);
+}
+.theme-console .pin-btn--card.is-pinned {
+  color: var(--c-signal);
+  border-color: var(--c-signal-soft);
+  background: var(--c-signal-soft);
+}
+
+/* Pinned card visual marker */
+.theme-console .scenario-card--pinned {
+  /* extra-faint ring on the top-left so a glance picks it out in the grid */
+}
+.theme-console .scenario-card--pinned::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 4px; height: 16px;
+  background: var(--c-signal);
+  border-radius: 0 0 2px 0;
+  box-shadow: 0 0 6px var(--c-signal-glow);
+}
+.theme-console .sc-id__pin-marker {
+  margin-left: 6px;
+  color: var(--c-signal);
+  font-size: 9px;
+  vertical-align: 1px;
+}
+
+/* Inspector variant — bigger button with text */
+.theme-console .pin-btn--inspector {
+  /* extends .btn — only visual deltas */
+  background: transparent;
+}
+.theme-console .pin-btn--inspector.is-pinned {
+  color: var(--c-signal);
+  border-color: var(--c-signal);
+  background: var(--c-signal-soft);
+}
+.theme-console .pin-btn--inspector .pin-btn__glyph {
+  display: inline-block;
+  width: 12px;
+}
+
+/* Rail — pinned section ─────────────────────────────────────────── */
+.theme-console .rail__hint {
+  margin-left: 6px;
+  font-size: 8px;
+  color: var(--c-text-disabled);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.theme-console .plane-item--pinned {
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border-left: 2px solid transparent;
+  cursor: default;
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.theme-console .plane-item--pinned:hover {
+  background: var(--c-surface-raised);
+  border-left-color: var(--c-signal);
+}
+.theme-console .plane-item__hit {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  text-align: left;
+}
+.theme-console .plane-item__hit .plane-item__name {
+  color: var(--c-text-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.theme-console .plane-item__hit:hover { color: var(--c-text); }
+.theme-console .plane-item__hit:hover .plane-item__name { color: var(--c-text-secondary); }
+
+.theme-console .plane-item__unpin {
+  width: 22px;
+  height: 22px;
+  margin-right: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--c-text-disabled);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.theme-console .plane-item--pinned:hover .plane-item__unpin { opacity: 1; }
+.theme-console .plane-item__unpin:hover {
+  color: var(--c-missed);
+  border-color: var(--c-missed);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Coverage view — ATT&CK matrix
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .coverage {
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.theme-console .coverage__empty {
+  padding: 64px 24px;
+  text-align: center;
+  color: var(--c-text-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+/* Stacked summary bar */
+.theme-console .coverage__summary-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  margin-bottom: 24px;
+}
+.theme-console .coverage__summary-seg {
+  height: 100%;
+  transition: width 400ms var(--ease-out);
+}
+
+/* Matrix row of tactic columns (horizontal scroll if needed) */
+.theme-console .coverage__matrix {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  align-items: flex-start;
+}
+
+.theme-console .coverage__column {
+  min-width: 130px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.theme-console .coverage__column-head {
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 8px 10px;
+  text-align: center;
+}
+.theme-console .coverage__column-tid {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-signal);
+}
+.theme-console .coverage__column-name {
+  font-size: 10px;
+  color: var(--c-text-secondary);
+  margin-top: 2px;
+  line-height: 1.2;
+}
+.theme-console .coverage__column-count {
+  margin-top: 4px;
+  font-size: 9px;
+  color: var(--c-text-muted);
+  letter-spacing: var(--tracking-mono);
+}
+
+.theme-console .coverage__column-cells {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-hairline);
+  border-radius: 0 0 4px 4px;
+}
+
+/* Technique cell */
+.theme-console .cov-cell {
+  position: relative;
+  padding: 7px 8px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+  color: var(--c-text-secondary);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.theme-console .cov-cell:hover {
+  border-color: var(--c-signal);
+  transform: translateY(-1px);
+}
+.theme-console .cov-cell--selected {
+  border-color: var(--c-signal);
+  box-shadow: 0 0 0 1px var(--c-signal-soft), 0 0 12px var(--c-signal-glow);
+}
+
+.theme-console .cov-cell__tid {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text);
+  margin-bottom: 2px;
+}
+.theme-console .cov-cell__name {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  color: var(--c-text-secondary);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+.theme-console .cov-cell__chip {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 5px;
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  background: var(--c-surface);
+  border: 1px solid var(--c-hairline);
+  border-radius: 2px;
+}
+
+/* status colorways */
+.theme-console .cov-cell--detected {
+  background: var(--c-detected-soft);
+  border-color: rgba(79, 209, 161, 0.32);
+}
+.theme-console .cov-cell--detected .cov-cell__tid    { color: var(--c-detected); }
+.theme-console .cov-cell--detected .cov-cell__chip   { color: var(--c-detected); border-color: rgba(79, 209, 161, 0.45); }
+.theme-console .cov-cell--detected:hover             { border-color: var(--c-detected); }
+
+.theme-console .cov-cell--pending {
+  background: var(--c-pending-soft);
+  border-color: rgba(245, 165, 36, 0.32);
+}
+.theme-console .cov-cell--pending .cov-cell__tid     { color: var(--c-pending); }
+.theme-console .cov-cell--pending .cov-cell__chip    { color: var(--c-pending); border-color: rgba(245, 165, 36, 0.45); }
+.theme-console .cov-cell--pending:hover              { border-color: var(--c-pending); }
+
+.theme-console .cov-cell--staged {
+  background: var(--c-surface-raised);
+  border-color: var(--c-hairline-strong);
+}
+.theme-console .cov-cell--staged .cov-cell__tid      { color: var(--c-text-secondary); }
+
+.theme-console .cov-cell--empty {
+  background: transparent;
+  border-color: var(--c-hairline);
+  opacity: 0.55;
+}
+.theme-console .cov-cell--empty .cov-cell__tid       { color: var(--c-text-muted); }
+.theme-console .cov-cell--empty .cov-cell__name      { color: var(--c-text-muted); }
+
+/* ─── Detail panel ──────────────────────────────────────────────────── */
+
+.theme-console .cov-detail {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-signal-soft);
+  border-left-width: 3px;
+  border-left-color: var(--c-signal);
+  border-radius: 4px;
+}
+.theme-console .cov-detail__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.theme-console .cov-detail__tid {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--c-signal);
+  letter-spacing: var(--tracking-mono);
+  margin-right: 12px;
+}
+.theme-console .cov-detail__status {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  border-radius: 3px;
+  border: 1px solid transparent;
+}
+.theme-console .cov-detail__status--detected {
+  color: var(--c-detected);
+  background: var(--c-detected-soft);
+  border-color: rgba(79, 209, 161, 0.32);
+}
+.theme-console .cov-detail__status--run_not_detected {
+  color: var(--c-pending);
+  background: var(--c-pending-soft);
+  border-color: rgba(245, 165, 36, 0.32);
+}
+.theme-console .cov-detail__status--not_run {
+  color: var(--c-text-secondary);
+  background: var(--c-surface);
+  border-color: var(--c-hairline-strong);
+}
+.theme-console .cov-detail__status--no_scenario {
+  color: var(--c-text-muted);
+  background: transparent;
+  border-color: var(--c-hairline);
+}
+
+.theme-console .cov-detail__name {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--c-text);
+  margin-bottom: 16px;
+}
+
+.theme-console .cov-detail__kv {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-bottom: 16px;
+}
+.theme-console .cov-detail__kv dt { color: var(--c-text-muted); }
+.theme-console .cov-detail__kv dd { color: var(--c-text); }
+
+.theme-console .cov-detail__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

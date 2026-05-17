@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import AppShell from './components/console/AppShell.jsx'
 import OperationsView from './components/console/OperationsView.jsx'
 import InflightView from './components/console/InflightView.jsx'
-import ResultsViewer from './components/ResultsViewer.jsx'
-import MitreHeatmap from './components/MitreHeatmap.jsx'
+import EvidenceView from './components/console/EvidenceView.jsx'
+import CoverageView from './components/console/CoverageView.jsx'
+import usePinnedScenarios from './components/console/usePinnedScenarios.js'
 import InfraGenerator from './components/InfraGenerator.jsx'
 import { getHealth, getRuns, getScenarios } from './api/client.js'
 
@@ -34,12 +35,17 @@ const PLANE_META = [
 ]
 
 export default function AppConsole() {
-  const [activeTab, setActiveTab]         = useState('operations')
-  const [selectedPlane, setSelectedPlane] = useState(null)
-  const [runs, setRuns]                   = useState([])
-  const [scenarioList, setScenarioList]   = useState([])
-  const [health, setHealth]               = useState({})
-  const [toast, setToast]                 = useState(null)
+  const [activeTab, setActiveTab]                       = useState('operations')
+  const [selectedPlane, setSelectedPlane]               = useState(null)
+  const [techniqueFilter, setTechniqueFilter]           = useState(null)
+  const [runs, setRuns]                                 = useState([])
+  const [scenarioList, setScenarioList]                 = useState([])
+  const [health, setHealth]                             = useState({})
+  const [toast, setToast]                               = useState(null)
+  const [requestOpenScenarioId, setRequestOpenScenarioId] = useState(null)
+
+  // Pinned scenarios — localStorage-backed
+  const { pinnedIds, isPinned, toggle: togglePin, unpin } = usePinnedScenarios()
 
   // ── Health fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -140,14 +146,33 @@ export default function AppConsole() {
     }))
   }, [scenarioList, selectedPlane])
 
+  // Resolve pinned IDs against the live scenario list. If a scenario was
+  // pinned but is no longer present in the list (e.g. plane filter or
+  // deletion), fall back to a name derived from the ID.
   const pinned = useMemo(() => {
-    // Show the 3 most-recent scenarios as pinned for now — a proper
-    // per-user pin list is a follow-up.
-    return scenarioList.slice(0, 3).map((s) => ({
-      id: s.scenario_id || s.id,
-      name: s.name || '',
-    }))
-  }, [scenarioList])
+    if (!pinnedIds.length) return []
+    const byId = new Map(
+      scenarioList.map((s) => [s.scenario_id || s.id, s])
+    )
+    return pinnedIds.map((id) => {
+      const s = byId.get(id)
+      return { id, name: s?.name || id }
+    })
+  }, [pinnedIds, scenarioList])
+
+  // ── Open-scenario helper (used by rail and palette) ──────────────────────
+  const handleOpenScenario = useCallback((scenarioId) => {
+    if (!scenarioId) return
+    setActiveTab('operations')
+    // Bump a fresh value so the same scenario re-opens if clicked twice.
+    setRequestOpenScenarioId(`${scenarioId}::${Date.now()}`)
+  }, [])
+
+  const requestOpenIdForView = useMemo(() => {
+    if (!requestOpenScenarioId) return null
+    const idx = requestOpenScenarioId.indexOf('::')
+    return idx > 0 ? requestOpenScenarioId.slice(0, idx) : requestOpenScenarioId
+  }, [requestOpenScenarioId])
 
   // ── Command palette items ────────────────────────────────────────────────
   const paletteItems = useMemo(() => {
@@ -155,14 +180,11 @@ export default function AppConsole() {
       section: 'Scenarios',
       id: s.scenario_id || s.id,
       title: s.name || '(unnamed)',
-      meta: `${s.scenario_id || s.id} \u00b7 ${s.plane || '?'} \u00b7 ${
-        s.steps ? `${s.steps.length} steps` : ''
-      }`,
+      meta: `${s.scenario_id || s.id} \u00b7 ${s.plane || '?'}${
+        s.steps ? ' \u00b7 ' + s.steps.length + ' steps' : ''
+      }${isPinned(s.scenario_id || s.id) ? ' \u00b7 \u25fc pinned' : ''}`,
       icon: '\u25b8',
-      onSelect: () => {
-        // jump to operations tab; the OperationsView manages its own selection
-        setActiveTab('operations')
-      },
+      onSelect: () => handleOpenScenario(s.scenario_id || s.id),
     }))
     const actions = [
       {
@@ -211,8 +233,26 @@ export default function AppConsole() {
         onSelect: () => setActiveTab('coverage'),
       },
     ]
-    return [...scenarios, ...actions]
-  }, [scenarioList])
+
+    // Pinned quick-launch actions appear FIRST in Actions when present.
+    const pinnedActions = pinnedIds
+      .map((pid) => {
+        const s = scenarioList.find((x) => (x.scenario_id || x.id) === pid)
+        if (!s) return null
+        return {
+          section: 'Pinned \u00b7 launch',
+          id: `quick-launch-${pid}`,
+          title: `Open ${s.name || pid}`,
+          meta: `${pid} \u00b7 ${s.plane || '?'}`,
+          icon: '\u25fc',
+          shortcut: ['\u2318', 'L'],
+          onSelect: () => handleOpenScenario(pid),
+        }
+      })
+      .filter(Boolean)
+
+    return [...pinnedActions, ...scenarios, ...actions]
+  }, [scenarioList, pinnedIds, isPinned, handleOpenScenario])
 
   // ── Tab badges ──────────────────────────────────────────────────────────
   const tabBadges = useMemo(() => {
@@ -260,8 +300,18 @@ export default function AppConsole() {
     tabContent = (
       <OperationsView
         selectedPlane={selectedPlane}
+        techniqueFilter={techniqueFilter}
+        onClearTechniqueFilter={() => setTechniqueFilter(null)}
+        requestOpenScenarioId={requestOpenIdForView}
+        pinnedIds={pinnedIds}
+        isPinned={isPinned}
+        togglePin={togglePin}
         onRunComplete={handleRunComplete}
         onError={(msg) => setToast({ message: msg, type: 'error' })}
+        onSurfaceMessage={(msg, type = 'info') => {
+          setToast({ message: msg, type })
+          setTimeout(() => setToast(null), 3000)
+        }}
       />
     )
   } else if (activeTab === 'inflight') {
@@ -269,22 +319,33 @@ export default function AppConsole() {
       <InflightView
         activeRun={activeRun}
         lastRun={lastRun}
-        onScreenshot={() => setToast({
-          message: 'Screenshot export — pending step 7',
-          type: 'warn',
-        })}
-        onExport={() => setToast({
-          message: 'POV report export — pending step 7',
-          type: 'warn',
-        })}
+        onError={(msg) => setToast({ message: msg, type: 'error' })}
       />
     )
   } else if (activeTab === 'evidence') {
-    tabContent = <ResultsViewer runs={runs} onClose={() => setActiveTab('operations')} />
+    tabContent = (
+      <EvidenceView
+        activeRun={activeRun}
+        lastRun={lastRun}
+        onError={(msg) => setToast({ message: msg, type: 'error' })}
+      />
+    )
   } else if (activeTab === 'lab') {
     tabContent = <InfraGenerator />
   } else if (activeTab === 'coverage') {
-    tabContent = <MitreHeatmap />
+    tabContent = (
+      <CoverageView
+        onFilterByTechnique={(tid, scenarioIds) => {
+          setTechniqueFilter({ tid, scenarioIds: scenarioIds || [] })
+          setActiveTab('operations')
+          setToast({
+            message: `Filtered Operations to ${tid} (${(scenarioIds || []).length} scenarios)`,
+            type: 'info',
+          })
+          setTimeout(() => setToast(null), 3000)
+        }}
+      />
+    )
   }
 
   return (
@@ -297,6 +358,8 @@ export default function AppConsole() {
         planes={planes}
         onSelectPlane={handleSelectPlane}
         pinned={pinned}
+        onSelectPinned={handleOpenScenario}
+        onUnpinScenario={unpin}
         onAbortRun={handleAbortRun}
         tabBadges={tabBadges}
         paletteItems={paletteItems}
@@ -327,51 +390,5 @@ export default function AppConsole() {
   )
 }
 
-// ─── Placeholder: In-flight narrative ────────────────────────────────────
-function InflightPlaceholder({ run }) {
-  return (
-    <div style={{
-      maxWidth: 960, margin: '0 auto', paddingTop: 32,
-    }}>
-      <div style={{
-        fontFamily: 'var(--font-mono)', fontSize: 10,
-        letterSpacing: '0.08em', textTransform: 'uppercase',
-        color: 'var(--c-signal)', marginBottom: 8,
-      }}>
-        {run.scenarioId} · step {run.step} of {run.totalSteps}
-      </div>
-      <h1 style={{
-        fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 400,
-        letterSpacing: '-0.02em', color: 'var(--c-text)', marginBottom: 12,
-      }}>
-        Run in progress
-      </h1>
-      <p style={{
-        fontFamily: 'var(--font-narrative)', fontSize: 16, fontWeight: 300,
-        color: 'var(--c-text-secondary)', lineHeight: 1.6, maxWidth: 720,
-      }}>
-        The attack narrative timeline will render here in a follow-up migration
-        step (see <em>docs/design/console-redesign.md</em> → migration step 6).
-        Until then, use the <strong>Evidence</strong> tab to validate detections
-        as they arrive.
-      </p>
-    </div>
-  )
-}
-
-function EmptyState({ title, body }) {
-  return (
-    <div style={{
-      maxWidth: 560, margin: '0 auto', paddingTop: 80, textAlign: 'left',
-    }}>
-      <h1 style={{
-        fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 400,
-        color: 'var(--c-text)', marginBottom: 12,
-      }}>{title}</h1>
-      <p style={{
-        fontFamily: 'var(--font-narrative)', fontSize: 15, fontWeight: 300,
-        color: 'var(--c-text-secondary)', lineHeight: 1.6,
-      }}>{body}</p>
-    </div>
-  )
-}
+// In-flight rendering moved to components/console/InflightView.jsx (step 6).
+// Empty-state handling is now intrinsic to InflightView when no run is active.

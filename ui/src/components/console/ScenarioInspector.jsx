@@ -1,30 +1,30 @@
 import React from 'react'
-import useLaunchScenario from './useLaunchScenario.js'
+import PinButton from './PinButton.jsx'
 
 /**
  * ScenarioInspector — right-side 420px drawer with pinned launch CTA at top,
  * metadata, expected-detection matrix, and footer.
  *
- * Solves design-doc issue #3: launch CTA below the fold. The Launch button
- * is the FIRST visible element when the drawer slides in.
+ * Launch state is owned by the parent (OperationsView) so the same hook
+ * instance powers both the drawer button AND the global ⌘L shortcut.
  *
  * Props:
- *   scenario        — scenario detail object
- *   open            — boolean
- *   onClose         — () => void
- *   onRunComplete   — (run) => void  (passed through to launch hook)
- *   onError         — (msg) => void
+ *   scenario      — scenario detail object
+ *   open          — boolean
+ *   launch        — useLaunchScenario() return value (controlled from parent)
+ *   pinned        — boolean — whether this scenario is currently pinned
+ *   onTogglePin   — () => void
+ *   onClose       — () => void
  */
 export default function ScenarioInspector({
   scenario,
   open,
+  launch,
+  pinned = false,
+  onTogglePin = () => {},
   onClose = () => {},
-  onRunComplete = () => {},
-  onError = () => {},
 }) {
-  const launch = useLaunchScenario(scenario, { onRunComplete, onError })
-
-  if (!scenario) return <aside className="inspector" />
+  if (!scenario || !launch) return <aside className="inspector" />
 
   const id = scenario.scenario_id || scenario.id
 
@@ -63,6 +63,11 @@ export default function ScenarioInspector({
           >
             {launch.downloading ? 'Preparing…' : 'Push bundle'}
           </button>
+          <PinButton
+            pinned={pinned}
+            onToggle={onTogglePin}
+            variant="inspector"
+          />
           <button type="button" className="btn" onClick={onClose}>Close</button>
         </div>
 
