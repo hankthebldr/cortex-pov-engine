@@ -1,0 +1,749 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://panw.local/cortex-pov-engine/schemas/ttp-entry.schema.json",
+  "title": "Cortex POV Engine — TTP / Attack Simulation Entry",
+  "description": "Canonical schema for a single adversary technique, attack vector, or threat-simulation entry consumed by the cortex-pov-engine. One file = one TTP. Grounded in MITRE ATT&CK with explicit Cortex / PANW product, IOC, BIOC, and use-case mappings.",
+  "type": "object",
+  "additionalProperties": false,
+
+  "required": [
+    "id",
+    "schema_version",
+    "status",
+    "metadata",
+    "identity",
+    "mitre_attack",
+    "execution",
+    "detections",
+    "panw_mapping",
+    "references"
+  ],
+
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^TTP-[0-9]{4}-[0-9]{4}$",
+      "description": "Stable identifier. Format: TTP-YYYY-NNNN. NNNN is zero-padded monotonic within the year. Never reused."
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Schema contract version. Bump only on breaking change."
+    },
+    "entry_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semver of this specific entry. Bump on payload/detection edits."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "active", "deprecated", "withdrawn"],
+      "description": "Lifecycle state. Only `active` entries are loaded by the pov-engine by default."
+    },
+
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at", "updated_at", "authors", "tags", "pov_engine"],
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "authors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "email": { "type": "string", "format": "email" },
+              "role": { "type": "string", "examples": ["author", "reviewer", "approver"] }
+            }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+          "uniqueItems": true,
+          "description": "Free-form lower-kebab tags. Conventions: actor-<slug>, malware-<slug>, industry-<slug>, vector-<slug>, severity-<level>."
+        },
+        "source_refs": {
+          "type": "array",
+          "description": "IDs from sources/source-registry.json that informed this entry.",
+          "items": { "type": "string", "pattern": "^SRC-[A-Z0-9-]+$" }
+        },
+        "pov_engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["auto_load", "simulation_class", "destructive", "platforms"],
+          "description": "Ingest hints consumed by the cortex-pov-engine loader.",
+          "properties": {
+            "engine_version_min": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+              "description": "Minimum pov-engine version that can execute this entry."
+            },
+            "auto_load": {
+              "type": "boolean",
+              "description": "If true, included in default simulation library."
+            },
+            "simulation_class": {
+              "type": "string",
+              "enum": [
+                "endpoint",
+                "identity",
+                "cloud",
+                "network",
+                "email",
+                "web",
+                "container",
+                "kubernetes",
+                "ot-iot",
+                "data-exfil",
+                "ransomware-chain",
+                "supply-chain"
+              ]
+            },
+            "destructive": {
+              "type": "boolean",
+              "description": "True if execution modifies persistent state, drops files, or impacts production-like systems. Engine should require explicit confirmation."
+            },
+            "requires_network_egress": { "type": "boolean", "default": false },
+            "requires_internet": { "type": "boolean", "default": false },
+            "platforms": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "windows",
+                  "linux",
+                  "macos",
+                  "android",
+                  "ios",
+                  "aws",
+                  "azure",
+                  "gcp",
+                  "oci",
+                  "kubernetes",
+                  "saas-m365",
+                  "saas-google-workspace",
+                  "saas-okta",
+                  "saas-salesforce",
+                  "network-fabric"
+                ]
+              }
+            },
+            "estimated_runtime_seconds": { "type": "integer", "minimum": 1 },
+            "cleanup_required": { "type": "boolean", "default": true },
+            "safety_class": {
+              "type": "string",
+              "enum": ["safe-by-design", "lab-only", "destructive-with-cleanup", "irreversible"],
+              "default": "lab-only"
+            }
+          }
+        }
+      }
+    },
+
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "summary"],
+      "properties": {
+        "name": { "type": "string", "minLength": 4, "maxLength": 140 },
+        "summary": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 400,
+          "description": "One-paragraph plain-English description suitable for SE-facing docs."
+        },
+        "description": {
+          "type": "string",
+          "description": "Long-form rationale, attacker objective, and observed real-world usage."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["informational", "low", "medium", "high", "critical"]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Analyst confidence that this TTP reflects current adversary behavior."
+        }
+      }
+    },
+
+    "threat_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who uses this technique in the wild. Drives sales narrative and Unit 42 alignment.",
+      "properties": {
+        "actors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "examples": ["Muddled Libra", "Scattered Spider", "Bling Libra"] },
+              "aliases": { "type": "array", "items": { "type": "string" } },
+              "unit42_actor_id": { "type": "string", "description": "Unit 42 internal actor identifier if known." },
+              "mitre_group_id": { "type": "string", "pattern": "^G[0-9]{4}$" }
+            }
+          }
+        },
+        "campaigns": { "type": "array", "items": { "type": "string" } },
+        "malware_families": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "mitre_software_id": { "type": "string", "pattern": "^S[0-9]{4}$" }
+            }
+          }
+        },
+        "industries_targeted": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "financial-services",
+              "healthcare",
+              "manufacturing",
+              "retail-hospitality",
+              "energy-utilities",
+              "government",
+              "education",
+              "technology",
+              "telecommunications",
+              "transportation-logistics",
+              "media-entertainment",
+              "professional-services",
+              "non-profit",
+              "all"
+            ]
+          }
+        },
+        "geographies_targeted": { "type": "array", "items": { "type": "string" } },
+        "first_observed": { "type": "string", "format": "date" }
+      }
+    },
+
+    "mitre_attack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matrix", "techniques"],
+      "properties": {
+        "matrix": {
+          "type": "string",
+          "enum": ["enterprise", "mobile", "ics", "cloud", "containers"]
+        },
+        "techniques": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["technique_id", "tactic_ids", "name"],
+            "properties": {
+              "technique_id": {
+                "type": "string",
+                "pattern": "^T[0-9]{4}$"
+              },
+              "subtechnique_id": {
+                "type": "string",
+                "pattern": "^T[0-9]{4}\\.[0-9]{3}$"
+              },
+              "name": { "type": "string" },
+              "tactic_ids": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^TA[0-9]{4}$"
+                }
+              },
+              "tactic_names": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "Reconnaissance",
+                    "Resource Development",
+                    "Initial Access",
+                    "Execution",
+                    "Persistence",
+                    "Privilege Escalation",
+                    "Defense Evasion",
+                    "Credential Access",
+                    "Discovery",
+                    "Lateral Movement",
+                    "Collection",
+                    "Command and Control",
+                    "Exfiltration",
+                    "Impact"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "kill_chain_phase": {
+          "type": "string",
+          "enum": [
+            "reconnaissance",
+            "weaponization",
+            "delivery",
+            "exploitation",
+            "installation",
+            "command-and-control",
+            "actions-on-objectives"
+          ]
+        },
+        "data_sources": {
+          "type": "array",
+          "description": "MITRE ATT&CK data sources observed (e.g., 'Process: Process Creation', 'Logon Session: Logon Session Creation').",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_platform", "privilege_required", "payload"],
+      "description": "Exact instructions the pov-engine uses to perform the simulation.",
+      "properties": {
+        "target_platform": {
+          "type": "string",
+          "enum": [
+            "windows",
+            "linux",
+            "macos",
+            "aws",
+            "azure",
+            "gcp",
+            "kubernetes",
+            "saas-m365",
+            "saas-okta",
+            "network-fabric",
+            "cross-platform"
+          ]
+        },
+        "execution_framework": {
+          "type": "string",
+          "enum": [
+            "atomic-red-team",
+            "stratus-red-team",
+            "leonidas",
+            "caldera",
+            "purplesharp",
+            "custom-cortex",
+            "manual"
+          ],
+          "description": "Framework the payload is authored against. `custom-cortex` for first-party scripts."
+        },
+        "framework_reference_id": {
+          "type": "string",
+          "description": "External framework test ID (e.g., Atomic Red Team GUID, Stratus attack ID)."
+        },
+        "privilege_required": {
+          "type": "string",
+          "enum": ["none", "user", "administrator", "system", "root", "cloud-iam-user", "cloud-iam-admin"]
+        },
+        "prerequisites": {
+          "type": "array",
+          "description": "Ordered preconditions. Engine evaluates before execution.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["description"],
+            "properties": {
+              "description": { "type": "string" },
+              "check_command": { "type": "string" },
+              "remediation": { "type": "string" }
+            }
+          }
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["interpreter", "code"],
+          "description": "What runs.",
+          "properties": {
+            "interpreter": {
+              "type": "string",
+              "enum": [
+                "powershell",
+                "cmd",
+                "bash",
+                "sh",
+                "zsh",
+                "python",
+                "node",
+                "aws-cli",
+                "az-cli",
+                "gcloud",
+                "kubectl",
+                "binary",
+                "api-call",
+                "manual"
+              ]
+            },
+            "code": {
+              "type": "string",
+              "description": "Literal command or script body. Use `${VAR}` placeholders the engine will substitute."
+            },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "input_variables": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "type"],
+                "properties": {
+                  "name": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+                  "type": { "type": "string", "enum": ["string", "integer", "boolean", "path", "url", "secret"] },
+                  "default": {},
+                  "description": { "type": "string" }
+                }
+              }
+            },
+            "timeout_seconds": { "type": "integer", "minimum": 1, "default": 300 }
+          }
+        },
+        "expected_artifacts": {
+          "type": "array",
+          "description": "Observable side effects the engine and downstream detections should expect.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["artifact_type", "description"],
+            "properties": {
+              "artifact_type": {
+                "type": "string",
+                "enum": [
+                  "process",
+                  "file",
+                  "registry",
+                  "network-connection",
+                  "dns-query",
+                  "auth-event",
+                  "cloud-api-call",
+                  "scheduled-task",
+                  "service",
+                  "wmi-event",
+                  "named-pipe",
+                  "module-load",
+                  "mailbox-rule",
+                  "saas-event"
+                ]
+              },
+              "description": { "type": "string" },
+              "expected_value": { "type": "string" }
+            }
+          }
+        },
+        "cleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "interpreter": { "type": "string" },
+            "code": { "type": "string" },
+            "manual_steps": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+
+    "detections": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Detections the simulation should trigger. Drives POV validation evidence.",
+      "properties": {
+        "iocs": {
+          "type": "array",
+          "description": "Atomic Indicators of Compromise. Mapped to Cortex XDR / XSIAM IOC objects.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ioc_type", "value"],
+            "properties": {
+              "ioc_type": {
+                "type": "string",
+                "enum": [
+                  "ipv4",
+                  "ipv6",
+                  "domain",
+                  "url",
+                  "file-sha256",
+                  "file-sha1",
+                  "file-md5",
+                  "filename",
+                  "filepath",
+                  "registry-key",
+                  "user-agent",
+                  "email-sender",
+                  "tls-ja3",
+                  "tls-ja4",
+                  "cloud-account-id"
+                ]
+              },
+              "value": { "type": "string" },
+              "context": { "type": "string" },
+              "reputation_required": {
+                "type": "string",
+                "enum": ["any", "malicious", "suspicious"],
+                "default": "any"
+              },
+              "cortex_severity_override": {
+                "type": "string",
+                "enum": ["informational", "low", "medium", "high", "critical"]
+              }
+            }
+          }
+        },
+        "biocs": {
+          "type": "array",
+          "description": "Behavioral Indicators of Compromise — Cortex XDR/XSIAM behavioral rules expressed as logical predicates.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "description", "logic"],
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "logic": {
+                "type": "string",
+                "description": "BIOC rule body. Native Cortex BIOC syntax (event_type, action_*, etc.). Multi-line allowed."
+              },
+              "severity": { "type": "string", "enum": ["informational", "low", "medium", "high", "critical"] },
+              "mitre_technique_ids": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }
+              },
+              "suppression_window_seconds": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "xql_queries": {
+          "type": "array",
+          "description": "Cortex Query Language queries for hunting / validation. Engine executes these post-simulation to confirm telemetry.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["purpose", "query"],
+            "properties": {
+              "purpose": {
+                "type": "string",
+                "enum": ["validation", "hunt", "investigation", "metric"]
+              },
+              "name": { "type": "string" },
+              "query": { "type": "string", "description": "XQL query body." },
+              "expected_rows_min": { "type": "integer", "minimum": 0, "default": 1 },
+              "dataset": {
+                "type": "string",
+                "description": "Cortex dataset (e.g., xdr_data, panw.endpoint, panw.network)."
+              }
+            }
+          }
+        },
+        "correlation_rules": {
+          "type": "array",
+          "description": "XSIAM correlation rule references that should fire from this TTP.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "rule_id": { "type": "string" },
+              "logic": { "type": "string" }
+            }
+          }
+        },
+        "analytics_modules": {
+          "type": "array",
+          "description": "Out-of-the-box Cortex Analytics modules expected to fire (ML-based detections).",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "panw_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["products"],
+      "description": "Which PANW products cover this TTP, at what coverage tier, and the use-case + test-case pairing.",
+      "properties": {
+        "products": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["module", "coverage_tier"],
+            "properties": {
+              "module": {
+                "type": "string",
+                "enum": [
+                  "cortex-xdr",
+                  "cortex-xsiam",
+                  "cortex-xsoar",
+                  "cortex-xpanse",
+                  "cortex-cloud",
+                  "cortex-cdr",
+                  "cortex-asm",
+                  "prisma-cloud",
+                  "prisma-access",
+                  "ngfw-pa-series",
+                  "advanced-threat-prevention",
+                  "advanced-wildfire",
+                  "advanced-url-filtering",
+                  "advanced-dns-security",
+                  "iot-security",
+                  "ai-access-security",
+                  "ai-runtime-security"
+                ]
+              },
+              "submodule": {
+                "type": "string",
+                "description": "Optional sub-capability (e.g., 'agent-traps', 'analytics', 'identity-threat-module', 'cloud-posture')."
+              },
+              "coverage_tier": {
+                "type": "string",
+                "enum": ["prevention", "detection", "investigation", "response", "exposure-mgmt"]
+              },
+              "rule_ids": {
+                "type": "array",
+                "description": "Out-of-the-box rule / signature IDs (e.g., XDR alert IDs, WildFire verdicts, ATP signatures).",
+                "items": { "type": "string" }
+              },
+              "agent_version_min": { "type": "string" },
+              "license_required": {
+                "type": "string",
+                "enum": ["base", "advanced", "premium", "pro", "enterprise"]
+              },
+              "evidence_query": {
+                "type": "string",
+                "description": "XQL or rule reference the demo / POV operator uses to surface evidence in the product UI."
+              }
+            }
+          }
+        },
+        "use_cases": {
+          "type": "array",
+          "description": "POV-level use cases this TTP supports. Lines up with the playbook the SE runs with the customer.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["use_case_id", "name", "test_cases"],
+            "properties": {
+              "use_case_id": {
+                "type": "string",
+                "pattern": "^UC-[A-Z0-9]+-[0-9]{3}$",
+                "description": "Format: UC-<DOMAIN>-NNN. DOMAIN examples: RANSOM, IDENT, CLOUD, INSIDER, SUPPLY, OT."
+              },
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "test_cases": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["test_case_id", "objective", "success_criteria"],
+                  "properties": {
+                    "test_case_id": {
+                      "type": "string",
+                      "pattern": "^TC-[A-Z0-9]+-[0-9]{3}[A-Z]?$"
+                    },
+                    "objective": { "type": "string" },
+                    "preconditions": { "type": "array", "items": { "type": "string" } },
+                    "steps": { "type": "array", "items": { "type": "string" } },
+                    "success_criteria": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": { "type": "string" },
+                      "description": "Each criterion is a verifiable pass/fail statement (e.g., 'BIOC `LSASS Handle Open` fires within 30s'). The pov-engine maps these to the XQL queries above."
+                    },
+                    "expected_score_weight": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "POV scorecard weight for this test case."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "remediation_guidance": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Hardening and response guidance shown to customers in the POV report.",
+      "properties": {
+        "preventive_controls": { "type": "array", "items": { "type": "string" } },
+        "detection_engineering": { "type": "array", "items": { "type": "string" } },
+        "response_playbook": {
+          "type": "string",
+          "description": "XSOAR playbook ID or filename, if applicable."
+        }
+      }
+    },
+
+    "references": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "url", "publisher"],
+        "properties": {
+          "title": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "publisher": {
+            "type": "string",
+            "examples": ["Unit 42", "MITRE", "CISA", "Microsoft Threat Intelligence", "Mandiant", "The DFIR Report"]
+          },
+          "publisher_id": {
+            "type": "string",
+            "description": "Source registry ID (e.g., SRC-UNIT42).",
+            "pattern": "^SRC-[A-Z0-9-]+$"
+          },
+          "published_date": { "type": "string", "format": "date" },
+          "primary": {
+            "type": "boolean",
+            "default": false,
+            "description": "Mark exactly one reference as primary (the source the TTP is derived from)."
+          }
+        }
+      }
+    },
+
+    "changelog": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["entry_version", "date", "change"],
+        "properties": {
+          "entry_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+          "date": { "type": "string", "format": "date" },
+          "author": { "type": "string" },
+          "change": { "type": "string" }
+        }
+      }
+    }
+  }
+}

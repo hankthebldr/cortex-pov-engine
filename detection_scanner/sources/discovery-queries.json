@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "updated_at": "2026-05-13",
+  "description": "Curated WebSearch query templates the cortex-scraper (or a human operator) uses to (re)discover high-signal posts. Templates contain {placeholders} the scraper resolves from current context: {year} = current year, {month} = current month, {actor} = each entry in scope_seeds.actors, etc. Domain-restricted queries are strongly preferred to reduce noise.",
+
+  "scope_seeds": {
+    "actors": [
+      "Muddled Libra",
+      "Scattered Spider",
+      "UNC3944",
+      "Octo Tempest",
+      "Ignoble Scorpius",
+      "Bling Libra",
+      "ShinyHunters",
+      "Boggy Serpens",
+      "Phantom Taurus",
+      "Stately Taurus",
+      "TeamPCP",
+      "Handala Hack Group",
+      "Volt Typhoon",
+      "Midnight Blizzard",
+      "APT29",
+      "APT41",
+      "Lazarus Group"
+    ],
+    "malware_families": [
+      "BlackSuit",
+      "Royal Ransomware",
+      "DragonForce",
+      "BlackCat",
+      "ALPHV",
+      "Akira",
+      "LockBit",
+      "Black Basta",
+      "Play",
+      "Clop",
+      "Medusa",
+      "Mimikatz",
+      "rclone"
+    ],
+    "themes": [
+      "ransomware kill chain",
+      "identity-driven initial access",
+      "cloud IAM abuse",
+      "ESXi mass encryption",
+      "supply chain compromise",
+      "help desk social engineering",
+      "DCSync",
+      "data exfiltration cloud storage",
+      "AI-enhanced phishing",
+      "vishing"
+    ]
+  },
+
+  "query_templates": {
+    "tier_1_unit42": {
+      "source_id": "SRC-UNIT42",
+      "domain_restrict": "unit42.paloaltonetworks.com",
+      "queries": [
+        "Unit 42 threat assessment {actor}",
+        "Unit 42 anatomy of an attack {malware_family}",
+        "Unit 42 ransomware kill chain {year}",
+        "Unit 42 cloud IAM threat research {year}",
+        "Unit 42 incident response report {year}",
+        "Unit 42 threat bulletin {month} {year}",
+        "Unit 42 {theme} {year}"
+      ]
+    },
+    "tier_1_mitre": {
+      "source_id": "SRC-MITRE-ATTACK",
+      "domain_restrict": "attack.mitre.org",
+      "queries": [
+        "MITRE ATT&CK technique {technique_id}",
+        "MITRE ATT&CK group {group_id}",
+        "MITRE ATT&CK software {software_id}"
+      ]
+    },
+    "tier_2_vendor_intel": {
+      "source_ids": ["SRC-MANDIANT", "SRC-MSTIC", "SRC-CROWDSTRIKE", "SRC-SENTINELLABS", "SRC-TALOS", "SRC-VOLEXITY", "SRC-SOPHOS-XOPS", "SRC-TRENDMICRO"],
+      "domain_restrict_per_source": true,
+      "queries": [
+        "{actor} threat intelligence {year}",
+        "{malware_family} technical analysis {year}",
+        "{theme} {year}"
+      ]
+    },
+    "tier_3_government": {
+      "source_ids": ["SRC-CISA", "SRC-NSA-CYBER", "SRC-NCSC-UK", "SRC-ACSC"],
+      "queries": [
+        "CISA #StopRansomware {malware_family}",
+        "CISA joint cybersecurity advisory {actor}",
+        "{government_agency} advisory {actor} TTPs"
+      ]
+    },
+    "tier_4_ir_community": {
+      "source_ids": ["SRC-DFIR-REPORT", "SRC-REDCANARY", "SRC-HUNTRESS", "SRC-SPECTEROPS"],
+      "queries": [
+        "The DFIR Report {malware_family} intrusion",
+        "Red Canary threat detection report {year}",
+        "Red Canary intelligence insights {month} {year}",
+        "SpecterOps {theme}"
+      ]
+    },
+    "tier_5_execution_frameworks": {
+      "source_ids": ["SRC-ATOMIC-RED-TEAM", "SRC-STRATUS-RED-TEAM", "SRC-CALDERA"],
+      "queries": [
+        "Atomic Red Team atomics {technique_id}",
+        "Stratus Red Team {cloud_provider} {technique_id}",
+        "MITRE CALDERA ability {technique_id}"
+      ]
+    }
+  },
+
+  "rerun_policy": {
+    "trigger_on": [
+      "scheduled cadence per source (see source-registry.json:update_cadence)",
+      "new actor/malware seed added to scope_seeds",
+      "new MITRE technique appears in scope of any active TTP"
+    ],
+    "deduplication": "URL canonicalization + last_canvassed timestamp comparison. Skip URLs already promoted to ttps/*.json unless their content hash has changed."
+  },
+
+  "operator_notes": [
+    "When canvassing for new content, start with Tier 1 (Unit 42 + MITRE), then expand outward by tier.",
+    "Always domain-restrict WebSearch queries — unscoped queries hit aggregators and lose signal.",
+    "Cross-reference actor aliases across Unit 42 (Libra), MSTIC (weather), CrowdStrike (animal), and Mandiant (UNCxxxx) before treating two articles as distinct threat reports.",
+    "When a high-signal post is found, add it to sources/<source-id>-index.json with priority P0/P1/P2 — that becomes the scraper's backlog."
+  ]
+}

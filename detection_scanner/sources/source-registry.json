@@ -1,0 +1,666 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "registry_version": "1.1.0",
+  "description": "Indexed threat-intel and execution-framework sources for the cortex-pov-engine TTP corpus. Consumed by the cortex-scraper to crawl, parse, and emit candidate TTP drafts. Tier 1 = primary/canonical; Tier 2 = vendor intel; Tier 3 = government; Tier 4 = IR/community; Tier 5 = execution frameworks (payload sources, not intel).",
+  "updated_at": "2026-05-13",
+  "sources": [
+    {
+      "id": "SRC-UNIT42",
+      "name": "Unit 42 \u2014 Palo Alto Networks",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "vendor-internal",
+      "homepage": "https://unit42.paloaltonetworks.com/",
+      "blog_index": "https://unit42.paloaltonetworks.com/category/threat-research/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://unit42.paloaltonetworks.com/feed/"
+        }
+      ],
+      "scrape_hints": {
+        "article_selector": "article.post, .post-content",
+        "title_selector": "h1.entry-title",
+        "date_selector": "time.entry-date",
+        "tag_selector": ".post-tags a, .tag-links a",
+        "extract_ioc_section": true,
+        "extract_atomic_indicators_table": true,
+        "follow_internal_links": true
+      },
+      "actor_taxonomy_alias": {
+        "naming_convention": "Constellation (Libra/Aquila/etc.)",
+        "examples": [
+          "Muddled Libra",
+          "Scattered Spider (== Muddled Libra alias)",
+          "Bling Libra",
+          "Howling Scorpius"
+        ]
+      },
+      "rate_limit_rpm": 30,
+      "categories_of_interest": [
+        "threat-research",
+        "malware",
+        "ransomware",
+        "incident-response",
+        "cloud",
+        "identity",
+        "vulnerabilities"
+      ],
+      "primary": true,
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Unit 42 threat assessment {actor}",
+        "Unit 42 ransomware kill chain {year}",
+        "Unit 42 cloud IAM threat research",
+        "Unit 42 incident response report {year}",
+        "Unit 42 anatomy of an attack",
+        "Unit 42 threat bulletin {month} {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MITRE-ATTACK",
+      "name": "MITRE ATT&CK",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "standards-body",
+      "homepage": "https://attack.mitre.org/",
+      "data_endpoints": [
+        {
+          "type": "stix",
+          "url": "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
+        },
+        {
+          "type": "stix",
+          "url": "https://raw.githubusercontent.com/mitre/cti/master/mobile-attack/mobile-attack.json"
+        },
+        {
+          "type": "stix",
+          "url": "https://raw.githubusercontent.com/mitre/cti/master/ics-attack/ics-attack.json"
+        }
+      ],
+      "purpose": "Canonical IDs for tactics, techniques, groups (G####), and software (S####). All TTP entries must resolve cleanly against this.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "MITRE ATT&CK technique {technique_id}",
+        "MITRE ATT&CK group {group_id}",
+        "MITRE ATT&CK software {software_id}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MANDIANT",
+      "name": "Mandiant \u2014 Google Threat Intelligence",
+      "tier": 2,
+      "weight": 0.9,
+      "publisher_class": "vendor-external",
+      "homepage": "https://cloud.google.com/security/resources/insights/mandiant",
+      "blog_index": "https://cloud.google.com/blog/topics/threat-intelligence",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://cloud.google.com/blog/topics/threat-intelligence/rss"
+        }
+      ],
+      "categories_of_interest": [
+        "apt",
+        "ransomware",
+        "nation-state",
+        "zero-day"
+      ],
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Mandiant threat intelligence {actor}",
+        "Mandiant APT {year} report",
+        "Google TIG zero-day {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MSTIC",
+      "name": "Microsoft Threat Intelligence",
+      "tier": 2,
+      "weight": 0.9,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.microsoft.com/en-us/security/blog/topic/threat-intelligence/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://www.microsoft.com/en-us/security/blog/topic/threat-intelligence/feed/"
+        }
+      ],
+      "actor_taxonomy_alias": {
+        "naming_convention": "Weather-themed (Storm-####, Sandstorm, Typhoon, Blizzard)",
+        "examples": [
+          "Octo Tempest (== Scattered Spider)",
+          "Midnight Blizzard (== APT29)",
+          "Volt Typhoon"
+        ]
+      },
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Microsoft Threat Intelligence {weather-actor}",
+        "MSTIC Storm-{number}",
+        "Microsoft Defender Threat Intelligence {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-CROWDSTRIKE",
+      "name": "CrowdStrike Counter Adversary Operations",
+      "tier": 2,
+      "weight": 0.85,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.crowdstrike.com/blog/category/threat-intel-research/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://www.crowdstrike.com/blog/feed/"
+        }
+      ],
+      "actor_taxonomy_alias": {
+        "naming_convention": "Animal-themed (Bear/Panda/Spider/Kitten/Buffalo/Chollima)",
+        "examples": [
+          "Scattered Spider",
+          "Cozy Bear (APT29)",
+          "Wizard Spider"
+        ]
+      },
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "CrowdStrike Counter Adversary Operations {actor}",
+        "CrowdStrike intel research {year}",
+        "{spider/bear/panda} CrowdStrike"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-SENTINELLABS",
+      "name": "SentinelLabs",
+      "tier": 2,
+      "weight": 0.8,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.sentinelone.com/labs/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://www.sentinelone.com/labs/feed/"
+        }
+      ],
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "SentinelLabs threat research {actor}",
+        "SentinelLabs ransomware {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-TALOS",
+      "name": "Cisco Talos Intelligence",
+      "tier": 2,
+      "weight": 0.8,
+      "publisher_class": "vendor-external",
+      "homepage": "https://blog.talosintelligence.com/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://blog.talosintelligence.com/rss/"
+        }
+      ],
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Cisco Talos threat research {actor}",
+        "Talos incident response {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-ZSCALER-THREATLABZ",
+      "name": "ZScaler ThreatLabz",
+      "tier": 2,
+      "weight": 0.75,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.zscaler.com/blogs/security-research",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "ZScaler ThreatLabz {malware-family}",
+        "ZScaler ransomware {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-TRENDMICRO",
+      "name": "Trend Micro Research",
+      "tier": 2,
+      "weight": 0.75,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.trendmicro.com/en_us/research.html",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://feeds.trendmicro.com/Anti-MalwareBlog/"
+        }
+      ],
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Trend Micro research {actor}",
+        "Trend Micro ransomware spotlight {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-SOPHOS-XOPS",
+      "name": "Sophos X-Ops",
+      "tier": 2,
+      "weight": 0.75,
+      "publisher_class": "vendor-external",
+      "homepage": "https://news.sophos.com/en-us/category/threat-research/",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Sophos X-Ops {ransomware-family}",
+        "Sophos active adversary report {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-TRELLIX-ARC",
+      "name": "Trellix Advanced Research Center",
+      "tier": 2,
+      "weight": 0.7,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.trellix.com/about/newsroom/stories/research/",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Trellix Advanced Research Center {actor}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-VOLEXITY",
+      "name": "Volexity",
+      "tier": 2,
+      "weight": 0.85,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.volexity.com/blog/",
+      "notes": "High signal on nation-state intrusions; small volume.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Volexity {actor} intrusion",
+        "Volexity zero-day {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-SECURELIST",
+      "name": "Kaspersky Securelist (GReAT)",
+      "tier": 2,
+      "weight": 0.7,
+      "publisher_class": "vendor-external",
+      "homepage": "https://securelist.com/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://securelist.com/feed/"
+        }
+      ],
+      "notes": "Use with awareness of geopolitical posture. Strong APT coverage.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Kaspersky GReAT APT {year}",
+        "Securelist threat report {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-CHECKPOINT-CPR",
+      "name": "Check Point Research",
+      "tier": 2,
+      "weight": 0.7,
+      "publisher_class": "vendor-external",
+      "homepage": "https://research.checkpoint.com/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://research.checkpoint.com/feed/"
+        }
+      ],
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Check Point Research {actor}",
+        "Check Point CPR ransomware {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-PROOFPOINT-TR",
+      "name": "Proofpoint Threat Research",
+      "tier": 2,
+      "weight": 0.7,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.proofpoint.com/us/blog/threat-insight",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Proofpoint threat insight {actor}",
+        "Proofpoint TA-{number}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-CISA",
+      "name": "CISA \u2014 Cybersecurity & Infrastructure Security Agency",
+      "tier": 3,
+      "weight": 0.95,
+      "publisher_class": "government",
+      "homepage": "https://www.cisa.gov/news-events/cybersecurity-advisories",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://www.cisa.gov/cybersecurity-advisories/all.xml"
+        }
+      ],
+      "scrape_hints": {
+        "extract_mitre_techniques_table": true,
+        "extract_iocs_appendix": true
+      },
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "CISA #StopRansomware {family}",
+        "CISA advisory {actor} TTPs",
+        "CISA known exploited vulnerabilities {year}",
+        "CISA Joint Cybersecurity Advisory {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-NSA-CYBER",
+      "name": "NSA Cybersecurity Advisories",
+      "tier": 3,
+      "weight": 0.85,
+      "publisher_class": "government",
+      "homepage": "https://www.nsa.gov/Press-Room/Cybersecurity-Advisories-Guidance/",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "NSA cybersecurity advisory {topic}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-NCSC-UK",
+      "name": "UK National Cyber Security Centre",
+      "tier": 3,
+      "weight": 0.8,
+      "publisher_class": "government",
+      "homepage": "https://www.ncsc.gov.uk/section/advice-guidance/all-topics",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "NCSC UK threat report {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-ACSC",
+      "name": "Australian Cyber Security Centre",
+      "tier": 3,
+      "weight": 0.75,
+      "publisher_class": "government",
+      "homepage": "https://www.cyber.gov.au/about-us/view-all-content/alerts-and-advisories",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "ACSC advisory {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-CERT-EU",
+      "name": "CERT-EU",
+      "tier": 3,
+      "weight": 0.7,
+      "publisher_class": "government",
+      "homepage": "https://cert.europa.eu/publications/security-advisories",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "CERT-EU security advisory {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-DFIR-REPORT",
+      "name": "The DFIR Report",
+      "tier": 4,
+      "weight": 0.9,
+      "publisher_class": "community-ir",
+      "homepage": "https://thedfirreport.com/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://thedfirreport.com/feed/"
+        }
+      ],
+      "notes": "High-fidelity intrusion narratives with full attack chains, Sigma rules, and IOC packs. Excellent TTP source.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "The DFIR Report {malware-family} intrusion",
+        "DFIR Report case study {year}",
+        "DFIR Report Sigma rules {family}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-REDCANARY",
+      "name": "Red Canary Threat Detection Report",
+      "tier": 4,
+      "weight": 0.85,
+      "publisher_class": "vendor-detection",
+      "homepage": "https://redcanary.com/blog/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://redcanary.com/feed/"
+        }
+      ],
+      "annual_report": "https://redcanary.com/threat-detection-report/",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Red Canary threat detection report {year}",
+        "Red Canary intelligence insights {month}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-HUNTRESS",
+      "name": "Huntress Blog",
+      "tier": 4,
+      "weight": 0.75,
+      "publisher_class": "vendor-detection",
+      "homepage": "https://www.huntress.com/blog",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Huntress threat research {actor}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-SPECTEROPS",
+      "name": "SpecterOps Blog (Posts on Medium)",
+      "tier": 4,
+      "weight": 0.85,
+      "publisher_class": "offensive-research",
+      "homepage": "https://posts.specterops.io/",
+      "notes": "Authoritative on AD / identity / BloodHound-relevant TTPs.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "SpecterOps BloodHound Active Directory {topic}",
+        "SpecterOps Kerberos {attack}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-TRUSTEDSEC",
+      "name": "TrustedSec Research",
+      "tier": 4,
+      "weight": 0.7,
+      "publisher_class": "offensive-research",
+      "homepage": "https://www.trustedsec.com/blog",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "TrustedSec research {topic}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-ATOMIC-RED-TEAM",
+      "name": "Atomic Red Team (Red Canary)",
+      "tier": 5,
+      "weight": 1.0,
+      "publisher_class": "execution-framework",
+      "homepage": "https://github.com/redcanaryco/atomic-red-team",
+      "purpose": "Reference execution payloads keyed by Atomic Test GUID. Cited via `execution.framework_reference_id` in TTP entries.",
+      "tests_index": "https://github.com/redcanaryco/atomic-red-team/tree/master/atomics",
+      "update_cadence": "monthly",
+      "discovery_queries": [
+        "Atomic Red Team {technique_id}",
+        "atomic-red-team atomics {technique_id}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-STRATUS-RED-TEAM",
+      "name": "Stratus Red Team (DataDog)",
+      "tier": 5,
+      "weight": 1.0,
+      "publisher_class": "execution-framework",
+      "homepage": "https://github.com/DataDog/stratus-red-team",
+      "purpose": "Cloud-native attack emulation. Pairs with Cortex Cloud / CDR coverage scenarios.",
+      "update_cadence": "monthly",
+      "discovery_queries": [
+        "Stratus Red Team AWS {attack}",
+        "Stratus Red Team Azure {attack}",
+        "Stratus Red Team GCP {attack}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-LEONIDAS",
+      "name": "Leonidas (FSecureLABS)",
+      "tier": 5,
+      "weight": 0.7,
+      "publisher_class": "execution-framework",
+      "homepage": "https://github.com/FSecureLABS/leonidas",
+      "purpose": "AWS-focused attack emulation.",
+      "update_cadence": "monthly",
+      "discovery_queries": [
+        "Leonidas AWS attack {technique}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-CALDERA",
+      "name": "MITRE CALDERA",
+      "tier": 5,
+      "weight": 0.8,
+      "publisher_class": "execution-framework",
+      "homepage": "https://github.com/mitre/caldera",
+      "update_cadence": "monthly",
+      "discovery_queries": [
+        "MITRE CALDERA ability {technique_id}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-PURPLESHARP",
+      "name": "PurpleSharp (Mordor / SpecterOps)",
+      "tier": 5,
+      "weight": 0.7,
+      "publisher_class": "execution-framework",
+      "homepage": "https://github.com/mvelazc0/PurpleSharp",
+      "purpose": "Windows-focused simulated attacks for detection engineering.",
+      "update_cadence": "monthly",
+      "discovery_queries": [
+        "PurpleSharp Windows {technique_id}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-KREBS",
+      "name": "KrebsOnSecurity",
+      "tier": 4,
+      "weight": 0.6,
+      "publisher_class": "journalism",
+      "homepage": "https://krebsonsecurity.com/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://krebsonsecurity.com/feed/"
+        }
+      ],
+      "notes": "Use for breach narrative + actor attribution context, not technical TTPs.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "KrebsOnSecurity {breach}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-BLEEPINGCOMPUTER",
+      "name": "BleepingComputer",
+      "tier": 4,
+      "weight": 0.55,
+      "publisher_class": "journalism",
+      "homepage": "https://www.bleepingcomputer.com/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://www.bleepingcomputer.com/feed/"
+        }
+      ],
+      "notes": "Useful for surface-area awareness of new ransomware crews / leak-site events. Cross-reference before treating as TTP source.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "BleepingComputer {malware-family}",
+        "BleepingComputer ransomware leak site {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MICROSOFT-LEARN",
+      "name": "Microsoft Learn \u2014 Open Specifications & Protocol Docs",
+      "tier": 2,
+      "weight": 0.7,
+      "publisher_class": "vendor-docs",
+      "homepage": "https://learn.microsoft.com/en-us/openspecs/",
+      "purpose": "Authoritative protocol/spec docs (MS-DRSR, MS-RPC, etc.) referenced when documenting technique-level network signatures.",
+      "update_cadence": "quarterly",
+      "discovery_queries": [
+        "Microsoft Learn open specifications {protocol}",
+        "MS-{protocol} reference Microsoft"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-RCLONE-DOCS",
+      "name": "Rclone Official Documentation",
+      "tier": 5,
+      "weight": 0.5,
+      "publisher_class": "tool-docs",
+      "homepage": "https://rclone.org/docs/",
+      "purpose": "Reference for the rclone tool that ransomware operators abuse for exfiltration. Used to ground command-line signatures.",
+      "update_cadence": "quarterly",
+      "discovery_queries": [
+        "rclone documentation flags",
+        "rclone copy --transfers --multi-thread-streams"
+      ],
+      "last_canvassed": null
+    }
+  ],
+  "scraper_contract": {
+    "scraper_name": "cortex-scraper",
+    "input_path": "sources/source-registry.json",
+    "output_path": "ttps/_drafts/",
+    "draft_status": "draft",
+    "draft_filename_pattern": "TTP-{YYYY}-{NNNN}-{slug}.json",
+    "draft_review_required": true,
+    "rate_limit_global_rpm": 60,
+    "cache_dir": ".cache/scraper/",
+    "notes": "Drafts land in ttps/_drafts/ with status=draft. A human reviewer promotes them to ttps/ with status=active after schema validation and Cortex-specific field enrichment (IOCs, BIOCs, product mapping, use cases)."
+  }
+}

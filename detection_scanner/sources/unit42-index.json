@@ -1,0 +1,188 @@
+{
+  "source_id": "SRC-UNIT42",
+  "indexed_at": "2026-05-13",
+  "indexer": "manual-canvas + cortex-scraper-handoff",
+  "description": "Curated, prioritized list of Unit 42 posts that should be parsed into TTP entries first. Grouped by theme so the cortex-scraper can batch by directory of relevance. Last 12-month rolling window emphasized; perennial reference docs flagged separately.",
+  "priority_legend": {
+    "P0": "Author TTP entry now — flagship POV narrative material.",
+    "P1": "Author within 30 days — supporting depth.",
+    "P2": "Index only — useful for cross-reference."
+  },
+
+  "groups": {
+    "actor_profiles": [
+      {
+        "priority": "P0",
+        "title": "Threat Group Assessment: Muddled Libra (Updated May 16, 2025)",
+        "url": "https://unit42.paloaltonetworks.com/threat-group-assessment-muddled-libra-2024/",
+        "actor_aliases": ["Scattered Spider", "UNC3944", "Octo Tempest"],
+        "themes": ["identity", "social-engineering", "ransomware-chain", "cloud"],
+        "notes": "Primary actor profile — feeds multiple TTP entries (help-desk MFA reset, VPN credential phishing, AD/Okta lateral movement)."
+      },
+      {
+        "priority": "P0",
+        "title": "A Peek Into Muddled Libra's Operational Playbook",
+        "url": "https://unit42.paloaltonetworks.com/muddled-libra-ops-playbook/",
+        "themes": ["identity", "okta", "azure", "lateral-movement"]
+      },
+      {
+        "priority": "P1",
+        "title": "Muddled Libra: Why Are We So Obsessed With You?",
+        "url": "https://unit42.paloaltonetworks.com/why-the-focus-on-muddled-libra/",
+        "themes": ["sales-narrative", "actor-context"]
+      },
+      {
+        "priority": "P0",
+        "title": "Boggy Serpens Threat Assessment",
+        "url": "https://unit42.paloaltonetworks.com/boggy-serpens-threat-assessment/",
+        "themes": ["iran-nexus", "espionage", "ai-enhanced-malware", "social-engineering"]
+      },
+      {
+        "priority": "P0",
+        "title": "Phantom Taurus: A New Chinese Nexus APT and the NET-STAR Malware Suite",
+        "url": "https://unit42.paloaltonetworks.com/phantom-taurus/",
+        "themes": ["china-nexus", "apt", "iis", "web-shell"]
+      },
+      {
+        "priority": "P1",
+        "title": "Bookworm to Stately Taurus",
+        "url": "https://unit42.paloaltonetworks.com/bookworm-to-stately-taurus/",
+        "themes": ["china-nexus", "attribution"]
+      },
+      {
+        "priority": "P2",
+        "title": "Threat Actor Groups Tracked by Palo Alto Networks Unit 42 (Updated Aug. 1, 2025)",
+        "url": "https://unit42.paloaltonetworks.com/threat-actor-groups-tracked-by-palo-alto-networks-unit-42/",
+        "themes": ["reference", "actor-taxonomy"],
+        "notes": "Canonical actor list — use to populate threat_context.actors.unit42_actor_id values."
+      },
+      {
+        "priority": "P2",
+        "title": "Introducing Unit 42's Attribution Framework",
+        "url": "https://unit42.paloaltonetworks.com/unit-42-attribution-framework/",
+        "themes": ["reference", "methodology"]
+      }
+    ],
+
+    "ransomware_extortion": [
+      {
+        "priority": "P0",
+        "title": "Anatomy of an Attack: The 'BlackSuit Blitz' at a Global Equipment Manufacturer",
+        "url": "https://unit42.paloaltonetworks.com/anatomy-of-an-attack-blacksuit-ransomware-blitz/",
+        "actor_aliases": ["Ignoble Scorpius"],
+        "themes": ["ransomware-chain", "vishing", "esxi", "ansible", "data-exfil"],
+        "notes": "End-to-end kill chain narrative — yields ~6 distinct TTP entries (vishing, VPN cred phish, DC compromise, hash extraction, exfil, ESXi mass encryption)."
+      },
+      {
+        "priority": "P0",
+        "title": "Extortion and Ransomware Trends January-March 2025",
+        "url": "https://unit42.paloaltonetworks.com/2025-ransomware-extortion-trends/",
+        "themes": ["trends", "leak-sites", "extortion-tactics"]
+      },
+      {
+        "priority": "P1",
+        "title": "The Golden Scale: Bling Libra and the Evolving Extortion Economy",
+        "url": "https://unit42.paloaltonetworks.com/scattered-lapsus-hunters/",
+        "actor_aliases": ["Bling Libra", "ShinyHunters"],
+        "themes": ["extortion", "data-exfil"]
+      },
+      {
+        "priority": "P1",
+        "title": "Multi-Extortion Tactics Continue to Rise",
+        "url": "https://unit42.paloaltonetworks.com/multi-extortion-rise-ransomware-report/",
+        "themes": ["extortion", "harassment", "ddos-as-pressure"]
+      }
+    ],
+
+    "cloud_identity": [
+      {
+        "priority": "P0",
+        "title": "IAM Your Defense Against Cloud Threats",
+        "url": "https://unit42.paloaltonetworks.com/iam-cloud-threat-research/",
+        "themes": ["aws-iam", "privilege-escalation", "credential-abuse"]
+      },
+      {
+        "priority": "P0",
+        "title": "Cloud Threats on the Rise: Alert Trends Show Intensified Attacker Focus on IAM, Exfiltration",
+        "url": "https://unit42.paloaltonetworks.com/2025-cloud-security-alert-trends/",
+        "themes": ["cloud-alert-trends", "iam", "exfil"]
+      },
+      {
+        "priority": "P0",
+        "title": "Responding to Cloud Incidents — 2025 IR Report",
+        "url": "https://unit42.paloaltonetworks.com/responding-to-cloud-incidents/",
+        "themes": ["cloud-ir", "playbook"]
+      },
+      {
+        "priority": "P1",
+        "title": "Novel Technique to Detect Cloud Threat Actor Operations",
+        "url": "https://unit42.paloaltonetworks.com/tracking-threat-groups-through-cloud-logging/",
+        "themes": ["cloud-logging", "detection-engineering"]
+      },
+      {
+        "priority": "P1",
+        "title": "Can AI Attack the Cloud? Lessons From the Zealot Autonomous Multi-Agent System",
+        "url": "https://unit42.paloaltonetworks.com/autonomous-ai-cloud-attacks/",
+        "themes": ["ai-attacker", "autonomous", "cloud", "research"]
+      }
+    ],
+
+    "social_engineering": [
+      {
+        "priority": "P0",
+        "title": "2025 Unit 42 Global Incident Response Report: Social Engineering Edition",
+        "url": "https://unit42.paloaltonetworks.com/2025-unit-42-global-incident-response-report-social-engineering-edition/",
+        "themes": ["report", "vishing", "smishing", "help-desk"],
+        "notes": "65% initial access via identity-based techniques (per report). Anchor stat for POV narrative."
+      },
+      {
+        "priority": "P0",
+        "title": "Anatomy of an Attack: The Payroll Pirates and the Power of Social Engineering",
+        "url": "https://unit42.paloaltonetworks.com/social-engineering-payroll-pirates/",
+        "themes": ["payroll-redirect", "phishing", "business-email-compromise"]
+      }
+    ],
+
+    "supply_chain": [
+      {
+        "priority": "P0",
+        "title": "Weaponizing the Protectors: TeamPCP's Multi-Stage Supply Chain Attack on Security Infrastructure",
+        "url": "https://unit42.paloaltonetworks.com/teampcp-supply-chain-attacks/",
+        "themes": ["supply-chain", "trivy", "kics", "litellm", "open-source"]
+      },
+      {
+        "priority": "P1",
+        "title": "The npm Threat Landscape (Updated May 1)",
+        "url": "https://unit42.paloaltonetworks.com/monitoring-npm-supply-chain-attacks/",
+        "themes": ["npm", "supply-chain", "shai-hulud-worm"]
+      }
+    ],
+
+    "rolling_threat_bulletins": [
+      {
+        "priority": "P1",
+        "title": "Unit 42 Threat Bulletin — March 2026",
+        "url": "https://unit42.paloaltonetworks.com/threat-bulletin/march-2026/",
+        "cadence": "monthly",
+        "notes": "Index target — scrape monthly; entries reference newest TTPs."
+      },
+      {
+        "priority": "P2",
+        "title": "Unit 42 Threat Bulletin — October 2025",
+        "url": "https://unit42.paloaltonetworks.com/threat-bulletin/october-2025/"
+      }
+    ]
+  },
+
+  "scraper_handoff": {
+    "next_actions": [
+      "cortex-scraper iterates P0 entries first, emits drafts to ttps/_drafts/.",
+      "Each draft must populate at minimum: identity, mitre_attack, references (with this URL as primary), and a stub for execution/detections/panw_mapping for human enrichment.",
+      "Re-crawl monthly on the 1st; threat bulletins drive backlog refresh."
+    ],
+    "exclusions": [
+      "Skip marketing landing pages (e.g., '/resources/', '/events/').",
+      "Skip duplicate cross-posts that don't add unique IOCs/TTPs."
+    ]
+  }
+}

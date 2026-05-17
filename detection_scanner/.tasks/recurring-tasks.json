@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "updated_at": "2026-05-13",
+  "description": "Declarative manifest of recurring jobs that keep the detection_scanner corpus current. A future operator (or a scheduled run) consumes this to resume work without re-deriving the cadence. Prose elaboration lives in RUNBOOK.md.",
+
+  "owner": "Henry Reed (WW Cortex Domain Consulting)",
+  "contact": "hreed@paloaltonetworks.com",
+
+  "tasks": [
+    {
+      "task_id": "T-WEEKLY-001",
+      "name": "Canvas Unit 42 + MITRE for new content",
+      "cadence": "weekly",
+      "day": "Monday",
+      "priority": "P0",
+      "owner": "detection-engineer",
+      "estimated_minutes": 30,
+      "inputs": [
+        "sources/source-registry.json (entries where tier == 1)",
+        "sources/discovery-queries.json (tier_1_unit42, tier_1_mitre templates)",
+        "sources/unit42-index.json (existing backlog)"
+      ],
+      "outputs": [
+        "Updated sources/unit42-index.json with new P0/P1/P2 entries",
+        "Optionally: new draft TTPs in ttps/_drafts/"
+      ],
+      "steps": [
+        "Pull RSS for SRC-UNIT42 and any other Tier-1 feed.",
+        "For each new article in last 7 days, classify P0/P1/P2 by themes in unit42-index.json.groups.",
+        "Add URL + title + themes + actor aliases to the relevant group.",
+        "If P0 and clearly actionable, open a draft TTP in ttps/_drafts/.",
+        "Run scripts/validate.py and scripts/build-manifest.py; commit."
+      ],
+      "definition_of_done": "All new Tier-1 posts from the prior week are either indexed (sources/) or drafted (ttps/_drafts/) and validator passes."
+    },
+    {
+      "task_id": "T-WEEKLY-002",
+      "name": "Validate corpus + refresh manifest",
+      "cadence": "weekly",
+      "day": "Monday",
+      "priority": "P0",
+      "owner": "any-contributor",
+      "estimated_minutes": 5,
+      "inputs": ["entire repo"],
+      "outputs": ["manifest.json (if drift)"],
+      "steps": [
+        "python3 scripts/validate.py",
+        "python3 scripts/build-manifest.py",
+        "git diff --exit-code manifest.json  # CI gate",
+        "commit any manifest drift"
+      ],
+      "definition_of_done": "Validator returns 0 failures and manifest.json is in sync with corpus."
+    },
+    {
+      "task_id": "T-MONTHLY-001",
+      "name": "Canvas Tier 2 + 3 sources",
+      "cadence": "monthly",
+      "day": "1st business day",
+      "priority": "P1",
+      "owner": "detection-engineer",
+      "estimated_minutes": 90,
+      "inputs": [
+        "sources/source-registry.json (tier 2 + 3 entries)",
+        "sources/discovery-queries.json"
+      ],
+      "outputs": [
+        "Updated last_canvassed timestamps in source-registry.json",
+        "New source-specific index files (e.g., sources/mandiant-index.json) for any source where backlog grows"
+      ],
+      "steps": [
+        "For each Tier-2 source, run its discovery_queries (substituting current scope_seeds).",
+        "For each Tier-3 government source, pull last month's advisories.",
+        "Cross-reference actor naming aliases before treating two reports as distinct.",
+        "Update last_canvassed."
+      ],
+      "definition_of_done": "All Tier-2/3 sources show last_canvassed within the last 30 days."
+    },
+    {
+      "task_id": "T-MONTHLY-002",
+      "name": "Promote draft TTPs to active",
+      "cadence": "monthly",
+      "priority": "P0",
+      "owner": "detection-engineer",
+      "estimated_minutes": 120,
+      "inputs": ["ttps/_drafts/*.json"],
+      "outputs": ["ttps/*.json with status=active"],
+      "steps": [
+        "For each draft, enrich Cortex-specific fields (IOCs, BIOCs, panw_mapping, use_cases, success_criteria).",
+        "Validate against schema.",
+        "If draft references a new source not yet in registry, add it.",
+        "Move file out of _drafts/, flip status to active, commit."
+      ],
+      "definition_of_done": "ttps/_drafts/ holds only entries needing human enrichment that didn't fit this cycle."
+    },
+    {
+      "task_id": "T-MONTHLY-003",
+      "name": "Re-test BlackSuit-Blitz chained scenario in lab",
+      "cadence": "monthly",
+      "priority": "P1",
+      "owner": "detection-engineer",
+      "estimated_minutes": 90,
+      "inputs": [
+        "ttps/TTP-2026-0002, TTP-2026-0004, TTP-2026-0005, TTP-2026-0006"
+      ],
+      "outputs": ["Lab run report; any BIOC/XQL adjustments committed"],
+      "steps": [
+        "Run TTP-0002 (LSASS) → 0004 (DCSync) → 0005 (rclone) → 0006 (ESXi safe-mode) sequentially in lab.",
+        "Confirm correlation rules CR-CRED-0003, CR-EXFIL-0001, CR-RANSOM-0001, CR-RANSOM-0002 fire.",
+        "If any BIOC fails, update the TTP entry and bump entry_version + add changelog entry."
+      ],
+      "definition_of_done": "Full chain produces one P1 XSIAM incident; all per-test success_criteria pass."
+    },
+    {
+      "task_id": "T-QUARTERLY-001",
+      "name": "Schema + product enum review",
+      "cadence": "quarterly",
+      "priority": "P1",
+      "owner": "detection-engineer-lead",
+      "estimated_minutes": 120,
+      "inputs": ["schema/ttp-entry.schema.json", "PANW product roadmap"],
+      "outputs": ["Updated schema with bumped version; migrated entries"],
+      "steps": [
+        "Review whether current corpus stresses the schema in unanticipated ways.",
+        "Update panw_mapping.products.module enum for new SKUs / retired ones.",
+        "If breaking change: bump schema_version const, migrate all entries, update validator if needed.",
+        "Re-validate + rebuild manifest."
+      ]
+    },
+    {
+      "task_id": "T-QUARTERLY-002",
+      "name": "MITRE ATT&CK version bump",
+      "cadence": "quarterly",
+      "priority": "P1",
+      "owner": "detection-engineer",
+      "estimated_minutes": 60,
+      "inputs": ["https://github.com/mitre/cti enterprise-attack.json"],
+      "outputs": ["Updated TTP entries; possible new schema enum entries"],
+      "steps": [
+        "Pull latest MITRE STIX bundle.",
+        "Cross-check all technique_id / subtechnique_id / tactic_id values in corpus resolve.",
+        "Flag any deprecated/renamed techniques; update affected TTP entries."
+      ]
+    },
+    {
+      "task_id": "T-ADHOC-001",
+      "name": "Author TTP from breaking Unit 42 post",
+      "cadence": "as-needed",
+      "priority": "P0",
+      "owner": "detection-engineer",
+      "trigger": "Unit 42 publishes a high-signal post about a current actor, campaign, or zero-day in active exploitation",
+      "estimated_minutes": 180,
+      "steps": [
+        "Add URL to sources/unit42-index.json with P0.",
+        "Author the TTP directly (skip scraper drafting).",
+        "Walk the 12-step 'How to add a new TTP' workflow in RUNBOOK.md.",
+        "If the post implies a chained scenario, decompose into multiple TTPs and add correlation rules linking them."
+      ]
+    }
+  ],
+
+  "backlog": {
+    "description": "Next-up TTPs to author from the indexed Unit 42 P0 set. Drained by T-ADHOC-001 or T-MONTHLY-002.",
+    "items": [
+      {
+        "candidate_id": "TTP-2026-0007",
+        "topic": "Phantom Taurus IIS web shell + NET-STAR malware",
+        "anchor_url": "https://unit42.paloaltonetworks.com/phantom-taurus/",
+        "pillar": "endpoint + web",
+        "priority": "P0"
+      },
+      {
+        "candidate_id": "TTP-2026-0008",
+        "topic": "TeamPCP supply-chain compromise (Trivy/KICS/LiteLLM)",
+        "anchor_url": "https://unit42.paloaltonetworks.com/teampcp-supply-chain-attacks/",
+        "pillar": "supply-chain",
+        "priority": "P0"
+      },
+      {
+        "candidate_id": "TTP-2026-0009",
+        "topic": "Payroll Pirates BEC and payroll redirect",
+        "anchor_url": "https://unit42.paloaltonetworks.com/social-engineering-payroll-pirates/",
+        "pillar": "email + identity",
+        "priority": "P0"
+      },
+      {
+        "candidate_id": "TTP-2026-0010",
+        "topic": "Boggy Serpens AI-assisted spear-phishing",
+        "anchor_url": "https://unit42.paloaltonetworks.com/boggy-serpens-threat-assessment/",
+        "pillar": "email + ai-enhanced",
+        "priority": "P1"
+      }
+    ]
+  },
+
+  "session_history": [
+    {
+      "session_date": "2026-05-13",
+      "operator": "Henry Reed",
+      "tasks_completed": [
+        "Designed JSON Schema 2020-12 contract (schema/ttp-entry.schema.json)",
+        "Built source registry (sources/source-registry.json, 34 sources, 5 tiers)",
+        "Canvassed Unit 42 — indexed P0/P1/P2 backlog (sources/unit42-index.json)",
+        "Authored 6 worked TTPs: TTP-2026-0001 through 0006",
+        "Decomposed BlackSuit-Blitz chain into TTPs 0002 + 0004 + 0005 + 0006 with correlation rules",
+        "Authored validator (scripts/validate.py) and manifest generator (scripts/build-manifest.py)",
+        "Wrote RUNBOOK.md and this recurring-tasks.json"
+      ],
+      "deferred": [
+        "Cortex-scraper handoff contract (waiting on scraper repo access)",
+        "BIOC dialect freeze against live XSIAM 2.x tenant",
+        "Real PANW rule IDs (currently placeholder; backfill as POVs surface them)",
+        "MITRE STIX live-resolution (currently regex-only)"
+      ]
+    }
+  ]
+}
