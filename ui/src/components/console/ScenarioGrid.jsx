@@ -1,4 +1,5 @@
 import React from 'react'
+import PinButton from './PinButton.jsx'
 
 const PLANE_CHIP_CLASS = {
   EDR:        'chip--plane-edr',
@@ -19,7 +20,7 @@ const DIFFICULTY_LABEL = {
 /**
  * ScenarioCard — single scenario card for the operations grid.
  */
-function ScenarioCard({ scenario, isSelected, onSelect }) {
+function ScenarioCard({ scenario, isSelected, isPinned, onSelect, onTogglePin }) {
   const id      = scenario.scenario_id || scenario.id
   const planes  = collectPlanes(scenario)
   const tids    = collectTechniques(scenario).slice(0, 6)
@@ -30,13 +31,28 @@ function ScenarioCard({ scenario, isSelected, onSelect }) {
 
   return (
     <article
-      className={'scenario-card' + (isSelected ? ' scenario-card--selected' : '')}
+      className={
+        'scenario-card' +
+        (isSelected ? ' scenario-card--selected' : '') +
+        (isPinned   ? ' scenario-card--pinned'   : '')
+      }
       onClick={() => onSelect(scenario)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(scenario) }}
     >
-      <div className="sc-id">{id}</div>
+      <div className="scenario-card__corner">
+        <PinButton
+          pinned={isPinned}
+          onToggle={() => onTogglePin(id)}
+          variant="card"
+        />
+      </div>
+
+      <div className="sc-id">
+        {id}
+        {isPinned && <span className="sc-id__pin-marker" aria-hidden="true">◼</span>}
+      </div>
       <div className="sc-title">{scenario.name || '(unnamed scenario)'}</div>
 
       <div className="sc-meta">
@@ -76,12 +92,14 @@ function ScenarioCard({ scenario, isSelected, onSelect }) {
 }
 
 /**
- * ScenarioGrid — grid of scenario cards.
+ * ScenarioGrid — grid of scenario cards. Pinned scenarios render first.
  */
 export default function ScenarioGrid({
   scenarios = [],
   selectedScenarioId = null,
   onSelectScenario = () => {},
+  isPinned = () => false,
+  onTogglePin = () => {},
 }) {
   if (scenarios.length === 0) {
     return (
@@ -98,16 +116,24 @@ export default function ScenarioGrid({
     )
   }
 
+  // Stable sort: pinned first, otherwise preserve API order.
+  const ordered = scenarios
+    .map((s, i) => ({ s, i, p: isPinned(s.scenario_id || s.id) ? 0 : 1 }))
+    .sort((a, b) => a.p - b.p || a.i - b.i)
+    .map((x) => x.s)
+
   return (
     <div className="scenario-grid">
-      {scenarios.map((s) => {
+      {ordered.map((s) => {
         const id = s.scenario_id || s.id
         return (
           <ScenarioCard
             key={id}
             scenario={s}
             isSelected={id === selectedScenarioId}
+            isPinned={isPinned(id)}
             onSelect={onSelectScenario}
+            onTogglePin={onTogglePin}
           />
         )
       })}

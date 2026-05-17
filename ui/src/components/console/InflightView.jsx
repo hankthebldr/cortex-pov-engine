@@ -1,6 +1,8 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef, useState, useCallback } from 'react'
 import NarrativeTimeline from './NarrativeTimeline.jsx'
 import useTimelineData from './useTimelineData.js'
+import { toPng } from 'html-to-image'
+import { downloadReport } from '../../api/client.js'
 
 /**
  * InflightView — the In-Flight tab.
@@ -16,16 +18,72 @@ import useTimelineData from './useTimelineData.js'
  *   activeRun  — { scenarioId, runId, step, totalSteps, ... }
  *   lastRun    — most recent completed run (used as fallback when nothing live)
  */
-export default function InflightView({ activeRun, lastRun, onScreenshot, onExport }) {
+export default function InflightView({ activeRun, lastRun, onError }) {
   // Prefer the live run; fall back to the most recent completed run.
   const targetRunId     = activeRun?.runId      || lastRun?.runId      || null
   const targetScenarioId = activeRun?.scenarioId || lastRun?.scenarioId || null
   const isLive = !!activeRun
 
+  const captureRef = useRef(null)
+  const [capturing, setCapturing] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
   const { frames, scenario, run, stitches, loading } = useTimelineData(
     targetScenarioId,
     targetRunId
   )
+
+  const handleScreenshot = useCallback(async () => {
+    if (!captureRef.current) return
+    setCapturing(true)
+    try {
+      const dataUrl = await toPng(captureRef.current, {
+        backgroundColor: '#050A14',
+        pixelRatio: 2,
+        cacheBust: true,
+        filter: (node) => {
+          // strip the action buttons themselves from the screenshot
+          if (node && node.classList && node.classList.contains('narrative__footer-actions')) {
+            return false
+          }
+          return true
+        },
+      })
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `cortexsim-narrative-${targetRunId || 'preview'}.png`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+    } catch (err) {
+      if (onError) onError(err.message || 'Screenshot failed')
+    } finally {
+      setCapturing(false)
+    }
+  }, [targetRunId, onError])
+
+  const handleExport = useCallback(async () => {
+    if (!targetRunId) {
+      if (onError) onError('No run selected for export')
+      return
+    }
+    setExporting(true)
+    try {
+      const blob = await downloadReport(targetRunId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cortexsim-pov-${targetRunId}.md`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      if (onError) onError(err.message || 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }, [targetRunId, onError])
 
   const summary = useMemo(() => {
     if (!scenario) return ''
@@ -91,30 +149,32 @@ export default function InflightView({ activeRun, lastRun, onScreenshot, onExpor
 
   return (
     <div className="narrative">
-      <div className="narrative__header">
-        <div className="narrative__eyebrow">{eyebrow}</div>
-        <h1 className="narrative__title">
-          {scenario?.name || 'loading…'}
-        </h1>
-        {summary && (
-          <p className="narrative__summary">{summary}</p>
+      <div className="narrative__capture" ref={captureRef}>
+        <div className="narrative__header">
+          <div className="narrative__eyebrow">{eyebrow}</div>
+          <h1 className="narrative__title">
+            {scenario?.name || 'loading…'}
+          </h1>
+          {summary && (
+            <p className="narrative__summary">{summary}</p>
+          )}
+        </div>
+
+        {loading && frames.length === 0 ? (
+          <div style={{
+            padding: 48,
+            textAlign: 'center',
+            color: 'var(--c-text-muted)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            letterSpacing: '0.04em',
+          }}>
+            loading run telemetry…
+          </div>
+        ) : (
+          <NarrativeTimeline frames={frames} stitches={stitches} />
         )}
       </div>
-
-      {loading && frames.length === 0 ? (
-        <div style={{
-          padding: 48,
-          textAlign: 'center',
-          color: 'var(--c-text-muted)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          letterSpacing: '0.04em',
-        }}>
-          loading run telemetry…
-        </div>
-      ) : (
-        <NarrativeTimeline frames={frames} stitches={stitches} />
-      )}
 
       <div className="narrative__footer">
         <p>
@@ -141,16 +201,16 @@ export default function InflightView({ activeRun, lastRun, onScreenshot, onExpor
             </>
           )}
         </p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" onClick={onScreenshot} disabled={!onScreenshot}>
-            Screenshot
+        <div className="narrative__footer-actions" style={{ display: 'flex', gap: 8 }}>
+          <button className="btn" onClick={handleScreenshot} disabled={capturing || frames.length === 0}>
+            {capturing ? 'Capturing…' : 'Screenshot'}
           </button>
           <button
             className="btn btn--primary"
-            onClick={onExport}
-            disabled={!onExport}
+            onClick={handleExport}
+            disabled={exporting || !targetRunId}
           >
-            Export
+            {exporting ? 'Exporting…' : 'Export POV'}
           </button>
         </div>
       </div>

@@ -20,6 +20,8 @@ import CommandPalette from './CommandPalette.jsx'
  *   planes              — array of { code, name, count, isActive } for the rail
  *   onSelectPlane       — (planeCode) => void
  *   pinned              — [{ id, name }]
+ *   onSelectPinned      — (scenarioId) => void
+ *   onUnpinScenario     — (scenarioId) => void
  *   onAbortRun          — () => void
  *   tabBadges           — { operations: '19', inflight: 'LIVE', evidence: '4/12' }
  *   paletteItems        — items for ⌘K — see CommandPalette
@@ -34,6 +36,8 @@ export default function AppShell({
   planes = [],
   onSelectPlane = () => {},
   pinned = [],
+  onSelectPinned = () => {},
+  onUnpinScenario = null,
   onAbortRun = () => {},
   tabBadges = {},
   paletteItems = [],
@@ -75,6 +79,8 @@ export default function AppShell({
           planes={planes}
           pinned={pinned}
           onSelectPlane={onSelectPlane}
+          onSelectPinned={onSelectPinned}
+          onUnpin={onUnpinScenario}
         />
 
         <section className="main">
