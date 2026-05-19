@@ -85,12 +85,18 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — outbound bytes per session greatly exceeds host baseline"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: "bioc-large-sustained-egress-from-file-server-to-non-corporate-cloud-provider"
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — long-lived HTTPS upload (>5 min duration)"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: "bioc-outbound-to-known-rclone-backend-provider-from-non-sanctioned-host"
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — exfil session correlated with originating process"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: "CR-EXFIL-0001"
 
 cleanup:
   commands:

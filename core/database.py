@@ -41,6 +41,38 @@ async def init_db() -> None:
         # Import models so their metadata is registered before create_all
         import models  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
+        # Idempotent column additions for tables that pre-date a schema bump.
+        # SQLAlchemy's create_all only creates missing TABLES, not missing
+        # COLUMNS — so a CortexSim dev box with an existing cortexsim.db
+        # would otherwise SELECT-fail on the new columns.
+        await conn.run_sync(_migrate_results_columns)
+
+
+def _migrate_results_columns(connection) -> None:
+    """Add Phase 1 columns to the ``results`` table if absent.
+
+    All columns are nullable so the ADD COLUMN is non-blocking and the
+    existing rows simply hold NULL until a new run seeds them.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "results" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("results")}
+
+    additions = [
+        ("ttp_ref", "VARCHAR"),
+        ("detection_id", "VARCHAR"),
+        ("detection_kind", "VARCHAR"),
+        ("detection_logic", "TEXT"),
+        ("detection_severity", "VARCHAR"),
+        ("mitre_technique", "VARCHAR"),
+    ]
+    for col_name, col_type in additions:
+        if col_name in existing:
+            continue
+        connection.execute(text(f"ALTER TABLE results ADD COLUMN {col_name} {col_type}"))
 
 
 async def get_db():

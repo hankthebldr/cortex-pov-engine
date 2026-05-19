@@ -1,0 +1,27 @@
+id: cortexsim-ttp-2026-0006-response
+version: 1
+name: "CortexSim — Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0006.
+  Triggered by Cortex correlation rules: CR-RANSOM-0001, CR-RANSOM-0002.
+  Reference playbook in panw_mapping: XSOAR-PB-ESXiContainment-v3
+triggers:
+  - correlation_rule_id: CR-RANSOM-0001
+  - correlation_rule_id: CR-RANSOM-0002
+  - playbook_rule_id: XSOAR-PB-ESXiContainment-v3
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0006
+  cortexsim_version: 1.0

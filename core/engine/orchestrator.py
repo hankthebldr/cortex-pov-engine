@@ -228,15 +228,26 @@ class Orchestrator:
         """
         Create one Result row per expected_detection across all scenario steps.
         Sets executed_at so MTTD can be calculated when the DC marks observed_at.
+
+        Phase 1: when a detection carries ``ttp_ref`` / ``detection_id``,
+        copy the resolved card's BIOC / XQL / correlation logic onto the
+        Result row so the POV report can render it inline.
         """
         from models import Result  # noqa: PLC0415
+        from engine.ttp_catalog import catalog  # noqa: PLC0415
 
         steps = scenario.steps or []
         count = 0
+        enriched = 0
         for step in steps:
             step_id = step.get("id", "unknown")
             step_name = step.get("name", "")
+            step_technique = step.get("mitre_technique")
             for detection in step.get("expected_detections", []):
+                ttp_ref = detection.get("ttp_ref")
+                detection_id = detection.get("detection_id")
+                card = catalog.find(ttp_ref, detection_id) if ttp_ref else None
+
                 result = Result(
                     run_id=run_id,
                     step_id=step_id,
@@ -246,12 +257,27 @@ class Orchestrator:
                     expected_detection=detection.get("description", ""),
                     observed=False,
                     executed_at=executed_at,
+                    ttp_ref=ttp_ref,
+                    detection_id=detection_id,
+                    mitre_technique=step_technique,
                 )
+                if card is not None:
+                    result.detection_kind = card.kind
+                    result.detection_logic = card.logic
+                    result.detection_severity = card.severity
+                    # Surface the card's MITRE technique back into the
+                    # Result row when it is more specific than the step's.
+                    if not result.mitre_technique and card.mitre_techniques:
+                        result.mitre_technique = card.mitre_techniques[0]
+                    enriched += 1
                 db.add(result)
                 count += 1
 
         await db.commit()
-        logger.info("Seeded %d expected detection results for run_id=%s", count, run_id)
+        logger.info(
+            "Seeded %d expected detection results for run_id=%s (%d enriched from TTP catalog)",
+            count, run_id, enriched,
+        )
 
     # ------------------------------------------------------------------
     # Queue management

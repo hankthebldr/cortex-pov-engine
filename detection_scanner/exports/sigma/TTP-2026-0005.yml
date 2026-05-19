@@ -1,0 +1,87 @@
+title: Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) — Rclone Command-Line Flag Pattern
+id: ttp-2026-0005-bioc-01
+status: experimental
+description: |
+  Any process executes with command-line containing rclone-specific flag combinations, regardless of binary name.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter (action_process_image_command_line contains_all ("--transfers","--multi-thread-streams"))
+          or (action_process_image_command_line contains "--no-traverse" and action_process_image_command_line contains "copy")
+          or (action_process_image_command_line matches "rclone(\\.exe)?\\s+(copy|sync|move|lsd|ls)")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) — Large Sustained Egress From File Server to Non-Corporate Cloud Provider
+id: ttp-2026-0005-bioc-02
+status: experimental
+description: |
+  Single host sustains >100 Mbps outbound to a non-corporate destination ASN for >2 minutes, with byte-out / byte-in ratio > 10.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_FLOW
+    | bin _time span=1m
+    | comp sum(bytes_sent) as bs, sum(bytes_received) as br by src_host, dst_asn, _time
+    | filter bs > 750000000 and (bs / (br + 1)) > 10
+    | filter dst_asn not in corp_baseline.cloud_asns_allowlist
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048.003
+    - attack.t1567.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) — Outbound to Known Rclone-Backend Provider From Non-Sanctioned Host
+id: ttp-2026-0005-bioc-03
+status: experimental
+description: |
+  DNS resolution + connection to MEGA / Backblaze B2 / pCloud / yandex disk endpoints from a host where these services are not sanctioned for business use.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_DNS
+    | filter dns_query matches_any (".*\\.mega\\.nz$",".*\\.mega\\.io$",".*\\.backblazeb2\\.com$",".*\\.pcloud\\.com$",".*\\.disk\\.yandex\\.net$")
+    | filter src_host not in corp_baseline.sanctioned_cloud_storage_users
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
