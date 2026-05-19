@@ -133,7 +133,7 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/runs/{run_id}/report")
 async def get_report(
     run_id: str,
-    format: str = Query("markdown", regex="^(markdown|json)$"),
+    format: str = Query("markdown", pattern="^(markdown|json)$"),
     db: AsyncSession = Depends(get_db),
 ):
     """

@@ -82,7 +82,8 @@ func (c *BeaconClient) Register(hostname, goos string, capabilities []string) er
 }
 
 // PollTasks asks SimCore whether there is a pending task for this agent.
-// Returns (nil, nil) when there is no task (HTTP 404 is treated as "nothing pending").
+// Returns (nil, nil) when there is no task (either HTTP 404 or
+// {"task": null} body — both are normal idle responses).
 // Corresponds to: GET /api/agents/{id}/tasks
 func (c *BeaconClient) PollTasks() (*Task, error) {
 	url := fmt.Sprintf("%s/api/agents/%s/tasks", c.ServerURL, c.AgentID)
@@ -102,11 +103,15 @@ func (c *BeaconClient) PollTasks() (*Task, error) {
 		return nil, fmt.Errorf("pollTasks: unexpected status %d: %s", resp.StatusCode, b)
 	}
 
-	var task Task
-	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
+	// SimCore wraps the payload as {"task": null | {...}} — decode the
+	// envelope so a null body cleanly maps to (nil, nil).
+	var env struct {
+		Task *Task `json:"task"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
 		return nil, fmt.Errorf("pollTasks decode: %w", err)
 	}
-	return &task, nil
+	return env.Task, nil
 }
 
 // SendOutput streams partial or final command output back to SimCore.
