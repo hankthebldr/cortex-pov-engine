@@ -74,7 +74,9 @@ export async function getScenarios(params = {}) {
   if (params.plane)  qs.set('plane',  params.plane)
   if (params.uc_ref) qs.set('uc_ref', params.uc_ref)
   const query = qs.toString() ? `?${qs.toString()}` : ''
-  return request(`/api/scenarios${query}`)
+  const data = await request(`/api/scenarios${query}`)
+  // List endpoints wrap as {scenarios: [...], total: N}; components expect bare arrays.
+  return Array.isArray(data) ? data : data?.scenarios ?? []
 }
 
 /**
@@ -123,7 +125,8 @@ export async function postRun(body) {
  * @returns {Promise<Array>}
  */
 export async function getRuns() {
-  return request('/api/runs')
+  const data = await request('/api/runs')
+  return Array.isArray(data) ? data : data?.runs ?? []
 }
 
 /**
@@ -142,7 +145,8 @@ export async function getRun(runId) {
  * @returns {Promise<Array>}
  */
 export async function getResults() {
-  return request('/api/results')
+  const data = await request('/api/results')
+  return Array.isArray(data) ? data : data?.results ?? []
 }
 
 /**
@@ -190,7 +194,8 @@ export async function updateResultNotes(resultId, notes) {
  * @returns {Promise<Array>}
  */
 export async function getTools() {
-  return request('/api/tools')
+  const data = await request('/api/tools')
+  return Array.isArray(data) ? data : data?.tools ?? []
 }
 
 /**
@@ -347,7 +352,8 @@ export async function getMitreCoverage() {
  * @returns {Promise<Array>}
  */
 export async function getAgents() {
-  return request('/api/agents')
+  const data = await request('/api/agents')
+  return Array.isArray(data) ? data : data?.agents ?? []
 }
 
 // ─── EAL Traffic Simulator ───────────────────────────────────────────────────
