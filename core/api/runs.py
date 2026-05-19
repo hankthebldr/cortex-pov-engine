@@ -269,6 +269,25 @@ async def get_report(
         lines.append(f"- {status_icon} **[{r.signal_type}]** {r.expected_detection}{mttd_str}")
         if r.notes:
             lines.append(f"  - *Notes: {r.notes}*")
+        # Phase 1 — when the orchestrator enriched this row from the TTP
+        # catalog, embed the deployable query so the DC can paste it into
+        # the XSIAM console during the demo. Indented under the bullet so
+        # markdown viewers render the code block inline.
+        if r.detection_logic:
+            ref_bits = []
+            if r.ttp_ref:
+                ref_bits.append(f"`{r.ttp_ref}`")
+            if r.detection_id:
+                ref_bits.append(f"`{r.detection_id}`")
+            kind_label = (r.detection_kind or "detection").upper()
+            ref_label = " · ".join(ref_bits) if ref_bits else kind_label
+            sev_label = f" · severity: **{r.detection_severity}**" if r.detection_severity else ""
+            lines.append(f"  - {kind_label} — {ref_label}{sev_label}")
+            fence_lang = "xql" if (r.detection_kind or "").lower() in ("bioc", "xql", "correlation") else ""
+            lines.append(f"    ```{fence_lang}")
+            for logic_line in (r.detection_logic or "").splitlines():
+                lines.append(f"    {logic_line}")
+            lines.append("    ```")
 
     lines.append("")
     lines.append("---")

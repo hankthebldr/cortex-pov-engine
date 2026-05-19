@@ -170,6 +170,20 @@ steps:
         description: "Package manager execution in container — unusual install pattern"
         # (required) Human-readable description of the expected alert/detection.
         # Used in ResultsViewer to show expected vs observed.
+        ttp_ref: "TTP-2026-0002"
+        # (optional) Reference to a TTP entry in detection_scanner/ttps/.
+        # When set together with detection_id, the engine resolves the card
+        # at startup and embeds the deployable BIOC/XQL/correlation logic
+        # onto the Result row so the POV report renders it inline.
+        # Dangling references are logged as warnings, never fatal.
+        detection_id: "bioc-comsvcs-dll-minidump-lolbin-execution"
+        # (optional) Stable detection identifier inside the TTP card.
+        # Match against:
+        #   - detections.biocs[].name              → slug "bioc-<slugified-name>"
+        #   - detections.xql_queries[].name        → slug "xql-<slugified-name>"
+        #   - detections.correlation_rules[].rule_id (verbatim, e.g. CR-CRED-0001)
+        #   - detections.iocs[]                    → slug "ioc-<type>-<value>"
+        # Resolved by core/engine/ttp_catalog.py.
 
   - id: "step-02"
     name: "Download and execute tool"
