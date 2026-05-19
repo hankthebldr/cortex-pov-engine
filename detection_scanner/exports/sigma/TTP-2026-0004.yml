@@ -1,0 +1,86 @@
+title: DCSync — Domain Replication Abuse for Credential Extraction (T1003.006) — DRSUAPI Replication Request From Non-DC Host
+id: ttp-2026-0004-bioc-01
+status: experimental
+description: |
+  A host that is NOT a domain controller initiates a DRSUAPI (MS-DRSR) RPC call to a DC requesting directory changes — the network signature of DCSync.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter event_sub_type = ENUM.NETWORK_RPC
+    | filter rpc_interface_uuid = "e3514235-4b06-11d1-ab04-00c04fc2dcd2"
+    | filter rpc_opnum in (0,3)  // DRSBind, DRSGetNCChanges
+    | filter dst_host in (active_directory.domain_controllers)
+    | filter src_host not in (active_directory.domain_controllers)
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.006
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: DCSync — Domain Replication Abuse for Credential Extraction (T1003.006) — Windows Event 4662 — Replicating Directory Changes by Non-DC Principal
+id: ttp-2026-0004-bioc-02
+status: experimental
+description: |
+  DC audit log shows access to the directory replication GUID by a principal that is not a DC computer account.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4662
+    | filter properties contains "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2"
+    | filter subject_user_name not_match "^[A-Z0-9-]+\\$$"  // strip computer accounts
+    | filter subject_user_name not in (active_directory.dc_computer_accounts)
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.006
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: DCSync — Domain Replication Abuse for Credential Extraction (T1003.006) — Mimikatz dcsync Command-Line Pattern
+id: ttp-2026-0004-bioc-03
+status: experimental
+description: |
+  Process start with command line containing `dcsync` or `lsadump::dcsync`.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line contains_any ("dcsync", "lsadump::dcsync")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.006
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical

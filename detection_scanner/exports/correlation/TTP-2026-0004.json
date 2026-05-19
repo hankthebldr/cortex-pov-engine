@@ -1,0 +1,22 @@
+{
+  "mitre_techniques": [
+    "T1003.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(DRSUAPI Replication Request From Non-DC Host) OR BIOC(Windows Event 4662 \u2014 Replicating Directory Changes by Non-DC Principal) OR BIOC(Mimikatz dcsync Command-Line Pattern)",
+      "name": "Credential Access \u2014 DCSync Detected",
+      "rule_id": "CR-CRED-0002",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "CR-CRED-0001 (LSASS dump) AND CR-CRED-0002 (DCSync) on same actor within 4h \u2014 promotes to Critical incident with auto-isolation.",
+      "name": "Credential Access \u2014 Chained LSASS + DCSync Within 4h",
+      "rule_id": "CR-CRED-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0004"
+}

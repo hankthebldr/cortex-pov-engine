@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1078.004",
+    "T1580",
+    "T1530",
+    "T1567.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(IAM User Discovery Burst From New Source IP) AND BIOC(S3 Bulk Object Download by IAM User With No Prior Read Pattern) within 60m",
+      "name": "Cloud \u2014 IAM Key Compromise With Exfiltration",
+      "rule_id": "CR-CLOUD-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0003"
+}

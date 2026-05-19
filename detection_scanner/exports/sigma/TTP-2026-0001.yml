@@ -1,0 +1,61 @@
+title: Help-Desk MFA Reset via Voice Impersonation (Muddled Libra Pattern) — Okta MFA Reset Followed by Factor Enrollment From New Device
+id: ttp-2026-0001-bioc-01
+status: experimental
+description: |
+  Help-desk-initiated MFA reset followed within 10 minutes by a new factor enrollment AND a successful sign-in from a device fingerprint not previously seen for this user.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = saas_okta_raw
+    | filter event_type in ("user.account.reset_factors", "user.mfa.factor.activate", "user.session.start")
+    | join (
+        user_id, sequence within 10m:
+          reset = event_type = "user.account.reset_factors"
+          then enroll = event_type = "user.mfa.factor.activate"
+          then signin = event_type = "user.session.start" and device_fingerprint not in last_30d_fingerprints[user_id]
+      )
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1556/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1556.006
+    - attack.t1078.004
+logsource:
+  product: saas-okta
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: Help-Desk MFA Reset via Voice Impersonation (Muddled Libra Pattern) — Help-Desk Admin Modifies Authentication for User Outside Their Span
+id: ttp-2026-0001-bioc-02
+status: experimental
+description: |
+  Help-desk role performs a factor reset for a user whose department or geo is outside the help-desk admin's usual support population.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = saas_okta_raw
+    | filter event_type = "user.account.reset_factors"
+    | enrich actor_geo = lookup(actor_user_id, employee_directory.geo)
+    | enrich target_geo = lookup(target_user_id, employee_directory.geo)
+    | where actor_geo != target_geo or target_user.privileged = true
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1556/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1556.006
+logsource:
+  product: saas-okta
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

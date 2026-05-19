@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1003.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(LSASS Handle Open With Sensitive Access Rights) OR BIOC(comsvcs.dll MiniDump LOLBin Execution)",
+      "name": "Credential Theft \u2014 LSASS Memory Dump",
+      "rule_id": "CR-CRED-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0002"
+}

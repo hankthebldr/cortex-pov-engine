@@ -1,0 +1,25 @@
+{
+  "mitre_techniques": [
+    "T1486",
+    "T1490",
+    "T1021.004",
+    "T1059.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(ESXi SSH Logon Burst \u2014 Single Source \u2192 Many Hypervisors) AND BIOC(vim-cmd Mass Power-Off Across ESXi Cluster) AND BIOC(Mass File Creation Adjacent to VMDK Files) within 15m",
+      "name": "Ransomware \u2014 ESXi Mass Encryption Sequence",
+      "rule_id": "CR-RANSOM-0001",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "CR-CRED-0003 (LSASS + DCSync) AND CR-EXFIL-0001 (rclone exfil) AND CR-RANSOM-0001 (ESXi mass encrypt) within 7d on related identities/hosts \u2014 auto-promotes to P1 incident.",
+      "name": "Ransomware \u2014 Full Kill Chain (Identity \u2192 Exfil \u2192 ESXi Encrypt)",
+      "rule_id": "CR-RANSOM-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0006"
+}

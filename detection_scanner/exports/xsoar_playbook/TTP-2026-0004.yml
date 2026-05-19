@@ -1,0 +1,27 @@
+id: cortexsim-ttp-2026-0004-response
+version: 1
+name: "CortexSim — DCSync — Domain Replication Abuse for Credential Extraction (T1003.006)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0004.
+  Triggered by Cortex correlation rules: CR-CRED-0002, CR-CRED-0003.
+  Reference playbook in panw_mapping: XSOAR-PB-DCSyncResponse-v2
+triggers:
+  - correlation_rule_id: CR-CRED-0002
+  - correlation_rule_id: CR-CRED-0003
+  - playbook_rule_id: XSOAR-PB-DCSyncResponse-v2
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0004
+  cortexsim_version: 1.0

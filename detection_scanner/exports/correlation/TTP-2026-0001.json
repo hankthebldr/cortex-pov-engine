@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1078.004",
+    "T1656",
+    "T1556.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(Okta MFA Reset Followed by Factor Enrollment From New Device) AND BIOC(Anomalous Sign-In Risk High within 1h)",
+      "name": "Identity Threat \u2014 Help-Desk-Assisted Account Takeover",
+      "rule_id": "CR-IDENT-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0001"
+}
