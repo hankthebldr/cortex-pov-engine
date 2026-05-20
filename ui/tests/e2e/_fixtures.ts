@@ -6,6 +6,17 @@ import { test as base, expect } from '@playwright/test'
  * Each test gets a small set of API helpers so we can pre-seed runs,
  * register agents, etc. without leaning on UI clicks for setup (faster
  * and less flaky).  The fixtures use baseURL from playwright.config.ts.
+ *
+ * The `page` fixture is also extended to seed `cortexsim.theme=legacy`
+ * into localStorage before any page script runs. Reason: the Mission Ops
+ * Console is now the default UI (see ui/src/main.jsx::resolveTheme), but
+ * these specs were written against the legacy light-themed App.jsx and
+ * still assert legacy selectors ("MITRE", "Deploy", "EAL", "Runs"
+ * buttons; "Scenario Library" heading). Until the specs are migrated to
+ * the console UI in a follow-up PR, the legacy escape hatch keeps them
+ * green. addInitScript runs the snippet on every navigation before the
+ * React bundle boots, so the theme router picks up the pinned legacy
+ * choice immediately.
  */
 
 type Helpers = {
@@ -18,6 +29,12 @@ type Helpers = {
 }
 
 export const test = base.extend<Helpers>({
+  page: async ({ page }, use) => {
+    await page.addInitScript(() => {
+      try { window.localStorage.setItem('cortexsim.theme', 'legacy') } catch {}
+    })
+    await use(page)
+  },
   api: async ({ request, baseURL }, use) => {
     const helpers = {
       async health() {
