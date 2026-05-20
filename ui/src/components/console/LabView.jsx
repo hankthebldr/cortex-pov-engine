@@ -417,7 +417,7 @@ function BundleRow({ bundle, onDownload }) {
  * The walk is BFS so transitive deps of any depth are picked up, with a
  * `next.has(name)` short-circuit that doubles as cycle protection.
  */
-function resolveModuleDependencies(prev, toggledName, allModules) {
+export function resolveModuleDependencies(prev, toggledName, allModules) {
   const next = new Set(prev)
 
   // Uncheck path — don't cascade dependents.
