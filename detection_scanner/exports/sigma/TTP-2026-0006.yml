@@ -1,0 +1,122 @@
+title: Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) — ESXi SSH Logon Burst — Single Source → Many Hypervisors
+id: ttp-2026-0006-bioc-01
+status: experimental
+description: |
+  ≥3 ESXi hosts receive successful SSH logon from the same source IP within 5 minutes.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = esxi_syslog
+    | filter event_source = "sshd" and event_message contains "Accepted"
+    | bin _time span=5m
+    | comp count_distinct(hostname) as host_count by source_ip, _time
+    | filter host_count >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) — vim-cmd Mass Power-Off Across ESXi Cluster
+id: ttp-2026-0006-bioc-02
+status: experimental
+description: |
+  vim-cmd power.off invoked across multiple ESXi hosts within a short window — a strong precursor to mass encryption.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter action_process_image_name = "vim-cmd" and action_process_image_command_line contains "power.off"
+    | bin _time span=5m
+    | comp count_distinct(agent_hostname) as h by _time
+    | filter h >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+    - attack.t1490
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) — Mass File Creation Adjacent to VMDK Files
+id: ttp-2026-0006-bioc-03
+status: experimental
+description: |
+  ≥10 files created on /vmfs/volumes/ with the same non-VMDK extension within 5 minutes — the encryption-marker signature.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE
+    | filter action_file_path starts_with "/vmfs/volumes/"
+    | filter action_file_extension not_in ("vmdk","vmx","vmsd","vmsn","log","nvram")
+    | bin _time span=5m
+    | comp count() as creates by action_file_extension, agent_hostname, _time
+    | filter creates >= 10
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) — Ansible-Pattern Process on Jumphost With ESXi Reach
+id: ttp-2026-0006-bioc-04
+status: experimental
+description: |
+  ansible-playbook process invoked on a host that subsequently opens SSH to multiple ESXi targets.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "ansible-playbook"
+    | join (
+        preset = xdr_data | filter event_type = ENUM.NETWORK and dst_port = 22 and dst_host in (vcenter.esxi_hosts)
+      ) on agent_hostname within 10m
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.004
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

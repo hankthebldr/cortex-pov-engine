@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1567.002",
+    "T1048.003",
+    "T1074.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(Rclone Command-Line Flag Pattern) AND BIOC(Large Sustained Egress From File Server to Non-Corporate Cloud Provider) on same host within 30m",
+      "name": "Exfiltration \u2014 Rclone-Pattern Tool + Large Egress to Non-Corp ASN",
+      "rule_id": "CR-EXFIL-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0005"
+}

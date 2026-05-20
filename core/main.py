@@ -98,6 +98,14 @@ async def lifespan(app: FastAPI):
     if not os.path.isabs(scenarios_dir):
         scenarios_dir = os.path.join(settings.CORTEXSIM_BASE_DIR, settings.CORTEXSIM_SCENARIOS_DIR)
 
+    # 2a. Load TTP detection-card catalog BEFORE scenarios so the loader
+    #     can flag dangling ttp_ref / detection_id pointers as it walks each
+    #     scenario's expected_detections.
+    from engine.ttp_catalog import catalog as ttp_catalog, default_corpus_dir  # noqa: PLC0415
+    corpus_dir = default_corpus_dir(settings.CORTEXSIM_BASE_DIR)
+    cards_loaded = ttp_catalog.load(corpus_dir)
+    logger.info("TTP catalog ready: %d detection cards", cards_loaded)
+
     async with _db_context() as db:
         loaded = await load_scenarios(scenarios_dir, db)
     logger.info("Scenarios loaded: %d scenario(s)", len(loaded))

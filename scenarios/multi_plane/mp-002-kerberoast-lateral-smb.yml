@@ -130,12 +130,21 @@ steps:
       - plane: ITDR
         type: BIOC
         description: "ITDR - DCSync: DRSUAPI GetNCChanges from non-DC source, critical severity"
+        ttp_ref: "TTP-2026-0004"
+        detection_id: "bioc-drsuapi-replication-request-from-non-dc-host"
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR - Windows Event 4662 Replicating Directory Changes by non-DC principal"
+        ttp_ref: "TTP-2026-0004"
+        detection_id: "bioc-windows-event-4662-replicating-directory-changes-by-non-dc-principal"
       - plane: NDR
         type: Analytics
         description: "NGFW - DCE/RPC (port 135 + ephemeral) traffic to DC from attack endpoint"
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM - full attack chain incident: recon -> Kerberoast -> PtH lateral -> DCSync, unified timeline"
+        ttp_ref: "TTP-2026-0004"
+        detection_id: "CR-CRED-0003"
 
 cleanup:
   commands:

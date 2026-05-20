@@ -144,6 +144,18 @@ class Result(Base):
     executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)   # when the TTP step ran
     observed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)   # when DC confirmed detection in XSIAM
 
+    # Phase 1 — TTP detection card linkage. Populated by the orchestrator at
+    # seed time when the scenario step references a card in
+    # detection_scanner/ttps/. Lets the report renderer embed the
+    # deployable XQL / BIOC / correlation logic alongside the expected
+    # detection description so the DC leaves the POV with content in hand.
+    ttp_ref: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    detection_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    detection_kind: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # bioc | xql | correlation | ioc
+    detection_logic: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    detection_severity: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    mitre_technique: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     # Relationships
     run_rel: Mapped["Run"] = relationship("Run", back_populates="results")
 
@@ -170,6 +182,12 @@ class Result(Base):
             "executed_at": self.executed_at.isoformat() if self.executed_at else None,
             "observed_at": self.observed_at.isoformat() if self.observed_at else None,
             "mttd_seconds": self.mttd_seconds,
+            "ttp_ref": self.ttp_ref,
+            "detection_id": self.detection_id,
+            "detection_kind": self.detection_kind,
+            "detection_logic": self.detection_logic,
+            "detection_severity": self.detection_severity,
+            "mitre_technique": self.mitre_technique,
         }
 
 

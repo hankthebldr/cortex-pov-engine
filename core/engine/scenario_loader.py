@@ -35,6 +35,12 @@ class StepExpectedDetection(BaseModel):
     plane: str
     type: str
     description: str
+    # Phase 1 — optional bridge to detection_scanner/ttps/*.json.
+    # When both fields resolve in the TTP catalog at startup, the orchestrator
+    # copies the card's BIOC / XQL / correlation logic onto the Result row so
+    # the POV report can render the deployable query inline.
+    ttp_ref: Optional[str] = None       # e.g. "TTP-2026-0002"
+    detection_id: Optional[str] = None  # e.g. "bioc-lsass-handle-open-with-sensitive-access-rights"
 
 
 class StepSchema(BaseModel):
@@ -185,6 +191,11 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
 
         assert schema is not None  # guaranteed by parse_and_validate
 
+        # Phase 1 — warn (don't fail) on dangling ttp_ref / detection_id
+        # references. The catalog is loaded best-effort; missing cards are
+        # advisory until Phase 2 backfills the corpus.
+        _warn_dangling_ttp_refs(schema, filepath)
+
         # Upsert: check if the scenario_id already exists
         result = await db.execute(
             select(Scenario).where(Scenario.scenario_id == schema.scenario_id)
@@ -217,6 +228,28 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
         logger.info("Scenario load complete: %d scenarios loaded.", len(loaded_ids))
 
     return loaded_ids
+
+
+def _warn_dangling_ttp_refs(schema: "ScenarioSchema", filepath: str) -> None:
+    """Log a warning for each ``ttp_ref`` / ``detection_id`` that does not
+    resolve in the TTP catalog. Never raises — the bridge is opt-in.
+    """
+    # Imported lazily so unit tests that exercise the schema alone (without
+    # running startup) don't pay the catalog import cost.
+    from engine.ttp_catalog import catalog  # noqa: PLC0415
+
+    for step in schema.steps:
+        for det in step.expected_detections:
+            if not det.ttp_ref and not det.detection_id:
+                continue
+            card = catalog.find(det.ttp_ref, det.detection_id)
+            if card is None:
+                logger.warning(
+                    "scenario=%s step=%s expected_detection references "
+                    "unresolved TTP card ttp_ref=%s detection_id=%s (from %s)",
+                    schema.scenario_id, step.id,
+                    det.ttp_ref, det.detection_id, filepath,
+                )
 
 
 def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:

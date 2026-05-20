@@ -1,0 +1,90 @@
+title: AWS IAM Access Key Abuse — Discovery + S3 Object Exfiltration — IAM User Discovery Burst From New Source IP
+id: ttp-2026-0003-bioc-01
+status: experimental
+description: |
+  ≥4 distinct AWS Discovery API calls (GetCallerIdentity, ListUsers, ListRoles, ListBuckets, DescribeInstances) within 60 seconds from a sourceIPAddress and userAgent combination not previously observed for that IAM user.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source in ("sts.amazonaws.com", "iam.amazonaws.com", "s3.amazonaws.com", "ec2.amazonaws.com")
+    | filter event_name in ("GetCallerIdentity","ListUsers","ListRoles","ListBuckets","DescribeInstances","ListAttachedUserPolicies")
+    | bin _time span=60s
+    | comp count_distinct(event_name) as distinct_calls by user_identity.arn, source_ip, user_agent, _time
+    | filter distinct_calls >= 4 and source_ip not in user_baseline.recent_ips[user_identity.arn]
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1580/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1580
+    - attack.t1078.004
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: AWS IAM Access Key Abuse — Discovery + S3 Object Exfiltration — S3 Bulk Object Download by IAM User With No Prior Read Pattern
+id: ttp-2026-0003-bioc-02
+status: experimental
+description: |
+  An IAM user (not a service role) issues ≥50 GetObject calls against a single bucket within 5 minutes, when historical baseline shows <5/day.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source = "s3.amazonaws.com" and event_name = "GetObject"
+    | filter user_identity.type = "IAMUser"
+    | bin _time span=5m
+    | comp count() as get_count by user_identity.arn, request_parameters.bucketName, _time
+    | filter get_count >= 50 and get_count > 10 * baseline.daily_avg[user_identity.arn, request_parameters.bucketName]
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1530/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1530
+    - attack.t1567.002
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: AWS IAM Access Key Abuse — Discovery + S3 Object Exfiltration — Long-Lived IAM User Key Used From Outside Known ASN
+id: ttp-2026-0003-bioc-03
+status: experimental
+description: |
+  Access key auth observed from an ASN never seen for this identity in 90 days.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and additional_event_data.MFAUsed = "No"
+    | filter user_identity.type = "IAMUser"
+    | enrich asn = geoip(source_ip).asn
+    | filter asn not in user_baseline.asns_90d[user_identity.arn]
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
