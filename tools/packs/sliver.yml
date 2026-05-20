@@ -1,0 +1,61 @@
+adapter_id: TOOL-SLIVER
+name: Sliver
+version: "1.5.42"
+
+tier: 3
+category: c2-framework
+
+upstream:
+  repo: https://github.com/BishopFox/sliver
+  license: GPL-3.0
+  attribution: Bishop Fox
+
+cortex_signal:
+  planes:
+    - EDR
+    - NDR
+  expected_techniques:
+    - T1071.001  # Application Layer Protocol: Web Protocols
+    - T1059.001  # Command and Scripting Interpreter: PowerShell
+    - T1219      # Remote Access Software
+
+safety_class: c2-framework
+
+install:
+  iac_module: edr
+  content_library_entry:
+    name: sliver
+    repo: BishopFox/sliver
+    install: release-binary
+    install_path: "/opt/sliver"
+    download_url: "https://github.com/BishopFox/sliver/releases/download/v1.5.42/sliver-server_linux"
+  binary: "/opt/sliver/sliver-server"
+
+invoke:
+  target_platform: linux
+  # Sliver's CLI takes a single command argument; the engine substitutes
+  # the operator's pre-staged session command (e.g. `generate --http
+  # https://lab.example.com:443 --os linux --save /tmp/lab.bin`).
+  run_template: "{binary} {sliver_command}"
+  default_args:
+    sliver_command: "version"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "pkill -f sliver-server || true"
+    - "rm -f /tmp/sliver-cortexsim-*.bin"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-EMPIRE
+  - TOOL-HAVOC
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - c2
+  - red-team
+  - gated

@@ -1,0 +1,65 @@
+adapter_id: TOOL-ATOMIC-RED-TEAM
+name: Atomic Red Team
+version: "master"
+
+tier: 2
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/redcanaryco/atomic-red-team
+  license: MIT
+  attribution: Red Canary
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    # Atomic Red Team covers ~all of MITRE ATT&CK Enterprise; the
+    # expected_techniques list is intentionally narrow — pinning the most
+    # common atomics so the UI tool picker surfaces this adapter for
+    # those scenarios. Per-step adapter overrides drive the actual TID.
+    - T1003     # OS Credential Dumping
+    - T1059     # Command and Scripting Interpreter
+    - T1055     # Process Injection
+    - T1547     # Boot or Logon Autostart Execution
+
+safety_class: dual-use-lab-only
+
+install:
+  source_path: sources/atomic-red-team
+  build_cmd: "true"   # repo is data; no build step
+
+invoke:
+  target_platform: any
+  # Invocation pattern: Invoke-AtomicTest (Windows) or atomic_test.py (Linux).
+  # Per-step scenarios override 'invoker' + 'test_id' + 'platform' rather
+  # than maintaining a separate adapter per atomic.
+  run_template: "{invoker} {test_id} -PathToAtomicsFolder {atomics_path} {extra_args}"
+  default_args:
+    invoker: "pwsh -Command Invoke-AtomicTest"
+    test_id: "T1003.001"
+    atomics_path: "sources/atomic-red-team/atomics"
+    extra_args: "-Show"
+  identity_required: root
+
+cleanup:
+  commands:
+    # Atomic tests carry their own cleanup blocks invoked via the same
+    # Invoke-AtomicTest -Cleanup flag — defer to the per-test cleanup
+    # rather than reproducing it here. The line below is a no-op safety
+    # net for orphaned tmp files atomics commonly leave behind.
+    - "find /tmp -maxdepth 1 -name 'art-*' -mmin +60 -delete 2>/dev/null || true"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-PURPLESHARP
+  - TOOL-CALDERA
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - atomic-tests
+  - mitre-attack
+  - already-submoduled

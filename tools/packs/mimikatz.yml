@@ -1,0 +1,63 @@
+adapter_id: TOOL-MIMIKATZ
+name: Mimikatz
+version: "2.2.0-20220919"
+
+tier: 3
+category: identity-credential
+
+upstream:
+  repo: https://github.com/gentilkiwi/mimikatz
+  license: CC-BY-4.0
+  attribution: Benjamin Delpy (gentilkiwi)
+
+cortex_signal:
+  planes:
+    - EDR
+    - ITDR
+  expected_techniques:
+    - T1003.001  # OS Credential Dumping: LSASS Memory
+    - T1003.006  # OS Credential Dumping: DCSync
+    - T1558.003  # Steal or Forge Kerberos Tickets: Kerberoasting
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: edr
+  content_library_entry:
+    name: mimikatz
+    repo: gentilkiwi/mimikatz
+    install: git-clone
+    install_path: "C:\\tools\\mimikatz"
+    build_cmd: "msbuild mimikatz.sln /p:Configuration=Release /p:Platform=x64"
+  binary: "C:\\tools\\mimikatz\\x64\\mimikatz.exe"
+
+invoke:
+  target_platform: windows
+  # commands is a single quoted blob passed through to mimikatz's argv —
+  # the engine substitutes verbatim, no escaping (NO WRAPPER CODE rule).
+  run_template: '"{binary}" "{commands}" "exit"'
+  default_args:
+    commands: "privilege::debug sekurlsa::logonpasswords"
+  identity_required: administrator
+
+cleanup:
+  commands:
+    - 'powershell -Command "Remove-Item -Force C:\\tools\\mimikatz\\*.txt -ErrorAction SilentlyContinue"'
+
+ttp_refs:
+  - TTP-2026-0002  # LSASS dump
+  - TTP-2026-0004  # DCSync
+
+equivalents:
+  - TOOL-PYPYKATZ
+  - TOOL-RUBEUS
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - credential-dump
+  - lsass
+  - dcsync
+  - kerberoast
+  - flagship

@@ -1,0 +1,54 @@
+adapter_id: TOOL-NUCLEI
+name: Nuclei
+version: "3.2.9"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/projectdiscovery/nuclei
+  license: MIT
+  attribution: ProjectDiscovery
+
+cortex_signal:
+  planes:
+    - NDR
+    - CDR
+  expected_techniques:
+    - T1190  # Exploit Public-Facing Application
+    - T1595  # Active Scanning
+    - T1592  # Gather Victim Host Information
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v nuclei >/dev/null 2>&1 || (curl -sSL https://github.com/projectdiscovery/nuclei/releases/download/v3.2.9/nuclei_3.2.9_linux_amd64.zip -o /tmp/nuclei.zip && unzip -o /tmp/nuclei.zip -d /usr/local/bin/ && chmod +x /usr/local/bin/nuclei)"
+  binary: nuclei
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -target {target} -severity {severity} -t {templates} -o /tmp/nuclei-cortexsim.json -j -rate-limit {rate_limit}"
+  default_args:
+    target: "http://127.0.0.1"
+    severity: "medium,high,critical"
+    templates: "cves,exposures,misconfigurations"
+    rate_limit: "150"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/nuclei-cortexsim.json /tmp/nuclei.zip"
+
+ttp_refs:
+  - TTP-2026-0003  # exposed services / IAM-key discovery flavour
+
+equivalents:
+  - TOOL-NIKTO
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - vulnerability-scan
+  - templates
+  - asm
