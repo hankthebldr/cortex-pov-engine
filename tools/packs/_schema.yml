@@ -1,0 +1,158 @@
+# tools/packs/_schema.yml
+# CortexSim Tool Adapter Schema Reference
+#
+# This file documents every field accepted by the adapter loader
+# (core/tools/adapter_loader.py). It is a documentation artifact —
+# NOT a runnable adapter.
+#
+# All fields marked (required) must be present. Fields marked (optional) may be omitted.
+# Validated at startup against the Pydantic ToolAdapterSchema; invalid files are
+# REJECTED with a logged error and excluded from the catalog.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Identity ────────────────────────────────────────────────────────────────
+
+adapter_id: "TOOL-NMAP"
+# (required) Stable identifier. Format: TOOL-{UPPER-NAME}. Never reused.
+# Unique across all adapter packs.
+
+name: "Nmap"
+# (required) Display name shown in the UI tool picker.
+
+version: "7.94"
+# (required) Pinned upstream version this adapter targets.
+# Bump when the run_template or default_args change in a non-backward-
+# compatible way.
+
+# ── Integration tier ─────────────────────────────────────────────────────────
+
+tier: 4
+# (required) Integration tier (1..5). See
+# docs/superpowers/specs/2026-05-19-tool-adapter-framework-design.md §3.
+#   1: in-tree         — sources/cortex-* (we own the source)
+#   2: submodule       — sources/<tool>   (OSS pinned at a version)
+#   3: IaC-provisioned — installed on the *target* VM via cloud-init
+#   4: runtime-fetched — installed at task dispatch (curl|apt|pip|go)
+#   5: external-only   — reference only; never invoked by the engine
+
+category: "network-scan"
+# (required) Top-level category. Controlled vocabulary:
+#   adversary-simulation | c2-framework | sandbox | reverse-engineering
+#   | network-scan | web-app | identity-credential | cloud-container
+#   | social-engineering | wireless-iot | analyst-workbench
+
+# ── Upstream & licence (audit trail) ─────────────────────────────────────────
+
+upstream:
+  repo: "https://github.com/nmap/nmap"
+  # (required) Canonical source URL.
+  license: "NPSL"
+  # (required) SPDX-style or project licence string. CI fails on
+  # "unknown" so contributors must look this up.
+  attribution: "Gordon Lyon (Fyodor)"
+  # (required) Project owner; surfaced in POV reports for licence-aware
+  # customer hand-off.
+
+# ── Cortex signal mapping (drives UI picker filters + auto-suggest) ─────────
+
+cortex_signal:
+  planes:
+    - NDR
+  # (required) Which CortexSim plane(s) this tool's signal lands on.
+  # Must be a subset of the loader's plane enum.
+  expected_techniques:
+    - "T1046"  # Network Service Discovery
+  # (optional) MITRE techniques this tool exercises by default.
+
+# ── Safety class (drives consent gating at scenario launch) ─────────────────
+
+safety_class: "safe"
+# (required) One of:
+#   safe              — benign scanner / reporting tool (nmap, nuclei, trivy)
+#   dual-use-lab-only — offensive capability needing lab consent
+#                       (Mimikatz, sqlmap, BloodHound, evilginx2)
+#   c2-framework      — full C2; refuses to launch unless the scenario sets
+#                       c2_authorized: true (Sliver, Empire, Havoc)
+#   destructive       — irreversible without cleanup; requires non-empty
+#                       cleanup.commands
+
+# ── Install: tier-specific block ────────────────────────────────────────────
+
+install:
+  # The shape of this block depends on the tier.
+  #
+  # Tier 1 (in-tree) — pointer at sources/cortex-*:
+  #   source_path: "sources/cortex-prompt-attacker"
+  #   build_cmd: "pip install -e ."
+  #   binary: "venv/bin/cortex-prompt-attacker"
+  #
+  # Tier 2 (submodule) — same shape; source_path is a submodule
+  #
+  # Tier 3 (IaC-provisioned) — install on target VM:
+  #   iac_module: "edr"
+  #   content_library_entry:
+  #     name: "mimikatz"
+  #     repo: "gentilkiwi/mimikatz"
+  #     install: "git-clone"
+  #     install_path: "C:\\tools\\mimikatz"
+  #     build_cmd: "msbuild mimikatz.sln /p:Configuration=Release /p:Platform=x64"
+  #
+  # Tier 4 (runtime-fetched) — install at dispatch:
+  runtime_install_command: "apt-get install -y nmap || (curl -sSL https://nmap.org/dist/nmap-7.94.tgz | tar xz)"
+  binary: "nmap"
+
+# ── Invoke: how to run the tool ─────────────────────────────────────────────
+
+invoke:
+  target_platform: "linux"
+  # (required) linux | windows | macos | k8s | any. Drives identity-harness
+  # selection and push-bundle template choice.
+
+  run_template: "{binary} {flags} {target}"
+  # (required) shlex-safe format string. Placeholders are filled in from
+  # default_args + per-step overrides. The orchestrator does NOT translate
+  # arguments — same NO-WRAPPER-CODE rule as TOOL_REGISTRY.
+
+  default_args:
+    flags: "-sS -Pn -p 1-1024"
+    target: "127.0.0.1"
+  # (required, may be empty {}) Default values for every placeholder in
+  # run_template. Scenario steps can override per-step.
+
+  identity_required: "root"
+  # (required) Identity harness mode. Matches scenario step identity values:
+  #   container-runtime | root | www-data | nobody | node | postgres
+  #   | svc-backup | administrator (Windows)
+
+# ── Cleanup (mandatory for destructive safety_class, optional otherwise) ───
+
+cleanup:
+  commands:
+    - "rm -f /tmp/nmap-*.xml"
+
+# ── Cross-references ────────────────────────────────────────────────────────
+
+ttp_refs:
+  # (optional) TTP cards in detection_scanner/ttps/ that should reference
+  # this adapter. Dangling refs warn at load time, never fail.
+  - "TTP-2026-0003"
+
+equivalents:
+  # (optional) Adapter ids in the same category producing overlapping
+  # signal. Phase 3 of the detection plan rotates these as the
+  # naive/intermediate/advanced/apt variants of one TTP.
+  - "TOOL-MASSCAN"
+
+deprecated_by: null
+# (optional) When set, this adapter is hidden from the picker but still
+# resolvable from historical scenarios. Migration target id.
+
+# ── Metadata ────────────────────────────────────────────────────────────────
+
+author: "Henry Reed"
+created: "2026-05-19"
+last_updated: "2026-05-19"
+tags:
+  - portscan
+  - discovery
+  - reference

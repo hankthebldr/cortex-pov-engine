@@ -91,9 +91,21 @@ class Orchestrator:
         db: AsyncSession,
         target_agent_id: Optional[str] = None,
         identity: Optional[str] = None,
+        consent: Optional[dict[str, bool]] = None,
     ) -> LaunchResult:
         """
         Create a Run record and route to pull or push path.
+
+        ``consent`` carries launch-time authorizations for tool-adapter
+        safety gates. Currently honoured keys:
+
+          - ``c2_authorized`` (bool) — required when any external_tools
+            entry references a ``safety_class: c2-framework`` adapter
+          - ``simulation_authorized`` (bool) — required for
+            ``dual-use-lab-only`` adapters
+
+        Missing consent for a gated adapter aborts the launch with a
+        structured error and creates no Run record.
         """
         from models import Run, Scenario  # noqa: PLC0415
 
@@ -107,6 +119,17 @@ class Orchestrator:
                 success=False,
                 error=f"Scenario '{scenario_id}' not found",
             )
+
+        # Phase A — adapter consent gate. Refuse to create the Run record
+        # if the scenario uses a gated adapter and the operator hasn't
+        # supplied the matching consent.
+        gate_error = _check_adapter_consent(scenario, consent or {})
+        if gate_error is not None:
+            logger.warning(
+                "Launch refused scenario=%s reason=%s",
+                scenario_id, gate_error,
+            )
+            return LaunchResult(success=False, error=gate_error)
 
         run_id = str(uuid.uuid4())
         now = datetime.utcnow()
@@ -170,7 +193,7 @@ class Orchestrator:
             task_id=str(uuid.uuid4()),
             run_id=run_id,
             scenario_id=scenario.scenario_id,
-            steps=scenario.steps or [],
+            steps=_resolve_adapter_placeholders(scenario.steps or []),
             identity_context=identity,
         )
         self._enqueue(target_agent_id, task)
@@ -298,6 +321,105 @@ class Orchestrator:
     def peek_queue(self, agent_id: str) -> list[Task]:
         """Return all pending tasks for an agent without removing them."""
         return list(self._queue.get(agent_id, []))
+
+
+# ---------------------------------------------------------------------------
+# Tool-adapter helpers (Phase A)
+# ---------------------------------------------------------------------------
+
+
+_ADAPTER_PLACEHOLDER_RE = __import__("re").compile(r"\{adapter:(TOOL-[A-Z0-9-]+)\}")
+
+
+def _check_adapter_consent(scenario: Any, consent: dict[str, bool]) -> Optional[str]:
+    """Validate that the operator authorised every gated adapter the
+    scenario references. Returns an error string when refused, ``None`` when
+    cleared.
+
+    Scenarios that use no adapter_refs (back-compat path) always pass.
+    """
+    from tools.adapter_catalog import catalog  # noqa: PLC0415
+
+    tools = scenario.external_tools or []
+    for tool in tools:
+        adapter_ref = tool.get("adapter_ref") if isinstance(tool, dict) else None
+        if not adapter_ref:
+            continue
+        adapter = catalog.find(adapter_ref)
+        if adapter is None:
+            # Loader already warned; treat as advisory at launch time too.
+            continue
+        if adapter.safety_class == "c2-framework" and not consent.get("c2_authorized"):
+            return (
+                f"Scenario uses C2-framework adapter {adapter_ref!r} "
+                f"({adapter.name} v{adapter.version}) but consent c2_authorized "
+                f"is not set. Re-launch with consent.c2_authorized=true to proceed."
+            )
+        if adapter.safety_class == "dual-use-lab-only" and not consent.get("simulation_authorized"):
+            return (
+                f"Scenario uses dual-use adapter {adapter_ref!r} "
+                f"({adapter.name} v{adapter.version}) but consent "
+                f"simulation_authorized is not set. Re-launch with "
+                f"consent.simulation_authorized=true to proceed."
+            )
+        if adapter.safety_class == "destructive":
+            if not (adapter.cleanup and adapter.cleanup.commands):
+                # Defence in depth — the loader rejects this case already,
+                # but if a deprecated_by/migration left a stale destructive
+                # adapter in the catalog we refuse to dispatch it.
+                return (
+                    f"Scenario references destructive adapter {adapter_ref!r} "
+                    f"but its catalog entry has no cleanup commands — refusing launch."
+                )
+    return None
+
+
+def _resolve_adapter_placeholders(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Substitute ``{adapter:TOOL-XYZ}`` placeholders in step commands with
+    the resolved adapter's ``run_template`` rendered with its ``default_args``.
+
+    Unresolved placeholders are left as-is so the agent surfaces the failure
+    cleanly instead of silently dropping the step.
+
+    Returns a NEW list of step dicts; the input is never mutated (scenarios
+    are loaded once at boot and shared across runs).
+    """
+    from tools.adapter_catalog import catalog  # noqa: PLC0415
+
+    rendered_steps: list[dict[str, Any]] = []
+    for step in steps:
+        new_step = dict(step)  # shallow copy is sufficient — we only edit ``command``
+        cmd = new_step.get("command")
+        if isinstance(cmd, str) and "{adapter:" in cmd:
+            new_step["command"] = _ADAPTER_PLACEHOLDER_RE.sub(
+                lambda m: _render_adapter(catalog.find(m.group(1)), m.group(0)),
+                cmd,
+            )
+        rendered_steps.append(new_step)
+    return rendered_steps
+
+
+def _render_adapter(adapter: Optional[Any], original_placeholder: str) -> str:
+    """Render an adapter's ``run_template`` with its ``default_args``.
+
+    Returns the original placeholder text on miss so the failure surfaces in
+    the agent's output instead of expanding to an empty command (which would
+    look like success).
+    """
+    if adapter is None or adapter.invoke is None:
+        logger.warning("Adapter placeholder unresolved: %s", original_placeholder)
+        return original_placeholder
+    try:
+        return adapter.invoke.run_template.format(
+            binary=adapter.install.binary or "",
+            **adapter.invoke.default_args,
+        )
+    except KeyError as exc:
+        logger.warning(
+            "Adapter %s run_template missing default for placeholder %s — leaving raw",
+            adapter.adapter_id, exc,
+        )
+        return original_placeholder
 
 
 # Module-level singleton — imported by API layer
