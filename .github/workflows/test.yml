@@ -42,19 +42,45 @@ jobs:
   ui-unit:
     name: ui (vitest)
     runs-on: ubuntu-22.04
+    env:
+      # @playwright/test's postinstall downloads ~200 MB of browsers from
+      # the Playwright CDN. The unit-test job uses vitest + jsdom and
+      # never spawns a real browser — fetching them here just makes the
+      # install step fail on runners without outbound access to that CDN
+      # (which is what every previous CI run on this repo did, hence
+      # the recurring `Process completed with exit code 1` during
+      # `npm ci || npm install`). The e2e-stack job below runs
+      # `npx playwright install --with-deps chromium` when it actually
+      # needs the browsers.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      # Same defence-in-depth for puppeteer if it ever sneaks in as a
+      # transitive dependency.
+      PUPPETEER_SKIP_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: npm, cache-dependency-path: ui/package-lock.json }
+      # `npm ci` is the correct install verb for CI — it refuses to
+      # touch the lockfile and fails fast on drift. The previous
+      # `|| npm install` fallback masked legitimate lockfile drift and
+      # ran the same failing postinstall a second time, doubling the
+      # job's failure budget without ever surfacing the real cause.
       - working-directory: ui
-        run: |
-          npm ci || npm install
-          npm test -- --coverage
+        run: npm ci
+      - working-directory: ui
+        run: npm test -- --coverage
 
   e2e-stack:
     name: e2e (smoke + playwright)
     runs-on: ubuntu-22.04
     needs: [python-tests, go-tests, ui-unit]
+    env:
+      # Defer the Playwright browser download to the dedicated
+      # `npx playwright install --with-deps chromium` step below, so
+      # that the bundle build (which only needs vite + react) doesn't
+      # have to reach the Playwright CDN. Same rationale as ui-unit.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      PUPPETEER_SKIP_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
         with: { submodules: false }
@@ -64,11 +90,12 @@ jobs:
         with: { node-version: '20', cache: npm, cache-dependency-path: ui/package-lock.json }
       - name: Install Python smoke deps
         run: pip install pytest httpx
+      - name: Install UI deps
+        working-directory: ui
+        run: npm ci
       - name: Build UI bundle
         working-directory: ui
-        run: |
-          npm ci || npm install
-          npm run build
+        run: npm run build
       - name: Copy UI to core/static
         run: |
           rm -rf core/static
