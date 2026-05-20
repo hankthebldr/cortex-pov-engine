@@ -73,6 +73,14 @@ jobs:
         run: |
           rm -rf core/static
           cp -r ui/dist core/static
+      - name: Generate per-run CORTEXSIM_SECRET for SimCore
+        # Production mode boot refuses default/short secrets (see core/config.py
+        # validate_master_key). CI is ephemeral so we generate a fresh 64-hex
+        # secret per run rather than committing one — mirrors the prod operator
+        # workflow surfaced in the MasterKeyError hint.
+        # Exporting via $GITHUB_ENV makes the value visible to docker compose's
+        # ${CORTEXSIM_SECRET} substitution in compose.yml on subsequent steps.
+        run: echo "CORTEXSIM_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - name: docker compose up SimCore
         run: |
           docker compose up -d --build
