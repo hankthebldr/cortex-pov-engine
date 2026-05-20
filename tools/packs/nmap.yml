@@ -1,0 +1,50 @@
+adapter_id: TOOL-NMAP
+name: Nmap
+version: "7.94"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/nmap/nmap
+  license: NPSL
+  attribution: Gordon Lyon (Fyodor)
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1046  # Network Service Discovery
+    - T1018  # Remote System Discovery
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v nmap >/dev/null 2>&1 || (apt-get install -y nmap 2>/dev/null || yum install -y nmap)"
+  binary: nmap
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {flags} {target}"
+  default_args:
+    flags: "-sS -Pn -T4 -p 22,80,443,3389,445"
+    target: "127.0.0.1"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/nmap-cortexsim-*.xml"
+
+ttp_refs:
+  - TTP-2026-0003
+
+equivalents:
+  - TOOL-MASSCAN
+
+author: Henry Reed
+created: "2026-05-19"
+last_updated: "2026-05-19"
+tags:
+  - portscan
+  - discovery
+  - reference-adapter

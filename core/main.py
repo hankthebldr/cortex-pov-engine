@@ -106,6 +106,15 @@ async def lifespan(app: FastAPI):
     cards_loaded = ttp_catalog.load(corpus_dir)
     logger.info("TTP catalog ready: %d detection cards", cards_loaded)
 
+    # 2b. Load Tool Adapter catalog (Phase A — tool framework). Same
+    #     warn-not-fail pattern: missing adapter packs are advisory and the
+    #     scenario loader logs a warning per dangling adapter_ref.
+    from tools.adapter_catalog import catalog as adapter_catalog  # noqa: PLC0415
+    from tools.adapter_loader import default_packs_dir  # noqa: PLC0415
+    packs_dir = default_packs_dir(settings.CORTEXSIM_BASE_DIR)
+    adapters_loaded = adapter_catalog.load(packs_dir)
+    logger.info("Tool adapter catalog ready: %d adapter(s)", adapters_loaded)
+
     async with _db_context() as db:
         loaded = await load_scenarios(scenarios_dir, db)
     logger.info("Scenarios loaded: %d scenario(s)", len(loaded))

@@ -57,6 +57,12 @@ class ExternalToolSchema(BaseModel):
     source: Optional[str] = None
     type: str
     install_inline: bool = False
+    # Phase A — optional bridge to a Tool Adapter pack in tools/packs/.
+    # When set, the loader resolves it against the adapter catalog at startup
+    # and the orchestrator can substitute the adapter's run_template into
+    # scenario step commands via the {adapter:<id>} placeholder. Existing
+    # scenarios without adapter_ref continue to work via the legacy path.
+    adapter_ref: Optional[str] = None
 
 
 class CleanupSchema(BaseModel):
@@ -195,6 +201,9 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
         # references. The catalog is loaded best-effort; missing cards are
         # advisory until Phase 2 backfills the corpus.
         _warn_dangling_ttp_refs(schema, filepath)
+        # Phase A (tool adapter framework) — same warn-not-fail pattern for
+        # external_tools.adapter_ref pointing at tools/packs/<id>.yml.
+        _warn_dangling_adapter_refs(schema, filepath)
 
         # Upsert: check if the scenario_id already exists
         result = await db.execute(
@@ -250,6 +259,24 @@ def _warn_dangling_ttp_refs(schema: "ScenarioSchema", filepath: str) -> None:
                     schema.scenario_id, step.id,
                     det.ttp_ref, det.detection_id, filepath,
                 )
+
+
+def _warn_dangling_adapter_refs(schema: "ScenarioSchema", filepath: str) -> None:
+    """Log a warning for each ``external_tools[].adapter_ref`` that does not
+    resolve in the adapter catalog. Never raises — adapter wiring is opt-in
+    and back-compatible with the legacy free-form ``external_tools`` shape.
+    """
+    from tools.adapter_catalog import catalog  # noqa: PLC0415
+
+    for tool in schema.external_tools:
+        if not tool.adapter_ref:
+            continue
+        if catalog.find(tool.adapter_ref) is None:
+            logger.warning(
+                "scenario=%s external_tool name=%s references unresolved "
+                "tool adapter adapter_ref=%s (from %s)",
+                schema.scenario_id, tool.name, tool.adapter_ref, filepath,
+            )
 
 
 def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
