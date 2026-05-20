@@ -1,0 +1,149 @@
+title: "AIRS \u2014 Direct Prompt Injection (LLM01) \u2014 Pre-flight: vulnerable target /healthz responds 200"
+id: ttp-2026-0012-bioc-01
+status: experimental
+description: |
+  Pre-flight: vulnerable target /healthz responds 200
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1059.004
+    dataset = airs_telemetry
+    | filter model_endpoint != null
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AIRS \u2014 Direct Prompt Injection (LLM01) \u2014 AIRS \u2014 direct prompt-injection classifier fires on 'Ignore previous instructions' family"
+id: ttp-2026-0012-bioc-02
+status: experimental
+description: |
+  AIRS — direct prompt-injection classifier fires on 'Ignore previous instructions' family
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1656
+    dataset = airs_telemetry
+    | filter model_endpoint != null
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AIRS \u2014 Direct Prompt Injection (LLM01) \u2014 AIRS \u2014 system prompt or hidden context appears verbatim in model response"
+id: ttp-2026-0012-bioc-03
+status: experimental
+description: |
+  AIRS — system prompt or hidden context appears verbatim in model response
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1656
+    dataset = airs_telemetry
+    | filter model_endpoint != null
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AIRS \u2014 Direct Prompt Injection (LLM01) \u2014 AIRS \u2014 base64-mutated injection evades naive filter, still caught by content classifier"
+id: ttp-2026-0012-bioc-04
+status: experimental
+description: |
+  AIRS — base64-mutated injection evades naive filter, still caught by content classifier
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1656
+    dataset = airs_telemetry
+    | filter model_endpoint != null
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AIRS \u2014 Direct Prompt Injection (LLM01) \u2014 Audit pipeline ingests JSONL events correctly (schema check)"
+id: ttp-2026-0012-bioc-05
+status: experimental
+description: |
+  Audit pipeline ingests JSONL events correctly (schema check)
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1656
+    dataset = airs_telemetry
+    | filter model_endpoint != null
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,277 @@
+{
+  "id": "TTP-2026-0026",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "kubernetes"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "WildFire Malware Trigger \u2014 Simulated Backdoor",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-CDR-005. Plane: CDR. Primary technique: T1105. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-CDR-005. Plane: CDR. Primary technique: T1105. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-CDR-005.\nUC: WildFire Cloud Intelligence Validation / TC: Known-Bad File Execution and C2 Simulation.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1071.001"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1105 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-CDR-005 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Download WildFire EICAR-equivalent test file\nmkdir -p /tmp/wf_sim && \\\necho '[*] Downloading WildFire test file (known-bad signature)...' && \\\ncurl -sSL \"https://wildfire.paloaltonetworks.com/publicapi/test/elf\" \\\n  -o /tmp/wf_sim/wildfire_test.elf 2>/dev/null || \\\ncurl -sSL \"https://www.eicar.org/download/eicar.com.txt\" \\\n  -o /tmp/wf_sim/eicar_test.txt 2>/dev/null; \\\necho '[*] Creating synthetic known-bad binary for WildFire trigger...' && \\\npython3 -c \"\nimport os, struct\n# ELF header for a minimal Linux x86_64 executable (WildFire test pattern)\nelf = b'\\x7fELF\\x02\\x01\\x01\\x00' + b'\\x00' * 8\nelf += struct.pack('<HHIQQQIHHHHHH', 2, 62, 1, 0x400080, 64, 0, 0, 64, 56, 1, 0, 0, 0)\nelf += struct.pack('<IIQQQQ', 1, 5, 0, 0x400000, 0x400000, 0x80, 0x80, 0x200000)\nelf += b'\\x48\\x31\\xff\\x48\\x31\\xd2\\x48\\x31\\xf6\\x0f\\x05'  # syscall stub\nwith open('/tmp/wf_sim/test_backdoor.elf', 'wb') as f: f.write(elf + b'\\x00' * (0x80 - len(elf)))\nprint('[*] Synthetic ELF test file created')\n\" && \\\nchmod +x /tmp/wf_sim/test_backdoor.elf && \\\nls -la /tmp/wf_sim/\n# step-2: Execute simulated backdoor in container context\necho '[*] Executing WildFire test binary...' && \\\ntimeout 5 /tmp/wf_sim/test_backdoor.elf 2>/dev/null; \\\necho \"[*] Exit code: $?\" && \\\nls -la /proc/$$/exe 2>/dev/null; \\\necho '[*] Backdoor execution simulation complete'\n# step-3: Simulate C2 beacon (curl to test endpoint mimicking malware callback)\necho '[*] Simulating C2 beacon activity...' && \\\nfor i in 1 2 3; do \\\n  curl -sSA \"Mozilla/5.0 (compatible; MSIE 9.0)\" \\\n    -H \"X-CortexSim: beacon-${i}\" \\\n    -H \"X-Session: $(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo 'sim-uuid')\" \\\n    --connect-timeout 3 \\\n    \"http://192.0.2.1/beacon?id=SIM-CDR-005&seq=${i}\" 2>/dev/null || true; \\\n  sleep 2; \\\ndone; \\\necho '[*] C2 beacon simulation complete (3 intervals)'",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching curl (heuristic from scenario step step-01)",
+        "expected_value": "process_name CONTAINS \"curl\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching nc (heuristic from scenario step step-04)",
+        "expected_value": "process_name CONTAINS \"nc\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "File access pattern matching '.enc' (encrypted-output marker) (heuristic from scenario step step-04)",
+        "expected_value": "file_path CONTAINS \".enc\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/wf_sim\necho '[CortexSim] SIM-CDR-005 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "WildFire test file download in container \u2014 known-bad file signature matched by WildFire cloud intelligence",
+        "description": "WildFire test file download in container \u2014 known-bad file signature matched by WildFire cloud intelligence",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1105\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1105"
+        ]
+      },
+      {
+        "name": "Executable file downloaded to /tmp and made executable \u2014 download-then-execute pattern in container",
+        "description": "Executable file downloaded to /tmp and made executable \u2014 download-then-execute pattern in container",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1105\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1105"
+        ]
+      },
+      {
+        "name": "WildFire test file execution \u2014 malicious ELF execution in container triggers CDR BIOC rule",
+        "description": "WildFire test file execution \u2014 malicious ELF execution in container triggers CDR BIOC rule",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1059.004\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ]
+      },
+      {
+        "name": "Downloaded binary executed from /tmp by www-data context \u2014 high-risk execution chain in container",
+        "description": "Downloaded binary executed from /tmp by www-data context \u2014 high-risk execution chain in container",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1059.004\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ]
+      },
+      {
+        "name": "Regular periodic outbound HTTP connections from container \u2014 C2 beacon interval pattern (3 attempts to 192.0.2.1)",
+        "description": "Regular periodic outbound HTTP connections from container \u2014 C2 beacon interval pattern (3 attempts to 192.0.2.1)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "C2 communication pattern following malware execution \u2014 post-execution network activity in container",
+        "description": "C2 communication pattern following malware execution \u2014 post-execution network activity in container",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "Mass file modification pattern in container \u2014 ransomware-style encryption simulation matches T1486 behavioral rule",
+        "description": "Mass file modification pattern in container \u2014 ransomware-style encryption simulation matches T1486 behavioral rule",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1486\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1486"
+        ]
+      },
+      {
+        "name": "Bulk file rename with .enc extension following malware execution \u2014 post-execution encryption behavior in container",
+        "description": "Bulk file rename with .enc extension following malware execution \u2014 post-execution encryption behavior in container",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1486\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1486"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CDR-0026"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "prisma-cloud",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CDR-0026"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-026",
+        "name": "WildFire Cloud Intelligence Validation",
+        "description": "WildFire Cloud Intelligence Validation",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-026A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - WildFire Cloud-Delivered Security Prevents Never-Before-Seen Malware",
+      "url": "https://unit42.paloaltonetworks.com/wildfire-cloud-delivered-security/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1105",
+      "url": "https://attack.mitre.org/techniques/T1105/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-CDR-005."
+    }
+  ]
+}

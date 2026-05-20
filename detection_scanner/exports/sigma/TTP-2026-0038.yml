@@ -1,0 +1,119 @@
+title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 Pre-flight: mfa_fatigue advertised in plugin metadata"
+id: ttp-2026-0038-bioc-01
+status: experimental
+description: |
+  Pre-flight: mfa_fatigue advertised in plugin metadata
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1621
+    dataset = msft_windows_security
+    | filter event_id IN (4624, 4625, 4662, 4768, 4769)
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1621/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1621
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 ITDR \u2014 MFA-fatigue alert: 7 push denials followed by 1 approval within burst window"
+id: ttp-2026-0038-bioc-02
+status: experimental
+description: |
+  ITDR — MFA-fatigue alert: 7 push denials followed by 1 approval within burst window
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1621
+    dataset = msft_windows_security
+    | filter event_id IN (4624, 4625, 4662, 4768, 4769)
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1621/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1621
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 ITDR \u2014 fatigue_marker boolean fires explicit pattern detection"
+id: ttp-2026-0038-bioc-03
+status: experimental
+description: |
+  ITDR — fatigue_marker boolean fires explicit pattern detection
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1621
+    dataset = msft_windows_security
+    | filter event_id IN (4624, 4625, 4662, 4768, 4769)
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1621/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1621
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 ITDR \u2014 MFA-fatigue alert severity escalates above 16-event threshold"
+id: ttp-2026-0038-bioc-04
+status: experimental
+description: |
+  ITDR — MFA-fatigue alert severity escalates above 16-event threshold
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1621
+    dataset = msft_windows_security
+    | filter event_id IN (4624, 4625, 4662, 4768, 4769)
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1621/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1621
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

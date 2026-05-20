@@ -1,0 +1,235 @@
+{
+  "id": "TTP-2026-0040",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "windows"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "ITDR \u2014 Session Token Replay Across Geo / User-Agent",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-ITDR-004. Plane: ITDR. Primary technique: T1539. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-ITDR-004. Plane: ITDR. Primary technique: T1539. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-ITDR-004.\nUC: Stolen Session-Token Detection / TC: Same Session Token Used From Two Distinct Geos / Browsers Within 5 min.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1539",
+        "name": "Steal Web Session Cookie",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "name": "Use Alternate Authentication Material: Web Session Cookie",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1550.004"
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1078.004"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1539 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-ITDR-004 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "powershell",
+      "code": "# step-1: Pre-flight: confirm token_replay pattern is supported\npython3 -m scripts.eal_simulator.cli describe idp_signin_emulator \\\n  | jq -e '.eal_targets'\n# step-2: Issue token from US-West Chrome, replay from EU-Central curl\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/itdr-004.yml <<YML\ncampaign_id: CMP-ITDR-004\nname: \"ITDR \u2014 Okta token replay\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\ntags: [itdr, okta, token-replay]\nsteps:\n  - step_id: step-01\n    plugin: idp_signin_emulator\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: okta\n      event_pattern: token_replay\n      target_user: \"ada.lovelace@cortexsim-canary.invalid\"\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-004.yml --live\n# step-3: Replay 3 iterations to confirm rule deterministically fires\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/itdr-004-rep.yml <<YML\ncampaign_id: CMP-ITDR-004\nname: \"ITDR \u2014 Okta token replay repeat\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: idp_signin_emulator\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: okta\n      event_pattern: token_replay\n      target_user: \"ada.lovelace@cortexsim-canary.invalid\"\n      iterations: 3\n      sleep_seconds: 10\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-004-rep.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "powershell",
+      "code": "rm -f /tmp/itdr-004.yml /tmp/itdr-004-rep.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: idp_signin_emulator metadata visible to operator",
+        "description": "Pre-flight: idp_signin_emulator metadata visible to operator",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1539\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1539"
+        ]
+      },
+      {
+        "name": "ITDR \u2014 same session_token_id observed from two geos and two user-agents within 5 min",
+        "description": "ITDR \u2014 same session_token_id observed from two geos and two user-agents within 5 min",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1539\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1539"
+        ]
+      },
+      {
+        "name": "ITDR \u2014 replay_marker boolean fires explicit detection rule",
+        "description": "ITDR \u2014 replay_marker boolean fires explicit detection rule",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1539\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1539"
+        ]
+      },
+      {
+        "name": "ITDR \u2014 three independent token-replay alerts within 5 min stitch into one incident",
+        "description": "ITDR \u2014 three independent token-replay alerts within 5 min stitch into one incident",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1550.004\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550.004"
+        ]
+      },
+      {
+        "name": "XSIAM stitching \u2014 token-replay incidents grouped under same identity",
+        "description": "XSIAM stitching \u2014 token-replay incidents grouped under same identity",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1550.004\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550.004"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ITDR-0040"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ITDR-0040"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-IDENT-040",
+        "name": "Stolen Session-Token Detection",
+        "description": "Stolen Session-Token Detection",
+        "test_cases": [
+          {
+            "test_case_id": "TC-IDENT-040A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Mandiant - APT29 OAuth Token Theft via AiTM",
+      "url": "https://cloud.google.com/blog/topics/threat-intelligence/",
+      "publisher": "Mandiant",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1539",
+      "url": "https://attack.mitre.org/techniques/T1539/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-ITDR-004."
+    }
+  ]
+}

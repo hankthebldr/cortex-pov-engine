@@ -1,0 +1,149 @@
+title: "AI Access \u2014 Source Code Paste to Public ChatGPT \u2014 Pre-flight: plugin metadata visible to operator"
+id: ttp-2026-0007-bioc-01
+status: experimental
+description: |
+  Pre-flight: plugin metadata visible to operator
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1567
+    dataset = http_proxy
+    | filter dst_host IN ("api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com")
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AI Access \u2014 Source Code Paste to Public ChatGPT \u2014 AI Access \u2014 outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)"
+id: ttp-2026-0007-bioc-02
+status: experimental
+description: |
+  AI Access — outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1567
+    dataset = http_proxy
+    | filter dst_host IN ("api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com")
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AI Access \u2014 Source Code Paste to Public ChatGPT \u2014 AI Access \u2014 DLP regex match on source-code structure in prompt body"
+id: ttp-2026-0007-bioc-03
+status: experimental
+description: |
+  AI Access — DLP regex match on source-code structure in prompt body
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1567
+    dataset = http_proxy
+    | filter dst_host IN ("api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com")
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AI Access \u2014 Source Code Paste to Public ChatGPT \u2014 NGFW EAL \u2014 generative-AI App-ID match on outbound HTTPS to api.openai.com"
+id: ttp-2026-0007-bioc-04
+status: experimental
+description: |
+  NGFW EAL — generative-AI App-ID match on outbound HTTPS to api.openai.com
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1567
+    dataset = http_proxy
+    | filter dst_host IN ("api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com")
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AI Access \u2014 Source Code Paste to Public ChatGPT \u2014 AI Access \u2014 repeated POST pattern (3 in <60s) flagged as policy violation"
+id: ttp-2026-0007-bioc-05
+status: experimental
+description: |
+  AI Access — repeated POST pattern (3 in <60s) flagged as policy violation
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1567
+    dataset = http_proxy
+    | filter dst_host IN ("api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com")
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

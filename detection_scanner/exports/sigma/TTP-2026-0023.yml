@@ -1,0 +1,239 @@
+title: "Cryptominer Deployment \u2014 Unit 42 XMRig Variant \u2014 System limit modification in container \u2014 ulimit/sysctl tuning consistent with cryptominer pre-deployment"
+id: ttp-2026-0023-bioc-01
+status: experimental
+description: |
+  System limit modification in container — ulimit/sysctl tuning consistent with cryptominer pre-deployment
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1562.001
+    preset = xdr_data
+    | filter cloud_provider = "aws"
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cryptominer Deployment \u2014 Unit 42 XMRig Variant \u2014 XMRig binary download and extraction \u2014 cryptominer tool transfer signature"
+id: ttp-2026-0023-bioc-02
+status: experimental
+description: |
+  XMRig binary download and extraction — cryptominer tool transfer signature
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1105
+    preset = xdr_data
+    | filter cloud_provider = "aws"
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cryptominer Deployment \u2014 Unit 42 XMRig Variant \u2014 Compressed binary downloaded and extracted to /tmp hidden directory in container"
+id: ttp-2026-0023-bioc-03
+status: experimental
+description: |
+  Compressed binary downloaded and extracted to /tmp hidden directory in container
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1105
+    preset = xdr_data
+    | filter cloud_provider = "aws"
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cryptominer Deployment \u2014 Unit 42 XMRig Variant \u2014 Known cryptomining pool domain/IP in config file \u2014 pool.minexmr.com association"
+id: ttp-2026-0023-bioc-04
+status: experimental
+description: |
+  Known cryptomining pool domain/IP in config file — pool.minexmr.com association
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1496
+    preset = xdr_data
+    | filter cloud_provider = "aws"
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1496/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1496
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cryptominer Deployment \u2014 Unit 42 XMRig Variant \u2014 Cryptominer binary execution \u2014 XMRig process tree detected by CDR runtime BIOC"
+id: ttp-2026-0023-bioc-05
+status: experimental
+description: |
+  Cryptominer binary execution — XMRig process tree detected by CDR runtime BIOC
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1496
+    preset = xdr_data
+    | filter cloud_provider = "aws"
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1496/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1496
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cryptominer Deployment \u2014 Unit 42 XMRig Variant \u2014 Sustained CPU spike from container process consistent with cryptomining workload"
+id: ttp-2026-0023-bioc-06
+status: experimental
+description: |
+  Sustained CPU spike from container process consistent with cryptomining workload
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1496
+    preset = xdr_data
+    | filter cloud_provider = "aws"
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1496/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1496
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cryptominer Deployment \u2014 Unit 42 XMRig Variant \u2014 Crontab modification to persist cryptominer \u2014 scheduled task creation from container"
+id: ttp-2026-0023-bioc-07
+status: experimental
+description: |
+  Crontab modification to persist cryptominer — scheduled task creation from container
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1053.005
+    preset = xdr_data
+    | filter cloud_provider = "aws"
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cryptominer Deployment \u2014 Unit 42 XMRig Variant \u2014 Cryptominer binary added to cron schedule \u2014 multi-stage malware persistence behavior"
+id: ttp-2026-0023-bioc-08
+status: experimental
+description: |
+  Cryptominer binary added to cron schedule — multi-stage malware persistence behavior
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1053.005
+    preset = xdr_data
+    | filter cloud_provider = "aws"
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

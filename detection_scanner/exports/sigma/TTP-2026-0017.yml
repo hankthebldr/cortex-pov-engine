@@ -1,0 +1,115 @@
+title: "Browser \u2014 Credential Paste into Untrusted Origin \u2014 Pre-flight: plugin metadata visible to operator"
+id: ttp-2026-0017-bioc-01
+status: experimental
+description: |
+  Pre-flight: plugin metadata visible to operator
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1552
+    dataset = browser_telemetry
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Browser \u2014 Credential Paste into Untrusted Origin \u2014 Prisma Browser \u2014 credential-shape paste into non-sanctioned origin (DLP rule)"
+id: ttp-2026-0017-bioc-02
+status: experimental
+description: |
+  Prisma Browser — credential-shape paste into non-sanctioned origin (DLP rule)
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1552
+    dataset = browser_telemetry
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Browser \u2014 Credential Paste into Untrusted Origin \u2014 Prisma Browser \u2014 paste source vs. destination origin mismatch"
+id: ttp-2026-0017-bioc-03
+status: experimental
+description: |
+  Prisma Browser — paste source vs. destination origin mismatch
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1552
+    dataset = browser_telemetry
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Browser \u2014 Credential Paste into Untrusted Origin \u2014 PB \u2192 XSIAM \u2014 alert with origin URL + paste DLP rule fires within MTTD target"
+id: ttp-2026-0017-bioc-04
+status: experimental
+description: |
+  PB → XSIAM — alert with origin URL + paste DLP rule fires within MTTD target
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1552
+    dataset = browser_telemetry
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,206 @@
+{
+  "id": "TTP-2026-0020",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-browser",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Browser \u2014 Cross-Origin SaaS Copy-Paste DLP",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-BROWSER-004. Plane: BROWSER. Primary technique: T1567. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-BROWSER-004. Plane: BROWSER. Primary technique: T1567. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-BROWSER-004.\nUC: Cross-SaaS Data Movement Detection / TC: User Copies from Sanctioned CRM, Pastes Into Personal Webmail.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1567 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-BROWSER-004 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Pre-flight: confirm browser_attack_runner plugin is registered\npython3 -m scripts.eal_simulator.cli describe browser_attack_runner \\\n  | jq -e '.eal_targets | length > 0'\n# step-2: Drive Prisma Browser: copy from CRM, paste into webmail\ncat > /tmp/sim-browser-004-eal.yml <<'YML'\ncampaign_id: CMP-BROWSER-004\nname: \"Browser \u2014 cross-origin DLP\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - crm.cortexsim-test.invalid\n  - mail.cortexsim-test.invalid\ndry_run: false\ntags: [browser, dlp, cross-origin]\nsteps:\n  - step_id: step-01\n    plugin: browser_attack_runner\n    params:\n      campaign_path: scenarios/browser/campaigns/saas-cross-origin-dlp.yml\n      allowlist_host: crm.cortexsim-test.invalid\n      browser_channel: prisma\n      headless: true\n      timeout_seconds: 120.0\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/sim-browser-004-eal.yml --live\n# step-3: Confirm PB \u2192 XSIAM stitched alert\necho \"[CortexSim] Confirm XSIAM stitched incident: clipboard-origin mismatch.\"",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching nc (heuristic from scenario step step-03)",
+        "expected_value": "process_name CONTAINS \"nc\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sim-browser-004-eal.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: plugin metadata visible to operator",
+        "description": "Pre-flight: plugin metadata visible to operator",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1005\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1005"
+        ]
+      },
+      {
+        "name": "Prisma Browser \u2014 cross-origin paste from sanctioned CRM into personal webmail (DLP rule)",
+        "description": "Prisma Browser \u2014 cross-origin paste from sanctioned CRM into personal webmail (DLP rule)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      },
+      {
+        "name": "Prisma Browser \u2014 clipboard origin tag mismatch with paste destination origin",
+        "description": "Prisma Browser \u2014 clipboard origin tag mismatch with paste destination origin",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      },
+      {
+        "name": "XSIAM stitching \u2014 copy + paste correlated by clipboard payload hash",
+        "description": "XSIAM stitching \u2014 copy + paste correlated by clipboard payload hash",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      },
+      {
+        "name": "XSIAM \u2014 stitched cross-origin DLP incident with both origins on the timeline",
+        "description": "XSIAM \u2014 stitched cross-origin DLP incident with both origins on the timeline",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-BROWSER-0020"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-020",
+        "name": "Cross-SaaS Data Movement Detection",
+        "description": "Cross-SaaS Data Movement Detection",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-020A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Insider Risk via Browser Exfil 2026",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1567",
+      "url": "https://attack.mitre.org/techniques/T1567/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-BROWSER-004."
+    }
+  ]
+}

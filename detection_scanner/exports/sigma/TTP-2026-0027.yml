@@ -1,0 +1,115 @@
+title: "Cloud App \u2014 Okta Risky OAuth Drive-Scope Grant \u2014 Pre-flight: oauth_grant_emulator metadata visible to operator"
+id: ttp-2026-0027-bioc-01
+status: experimental
+description: |
+  Pre-flight: oauth_grant_emulator metadata visible to operator
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1550.001
+    dataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cloud App \u2014 Okta Risky OAuth Drive-Scope Grant \u2014 Cloud App \u2014 outbound OAuth authorize to Okta carrying drive-wide scope"
+id: ttp-2026-0027-bioc-02
+status: experimental
+description: |
+  Cloud App — outbound OAuth authorize to Okta carrying drive-wide scope
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1550.001
+    dataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cloud App \u2014 Okta Risky OAuth Drive-Scope Grant \u2014 NGFW EAL \u2014 outbound /oauth2/v1/authorize App-ID match to *.okta.com"
+id: ttp-2026-0027-bioc-03
+status: experimental
+description: |
+  NGFW EAL — outbound /oauth2/v1/authorize App-ID match to *.okta.com
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1550.001
+    dataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cloud App \u2014 Okta Risky OAuth Drive-Scope Grant \u2014 Cloud App \u2014 repeated risky grant attempts (3 in <60s) flagged as enumeration pattern"
+id: ttp-2026-0027-bioc-04
+status: experimental
+description: |
+  Cloud App — repeated risky grant attempts (3 in <60s) flagged as enumeration pattern
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1550.001
+    dataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

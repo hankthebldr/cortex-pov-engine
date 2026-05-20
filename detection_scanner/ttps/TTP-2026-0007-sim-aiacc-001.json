@@ -1,0 +1,218 @@
+{
+  "id": "TTP-2026-0007",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:11+00:00",
+    "updated_at": "2026-05-20T21:16:11+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ai-access",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high",
+      "needs-detection-engineering-review"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws",
+        "azure",
+        "gcp"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AI Access \u2014 Source Code Paste to Public ChatGPT",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-AIACC-001. Plane: AI_ACCESS. Primary technique: T1567. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-AIACC-001. Plane: AI_ACCESS. Primary technique: T1567. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-AIACC-001.\nUC: Shadow-AI Source Code Disclosure / TC: Multi-File Source Code Paste to OpenAI ChatGPT API.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1041",
+        "name": "Exfiltration Over C2 Channel",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1567 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-AIACC-001 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Pre-flight: confirm llm_provider_egress plugin is registered\npython3 -m scripts.eal_simulator.cli describe llm_provider_egress \\\n  | jq -e '.eal_targets | length > 0'\n# step-2: Single source-code POST to api.openai.com via EAL plugin\ncat > /tmp/aiacc-001.yml <<'YML'\ncampaign_id: CMP-AIACC-001\nname: \"AI Access \u2014 source paste to OpenAI\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\ntags: [ai-access, openai, source-paste]\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-001.yml --live\n# step-3: Repeated POSTs (x3) to confirm stable per-session detection\ncat > /tmp/aiacc-001-burst.yml <<'YML'\ncampaign_id: CMP-AIACC-001\nname: \"AI Access \u2014 source paste burst\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 3\n      sleep_seconds: 5\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-001-burst.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "TODO \u2014 author at least one concrete expected artifact for this scenario",
+        "expected_value": "TODO"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aiacc-001.yml /tmp/aiacc-001-burst.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: plugin metadata visible to operator",
+        "description": "Pre-flight: plugin metadata visible to operator",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      },
+      {
+        "name": "AI Access \u2014 outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)",
+        "description": "AI Access \u2014 outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      },
+      {
+        "name": "AI Access \u2014 DLP regex match on source-code structure in prompt body",
+        "description": "AI Access \u2014 DLP regex match on source-code structure in prompt body",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 generative-AI App-ID match on outbound HTTPS to api.openai.com",
+        "description": "NGFW EAL \u2014 generative-AI App-ID match on outbound HTTPS to api.openai.com",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      },
+      {
+        "name": "AI Access \u2014 repeated POST pattern (3 in <60s) flagged as policy violation",
+        "description": "AI Access \u2014 repeated POST pattern (3 in <60s) flagged as policy violation",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ai-access-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-AI_ACCESS-0007"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-INSIDER-007",
+        "name": "Shadow-AI Source Code Disclosure",
+        "description": "Shadow-AI Source Code Disclosure",
+        "test_cases": [
+          {
+            "test_case_id": "TC-INSIDER-007A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Shadow AI in the Enterprise",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1567",
+      "url": "https://attack.mitre.org/techniques/T1567/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-AIACC-001."
+    }
+  ]
+}

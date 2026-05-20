@@ -1,0 +1,179 @@
+title: "KOI \u2014 Claude Desktop Installs Typosquat MCP Server \u2014 Code scan \u2014 manifest name 'anthroopic-calculator' typosquats 'anthropic-calculator'"
+id: ttp-2026-0042-bioc-01
+status: experimental
+description: |
+  Code scan — manifest name 'anthroopic-calculator' typosquats 'anthropic-calculator'
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1195
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1195/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1195
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "KOI \u2014 Claude Desktop Installs Typosquat MCP Server \u2014 Code scan \u2014 tool description embeds 'Ignore previous instructions' / AKIA canary"
+id: ttp-2026-0042-bioc-02
+status: experimental
+description: |
+  Code scan — tool description embeds 'Ignore previous instructions' / AKIA canary
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1195
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1195/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1195
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "KOI \u2014 Claude Desktop Installs Typosquat MCP Server \u2014 NGFW EAL \u2014 Claude Desktop User-Agent fetches MCP manifest from non-canonical FQDN"
+id: ttp-2026-0042-bioc-03
+status: experimental
+description: |
+  NGFW EAL — Claude Desktop User-Agent fetches MCP manifest from non-canonical FQDN
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1059
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "KOI \u2014 Claude Desktop Installs Typosquat MCP Server \u2014 URL filtering \u2014 destination matches typosquat pattern of approved AI tool publisher"
+id: ttp-2026-0042-bioc-04
+status: experimental
+description: |
+  URL filtering — destination matches typosquat pattern of approved AI tool publisher
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1059
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "KOI \u2014 Claude Desktop Installs Typosquat MCP Server \u2014 Cortex Cloud Code \u2014 typosquat package-name detector fires"
+id: ttp-2026-0042-bioc-05
+status: experimental
+description: |
+  Cortex Cloud Code — typosquat package-name detector fires
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1195
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1195/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1195
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "KOI \u2014 Claude Desktop Installs Typosquat MCP Server \u2014 Cortex Cloud Code \u2014 instruction-injection in tool description detected"
+id: ttp-2026-0042-bioc-06
+status: experimental
+description: |
+  Cortex Cloud Code — instruction-injection in tool description detected
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1195
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1195/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1195
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

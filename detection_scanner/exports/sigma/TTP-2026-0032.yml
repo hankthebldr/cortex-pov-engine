@@ -1,0 +1,269 @@
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Non-root process reading /etc/passwd \u2014 user enumeration behavior from web service account"
+id: ttp-2026-0032-bioc-01
+status: experimental
+description: |
+  Non-root process reading /etc/passwd — user enumeration behavior from web service account
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1087.001
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Credential file access \u2014 /etc/shadow read attempt from non-root service account (www-data)"
+id: ttp-2026-0032-bioc-02
+status: experimental
+description: |
+  Credential file access — /etc/shadow read attempt from non-root service account (www-data)
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1003.008
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.008
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Unauthorized shadow file access pattern \u2014 credential harvesting behavior"
+id: ttp-2026-0032-bioc-03
+status: experimental
+description: |
+  Unauthorized shadow file access pattern — credential harvesting behavior
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1003.008
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.008
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Broad credential file search across home directories \u2014 SSH key and history file harvesting"
+id: ttp-2026-0032-bioc-04
+status: experimental
+description: |
+  Broad credential file search across home directories — SSH key and history file harvesting
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1552.001
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Recursive filesystem search for credential artifacts from service account context"
+id: ttp-2026-0032-bioc-05
+status: experimental
+description: |
+  Recursive filesystem search for credential artifacts from service account context
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1552.001
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Process memory reading via /proc \u2014 credential extraction from service process memory spaces"
+id: ttp-2026-0032-bioc-06
+status: experimental
+description: |
+  Process memory reading via /proc — credential extraction from service process memory spaces
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1003
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Sequential /proc/pid/environ access pattern \u2014 automated credential harvesting across multiple processes"
+id: ttp-2026-0032-bioc-07
+status: experimental
+description: |
+  Sequential /proc/pid/environ access pattern — automated credential harvesting across multiple processes
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1003
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Mimipenguin execution \u2014 known credential dumping tool signature detected by XDR Agent"
+id: ttp-2026-0032-bioc-08
+status: experimental
+description: |
+  Mimipenguin execution — known credential dumping tool signature detected by XDR Agent
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1003
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Credential Dumping \u2014 /etc/shadow and Mimipenguin \u2014 Credential extraction tool downloaded and executed \u2014 curl-to-bash pattern with /proc memory access"
+id: ttp-2026-0032-bioc-09
+status: experimental
+description: |
+  Credential extraction tool downloaded and executed — curl-to-bash pattern with /proc memory access
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1003
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
