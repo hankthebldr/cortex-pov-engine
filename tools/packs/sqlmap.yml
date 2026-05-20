@@ -1,0 +1,54 @@
+adapter_id: TOOL-SQLMAP
+name: sqlmap
+version: "1.8.10"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/sqlmapproject/sqlmap
+  license: GPL-2.0
+  attribution: sqlmap developers (Bernardo Damele, Miroslav Stampar)
+
+cortex_signal:
+  planes:
+    - NDR
+    - CLOUD_APP
+  expected_techniques:
+    - T1190  # Exploit Public-Facing Application
+    - T1059  # Command and Scripting Interpreter (when SQLi → RCE)
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "command -v sqlmap >/dev/null 2>&1 || (apt-get install -y sqlmap 2>/dev/null || pip3 install --no-input sqlmap)"
+  binary: sqlmap
+
+invoke:
+  target_platform: linux
+  # --batch + --random-agent keeps the invocation non-interactive and
+  # produces realistic web-app egress; -o turns on optimizations the
+  # NDR plane needs to see for SQLi pattern detection.
+  run_template: "{binary} -u {target} --batch --random-agent -o --level={level} --risk={risk} --output-dir={output_dir}"
+  default_args:
+    target: "http://127.0.0.1/vulnerable.php?id=1"
+    level: "2"
+    risk: "1"
+    output_dir: "/tmp/sqlmap-cortexsim"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/sqlmap-cortexsim"
+
+ttp_refs: []
+
+equivalents: []
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - sql-injection
+  - web-app
+  - exploitation

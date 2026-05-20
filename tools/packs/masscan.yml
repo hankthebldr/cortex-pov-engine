@@ -1,0 +1,55 @@
+adapter_id: TOOL-MASSCAN
+name: masscan
+version: "1.3.2"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/robertdavidgraham/masscan
+  license: AGPL-3.0
+  attribution: Robert David Graham
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1046  # Network Service Discovery
+    - T1595  # Active Scanning
+
+safety_class: dual-use-lab-only
+
+install:
+  # masscan needs raw sockets — bundled in apt on most distros, otherwise
+  # build from source. The runtime command degrades gracefully to source
+  # build only when the package is unavailable.
+  runtime_install_command: "command -v masscan >/dev/null 2>&1 || (apt-get install -y masscan 2>/dev/null || (git clone --depth 1 https://github.com/robertdavidgraham/masscan /tmp/masscan && make -C /tmp/masscan && install /tmp/masscan/bin/masscan /usr/local/bin/))"
+  binary: masscan
+
+invoke:
+  target_platform: linux
+  # Default rate kept conservative for lab sweeps; bumping to 100k+ pps
+  # requires explicit operator override per scenario step.
+  run_template: "{binary} {target} -p{ports} --rate={rate} --output-format json --output-filename /tmp/masscan-cortexsim.json"
+  default_args:
+    target: "10.0.0.0/24"
+    ports: "22,80,443,3389,445"
+    rate: "1000"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/masscan-cortexsim.json"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-NMAP
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - portscan
+  - high-rate
+  - asm

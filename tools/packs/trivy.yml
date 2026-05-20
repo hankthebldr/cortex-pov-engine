@@ -1,0 +1,52 @@
+adapter_id: TOOL-TRIVY
+name: Trivy
+version: "0.55.2"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/aquasecurity/trivy
+  license: Apache-2.0
+  attribution: Aqua Security
+
+cortex_signal:
+  planes:
+    - CDR
+  expected_techniques:
+    - T1525  # Implant Internal Image (when scanning supply-chain images)
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v trivy >/dev/null 2>&1 || (curl -sSL https://github.com/aquasecurity/trivy/releases/download/v0.55.2/trivy_0.55.2_Linux-64bit.tar.gz | tar xz -C /usr/local/bin trivy && chmod +x /usr/local/bin/trivy)"
+  binary: trivy
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {scan_type} --severity {severity} --format {output_format} --output {output_path} {target}"
+  default_args:
+    scan_type: "image"
+    severity: "CRITICAL,HIGH"
+    output_format: "json"
+    output_path: "/tmp/trivy-cortexsim.json"
+    target: "alpine:3.18"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/trivy-cortexsim.json"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-PROWLER
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - container-scan
+  - cve
+  - sbom
+  - supply-chain
