@@ -5,6 +5,7 @@ import ConsoleRail from './ConsoleRail.jsx'
 import ConsoleTabs from './ConsoleTabs.jsx'
 import CommandStrip from './CommandStrip.jsx'
 import CommandPalette from './CommandPalette.jsx'
+import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverlay.jsx'
 
 /**
  * AppShell — Mission Ops Console layout wrapper.
@@ -45,20 +46,41 @@ export default function AppShell({
   children,
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [helpOpen, setHelpOpen]       = useState(false)
 
-  // Global ⌘K / Ctrl+K handler
+  // First-run help overlay — appears once per browser, then suppressed.
+  useEffect(() => {
+    if (shouldShowOnFirstRun()) {
+      // Defer so it doesn't race with the initial render's keyboard handlers.
+      const t = setTimeout(() => setHelpOpen(true), 400)
+      return () => clearTimeout(t)
+    }
+    return undefined
+  }, [])
+
+  // Global ⌘K / ⌘/ / Ctrl+K / Ctrl+/ handler
   useEffect(() => {
     const handler = (e) => {
       const key = e.key ? e.key.toLowerCase() : ''
-      if ((e.metaKey || e.ctrlKey) && key === 'k') {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && key === 'k') {
         e.preventDefault()
         setPaletteOpen((v) => !v)
+      } else if (mod && (key === '/' || key === '?')) {
+        e.preventDefault()
+        setHelpOpen((v) => !v)
       } else if (key === 'escape') {
         setPaletteOpen(false)
+        setHelpOpen(false)
       }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
+  }, [])
+
+  const handleCloseHelp = useCallback(() => {
+    setHelpOpen(false)
+    markFirstRunSeen()
   }, [])
 
   const shellClass = `shell${activeRun ? '' : ' shell--no-telemetry'}`
@@ -102,6 +124,11 @@ export default function AppShell({
         open={paletteOpen}
         items={paletteItems}
         onClose={() => setPaletteOpen(false)}
+      />
+
+      <HelpOverlay
+        open={helpOpen}
+        onClose={handleCloseHelp}
       />
     </div>
   )

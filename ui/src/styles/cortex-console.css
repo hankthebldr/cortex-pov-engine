@@ -2430,3 +2430,177 @@
 .theme-console .filter-chip-strip__clear-all:hover {
   color: var(--c-missed);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Help overlay (⌘/)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .help-overlay__backdrop {
+  position: fixed; inset: 0;
+  background: rgba(5, 10, 20, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 8vh;
+  z-index: 110;
+  animation: help-overlay-fade-in 200ms var(--ease-out);
+}
+@keyframes help-overlay-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.theme-console .help-overlay {
+  width: min(880px, 94vw);
+  max-height: 82vh;
+  background: var(--c-surface-modal);
+  border: 1px solid var(--c-hairline-strong);
+  border-radius: 8px;
+  box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.8),
+              0 0 0 1px var(--c-signal-soft);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+}
+
+.theme-console .help-overlay__head {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--c-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.theme-console .help-overlay__eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-signal);
+  margin-bottom: 6px;
+}
+.theme-console .help-overlay__title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 500;
+  color: var(--c-text);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.theme-console .help-overlay__tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--c-hairline);
+  background: var(--c-surface);
+}
+.theme-console .help-overlay__tab {
+  height: 38px;
+  padding: 0 18px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.theme-console .help-overlay__tab:hover { color: var(--c-text-secondary); }
+.theme-console .help-overlay__tab.is-active {
+  color: var(--c-signal);
+  border-bottom-color: var(--c-signal);
+}
+
+.theme-console .help-overlay__body {
+  padding: 24px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.theme-console .help-overlay__group-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  margin: 18px 0 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--c-hairline);
+}
+.theme-console .help-overlay__group-title:first-child { margin-top: 0; }
+
+.theme-console .help-overlay__shortcuts section,
+.theme-console .help-overlay__cheatsheet section {
+  margin-bottom: 18px;
+}
+
+.theme-console .help-overlay__shortcut-list {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 8px 16px;
+}
+.theme-console .help-overlay__shortcut-list li {
+  display: contents;
+}
+.theme-console .help-overlay__keys {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.theme-console .help-overlay__shortcut-label {
+  font-size: 13px;
+  color: var(--c-text-secondary);
+  line-height: 1.5;
+}
+
+.theme-console .help-overlay__cheatsheet-body {
+  font-family: var(--font-narrative);
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--c-text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.theme-console .help-overlay__about p,
+.theme-console .help-overlay__about ul {
+  font-family: var(--font-narrative);
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--c-text-secondary);
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.theme-console .help-overlay__about strong { color: var(--c-text); font-weight: 400; }
+.theme-console .help-overlay__about a { color: var(--c-signal); }
+.theme-console .help-overlay__stack-list {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+  font-size: 13px !important;
+}
+.theme-console .help-overlay__stack-list li::before {
+  content: '◆ ';
+  color: var(--c-signal);
+  margin-right: 4px;
+}
+
+.theme-console .help-overlay__footer {
+  padding: 12px 24px;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-hairline);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
