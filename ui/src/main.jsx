@@ -8,11 +8,15 @@ import './styles/cortex-console.css'
 /**
  * Theme router — URL flag selects the shell.
  *
- *   ?theme=console     → Mission Ops Console (new)
- *   (default)          → legacy light theme
+ *   (default)          → Mission Ops Console (dark, operator-first)
+ *   ?theme=legacy      → previous light-themed App (kept as an escape hatch
+ *                        during the soak period — see migration step 9)
  *
- * The choice is also persisted in localStorage under `cortexsim.theme` so
- * DCs who prefer the console only set the flag once.
+ * The choice is persisted in localStorage under `cortexsim.theme` so a DC
+ * who explicitly opts in to either theme keeps it across reloads.
+ *
+ * To force the default for an existing browser:
+ *   localStorage.removeItem('cortexsim.theme')   // or visit ?theme=console
  */
 function resolveTheme() {
   try {
@@ -27,7 +31,7 @@ function resolveTheme() {
   } catch {
     /* non-browser context */
   }
-  return 'legacy'
+  return 'console'
 }
 
 const theme = resolveTheme()

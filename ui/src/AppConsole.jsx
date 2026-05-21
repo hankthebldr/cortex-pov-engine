@@ -4,25 +4,31 @@ import OperationsView from './components/console/OperationsView.jsx'
 import InflightView from './components/console/InflightView.jsx'
 import EvidenceView from './components/console/EvidenceView.jsx'
 import CoverageView from './components/console/CoverageView.jsx'
+import LabView from './components/console/LabView.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
-import InfraGenerator from './components/InfraGenerator.jsx'
 import { getHealth, getRuns, getScenarios } from './api/client.js'
 
 /**
  * AppConsole — Mission Ops Console root.
  *
- * Wraps the existing scenario/launch/evidence/lab/coverage components in the
- * new 4-region AppShell layout. This is the migration target for the UI;
- * the legacy light-themed App.jsx remains available via the URL flag
- * (?theme=console toggles this root on; default stays on the legacy App).
+ * The default shell as of migration step 9. The legacy light-themed App.jsx
+ * remains reachable via `?theme=legacy` as an escape hatch during the soak
+ * period — see docs/design/console-redesign.md for the deprecation schedule.
  *
- * Migration status (aligned with docs/design/console-redesign.md):
- *   [x] Shell chrome (header, telemetry, rail, tabs, strip, ⌘K)
- *   [x] Tabs wired to existing components as content
- *   [ ] Operations tab redesigned (scenario card grid) — next
- *   [ ] In-Flight tab (attack narrative timeline) — next
- *   [ ] Evidence tab redesigned (KPI row + scorecard) — next
- *   [ ] Inspector drawer (pinned launch CTA) — next
+ * Migration status (all 9 steps shipped):
+ *   [x] 1 · tokens + Google Fonts + .theme-console scope
+ *   [x] 2 · AppShell chrome (header, telemetry, rail, tabs, strip, ⌘K)
+ *   [x] 3 · modes-as-buttons → proper tabs (Ops · In-Flight · Evidence · Lab · Coverage)
+ *   [x] 4 · Inspector drawer with pinned launch CTA (fixes below-fold launch)
+ *   [x] 5 · TelemetryStrip (always-visible live run state)
+ *   [x] 6 · Attack Narrative Timeline (animated SVG stitch arcs — the hero)
+ *   [x] 7 · Evidence redesign + Screenshot PNG + POV report markdown export
+ *   [x] 8 · CoverageView (ATT&CK matrix → click-to-filter Operations) + LabView (IaC)
+ *   [x] 9 · console is the default; ?theme=legacy is the opt-out
+ *
+ * Bonus features layered on top:
+ *   ⌘L quick-launch · pinned scenarios (localStorage, cross-tab sync) ·
+ *   ⌘K palette with fuzzy scenario search + jump-to-tab actions.
  */
 
 const PLANE_META = [
@@ -331,7 +337,11 @@ export default function AppConsole() {
       />
     )
   } else if (activeTab === 'lab') {
-    tabContent = <InfraGenerator />
+    tabContent = (
+      <LabView
+        onError={(msg) => setToast({ message: msg, type: 'error' })}
+      />
+    )
   } else if (activeTab === 'coverage') {
     tabContent = (
       <CoverageView
