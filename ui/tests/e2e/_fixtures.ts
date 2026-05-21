@@ -18,6 +18,22 @@ type Helpers = {
 }
 
 export const test = base.extend<Helpers>({
+  // Suppress the first-run HelpOverlay across every test. Without this,
+  // the overlay intercepts clicks on the first page load and the early
+  // shell tests flake. We pre-seed every localStorage key the console
+  // checks on mount so the UI renders in its "returning user" mode.
+  page: async ({ page }, use) => {
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem('cortexsim.helpOverlay.seenV1', 'true')
+      } catch {
+        // localStorage can be blocked in cross-origin iframes; the
+        // overlay handles its own try/catch and won't crash the app.
+      }
+    })
+    await use(page)
+  },
+
   api: async ({ request, baseURL }, use) => {
     const helpers = {
       async health() {

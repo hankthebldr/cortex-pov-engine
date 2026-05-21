@@ -27,6 +27,9 @@ export default function ConsoleRail({
           <button
             key={p.code}
             type="button"
+            // Stable testid mirrors PlaneSelector (legacy) so existing
+            // playwright assertions work on both theme renders.
+            data-testid={`plane-button-${p.code}`}
             className={'plane-item' + (p.isActive ? ' plane-item--active' : '')}
             onClick={() => onSelectPlane(p.code)}
           >
