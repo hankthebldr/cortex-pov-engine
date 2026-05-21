@@ -29,10 +29,59 @@ from database import get_db
 from engine import report_generator
 from engine.orchestrator import orchestrator
 from models import Result, Run, Scenario
+from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.runs")
 
 router = APIRouter(tags=["runs"])
+
+
+def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
+    """Resolve a scenario's external_tools[] entries into report-row dicts.
+
+    For each entry with an ``adapter_ref``, look up the adapter in the
+    catalog and emit a fully-populated row (name, version, tier, category,
+    safety, licence, upstream attribution). For legacy entries without an
+    adapter_ref — or with a stale adapter_ref the catalog can't resolve —
+    fall back to the bare ``name`` / ``type`` from the YAML so the report
+    never drops a tool the scenario declared.
+
+    Pure function; keeps the markdown generator readable + unit-testable.
+    """
+    if not external_tools:
+        return []
+
+    rows: list[dict] = []
+    for entry in external_tools:
+        if not isinstance(entry, dict):
+            continue
+        adapter_ref = entry.get("adapter_ref")
+        name = entry.get("name") or "—"
+        adapter = adapter_catalog.find(adapter_ref) if adapter_ref else None
+        if adapter is not None:
+            rows.append({
+                "name":     adapter.name,
+                "version":  adapter.version,
+                "tier":     str(adapter.tier),
+                "category": adapter.category,
+                "safety":   adapter.safety_class,
+                "license":  adapter.upstream.license,
+                "upstream": adapter.upstream.attribution,
+            })
+        else:
+            # Either no adapter_ref (legacy scenario shape) or a stale ref
+            # the catalog rejected. Emit a row that surfaces the gap rather
+            # than hiding it — auditors need to see what ran.
+            rows.append({
+                "name":     name,
+                "version":  "—",
+                "tier":     "—",
+                "category": entry.get("type") or "—",
+                "safety":   "unresolved" if adapter_ref else "legacy",
+                "license":  "—",
+                "upstream": "—",
+            })
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +227,8 @@ async def get_report(
     mttd_min = round(min(mttd_values), 1) if mttd_values else None
     mttd_max = round(max(mttd_values), 1) if mttd_values else None
 
+    tools_used = _build_tools_used_rows(scenario.external_tools if scenario else None)
+
     if format == "json":
         return {
             "run": run.to_dict(),
@@ -188,6 +239,7 @@ async def get_report(
                 "by_type": {k: {**v, "pct": round(v["observed"] / v["total"] * 100, 1) if v["total"] > 0 else 0} for k, v in by_type.items()},
             },
             "mttd": {"avg_seconds": mttd_avg, "min_seconds": mttd_min, "max_seconds": mttd_max, "count": len(mttd_values)} if mttd_values else None,
+            "tools_used": tools_used,
         }
 
     # --- Generate Markdown report ---
@@ -220,6 +272,31 @@ async def get_report(
         lines.append(f"| TC Reference | {s.tc_ref} — {s.tc_name} |")
         if s.threat_report:
             lines.append(f"| Threat Intel | {s.threat_report} |")
+        lines.append("")
+
+    # Tools used — per-run attribution + licence audit trail derived from
+    # the scenario's external_tools[] block. Each entry that carries an
+    # adapter_ref is resolved against the in-process adapter catalog so
+    # the customer-facing report cites the exact version / licence /
+    # upstream project. Legacy entries (no adapter_ref) are still listed
+    # by name so the report never silently drops a tool the run used.
+    if tools_used:
+        lines.append("## Tools Used")
+        lines.append("")
+        lines.append(
+            "Adapters referenced by this scenario, resolved against the "
+            "Tool Adapter catalog at run time. Customers should treat this "
+            "table as the licence + attribution audit trail for the run."
+        )
+        lines.append("")
+        lines.append("| Tool | Version | Tier | Category | Safety | Licence | Upstream |")
+        lines.append("|------|---------|------|----------|--------|---------|----------|")
+        for row in tools_used:
+            lines.append(
+                f"| {row['name']} | {row['version']} | {row['tier']} | "
+                f"{row['category']} | {row['safety']} | {row['license']} | "
+                f"{row['upstream']} |"
+            )
         lines.append("")
 
     # Coverage summary

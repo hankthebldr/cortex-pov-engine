@@ -128,6 +128,144 @@ def test_report_format_validation(client, seeded_run):
     assert r.status_code == 422  # Pydantic regex rejects
 
 
+# ---------------------------------------------------------------------------
+# Tools used — licence + attribution audit trail
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def run_with_tools(session_factory):
+    """Seed a run whose scenario references real tool adapters via
+    ``external_tools[].adapter_ref``. We mix a resolvable adapter, a
+    legacy entry without adapter_ref, and a stale/unknown adapter_ref to
+    exercise every branch of ``_build_tools_used_rows``."""
+    from models import Run, Scenario  # noqa: PLC0415
+    from tools.adapter_catalog import catalog  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    catalog.load(str(Path(__file__).resolve().parent.parent.parent / "tools" / "packs"))
+
+    async def _seed():
+        async with session_factory() as db:
+            s = Scenario(
+                scenario_id="SIM-EDR-002",
+                name="Network Discovery",
+                plane="NDR",
+                version="1.0",
+                status="active",
+                uc_ref="UCS-NDR-01",
+                uc_name="Recon",
+                tc_ref="TC-NDR-01",
+                tc_name="Port Scan",
+                mitre_tactic="TA0007",
+                mitre_tactic_name="Discovery",
+                mitre_technique="T1046",
+                mitre_technique_name="Network Service Discovery",
+                steps=[{"id": "step-01", "name": "scan"}],
+                external_tools=[
+                    {"name": "nmap", "type": "scanner", "adapter_ref": "TOOL-NMAP"},
+                    {"name": "legacy-script", "type": "script"},
+                    {"name": "ghost", "type": "scanner", "adapter_ref": "TOOL-DOES-NOT-EXIST"},
+                ],
+            )
+            db.add(s)
+            db.add(Run(
+                run_id="r-tools",
+                scenario_id="SIM-EDR-002",
+                mode="push",
+                status="complete",
+                started_at=datetime.utcnow() - timedelta(minutes=5),
+                completed_at=datetime.utcnow() - timedelta(minutes=1),
+            ))
+            await db.commit()
+
+    asyncio.get_event_loop().run_until_complete(_seed())
+    return "r-tools"
+
+
+def test_build_tools_used_rows_pure_helper():
+    """Unit-test the resolver in isolation — every adapter_ref state."""
+    from api.runs import _build_tools_used_rows  # noqa: PLC0415
+    from tools.adapter_catalog import catalog  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    catalog.load(str(Path(__file__).resolve().parent.parent.parent / "tools" / "packs"))
+
+    rows = _build_tools_used_rows([
+        {"name": "nmap",        "type": "scanner", "adapter_ref": "TOOL-NMAP"},
+        {"name": "legacy-bin",  "type": "binary"},  # no adapter_ref
+        {"name": "ghost",       "type": "x", "adapter_ref": "TOOL-DOES-NOT-EXIST"},
+    ])
+    assert len(rows) == 3
+
+    # Resolved row — pulls real metadata from the catalog
+    resolved = rows[0]
+    assert resolved["name"] == "Nmap"
+    assert resolved["tier"] == "4"
+    assert resolved["safety"] == "safe"
+    assert resolved["license"] == "NPSL"
+    assert resolved["upstream"].startswith("Gordon Lyon")
+
+    # Legacy row — keeps the bare name, marks safety as "legacy"
+    legacy = rows[1]
+    assert legacy["name"] == "legacy-bin"
+    assert legacy["safety"] == "legacy"
+    assert legacy["version"] == "—"
+
+    # Unresolved adapter_ref — surfaces the gap rather than dropping it
+    unresolved = rows[2]
+    assert unresolved["name"] == "ghost"
+    assert unresolved["safety"] == "unresolved"
+
+
+def test_build_tools_used_rows_handles_empty_input():
+    from api.runs import _build_tools_used_rows  # noqa: PLC0415
+    assert _build_tools_used_rows(None) == []
+    assert _build_tools_used_rows([]) == []
+    # Non-dict entries are ignored (defensive against future schema drift)
+    assert _build_tools_used_rows(["string", 42, None]) == []
+
+
+def test_report_json_includes_tools_used(client, run_with_tools):
+    r = client.get(f"/api/runs/{run_with_tools}/report", params={"format": "json"})
+    assert r.status_code == 200
+    rep = r.json()
+    assert "tools_used" in rep
+    assert len(rep["tools_used"]) == 3
+    # The Nmap adapter is fully resolved
+    nmap_row = next(row for row in rep["tools_used"] if row["name"] == "Nmap")
+    assert nmap_row["license"] == "NPSL"
+    assert nmap_row["tier"] == "4"
+
+
+def test_report_markdown_renders_tools_used_section(client, run_with_tools):
+    r = client.get(f"/api/runs/{run_with_tools}/report", params={"format": "markdown"})
+    assert r.status_code == 200
+    body = r.text
+    assert "## Tools Used" in body
+    # Resolved adapter — full row
+    assert "Nmap" in body
+    assert "NPSL" in body
+    # Legacy entry — name surfaces even without adapter metadata
+    assert "legacy-script" in body
+    # Unresolved adapter_ref — marked as "unresolved" so an auditor sees it
+    assert "unresolved" in body
+
+
+def test_report_markdown_omits_tools_used_when_scenario_has_none(client, seeded_run):
+    """The seeded_run fixture's scenario has no external_tools — the
+    Tools Used section should not render rather than emit an empty table."""
+    r = client.get(f"/api/runs/{seeded_run}/report", params={"format": "markdown"})
+    assert r.status_code == 200
+    assert "## Tools Used" not in r.text
+
+
+def test_report_json_omits_tools_used_when_scenario_has_none(client, seeded_run):
+    """JSON branch always emits the key for shape stability, but empty list."""
+    r = client.get(f"/api/runs/{seeded_run}/report", params={"format": "json"})
+    rep = r.json()
+    assert rep.get("tools_used") == []
+
+
 def test_report_matrix_csv(client, seeded_run):
     r = client.get(f"/api/runs/{seeded_run}/report/matrix")
     assert r.status_code == 200
