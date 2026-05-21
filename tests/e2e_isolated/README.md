@@ -9,8 +9,8 @@ See `docs/design/e2e-execution-methodology.md` for the full methodology.
 
 | Tier | File | What it checks |
 |------|------|----------------|
-| A | `test_tier_a_static.py` | shellcheck + `bash -n` on every TTP script and every `run.sh` |
-| B | `test_tier_b_push_bundle.py` (pending — phase 2) | Push bundle integrity |
+| A | `test_tier_a_static.py` | shellcheck + `bash -n` on every hand-written TTP script and every `run.sh` |
+| B | `test_tier_b_push_bundle.py` | Same checks on the GENERATED push-mode bundles for every scenario YAML + step-presence, harness presence, cleanup presence, placeholder-leak guards |
 | C | `test_tier_c_isolated_exec.py` (pending — phase 4) | Real execution in isolated container with auditd + sinkhole |
 
 ## Run locally
