@@ -3064,3 +3064,54 @@
   color: var(--c-text-muted);
   letter-spacing: var(--tracking-mono);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Accessibility primitives
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Skip link — invisible until focused, then anchored top-left so
+   keyboard users see it before tabbing into the header. */
+.theme-console .skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  z-index: 1000;
+  padding: 8px 16px;
+  background: var(--c-signal);
+  color: var(--c-void);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  border-radius: 0 0 4px 4px;
+  transition: top var(--dur-fast) var(--ease-out);
+}
+.theme-console .skip-link:focus {
+  top: 0;
+  border-bottom-color: transparent;  /* override default a:focus underline */
+  outline: 2px solid var(--c-text);
+  outline-offset: -4px;
+}
+
+/* Generic focus-visible treatment for buttons + interactive controls
+   in the theme — preserves the OS-native focus ring but ensures it's
+   visible against the dark background. */
+.theme-console button:focus-visible,
+.theme-console [role="button"]:focus-visible,
+.theme-console [role="tab"]:focus-visible,
+.theme-console a:focus-visible {
+  outline: 2px solid var(--c-signal);
+  outline-offset: 2px;
+}
+
+/* Reduce-motion respect: motion-driven affordances drop their animations
+   when the OS preference is set. */
+@media (prefers-reduced-motion: reduce) {
+  .theme-console *,
+  .theme-console *::before,
+  .theme-console *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -30,7 +30,12 @@ export default function TelemetryStrip({ run, onAbort }) {
     : 'tel-value--pending'
 
   return (
-    <div className="telemetry">
+    <div
+      className="telemetry"
+      role="region"
+      aria-label="Active run telemetry"
+      aria-live="polite"
+    >
       <span className="tel-label">Active</span>
       <span className="tel-value mono tel-value--signal">{run.scenarioId}</span>
       <span className="tel-sep">/</span>
@@ -45,7 +50,14 @@ export default function TelemetryStrip({ run, onAbort }) {
         {run.detected} / {run.total}
       </span>
 
-      <div className="tel-progress">
+      <div
+        className="tel-progress"
+        role="progressbar"
+        aria-valuenow={Math.round(progress)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Run progress: step ${run.step} of ${run.totalSteps}`}
+      >
         <div className="tel-progress__fill" style={{ width: `${progress}%` }} />
       </div>
 

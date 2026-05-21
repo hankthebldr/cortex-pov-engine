@@ -97,6 +97,12 @@ export default function AppShell({
 
   return (
     <div className={`theme-console ${shellClass}`}>
+      {/* Skip link — keyboard users land here on Tab; jumps past header/rail
+          to the main workspace. Invisible until focused. */}
+      <a href="#cortexsim-main" className="skip-link">
+        Skip to workspace
+      </a>
+
       <ConsoleHeader
         health={health}
         onOpenPalette={() => setPaletteOpen(true)}
@@ -115,7 +121,7 @@ export default function AppShell({
           onUnpin={onUnpinScenario}
         />
 
-        <section className="main">
+        <main className="main" id="cortexsim-main" aria-label="CortexSim workspace">
           <ConsoleTabs
             activeTab={activeTab}
             onTabChange={onTabChange}
@@ -125,7 +131,7 @@ export default function AppShell({
           <div className="view" key={activeTab}>
             {children}
           </div>
-        </section>
+        </main>
       </div>
 
       <CommandStrip ticker={ticker} />
