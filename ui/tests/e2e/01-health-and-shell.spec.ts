@@ -31,9 +31,19 @@ test.describe('app shell', () => {
 
   test('view toggles flip the main panel without errors', async ({ page }) => {
     await page.goto('/')
-    for (const btn of ['MITRE', 'Deploy', 'EAL', 'Runs']) {
-      await page.getByRole('button', { name: new RegExp(btn) }).click()
-      // Wait for any view-content to appear or just a network idle tick
+    // Migrated from the legacy theme: the Mission Ops Console (default)
+    // has tabs Operations / In-Flight / Evidence / Lab / Coverage. The
+    // legacy MITRE/Deploy/EAL/Runs labels are still reachable via
+    // ?theme=legacy but are no longer the default render path.
+    const tabs = [
+      { role: 'tab', name: /Operations/   },
+      { role: 'tab', name: /In-Flight/    },
+      { role: 'tab', name: /Evidence/     },
+      { role: 'tab', name: /Lab/          },
+      { role: 'tab', name: /Coverage/     },
+    ]
+    for (const t of tabs) {
+      await page.getByRole(t.role as 'tab', { name: t.name }).first().click()
       await page.waitForLoadState('networkidle')
     }
   })

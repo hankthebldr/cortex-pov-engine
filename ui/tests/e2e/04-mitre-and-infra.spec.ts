@@ -2,32 +2,39 @@ import { test, expect } from './_fixtures'
 
 /**
  * Golden paths #4 + #5 — the two views DCs spend the most secondary time in:
- *   - MITRE heatmap renders + has at least one technique cell
- *   - Infra topology generator lists AWS modules and can render the
- *     "base" + a plane-specific module side by side
+ *   - MITRE/ATT&CK heatmap renders + the coverage endpoint is hit
+ *   - Infra topology generator (Lab tab) lists AWS modules and exposes
+ *     a Generate action
+ *
+ * Migrated to Mission Ops Console (PR #44):
+ *   - MITRE heatmap now lives under the ATT&CK Coverage tab
+ *   - Infra Generator now lives under the Lab tab (the legacy "Deploy"
+ *     tab was renamed during the dark-console rework)
  */
-test('MITRE heatmap renders with coverage data', async ({ page, api }) => {
+test('ATT&CK Coverage tab renders with MITRE coverage data', async ({ page, api }) => {
   await api.health()
   await page.goto('/')
-  await page.getByRole('button', { name: /MITRE/ }).click()
 
-  // Either a heatmap grid or the words "MITRE" / "ATT&CK" / "Coverage" show
-  await expect(page.locator('body')).toContainText(/MITRE|ATT&CK|Coverage/i)
-  // Heatmap should have at least one technique badge / cell
-  await page.waitForLoadState('networkidle')
-  const techniqueCells = page.locator('[class*="technique"], [data-technique]')
-  // Soft assertion — UI shape varies; at minimum the network call returned
-  const resp = await page.waitForResponse('**/api/mitre/coverage', { timeout: 10_000 })
+  // Set up the response listener BEFORE the click — the network call
+  // fires as soon as CoverageView mounts, and a post-click waitForResponse
+  // would race against an already-completed fetch.
+  const respPromise = page.waitForResponse('**/api/mitre/coverage', { timeout: 10_000 })
+  await page.getByRole('tab', { name: /Coverage/ }).first().click()
+  const resp = await respPromise
   expect(resp.ok()).toBe(true)
+
+  // Either the heatmap grid or the words "MITRE" / "ATT&CK" / "Coverage" show
+  await expect(page.locator('body')).toContainText(/MITRE|ATT&CK|Coverage/i)
 })
 
-test('Infra Generator lists AWS modules and exposes Generate action', async ({
+test('Lab tab lists Infra Generator AWS modules and exposes Generate action', async ({
   page,
   api,
 }) => {
   await api.health()
   await page.goto('/')
-  await page.getByRole('button', { name: /Deploy/ }).click()
+  await page.getByRole('tab', { name: /^Lab$/ }).first().click()
+  await page.waitForLoadState('networkidle')
 
   // base module is always shown per CLAUDE.md design rule
   await expect(page.getByText(/\bbase\b/).first()).toBeVisible({ timeout: 10_000 })

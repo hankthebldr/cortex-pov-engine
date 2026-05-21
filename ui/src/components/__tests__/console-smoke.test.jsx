@@ -248,7 +248,7 @@ describe('console-view smoke renders', () => {
       expect(screen.getByText(/AKIA grep/)).toBeInTheDocument()
     })
     expect(screen.getByText(/Coverage/i)).toBeInTheDocument()
-    expect(screen.getByText(/Export POV report/i)).toBeInTheDocument()
+    expect(screen.getByText(/Export POV briefing/i)).toBeInTheDocument()
   })
 
   it('NarrativeTimeline renders frames with stitches', async () => {

@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
-import { downloadReport } from '../../api/client.js'
+import MultiRunCompare from './MultiRunCompare.jsx'
+import MttdHistogram from './MttdHistogram.jsx'
+import ExportMenu from './ExportMenu.jsx'
 
 /**
  * EvidenceView — the Evidence tab.
@@ -16,13 +18,23 @@ import { downloadReport } from '../../api/client.js'
  *   lastRun    — fallback run when no live run
  *   onError    — (msg) => void
  */
-export default function EvidenceView({ activeRun, lastRun, onError = () => {} }) {
-  const targetRunId = activeRun?.runId || lastRun?.runId || null
-  const targetScenarioId = activeRun?.scenarioId || lastRun?.scenarioId || null
+export default function EvidenceView({
+  activeRun,
+  lastRun,
+  pinnedRun = null,
+  onError = () => {},
+}) {
+  // pinnedRun lets parents (e.g. a history-row click) override the
+  // derived active/last selection — explicit picks always win.
+  const targetRunId = pinnedRun?.runId || activeRun?.runId || lastRun?.runId || null
+  const targetScenarioId = pinnedRun?.scenarioId
+    || activeRun?.scenarioId
+    || lastRun?.scenarioId
+    || null
 
   const { rows, kpis, loading, validate, refresh } = useResultsData(targetRunId)
-  const [exporting, setExporting] = useState(false)
   const [selectedRowId, setSelectedRowId] = useState(null)
+  const [viewMode, setViewMode] = useState('this-run') // 'this-run' | 'compare'
 
   // Reset drilldown selection when the underlying run changes.
   useEffect(() => { setSelectedRowId(null) }, [targetRunId])
@@ -31,29 +43,6 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
     () => (selectedRowId == null ? null : rows.find((r) => r.id === selectedRowId) || null),
     [rows, selectedRowId],
   )
-
-  const handleExport = useCallback(async () => {
-    if (!targetRunId) {
-      onError('No run selected for export')
-      return
-    }
-    setExporting(true)
-    try {
-      const blob = await downloadReport(targetRunId)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `cortexsim-pov-${targetRunId}.md`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      onError(err.message || 'Export failed')
-    } finally {
-      setExporting(false)
-    }
-  }, [targetRunId, onError])
 
   const handleValidateAll = useCallback(async () => {
     // Mark every pending row as detected (DC sweeps after a successful run).
@@ -89,36 +78,67 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
         <div>
           <h1>Evidence</h1>
           <div className="view-head__meta">
-            Run <strong className="mono">{targetRunId}</strong>
-            {targetScenarioId && (
-              <> · <span className="mono">{targetScenarioId}</span></>
+            {viewMode === 'this-run' ? (
+              <>
+                Run <strong className="mono">{targetRunId}</strong>
+                {targetScenarioId && (
+                  <> · <span className="mono">{targetScenarioId}</span></>
+                )}
+                {loading && <> · <span className="mono">syncing…</span></>}
+              </>
+            ) : (
+              <>cross-run comparison · pick 2–4 runs to diff</>
             )}
-            {loading && <> · <span className="mono">syncing…</span></>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="btn"
-            onClick={handleValidateAll}
-            disabled={kpis.pending === 0}
-            title="Mark all pending detections as observed"
-          >
-            Validate all
-            {kpis.pending > 0 && (
-              <span className="kbd">{kpis.pending}</span>
-            )}
-          </button>
-          <button
-            className="btn btn--primary"
-            onClick={handleExport}
-            disabled={exporting}
-          >
-            {exporting ? 'Exporting…' : 'Export POV report'}
-          </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="lab__segmented" role="tablist" aria-label="Evidence view mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'this-run'}
+              className={viewMode === 'this-run' ? 'is-active' : ''}
+              onClick={() => setViewMode('this-run')}
+            >
+              This run
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'compare'}
+              className={viewMode === 'compare' ? 'is-active' : ''}
+              onClick={() => setViewMode('compare')}
+              title="Compare 2-4 runs side by side"
+            >
+              Compare runs
+            </button>
+          </div>
+          {viewMode === 'this-run' && (
+            <>
+              <button
+                className="btn"
+                onClick={handleValidateAll}
+                disabled={kpis.pending === 0}
+                title="Mark all pending detections as observed"
+              >
+                Validate all
+                {kpis.pending > 0 && (
+                  <span className="kbd">{kpis.pending}</span>
+                )}
+              </button>
+              <ExportMenu runId={targetRunId} onError={onError} />
+            </>
+          )}
         </div>
       </div>
 
+      {viewMode === 'compare' ? (
+        <MultiRunCompare />
+      ) : (
+        <>
       <KpiRow kpis={kpis} />
+
+      <MttdHistogram rows={rows} />
 
       <Scorecard
         rows={rows}
@@ -136,6 +156,8 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
           validate(id, observed, notes)
         }}
       />
+        </>
+      )}
     </div>
   )
 }

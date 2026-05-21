@@ -4,6 +4,7 @@ import ScenarioInspector from './ScenarioInspector.jsx'
 import FilterPalette from './FilterPalette.jsx'
 import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
+import useScenarioRunHistory from './useScenarioRunHistory.js'
 import { getScenarios, getScenario } from '../../api/client.js'
 
 /**
@@ -45,6 +46,7 @@ export default function OperationsView({
   onRunComplete = () => {},
   onError = () => {},
   onSurfaceMessage = () => {},
+  onOpenRunEvidence = () => {},
 }) {
   const [scenarios, setScenarios]       = useState([])
   const [loading, setLoading]           = useState(true)
@@ -54,6 +56,17 @@ export default function OperationsView({
 
   // Unified filter — plane + technique + multi-criteria from FilterPalette
   const scenarioFilter = useScenarioFilter()
+
+  // Run history rollup — feeds the per-card history badge and the
+  // inspector's per-scenario run list. We expose refresh so the launch
+  // hook can repoll after a successful run — otherwise the badge stays
+  // "never run" until the user navigates away and back.
+  const { historyByScenario, runsByScenario, refresh: refreshHistory } = useScenarioRunHistory()
+
+  // History-based view mode: 'all' (default) | 'never' (never run) | 'run' (already run).
+  // Sits on top of the unified filter — lets DCs target gaps without re-keying every
+  // filter criterion through the palette.
+  const [historyMode, setHistoryMode] = useState('all')
 
   // ── Fetch scenario list ──────────────────────────────────────────────
   useEffect(() => {
@@ -112,7 +125,13 @@ export default function OperationsView({
 
   // ── Launch hook (lifted from inspector) ──────────────────────────────
   const launch = useLaunchScenario(selected, {
-    onRunComplete: (run) => { onRunComplete(run); setDrawerOpen(false) },
+    onRunComplete: (run) => {
+      onRunComplete(run)
+      setDrawerOpen(false)
+      // Re-fetch the run list so the per-card history badge picks up
+      // the new run without requiring a tab switch.
+      refreshHistory()
+    },
     onError,
   })
 
@@ -159,11 +178,16 @@ export default function OperationsView({
     }
   }, [techniqueFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Apply unified filter ─────────────────────────────────────────────
-  const visibleScenarios = useMemo(
-    () => scenarioFilter.applyTo(scenarios),
-    [scenarios, scenarioFilter.filter] // eslint-disable-line react-hooks/exhaustive-deps
-  )
+  // ── Apply unified filter, then layer history mode on top ────────────
+  const visibleScenarios = useMemo(() => {
+    const filtered = scenarioFilter.applyTo(scenarios)
+    if (historyMode === 'all') return filtered
+    return filtered.filter((s) => {
+      const id = s.scenario_id || s.id
+      const hasHistory = historyByScenario.has(id) && historyByScenario.get(id).count > 0
+      return historyMode === 'never' ? !hasHistory : hasHistory
+    })
+  }, [scenarios, scenarioFilter.filter, historyMode, historyByScenario]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── ⌘F / Ctrl+F → open filter palette ────────────────────────────────
   useEffect(() => {
@@ -246,6 +270,12 @@ export default function OperationsView({
         </div>
       </div>
 
+      <HistoryModeStrip
+        mode={historyMode}
+        onChange={setHistoryMode}
+        counts={countByHistoryMode(scenarios, historyByScenario)}
+      />
+
       {loading ? (
         <div style={{
           padding: 48,
@@ -264,6 +294,7 @@ export default function OperationsView({
           onSelectScenario={handleSelect}
           isPinned={isPinned}
           onTogglePin={togglePin}
+          historyByScenario={historyByScenario}
         />
       )}
 
@@ -274,6 +305,10 @@ export default function OperationsView({
         pinned={selectedId ? isPinned(selectedId) : false}
         onTogglePin={() => selectedId && togglePin(selectedId)}
         onClose={handleClose}
+        runHistory={selectedId && runsByScenario.get
+          ? (runsByScenario.get(selectedId) || [])
+          : []}
+        onOpenRunEvidence={onOpenRunEvidence}
       />
 
       <FilterPalette
@@ -353,6 +388,50 @@ function FilterChips({ filter, onClearOne, onClearAll }) {
           clear all
         </button>
       )}
+    </div>
+  )
+}
+
+/* ─── History-mode strip (Never run / Already run / All) ──────────── */
+
+/**
+ * Tally how many scenarios fall into each history bucket. Cheap O(n)
+ * loop; runs every render but n is tiny.
+ */
+function countByHistoryMode(scenarios, history) {
+  const counts = { all: scenarios.length, never: 0, run: 0 }
+  if (!history || !history.get) return counts
+  for (const s of scenarios) {
+    const id = s.scenario_id || s.id
+    const h = history.get(id)
+    if (h && h.count > 0) counts.run += 1
+    else counts.never += 1
+  }
+  return counts
+}
+
+function HistoryModeStrip({ mode, onChange, counts }) {
+  const options = [
+    { id: 'all',   label: 'All',         count: counts.all   },
+    { id: 'never', label: 'Never run',   count: counts.never },
+    { id: 'run',   label: 'Already run', count: counts.run   },
+  ]
+  return (
+    <div className="lab__segmented ops-history-strip" role="tablist" aria-label="Filter by run history">
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="tab"
+          aria-selected={mode === o.id}
+          className={mode === o.id ? 'is-active' : ''}
+          onClick={() => onChange(o.id)}
+          title={`Show ${o.label.toLowerCase()} scenarios`}
+        >
+          {o.label}
+          <span className="kbd ops-history-strip__count">{o.count}</span>
+        </button>
+      ))}
     </div>
   )
 }

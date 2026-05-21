@@ -1,14 +1,18 @@
 import { test, expect } from './_fixtures'
 
 /**
- * Golden path #5 — the EAL (External Attack Library) console.
+ * Golden path #5 — the EAL (External Attack Library) plugin surface.
  *
- * EAL is the headline POV demo path for AI Access / AIRS / Browser / KOI
- * scenarios.  Asserts: console opens, plugin list renders, campaigns list
- * renders.  Campaign creation is API-tested separately under
- * tests/eal_simulator/ — here we just need the surface to be reachable.
+ * EAL adapters power the AI Access / AIRS / Browser / KOI demo flows.
+ * Asserts: API reports at least one plugin and the Adapter Registry
+ * sub-view in Coverage renders it. Campaign creation is API-tested
+ * separately under tests/eal_simulator/ — here we just need the surface
+ * to be reachable.
+ *
+ * Migrated to Mission Ops Console: the EAL list is no longer its own
+ * tab — it lives under Coverage → Adapters sub-view (PR #44).
  */
-test('EAL console opens and shows plugin + campaign surface', async ({ page, api, baseURL, request }) => {
+test('Adapter Registry opens and shows plugin surface', async ({ page, api, baseURL, request }) => {
   await api.health()
 
   // Sanity: the plugin endpoint reports at least one plugin
@@ -19,13 +23,15 @@ test('EAL console opens and shows plugin + campaign surface', async ({ page, api
   expect(Array.isArray(pluginList)).toBe(true)
   expect(pluginList.length).toBeGreaterThan(0)
 
-  // UI side
+  // UI side — navigate Operations → Coverage → Adapters
   await page.goto('/')
-  await page.getByRole('button', { name: /EAL/ }).click()
+  await page.getByRole('tab', { name: /Coverage/ }).first().click()
+  await page.waitForLoadState('networkidle')
+  await page.getByRole('tab', { name: /^Adapters$/ }).click()
   await page.waitForLoadState('networkidle')
 
-  // At least one plugin name should surface in the EAL view.  Grab the
-  // first plugin's name from the API and check it renders.
+  // At least one plugin name should surface in the Adapter Registry. Grab
+  // the first plugin's name from the API and check it renders.
   const firstName: string = pluginList[0].name
   await expect(page.getByText(new RegExp(firstName)).first()).toBeVisible({
     timeout: 10_000,

@@ -7,7 +7,7 @@ import CoverageView from './components/console/CoverageView.jsx'
 import LabView from './components/console/LabView.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
-import { getHealth, getRuns, getScenarios, downloadReport } from './api/client.js'
+import { getHealth, getRuns, getScenarios, downloadReportBundle } from './api/client.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -67,6 +67,10 @@ export default function AppConsole() {
   const [health, setHealth]                             = useState({})
   const [toast, setToast]                               = useState(null)
   const [requestOpenScenarioId, setRequestOpenScenarioId] = useState(null)
+  // Pinned run override for Evidence tab — set when a DC drills in from
+  // a history row. Cleared when a fresh run starts or the user explicitly
+  // returns to the active-run view.
+  const [pinnedRun, setPinnedRun]                       = useState(null)
 
   // Pinned scenarios — localStorage-backed
   const { pinnedIds, isPinned, toggle: togglePin, unpin } = usePinnedScenarios()
@@ -197,6 +201,40 @@ export default function AppConsole() {
     const idx = requestOpenScenarioId.indexOf('::')
     return idx > 0 ? requestOpenScenarioId.slice(0, idx) : requestOpenScenarioId
   }, [requestOpenScenarioId])
+
+  // ⌘E — global POV briefing export. Picks the most relevant run: active
+  // if any, else last completed. Downloads the full bundle (narrative +
+  // matrix + Navigator layer + manifest) — the artifact a DC actually
+  // hands the customer at the end of a POV. Friendly toast if no run.
+  //
+  // Declared BEFORE the command-palette useMemo below so the memo's body
+  // can reference it without hitting the temporal dead zone — a regression
+  // that left the entire AppConsole rendering as a blank #root once the
+  // export action was wired into the palette (PR #43).
+  const handleExportPOV = useCallback(async () => {
+    const targetRunId = activeRun?.runId || lastRun?.runId || null
+    if (!targetRunId) {
+      setToast({ message: 'No run to export — launch a scenario first', type: 'warn' })
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
+    try {
+      const blob = await downloadReportBundle(targetRunId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cortexsim-pov-${targetRunId}.tar.gz`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setToast({ message: `Exported POV briefing for ${targetRunId}`, type: 'success' })
+      setTimeout(() => setToast(null), 3000)
+    } catch (err) {
+      setToast({ message: err.message || 'Export failed', type: 'error' })
+      setTimeout(() => setToast(null), 4000)
+    }
+  }, [activeRun, lastRun])
 
   // ── Command palette items ────────────────────────────────────────────────
   const paletteItems = useMemo(() => {
@@ -355,33 +393,6 @@ export default function AppConsole() {
     setTimeout(() => setToast(null), 4000)
   }, [activeRun, refreshRuns])
 
-  // ⌘E — global POV report export. Picks the most relevant run: active if
-  // any, else last completed. No-op with a friendly toast if neither exists.
-  const handleExportPOV = useCallback(async () => {
-    const targetRunId = activeRun?.runId || lastRun?.runId || null
-    if (!targetRunId) {
-      setToast({ message: 'No run to export — launch a scenario first', type: 'warn' })
-      setTimeout(() => setToast(null), 3000)
-      return
-    }
-    try {
-      const blob = await downloadReport(targetRunId)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `cortexsim-pov-${targetRunId}.md`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      setToast({ message: `Exported POV report for ${targetRunId}`, type: 'success' })
-      setTimeout(() => setToast(null), 3000)
-    } catch (err) {
-      setToast({ message: err.message || 'Export failed', type: 'error' })
-      setTimeout(() => setToast(null), 4000)
-    }
-  }, [activeRun, lastRun])
-
   // ── Render tab content ──────────────────────────────────────────────────
   let tabContent = null
   if (activeTab === 'operations') {
@@ -396,6 +407,15 @@ export default function AppConsole() {
         isPinned={isPinned}
         togglePin={togglePin}
         onRunComplete={handleRunComplete}
+        onOpenRunEvidence={(run) => {
+          // Pin the run + switch to Evidence so the DC lands on
+          // exactly the historical row they clicked.
+          setPinnedRun({
+            runId: run.id || run.run_id,
+            scenarioId: run.scenario_id,
+          })
+          setActiveTab('evidence')
+        }}
         onError={(msg) => setToast({ message: msg, type: 'error' })}
         onSurfaceMessage={(msg, type = 'info') => {
           setToast({ message: msg, type })
@@ -416,6 +436,7 @@ export default function AppConsole() {
       <EvidenceView
         activeRun={activeRun}
         lastRun={lastRun}
+        pinnedRun={pinnedRun}
         onError={(msg) => setToast({ message: msg, type: 'error' })}
       />
     )

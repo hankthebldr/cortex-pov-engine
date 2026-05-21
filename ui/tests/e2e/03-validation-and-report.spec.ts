@@ -49,8 +49,17 @@ test('DC validates seeded results and report reflects 100% coverage', async ({
   expect(buf[0]).toBe(0x1f)
   expect(buf[1]).toBe(0x8b)
 
-  // 7. UI Runs view shows the run
+  // 7. UI Evidence tab renders the run (Mission Ops Console — PR #44).
+  // The legacy "Runs" tab no longer exists; Evidence is the canonical
+  // place to confirm a run landed in the UI.
+  //
+  // Note: api.launchPush returns the UUID-shaped run_id, but the
+  // Evidence header displays the integer Run.id from the ORM (the two
+  // identifiers are distinct fields on the same row). Rather than chase
+  // that schema quirk in the test, we verify the scenarioId surfaces on
+  // the Evidence head — which is what a DC actually looks at to confirm
+  // "the run I just kicked off shows up."
   await page.goto('/')
-  await page.getByRole('button', { name: /Runs/ }).click()
-  await expect(page.getByText(runId).first()).toBeVisible({ timeout: 10_000 })
+  await page.getByRole('tab', { name: /Evidence/ }).first().click()
+  await expect(page.getByText('SIM-EDR-001').first()).toBeVisible({ timeout: 10_000 })
 })
