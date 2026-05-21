@@ -5,6 +5,7 @@ import InflightView from './components/console/InflightView.jsx'
 import EvidenceView from './components/console/EvidenceView.jsx'
 import CoverageView from './components/console/CoverageView.jsx'
 import LabView from './components/console/LabView.jsx'
+import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
 import { getHealth, getRuns, getScenarios, downloadReport } from './api/client.js'
 
@@ -320,11 +321,39 @@ export default function AppConsole() {
     setTimeout(() => setToast(null), 4000)
   }, [refreshRuns])
 
+  // Abort flow — confirmation dialog → POST /api/runs/:id/abort with
+  // graceful fallback when the backend doesn't yet implement the
+  // endpoint (older SimCore builds). Friendly toast in either case.
+  const [abortConfirmOpen, setAbortConfirmOpen] = useState(false)
+
   const handleAbortRun = useCallback(() => {
-    // TODO: wire to POST /api/runs/:id/abort once endpoint is available
-    setToast({ message: 'Abort not yet implemented (see migration step 5)', type: 'warn' })
-    setTimeout(() => setToast(null), 4000)
+    setAbortConfirmOpen(true)
   }, [])
+
+  const handleAbortConfirmed = useCallback(async () => {
+    setAbortConfirmOpen(false)
+    if (!activeRun?.runId) return
+    try {
+      const r = await fetch(`/api/runs/${activeRun.runId}/abort`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (r.ok) {
+        setToast({ message: `Run ${activeRun.runId} aborted`, type: 'success' })
+        refreshRuns()
+      } else if (r.status === 404) {
+        setToast({
+          message: 'Abort endpoint not yet implemented on this SimCore — escalate to lab admin',
+          type: 'warn',
+        })
+      } else {
+        setToast({ message: `Abort failed: HTTP ${r.status}`, type: 'error' })
+      }
+    } catch (err) {
+      setToast({ message: err.message || 'Abort failed', type: 'error' })
+    }
+    setTimeout(() => setToast(null), 4000)
+  }, [activeRun, refreshRuns])
 
   // ⌘E — global POV report export. Picks the most relevant run: active if
   // any, else last completed. No-op with a friendly toast if neither exists.
@@ -432,6 +461,33 @@ export default function AppConsole() {
       >
         {tabContent}
       </AppShell>
+
+      <ConfirmDialog
+        open={abortConfirmOpen}
+        onClose={() => setAbortConfirmOpen(false)}
+        onConfirm={handleAbortConfirmed}
+        title="Abort active run?"
+        body={
+          activeRun ? (
+            <>
+              <p>
+                Aborting <strong className="mono">{activeRun.scenarioId}</strong>{' '}
+                (step {activeRun.step} of {activeRun.totalSteps}) will:
+              </p>
+              <ul>
+                <li>Stop the agent from executing remaining steps</li>
+                <li>Trigger the scenario's cleanup block on the target</li>
+                <li>Mark the run as <span className="mono">aborted</span> in Evidence</li>
+              </ul>
+              <p style={{ color: 'var(--c-pending)', fontSize: 12 }}>
+                Already-fired detections remain valid for POV evidence.
+              </p>
+            </>
+          ) : null
+        }
+        confirmLabel="Abort run"
+        confirmVariant="danger"
+      />
 
       {toast && (
         <div className={`toast toast-${toast.type}`} style={{
