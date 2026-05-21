@@ -1,0 +1,54 @@
+adapter_id: TOOL-SCAPY
+name: Scapy
+version: "2.6.1"
+
+tier: 2
+category: network-scan
+
+upstream:
+  repo: https://github.com/secdev/scapy
+  license: GPL-2.0
+  attribution: Philippe Biondi & contributors
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1095     # Non-Application Layer Protocol
+    - T1571     # Non-Standard Port
+    - T1565.002 # Data Manipulation: Transmitted Data Manipulation
+
+safety_class: dual-use-lab-only
+
+install:
+  source_path: sources/scapy   # submodule path; matches the existing pattern
+  build_cmd: "pip install --no-input -e ."
+
+invoke:
+  target_platform: linux
+  # Scapy is a Python library, not a standalone binary. The adapter
+  # invokes the operator-supplied Python script that builds + sends
+  # custom packets — typical use is `python3 -c '...one-liner scapy...'`
+  # or a `.py` file under scenarios/<plane>/scapy/. Scenario steps
+  # override script_path per detonation.
+  run_template: "python3 {script_path}"
+  default_args:
+    script_path: "scenarios/ndr/scapy/baseline-icmp.py"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/scapy-cortexsim-*.pcap"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-HPING3
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - packet-forging
+  - python-library
+  - already-submoduled-target
