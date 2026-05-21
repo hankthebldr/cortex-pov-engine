@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import ScenarioGrid from './ScenarioGrid.jsx'
 import ScenarioInspector from './ScenarioInspector.jsx'
+import FilterPalette from './FilterPalette.jsx'
 import useLaunchScenario from './useLaunchScenario.js'
+import useScenarioFilter from './useScenarioFilter.js'
 import { getScenarios, getScenario } from '../../api/client.js'
 
 /**
@@ -33,6 +35,7 @@ import { getScenarios, getScenario } from '../../api/client.js'
  */
 export default function OperationsView({
   selectedPlane = null,
+  onClearPlane = () => {},
   techniqueFilter = null,
   onClearTechniqueFilter = () => {},
   requestOpenScenarioId = null,
@@ -43,10 +46,14 @@ export default function OperationsView({
   onError = () => {},
   onSurfaceMessage = () => {},
 }) {
-  const [scenarios, setScenarios]   = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [selected, setSelected]     = useState(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [scenarios, setScenarios]       = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [selected, setSelected]         = useState(null)
+  const [drawerOpen, setDrawerOpen]     = useState(false)
+  const [filterPaletteOpen, setFilterPaletteOpen] = useState(false)
+
+  // Unified filter — plane + technique + multi-criteria from FilterPalette
+  const scenarioFilter = useScenarioFilter()
 
   // ── Fetch scenario list ──────────────────────────────────────────────
   useEffect(() => {
@@ -131,21 +138,48 @@ export default function OperationsView({
     return () => window.removeEventListener('keydown', handler)
   }, [selected, drawerOpen, launch, onSurfaceMessage])
 
-  // ── Apply client-side filters (technique) ────────────────────────────
-  // techniqueFilter accepts:
-  //   { tid: 'T1552.001', scenarioIds: ['SIM-MP-004', ...] }   (preferred — from Coverage tab)
-  //   string 'T1552.001'                                       (fallback — palette etc.)
-  const visibleScenarios = useMemo(() => {
-    if (!techniqueFilter) return scenarios
-    const ids = (techniqueFilter.scenarioIds || []).map((x) => String(x))
-    const tid = (techniqueFilter.tid || techniqueFilter).toString().toUpperCase()
-    return scenarios.filter((s) => {
-      const sid = String(s.scenario_id || s.id || '')
-      if (ids.length && ids.includes(sid)) return true
-      const tids = collectTids(s).map((t) => t.toUpperCase())
-      return tids.includes(tid)
-    })
-  }, [scenarios, techniqueFilter])
+  // ── Sync external filter signals into the unified hook ──────────────
+  // selectedPlane comes from the rail; techniqueFilter from the Coverage tab.
+  // Both feed into useScenarioFilter so the chip strip is canonical.
+  useEffect(() => {
+    scenarioFilter.setPlane(selectedPlane)
+  }, [selectedPlane]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (techniqueFilter) {
+      const tid = typeof techniqueFilter === 'string'
+        ? techniqueFilter
+        : techniqueFilter.tid
+      const ids = typeof techniqueFilter === 'string'
+        ? []
+        : (techniqueFilter.scenarioIds || [])
+      scenarioFilter.setTechnique(tid, ids)
+    } else {
+      scenarioFilter.setTechnique(null)
+    }
+  }, [techniqueFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Apply unified filter ─────────────────────────────────────────────
+  const visibleScenarios = useMemo(
+    () => scenarioFilter.applyTo(scenarios),
+    [scenarios, scenarioFilter.filter] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+
+  // ── ⌘F / Ctrl+F → open filter palette ────────────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      const key = e.key ? e.key.toLowerCase() : ''
+      if ((e.metaKey || e.ctrlKey) && key === 'f') {
+        // Preempt the browser's in-page find — DCs want scenario filter here.
+        e.preventDefault()
+        setFilterPaletteOpen((v) => !v)
+      } else if (key === 'escape' && filterPaletteOpen) {
+        setFilterPaletteOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [filterPaletteOpen])
 
   const headMeta = useMemo(() => ({
     planeLabel: selectedPlane || 'all planes',
@@ -172,37 +206,38 @@ export default function OperationsView({
             {' · '}<span className="mono">{pinnedIds.length} pinned</span>
             {' · '}last updated <span className="mono">{headMeta.lastUpdated}</span>
           </div>
-          {techniqueFilter && (
-            <div style={{ marginTop: 10 }}>
-              <span
-                className="chip chip--signal"
-                style={{ paddingRight: 6 }}
-              >
-                Technique: {techniqueFilter.tid || techniqueFilter}
-                <button
-                  type="button"
-                  onClick={onClearTechniqueFilter}
-                  style={{
-                    marginLeft: 6,
-                    background: 'transparent',
-                    border: 0,
-                    color: 'inherit',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 12,
-                    lineHeight: 1,
-                  }}
-                  aria-label="Clear technique filter"
-                  title="Clear filter"
-                >×</button>
-              </span>
-            </div>
+          {!scenarioFilter.isEmpty && (
+            <FilterChips
+              filter={scenarioFilter.filter}
+              onClearOne={(field) => {
+                // Plane and technique cross-link state lives in the parent; the
+                // hook's clearOne only clears local state. Mirror up.
+                if (field === 'plane')     onClearPlane()
+                if (field === 'technique') onClearTechniqueFilter()
+                scenarioFilter.clearOne(field)
+              }}
+              onClearAll={() => {
+                onClearPlane()
+                onClearTechniqueFilter()
+                scenarioFilter.clearAll()
+              }}
+            />
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" disabled title="Filter palette — backlog">
+          <button
+            type="button"
+            className={'btn' + (scenarioFilter.activeCount > 0 ? ' btn--primary' : '')}
+            onClick={() => setFilterPaletteOpen(true)}
+            title="Open filter palette"
+          >
             <span>Filter</span>
-            <span className="kbd">F</span>
+            {scenarioFilter.activeCount > 0 && (
+              <span className="kbd" style={{ background: 'rgba(5,10,20,0.25)', borderColor: 'rgba(5,10,20,0.25)' }}>
+                {scenarioFilter.activeCount}
+              </span>
+            )}
+            <span className="kbd">⌘F</span>
           </button>
           <button className="btn" disabled title="New scenario authoring — backlog">
             <span>New scenario</span>
@@ -240,20 +275,84 @@ export default function OperationsView({
         onTogglePin={() => selectedId && togglePin(selectedId)}
         onClose={handleClose}
       />
+
+      <FilterPalette
+        open={filterPaletteOpen}
+        onClose={() => setFilterPaletteOpen(false)}
+        scenarios={scenarios}
+        filter={scenarioFilter.filter}
+        onToggle={scenarioFilter.toggle}
+        onClearAll={() => {
+          onClearPlane()
+          onClearTechniqueFilter()
+          scenarioFilter.clearAll()
+        }}
+        matchCount={visibleScenarios.length}
+        totalCount={scenarios.length}
+      />
     </div>
   )
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────
 
-function collectTids(scenario) {
-  const tids = new Set()
-  if (scenario.mitre_technique) tids.add(scenario.mitre_technique)
-  ;(scenario.additional_techniques || []).forEach((t) => {
-    if (t && t.technique) tids.add(t.technique)
-  })
-  ;(scenario.steps || []).forEach((step) => {
-    if (step.mitre_technique) tids.add(step.mitre_technique)
-  })
-  return Array.from(tids)
+/**
+ * FilterChips — render one chip per active filter criterion in the header.
+ * Each chip's × calls clearOne(field). Multi-value Sets render as a single
+ * chip with the count rather than one chip per value (the palette already
+ * shows the per-value detail).
+ */
+function FilterChips({ filter, onClearOne, onClearAll }) {
+  const chips = []
+  if (filter.plane) {
+    chips.push({ field: 'plane', label: `Plane: ${filter.plane}` })
+  }
+  if (filter.technique) {
+    chips.push({ field: 'technique', label: `Technique: ${filter.technique.tid}` })
+  }
+  const SET_LABELS = {
+    tactics:      'Tactics',
+    techniques:   'Techniques',
+    actors:       'Actors',
+    difficulties: 'Difficulty',
+    identities:   'Identity',
+    detTypes:     'Det type',
+    tags:         'Tags',
+  }
+  for (const [field, label] of Object.entries(SET_LABELS)) {
+    const set = filter[field]
+    if (set && set.size > 0) {
+      const preview = Array.from(set).slice(0, 2).join(', ')
+      const more = set.size > 2 ? ` +${set.size - 2}` : ''
+      chips.push({ field, label: `${label}: ${preview}${more}` })
+    }
+  }
+  if (chips.length === 0) return null
+
+  return (
+    <div className="filter-chip-strip">
+      {chips.map((c) => (
+        <button
+          key={c.field}
+          type="button"
+          className="chip chip--signal filter-chip-strip__chip"
+          onClick={() => onClearOne(c.field)}
+          aria-label={`Clear ${c.label}`}
+          title={`Clear ${c.label}`}
+        >
+          {c.label}
+          <span className="filter-chip-strip__x" aria-hidden="true">×</span>
+        </button>
+      ))}
+      {chips.length > 1 && (
+        <button
+          type="button"
+          className="filter-chip-strip__clear-all"
+          onClick={onClearAll}
+        >
+          clear all
+        </button>
+      )}
+    </div>
+  )
 }
