@@ -3795,3 +3795,205 @@
 .theme-console--theater .sc-title {
   font-size: 17px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Adapter Registry view — installed EAL plugin browser
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .adapter-registry { max-width: 100%; }
+
+.theme-console .adapter-registry__intro {
+  margin-bottom: 24px;
+  padding: 20px 22px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  border-left: 3px solid var(--c-signal);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: center;
+}
+.theme-console .adapter-registry__intro-prose {
+  font-family: var(--font-narrative);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--c-text-secondary);
+  margin: 0;
+  max-width: 720px;
+}
+.theme-console .adapter-registry__intro-prose strong {
+  color: var(--c-signal);
+  font-weight: 400;
+}
+.theme-console .adapter-registry__stats {
+  display: flex;
+  gap: 24px;
+}
+
+.theme-console .adapter-registry__error {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: var(--c-missed-soft);
+  color: var(--c-missed);
+  border: 1px solid var(--c-missed);
+  border-radius: 4px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+}
+
+.theme-console .adapter-registry__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.theme-console .adapter-registry__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.theme-console .adapter-card {
+  position: relative;
+  padding: 16px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+}
+.theme-console .adapter-card:hover,
+.theme-console .adapter-card:focus-visible {
+  border-color: var(--c-hairline-strong);
+  transform: translateY(-1px);
+}
+.theme-console .adapter-card--selected {
+  border-color: var(--c-signal);
+  box-shadow: 0 0 0 1px var(--c-signal-soft);
+}
+.theme-console .adapter-card--selected::before {
+  content: '';
+  position: absolute;
+  left: -1px; top: -1px; bottom: -1px;
+  width: 2px;
+  background: var(--c-signal);
+  box-shadow: 0 0 8px var(--c-signal-glow);
+}
+
+.theme-console .adapter-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.theme-console .adapter-card__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-signal);
+  letter-spacing: var(--tracking-mono);
+  word-break: break-word;
+}
+.theme-console .adapter-card__version {
+  font-size: 10px;
+  color: var(--c-text-muted);
+  letter-spacing: var(--tracking-mono);
+  flex-shrink: 0;
+}
+.theme-console .adapter-card__category {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  margin-bottom: 10px;
+}
+.theme-console .adapter-card__desc {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--c-text-secondary);
+  line-height: 1.4;
+  margin-bottom: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.theme-console .adapter-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--c-hairline);
+}
+.theme-console .adapter-card__tids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.theme-console .adapter-card__more {
+  font-size: 9px;
+  color: var(--c-text-muted);
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .adapter-card__targets {
+  font-size: 9px;
+  color: var(--c-text-muted);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+}
+.theme-console .adapter-card__targets-label {
+  color: var(--c-text-disabled);
+}
+
+/* Schema field list inside the drill-down panel */
+.theme-console .adapter-schema {
+  background: var(--c-surface);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.theme-console .adapter-schema__row {
+  display: grid;
+  grid-template-columns: 160px 90px 1fr;
+  gap: 14px;
+  padding: 8px 12px;
+  border-bottom: 1px dashed var(--c-hairline);
+  align-items: baseline;
+}
+.theme-console .adapter-schema__row:last-child { border-bottom: 0; }
+.theme-console .adapter-schema__name {
+  font-size: 12px;
+  color: var(--c-text);
+  font-weight: 600;
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .adapter-schema__required {
+  color: var(--c-missed);
+  margin-left: 2px;
+}
+.theme-console .adapter-schema__type {
+  font-size: 11px;
+  color: var(--c-pending);
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .adapter-schema__desc {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--c-text-secondary);
+  line-height: 1.4;
+}
+.theme-console .adapter-schema__default {
+  font-size: 10px;
+  color: var(--c-text-disabled);
+  letter-spacing: var(--tracking-mono);
+}

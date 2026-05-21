@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import useMitreCoverage from './useMitreCoverage.js'
 import StackCoverageView from './StackCoverageView.jsx'
 import CompetitiveView from './CompetitiveView.jsx'
+import AdapterRegistryView from './AdapterRegistryView.jsx'
 import { downloadLayer } from './exportNavigatorLayer.js'
 
 /**
@@ -61,6 +62,23 @@ export default function CoverageView({ onFilterByTechnique = () => {} }) {
           <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
         </div>
         <CompetitiveView />
+      </div>
+    )
+  }
+
+  if (viewMode === 'adapters') {
+    return (
+      <div className="coverage">
+        <div className="view-head">
+          <div>
+            <h1>Attack Adapters</h1>
+            <div className="view-head__meta">
+              EAL plugin registry · attack vectors shipped with this build
+            </div>
+          </div>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+        </div>
+        <AdapterRegistryView />
       </div>
     )
   }
@@ -332,6 +350,16 @@ function ViewModeToggle({ viewMode, onChange }) {
         title="Capability matrix vs. major competitors"
       >
         Advantage
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={viewMode === 'adapters'}
+        className={viewMode === 'adapters' ? 'is-active' : ''}
+        onClick={() => onChange('adapters')}
+        title="Installed EAL attack adapters + parameter schemas"
+      >
+        Adapters
       </button>
     </div>
   )
