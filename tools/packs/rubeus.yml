@@ -1,0 +1,71 @@
+adapter_id: TOOL-RUBEUS
+name: Rubeus
+version: "2.3.2"
+
+tier: 3
+category: identity-credential
+
+upstream:
+  repo: https://github.com/GhostPack/Rubeus
+  license: BSD-3-Clause
+  attribution: GhostPack (Will Schroeder / SpecterOps)
+
+cortex_signal:
+  planes:
+    - ITDR
+    - EDR
+  expected_techniques:
+    - T1558.003  # Steal or Forge Kerberos Tickets: Kerberoasting
+    - T1558.004  # Steal or Forge Kerberos Tickets: AS-REP Roasting
+    - T1550.003  # Use Alternate Authentication Material: Pass the Ticket
+    - T1097      # Pass the Ticket (legacy id, retained for older detections)
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  # The itdr IaC module already pre-seeds 5 Kerberoast-vulnerable service
+  # accounts + 1 AS-REP-Roastable DA-equivalent account (see CLAUDE.md §IaC
+  # — ITDR module). Rubeus is the offensive companion that exercises both
+  # primitives end-to-end on those targets.
+  content_library_entry:
+    name: rubeus
+    repo: GhostPack/Rubeus
+    install: git-clone
+    install_path: "C:\\tools\\Rubeus"
+    build_cmd: "msbuild Rubeus.sln /p:Configuration=Release /p:Platform=x64"
+  binary: "C:\\tools\\Rubeus\\Rubeus\\bin\\Release\\Rubeus.exe"
+
+invoke:
+  target_platform: windows
+  # Rubeus parses positional + slash-flag args (C# convention). The
+  # adapter substitutes verbatim — no shell-escaping (NO WRAPPER CODE
+  # rule). Operators pick one of {kerberoast, asreproast, dump, tgtdeleg}
+  # as the action and the remaining slash-flags fall into {flags}.
+  run_template: '"{binary}" {action} {flags}'
+  default_args:
+    action: "kerberoast"
+    flags: "/outfile:C:\\tools\\Rubeus\\hashes.txt /nowrap"
+  identity_required: administrator
+
+cleanup:
+  commands:
+    - 'powershell -Command "Remove-Item -Force C:\\tools\\Rubeus\\hashes.txt -ErrorAction SilentlyContinue"'
+    - 'powershell -Command "klist purge"'
+
+ttp_refs:
+  - TTP-2026-0004  # DCSync chain — Rubeus harvests TGTs upstream of DCSync
+
+equivalents:
+  - TOOL-MIMIKATZ
+  - TOOL-IMPACKET-GETUSERSPNS
+
+author: Henry Reed
+created: "2026-05-21"
+last_updated: "2026-05-21"
+tags:
+  - kerberos
+  - kerberoast
+  - asreproast
+  - pass-the-ticket
+  - ad-attack
