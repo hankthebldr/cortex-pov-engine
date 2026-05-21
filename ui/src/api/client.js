@@ -238,6 +238,42 @@ export async function getToolStatus(toolName) {
   return request(`/api/tools/${toolName}/status`)
 }
 
+// ─── Tool-adapter catalog (tools/packs/*.yml) ───────────────────────────────
+
+/**
+ * GET /api/tools/adapters
+ *
+ * List the static tool-adapter catalog. Filters compose with logical AND
+ * server-side; unknown values quietly return an empty list.
+ *
+ * @param {Object} [filters]
+ * @param {string} [filters.plane]         e.g. 'EDR' | 'CDR' | 'NDR' | 'ITDR' | ...
+ * @param {number} [filters.tier]          1..5
+ * @param {string} [filters.safety_class]  'safe' | 'dual-use-lab-only' | 'c2-framework' | 'destructive'
+ * @param {string} [filters.category]      controlled-vocab category
+ * @returns {Promise<{adapters: Array<Object>, total: number}>}
+ */
+export async function getToolAdapters(filters = {}) {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== '') qs.append(k, String(v))
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/tools/adapters${suffix}`)
+}
+
+/**
+ * GET /api/tools/adapters/:adapterId
+ *
+ * Full ToolAdapterSchema for a single entry — used by the drill-down panel.
+ *
+ * @param {string} adapterId  e.g. 'TOOL-NMAP'
+ * @returns {Promise<Object>}
+ */
+export async function getToolAdapter(adapterId) {
+  return request(`/api/tools/adapters/${encodeURIComponent(adapterId)}`)
+}
+
 // ─── Reports ────────────────────────────────────────────────────────────────
 
 /**

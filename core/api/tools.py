@@ -3,6 +3,8 @@ CortexSim API — /api/tools router.
 
 Endpoints:
   GET  /api/tools                        — list all tools + status
+  GET  /api/tools/adapters               — list tool-adapter catalog (tools/packs/*.yml)
+  GET  /api/tools/adapters/{adapter_id}  — single adapter detail
   POST /api/tools/{tool_name}/install    — trigger install via ToolInstantiator.install()
   POST /api/tools/{tool_name}/start      — start tool with body params
   POST /api/tools/{tool_name}/stop       — stop tool
@@ -22,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models import ToolInstance
+from tools.adapter_catalog import catalog as adapter_catalog
 from tools.instantiator import InstallResult, StartResult, StopResult, ToolStatus, instantiator
 from tools.registry import TOOL_REGISTRY
 
@@ -122,6 +125,91 @@ async def list_tools(db: AsyncSession = Depends(get_db)):
 
     logger.info("list_tools count=%d", len(tools_out))
     return {"tools": tools_out, "total": len(tools_out)}
+
+
+# ---------------------------------------------------------------------------
+# Tool-adapter catalog (read-only — populated from tools/packs/*.yml at boot)
+# ---------------------------------------------------------------------------
+#
+# The adapter catalog is a separate concern from the runtime ToolInstantiator
+# above: it documents every offensive / defensive tool that CortexSim can
+# reference (via `scenario.external_tools[].adapter_ref`), with its tier,
+# safety classification, licence trail, and Cortex-plane mapping. The UI
+# tool picker (Coverage tab → Tool Adapters) consumes these endpoints.
+#
+# These routes are defined BEFORE the `/{tool_name}/...` routes below so
+# FastAPI can never resolve `/tools/adapters` against the `{tool_name}` rule.
+
+
+def _adapter_summary(adapter) -> dict[str, Any]:
+    """Slim card-payload for the UI grid — full schema is only fetched on
+    drill-down via /adapters/{adapter_id} to keep the list call cheap."""
+    return {
+        "adapter_id":      adapter.adapter_id,
+        "name":            adapter.name,
+        "version":         adapter.version,
+        "tier":            adapter.tier,
+        "category":        adapter.category,
+        "safety_class":    adapter.safety_class,
+        "planes":          list(adapter.cortex_signal.planes),
+        "expected_techniques": list(adapter.cortex_signal.expected_techniques),
+        "target_platform": adapter.invoke.target_platform if adapter.invoke else None,
+        "license":         adapter.upstream.license,
+        "tags":            list(adapter.tags),
+    }
+
+
+@router.get("/adapters")
+async def list_adapters(
+    plane: Optional[str] = None,
+    tier: Optional[int] = None,
+    safety_class: Optional[str] = None,
+    category: Optional[str] = None,
+):
+    """
+    List every adapter in the catalog with optional server-side filters.
+    Filters compose (logical AND). Unknown filter values return an empty
+    list rather than 400 — keeps the UI defensive against future taxonomy
+    drift.
+    """
+    items = adapter_catalog.all()
+
+    if plane:
+        items = [a for a in items if plane in a.cortex_signal.planes]
+    if tier is not None:
+        items = [a for a in items if a.tier == tier]
+    if safety_class:
+        items = [a for a in items if a.safety_class == safety_class]
+    if category:
+        items = [a for a in items if a.category == category]
+
+    payload = sorted(
+        (_adapter_summary(a) for a in items),
+        key=lambda d: d["adapter_id"],
+    )
+    logger.info(
+        "list_adapters count=%d filters=plane=%s tier=%s safety=%s cat=%s",
+        len(payload), plane, tier, safety_class, category,
+    )
+    return {"adapters": payload, "total": len(payload)}
+
+
+@router.get("/adapters/{adapter_id}")
+async def get_adapter(adapter_id: str):
+    """Return the full pack for a single adapter, including invoke shape,
+    install plan, cleanup, ttp_refs and equivalents — the drill-down panel
+    in the UI calls this on selection."""
+    adapter = adapter_catalog.find(adapter_id)
+    if adapter is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "Adapter not found",
+                "code": "ADAPTER_NOT_FOUND",
+                "detail": f"adapter_id='{adapter_id}'",
+            },
+        )
+    return adapter.model_dump()
 
 
 @router.post("/{tool_name}/install")
