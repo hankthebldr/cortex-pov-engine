@@ -2242,3 +2242,191 @@
   letter-spacing: var(--tracking-mono);
   text-align: right;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Filter palette + active-filter chip strip
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .filter-palette {
+  width: min(780px, 92vw);
+}
+
+.theme-console .filter-palette__results {
+  max-height: 60vh;
+  padding: 0;
+}
+
+.theme-console .filter-palette__group {
+  padding: 14px 20px 8px;
+  border-bottom: 1px dashed var(--c-hairline);
+}
+.theme-console .filter-palette__group:last-child {
+  border-bottom: 0;
+}
+.theme-console .filter-palette__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.theme-console .filter-palette__active-badge {
+  font-size: 9px;
+  color: var(--c-signal);
+  background: var(--c-signal-soft);
+  padding: 1px 6px;
+  border-radius: 2px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+}
+
+.theme-console .filter-palette__values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.theme-console .filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  background: var(--c-surface);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.theme-console .filter-chip:hover {
+  border-color: var(--c-signal);
+  color: var(--c-text);
+}
+.theme-console .filter-chip--active {
+  background: var(--c-signal-soft);
+  border-color: var(--c-signal);
+  color: var(--c-signal);
+}
+.theme-console .filter-chip__check {
+  font-size: 10px;
+  opacity: 0.7;
+}
+.theme-console .filter-chip--active .filter-chip__check {
+  opacity: 1;
+}
+.theme-console .filter-chip__label {
+  /* main facet value */
+}
+.theme-console .filter-chip__count {
+  font-size: 9px;
+  color: var(--c-text-muted);
+  padding-left: 4px;
+  border-left: 1px solid var(--c-hairline);
+}
+.theme-console .filter-chip--active .filter-chip__count {
+  color: var(--c-signal);
+  border-left-color: var(--c-signal-soft);
+}
+
+.theme-console .filter-palette__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.theme-console .filter-palette__count {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--c-signal);
+  letter-spacing: -0.01em;
+}
+.theme-console .filter-palette__clear-all {
+  background: transparent;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 2px;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.theme-console .filter-palette__clear-all:hover:not(:disabled) {
+  color: var(--c-missed);
+}
+.theme-console .filter-palette__clear-all:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ─── Active filter chip strip in OperationsView header ──────────── */
+
+.theme-console .filter-chip-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.theme-console .filter-chip-strip__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 4px 0 10px;
+  background: var(--c-signal-soft);
+  color: var(--c-signal);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.theme-console .filter-chip-strip__chip:hover {
+  background: rgba(0, 192, 232, 0.18);
+}
+
+.theme-console .filter-chip-strip__x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--c-signal);
+  opacity: 0.7;
+  margin-left: 2px;
+  padding-bottom: 2px;
+}
+.theme-console .filter-chip-strip__chip:hover .filter-chip-strip__x {
+  opacity: 1;
+  color: var(--c-missed);
+}
+
+.theme-console .filter-chip-strip__clear-all {
+  margin-left: 4px;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  cursor: pointer;
+  padding: 0 6px;
+  height: 22px;
+  border-radius: 2px;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.theme-console .filter-chip-strip__clear-all:hover {
+  color: var(--c-missed);
+}

@@ -306,6 +306,7 @@ export default function AppConsole() {
     tabContent = (
       <OperationsView
         selectedPlane={selectedPlane}
+        onClearPlane={() => setSelectedPlane(null)}
         techniqueFilter={techniqueFilter}
         onClearTechniqueFilter={() => setTechniqueFilter(null)}
         requestOpenScenarioId={requestOpenIdForView}
