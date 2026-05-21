@@ -27,6 +27,7 @@ import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverl
  *   tabBadges           — { operations: '19', inflight: 'LIVE', evidence: '4/12' }
  *   paletteItems        — items for ⌘K — see CommandPalette
  *   ticker              — string rendered in bottom strip
+ *   onExportPOV         — () => void  triggered by ⌘E from anywhere
  *   children            — tab content (rendered in the main workspace area)
  */
 export default function AppShell({
@@ -43,6 +44,7 @@ export default function AppShell({
   tabBadges = {},
   paletteItems = [],
   ticker = '',
+  onExportPOV = null,
   children,
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -69,6 +71,14 @@ export default function AppShell({
       } else if (mod && (key === '/' || key === '?')) {
         e.preventDefault()
         setHelpOpen((v) => !v)
+      } else if (mod && key === 'e' && !e.shiftKey) {
+        // ⌘E — global POV report export (preempts the browser's "view page
+        // source" / Firefox print-preview default; only when we have an
+        // export handler wired)
+        if (onExportPOV) {
+          e.preventDefault()
+          onExportPOV()
+        }
       } else if (key === 'escape') {
         setPaletteOpen(false)
         setHelpOpen(false)
@@ -76,7 +86,7 @@ export default function AppShell({
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [])
+  }, [onExportPOV])
 
   const handleCloseHelp = useCallback(() => {
     setHelpOpen(false)

@@ -6,7 +6,7 @@ import EvidenceView from './components/console/EvidenceView.jsx'
 import CoverageView from './components/console/CoverageView.jsx'
 import LabView from './components/console/LabView.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
-import { getHealth, getRuns, getScenarios } from './api/client.js'
+import { getHealth, getRuns, getScenarios, downloadReport } from './api/client.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -300,6 +300,33 @@ export default function AppConsole() {
     setTimeout(() => setToast(null), 4000)
   }, [])
 
+  // ⌘E — global POV report export. Picks the most relevant run: active if
+  // any, else last completed. No-op with a friendly toast if neither exists.
+  const handleExportPOV = useCallback(async () => {
+    const targetRunId = activeRun?.runId || lastRun?.runId || null
+    if (!targetRunId) {
+      setToast({ message: 'No run to export — launch a scenario first', type: 'warn' })
+      setTimeout(() => setToast(null), 3000)
+      return
+    }
+    try {
+      const blob = await downloadReport(targetRunId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cortexsim-pov-${targetRunId}.md`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setToast({ message: `Exported POV report for ${targetRunId}`, type: 'success' })
+      setTimeout(() => setToast(null), 3000)
+    } catch (err) {
+      setToast({ message: err.message || 'Export failed', type: 'error' })
+      setTimeout(() => setToast(null), 4000)
+    }
+  }, [activeRun, lastRun])
+
   // ── Render tab content ──────────────────────────────────────────────────
   let tabContent = null
   if (activeTab === 'operations') {
@@ -372,6 +399,7 @@ export default function AppConsole() {
         onSelectPinned={handleOpenScenario}
         onUnpinScenario={unpin}
         onAbortRun={handleAbortRun}
+        onExportPOV={handleExportPOV}
         tabBadges={tabBadges}
         paletteItems={paletteItems}
         ticker={ticker}
