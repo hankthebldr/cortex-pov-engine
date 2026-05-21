@@ -4,6 +4,7 @@ import ScenarioInspector from './ScenarioInspector.jsx'
 import FilterPalette from './FilterPalette.jsx'
 import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
+import useScenarioRunHistory from './useScenarioRunHistory.js'
 import { getScenarios, getScenario } from '../../api/client.js'
 
 /**
@@ -54,6 +55,9 @@ export default function OperationsView({
 
   // Unified filter — plane + technique + multi-criteria from FilterPalette
   const scenarioFilter = useScenarioFilter()
+
+  // Run history rollup — feeds the per-card history badge.
+  const { historyByScenario } = useScenarioRunHistory()
 
   // ── Fetch scenario list ──────────────────────────────────────────────
   useEffect(() => {
@@ -264,6 +268,7 @@ export default function OperationsView({
           onSelectScenario={handleSelect}
           isPinned={isPinned}
           onTogglePin={togglePin}
+          historyByScenario={historyByScenario}
         />
       )}
 

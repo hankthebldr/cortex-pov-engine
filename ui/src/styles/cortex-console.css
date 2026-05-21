@@ -4520,3 +4520,47 @@
   letter-spacing: var(--tracking-mono);
   color: var(--c-text-muted);
 }
+
+/* ─── Scenario history badge (footer of ScenarioCard) ─────────────── */
+
+.theme-console .sc-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 4px 8px;
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  background: color-mix(in srgb, var(--c-bg-base) 50%, transparent);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.theme-console .sc-history__dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--c-text-muted);
+  flex-shrink: 0;
+}
+
+.theme-console .sc-history.is-ok    .sc-history__dot { background: var(--c-status-detected, #4FD1A1); }
+.theme-console .sc-history.is-fail  .sc-history__dot { background: var(--c-status-missed,   #FF6B6B); }
+.theme-console .sc-history.is-run   .sc-history__dot { background: var(--c-cortex-teal); animation: sc-history-pulse 1.6s ease-in-out infinite; }
+.theme-console .sc-history.is-idle  .sc-history__dot { background: var(--c-text-disabled); }
+
+@keyframes sc-history-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 1.0; transform: scale(1.4); }
+}
+
+.theme-console .sc-history__count {
+  color: var(--c-text);
+  font-weight: 500;
+}
+
+.theme-console .sc-history__ago {
+  color: var(--c-text-muted);
+}

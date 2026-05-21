@@ -1,5 +1,6 @@
 import React from 'react'
 import PinButton from './PinButton.jsx'
+import { formatAgo } from './useScenarioRunHistory.js'
 
 const PLANE_CHIP_CLASS = {
   EDR:        'chip--plane-edr',
@@ -20,7 +21,7 @@ const DIFFICULTY_LABEL = {
 /**
  * ScenarioCard — single scenario card for the operations grid.
  */
-function ScenarioCard({ scenario, isSelected, isPinned, onSelect, onTogglePin }) {
+function ScenarioCard({ scenario, isSelected, isPinned, onSelect, onTogglePin, history = null }) {
   const id      = scenario.scenario_id || scenario.id
   const planes  = collectPlanes(scenario)
   const tids    = collectTechniques(scenario).slice(0, 6)
@@ -87,7 +88,34 @@ function ScenarioCard({ scenario, isSelected, isPinned, onSelect, onTogglePin })
           ))}
         </div>
       </div>
+
+      {history && history.count > 0 && (
+        <ScenarioHistoryBadge history={history} />
+      )}
     </article>
+  )
+}
+
+/**
+ * ScenarioHistoryBadge — small footer strip surfacing whether this
+ * scenario has been run before. Helps DCs prioritize untouched
+ * scenarios during a POV.
+ */
+function ScenarioHistoryBadge({ history }) {
+  const status = history.lastStatus || 'unknown'
+  const statusClass = status === 'completed' ? 'is-ok'
+    : status === 'failed'  ? 'is-fail'
+    : status === 'running' ? 'is-run'
+    : 'is-idle'
+  return (
+    <div className={'sc-history mono ' + statusClass}
+         title={`Last status: ${status} · ${history.count} total run${history.count === 1 ? '' : 's'}`}>
+      <span className="sc-history__dot" aria-hidden="true" />
+      <span className="sc-history__count">{history.count}× run</span>
+      {history.lastRunAt > 0 && (
+        <span className="sc-history__ago">· {formatAgo(history.lastRunAt)}</span>
+      )}
+    </div>
   )
 }
 
@@ -100,6 +128,7 @@ export default function ScenarioGrid({
   onSelectScenario = () => {},
   isPinned = () => false,
   onTogglePin = () => {},
+  historyByScenario = null, // Map<scenario_id, { count, lastRunAt, lastStatus }>
 }) {
   if (scenarios.length === 0) {
     return (
@@ -126,6 +155,9 @@ export default function ScenarioGrid({
     <div className="scenario-grid">
       {ordered.map((s) => {
         const id = s.scenario_id || s.id
+        const history = historyByScenario && historyByScenario.get
+          ? historyByScenario.get(id)
+          : null
         return (
           <ScenarioCard
             key={id}
@@ -134,6 +166,7 @@ export default function ScenarioGrid({
             isPinned={isPinned(id)}
             onSelect={onSelectScenario}
             onTogglePin={onTogglePin}
+            history={history}
           />
         )
       })}
