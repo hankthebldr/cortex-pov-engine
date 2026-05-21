@@ -71,13 +71,20 @@ jobs:
         run: npm test -- --coverage
 
   ttp-static:
-    # Tier A of the e2e execution methodology (see
-    # docs/design/e2e-execution-methodology.md). Hard gate. Static
-    # analysis of every scenario TTP script: bash -n + shellcheck
-    # severity=warning + executable-bit + shebang presence. Fast
-    # (<2s) and catches the class of regressions that would otherwise
-    # ship green through every other tier.
-    name: ttp static (tier A)
+    # Tiers A + B of the e2e execution methodology (see
+    # docs/design/e2e-execution-methodology.md). Hard gate.
+    #
+    # Tier A: bash -n + shellcheck on every hand-written TTP script
+    #         (scenarios/*/packages/*/ttps/*.sh + run.sh).
+    # Tier B: same checks on the GENERATED push-mode bundles for every
+    #         scenario YAML in the library, plus step-presence,
+    #         identity-harness presence, cleanup-presence, and
+    #         placeholder-leak guards. Catches generator-path
+    #         regressions that hand-written package scripts wouldn't
+    #         expose.
+    #
+    # Both together: ~5 seconds wall-clock for the full library.
+    name: ttp static (tier A + B)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -85,10 +92,21 @@ jobs:
         with: { python-version: '3.11', cache: pip }
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Install pytest
-        run: python -m pip install --upgrade pip && pip install pytest
+      - name: Install Python deps
+        # core/ imports are needed for Tier B which calls into
+        # core.engine.push_generator directly (skips HTTP overhead).
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pyyaml
+          pip install -r core/requirements.txt
       - name: Tier A — TTP static analysis
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
         run: pytest tests/e2e_isolated/test_tier_a_static.py -v --tb=short
+      - name: Tier B — push bundle integrity
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+        run: pytest tests/e2e_isolated/test_tier_b_push_bundle.py -v --tb=short
 
   e2e-stack:
     name: e2e (smoke + playwright)

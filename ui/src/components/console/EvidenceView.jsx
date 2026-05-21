@@ -1,5 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import useResultsData from './useResultsData.js'
+import DetectionDrawer from './DetectionDrawer.jsx'
 import { downloadReport } from '../../api/client.js'
 
 /**
@@ -21,6 +22,15 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
 
   const { rows, kpis, loading, validate, refresh } = useResultsData(targetRunId)
   const [exporting, setExporting] = useState(false)
+  const [selectedRowId, setSelectedRowId] = useState(null)
+
+  // Reset drilldown selection when the underlying run changes.
+  useEffect(() => { setSelectedRowId(null) }, [targetRunId])
+
+  const selectedRow = useMemo(
+    () => (selectedRowId == null ? null : rows.find((r) => r.id === selectedRowId) || null),
+    [rows, selectedRowId],
+  )
 
   const handleExport = useCallback(async () => {
     if (!targetRunId) {
@@ -113,7 +123,18 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
       <Scorecard
         rows={rows}
         loading={loading}
+        selectedRowId={selectedRowId}
+        onSelectRow={setSelectedRowId}
         onValidate={validate}
+      />
+
+      <DetectionDrawer
+        row={selectedRow}
+        open={!!selectedRow}
+        onClose={() => setSelectedRowId(null)}
+        onValidate={(id, observed, notes) => {
+          validate(id, observed, notes)
+        }}
       />
     </div>
   )
@@ -171,7 +192,7 @@ function Kpi({ label, value, suffix = '', meta = '', valueClass = '' }) {
 
 /* ─── Scorecard ────────────────────────────────────────────────────────── */
 
-function Scorecard({ rows, loading, onValidate }) {
+function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
   if (rows.length === 0 && !loading) {
     return (
       <div className="scorecard">
@@ -211,6 +232,8 @@ function Scorecard({ rows, loading, onValidate }) {
         <ScorecardRow
           key={r.id ?? i}
           row={r}
+          isSelected={r.id != null && r.id === selectedRowId}
+          onSelect={() => r.id != null && onSelectRow(r.id)}
           onValidate={onValidate}
         />
       ))}
@@ -218,7 +241,7 @@ function Scorecard({ rows, loading, onValidate }) {
   )
 }
 
-function ScorecardRow({ row, onValidate }) {
+function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
   const status = row.observed === true
     ? 'detected'
     : row.observed === false
@@ -226,8 +249,20 @@ function ScorecardRow({ row, onValidate }) {
     : 'pending'
   const statusLabel = status === 'detected' ? 'Detected' : status === 'missed' ? 'Missed' : 'Pending'
 
+  // Inline-button clicks shouldn't propagate to the row click (avoid
+  // double-firing validate + selecting the row at the same time).
+  const stop = (fn) => (e) => { e.stopPropagation(); fn() }
+
   return (
-    <div className="scorecard__row" data-status={status}>
+    <div
+      className={'scorecard__row' + (isSelected ? ' scorecard__row--selected' : '')}
+      data-status={status}
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect() } }}
+      aria-label={`Open detection detail for ${row.tid}`}
+    >
       <div className="scorecard__tid">{row.tid}</div>
       <div className="scorecard__plane">
         {row.plane}{row.detectionType && ` · ${row.detectionType}`}
@@ -246,21 +281,21 @@ function ScorecardRow({ row, onValidate }) {
             {row.observed !== true && (
               <button
                 className="row-action row-action--detected"
-                onClick={() => onValidate(row.id, true, null)}
+                onClick={stop(() => onValidate(row.id, true, null))}
                 title="Mark as detected"
               >✓</button>
             )}
             {row.observed !== false && (
               <button
                 className="row-action row-action--missed"
-                onClick={() => onValidate(row.id, false, null)}
+                onClick={stop(() => onValidate(row.id, false, null))}
                 title="Mark as missed"
               >✗</button>
             )}
             {row.observed != null && (
               <button
                 className="row-action"
-                onClick={() => onValidate(row.id, null, null)}
+                onClick={stop(() => onValidate(row.id, null, null))}
                 title="Reset to pending"
               >○</button>
             )}

@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState, useCallback } from 'react'
 import NarrativeTimeline from './NarrativeTimeline.jsx'
+import EventStream from './EventStream.jsx'
 import useTimelineData from './useTimelineData.js'
 import { toPng } from 'html-to-image'
 import { downloadReport } from '../../api/client.js'
@@ -175,6 +176,8 @@ export default function InflightView({ activeRun, lastRun, onError }) {
           <NarrativeTimeline frames={frames} stitches={stitches} />
         )}
       </div>
+
+      <EventStream runId={targetRunId} compact />
 
       <div className="narrative__footer">
         <p>

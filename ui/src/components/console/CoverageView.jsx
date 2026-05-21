@@ -1,23 +1,69 @@
 import React, { useState } from 'react'
 import useMitreCoverage from './useMitreCoverage.js'
+import StackCoverageView from './StackCoverageView.jsx'
+import CompetitiveView from './CompetitiveView.jsx'
+import { downloadLayer } from './exportNavigatorLayer.js'
 
 /**
- * CoverageView — the ATT&CK Coverage tab.
+ * CoverageView — the Coverage tab. Two view modes:
  *
- * Console-themed MITRE Navigator-style matrix:
- *   - Tactic columns scroll horizontally
- *   - Each technique cell shows TID, name, coverage chip
- *   - Cell click opens an inline detail panel with the scenario list
- *   - "Filter Operations" button on the detail panel emits a callback the
- *     parent uses to switch tabs and apply a technique filter
+ *   ATT&CK   — MITRE Navigator-style matrix (tactic × technique cells)
+ *   PANW Stack — product × tactic kill-chain matrix
+ *
+ * Both pivot the same scenario library through different lenses. The
+ * ATT&CK view answers "which techniques do we exercise?"; the Stack view
+ * answers "which Palo Alto products carry the detection load?"
  *
  * Props:
- *   onFilterByTechnique  — (tid) => void
- *                          AppConsole switches to Operations tab + sets the filter
+ *   onFilterByTechnique  — (tid, scenarioIds) => void
+ *                          AppConsole switches to Operations tab + applies
+ *                          the filter for either view's cell click.
  */
 export default function CoverageView({ onFilterByTechnique = () => {} }) {
   const { data, loading, error, refresh } = useMitreCoverage()
   const [selectedTechnique, setSelectedTechnique] = useState(null)
+  const [viewMode, setViewMode] = useState('attack') // 'attack' | 'stack' | 'advantage'
+
+  if (viewMode === 'stack') {
+    return (
+      <div className="coverage">
+        <div className="view-head">
+          <div>
+            <h1>PANW Stack Coverage</h1>
+            <div className="view-head__meta">
+              product × kill chain · click a cell to drill into scenarios
+            </div>
+          </div>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+        </div>
+        <StackCoverageView
+          onFilterByCell={(_productId, _tactic, scenarioIds) => {
+            // Re-use the existing Operations filter cross-link by passing
+            // scenarioIds; the receiving end ignores the tid when
+            // scenarioIds is populated.
+            onFilterByTechnique('STACK', scenarioIds)
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (viewMode === 'advantage') {
+    return (
+      <div className="coverage">
+        <div className="view-head">
+          <div>
+            <h1>PANW Advantage</h1>
+            <div className="view-head__meta">
+              capability matrix · Cortex vs. major EDR / SIEM / BAS competitors
+            </div>
+          </div>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+        </div>
+        <CompetitiveView />
+      </div>
+    )
+  }
 
   return (
     <div className="coverage">
@@ -43,7 +89,16 @@ export default function CoverageView({ onFilterByTechnique = () => {} }) {
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+          <button
+            className="btn"
+            onClick={() => downloadLayer(data)}
+            disabled={loading || !data?.by_tactic || data.by_tactic.length === 0}
+            title="Download MITRE ATT&CK Navigator v4.5 layer JSON for executive briefings"
+          >
+            ↗ Navigator layer
+          </button>
           <button className="btn" onClick={refresh} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
@@ -241,6 +296,43 @@ function TechniqueDetailPanel({ technique, onClose, onFilterByTechnique }) {
           Filter Operations <span className="kbd">→</span>
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ─── ViewMode toggle ────────────────────────────────────────────── */
+
+function ViewModeToggle({ viewMode, onChange }) {
+  return (
+    <div className="lab__segmented" role="tablist" aria-label="Coverage view mode">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={viewMode === 'attack'}
+        className={viewMode === 'attack' ? 'is-active' : ''}
+        onClick={() => onChange('attack')}
+      >
+        ATT&amp;CK
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={viewMode === 'stack'}
+        className={viewMode === 'stack' ? 'is-active' : ''}
+        onClick={() => onChange('stack')}
+      >
+        PANW Stack
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={viewMode === 'advantage'}
+        className={viewMode === 'advantage' ? 'is-active' : ''}
+        onClick={() => onChange('advantage')}
+        title="Capability matrix vs. major competitors"
+      >
+        Advantage
+      </button>
     </div>
   )
 }

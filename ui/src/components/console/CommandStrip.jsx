@@ -16,8 +16,12 @@ const DEFAULT_HINTS = [
 
 export default function CommandStrip({ ticker = '', hints = DEFAULT_HINTS }) {
   return (
-    <div className="command-strip">
-      <div className="cs-hints">
+    <div
+      className="command-strip"
+      role="contentinfo"
+      aria-label="Keyboard shortcuts and event ticker"
+    >
+      <div className="cs-hints" aria-hidden="true">
         {hints.map((h, i) => (
           <span key={i} className="cs-hint">
             {h.keys.map((k) => (
@@ -27,7 +31,14 @@ export default function CommandStrip({ ticker = '', hints = DEFAULT_HINTS }) {
           </span>
         ))}
       </div>
-      <div className="cs-ticker">{ticker || 'idle'}</div>
+      <div
+        className="cs-ticker"
+        role="status"
+        aria-live="polite"
+        aria-label="Latest event"
+      >
+        {ticker || 'idle'}
+      </div>
     </div>
   )
 }

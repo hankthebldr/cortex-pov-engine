@@ -5,6 +5,7 @@ import ConsoleRail from './ConsoleRail.jsx'
 import ConsoleTabs from './ConsoleTabs.jsx'
 import CommandStrip from './CommandStrip.jsx'
 import CommandPalette from './CommandPalette.jsx'
+import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverlay.jsx'
 
 /**
  * AppShell — Mission Ops Console layout wrapper.
@@ -26,6 +27,7 @@ import CommandPalette from './CommandPalette.jsx'
  *   tabBadges           — { operations: '19', inflight: 'LIVE', evidence: '4/12' }
  *   paletteItems        — items for ⌘K — see CommandPalette
  *   ticker              — string rendered in bottom strip
+ *   onExportPOV         — () => void  triggered by ⌘E from anywhere
  *   children            — tab content (rendered in the main workspace area)
  */
 export default function AppShell({
@@ -42,32 +44,84 @@ export default function AppShell({
   tabBadges = {},
   paletteItems = [],
   ticker = '',
+  onExportPOV = null,
   children,
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [helpOpen, setHelpOpen]       = useState(false)
+  // Theater mode — projector-friendly view for sales briefings.
+  // Persisted to localStorage so the DC can pin it for the duration of
+  // a meeting and not lose it across an accidental reload.
+  const [theaterMode, setTheaterMode] = useState(() => {
+    try { return window.localStorage.getItem('cortexsim.theaterMode') === 'true' } catch { return false }
+  })
+  const toggleTheater = useCallback(() => {
+    setTheaterMode((v) => {
+      const next = !v
+      try { window.localStorage.setItem('cortexsim.theaterMode', String(next)) } catch {}
+      return next
+    })
+  }, [])
 
-  // Global ⌘K / Ctrl+K handler
+  // First-run help overlay — appears once per browser, then suppressed.
+  useEffect(() => {
+    if (shouldShowOnFirstRun()) {
+      // Defer so it doesn't race with the initial render's keyboard handlers.
+      const t = setTimeout(() => setHelpOpen(true), 400)
+      return () => clearTimeout(t)
+    }
+    return undefined
+  }, [])
+
+  // Global ⌘K / ⌘/ / Ctrl+K / Ctrl+/ handler
   useEffect(() => {
     const handler = (e) => {
       const key = e.key ? e.key.toLowerCase() : ''
-      if ((e.metaKey || e.ctrlKey) && key === 'k') {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && key === 'k') {
         e.preventDefault()
         setPaletteOpen((v) => !v)
+      } else if (mod && (key === '/' || key === '?')) {
+        e.preventDefault()
+        setHelpOpen((v) => !v)
+      } else if (mod && key === 'e' && !e.shiftKey) {
+        // ⌘E — global POV report export (preempts the browser's "view page
+        // source" / Firefox print-preview default; only when we have an
+        // export handler wired)
+        if (onExportPOV) {
+          e.preventDefault()
+          onExportPOV()
+        }
       } else if (key === 'escape') {
         setPaletteOpen(false)
+        setHelpOpen(false)
       }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
+  }, [onExportPOV])
+
+  const handleCloseHelp = useCallback(() => {
+    setHelpOpen(false)
+    markFirstRunSeen()
   }, [])
 
   const shellClass = `shell${activeRun ? '' : ' shell--no-telemetry'}`
+  const themeClass = `theme-console ${theaterMode ? 'theme-console--theater' : ''}`
 
   return (
-    <div className={`theme-console ${shellClass}`}>
+    <div className={`${themeClass} ${shellClass}`}>
+      {/* Skip link — keyboard users land here on Tab; jumps past header/rail
+          to the main workspace. Invisible until focused. */}
+      <a href="#cortexsim-main" className="skip-link">
+        Skip to workspace
+      </a>
+
       <ConsoleHeader
         health={health}
         onOpenPalette={() => setPaletteOpen(true)}
+        theaterMode={theaterMode}
+        onToggleTheater={toggleTheater}
       />
 
       {activeRun && (
@@ -83,7 +137,7 @@ export default function AppShell({
           onUnpin={onUnpinScenario}
         />
 
-        <section className="main">
+        <main className="main" id="cortexsim-main" aria-label="CortexSim workspace">
           <ConsoleTabs
             activeTab={activeTab}
             onTabChange={onTabChange}
@@ -93,7 +147,7 @@ export default function AppShell({
           <div className="view" key={activeTab}>
             {children}
           </div>
-        </section>
+        </main>
       </div>
 
       <CommandStrip ticker={ticker} />
@@ -102,6 +156,11 @@ export default function AppShell({
         open={paletteOpen}
         items={paletteItems}
         onClose={() => setPaletteOpen(false)}
+      />
+
+      <HelpOverlay
+        open={helpOpen}
+        onClose={handleCloseHelp}
       />
     </div>
   )
