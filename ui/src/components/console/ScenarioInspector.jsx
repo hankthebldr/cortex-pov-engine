@@ -1,5 +1,6 @@
 import React from 'react'
 import PinButton from './PinButton.jsx'
+import { formatAgo } from './useScenarioRunHistory.js'
 
 /**
  * ScenarioInspector — right-side 420px drawer with pinned launch CTA at top,
@@ -23,6 +24,7 @@ export default function ScenarioInspector({
   pinned = false,
   onTogglePin = () => {},
   onClose = () => {},
+  runHistory = [],
 }) {
   if (!scenario || !launch) return <aside className="inspector" />
 
@@ -262,6 +264,9 @@ export default function ScenarioInspector({
         )}
       </div>
 
+      {/* ── Run history ───────────────────────────────────────────────── */}
+      <RunHistorySection runs={runHistory} />
+
       {/* ── Footer ─────────────────────────────────────────────────────── */}
       <div className="insp-footer">
         <span>
@@ -288,4 +293,58 @@ function countDetections(scenario) {
 function truncate(s, n) {
   if (!s || s.length <= n) return s
   return s.slice(0, n - 1) + '\u2026'
+}
+
+/* ─── Run history section ─────────────────────────────────────────── */
+
+/**
+ * RunHistorySection — last 5 runs of this scenario.
+ *
+ * Reads from the OperationsView's run-history rollup; no extra fetch.
+ * Empty state stays inline so the section never disappears (consistent
+ * drawer height across selections).
+ */
+function RunHistorySection({ runs = [] }) {
+  const shown = runs.slice(0, 5)
+  return (
+    <div className="insp-section insp-history">
+      <div className="insp-section__title">
+        Run history
+        <span className="insp-history__count mono">
+          {runs.length === 0 ? 'never run' : `${runs.length} total`}
+        </span>
+      </div>
+      {shown.length === 0 ? (
+        <div className="insp-history__empty mono">
+          no runs on record · launch to validate
+        </div>
+      ) : (
+        <ul className="insp-history__list">
+          {shown.map((r) => (
+            <RunHistoryRow key={r.id || r.run_id} run={r} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function RunHistoryRow({ run }) {
+  const id     = run.id || run.run_id
+  const status = (run.status || 'unknown').toLowerCase()
+  const ts     = Date.parse(run.started_at || run.created_at || '') || 0
+  const ago    = formatAgo(ts) || '—'
+  const statusGlyph = status === 'completed' ? '✓'
+    : status === 'failed'    ? '✗'
+    : status === 'running'   ? '◐'
+    : '○'
+  const statusClass = 'insp-history__row--' + status
+  return (
+    <li className={'insp-history__row ' + statusClass} title={`Run ${id} · ${status}`}>
+      <span className="insp-history__glyph" aria-hidden="true">{statusGlyph}</span>
+      <span className="insp-history__id mono">{String(id).slice(0, 10)}</span>
+      <span className="insp-history__when mono">{ago}</span>
+      <span className="insp-history__status mono">{status}</span>
+    </li>
+  )
 }

@@ -56,11 +56,11 @@ export default function OperationsView({
   // Unified filter — plane + technique + multi-criteria from FilterPalette
   const scenarioFilter = useScenarioFilter()
 
-  // Run history rollup — feeds the per-card history badge.
-  // We expose refresh so the launch hook can repoll after a successful
-  // run — otherwise the badge stays "never run" until the user
-  // navigates away and back.
-  const { historyByScenario, refresh: refreshHistory } = useScenarioRunHistory()
+  // Run history rollup — feeds the per-card history badge and the
+  // inspector's per-scenario run list. We expose refresh so the launch
+  // hook can repoll after a successful run — otherwise the badge stays
+  // "never run" until the user navigates away and back.
+  const { historyByScenario, runsByScenario, refresh: refreshHistory } = useScenarioRunHistory()
 
   // History-based view mode: 'all' (default) | 'never' (never run) | 'run' (already run).
   // Sits on top of the unified filter — lets DCs target gaps without re-keying every
@@ -304,6 +304,9 @@ export default function OperationsView({
         pinned={selectedId ? isPinned(selectedId) : false}
         onTogglePin={() => selectedId && togglePin(selectedId)}
         onClose={handleClose}
+        runHistory={selectedId && runsByScenario.get
+          ? (runsByScenario.get(selectedId) || [])
+          : []}
       />
 
       <FilterPalette

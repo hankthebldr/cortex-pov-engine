@@ -4582,3 +4582,74 @@
   background: color-mix(in srgb, var(--c-cortex-teal) 20%, transparent);
   border-color: color-mix(in srgb, var(--c-cortex-teal) 40%, transparent);
 }
+
+/* ─── Run history section in the inspector ─────────────────────────── */
+
+.theme-console .insp-history__count {
+  margin-left: 8px;
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+.theme-console .insp-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theme-console .insp-history__row {
+  display: grid;
+  grid-template-columns: 18px 92px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--c-bg-base) 50%, transparent);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+}
+
+.theme-console .insp-history__row--completed { border-left: 2px solid var(--c-status-detected, #4FD1A1); }
+.theme-console .insp-history__row--failed    { border-left: 2px solid var(--c-status-missed,   #FF6B6B); }
+.theme-console .insp-history__row--running   { border-left: 2px solid var(--c-cortex-teal); }
+.theme-console .insp-history__row--unknown   { border-left: 2px solid var(--c-text-disabled); }
+
+.theme-console .insp-history__glyph {
+  font-size: 12px;
+  text-align: center;
+  color: var(--c-text-muted);
+}
+
+.theme-console .insp-history__row--completed .insp-history__glyph { color: var(--c-status-detected, #4FD1A1); }
+.theme-console .insp-history__row--failed    .insp-history__glyph { color: var(--c-status-missed,   #FF6B6B); }
+.theme-console .insp-history__row--running   .insp-history__glyph { color: var(--c-cortex-teal); }
+
+.theme-console .insp-history__id {
+  color: var(--c-text);
+  font-weight: 500;
+}
+
+.theme-console .insp-history__when,
+.theme-console .insp-history__status {
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  font-size: 9px;
+}
+
+.theme-console .insp-history__empty {
+  padding: 10px;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  background: color-mix(in srgb, var(--c-bg-base) 40%, transparent);
+  border: 1px dashed var(--c-border);
+  border-radius: 4px;
+}

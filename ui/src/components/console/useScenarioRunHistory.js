@@ -34,8 +34,28 @@ export default function useScenarioRunHistory() {
   useEffect(() => { refresh() }, [])
 
   const historyByScenario = useMemo(() => buildHistory(runs), [runs])
+  const runsByScenario    = useMemo(() => groupRuns(runs), [runs])
 
-  return { historyByScenario, loading, refresh }
+  return { historyByScenario, runsByScenario, loading, refresh }
+}
+
+/**
+ * Group raw runs by scenario_id, sorted most-recent first. Returns a
+ * Map<scenario_id, Array<run>> — the inspector uses this to render
+ * a "last 5 runs" list per-scenario without re-fetching.
+ */
+function groupRuns(runs) {
+  const map = new Map()
+  for (const r of runs) {
+    const sid = r.scenario_id || r.scenarioId
+    if (!sid) continue
+    if (!map.has(sid)) map.set(sid, [])
+    map.get(sid).push(r)
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => parseTs(b.started_at || b.created_at) - parseTs(a.started_at || a.created_at))
+  }
+  return map
 }
 
 function buildHistory(runs) {
