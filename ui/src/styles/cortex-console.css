@@ -3997,3 +3997,287 @@
   color: var(--c-text-disabled);
   letter-spacing: var(--tracking-mono);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Multi-Run Compare — side-by-side scorecard for 2-4 runs
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .multirun { max-width: 100%; }
+
+.theme-console .multirun__intro {
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-left: 3px solid var(--c-signal);
+  border-radius: 4px;
+}
+.theme-console .multirun__intro-prose {
+  font-family: var(--font-narrative);
+  font-size: 13px;
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--c-text-secondary);
+  margin: 0;
+  max-width: 880px;
+}
+.theme-console .multirun__intro-prose strong {
+  color: var(--c-signal);
+  font-weight: 400;
+}
+
+.theme-console .multirun__picker {
+  margin-bottom: 20px;
+}
+.theme-console .multirun__run-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+.theme-console .multirun__run-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+  text-align: left;
+  width: 100%;
+}
+.theme-console .multirun__run-pill:hover {
+  border-color: var(--c-hairline-strong);
+}
+.theme-console .multirun__run-pill.is-picked {
+  border-color: var(--c-signal);
+  background: var(--c-signal-soft);
+}
+.theme-console .multirun__run-pill-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-void);
+  background: var(--c-signal);
+  border-radius: 50%;
+  letter-spacing: 0;
+}
+.theme-console .multirun__run-pill-id {
+  font-size: 10px;
+  color: var(--c-signal);
+}
+.theme-console .multirun__run-pill-scenario {
+  flex: 1;
+  font-size: 11px;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.theme-console .multirun__run-pill-status {
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  padding: 1px 5px;
+  border: 1px solid var(--c-hairline);
+  border-radius: 2px;
+}
+
+/* Per-run KPI summary row */
+.theme-console .multirun__matrix-wrap {
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.theme-console .multirun__kpi-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(120px, 1fr);
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-hairline);
+}
+.theme-console .multirun__kpi {
+  padding: 14px 16px;
+  border-right: 1px solid var(--c-hairline);
+}
+.theme-console .multirun__kpi:last-child { border-right: 0; }
+.theme-console .multirun__kpi-runid {
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+  margin-bottom: 4px;
+}
+.theme-console .multirun__kpi-coverage {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.theme-console .multirun__kpi-pct {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 500;
+  color: var(--c-detected);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.theme-console .multirun__kpi-unit {
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--c-text-muted);
+}
+.theme-console .multirun__kpi-meta {
+  margin-top: 6px;
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+.theme-console .multirun__kpi-delta {
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+.theme-console .multirun__kpi-delta--up   { color: var(--c-detected); }
+.theme-console .multirun__kpi-delta--down { color: var(--c-missed); }
+
+/* Comparison matrix */
+.theme-console .multirun__matrix-scroll {
+  overflow-x: auto;
+}
+.theme-console .multirun__matrix {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.theme-console .multirun__matrix th,
+.theme-console .multirun__matrix td {
+  border-bottom: 1px dashed var(--c-hairline);
+}
+
+.theme-console .multirun__h-detection {
+  width: 320px;
+  padding: 10px 14px;
+  background: var(--c-surface);
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+.theme-console .multirun__h-run {
+  padding: 10px 12px;
+  background: var(--c-surface);
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-signal);
+  width: 140px;
+}
+
+.theme-console .multirun__row-detection {
+  padding: 8px 14px;
+  text-align: left;
+  background: var(--c-surface);
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+.theme-console .multirun__row-tid {
+  font-size: 11px;
+  color: var(--c-signal);
+  letter-spacing: var(--tracking-mono);
+  margin-bottom: 2px;
+}
+.theme-console .multirun__row-desc {
+  font-size: 12px;
+  color: var(--c-text);
+  line-height: 1.3;
+}
+.theme-console .multirun__row-plane {
+  margin-top: 2px;
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+}
+
+.theme-console .multirun__cell {
+  padding: 10px;
+  text-align: center;
+  position: relative;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.theme-console .multirun__cell--detected { background: var(--c-detected-soft); color: var(--c-detected); }
+.theme-console .multirun__cell--missed   { background: var(--c-missed-soft);   color: var(--c-missed); }
+.theme-console .multirun__cell--pending  { background: var(--c-pending-soft);  color: var(--c-pending); }
+.theme-console .multirun__cell--absent   { background: transparent;            color: var(--c-text-disabled); }
+.theme-console .multirun__cell--new {
+  box-shadow: inset 0 0 0 2px var(--c-signal);
+}
+.theme-console .multirun__cell--regression {
+  box-shadow: inset 0 0 0 2px var(--c-missed);
+}
+.theme-console .multirun__cell-glyph {
+  font-size: 16px;
+  font-weight: 600;
+}
+.theme-console .multirun__cell-mttd {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  color: inherit;
+  opacity: 0.8;
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .multirun__flag {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+.theme-console .multirun__flag--new {
+  background: var(--c-signal);
+  color: var(--c-void);
+}
+.theme-console .multirun__flag--reg {
+  background: var(--c-missed);
+  color: var(--c-void);
+}
+
+.theme-console .multirun__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--c-surface);
+  border-top: 1px solid var(--c-hairline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+}
+.theme-console .multirun__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: transparent;
+  border-radius: 2px;
+}

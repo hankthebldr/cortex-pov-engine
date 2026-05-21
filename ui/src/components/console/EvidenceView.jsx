@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
+import MultiRunCompare from './MultiRunCompare.jsx'
 import { downloadReport } from '../../api/client.js'
 
 /**
@@ -23,6 +24,7 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
   const { rows, kpis, loading, validate, refresh } = useResultsData(targetRunId)
   const [exporting, setExporting] = useState(false)
   const [selectedRowId, setSelectedRowId] = useState(null)
+  const [viewMode, setViewMode] = useState('this-run') // 'this-run' | 'compare'
 
   // Reset drilldown selection when the underlying run changes.
   useEffect(() => { setSelectedRowId(null) }, [targetRunId])
@@ -89,35 +91,70 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
         <div>
           <h1>Evidence</h1>
           <div className="view-head__meta">
-            Run <strong className="mono">{targetRunId}</strong>
-            {targetScenarioId && (
-              <> · <span className="mono">{targetScenarioId}</span></>
+            {viewMode === 'this-run' ? (
+              <>
+                Run <strong className="mono">{targetRunId}</strong>
+                {targetScenarioId && (
+                  <> · <span className="mono">{targetScenarioId}</span></>
+                )}
+                {loading && <> · <span className="mono">syncing…</span></>}
+              </>
+            ) : (
+              <>cross-run comparison · pick 2–4 runs to diff</>
             )}
-            {loading && <> · <span className="mono">syncing…</span></>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="btn"
-            onClick={handleValidateAll}
-            disabled={kpis.pending === 0}
-            title="Mark all pending detections as observed"
-          >
-            Validate all
-            {kpis.pending > 0 && (
-              <span className="kbd">{kpis.pending}</span>
-            )}
-          </button>
-          <button
-            className="btn btn--primary"
-            onClick={handleExport}
-            disabled={exporting}
-          >
-            {exporting ? 'Exporting…' : 'Export POV report'}
-          </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="lab__segmented" role="tablist" aria-label="Evidence view mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'this-run'}
+              className={viewMode === 'this-run' ? 'is-active' : ''}
+              onClick={() => setViewMode('this-run')}
+            >
+              This run
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'compare'}
+              className={viewMode === 'compare' ? 'is-active' : ''}
+              onClick={() => setViewMode('compare')}
+              title="Compare 2-4 runs side by side"
+            >
+              Compare runs
+            </button>
+          </div>
+          {viewMode === 'this-run' && (
+            <>
+              <button
+                className="btn"
+                onClick={handleValidateAll}
+                disabled={kpis.pending === 0}
+                title="Mark all pending detections as observed"
+              >
+                Validate all
+                {kpis.pending > 0 && (
+                  <span className="kbd">{kpis.pending}</span>
+                )}
+              </button>
+              <button
+                className="btn btn--primary"
+                onClick={handleExport}
+                disabled={exporting}
+              >
+                {exporting ? 'Exporting…' : 'Export POV report'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      {viewMode === 'compare' ? (
+        <MultiRunCompare />
+      ) : (
+        <>
       <KpiRow kpis={kpis} />
 
       <Scorecard
@@ -136,6 +173,8 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
           validate(id, observed, notes)
         }}
       />
+        </>
+      )}
     </div>
   )
 }
