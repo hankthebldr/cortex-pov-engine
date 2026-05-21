@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
 import MultiRunCompare from './MultiRunCompare.jsx'
+import MttdHistogram from './MttdHistogram.jsx'
 import { downloadReport } from '../../api/client.js'
 
 /**
@@ -156,6 +157,8 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
       ) : (
         <>
       <KpiRow kpis={kpis} />
+
+      <MttdHistogram rows={rows} />
 
       <Scorecard
         rows={rows}

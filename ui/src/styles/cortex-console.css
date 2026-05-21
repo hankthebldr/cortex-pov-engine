@@ -4281,3 +4281,141 @@
   background: transparent;
   border-radius: 2px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   MTTD histogram — detection latency distribution
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .mttd-histogram {
+  margin: 0 0 24px;
+  padding: 18px 22px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+}
+.theme-console .mttd-histogram--empty .mttd-histogram__head {
+  margin-bottom: 0;
+}
+
+.theme-console .mttd-histogram__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.theme-console .mttd-histogram__title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  margin: 0;
+}
+.theme-console .mttd-histogram__stats {
+  display: flex;
+  gap: 18px;
+}
+.theme-console .mttd-histogram__stat {
+  text-align: right;
+}
+.theme-console .mttd-histogram__stat--alert .mttd-histogram__stat-value {
+  color: var(--c-missed);
+}
+.theme-console .mttd-histogram__stat-label {
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-muted);
+  margin-bottom: 2px;
+}
+.theme-console .mttd-histogram__stat-value {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--c-signal);
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.theme-console .mttd-histogram__stat-unit {
+  font-size: 11px;
+  color: var(--c-text-muted);
+  margin-left: 2px;
+}
+
+.theme-console .mttd-histogram__chart {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.theme-console .mttd-histogram__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.theme-console .mttd-histogram__count {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--c-text);
+  letter-spacing: var(--tracking-mono);
+  margin-bottom: 4px;
+  height: 14px;
+}
+.theme-console .mttd-histogram__bar-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: linear-gradient(180deg, transparent 0%, var(--c-hairline) 100%);
+  background-size: 100% 1px;
+  background-repeat: repeat-y;
+  background-image:
+    linear-gradient(to top,
+      var(--c-hairline) 0%, var(--c-hairline) 1px,
+      transparent 1px, transparent 33%,
+      var(--c-hairline) 33%, var(--c-hairline) calc(33% + 1px),
+      transparent calc(33% + 1px), transparent 66%,
+      var(--c-hairline) 66%, var(--c-hairline) calc(66% + 1px),
+      transparent calc(66% + 1px));
+}
+.theme-console .mttd-histogram__bar {
+  width: 70%;
+  margin: 0 auto;
+  background: linear-gradient(180deg,
+    var(--c-detected) 0%,
+    color-mix(in srgb, var(--c-detected) 70%, var(--c-signal)) 100%);
+  border-radius: 2px 2px 0 0;
+  transition: height var(--dur-base) var(--ease-out);
+  min-height: 1px;
+}
+.theme-console .mttd-histogram__bar--median {
+  background: linear-gradient(180deg,
+    var(--c-signal) 0%,
+    color-mix(in srgb, var(--c-signal) 70%, var(--c-detected)) 100%);
+  box-shadow: 0 0 8px var(--c-signal-glow);
+}
+.theme-console .mttd-histogram__label {
+  margin-top: 6px;
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-muted);
+}
+
+.theme-console .mttd-histogram__hint {
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-disabled);
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.theme-console .mttd-histogram__empty-state {
+  padding: 14px;
+  font-size: 11px;
+  color: var(--c-text-muted);
+  text-align: center;
+  letter-spacing: var(--tracking-mono);
+}
