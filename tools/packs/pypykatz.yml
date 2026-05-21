@@ -1,0 +1,66 @@
+adapter_id: TOOL-PYPYKATZ
+name: pypykatz
+version: "0.6.10"
+
+tier: 4
+category: identity-credential
+
+upstream:
+  repo: https://github.com/skelsec/pypykatz
+  license: MIT
+  attribution: Tamas Jos (skelsec)
+
+cortex_signal:
+  planes:
+    - EDR
+    - ITDR
+  expected_techniques:
+    - T1003.001  # OS Credential Dumping: LSASS Memory
+    - T1003.003  # OS Credential Dumping: NTDS
+    - T1555      # Credentials from Password Stores
+
+safety_class: dual-use-lab-only
+
+install:
+  # pypykatz is the pure-Python re-implementation of mimikatz primitives.
+  # Unlike mimikatz it can parse LSASS minidumps + NTDS.dit *offline* on
+  # Linux, which makes it the natural fit for a tier-4 runtime-fetched
+  # adapter that the Linux agent identity-harness can run without a
+  # Windows IaC module.
+  runtime_install_command: "command -v pypykatz >/dev/null 2>&1 || pip3 install --no-input pypykatz==0.6.10"
+  binary: pypykatz
+
+invoke:
+  target_platform: linux
+  # The Linux usage pattern is: operator drops a LSASS minidump (acquired
+  # via procdump/comsvcs.dll/SSP-ng on the Windows victim) into a known
+  # path and pypykatz parses it offline. The scenario step provides the
+  # dump path via {target_path}; output is JSON the orchestrator can
+  # parse for credential-exposure evidence.
+  run_template: "{binary} {dump_type} {target_path} --json --outfile {output_path}"
+  default_args:
+    dump_type: "lsa minidump"
+    target_path: "/tmp/lsass-cortexsim.dmp"
+    output_path: "/tmp/pypykatz-cortexsim.json"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/pypykatz-cortexsim.json"
+    - "rm -f /tmp/lsass-cortexsim.dmp"
+
+ttp_refs:
+  - TTP-2026-0002  # LSASS Memory Credential Dump — pypykatz is the offline twin
+
+equivalents:
+  - TOOL-MIMIKATZ
+
+author: Henry Reed
+created: "2026-05-21"
+last_updated: "2026-05-21"
+tags:
+  - lsass
+  - credential-dump
+  - offline-parser
+  - linux
+  - python

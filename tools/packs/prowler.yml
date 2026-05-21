@@ -1,0 +1,64 @@
+adapter_id: TOOL-PROWLER
+name: Prowler
+version: "5.4.0"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/prowler-cloud/prowler
+  license: Apache-2.0
+  attribution: Prowler (Toni de la Fuente / ProwlerPro)
+
+cortex_signal:
+  planes:
+    - CDR
+    - CLOUD_APP
+  expected_techniques:
+    - T1078.004  # Valid Accounts: Cloud Accounts
+    - T1580      # Cloud Infrastructure Discovery
+    - T1526      # Cloud Service Discovery
+    - T1538      # Cloud Service Dashboard
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v prowler >/dev/null 2>&1 || pip3 install --no-input prowler==5.4.0"
+  binary: prowler
+
+invoke:
+  target_platform: linux
+  # Prowler is read-only audit tooling — it never mutates the target
+  # cloud account. Adapter assumes the operator has pre-seeded an AWS
+  # profile (named `cortexsim-lab`) in the environment running the
+  # scenario step, same convention as TOOL-PACU. JSON-OCSF output is
+  # consumed by the POV report generator for the "cloud posture" block.
+  run_template: "{binary} {provider} --profile {aws_profile} --output-formats {output_format} --output-directory {output_dir}"
+  default_args:
+    provider: "aws"
+    aws_profile: "cortexsim-lab"
+    output_format: "json-ocsf"
+    output_dir: "/tmp/prowler-cortexsim"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/prowler-cortexsim"
+
+ttp_refs:
+  - TTP-2026-0003  # AWS IAM Key Abuse — prowler audits the same surface defensively
+
+equivalents:
+  - TOOL-SCOUTSUITE
+  - TOOL-KUBESCAPE
+
+author: Henry Reed
+created: "2026-05-21"
+last_updated: "2026-05-21"
+tags:
+  - cloud-audit
+  - cspm
+  - aws
+  - azure
+  - gcp
+  - ocsf

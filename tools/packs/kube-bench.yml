@@ -1,0 +1,65 @@
+adapter_id: TOOL-KUBE-BENCH
+name: kube-bench
+version: "0.10.3"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/aquasecurity/kube-bench
+  license: Apache-2.0
+  attribution: Aqua Security
+
+cortex_signal:
+  planes:
+    - CDR
+  # kube-bench is purely defensive — it runs the CIS Kubernetes
+  # Benchmark against a cluster's control-plane + node config. The
+  # techniques below are what an *attacker* would lean on if the
+  # benchmark fails; surfacing them here makes the Cortex CDR plane
+  # auto-suggest kube-bench when a scenario exercises container
+  # escape or privileged-pod paths.
+  expected_techniques:
+    - T1610      # Deploy Container
+    - T1611      # Escape to Host
+    - T1613      # Container and Resource Discovery
+
+safety_class: safe
+
+install:
+  # Container-first: official quay.io image. Falls back to the release
+  # binary so the adapter is usable on jumpboxes without docker.
+  runtime_install_command: "command -v kube-bench >/dev/null 2>&1 || (curl -sSL https://github.com/aquasecurity/kube-bench/releases/download/v0.10.3/kube-bench_0.10.3_linux_amd64.tar.gz | tar xz -C /usr/local/bin kube-bench && chmod +x /usr/local/bin/kube-bench)"
+  binary: kube-bench
+
+invoke:
+  target_platform: k8s
+  # kube-bench reads its target from $KUBECONFIG; the {targets} arg
+  # selects which CIS section to evaluate (master, node, etcd, policies).
+  # Output is JSON the report generator can fold into the CDR plane
+  # block alongside trivy.
+  run_template: "{binary} run --targets {targets} --json --outputfile {output_path}"
+  default_args:
+    targets: "node"
+    output_path: "/tmp/kube-bench-cortexsim.json"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/kube-bench-cortexsim.json"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-KUBESCAPE
+  - TOOL-TRIVY
+
+author: Henry Reed
+created: "2026-05-21"
+last_updated: "2026-05-21"
+tags:
+  - kubernetes
+  - cis-benchmark
+  - cdr
+  - container-audit
+  - compliance
