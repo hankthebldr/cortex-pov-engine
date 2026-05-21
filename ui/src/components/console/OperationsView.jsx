@@ -57,7 +57,10 @@ export default function OperationsView({
   const scenarioFilter = useScenarioFilter()
 
   // Run history rollup — feeds the per-card history badge.
-  const { historyByScenario } = useScenarioRunHistory()
+  // We expose refresh so the launch hook can repoll after a successful
+  // run — otherwise the badge stays "never run" until the user
+  // navigates away and back.
+  const { historyByScenario, refresh: refreshHistory } = useScenarioRunHistory()
 
   // History-based view mode: 'all' (default) | 'never' (never run) | 'run' (already run).
   // Sits on top of the unified filter — lets DCs target gaps without re-keying every
@@ -121,7 +124,13 @@ export default function OperationsView({
 
   // ── Launch hook (lifted from inspector) ──────────────────────────────
   const launch = useLaunchScenario(selected, {
-    onRunComplete: (run) => { onRunComplete(run); setDrawerOpen(false) },
+    onRunComplete: (run) => {
+      onRunComplete(run)
+      setDrawerOpen(false)
+      // Re-fetch the run list so the per-card history badge picks up
+      // the new run without requiring a tab switch.
+      refreshHistory()
+    },
     onError,
   })
 
