@@ -4564,3 +4564,21 @@
 .theme-console .sc-history__ago {
   color: var(--c-text-muted);
 }
+
+/* ─── History-mode strip on Operations ─────────────────────────────── */
+
+.theme-console .ops-history-strip {
+  margin: 8px 0 12px;
+}
+
+.theme-console .ops-history-strip__count {
+  margin-left: 6px;
+  background: color-mix(in srgb, var(--c-bg-base) 60%, transparent);
+  border-color: color-mix(in srgb, var(--c-border) 60%, transparent);
+  font-size: 9px;
+}
+
+.theme-console .lab__segmented .is-active .ops-history-strip__count {
+  background: color-mix(in srgb, var(--c-cortex-teal) 20%, transparent);
+  border-color: color-mix(in srgb, var(--c-cortex-teal) 40%, transparent);
+}
