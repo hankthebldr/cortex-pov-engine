@@ -70,6 +70,26 @@ jobs:
       - working-directory: ui
         run: npm test -- --coverage
 
+  ttp-static:
+    # Tier A of the e2e execution methodology (see
+    # docs/design/e2e-execution-methodology.md). Hard gate. Static
+    # analysis of every scenario TTP script: bash -n + shellcheck
+    # severity=warning + executable-bit + shebang presence. Fast
+    # (<2s) and catches the class of regressions that would otherwise
+    # ship green through every other tier.
+    name: ttp static (tier A)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: pip }
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Install pytest
+        run: python -m pip install --upgrade pip && pip install pytest
+      - name: Tier A — TTP static analysis
+        run: pytest tests/e2e_isolated/test_tier_a_static.py -v --tb=short
+
   e2e-stack:
     name: e2e (smoke + playwright)
     runs-on: ubuntu-22.04
