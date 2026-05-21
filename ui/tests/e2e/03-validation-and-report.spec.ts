@@ -49,8 +49,10 @@ test('DC validates seeded results and report reflects 100% coverage', async ({
   expect(buf[0]).toBe(0x1f)
   expect(buf[1]).toBe(0x8b)
 
-  // 7. UI Runs view shows the run
+  // 7. UI Evidence tab shows the run (Mission Ops Console — PR #44).
+  // The legacy "Runs" tab no longer exists; Evidence is now the
+  // canonical place to confirm a run lands in the UI.
   await page.goto('/')
-  await page.getByRole('button', { name: /Runs/ }).click()
+  await page.getByRole('tab', { name: /Evidence/ }).first().click()
   await expect(page.getByText(runId).first()).toBeVisible({ timeout: 10_000 })
 })
