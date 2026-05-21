@@ -14,15 +14,17 @@ import { test, expect } from './_fixtures'
 test('ATT&CK Coverage tab renders with MITRE coverage data', async ({ page, api }) => {
   await api.health()
   await page.goto('/')
+
+  // Set up the response listener BEFORE the click — the network call
+  // fires as soon as CoverageView mounts, and a post-click waitForResponse
+  // would race against an already-completed fetch.
+  const respPromise = page.waitForResponse('**/api/mitre/coverage', { timeout: 10_000 })
   await page.getByRole('tab', { name: /Coverage/ }).first().click()
+  const resp = await respPromise
+  expect(resp.ok()).toBe(true)
 
   // Either the heatmap grid or the words "MITRE" / "ATT&CK" / "Coverage" show
   await expect(page.locator('body')).toContainText(/MITRE|ATT&CK|Coverage/i)
-  await page.waitForLoadState('networkidle')
-
-  // Soft assertion — at minimum the network call returned
-  const resp = await page.waitForResponse('**/api/mitre/coverage', { timeout: 10_000 })
-  expect(resp.ok()).toBe(true)
 })
 
 test('Lab tab lists Infra Generator AWS modules and exposes Generate action', async ({
