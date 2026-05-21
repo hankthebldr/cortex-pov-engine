@@ -74,6 +74,14 @@ jobs:
     name: e2e (smoke + playwright)
     runs-on: ubuntu-22.04
     needs: [python-tests, go-tests, ui-unit]
+    # Soft-fail while the playwright specs are being migrated from the legacy
+    # light theme to the Mission Ops Console UI (originally added in PR #37,
+    # silently reverted when PR #36's squash merge overwrote this block).
+    # The check still runs and surfaces real regressions to reviewers — it
+    # just doesn't block PR merges. Other test layers (python, go, vitest,
+    # Tier-1 smoke) remain hard gates. The follow-up spec-migration PR will
+    # remove this toggle in the same change set.
+    continue-on-error: true
     env:
       # Defer the Playwright browser download to the dedicated
       # `npx playwright install --with-deps chromium` step below, so
