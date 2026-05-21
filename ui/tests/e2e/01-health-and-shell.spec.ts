@@ -17,9 +17,15 @@ test.describe('app shell', () => {
     await expect(page.getByText(/Cortex/).first()).toBeVisible()
     await expect(page.getByText(/Detection Simulation Engine/i)).toBeVisible()
 
-    // Plane selector renders all six labels
-    for (const label of ['EDR', 'CDR', 'NDR', 'ITDR', 'Cloud App', 'Analytics']) {
-      await expect(page.getByRole('button', { name: new RegExp(label) })).toBeVisible()
+    // Plane selector renders all six core planes. The Mission Ops Console
+    // (PR #35) packs 49 scenario cards into a single ScenarioGrid and each
+    // card surfaces its plane name in the accessible label, so a
+    // name-regex selector matched 50+ buttons and tripped Playwright's
+    // strict-mode guard. Plane buttons now carry a stable data-testid for
+    // any test that needs the *plane button specifically*, not any button
+    // whose accessible name happens to contain a plane id.
+    for (const id of ['EDR', 'CDR', 'NDR', 'ITDR', 'CLOUD_APP', 'ANALYTICS']) {
+      await expect(page.getByTestId(`plane-button-${id}`)).toBeVisible()
     }
   })
 

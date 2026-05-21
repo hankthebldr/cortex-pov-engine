@@ -78,6 +78,7 @@ export default function PlaneSelector({ selectedPlane, onSelectPlane }) {
             <button
               key={plane.id}
               onClick={() => onSelectPlane(plane.id)}
+              data-testid={`plane-button-${plane.id}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',
