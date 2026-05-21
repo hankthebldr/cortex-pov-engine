@@ -1,0 +1,69 @@
+adapter_id: TOOL-EVILGINX2
+name: evilginx2
+version: "3.3.0"
+
+tier: 3
+category: social-engineering
+
+upstream:
+  repo: https://github.com/kgretzky/evilginx2
+  license: BSD-3-Clause
+  attribution: Kuba Gretzky
+
+cortex_signal:
+  planes:
+    - ITDR
+    - BROWSER
+    - CLOUD_APP
+  expected_techniques:
+    - T1557      # Adversary-in-the-Middle
+    - T1539      # Steal Web Session Cookie
+    - T1566.002  # Phishing: Spearphishing Link
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  content_library_entry:
+    name: evilginx2
+    repo: kgretzky/evilginx2
+    install: go-build
+    install_path: "/opt/evilginx2"
+    build_cmd: "make"
+    # The companion `phishlets/` directory ships in-repo with templates
+    # for common IdPs (Okta, Microsoft, Google). Custom phishlets must
+    # be placed under /opt/evilginx2/phishlets/ before invocation.
+  binary: "/opt/evilginx2/build/evilginx"
+
+invoke:
+  target_platform: linux
+  # evilginx2 is interactive by default (-p starts the proxy). The
+  # adapter assumes the operator has pre-configured a phishlet via a
+  # static --config + --phishlet pair so the run is non-interactive.
+  run_template: "{binary} -p {phishlets_dir} -c {config_dir} -t {target_phishlet}"
+  default_args:
+    phishlets_dir: "/opt/evilginx2/phishlets"
+    config_dir: "/opt/evilginx2/config"
+    target_phishlet: "okta"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "pkill -f 'evilginx -p' || true"
+    - "rm -rf /opt/evilginx2/config/sessions-cortexsim-*"
+
+ttp_refs:
+  - TTP-2026-0001  # Help-desk MFA reset — same Muddled Libra family
+
+equivalents:
+  - TOOL-MODLISHKA
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - phishing
+  - aitm
+  - session-cookie-theft
+  - 2fa-bypass
+  - gated

@@ -1,0 +1,68 @@
+adapter_id: TOOL-BLOODHOUND
+name: BloodHound
+version: "5.13.0"
+
+tier: 3
+category: identity-credential
+
+upstream:
+  repo: https://github.com/SpecterOps/BloodHound
+  license: Apache-2.0
+  attribution: SpecterOps
+
+cortex_signal:
+  planes:
+    - ITDR
+    - EDR
+  expected_techniques:
+    - T1087.002  # Account Discovery: Domain Account
+    - T1069.002  # Permission Groups Discovery: Domain Groups
+    - T1482      # Domain Trust Discovery
+    - T1018      # Remote System Discovery
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  content_library_entry:
+    name: bloodhound
+    repo: SpecterOps/BloodHound
+    install: release-binary
+    install_path: "/opt/bloodhound"
+    # Companion collector (SharpHound) gets installed on the Windows
+    # workstations per the itdr IaC module content.yml entry below.
+    download_url: "https://github.com/SpecterOps/BloodHound/releases/download/v5.13.0/BloodHound-linux-amd64.zip"
+  binary: "/opt/bloodhound/bloodhound"
+
+invoke:
+  target_platform: linux
+  # BloodHound CE is a server + GUI; in lab-only POVs the operator typically
+  # runs the SharpHound collector on the AD-joined host (covered by
+  # equivalents) and posts the resulting ZIP to the BloodHound UI. This
+  # adapter spawns the BloodHound server so the orchestrator can verify
+  # health; collector invocation lives in a paired Windows adapter (TBD).
+  run_template: "{binary} --config-file {config_path} --json-output"
+  default_args:
+    config_path: "/opt/bloodhound/config.json"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "pkill -f bloodhound-server || true"
+    - "rm -f /tmp/bloodhound-cortexsim-*.json"
+
+ttp_refs:
+  - TTP-2026-0004  # DCSync — BloodHound paths surface DCSync candidates
+
+equivalents:
+  - TOOL-SHARPHOUND
+  - TOOL-BLOODYAD
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - ad-recon
+  - graph-database
+  - attack-paths
+  - lateral-movement-discovery

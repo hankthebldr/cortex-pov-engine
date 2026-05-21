@@ -1,0 +1,62 @@
+adapter_id: TOOL-GOPHISH
+name: Gophish
+version: "0.12.1"
+
+tier: 3
+category: social-engineering
+
+upstream:
+  repo: https://github.com/gophish/gophish
+  license: MIT
+  attribution: Gophish
+
+cortex_signal:
+  planes:
+    - CLOUD_APP
+    - BROWSER
+  expected_techniques:
+    - T1566.001  # Phishing: Spearphishing Attachment
+    - T1566.002  # Phishing: Spearphishing Link
+    - T1598.003  # Phishing for Information: Spearphishing Link
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: cspm   # CSPM IaC ships the cloud public-egress shape gophish needs
+  content_library_entry:
+    name: gophish
+    repo: gophish/gophish
+    install: release-binary
+    install_path: "/opt/gophish"
+    download_url: "https://github.com/gophish/gophish/releases/download/v0.12.1/gophish-v0.12.1-linux-64bit.zip"
+  binary: "/opt/gophish/gophish"
+
+invoke:
+  target_platform: linux
+  # Gophish reads its config from config.json relative to the binary.
+  # Campaigns are driven via the REST API after the server is up; the
+  # adapter just starts the server and lets the scenario step's curl
+  # commands drive the campaign lifecycle.
+  run_template: "{binary} --config {config_path}"
+  default_args:
+    config_path: "/opt/gophish/config.json"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "pkill -f /opt/gophish/gophish || true"
+    - "rm -f /opt/gophish/gophish.db.cortexsim"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-SET     # Social Engineer Toolkit
+  - TOOL-EVILGINX2  # AiTM flavour of phishing
+
+author: Henry Reed
+created: "2026-05-20"
+last_updated: "2026-05-20"
+tags:
+  - phishing-campaign
+  - awareness-testing
+  - email
