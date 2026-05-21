@@ -1,4 +1,4 @@
-title: Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) — Rclone Command-Line Flag Pattern
+title: "Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) \u2014 Rclone Command-Line Flag Pattern"
 id: ttp-2026-0005-bioc-01
 status: experimental
 description: |
@@ -27,7 +27,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: high
 ---
-title: Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) — Large Sustained Egress From File Server to Non-Corporate Cloud Provider
+title: "Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) \u2014 Large Sustained Egress From File Server to Non-Corporate Cloud Provider"
 id: ttp-2026-0005-bioc-02
 status: experimental
 description: |
@@ -58,7 +58,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) — Outbound to Known Rclone-Backend Provider From Non-Sanctioned Host
+title: "Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) \u2014 Outbound to Known Rclone-Backend Provider From Non-Sanctioned Host"
 id: ttp-2026-0005-bioc-03
 status: experimental
 description: |

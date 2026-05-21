@@ -1,0 +1,225 @@
+{
+  "id": "TTP-2026-0050",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "NDR \u2014 C2 Beaconing EAL Validation",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-NDR-001. Plane: NDR. Primary technique: T1071.001. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-NDR-001. Plane: NDR. Primary technique: T1071.001. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-NDR-001.\nUC: NGFW Enhanced Application Log Validation / TC: Periodic HTTP Beacon Detection via EAL Analytics.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ],
+        "subtechnique_id": "T1071.001"
+      },
+      {
+        "technique_id": "T1568",
+        "name": "Dynamic Resolution",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1071.001 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-001 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Deploy EAL traffic simulator pod and confirm registry\npython3 -m scripts.eal_simulator.cli list-plugins | jq -e '.total >= 4'\n# step-2: Launch dry-run campaign \u2014 confirm safety policy holds\ncat > /tmp/c2-beacon-dry.yml <<'YML'\ncampaign_id: CMP-NDR-001\nname: \"NDR validation \u2014 C2 beacon dry run\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: false\ntarget_allowlist: []\ndry_run: true\ntags: [ndr, c2-beacon, eal]\nsteps:\n  - step_id: step-01\n    plugin: c2_http_beacon\n    params:\n      target_url: http://testmynids.org/uid/index.html\n      iterations: 5\n      sleep_seconds: 2\n      jitter_pct: 25\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-dry.yml\n# step-3: Live campaign \u2014 periodic beacon to authorised test endpoint\ncat > /tmp/c2-beacon-live.yml <<'YML'\ncampaign_id: CMP-NDR-001\nname: \"NDR validation \u2014 C2 beacon live\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - testmynids.org\ndry_run: false\ntags: [ndr, c2-beacon, eal]\nsteps:\n  - step_id: step-01\n    plugin: c2_http_beacon\n    params:\n      target_url: http://testmynids.org/uid/index.html\n      iterations: 12\n      sleep_seconds: 30\n      jitter_pct: 25\n      method: GET\n      dga_query_param: true\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-live.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/c2-beacon-dry.yml /tmp/c2-beacon-live.yml\necho '[CortexSim] SIM-NDR-001 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: simulator manifest visible to operator",
+        "description": "Pre-flight: simulator manifest visible to operator",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "Dry-run: no NGFW EAL fires (safety policy active)",
+        "description": "Dry-run: no NGFW EAL fires (safety policy active)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 periodic HTTP beacon (regular interval, anomalous User-Agent)",
+        "description": "NGFW EAL \u2014 periodic HTTP beacon (regular interval, anomalous User-Agent)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 DGA-style URI parameter on outbound HTTP",
+        "description": "NGFW EAL \u2014 DGA-style URI parameter on outbound HTTP",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 outbound HTTP carrying X-Simulation-Run-ID header (operator filter)",
+        "description": "NGFW EAL \u2014 outbound HTTP carrying X-Simulation-Run-ID header (operator filter)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NDR-0050"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NDR-0050"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-050",
+        "name": "NGFW Enhanced Application Log Validation",
+        "description": "NGFW Enhanced Application Log Validation",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-050A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Cobalt Strike Malleable C2 Profile Analysis",
+      "url": "https://unit42.paloaltonetworks.com/cobalt-strike-malleable-c2-profile/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1071.001",
+      "url": "https://attack.mitre.org/techniques/T1071/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-001."
+    }
+  ]
+}

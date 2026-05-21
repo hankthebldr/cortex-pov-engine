@@ -1,0 +1,264 @@
+{
+  "id": "TTP-2026-0036",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Lateral Movement \u2014 SSH Abuse, Tunneling, and Internal Recon",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-EDR-005. Plane: EDR. Primary technique: T1021.004. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-EDR-005. Plane: EDR. Primary technique: T1021.004. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-EDR-005.\nUC: Lateral Movement Detection / TC: SSH-Based Lateral Movement and Network Tunneling.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1021.004"
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1018",
+        "name": "Remote System Discovery",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1021.004 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-EDR-005 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Internal network reconnaissance via ARP and subnet scan\necho '[*] Performing internal network reconnaissance';\nip addr show 2>/dev/null || ifconfig 2>/dev/null;\nip route show 2>/dev/null || route -n 2>/dev/null;\nip neigh show 2>/dev/null || arp -a 2>/dev/null;\necho '[*] Network reconnaissance complete'\n# step-2: Port scan local subnet for SSH and common services\necho '[*] Scanning local subnet for SSH services';\nSUBNET=$(ip route | grep -v default | grep src | head -1 | awk '{print $1}');\nfor port in 22 80 443 3306 5432 8080 8888; do\n  timeout 1 bash -c \"echo >/dev/tcp/127.0.0.1/$port\" 2>/dev/null && echo \"localhost:$port OPEN\" || true;\ndone;\necho '[*] Service discovery scan complete'\n# step-3: SSH lateral movement attempt to discovered hosts\necho '[*] Simulating SSH lateral movement (all connections to localhost for safety)';\ntimeout 5 ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no \\\n  www-data@127.0.0.1 'whoami' 2>&1 || echo '[*] SSH connection failed (expected)';\ntimeout 5 ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no \\\n  root@127.0.0.1 'id' 2>&1 || echo '[*] SSH root attempt failed (expected)';\necho '[*] SSH lateral movement simulation complete'",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching nc (heuristic from scenario step step-01)",
+        "expected_value": "process_name CONTAINS \"nc\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "pkill -f 'ssh.*tunnel.*cortexsim' 2>/dev/null\necho '[CortexSim] SIM-EDR-005 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Network interface and routing enumeration from service account \u2014 internal recon preceding lateral movement",
+        "description": "Network interface and routing enumeration from service account \u2014 internal recon preceding lateral movement",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1016\npreset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1016"
+        ]
+      },
+      {
+        "name": "Port scanning via bash /dev/tcp \u2014 network service discovery from web service account",
+        "description": "Port scanning via bash /dev/tcp \u2014 network service discovery from web service account",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1046\npreset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1046"
+        ]
+      },
+      {
+        "name": "Sequential port connection attempts across multiple services \u2014 automated service enumeration",
+        "description": "Sequential port connection attempts across multiple services \u2014 automated service enumeration",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1046\npreset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1046"
+        ]
+      },
+      {
+        "name": "SSH connection attempt from service account \u2014 lateral movement via remote service",
+        "description": "SSH connection attempt from service account \u2014 lateral movement via remote service",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1021.004\npreset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.004"
+        ]
+      },
+      {
+        "name": "Batch-mode SSH with StrictHostKeyChecking disabled \u2014 automated lateral movement tool behavior",
+        "description": "Batch-mode SSH with StrictHostKeyChecking disabled \u2014 automated lateral movement tool behavior",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1021.004\npreset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.004"
+        ]
+      },
+      {
+        "name": "SSH tunnel creation (-L/-D flags) \u2014 protocol tunneling for covert channel establishment",
+        "description": "SSH tunnel creation (-L/-D flags) \u2014 protocol tunneling for covert channel establishment",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1572\npreset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1572"
+        ]
+      },
+      {
+        "name": "SSH invoked with port forwarding from service account \u2014 data exfiltration channel pattern",
+        "description": "SSH invoked with port forwarding from service account \u2014 data exfiltration channel pattern",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1572\npreset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1572"
+        ]
+      },
+      {
+        "name": "DNS and host file enumeration from service account \u2014 remote system discovery for lateral movement planning",
+        "description": "DNS and host file enumeration from service account \u2014 remote system discovery for lateral movement planning",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1018\npreset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1018"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-EDR-0036"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-RANSOM-036",
+        "name": "Lateral Movement Detection",
+        "description": "Lateral Movement Detection",
+        "test_cases": [
+          {
+            "test_case_id": "TC-RANSOM-036A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Linux Threat Landscape Report 2024",
+      "url": "https://unit42.paloaltonetworks.com/2024-linux-threat-landscape/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1021.004",
+      "url": "https://attack.mitre.org/techniques/T1021/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-EDR-005."
+    }
+  ]
+}

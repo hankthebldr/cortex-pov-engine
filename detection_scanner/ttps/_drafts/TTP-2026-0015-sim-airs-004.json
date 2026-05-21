@@ -1,0 +1,220 @@
+{
+  "id": "TTP-2026-0015",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-airs",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AIRS \u2014 Excessive Agency / Tool-Call Abuse (LLM06)",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-AIRS-004. Plane: AIRS. Primary technique: T1059. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-AIRS-004. Plane: AIRS. Primary technique: T1059. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-AIRS-004.\nUC: OWASP LLM06 \u2014 Excessive Agency / TC: Adversarial Prompt Triggers Unsafe Tool Invocation by Agentic LLM.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1656",
+        "name": "Impersonation",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1059 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-AIRS-004 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Start vulnerable LLM with LLM06 agent endpoint exposing fake tools\n# The canary exposes send_email, delete_file, exec_shell as 'tools'\n# the model can 'call'; canary returns a synthesized tool-call event.\ncortex-vulnerable-llm serve --port 8089 --vuln llm06 \\\n  --tools send_email,delete_file,exec_shell &\nsleep 2\ncurl -sSf http://127.0.0.1:8089/owasp/llm06/agent/tools > /tmp/airs-004-tools.json\njq -e 'length == 3' /tmp/airs-004-tools.json\n# step-2: Submit adversarial prompt that coerces unsafe tool call\ncortex-prompt-attacker run \\\n  --probes scenarios/airs/probes/llm06/tool_abuse/*.yml \\\n  --target-url http://127.0.0.1:8089/owasp/llm06/agent \\\n  --mutators noop,role_play,indirect_injection \\\n  --scorers tool_call_unsafe,exec_shell_called \\\n  --out /tmp/airs-004-events.jsonl\n# step-3: Confirm AIRS detection on send_email tool used for exfil\njq -e '[.[] | select(.outcome==\"vuln\" and (.detector_results.exec_shell_called or .detector_results.tool_call_unsafe))] | length >= 1' \\\n  /tmp/airs-004-events.jsonl",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching curl (heuristic from scenario step step-01)",
+        "expected_value": "process_name CONTAINS \"curl\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "pkill -f 'cortex-vulnerable-llm serve' || true\nrm -f /tmp/airs-004-tools.json /tmp/airs-004-events.jsonl"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: agent endpoint advertises three tool functions",
+        "description": "Pre-flight: agent endpoint advertises three tool functions",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1059\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059"
+        ]
+      },
+      {
+        "name": "AIRS \u2014 exec_shell tool invoked from a non-developer-context prompt \u2014 policy violation",
+        "description": "AIRS \u2014 exec_shell tool invoked from a non-developer-context prompt \u2014 policy violation",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1656\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      },
+      {
+        "name": "AIRS \u2014 tool-call argument carries shell metacharacters (rm/curl/wget) \u2014 unsafe input",
+        "description": "AIRS \u2014 tool-call argument carries shell metacharacters (rm/curl/wget) \u2014 unsafe input",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1656\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      },
+      {
+        "name": "XSIAM stitching \u2014 agentic tool-call correlates with downstream EDR process event",
+        "description": "XSIAM stitching \u2014 agentic tool-call correlates with downstream EDR process event",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1656\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      },
+      {
+        "name": "AIRS \u2014 send_email tool argument contains exfil URL (smtp to external) \u2014 flagged",
+        "description": "AIRS \u2014 send_email tool argument contains exfil URL (smtp to external) \u2014 flagged",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1656\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ai-runtime-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-AIRS-0015"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-015",
+        "name": "OWASP LLM06 \u2014 Excessive Agency",
+        "description": "OWASP LLM06 \u2014 Excessive Agency",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-015A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "OWASP Top 10 for LLM Applications v2025 \u2014 LLM06",
+      "url": "https://genai.owasp.org/llm-top-10/",
+      "publisher": "OWASP Top 10 for LLM Applications v2025 \u2014 LLM06",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059",
+      "url": "https://attack.mitre.org/techniques/T1059/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-AIRS-004."
+    }
+  ]
+}

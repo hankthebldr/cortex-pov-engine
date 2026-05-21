@@ -1,0 +1,211 @@
+{
+  "id": "TTP-2026-0012",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-airs",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high",
+      "needs-detection-engineering-review"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AIRS \u2014 Direct Prompt Injection (LLM01)",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-AIRS-001. Plane: AIRS. Primary technique: T1656. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-AIRS-001. Plane: AIRS. Primary technique: T1656. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-AIRS-001.\nUC: OWASP LLM01 \u2014 Prompt Injection / TC: Direct Injection Overrides System Prompt and Reveals Hidden Context.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1656",
+        "name": "Impersonation",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1656 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-AIRS-001 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Start cortex-vulnerable-llm Flask target on port 8089\n# Phase 2 \u2014 cortex-vulnerable-llm runs the canary LLM locally\ncortex-vulnerable-llm serve --port 8089 --vuln llm01 &\nVLLM_PID=$!\nsleep 2\ncurl -sSf http://127.0.0.1:8089/healthz > /dev/null\necho \"vllm_pid=$VLLM_PID\" > /tmp/airs-001.env\n# step-2: Run cortex-prompt-attacker LLM01 probe pack with mutator chain\ncortex-prompt-attacker run \\\n  --probes scenarios/airs/probes/llm01/*.yml \\\n  --target-url http://127.0.0.1:8089/owasp/llm01/chat \\\n  --mutators noop,base64,leetspeak \\\n  --scorers system_prompt_leak,instruction_override \\\n  --out /tmp/airs-001-events.jsonl\njq '.[].outcome' /tmp/airs-001-events.jsonl | sort | uniq -c\n# step-3: Verify the prompt-attacker JSONL conforms to garak Attempt schema\nhead -1 /tmp/airs-001-events.jsonl | jq -e \\\n  '.entry_type and .uuid and .probe_classname and .prompt and .outputs' > /dev/null\necho \"[CortexSim] AIRS-001 events conform to expected schema\"",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching curl (heuristic from scenario step step-01)",
+        "expected_value": "process_name CONTAINS \"curl\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "if [ -f /tmp/airs-001.env ]; then . /tmp/airs-001.env && kill $vllm_pid 2>/dev/null || true; fi\nrm -f /tmp/airs-001.env /tmp/airs-001-events.jsonl"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: vulnerable target /healthz responds 200",
+        "description": "Pre-flight: vulnerable target /healthz responds 200",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1059.004\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ]
+      },
+      {
+        "name": "AIRS \u2014 direct prompt-injection classifier fires on 'Ignore previous instructions' family",
+        "description": "AIRS \u2014 direct prompt-injection classifier fires on 'Ignore previous instructions' family",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1656\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      },
+      {
+        "name": "AIRS \u2014 system prompt or hidden context appears verbatim in model response",
+        "description": "AIRS \u2014 system prompt or hidden context appears verbatim in model response",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1656\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      },
+      {
+        "name": "AIRS \u2014 base64-mutated injection evades naive filter, still caught by content classifier",
+        "description": "AIRS \u2014 base64-mutated injection evades naive filter, still caught by content classifier",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1656\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      },
+      {
+        "name": "Audit pipeline ingests JSONL events correctly (schema check)",
+        "description": "Audit pipeline ingests JSONL events correctly (schema check)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1656\ndataset = airs_telemetry\n| filter model_endpoint != null\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ai-runtime-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-AIRS-0012"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-012",
+        "name": "OWASP LLM01 \u2014 Prompt Injection",
+        "description": "OWASP LLM01 \u2014 Prompt Injection",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-012A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "OWASP Top 10 for LLM Applications v2025 \u2014 LLM01",
+      "url": "https://genai.owasp.org/llm-top-10/",
+      "publisher": "OWASP Top 10 for LLM Applications v2025 \u2014 LLM01",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1656",
+      "url": "https://attack.mitre.org/techniques/T1656/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-AIRS-001."
+    }
+  ]
+}

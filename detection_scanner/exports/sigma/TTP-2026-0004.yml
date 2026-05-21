@@ -1,4 +1,4 @@
-title: DCSync — Domain Replication Abuse for Credential Extraction (T1003.006) — DRSUAPI Replication Request From Non-DC Host
+title: "DCSync \u2014 Domain Replication Abuse for Credential Extraction (T1003.006) \u2014 DRSUAPI Replication Request From Non-DC Host"
 id: ttp-2026-0004-bioc-01
 status: experimental
 description: |
@@ -29,7 +29,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: DCSync — Domain Replication Abuse for Credential Extraction (T1003.006) — Windows Event 4662 — Replicating Directory Changes by Non-DC Principal
+title: "DCSync \u2014 Domain Replication Abuse for Credential Extraction (T1003.006) \u2014 Windows Event 4662 \u2014 Replicating Directory Changes by Non-DC Principal"
 id: ttp-2026-0004-bioc-02
 status: experimental
 description: |
@@ -58,7 +58,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: DCSync — Domain Replication Abuse for Credential Extraction (T1003.006) — Mimikatz dcsync Command-Line Pattern
+title: "DCSync \u2014 Domain Replication Abuse for Credential Extraction (T1003.006) \u2014 Mimikatz dcsync Command-Line Pattern"
 id: ttp-2026-0004-bioc-03
 status: experimental
 description: |

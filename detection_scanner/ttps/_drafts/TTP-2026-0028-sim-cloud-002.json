@@ -1,0 +1,228 @@
+{
+  "id": "TTP-2026-0028",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "saas-okta",
+        "saas-m365",
+        "saas-google-workspace"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Cloud App \u2014 Microsoft Admin-Consent-Required Scope Request",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-CLOUD-002. Plane: CLOUD_APP. Primary technique: T1078.004. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-CLOUD-002. Plane: CLOUD_APP. Primary technique: T1078.004. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-CLOUD-002.\nUC: Admin-Consent OAuth Abuse / TC: Microsoft 365 \u2014 App Requests Directory.ReadWrite.All Without Consent.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1078.004"
+      },
+      {
+        "technique_id": "T1098",
+        "name": "Account Manipulation",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1528",
+        "name": "Steal Application Access Token",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1078.004 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-CLOUD-002 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Pre-flight: confirm Microsoft provider supported\npython3 -m scripts.eal_simulator.cli describe oauth_grant_emulator \\\n  | jq -e '.params_schema.properties.provider'\n# step-2: Single admin-consent grant request to Microsoft Identity Platform\ncat > /tmp/cloud-002.yml <<'YML'\ncampaign_id: CMP-CLOUDAPP-002\nname: \"Cloud App \u2014 Microsoft admin-consent grant\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - login.microsoftonline.com\ndry_run: false\ntags: [cloud-app, microsoft, oauth, admin-consent]\nsteps:\n  - step_id: step-01\n    plugin: oauth_grant_emulator\n    params:\n      provider: microsoft\n      scope_preset: admin_consent\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-002.yml --live\n# step-3: Confirm a second attempt produces same alert deterministically\ncat > /tmp/cloud-002-rep.yml <<'YML'\ncampaign_id: CMP-CLOUDAPP-002\nname: \"Cloud App \u2014 Microsoft admin-consent repeat\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - login.microsoftonline.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: oauth_grant_emulator\n    params:\n      provider: microsoft\n      scope_preset: admin_consent\n      iterations: 2\n      sleep_seconds: 10\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-002-rep.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "TODO \u2014 author at least one concrete expected artifact for this scenario",
+        "expected_value": "TODO"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cloud-002.yml /tmp/cloud-002-rep.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: provider list includes microsoft",
+        "description": "Pre-flight: provider list includes microsoft",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1078.004\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "Cloud App \u2014 Directory.ReadWrite.All scope request from non-admin user",
+        "description": "Cloud App \u2014 Directory.ReadWrite.All scope request from non-admin user",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1078.004\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "Cloud App \u2014 Application.ReadWrite.All in same grant body",
+        "description": "Cloud App \u2014 Application.ReadWrite.All in same grant body",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1078.004\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 outbound v2.0/authorize App-ID match to login.microsoftonline.com",
+        "description": "NGFW EAL \u2014 outbound v2.0/authorize App-ID match to login.microsoftonline.com",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1078.004\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "Cloud App \u2014 repeat admin-consent attempt confirms persistence intent",
+        "description": "Cloud App \u2014 repeat admin-consent attempt confirms persistence intent",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1098\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1098"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CLOUD_APP-0028"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-028",
+        "name": "Admin-Consent OAuth Abuse",
+        "description": "Admin-Consent OAuth Abuse",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-028A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Microsoft - Volt Typhoon OAuth Persistence Patterns",
+      "url": "https://www.microsoft.com/en-us/security/blog/",
+      "publisher": "Microsoft",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004",
+      "url": "https://attack.mitre.org/techniques/T1078/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-CLOUD-002."
+    }
+  ]
+}

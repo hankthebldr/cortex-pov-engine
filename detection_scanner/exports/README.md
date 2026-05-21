@@ -12,4 +12,13 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0004` | DCSync — Domain Replication Abuse for Credential Extraction (T1003.006) | [sigma](sigma/TTP-2026-0004.yml), [xql](xql/TTP-2026-0004.xql), [correlation](correlation/TTP-2026-0004.json), [xsoar_playbook](xsoar_playbook/TTP-2026-0004.yml) |
 | `TTP-2026-0005` | Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002) | [sigma](sigma/TTP-2026-0005.yml), [xql](xql/TTP-2026-0005.xql), [correlation](correlation/TTP-2026-0005.json), [xsoar_playbook](xsoar_playbook/TTP-2026-0005.yml) |
 | `TTP-2026-0006` | Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) | [sigma](sigma/TTP-2026-0006.yml), [xql](xql/TTP-2026-0006.xql), [correlation](correlation/TTP-2026-0006.json), [xsoar_playbook](xsoar_playbook/TTP-2026-0006.yml) |
+| `TTP-2026-0007` | AI Access — Source Code Paste to Public ChatGPT | [sigma](sigma/TTP-2026-0007.yml), [xql](xql/TTP-2026-0007.xql) |
+| `TTP-2026-0012` | AIRS — Direct Prompt Injection (LLM01) | [sigma](sigma/TTP-2026-0012.yml), [xql](xql/TTP-2026-0012.xql) |
+| `TTP-2026-0017` | Browser — Credential Paste into Untrusted Origin | [sigma](sigma/TTP-2026-0017.yml), [xql](xql/TTP-2026-0017.xql) |
+| `TTP-2026-0023` | Cryptominer Deployment — Unit 42 XMRig Variant | [sigma](sigma/TTP-2026-0023.yml), [xql](xql/TTP-2026-0023.xql) |
+| `TTP-2026-0027` | Cloud App — Okta Risky OAuth Drive-Scope Grant | [sigma](sigma/TTP-2026-0027.yml), [xql](xql/TTP-2026-0027.xql) |
+| `TTP-2026-0032` | Credential Dumping — /etc/shadow and Mimipenguin | [sigma](sigma/TTP-2026-0032.yml), [xql](xql/TTP-2026-0032.xql) |
+| `TTP-2026-0038` | ITDR — MFA Fatigue / Push-Bombing (Okta) | [sigma](sigma/TTP-2026-0038.yml), [xql](xql/TTP-2026-0038.xql) |
+| `TTP-2026-0042` | KOI — Claude Desktop Installs Typosquat MCP Server | [sigma](sigma/TTP-2026-0042.yml), [xql](xql/TTP-2026-0042.xql) |
+| `TTP-2026-0047` | C2 Beacon Callback — NGFW + XDR Stitch Validation | [sigma](sigma/TTP-2026-0047.yml), [xql](xql/TTP-2026-0047.xql), [xsoar_playbook](xsoar_playbook/TTP-2026-0047.yml) |
 

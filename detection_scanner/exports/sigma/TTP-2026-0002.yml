@@ -1,4 +1,4 @@
-title: LSASS Memory Credential Dump via MiniDumpWriteDump (T1003.001) — LSASS Handle Open With Sensitive Access Rights
+title: "LSASS Memory Credential Dump via MiniDumpWriteDump (T1003.001) \u2014 LSASS Handle Open With Sensitive Access Rights"
 id: ttp-2026-0002-bioc-01
 status: experimental
 description: |
@@ -28,7 +28,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: LSASS Memory Credential Dump via MiniDumpWriteDump (T1003.001) — comsvcs.dll MiniDump LOLBin Execution
+title: "LSASS Memory Credential Dump via MiniDumpWriteDump (T1003.001) \u2014 comsvcs.dll MiniDump LOLBin Execution"
 id: ttp-2026-0002-bioc-02
 status: experimental
 description: |

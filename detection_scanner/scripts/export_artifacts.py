@@ -114,11 +114,16 @@ def render_sigma(ttp: dict[str, Any]) -> Optional[str]:
         logic_block = (b.get("logic") or "").rstrip("\n")
         # Sigma doesn't natively express XQL — we embed it as a `condition:`
         # plus a free-text `description` so detection engineers can port it.
-        doc = f"""title: {title_base} — {name}
+        # title may contain `:`, `#`, or other YAML-sensitive chars when
+        # lifted verbatim from scenario descriptions — emit JSON-style
+        # double-quoted scalars so YAML parses cleanly.
+        safe_title = json.dumps(f"{title_base} — {name}")
+        safe_desc = (b.get("description") or "").strip()
+        doc = f"""title: {safe_title}
 id: {rule_id}
 status: experimental
 description: |
-  {(b.get('description') or '').strip()}
+  {safe_desc}
   Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
   ----
 {textwrap_indent(logic_block, "    ")}

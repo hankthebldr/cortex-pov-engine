@@ -1,0 +1,215 @@
+{
+  "id": "TTP-2026-0037",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "windows"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "ITDR \u2014 Impossible Travel (Okta sign-ins from US-West and APAC-East)",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-ITDR-001. Plane: ITDR. Primary technique: T1078.004. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-ITDR-001. Plane: ITDR. Primary technique: T1078.004. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-ITDR-001.\nUC: Geo-Anomaly Sign-In Detection / TC: Two Successful Sign-Ins From Geographically Impossible Locations Within 5 min.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1078.004"
+      },
+      {
+        "technique_id": "T1539",
+        "name": "Steal Web Session Cookie",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1078.004 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-ITDR-001 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "powershell",
+      "code": "# step-1: Pre-flight: confirm idp_signin_emulator plugin is registered\npython3 -m scripts.eal_simulator.cli describe idp_signin_emulator \\\n  | jq -e '.eal_targets | length > 0'\n# step-2: Emit two successful Okta sign-in events from US-West then APAC-East\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/itdr-001.yml <<YML\ncampaign_id: CMP-ITDR-001\nname: \"ITDR \u2014 Okta impossible travel\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\ntags: [itdr, okta, impossible-travel]\nsteps:\n  - step_id: step-01\n    plugin: idp_signin_emulator\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: okta\n      event_pattern: impossible_travel\n      target_user: \"ada.lovelace@cortexsim-canary.invalid\"\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-001.yml --live\n# step-3: Repeat the pattern with Microsoft event shape \u2014 confirm parser works for both\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/itdr-001-ms.yml <<YML\ncampaign_id: CMP-ITDR-001\nname: \"ITDR \u2014 Microsoft impossible travel\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: idp_signin_emulator\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: microsoft\n      event_pattern: impossible_travel\n      target_user: \"ada.lovelace@cortexsim-canary.invalid\"\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-001-ms.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "powershell",
+      "code": "rm -f /tmp/itdr-001.yml /tmp/itdr-001-ms.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: idp_signin_emulator metadata visible to operator",
+        "description": "Pre-flight: idp_signin_emulator metadata visible to operator",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1078.004\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "ITDR \u2014 impossible-travel alert: same user signed in from two distant geos within travel-impossibility window",
+        "description": "ITDR \u2014 impossible-travel alert: same user signed in from two distant geos within travel-impossibility window",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1078.004\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 outbound POST burst to identity log-collector App-ID match",
+        "description": "NGFW EAL \u2014 outbound POST burst to identity log-collector App-ID match",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1078.004\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "ITDR \u2014 impossible-travel alert fires identically for Microsoft signInLogs shape",
+        "description": "ITDR \u2014 impossible-travel alert fires identically for Microsoft signInLogs shape",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1078.004\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ITDR-0037"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ITDR-0037"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-IDENT-037",
+        "name": "Geo-Anomaly Sign-In Detection",
+        "description": "Geo-Anomaly Sign-In Detection",
+        "test_cases": [
+          {
+            "test_case_id": "TC-IDENT-037A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Okta - Identity Threat Trends 2025",
+      "url": "https://www.okta.com/identity-101/",
+      "publisher": "Okta",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004",
+      "url": "https://attack.mitre.org/techniques/T1078/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-ITDR-001."
+    }
+  ]
+}

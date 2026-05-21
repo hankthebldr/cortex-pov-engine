@@ -1,0 +1,216 @@
+{
+  "id": "TTP-2026-0018",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-browser",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Browser \u2014 Drive-by Download from Phishing Page",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-BROWSER-002. Plane: BROWSER. Primary technique: T1189. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-BROWSER-002. Plane: BROWSER. Primary technique: T1189. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-BROWSER-002.\nUC: Browser-Initiated Malware Download / TC: Auto-Download Triggered by Phishing Landing Page.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1189",
+        "name": "Drive-by Compromise",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "name": "Phishing",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1189 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-BROWSER-002 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Pre-flight: confirm browser_attack_runner plugin is registered\npython3 -m scripts.eal_simulator.cli describe browser_attack_runner \\\n  | jq -e '.params_schema.properties.campaign_path'\n# step-2: Drive Prisma Browser to phishing page; expect auto-download\ncat > /tmp/sim-browser-002-eal.yml <<'YML'\ncampaign_id: CMP-BROWSER-002\nname: \"Browser \u2014 drive-by download\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - phish.cortexsim-test.invalid\ndry_run: false\ntags: [browser, drive-by, download]\nsteps:\n  - step_id: step-01\n    plugin: browser_attack_runner\n    params:\n      campaign_path: scenarios/browser/campaigns/drive-by-download.yml\n      allowlist_host: phish.cortexsim-test.invalid\n      browser_channel: prisma\n      headless: true\n      timeout_seconds: 90.0\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/sim-browser-002-eal.yml --live\n# step-3: Confirm WildFire submission path on the downloaded artifact\necho \"[CortexSim] PB submits downloaded artifact to WildFire.\"\necho \"[CortexSim] Confirm in XSIAM (manual): WildFire verdict appears within MTTD target.\"",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "TODO \u2014 author at least one concrete expected artifact for this scenario",
+        "expected_value": "TODO"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sim-browser-002-eal.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: plugin metadata visible to operator",
+        "description": "Pre-flight: plugin metadata visible to operator",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1566\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1566"
+        ]
+      },
+      {
+        "name": "Prisma Browser \u2014 auto-download initiated by JS without user gesture",
+        "description": "Prisma Browser \u2014 auto-download initiated by JS without user gesture",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1189\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1189"
+        ]
+      },
+      {
+        "name": "Prisma Browser \u2014 downloaded artifact MIME application/x-msdownload from non-SaaS origin",
+        "description": "Prisma Browser \u2014 downloaded artifact MIME application/x-msdownload from non-SaaS origin",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1189\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1189"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 file-type download policy matches downloaded artifact",
+        "description": "NGFW EAL \u2014 file-type download policy matches downloaded artifact",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1189\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1189"
+        ]
+      },
+      {
+        "name": "PB \u2192 WildFire submission within download-policy MTTD",
+        "description": "PB \u2192 WildFire submission within download-policy MTTD",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1189\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1189"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-BROWSER-0018"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-018",
+        "name": "Browser-Initiated Malware Download",
+        "description": "Browser-Initiated Malware Download",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-018A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Drive-by Compromise Tradecraft 2026",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1189",
+      "url": "https://attack.mitre.org/techniques/T1189/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-BROWSER-002."
+    }
+  ]
+}

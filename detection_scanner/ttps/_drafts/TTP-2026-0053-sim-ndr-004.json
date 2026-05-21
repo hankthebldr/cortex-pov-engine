@@ -1,0 +1,226 @@
+{
+  "id": "TTP-2026-0053",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "NDR \u2014 SMB/RPC Lateral Sweep EAL Validation",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-NDR-004. Plane: NDR. Primary technique: T1046. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-NDR-004. Plane: NDR. Primary technique: T1046. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-NDR-004.\nUC: Lateral Reconnaissance Detection via NGFW EAL / TC: Host Sweeping Across SMB/RPC Ports.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1018",
+        "name": "Remote System Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "name": "SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ],
+        "subtechnique_id": "T1021.002"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1046 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-004 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Dry-run: verify CIDR coverage and authorisation\ncat > /tmp/smb-sweep-dry.yml <<'YML'\ncampaign_id: CMP-NDR-004\nname: \"NDR validation \u2014 SMB sweep dry\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.10.0/24\ndry_run: true\ntags: [ndr, lateral, eal]\nsteps:\n  - step_id: step-01\n    plugin: smb_rpc_sweep\n    params:\n      target_cidr: \"10.50.10.0/24\"\n      ports: [445, 139, 135]\n      connect_timeout: 1.0\n      inter_host_delay: 0.05\n      max_hosts: 64\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-dry.yml\n# step-2: Live SMB/RPC sweep against ITDR lab subnet\ncat > /tmp/smb-sweep-live.yml <<'YML'\ncampaign_id: CMP-NDR-004\nname: \"NDR validation \u2014 SMB sweep live\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.10.0/24\ndry_run: false\ntags: [ndr, lateral, eal]\nsteps:\n  - step_id: step-01\n    plugin: smb_rpc_sweep\n    params:\n      target_cidr: \"10.50.10.0/28\"\n      ports: [445, 139, 135]\n      connect_timeout: 1.0\n      inter_host_delay: 0.1\n      max_hosts: 16\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-live.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "TODO \u2014 author at least one concrete expected artifact for this scenario",
+        "expected_value": "TODO"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/smb-sweep-dry.yml /tmp/smb-sweep-live.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Dry-run report shows planned host count and ports",
+        "description": "Dry-run report shows planned host count and ports",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1046\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1046"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 host sweeping pattern (1 src \u2192 many dst on TCP/445)",
+        "description": "NGFW EAL \u2014 host sweeping pattern (1 src \u2192 many dst on TCP/445)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1018\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1018"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 anomalous SMB traffic outside admin baseline",
+        "description": "NGFW EAL \u2014 anomalous SMB traffic outside admin baseline",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1018\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1018"
+        ]
+      },
+      {
+        "name": "XSIAM correlation \u2014 sweep src host stitched with workstation context",
+        "description": "XSIAM correlation \u2014 sweep src host stitched with workstation context",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1018\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1018"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NDR-0053"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NDR-0053"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-053",
+        "name": "Lateral Reconnaissance Detection via NGFW EAL",
+        "description": "Lateral Reconnaissance Detection via NGFW EAL",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-053A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Lateral Movement Tradecraft 2025",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1046",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-004."
+    }
+  ]
+}

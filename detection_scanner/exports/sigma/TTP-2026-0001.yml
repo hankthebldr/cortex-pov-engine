@@ -1,4 +1,4 @@
-title: Help-Desk MFA Reset via Voice Impersonation (Muddled Libra Pattern) — Okta MFA Reset Followed by Factor Enrollment From New Device
+title: "Help-Desk MFA Reset via Voice Impersonation (Muddled Libra Pattern) \u2014 Okta MFA Reset Followed by Factor Enrollment From New Device"
 id: ttp-2026-0001-bioc-01
 status: experimental
 description: |
@@ -31,7 +31,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: Help-Desk MFA Reset via Voice Impersonation (Muddled Libra Pattern) — Help-Desk Admin Modifies Authentication for User Outside Their Span
+title: "Help-Desk MFA Reset via Voice Impersonation (Muddled Libra Pattern) \u2014 Help-Desk Admin Modifies Authentication for User Outside Their Span"
 id: ttp-2026-0001-bioc-02
 status: experimental
 description: |

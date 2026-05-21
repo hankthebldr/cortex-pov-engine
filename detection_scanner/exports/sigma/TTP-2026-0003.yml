@@ -1,4 +1,4 @@
-title: AWS IAM Access Key Abuse — Discovery + S3 Object Exfiltration — IAM User Discovery Burst From New Source IP
+title: "AWS IAM Access Key Abuse \u2014 Discovery + S3 Object Exfiltration \u2014 IAM User Discovery Burst From New Source IP"
 id: ttp-2026-0003-bioc-01
 status: experimental
 description: |
@@ -29,7 +29,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: high
 ---
-title: AWS IAM Access Key Abuse — Discovery + S3 Object Exfiltration — S3 Bulk Object Download by IAM User With No Prior Read Pattern
+title: "AWS IAM Access Key Abuse \u2014 Discovery + S3 Object Exfiltration \u2014 S3 Bulk Object Download by IAM User With No Prior Read Pattern"
 id: ttp-2026-0003-bioc-02
 status: experimental
 description: |
@@ -60,7 +60,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: AWS IAM Access Key Abuse — Discovery + S3 Object Exfiltration — Long-Lived IAM User Key Used From Outside Known ASN
+title: "AWS IAM Access Key Abuse \u2014 Discovery + S3 Object Exfiltration \u2014 Long-Lived IAM User Key Used From Outside Known ASN"
 id: ttp-2026-0003-bioc-03
 status: experimental
 description: |

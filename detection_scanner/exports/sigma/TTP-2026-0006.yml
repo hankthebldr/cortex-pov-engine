@@ -1,4 +1,4 @@
-title: Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) — ESXi SSH Logon Burst — Single Source → Many Hypervisors
+title: "Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) \u2014 ESXi SSH Logon Burst \u2014 Single Source \u2192 Many Hypervisors"
 id: ttp-2026-0006-bioc-01
 status: experimental
 description: |
@@ -27,7 +27,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) — vim-cmd Mass Power-Off Across ESXi Cluster
+title: "Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) \u2014 vim-cmd Mass Power-Off Across ESXi Cluster"
 id: ttp-2026-0006-bioc-02
 status: experimental
 description: |
@@ -59,7 +59,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) — Mass File Creation Adjacent to VMDK Files
+title: "Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) \u2014 Mass File Creation Adjacent to VMDK Files"
 id: ttp-2026-0006-bioc-03
 status: experimental
 description: |
@@ -90,7 +90,7 @@ falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
 level: critical
 ---
-title: Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) — Ansible-Pattern Process on Jumphost With ESXi Reach
+title: "Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern) \u2014 Ansible-Pattern Process on Jumphost With ESXi Reach"
 id: ttp-2026-0006-bioc-04
 status: experimental
 description: |

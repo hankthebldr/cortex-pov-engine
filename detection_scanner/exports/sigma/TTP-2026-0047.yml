@@ -1,0 +1,260 @@
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 XDR \u2014 interactive bash spawned from www-data service context"
+id: ttp-2026-0047-bioc-01
+status: experimental
+description: |
+  XDR — interactive bash spawned from www-data service context
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1059.004
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 NGFW \u2014 repetitive HTTP beacon to testmynids.org (known IOC list)"
+id: ttp-2026-0047-bioc-02
+status: experimental
+description: |
+  NGFW — repetitive HTTP beacon to testmynids.org (known IOC list)
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1071.001
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 XDR \u2014 curl executed from www-data with suspicious user-agent"
+id: ttp-2026-0047-bioc-03
+status: experimental
+description: |
+  XDR — curl executed from www-data with suspicious user-agent
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1071.001
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 XSIAM correlation \u2014 NGFW outbound session + XDR process event sharing src_host + session_time stitched into single..."
+id: ttp-2026-0047-bioc-04
+status: experimental
+description: |
+  XSIAM correlation — NGFW outbound session + XDR process event sharing src_host + session_time stitched into single incident
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1071.001
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 NGFW \u2014 DNS anomaly: high TXT query volume with high-entropy labels"
+id: ttp-2026-0047-bioc-05
+status: experimental
+description: |
+  NGFW — DNS anomaly: high TXT query volume with high-entropy labels
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1572
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1572/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1572
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 XDR \u2014 repetitive dig invocation from service account"
+id: ttp-2026-0047-bioc-06
+status: experimental
+description: |
+  XDR — repetitive dig invocation from service account
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1572
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1572/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1572
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 XSIAM stitching \u2014 DNS exfil pattern correlated with process lineage into unified exfiltration incident"
+id: ttp-2026-0047-bioc-07
+status: experimental
+description: |
+  XSIAM stitching — DNS exfil pattern correlated with process lineage into unified exfiltration incident
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1572
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1572/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1572
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 NGFW \u2014 download from IOC-listed domain matching threat intel feed"
+id: ttp-2026-0047-bioc-08
+status: experimental
+description: |
+  NGFW — download from IOC-listed domain matching threat intel feed
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1105
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "C2 Beacon Callback \u2014 NGFW + XDR Stitch Validation \u2014 XDR \u2014 file written to /tmp/ by curl from service account"
+id: ttp-2026-0047-bioc-09
+status: experimental
+description: |
+  XDR — file written to /tmp/ by curl from service account
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
+    // MITRE technique: T1105
+    // Multi-plane correlation — combine BIOCs across planes
+    | filter /* TODO: predicate matching the BIOC name */
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

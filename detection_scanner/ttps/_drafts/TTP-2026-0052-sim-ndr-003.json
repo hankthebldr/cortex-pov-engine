@@ -1,0 +1,196 @@
+{
+  "id": "TTP-2026-0052",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-05-20T21:16:12+00:00",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "auto-generated",
+      "skeleton-draft",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "NDR \u2014 Cryptojacking Stratum App-ID Validation",
+    "summary": "Auto-generated draft from CortexSim scenario SIM-NDR-003. Plane: NDR. Primary technique: T1496. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "description": "Auto-generated draft from CortexSim scenario SIM-NDR-003. Plane: NDR. Primary technique: T1496. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-NDR-003.\nUC: Cryptojacking App-ID Detection / TC: Stratum JSON-RPC Mining Pool Connection.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1496",
+        "name": "Resource Hijacking",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": []
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1496 (TODO \u2014 pin atomic test ref)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-003 requirements."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Stand up sinkhole TCP listener inside lab CIDR\n# Operator must pre-deploy a sinkhole on 10.50.0.42:3333 (any TCP listener)\n# to absorb the simulator's Stratum frames. Confirm reachability:\nnc -zv 10.50.0.42 3333 || echo \"[CortexSim] sinkhole reachable check (best-effort)\"\n# step-2: Launch Stratum JSON-RPC sessions against sinkhole\ncat > /tmp/stratum-live.yml <<'YML'\ncampaign_id: CMP-NDR-003\nname: \"NDR validation \u2014 Stratum App-ID\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.0.0/24\ndry_run: false\ntags: [ndr, cryptojacking, stratum, eal]\nsteps:\n  - step_id: step-01\n    plugin: stratum_tcp_connect\n    params:\n      target_host: \"10.50.0.42\"\n      target_port: 3333\n      iterations: 5\n      sleep_seconds: 15\n      wallet: \"cortexsim-test-wallet\"\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/stratum-live.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process execution matching nc (heuristic from scenario step step-01)",
+        "expected_value": "process_name CONTAINS \"nc\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/stratum-live.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Pre-flight: sinkhole port 3333 reachable",
+        "description": "Pre-flight: sinkhole port 3333 reachable",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1496\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1496"
+        ]
+      },
+      {
+        "name": "NGFW App-ID \u2014 Stratum/cryptocurrency-mining identified on outbound TCP",
+        "description": "NGFW App-ID \u2014 Stratum/cryptocurrency-mining identified on outbound TCP",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1496\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1496"
+        ]
+      },
+      {
+        "name": "NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port",
+        "description": "NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port",
+        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1496\npreset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1496"
+        ]
+      }
+    ],
+    "xql_queries": [],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NDR-0052"
+        ],
+        "license_required": "pro"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NDR-0052"
+        ],
+        "license_required": "pro"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-052",
+        "name": "Cryptojacking App-ID Detection",
+        "description": "Cryptojacking App-ID Detection",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-052A",
+            "objective": "TBD \u2014 author concrete pass/fail criteria",
+            "success_criteria": [
+              "TBD \u2014 author at least one verifiable success criterion"
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit42 - Large-Scale Monero Cryptomining Operation",
+      "url": "https://unit42.paloaltonetworks.com/cryptojacking-additional-techniques/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1496",
+      "url": "https://attack.mitre.org/techniques/T1496/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-003."
+    }
+  ]
+}
