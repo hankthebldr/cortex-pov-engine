@@ -3721,3 +3721,77 @@
   color: var(--c-text-muted);
 }
 .theme-console .competitive__footer strong { color: var(--c-text-secondary); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Theater mode — projector-friendly view for sales demos + briefings
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Header toggle */
+.theme-console .theater-toggle {
+  height: 28px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.theme-console .theater-toggle:hover {
+  border-color: var(--c-signal);
+  color: var(--c-signal);
+}
+.theme-console .theater-toggle.is-active {
+  background: var(--c-signal-soft);
+  border-color: var(--c-signal);
+  color: var(--c-signal);
+}
+
+/* When theater mode is active:
+     - Hide debug-y chrome (command strip's keyboard hints stay but the
+       synthetic event flag goes away)
+     - Larger base font for projector readability
+     - Larger narrative timeline node sizes
+     - Suppress synthetic-event markers (DC's audience doesn't need
+       to know what's projected vs. real-streamed)
+*/
+.theme-console--theater {
+  --fs-body:        15px;
+  --fs-h1:          22px;
+  --fs-h2:          18px;
+  --fs-display-lg:  40px;
+  --fs-label:       12px;
+}
+.theme-console--theater .event-stream__synthetic-flag { display: none; }
+.theme-console--theater .cs-hints { opacity: 0.4; }
+
+/* Narrative timeline gets bigger nodes in theater mode — the timeline
+   is the demo's hero artifact; make it readable from the back of the
+   conference room. */
+.theme-console--theater .tl-step__node {
+  width: 28px; height: 28px;
+  box-shadow: 0 0 0 6px var(--c-surface);
+}
+.theme-console--theater .tl-step__node::after {
+  inset: 5px;
+}
+.theme-console--theater .tl-step__name {
+  font-size: 14px;
+  min-height: 40px;
+}
+.theme-console--theater .tl-det {
+  min-width: 72px;
+  padding: 8px 10px;
+  font-size: 10px;
+}
+
+/* Scenario cards get a little more breathing room. */
+.theme-console--theater .scenario-card {
+  padding: 20px;
+}
+.theme-console--theater .sc-title {
+  font-size: 17px;
+}

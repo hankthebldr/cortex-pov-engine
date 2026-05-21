@@ -7,8 +7,17 @@ import React from 'react'
  *   health          — { hostname, version, sensors: { xdr: 'healthy'|'warn'|'bad', ... } }
  *   onOpenPalette   — () => void
  *   userInitials    — string (defaults to 'DC')
+ *   theaterMode     — boolean — when true, render the theater toggle as
+ *                     active (filled). Otherwise outlined.
+ *   onToggleTheater — () => void
  */
-export default function ConsoleHeader({ health = {}, onOpenPalette, userInitials = 'DC' }) {
+export default function ConsoleHeader({
+  health = {},
+  onOpenPalette,
+  userInitials = 'DC',
+  theaterMode = false,
+  onToggleTheater = null,
+}) {
   const hostname = health.hostname || (typeof window !== 'undefined' ? window.location.hostname : 'lab')
   const version  = health.version  || 'v1.0'
   const sensors  = health.sensors  || {}
@@ -46,6 +55,19 @@ export default function ConsoleHeader({ health = {}, onOpenPalette, userInitials
         <span>⌘K</span>
         <span style={{ color: 'var(--c-text-muted)' }}>search · launch · export</span>
       </button>
+
+      {onToggleTheater && (
+        <button
+          type="button"
+          className={'theater-toggle' + (theaterMode ? ' is-active' : '')}
+          onClick={onToggleTheater}
+          aria-pressed={theaterMode}
+          aria-label={theaterMode ? 'Exit theater mode' : 'Enter theater mode for sales demos and briefings'}
+          title={theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly, hides debug chrome'}
+        >
+          {theaterMode ? '◼ theater' : '◻ theater'}
+        </button>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <div className="user-avatar">{userInitials}</div>

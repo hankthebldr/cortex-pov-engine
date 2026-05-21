@@ -49,6 +49,19 @@ export default function AppShell({
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [helpOpen, setHelpOpen]       = useState(false)
+  // Theater mode — projector-friendly view for sales briefings.
+  // Persisted to localStorage so the DC can pin it for the duration of
+  // a meeting and not lose it across an accidental reload.
+  const [theaterMode, setTheaterMode] = useState(() => {
+    try { return window.localStorage.getItem('cortexsim.theaterMode') === 'true' } catch { return false }
+  })
+  const toggleTheater = useCallback(() => {
+    setTheaterMode((v) => {
+      const next = !v
+      try { window.localStorage.setItem('cortexsim.theaterMode', String(next)) } catch {}
+      return next
+    })
+  }, [])
 
   // First-run help overlay — appears once per browser, then suppressed.
   useEffect(() => {
@@ -94,9 +107,10 @@ export default function AppShell({
   }, [])
 
   const shellClass = `shell${activeRun ? '' : ' shell--no-telemetry'}`
+  const themeClass = `theme-console ${theaterMode ? 'theme-console--theater' : ''}`
 
   return (
-    <div className={`theme-console ${shellClass}`}>
+    <div className={`${themeClass} ${shellClass}`}>
       {/* Skip link — keyboard users land here on Tab; jumps past header/rail
           to the main workspace. Invisible until focused. */}
       <a href="#cortexsim-main" className="skip-link">
@@ -106,6 +120,8 @@ export default function AppShell({
       <ConsoleHeader
         health={health}
         onOpenPalette={() => setPaletteOpen(true)}
+        theaterMode={theaterMode}
+        onToggleTheater={toggleTheater}
       />
 
       {activeRun && (
