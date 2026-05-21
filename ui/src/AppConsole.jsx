@@ -11,24 +11,41 @@ import { getHealth, getRuns, getScenarios, downloadReport } from './api/client.j
 /**
  * AppConsole — Mission Ops Console root.
  *
- * The default shell as of migration step 9. The legacy light-themed App.jsx
- * remains reachable via `?theme=legacy` as an escape hatch during the soak
- * period — see docs/design/console-redesign.md for the deprecation schedule.
+ * The default shell. Legacy light-themed App.jsx remains reachable via
+ * `?theme=legacy` as an escape hatch during the soak period — see
+ * docs/design/console-redesign.md for the deprecation schedule.
  *
- * Migration status (all 9 steps shipped):
+ * Migration: all 9 steps shipped + extensive enterprise-grade
+ * enhancements layered on top.
+ *
+ * Migration plan (complete):
  *   [x] 1 · tokens + Google Fonts + .theme-console scope
- *   [x] 2 · AppShell chrome (header, telemetry, rail, tabs, strip, ⌘K)
- *   [x] 3 · modes-as-buttons → proper tabs (Ops · In-Flight · Evidence · Lab · Coverage)
- *   [x] 4 · Inspector drawer with pinned launch CTA (fixes below-fold launch)
+ *   [x] 2 · AppShell chrome (header, telemetry, rail, tabs, strip)
+ *   [x] 3 · modes-as-buttons → proper tabs (Ops/In-Flight/Evidence/Lab/Coverage)
+ *   [x] 4 · Inspector drawer with pinned launch CTA
  *   [x] 5 · TelemetryStrip (always-visible live run state)
  *   [x] 6 · Attack Narrative Timeline (animated SVG stitch arcs — the hero)
  *   [x] 7 · Evidence redesign + Screenshot PNG + POV report markdown export
- *   [x] 8 · CoverageView (ATT&CK matrix → click-to-filter Operations) + LabView (IaC)
+ *   [x] 8 · CoverageView (ATT&CK matrix + PANW Stack toggle) + LabView (IaC)
  *   [x] 9 · console is the default; ?theme=legacy is the opt-out
  *
- * Bonus features layered on top:
- *   ⌘L quick-launch · pinned scenarios (localStorage, cross-tab sync) ·
- *   ⌘K palette with fuzzy scenario search + jump-to-tab actions.
+ * Enterprise-grade enhancements:
+ *   • ⌘K command palette — fuzzy scenario search + jump-to-tab + actions
+ *   • ⌘F filter palette — multi-criteria slicing across 7 facet groups
+ *   • ⌘L global quick-launch — preempts browser default
+ *   • ⌘E global POV report export from any tab
+ *   • ⌘/ help overlay — keyboard reference + tab cheatsheet + PANW stack
+ *     map; surfaces automatically on first browser visit
+ *   • Pinned scenarios — localStorage-backed, cross-tab sync, rail + palette
+ *   • Detection drill-down — click any scorecard row → side panel with
+ *     timing, alert ID copy, operator notes, validate-with-notes
+ *   • PANW Stack Coverage view — product × kill chain matrix; "wow"
+ *     visualization for security architects
+ *   • A11y: skip link, ARIA landmarks, aria-live regions on telemetry +
+ *     ticker, role=progressbar with valuenow, prefers-reduced-motion
+ *     respect, focus-visible outlines
+ *   • Tier A + Tier B static analysis CI gates (every TTP script +
+ *     every generated push bundle)
  */
 
 const PLANE_META = [
@@ -233,10 +250,19 @@ export default function AppConsole() {
         section: 'Actions',
         id: 'tab-coverage',
         title: 'Go to ATT&CK Coverage',
-        meta: 'MITRE heatmap',
+        meta: 'MITRE + PANW Stack matrix',
         icon: '\u26a1',
         shortcut: ['G', 'C'],
         onSelect: () => setActiveTab('coverage'),
+      },
+      {
+        section: 'Actions',
+        id: 'global-export',
+        title: 'Export POV report',
+        meta: 'markdown \u00b7 active or most recent run',
+        icon: '\u2197',
+        shortcut: ['\u2318', 'E'],
+        onSelect: handleExportPOV,
       },
     ]
 
@@ -258,7 +284,7 @@ export default function AppConsole() {
       .filter(Boolean)
 
     return [...pinnedActions, ...scenarios, ...actions]
-  }, [scenarioList, pinnedIds, isPinned, handleOpenScenario])
+  }, [scenarioList, pinnedIds, isPinned, handleOpenScenario, handleExportPOV])
 
   // ── Tab badges ──────────────────────────────────────────────────────────
   const tabBadges = useMemo(() => {
