@@ -59,5 +59,7 @@ installer/**/SHA256SUMS
 
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
+.claude/launch.json
+ui/.claude/
 
 
