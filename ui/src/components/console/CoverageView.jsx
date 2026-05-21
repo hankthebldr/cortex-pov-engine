@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import useMitreCoverage from './useMitreCoverage.js'
 import StackCoverageView from './StackCoverageView.jsx'
 import CompetitiveView from './CompetitiveView.jsx'
+import { downloadLayer } from './exportNavigatorLayer.js'
 
 /**
  * CoverageView — the Coverage tab. Two view modes:
@@ -90,6 +91,14 @@ export default function CoverageView({ onFilterByTechnique = () => {} }) {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+          <button
+            className="btn"
+            onClick={() => downloadLayer(data)}
+            disabled={loading || !data?.by_tactic || data.by_tactic.length === 0}
+            title="Download MITRE ATT&CK Navigator v4.5 layer JSON for executive briefings"
+          >
+            ↗ Navigator layer
+          </button>
           <button className="btn" onClick={refresh} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
