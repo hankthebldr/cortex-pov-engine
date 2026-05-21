@@ -25,6 +25,7 @@ export default function ScenarioInspector({
   onTogglePin = () => {},
   onClose = () => {},
   runHistory = [],
+  onOpenRunEvidence = () => {},
 }) {
   if (!scenario || !launch) return <aside className="inspector" />
 
@@ -265,7 +266,7 @@ export default function ScenarioInspector({
       </div>
 
       {/* ── Run history ───────────────────────────────────────────────── */}
-      <RunHistorySection runs={runHistory} />
+      <RunHistorySection runs={runHistory} onOpenRunEvidence={onOpenRunEvidence} />
 
       {/* ── Footer ─────────────────────────────────────────────────────── */}
       <div className="insp-footer">
@@ -304,7 +305,7 @@ function truncate(s, n) {
  * Empty state stays inline so the section never disappears (consistent
  * drawer height across selections).
  */
-function RunHistorySection({ runs = [] }) {
+function RunHistorySection({ runs = [], onOpenRunEvidence = () => {} }) {
   const shown = runs.slice(0, 5)
   return (
     <div className="insp-section insp-history">
@@ -321,7 +322,11 @@ function RunHistorySection({ runs = [] }) {
       ) : (
         <ul className="insp-history__list">
           {shown.map((r) => (
-            <RunHistoryRow key={r.id || r.run_id} run={r} />
+            <RunHistoryRow
+              key={r.id || r.run_id}
+              run={r}
+              onOpen={() => onOpenRunEvidence(r)}
+            />
           ))}
         </ul>
       )}
@@ -329,7 +334,7 @@ function RunHistorySection({ runs = [] }) {
   )
 }
 
-function RunHistoryRow({ run }) {
+function RunHistoryRow({ run, onOpen = () => {} }) {
   const id     = run.id || run.run_id
   const status = (run.status || 'unknown').toLowerCase()
   const ts     = Date.parse(run.started_at || run.created_at || '') || 0
@@ -340,11 +345,19 @@ function RunHistoryRow({ run }) {
     : '○'
   const statusClass = 'insp-history__row--' + status
   return (
-    <li className={'insp-history__row ' + statusClass} title={`Run ${id} · ${status}`}>
-      <span className="insp-history__glyph" aria-hidden="true">{statusGlyph}</span>
-      <span className="insp-history__id mono">{String(id).slice(0, 10)}</span>
-      <span className="insp-history__when mono">{ago}</span>
-      <span className="insp-history__status mono">{status}</span>
+    <li className={'insp-history__row ' + statusClass}>
+      <button
+        type="button"
+        className="insp-history__row-btn"
+        onClick={onOpen}
+        title={`Open run ${id} in Evidence`}
+      >
+        <span className="insp-history__glyph" aria-hidden="true">{statusGlyph}</span>
+        <span className="insp-history__id mono">{String(id).slice(0, 10)}</span>
+        <span className="insp-history__when mono">{ago}</span>
+        <span className="insp-history__status mono">{status}</span>
+        <span className="insp-history__arrow mono" aria-hidden="true">→</span>
+      </button>
     </li>
   )
 }

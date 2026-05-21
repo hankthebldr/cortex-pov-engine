@@ -4653,3 +4653,45 @@
   border: 1px dashed var(--c-border);
   border-radius: 4px;
 }
+
+/* ─── Run history row — clickable button ──────────────────────────── */
+
+.theme-console .insp-history__row-btn {
+  display: grid;
+  grid-template-columns: 18px 92px 1fr auto 14px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  color: inherit;
+  transition: background-color 120ms;
+}
+
+.theme-console .insp-history__row-btn:hover,
+.theme-console .insp-history__row-btn:focus-visible {
+  background: color-mix(in srgb, var(--c-cortex-teal) 10%, transparent);
+  outline: none;
+}
+
+.theme-console .insp-history__row {
+  padding: 0;
+}
+
+.theme-console .insp-history__arrow {
+  color: var(--c-text-disabled);
+  font-size: 11px;
+  transition: color 120ms, transform 120ms;
+}
+
+.theme-console .insp-history__row-btn:hover .insp-history__arrow,
+.theme-console .insp-history__row-btn:focus-visible .insp-history__arrow {
+  color: var(--c-cortex-teal);
+  transform: translateX(2px);
+}

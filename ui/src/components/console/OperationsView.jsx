@@ -46,6 +46,7 @@ export default function OperationsView({
   onRunComplete = () => {},
   onError = () => {},
   onSurfaceMessage = () => {},
+  onOpenRunEvidence = () => {},
 }) {
   const [scenarios, setScenarios]       = useState([])
   const [loading, setLoading]           = useState(true)
@@ -307,6 +308,7 @@ export default function OperationsView({
         runHistory={selectedId && runsByScenario.get
           ? (runsByScenario.get(selectedId) || [])
           : []}
+        onOpenRunEvidence={onOpenRunEvidence}
       />
 
       <FilterPalette

@@ -18,9 +18,19 @@ import ExportMenu from './ExportMenu.jsx'
  *   lastRun    — fallback run when no live run
  *   onError    — (msg) => void
  */
-export default function EvidenceView({ activeRun, lastRun, onError = () => {} }) {
-  const targetRunId = activeRun?.runId || lastRun?.runId || null
-  const targetScenarioId = activeRun?.scenarioId || lastRun?.scenarioId || null
+export default function EvidenceView({
+  activeRun,
+  lastRun,
+  pinnedRun = null,
+  onError = () => {},
+}) {
+  // pinnedRun lets parents (e.g. a history-row click) override the
+  // derived active/last selection — explicit picks always win.
+  const targetRunId = pinnedRun?.runId || activeRun?.runId || lastRun?.runId || null
+  const targetScenarioId = pinnedRun?.scenarioId
+    || activeRun?.scenarioId
+    || lastRun?.scenarioId
+    || null
 
   const { rows, kpis, loading, validate, refresh } = useResultsData(targetRunId)
   const [selectedRowId, setSelectedRowId] = useState(null)

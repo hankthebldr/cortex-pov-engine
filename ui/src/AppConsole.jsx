@@ -67,6 +67,10 @@ export default function AppConsole() {
   const [health, setHealth]                             = useState({})
   const [toast, setToast]                               = useState(null)
   const [requestOpenScenarioId, setRequestOpenScenarioId] = useState(null)
+  // Pinned run override for Evidence tab — set when a DC drills in from
+  // a history row. Cleared when a fresh run starts or the user explicitly
+  // returns to the active-run view.
+  const [pinnedRun, setPinnedRun]                       = useState(null)
 
   // Pinned scenarios — localStorage-backed
   const { pinnedIds, isPinned, toggle: togglePin, unpin } = usePinnedScenarios()
@@ -398,6 +402,15 @@ export default function AppConsole() {
         isPinned={isPinned}
         togglePin={togglePin}
         onRunComplete={handleRunComplete}
+        onOpenRunEvidence={(run) => {
+          // Pin the run + switch to Evidence so the DC lands on
+          // exactly the historical row they clicked.
+          setPinnedRun({
+            runId: run.id || run.run_id,
+            scenarioId: run.scenario_id,
+          })
+          setActiveTab('evidence')
+        }}
         onError={(msg) => setToast({ message: msg, type: 'error' })}
         onSurfaceMessage={(msg, type = 'info') => {
           setToast({ message: msg, type })
@@ -418,6 +431,7 @@ export default function AppConsole() {
       <EvidenceView
         activeRun={activeRun}
         lastRun={lastRun}
+        pinnedRun={pinnedRun}
         onError={(msg) => setToast({ message: msg, type: 'error' })}
       />
     )

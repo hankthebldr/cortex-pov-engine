@@ -6,8 +6,8 @@
  * scenario fetch / launch wiring.
  */
 import React from 'react'
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import ScenarioInspector from '../console/ScenarioInspector.jsx'
 
 void React
@@ -131,5 +131,29 @@ describe('ScenarioInspector — Run history section', () => {
       />,
     )
     expect(screen.getByText(/3m ago/)).toBeInTheDocument()
+  })
+
+  it('clicking a row calls onOpenRunEvidence with the run', () => {
+    const onOpen = vi.fn()
+    const runs = [{
+      id: 'r-click-me',
+      status: 'completed',
+      scenario_id: 'SIM-EDR-001',
+      started_at: new Date(Date.now() - 60_000).toISOString(),
+    }]
+    const { container } = render(
+      <ScenarioInspector
+        scenario={scenario}
+        open
+        launch={stubLaunch}
+        runHistory={runs}
+        onOpenRunEvidence={onOpen}
+      />,
+    )
+    const btn = container.querySelector('.insp-history__row-btn')
+    expect(btn).toBeTruthy()
+    fireEvent.click(btn)
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onOpen.mock.calls[0][0].id).toBe('r-click-me')
   })
 })
