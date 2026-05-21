@@ -7,7 +7,7 @@ import CoverageView from './components/console/CoverageView.jsx'
 import LabView from './components/console/LabView.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
-import { getHealth, getRuns, getScenarios, downloadReport } from './api/client.js'
+import { getHealth, getRuns, getScenarios, downloadReportBundle } from './api/client.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -355,8 +355,10 @@ export default function AppConsole() {
     setTimeout(() => setToast(null), 4000)
   }, [activeRun, refreshRuns])
 
-  // ⌘E — global POV report export. Picks the most relevant run: active if
-  // any, else last completed. No-op with a friendly toast if neither exists.
+  // ⌘E — global POV briefing export. Picks the most relevant run: active
+  // if any, else last completed. Downloads the full bundle (narrative +
+  // matrix + Navigator layer + manifest) — the artifact a DC actually
+  // hands the customer at the end of a POV. Friendly toast if no run.
   const handleExportPOV = useCallback(async () => {
     const targetRunId = activeRun?.runId || lastRun?.runId || null
     if (!targetRunId) {
@@ -365,16 +367,16 @@ export default function AppConsole() {
       return
     }
     try {
-      const blob = await downloadReport(targetRunId)
+      const blob = await downloadReportBundle(targetRunId)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `cortexsim-pov-${targetRunId}.md`
+      a.download = `cortexsim-pov-${targetRunId}.tar.gz`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      setToast({ message: `Exported POV report for ${targetRunId}`, type: 'success' })
+      setToast({ message: `Exported POV briefing for ${targetRunId}`, type: 'success' })
       setTimeout(() => setToast(null), 3000)
     } catch (err) {
       setToast({ message: err.message || 'Export failed', type: 'error' })

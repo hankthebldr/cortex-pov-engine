@@ -3,7 +3,7 @@ import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
 import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
-import { downloadReport } from '../../api/client.js'
+import ExportMenu from './ExportMenu.jsx'
 
 /**
  * EvidenceView — the Evidence tab.
@@ -23,7 +23,6 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
   const targetScenarioId = activeRun?.scenarioId || lastRun?.scenarioId || null
 
   const { rows, kpis, loading, validate, refresh } = useResultsData(targetRunId)
-  const [exporting, setExporting] = useState(false)
   const [selectedRowId, setSelectedRowId] = useState(null)
   const [viewMode, setViewMode] = useState('this-run') // 'this-run' | 'compare'
 
@@ -34,29 +33,6 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
     () => (selectedRowId == null ? null : rows.find((r) => r.id === selectedRowId) || null),
     [rows, selectedRowId],
   )
-
-  const handleExport = useCallback(async () => {
-    if (!targetRunId) {
-      onError('No run selected for export')
-      return
-    }
-    setExporting(true)
-    try {
-      const blob = await downloadReport(targetRunId)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `cortexsim-pov-${targetRunId}.md`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      onError(err.message || 'Export failed')
-    } finally {
-      setExporting(false)
-    }
-  }, [targetRunId, onError])
 
   const handleValidateAll = useCallback(async () => {
     // Mark every pending row as detected (DC sweeps after a successful run).
@@ -140,13 +116,7 @@ export default function EvidenceView({ activeRun, lastRun, onError = () => {} })
                   <span className="kbd">{kpis.pending}</span>
                 )}
               </button>
-              <button
-                className="btn btn--primary"
-                onClick={handleExport}
-                disabled={exporting}
-              >
-                {exporting ? 'Exporting…' : 'Export POV report'}
-              </button>
+              <ExportMenu runId={targetRunId} onError={onError} />
             </>
           )}
         </div>
