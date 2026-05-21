@@ -70,7 +70,7 @@ parse_args() {
 }
 
 preflight() {
-  log "=== SIM-MP-004 preflight ==="
+  log "=== ${SCENARIO_ID} preflight ==="
   mkdir -p "${LOG_DIR}"
   if ! command -v aws >/dev/null 2>&1; then
     log "WARN: aws CLI not found on PATH. Cloud steps will no-op."
