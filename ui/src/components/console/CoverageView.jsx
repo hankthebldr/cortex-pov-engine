@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import useMitreCoverage from './useMitreCoverage.js'
 import StackCoverageView from './StackCoverageView.jsx'
+import CompetitiveView from './CompetitiveView.jsx'
 
 /**
  * CoverageView — the Coverage tab. Two view modes:
@@ -20,7 +21,7 @@ import StackCoverageView from './StackCoverageView.jsx'
 export default function CoverageView({ onFilterByTechnique = () => {} }) {
   const { data, loading, error, refresh } = useMitreCoverage()
   const [selectedTechnique, setSelectedTechnique] = useState(null)
-  const [viewMode, setViewMode] = useState('attack') // 'attack' | 'stack'
+  const [viewMode, setViewMode] = useState('attack') // 'attack' | 'stack' | 'advantage'
 
   if (viewMode === 'stack') {
     return (
@@ -42,6 +43,23 @@ export default function CoverageView({ onFilterByTechnique = () => {} }) {
             onFilterByTechnique('STACK', scenarioIds)
           }}
         />
+      </div>
+    )
+  }
+
+  if (viewMode === 'advantage') {
+    return (
+      <div className="coverage">
+        <div className="view-head">
+          <div>
+            <h1>PANW Advantage</h1>
+            <div className="view-head__meta">
+              capability matrix · Cortex vs. major EDR / SIEM / BAS competitors
+            </div>
+          </div>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+        </div>
+        <CompetitiveView />
       </div>
     )
   }
@@ -295,6 +313,16 @@ function ViewModeToggle({ viewMode, onChange }) {
         onClick={() => onChange('stack')}
       >
         PANW Stack
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={viewMode === 'advantage'}
+        className={viewMode === 'advantage' ? 'is-active' : ''}
+        onClick={() => onChange('advantage')}
+        title="Capability matrix vs. major competitors"
+      >
+        Advantage
       </button>
     </div>
   )
