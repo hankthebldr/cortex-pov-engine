@@ -4,6 +4,7 @@ import {
   generateInfra,
   getInfraBundles,
   downloadInfraBundle,
+  getToolAdapters,
 } from '../../api/client.js'
 
 /**
@@ -51,6 +52,15 @@ export default function LabView({ onError = () => {} }) {
   const [generating, setGenerating] = useState(false)
   const [lastBundle, setLastBundle] = useState(null)
 
+  // Adapter-driven module auto-pull. The DC ticks tool adapters here
+  // (only tier-3 adapters with an iac_module are useful — the catalog
+  // filter call below restricts the list). The backend resolver in
+  // InfraGenerator unions each adapter's iac_module into the bundle's
+  // module set, so the operator can stop thinking about which module
+  // ships which tool.
+  const [adapters, setAdapters]                 = useState([])
+  const [selectedAdapters, setSelectedAdapters] = useState(new Set())
+
   // ── Data fetches ─────────────────────────────────────────────────────
   const refreshModules = useCallback(() => {
     setLoading(true)
@@ -68,6 +78,16 @@ export default function LabView({ onError = () => {} }) {
 
   useEffect(() => { refreshModules() }, [refreshModules])
   useEffect(() => { refreshBundles() }, [refreshBundles])
+
+  // Load only tier-3 adapters — these are the ones that declare an
+  // iac_module the bundle can auto-include. Tier 4 (runtime-fetched)
+  // and Tier 2 (submodule) tools don't bind to IaC so showing them in
+  // this picker would be noise.
+  useEffect(() => {
+    getToolAdapters({ tier: 3 })
+      .then((d) => setAdapters(Array.isArray(d?.adapters) ? d.adapters : []))
+      .catch(() => { /* non-fatal — picker just stays empty */ })
+  }, [])
 
   // ── Module toggle (with dependency awareness) ────────────────────────
   // See resolveModuleDependencies below — the policy decision lives there.
@@ -102,6 +122,7 @@ export default function LabView({ onError = () => {} }) {
         provider,
         region,
         modules: Array.from(selected),
+        adapter_refs: Array.from(selectedAdapters),
         params: {
           ...params,
           k8s_node_count:   Number(params.k8s_node_count),
@@ -117,7 +138,7 @@ export default function LabView({ onError = () => {} }) {
     } finally {
       setGenerating(false)
     }
-  }, [canGenerate, provider, region, selected, params, refreshBundles, onError])
+  }, [canGenerate, provider, region, selected, selectedAdapters, params, refreshBundles, onError])
 
   const handleDownload = useCallback(async (bundleId) => {
     try {
@@ -211,6 +232,23 @@ export default function LabView({ onError = () => {} }) {
         )}
       </div>
 
+      {/* ── Adapter auto-pull (tier-3 only — adapters that ship via IaC) ─ */}
+      {adapters.length > 0 && (
+        <AdapterAutoPullPicker
+          adapters={adapters}
+          selectedModules={selected}
+          selectedAdapters={selectedAdapters}
+          onToggleAdapter={(adapterId) => {
+            setSelectedAdapters((prev) => {
+              const next = new Set(prev)
+              if (next.has(adapterId)) next.delete(adapterId)
+              else next.add(adapterId)
+              return next
+            })
+          }}
+        />
+      )}
+
       {/* ── Parameters ─────────────────────────────────────────────── */}
       <div className="lab__section">
         <div className="lab__section-title">Parameters</div>
@@ -280,6 +318,16 @@ export default function LabView({ onError = () => {} }) {
         {lastBundle && !generating && validationErrors.length === 0 && (
           <span className="lab__last-bundle mono">
             ✓ generated {String(lastBundle.bundle_id).slice(0, 12)}…
+            {Array.isArray(lastBundle.auto_included_modules)
+              && lastBundle.auto_included_modules.length > 0 && (
+              <span
+                className="lab__auto-pulled"
+                style={{ marginLeft: 8 }}
+                title="Modules auto-included from selected adapter_refs"
+              >
+                · +{lastBundle.auto_included_modules.join(', +')} (auto)
+              </span>
+            )}
             <button
               type="button"
               className="btn"
@@ -397,6 +445,117 @@ function BundleRow({ bundle, onDownload }) {
       >
         Download
       </button>
+    </div>
+  )
+}
+
+/* ─── Adapter auto-pull picker ─────────────────────────────────────── */
+
+/**
+ * AdapterAutoPullPicker — surface tier-3 tool adapters and let the DC
+ * tick the ones their scenario will reference. Backend resolves each
+ * adapter's iac_module and auto-includes it in the bundle, so the
+ * operator never has to remember which module ships which tool.
+ *
+ * Visual: chips grouped by iac_module. A chip shows the adapter name +
+ * version + safety hint; clicking toggles selection.
+ */
+function AdapterAutoPullPicker({
+  adapters,
+  selectedAdapters,
+  selectedModules,
+  onToggleAdapter,
+}) {
+  // Group adapters by their resolved iac_module so the DC can see "ticking
+  // Rubeus + BloodHound both bring in itdr" at a glance.
+  const groups = useMemo(() => {
+    const byModule = new Map()
+    for (const a of adapters) {
+      // The summary payload does not carry install.iac_module (we'd need
+      // the detail endpoint for that). However the backend resolver
+      // re-binds it server-side at generate time. For UI grouping we
+      // fall back to the first plane as a rough bucket, then label it
+      // with a parenthetical hint sourced from category.
+      const bucket = a.category || 'other'
+      if (!byModule.has(bucket)) byModule.set(bucket, [])
+      byModule.get(bucket).push(a)
+    }
+    return Array.from(byModule.entries()).sort(([a], [b]) => a.localeCompare(b))
+  }, [adapters])
+
+  const tickedCount = selectedAdapters.size
+  const moduleHints = useMemo(() => {
+    // Heuristic preview of what the backend WILL pull: derived from the
+    // adapter's planes since the summary payload doesn't include
+    // iac_module. The real source of truth is the backend's resolver +
+    // ADAPTERS.md provenance file in the generated bundle.
+    const planes = new Set()
+    for (const a of adapters) {
+      if (!selectedAdapters.has(a.adapter_id)) continue
+      for (const p of (a.planes || [])) planes.add(p.toLowerCase())
+    }
+    return Array.from(planes).filter((p) => !selectedModules.has(p))
+  }, [adapters, selectedAdapters, selectedModules])
+
+  return (
+    <div className="lab__section" data-testid="adapter-auto-pull">
+      <div className="lab__section-title">
+        Tool adapters{' '}
+        <span className="mono" style={{
+          fontSize: 11,
+          color: 'var(--c-text-muted)',
+          fontWeight: 400,
+          marginLeft: 6,
+        }}>
+          (tier 3 only · backend auto-includes each adapter's iac_module)
+        </span>
+      </div>
+      <p className="mono" style={{ fontSize: 11, color: 'var(--c-text-secondary)', margin: '4px 0 10px' }}>
+        Tick adapters your scenario will reference via{' '}
+        <span className="mono">external_tools[].adapter_ref</span>.
+        {tickedCount > 0
+          ? ` ${tickedCount} ticked.`
+          : ' None ticked — bundle stays as-is.'}
+        {moduleHints.length > 0 && (
+          <span style={{ marginLeft: 6 }}>
+            ▸ likely +<span className="mono">{moduleHints.join(', +')}</span>
+          </span>
+        )}
+      </p>
+      {groups.map(([bucket, list]) => (
+        <div key={bucket} style={{ marginBottom: 8 }}>
+          <div className="mono" style={{
+            fontSize: 10,
+            color: 'var(--c-text-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            marginBottom: 4,
+          }}>
+            {bucket}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {list.map((a) => {
+              const ticked = selectedAdapters.has(a.adapter_id)
+              return (
+                <button
+                  key={a.adapter_id}
+                  type="button"
+                  className={'competitive__filter' + (ticked ? ' is-active' : '')}
+                  data-testid={`adapter-toggle-${a.adapter_id}`}
+                  onClick={() => onToggleAdapter(a.adapter_id)}
+                  title={`${a.adapter_id} · v${a.version} · ${a.safety_class} · ${a.license}`}
+                >
+                  {ticked && <span style={{ marginRight: 4 }}>✓</span>}
+                  {a.name}
+                  <span className="mono" style={{ marginLeft: 6, fontSize: 9, opacity: 0.7 }}>
+                    v{a.version}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

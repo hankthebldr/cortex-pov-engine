@@ -339,8 +339,14 @@ export async function getInfraModules(provider = 'aws') {
 
 /**
  * POST /api/infra/generate
- * @param {Object} body  { provider, region, modules, params }
- * @returns {Promise<Object>}
+ * @param {Object} body
+ * @param {string} body.provider          'aws' | 'gcp' | 'azure'
+ * @param {string} body.region            cloud region (e.g. 'us-east-1')
+ * @param {string[]} body.modules         IaC modules the operator picked
+ * @param {string[]} [body.adapter_refs]  optional adapter_ref ids — backend
+ *                                        auto-includes each adapter's iac_module
+ * @param {Object} body.params            project / SSH / sizing params
+ * @returns {Promise<Object>}             response includes auto_included_modules[]
  */
 export async function generateInfra(body) {
   return request('/api/infra/generate', {

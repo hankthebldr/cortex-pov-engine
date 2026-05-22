@@ -107,3 +107,51 @@ class TestInfraAPI:
         data = resp.json()
         assert data["total"] >= 1
         assert len(data["bundles"]) >= 1
+
+
+class TestInfraAPIAdapterAutoPull:
+    """API surface for the adapter_refs[] auto-pull plumbing."""
+
+    @pytest.fixture(autouse=True)
+    def _load_catalog(self, repo_root: Path):
+        from tools.adapter_catalog import catalog  # noqa: PLC0415
+        catalog.load(str(repo_root / "tools" / "packs"))
+
+    def test_generate_with_adapter_refs_pulls_modules(self, client: TestClient):
+        resp = client.post("/api/infra/generate", json={
+            "provider": "aws",
+            "region": "us-east-1",
+            "modules": ["base"],
+            "adapter_refs": ["TOOL-RUBEUS", "TOOL-MIMIKATZ"],
+            "params": {"project_name": "auto-pull", "dc_ssh_cidr": "1.2.3.4/32"},
+        })
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "edr" in body["modules"]
+        assert "itdr" in body["modules"]
+        assert set(body["auto_included_modules"]) == {"edr", "itdr"}
+
+    def test_generate_without_adapter_refs_keeps_old_response_shape(self, client: TestClient):
+        """Back-compat: callers that never send adapter_refs[] still get a
+        well-formed response with auto_included_modules=[]."""
+        resp = client.post("/api/infra/generate", json={
+            "provider": "aws",
+            "region": "us-east-1",
+            "modules": ["edr"],
+            "params": {"project_name": "legacy", "dc_ssh_cidr": "1.2.3.4/32"},
+        })
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["auto_included_modules"] == []
+
+    def test_unresolved_adapter_ref_does_not_400(self, client: TestClient):
+        resp = client.post("/api/infra/generate", json={
+            "provider": "aws",
+            "region": "us-east-1",
+            "modules": ["edr"],
+            "adapter_refs": ["TOOL-DOES-NOT-EXIST"],
+            "params": {"project_name": "stale", "dc_ssh_cidr": "1.2.3.4/32"},
+        })
+        assert resp.status_code == 200  # never fatal
+        body = resp.json()
+        assert body["auto_included_modules"] == []

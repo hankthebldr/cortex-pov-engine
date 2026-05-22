@@ -1,7 +1,52 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import LabView, { resolveModuleDependencies } from '../console/LabView.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
+
+const adapterFixtures = {
+  adapters: [
+    {
+      adapter_id:   'TOOL-MIMIKATZ',
+      name:         'Mimikatz',
+      version:      '2.2.0',
+      tier:         3,
+      category:     'identity-credential',
+      safety_class: 'dual-use-lab-only',
+      planes:       ['EDR', 'ITDR'],
+      expected_techniques: ['T1003.001'],
+      target_platform: 'windows',
+      license:      'CC-BY-4.0',
+      tags:         [],
+    },
+    {
+      adapter_id:   'TOOL-RUBEUS',
+      name:         'Rubeus',
+      version:      '2.3.2',
+      tier:         3,
+      category:     'identity-credential',
+      safety_class: 'dual-use-lab-only',
+      planes:       ['ITDR'],
+      expected_techniques: ['T1558.003'],
+      target_platform: 'windows',
+      license:      'BSD-3-Clause',
+      tags:         [],
+    },
+    {
+      adapter_id:   'TOOL-GOPHISH',
+      name:         'Gophish',
+      version:      '0.12',
+      tier:         3,
+      category:     'social-engineering',
+      safety_class: 'dual-use-lab-only',
+      planes:       ['CDR'],
+      expected_techniques: ['T1566'],
+      target_platform: 'linux',
+      license:      'MIT',
+      tags:         [],
+    },
+  ],
+  total: 3,
+}
 
 /**
  * Tests for the console-themed Lab tab.
@@ -135,4 +180,76 @@ describe('<LabView />', () => {
     // Bundle ID is truncated to ~12 chars + ellipsis in the table cell.
     expect(screen.getByText(/b-abc12345/)).toBeInTheDocument()
   })
+})
+
+describe('<LabView /> adapter auto-pull picker', () => {
+  it('renders an adapter chip per tier-3 adapter returned by the API', async () => {
+    installRoutes({
+      'GET /api/infra/modules': moduleFixtures,
+      'GET /api/infra/bundles': { bundles: [], total: 0 },
+      'GET /api/tools/adapters': adapterFixtures,
+    })
+    render(<LabView />)
+    await waitFor(() => {
+      expect(screen.getByTestId('adapter-auto-pull')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('adapter-toggle-TOOL-MIMIKATZ')).toBeInTheDocument()
+    expect(screen.getByTestId('adapter-toggle-TOOL-RUBEUS')).toBeInTheDocument()
+    expect(screen.getByTestId('adapter-toggle-TOOL-GOPHISH')).toBeInTheDocument()
+  })
+
+  it('groups adapters by category (identity-credential, social-engineering)', async () => {
+    installRoutes({
+      'GET /api/infra/modules': moduleFixtures,
+      'GET /api/infra/bundles': { bundles: [], total: 0 },
+      'GET /api/tools/adapters': adapterFixtures,
+    })
+    render(<LabView />)
+    await waitFor(() => {
+      expect(screen.getByText(/identity-credential/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/social-engineering/i)).toBeInTheDocument()
+  })
+
+  it('chip starts unticked', async () => {
+    installRoutes({
+      'GET /api/infra/modules': moduleFixtures,
+      'GET /api/infra/bundles': { bundles: [], total: 0 },
+      'GET /api/tools/adapters': adapterFixtures,
+    })
+    render(<LabView />)
+    const chip = await screen.findByTestId('adapter-toggle-TOOL-RUBEUS')
+    expect(chip.className).not.toMatch(/is-active/)
+  })
+
+  it('hides the picker entirely when the catalog returns no adapters', async () => {
+    installRoutes({
+      'GET /api/infra/modules': moduleFixtures,
+      'GET /api/infra/bundles': { bundles: [], total: 0 },
+      'GET /api/tools/adapters': { adapters: [], total: 0 },
+    })
+    render(<LabView />)
+    // Wait for the modules grid to confirm render, then assert the picker
+    // is absent. Using a unique-fixture module name avoids the ambiguous-
+    // text matcher trap.
+    await waitFor(() => {
+      expect(screen.getByText('itdr')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('adapter-auto-pull')).not.toBeInTheDocument()
+  })
+
+  it('survives /api/tools/adapters failing — section stays hidden, no crash', async () => {
+    // No mock for /api/tools/adapters → 404 from the mockFetch fallback
+    installRoutes({
+      'GET /api/infra/modules': moduleFixtures,
+      'GET /api/infra/bundles': { bundles: [], total: 0 },
+    })
+    render(<LabView />)
+    await waitFor(() => {
+      expect(screen.getByText('itdr')).toBeInTheDocument()
+    })
+    // No adapter section, no error banner, no React crash
+    expect(screen.queryByTestId('adapter-auto-pull')).not.toBeInTheDocument()
+  })
+
 })
