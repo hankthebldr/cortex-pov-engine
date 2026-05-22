@@ -251,5 +251,43 @@ describe('<LabView /> adapter auto-pull picker', () => {
     // No adapter section, no error banner, no React crash
     expect(screen.queryByTestId('adapter-auto-pull')).not.toBeInTheDocument()
   })
+})
+
+describe('<LabView /> scenario → infra-hints quick-fill', () => {
+  it('renders the hint row with input + apply button', async () => {
+    installRoutes({
+      'GET /api/infra/modules':  moduleFixtures,
+      'GET /api/infra/bundles':  { bundles: [], total: 0 },
+      'GET /api/tools/adapters': { adapters: [], total: 0 },
+    })
+    render(<LabView />)
+    await waitFor(() => {
+      expect(screen.getByTestId('scenario-hint-row')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('scenario-hint-input')).toBeInTheDocument()
+    expect(screen.getByTestId('scenario-hint-apply')).toBeInTheDocument()
+  })
+
+  it('disables the apply button when the input is empty', async () => {
+    installRoutes({
+      'GET /api/infra/modules':  moduleFixtures,
+      'GET /api/infra/bundles':  { bundles: [], total: 0 },
+      'GET /api/tools/adapters': { adapters: [], total: 0 },
+    })
+    render(<LabView />)
+    const btn = await screen.findByTestId('scenario-hint-apply')
+    expect(btn).toBeDisabled()
+  })
+
+  it('placeholder hint mentions the SIM- id format the operator should type', async () => {
+    installRoutes({
+      'GET /api/infra/modules':  moduleFixtures,
+      'GET /api/infra/bundles':  { bundles: [], total: 0 },
+      'GET /api/tools/adapters': { adapters: [], total: 0 },
+    })
+    render(<LabView />)
+    const input = await screen.findByTestId('scenario-hint-input')
+    expect(input.getAttribute('placeholder')).toMatch(/SIM-/)
+  })
 
 })

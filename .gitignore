@@ -7,6 +7,10 @@ __pycache__/
 # Node
 ui/node_modules/
 ui/dist/
+# Defensive: catch stray node_modules at the repo root, created when
+# vitest / npm gets accidentally invoked outside ui/. Real packages
+# always live under ui/node_modules/.
+/node_modules/
 
 # Build artifacts
 bin/cortexsim-agent
