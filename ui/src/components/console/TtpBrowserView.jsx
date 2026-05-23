@@ -369,20 +369,7 @@ function TtpDetail({ detail, onClose }) {
       )}
 
       <DetailSection label="Detection coverage">
-        <div className="adapter-schema">
-          {[
-            ['iocs',              detections.iocs?.length              || 0],
-            ['biocs',             detections.biocs?.length             || 0],
-            ['xql_queries',       detections.xql_queries?.length       || 0],
-            ['correlation_rules', detections.correlation_rules?.length || 0],
-            ['analytics_modules', detections.analytics_modules?.length || 0],
-          ].filter(([, n]) => n > 0).map(([k, n]) => (
-            <div key={k} className="adapter-schema__row">
-              <div className="adapter-schema__name mono">{k}</div>
-              <div className="adapter-schema__desc mono">{n}</div>
-            </div>
-          ))}
-        </div>
+        <DetectionsBreakdown detections={detections} />
       </DetailSection>
 
       {products.length > 0 && (
@@ -447,6 +434,197 @@ function DetailSection({ label, children }) {
     <div className="competitive__detail-section">
       <div className="competitive__detail-label">{label}</div>
       {children}
+    </div>
+  )
+}
+
+/* ─── Detection accordion (XQL / BIOC / correlation body reveal) ───── */
+
+/**
+ * Render every detection across BIOC / XQL / correlation / IOC as an
+ * expandable card with the raw logic body + copy-to-clipboard.
+ *
+ * Goal: an operator who reads the detail panel can grab the exact XQL
+ * string (or BIOC body, or correlation expression) Cortex ships and
+ * paste it straight into XSIAM Query Center without a hop through the
+ * filesystem. Closes the "show me the actual detection" gap PR #50
+ * left as a follow-up.
+ */
+function DetectionsBreakdown({ detections }) {
+  const kinds = [
+    { key: 'biocs',             label: 'BIOCs',        bodyKey: 'logic' },
+    { key: 'xql_queries',       label: 'XQL queries',  bodyKey: 'query' },
+    { key: 'correlation_rules', label: 'Correlation',  bodyKey: 'logic' },
+    { key: 'iocs',              label: 'IOCs',         bodyKey: 'value' },
+    { key: 'analytics_modules', label: 'Analytics',    bodyKey: 'logic' },
+  ]
+  const hasAny = kinds.some(({ key }) => (detections[key] || []).length > 0)
+  if (!hasAny) {
+    return (
+      <div className="coverage__empty mono" style={{ fontSize: 11 }}>
+        no detections shipped with this card
+      </div>
+    )
+  }
+  return (
+    <div className="ttp-detections">
+      {kinds.map(({ key, label, bodyKey }) => {
+        const items = detections[key] || []
+        if (items.length === 0) return null
+        return (
+          <div key={key} className="ttp-detections__group">
+            <div
+              className="competitive__detail-label mono"
+              style={{ fontSize: 10, opacity: 0.7, marginBottom: 4 }}
+            >
+              {label} · {items.length}
+            </div>
+            {items.map((item, idx) => (
+              <DetectionItem
+                key={`${key}-${idx}`}
+                kind={key}
+                index={idx}
+                item={item}
+                bodyKey={bodyKey}
+              />
+            ))}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function DetectionItem({ kind, index, item, bodyKey }) {
+  const [expanded, setExpanded] = useState(false)
+  const [copied, setCopied]     = useState(false)
+
+  // BIOC / correlation: name + description + logic
+  // XQL:               name + purpose     + query
+  // IOC:               ioc_type + value   (value becomes the body)
+  const name = item.name
+    || (kind === 'iocs' ? `${item.ioc_type || 'ioc'}: ${item.value || ''}` : `${kind}-${index + 1}`)
+  const desc = item.description || item.purpose || item.context || ''
+  const body = item[bodyKey] || ''
+  const severity = item.severity
+  const detId = item.detection_id || item.rule_id
+
+  const handleCopy = (e) => {
+    e.stopPropagation()
+    if (!body) return
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(body).catch(() => {})
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className={'ttp-detection-item' + (expanded ? ' is-expanded' : '')}>
+      <button
+        type="button"
+        className="ttp-detection-item__head"
+        data-testid={`ttp-det-${kind}-${index}`}
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          background: 'none',
+          border: 0,
+          padding: '6px 4px',
+          cursor: 'pointer',
+          borderTop: '1px solid var(--c-border-subtle, rgba(255,255,255,0.05))',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span className="mono" style={{ fontSize: 9, opacity: 0.5 }}>
+            {expanded ? '▼' : '▶'}
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 500, flex: 1 }}>{name}</span>
+          {severity && (
+            <span className="chip" style={{ fontSize: 9 }}>{severity}</span>
+          )}
+          {detId && (
+            <span
+              className="mono"
+              style={{ fontSize: 9, opacity: 0.6 }}
+              title={detId}
+            >
+              {detId}
+            </span>
+          )}
+        </div>
+        {desc && !expanded && (
+          <div
+            style={{
+              fontSize: 10,
+              color: 'var(--c-text-muted)',
+              marginLeft: 16,
+              marginTop: 2,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {desc}
+          </div>
+        )}
+      </button>
+      {expanded && (
+        <div className="ttp-detection-item__body" style={{ padding: '4px 4px 8px 16px' }}>
+          {desc && (
+            <p style={{ fontSize: 11, color: 'var(--c-text-secondary)', margin: '0 0 6px' }}>
+              {desc}
+            </p>
+          )}
+          {body ? (
+            <>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 4,
+                }}
+              >
+                <span className="mono" style={{ fontSize: 9, opacity: 0.6 }}>
+                  {bodyKey}
+                </span>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ height: 20, padding: '0 8px', fontSize: 10 }}
+                  onClick={handleCopy}
+                  data-testid={`ttp-det-copy-${kind}-${index}`}
+                >
+                  {copied ? '✓ copied' : 'Copy'}
+                </button>
+              </div>
+              <pre
+                className="mono"
+                style={{
+                  fontSize: 10,
+                  background: 'var(--c-bg-subtle, rgba(0,0,0,0.25))',
+                  border: '1px solid var(--c-border-subtle, rgba(255,255,255,0.05))',
+                  padding: '6px 8px',
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: 260,
+                  overflowY: 'auto',
+                }}
+              >
+                {body}
+              </pre>
+            </>
+          ) : (
+            <p className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>
+              (no body in corpus entry)
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
