@@ -6,6 +6,8 @@ end-to-end against the same data the engine sees at runtime.
 """
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -166,3 +168,163 @@ def test_get_ttp_detail_unknown_id_404(client):
     err = resp.json()["detail"]
     assert err["code"] == "TTP_NOT_FOUND"
     assert "TTP-DOES-NOT-EXIST" in err["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Runs-by-TTP endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def seeded_ttp_runs(session_factory):
+    """Seed two runs whose Result rows cite TTP-2026-0004 (DCSync), plus
+    one run citing a different TTP and one orphan Result with no ttp_ref
+    so the filter logic gets exercised."""
+    from models import Run, Result, Scenario
+
+    async def _seed():
+        async with session_factory() as db:
+            db.add(Scenario(
+                scenario_id="SIM-ITDR-002",
+                name="DCSync chain",
+                plane="ITDR",
+                version="1.0",
+                status="active",
+                uc_ref="UCS-ITDR-02",
+                uc_name="Credential Replication",
+                tc_ref="TC-ITDR-02",
+                tc_name="DCSync Replication Abuse",
+                mitre_tactic="TA0006",
+                mitre_tactic_name="Credential Access",
+                mitre_technique="T1003.006",
+                mitre_technique_name="DCSync",
+                steps=[],
+            ))
+
+            now = datetime.utcnow()
+
+            # Run 1 — newest, 2 expected, 2 observed, fast MTTD
+            db.add(Run(
+                run_id="r-dcsync-1", scenario_id="SIM-ITDR-002",
+                mode="push", status="complete",
+                started_at=now - timedelta(minutes=10),
+                completed_at=now - timedelta(minutes=5),
+            ))
+            db.add(Result(
+                run_id="r-dcsync-1", plane="ITDR",
+                signal_type="BIOC", expected_detection="DRSUAPI from non-DC",
+                observed=True, ttp_ref="TTP-2026-0004",
+                detection_id="BIOC-CRED-DCSYNC-001",
+                executed_at=now - timedelta(minutes=10),
+                observed_at=now - timedelta(minutes=9, seconds=30),
+            ))
+            db.add(Result(
+                run_id="r-dcsync-1", plane="ITDR",
+                signal_type="Analytics", expected_detection="Event 4662",
+                observed=True, ttp_ref="TTP-2026-0004",
+                detection_id="BIOC-CRED-DCSYNC-002",
+                executed_at=now - timedelta(minutes=10),
+                observed_at=now - timedelta(minutes=8),
+            ))
+
+            # Run 2 — older, 2 expected, 1 observed (partial)
+            db.add(Run(
+                run_id="r-dcsync-2", scenario_id="SIM-ITDR-002",
+                mode="push", status="complete",
+                started_at=now - timedelta(hours=2),
+                completed_at=now - timedelta(hours=1, minutes=55),
+            ))
+            db.add(Result(
+                run_id="r-dcsync-2", plane="ITDR",
+                signal_type="BIOC", expected_detection="DRSUAPI",
+                observed=True, ttp_ref="TTP-2026-0004",
+                detection_id="BIOC-CRED-DCSYNC-001",
+                executed_at=now - timedelta(hours=2),
+                observed_at=now - timedelta(hours=1, minutes=50),
+            ))
+            db.add(Result(
+                run_id="r-dcsync-2", plane="ITDR",
+                signal_type="BIOC", expected_detection="Mimikatz dcsync pattern",
+                observed=False, ttp_ref="TTP-2026-0004",
+                detection_id="BIOC-CRED-DCSYNC-003",
+            ))
+
+            # Run 3 — cites a DIFFERENT TTP, must NOT appear in the
+            # TTP-2026-0004 history
+            db.add(Run(
+                run_id="r-other", scenario_id="SIM-ITDR-002",
+                mode="push", status="complete",
+                started_at=now - timedelta(minutes=20),
+            ))
+            db.add(Result(
+                run_id="r-other", plane="ITDR",
+                signal_type="BIOC", expected_detection="LSASS dump",
+                observed=True, ttp_ref="TTP-2026-0002",
+            ))
+
+            # Orphan Result with no ttp_ref — defensive: don't count it
+            db.add(Result(
+                run_id="r-dcsync-1", plane="ITDR",
+                signal_type="BIOC", expected_detection="untyped step",
+                observed=False, ttp_ref=None,
+            ))
+
+            await db.commit()
+
+    asyncio.get_event_loop().run_until_complete(_seed())
+
+
+def test_runs_by_ttp_returns_only_matching_runs(client, seeded_ttp_runs):
+    resp = client.get("/api/ttps/TTP-2026-0004/runs")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ttp_id"] == "TTP-2026-0004"
+    run_ids = [r["run_id"] for r in body["runs"]]
+    assert run_ids == ["r-dcsync-1", "r-dcsync-2"]  # newest-first, no r-other
+    assert body["total"] == 2
+
+
+def test_runs_by_ttp_rolls_up_per_run_counts(client, seeded_ttp_runs):
+    body = client.get("/api/ttps/TTP-2026-0004/runs").json()
+    by_id = {r["run_id"]: r for r in body["runs"]}
+
+    # Run 1 — 2 expected, 2 observed, fastest MTTD = 30 s
+    assert by_id["r-dcsync-1"]["expected"] == 2
+    assert by_id["r-dcsync-1"]["observed"] == 2
+    assert by_id["r-dcsync-1"]["min_mttd_seconds"] == pytest.approx(30, abs=1)
+    assert set(by_id["r-dcsync-1"]["detection_ids"]) == {
+        "BIOC-CRED-DCSYNC-001", "BIOC-CRED-DCSYNC-002",
+    }
+
+    # Run 2 — 2 expected, 1 observed, MTTD = 600 s (one Result lacks
+    # observed_at so it doesn't contribute to min_mttd)
+    assert by_id["r-dcsync-2"]["expected"] == 2
+    assert by_id["r-dcsync-2"]["observed"] == 1
+    assert by_id["r-dcsync-2"]["min_mttd_seconds"] == pytest.approx(600, abs=1)
+
+
+def test_runs_by_ttp_scenario_id_propagated(client, seeded_ttp_runs):
+    body = client.get("/api/ttps/TTP-2026-0004/runs").json()
+    for r in body["runs"]:
+        assert r["scenario_id"] == "SIM-ITDR-002"
+        assert r["run_status"] == "complete"
+        assert isinstance(r["started_at"], str)
+
+
+def test_runs_by_ttp_empty_when_no_results(client, seeded_ttp_runs):
+    body = client.get("/api/ttps/TTP-2026-0003/runs").json()
+    assert body == {"ttp_id": "TTP-2026-0003", "runs": [], "total": 0}
+
+
+def test_runs_by_ttp_unknown_ttp_404(client):
+    resp = client.get("/api/ttps/TTP-NOPE/runs")
+    assert resp.status_code == 404
+    err = resp.json()["detail"]
+    assert err["code"] == "TTP_NOT_FOUND"
+
+
+def test_runs_by_ttp_respects_limit(client, seeded_ttp_runs):
+    body = client.get("/api/ttps/TTP-2026-0004/runs?limit=1").json()
+    assert body["total"] == 1
+    # Newest-first — r-dcsync-1 wins
+    assert body["runs"][0]["run_id"] == "r-dcsync-1"

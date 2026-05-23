@@ -280,6 +280,54 @@ describe('<TtpBrowserView />', () => {
     )
   })
 
+  // ── Run history (per-TTP run rollup) ───────────────────────────────
+
+  it('renders the run history table with coverage chips + MTTD', async () => {
+    installRoutes({
+      'GET /api/ttps':                       fixtureList,
+      'GET /api/ttps/TTP-2026-0004':         fixtureDetailDcsync,
+      'GET /api/ttps/TTP-2026-0004/runs': {
+        ttp_id: 'TTP-2026-0004',
+        runs: [
+          {
+            run_id: 'r-dcsync-1', scenario_id: 'SIM-ITDR-002',
+            run_status: 'complete', started_at: '2026-05-23T15:00:00Z',
+            expected: 2, observed: 2, min_mttd_seconds: 30,
+            detection_ids: ['BIOC-CRED-DCSYNC-001'],
+          },
+          {
+            run_id: 'r-dcsync-2', scenario_id: 'SIM-ITDR-002',
+            run_status: 'complete', started_at: '2026-05-22T10:00:00Z',
+            expected: 2, observed: 1, min_mttd_seconds: 600,
+            detection_ids: ['BIOC-CRED-DCSYNC-001'],
+          },
+        ],
+        total: 2,
+      },
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-runs-table')).toBeInTheDocument())
+    expect(screen.getByTestId('ttp-run-r-dcsync-1')).toBeInTheDocument()
+    expect(screen.getByTestId('ttp-run-r-dcsync-2')).toBeInTheDocument()
+    // Coverage chip — full hit on run 1, partial on run 2
+    expect(screen.getByText('2/2')).toBeInTheDocument()
+    expect(screen.getByText('1/2')).toBeInTheDocument()
+    // MTTD — 30s formatted as seconds, 600s formatted as 10m
+    expect(screen.getByText('30s')).toBeInTheDocument()
+    expect(screen.getByText('10m')).toBeInTheDocument()
+  })
+
+  it('empty run history renders the no-runs placeholder', async () => {
+    installRoutes({
+      'GET /api/ttps':                       fixtureList,
+      'GET /api/ttps/TTP-2026-0004':         fixtureDetailDcsync,
+      'GET /api/ttps/TTP-2026-0004/runs':    { ttp_id: 'TTP-2026-0004', runs: [], total: 0 },
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-runs-empty')).toBeInTheDocument())
+    expect(screen.getByText(/no runs have exercised this TTP yet/i)).toBeInTheDocument()
+  })
+
   it('empty detections renders a friendly no-detections message', async () => {
     installRoutes({
       'GET /api/ttps': fixtureList,
