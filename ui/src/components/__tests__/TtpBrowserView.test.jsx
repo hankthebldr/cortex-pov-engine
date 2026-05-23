@@ -94,8 +94,27 @@ const fixtureDetailDcsync = {
     kill_chain_phase: 'actions-on-objectives',
   },
   detections: {
-    iocs: [], biocs: [{ name: 'a' }, { name: 'b' }, { name: 'c' }],
-    xql_queries: [{ name: 'q1' }], correlation_rules: [], analytics_modules: [],
+    iocs: [],
+    biocs: [
+      {
+        name:         'DRSUAPI Replication From Non-DC Host',
+        description:  'A non-DC host issues a DRSUAPI RPC call to a DC.',
+        severity:     'high',
+        detection_id: 'BIOC-CRED-DCSYNC-001',
+        logic:        'preset = xdr_data\n| filter rpc_interface_uuid = "e3514235-..."',
+      },
+      { name: 'b' },
+      { name: 'c' },
+    ],
+    xql_queries: [
+      {
+        name:    'Confirm DRSUAPI replication seen from non-DC',
+        purpose: 'validation',
+        query:   'preset = xdr_data\n| filter event_type = ENUM.NETWORK',
+      },
+    ],
+    correlation_rules: [],
+    analytics_modules: [],
   },
   panw_mapping: {
     products: [{ module: 'cortex-xdr', submodule: 'identity-threat-module' }],
@@ -203,5 +222,76 @@ describe('<TtpBrowserView />', () => {
     await waitFor(() => {
       expect(screen.getByText(/no mock for|Failed to load/i)).toBeInTheDocument()
     })
+  })
+
+  // ── Detection accordion (XQL/BIOC body reveal + copy) ──────────────
+
+  it('detection accordion is collapsed by default and reveals body on click', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+
+    // Body is not visible before expand
+    expect(screen.queryByText(/rpc_interface_uuid/)).not.toBeInTheDocument()
+
+    // Expand the first BIOC
+    fireEvent.click(screen.getByTestId('ttp-det-biocs-0'))
+
+    // XQL body now visible
+    expect(screen.getByText(/rpc_interface_uuid/)).toBeInTheDocument()
+  })
+
+  it('renders detection name + severity + detection_id chip in the head', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    expect(screen.getByText('DRSUAPI Replication From Non-DC Host')).toBeInTheDocument()
+    expect(screen.getByText('high')).toBeInTheDocument()
+    expect(screen.getByText('BIOC-CRED-DCSYNC-001')).toBeInTheDocument()
+  })
+
+  it('copy button writes the detection body to clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+
+    // Expand the first XQL query and copy
+    fireEvent.click(screen.getByTestId('ttp-det-xql_queries-0'))
+    fireEvent.click(screen.getByTestId('ttp-det-copy-xql_queries-0'))
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText).toHaveBeenCalledWith(
+      'preset = xdr_data\n| filter event_type = ENUM.NETWORK',
+    )
+  })
+
+  it('empty detections renders a friendly no-detections message', async () => {
+    installRoutes({
+      'GET /api/ttps': fixtureList,
+      'GET /api/ttps/TTP-2026-0004': {
+        ...fixtureDetailDcsync,
+        detections: {
+          iocs: [], biocs: [], xql_queries: [], correlation_rules: [], analytics_modules: [],
+        },
+      },
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    expect(screen.getByText(/no detections shipped/i)).toBeInTheDocument()
   })
 })
