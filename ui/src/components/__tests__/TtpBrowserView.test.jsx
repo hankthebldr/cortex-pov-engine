@@ -317,6 +317,38 @@ describe('<TtpBrowserView />', () => {
     expect(screen.getByText('10m')).toBeInTheDocument()
   })
 
+  it('clicking a run row dispatches cortex:navigate-run with the run_id', async () => {
+    installRoutes({
+      'GET /api/ttps':                       fixtureList,
+      'GET /api/ttps/TTP-2026-0004':         fixtureDetailDcsync,
+      'GET /api/ttps/TTP-2026-0004/runs': {
+        ttp_id: 'TTP-2026-0004',
+        runs: [
+          {
+            run_id: 'r-dcsync-1', scenario_id: 'SIM-ITDR-002',
+            run_status: 'complete', started_at: '2026-05-23T15:00:00Z',
+            expected: 2, observed: 2, min_mttd_seconds: 30,
+            detection_ids: [],
+          },
+        ],
+        total: 1,
+      },
+    })
+
+    const received = []
+    const listener = (e) => received.push(e.detail?.runId)
+    window.addEventListener('cortex:navigate-run', listener)
+
+    try {
+      render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+      await waitFor(() => expect(screen.getByTestId('ttp-run-r-dcsync-1')).toBeInTheDocument())
+      fireEvent.click(screen.getByTestId('ttp-run-r-dcsync-1'))
+      expect(received).toEqual(['r-dcsync-1'])
+    } finally {
+      window.removeEventListener('cortex:navigate-run', listener)
+    }
+  })
+
   it('empty run history renders the no-runs placeholder', async () => {
     installRoutes({
       'GET /api/ttps':                       fixtureList,

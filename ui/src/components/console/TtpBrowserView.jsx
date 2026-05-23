@@ -498,7 +498,27 @@ function RunHistory({ runs }) {
       </thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.run_id} data-testid={`ttp-run-${r.run_id}`}>
+          <tr
+            key={r.run_id}
+            data-testid={`ttp-run-${r.run_id}`}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('cortex:navigate-run', {
+                detail: { runId: r.run_id },
+              }))
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                window.dispatchEvent(new CustomEvent('cortex:navigate-run', {
+                  detail: { runId: r.run_id },
+                }))
+              }
+            }}
+            style={{ cursor: 'pointer' }}
+            title={`Open run ${r.run_id} in the validation wizard`}
+          >
             <td className="mono" style={{ padding: '2px 6px 2px 0' }}>{r.run_id}</td>
             <td className="mono" style={{ padding: '2px 6px 2px 0' }}>{r.scenario_id}</td>
             <td className="mono" style={{ padding: '2px 6px 2px 0', fontSize: 10 }}>

@@ -232,6 +232,26 @@ export default function App() {
     refreshRuns()
   }, [refreshRuns])
 
+  // ── cortex:navigate-run — TTP Browser → Run Detail drill-down ────
+  //
+  // The TTP Browser's run-history table emits this event on row click.
+  // App.jsx owns the top-level view routing, so it's the natural place
+  // to listen and flip to the validation wizard for the requested run.
+  useEffect(() => {
+    const handler = (e) => {
+      const runId = e?.detail?.runId
+      if (typeof runId !== 'string' || !runId) return
+      setValidateRunId(runId)
+      setShowValidate(true)
+      setShowResults(false)
+      setShowMitre(false)
+      setShowDeploy(false)
+      setShowEal(false)
+    }
+    window.addEventListener('cortex:navigate-run', handler)
+    return () => window.removeEventListener('cortex:navigate-run', handler)
+  }, [])
+
   // ── Toast helper ──────────────────────────────────────────────────────────
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type })
