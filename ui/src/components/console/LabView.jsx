@@ -4,6 +4,8 @@ import {
   generateInfra,
   getInfraBundles,
   downloadInfraBundle,
+  getToolAdapters,
+  getScenarioInfraHints,
 } from '../../api/client.js'
 
 /**
@@ -51,6 +53,15 @@ export default function LabView({ onError = () => {} }) {
   const [generating, setGenerating] = useState(false)
   const [lastBundle, setLastBundle] = useState(null)
 
+  // Adapter-driven module auto-pull. The DC ticks tool adapters here
+  // (only tier-3 adapters with an iac_module are useful — the catalog
+  // filter call below restricts the list). The backend resolver in
+  // InfraGenerator unions each adapter's iac_module into the bundle's
+  // module set, so the operator can stop thinking about which module
+  // ships which tool.
+  const [adapters, setAdapters]                 = useState([])
+  const [selectedAdapters, setSelectedAdapters] = useState(new Set())
+
   // ── Data fetches ─────────────────────────────────────────────────────
   const refreshModules = useCallback(() => {
     setLoading(true)
@@ -68,6 +79,16 @@ export default function LabView({ onError = () => {} }) {
 
   useEffect(() => { refreshModules() }, [refreshModules])
   useEffect(() => { refreshBundles() }, [refreshBundles])
+
+  // Load only tier-3 adapters — these are the ones that declare an
+  // iac_module the bundle can auto-include. Tier 4 (runtime-fetched)
+  // and Tier 2 (submodule) tools don't bind to IaC so showing them in
+  // this picker would be noise.
+  useEffect(() => {
+    getToolAdapters({ tier: 3 })
+      .then((d) => setAdapters(Array.isArray(d?.adapters) ? d.adapters : []))
+      .catch(() => { /* non-fatal — picker just stays empty */ })
+  }, [])
 
   // ── Module toggle (with dependency awareness) ────────────────────────
   // See resolveModuleDependencies below — the policy decision lives there.
@@ -102,6 +123,7 @@ export default function LabView({ onError = () => {} }) {
         provider,
         region,
         modules: Array.from(selected),
+        adapter_refs: Array.from(selectedAdapters),
         params: {
           ...params,
           k8s_node_count:   Number(params.k8s_node_count),
@@ -117,7 +139,7 @@ export default function LabView({ onError = () => {} }) {
     } finally {
       setGenerating(false)
     }
-  }, [canGenerate, provider, region, selected, params, refreshBundles, onError])
+  }, [canGenerate, provider, region, selected, selectedAdapters, params, refreshBundles, onError])
 
   const handleDownload = useCallback(async (bundleId) => {
     try {
@@ -211,6 +233,48 @@ export default function LabView({ onError = () => {} }) {
         )}
       </div>
 
+      {/* ── Hint from scenario (auto-fill modules + adapter chips) ───── */}
+      <ScenarioHintRow
+        modules={modules}
+        onApplyHint={(hint) => {
+          // Merge suggested_modules into the module picker selection
+          if (Array.isArray(hint.suggested_modules)) {
+            setSelected((prev) => {
+              const next = new Set(prev)
+              for (const m of hint.suggested_modules) next.add(m)
+              return next
+            })
+          }
+          // Tick every adapter_ref the scenario declared (resolved or not —
+          // unresolved refs surface as a warning row in the picker itself)
+          if (Array.isArray(hint.adapter_refs)) {
+            setSelectedAdapters((prev) => {
+              const next = new Set(prev)
+              for (const r of hint.adapter_refs) next.add(r)
+              return next
+            })
+          }
+        }}
+        onError={onError}
+      />
+
+      {/* ── Adapter auto-pull (tier-3 only — adapters that ship via IaC) ─ */}
+      {adapters.length > 0 && (
+        <AdapterAutoPullPicker
+          adapters={adapters}
+          selectedModules={selected}
+          selectedAdapters={selectedAdapters}
+          onToggleAdapter={(adapterId) => {
+            setSelectedAdapters((prev) => {
+              const next = new Set(prev)
+              if (next.has(adapterId)) next.delete(adapterId)
+              else next.add(adapterId)
+              return next
+            })
+          }}
+        />
+      )}
+
       {/* ── Parameters ─────────────────────────────────────────────── */}
       <div className="lab__section">
         <div className="lab__section-title">Parameters</div>
@@ -280,6 +344,16 @@ export default function LabView({ onError = () => {} }) {
         {lastBundle && !generating && validationErrors.length === 0 && (
           <span className="lab__last-bundle mono">
             ✓ generated {String(lastBundle.bundle_id).slice(0, 12)}…
+            {Array.isArray(lastBundle.auto_included_modules)
+              && lastBundle.auto_included_modules.length > 0 && (
+              <span
+                className="lab__auto-pulled"
+                style={{ marginLeft: 8 }}
+                title="Modules auto-included from selected adapter_refs"
+              >
+                · +{lastBundle.auto_included_modules.join(', +')} (auto)
+              </span>
+            )}
             <button
               type="button"
               className="btn"
@@ -397,6 +471,237 @@ function BundleRow({ bundle, onDownload }) {
       >
         Download
       </button>
+    </div>
+  )
+}
+
+/* ─── Scenario → infra-hints quick-fill ───────────────────────────── */
+
+/**
+ * ScenarioHintRow — small input + button. The DC types/pastes a
+ * scenario id (e.g. ``SIM-EDR-001``), hits Apply, and the row fetches
+ * ``/api/scenarios/{id}/infra-hints`` and emits the resolved hint up to
+ * LabView so the module picker + auto-pull picker auto-fill.
+ *
+ * Failure modes are non-destructive: 404 surfaces inline, network
+ * errors bubble to the global error toast via ``onError``.
+ */
+function ScenarioHintRow({ modules, onApplyHint, onError }) {
+  const [scenarioId, setScenarioId] = useState('')
+  const [loading, setLoading]       = useState(false)
+  const [lastHint, setLastHint]     = useState(null)
+  const [inlineError, setInlineError] = useState(null)
+
+  // Module ids the DC's IaC catalog actually supports for the active
+  // provider. Used to flag a hint that names a module the bundle won't
+  // be able to build (e.g. scenario references the future `cspm`
+  // module under GCP before Phase C ports it).
+  const validModules = useMemo(
+    () => new Set((modules || []).map((m) => m.name)),
+    [modules],
+  )
+
+  const handleApply = useCallback(async () => {
+    const id = scenarioId.trim()
+    if (!id) return
+    setLoading(true)
+    setInlineError(null)
+    try {
+      const hint = await getScenarioInfraHints(id)
+      setLastHint(hint)
+      onApplyHint(hint)
+    } catch (e) {
+      // 404 lives inline (operator typo); other failures bubble out.
+      const msg = e?.message || 'Hint failed'
+      if (/SCENARIO_NOT_FOUND|404|not found/i.test(msg)) {
+        setInlineError(`Scenario not found: ${id}`)
+      } else {
+        onError(msg)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [scenarioId, onApplyHint, onError])
+
+  // Module suggestions that the IaC catalog DOESN'T know about — surface
+  // these so the operator isn't surprised when the bundle drops them.
+  const missingFromCatalog = useMemo(() => {
+    if (!lastHint || !Array.isArray(lastHint.suggested_modules)) return []
+    return lastHint.suggested_modules.filter((m) => !validModules.has(m))
+  }, [lastHint, validModules])
+
+  return (
+    <div className="lab__section" data-testid="scenario-hint-row">
+      <div className="lab__section-title">
+        Hint from scenario{' '}
+        <span className="mono" style={{
+          fontSize: 11,
+          color: 'var(--c-text-muted)',
+          fontWeight: 400,
+          marginLeft: 6,
+        }}>
+          (auto-fills modules + adapter chips from external_tools[])
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          type="text"
+          className="lab__input mono"
+          style={{ maxWidth: 260 }}
+          placeholder="SIM-EDR-001"
+          value={scenarioId}
+          onChange={(e) => setScenarioId(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleApply() }}
+          data-testid="scenario-hint-input"
+        />
+        <button
+          type="button"
+          className="btn"
+          onClick={handleApply}
+          disabled={loading || !scenarioId.trim()}
+          data-testid="scenario-hint-apply"
+        >
+          {loading ? 'Resolving…' : 'Apply hint'}
+        </button>
+        {inlineError && (
+          <span className="mono" style={{ color: 'var(--c-missed)', fontSize: 11 }}>
+            ! {inlineError}
+          </span>
+        )}
+      </div>
+      {lastHint && !inlineError && (
+        <div
+          className="mono"
+          style={{ fontSize: 11, color: 'var(--c-text-secondary)', marginTop: 6 }}
+        >
+          ✓ {lastHint.plane} · refs: {lastHint.adapter_refs.length || '—'}
+          {lastHint.suggested_modules.length > 0 && (
+            <span> · +{lastHint.suggested_modules.join(', +')}</span>
+          )}
+          {lastHint.unresolved_refs.length > 0 && (
+            <span style={{ color: 'var(--c-pending)' }}>
+              {' '}· {lastHint.unresolved_refs.length} unresolved (
+              {lastHint.unresolved_refs.join(', ')})
+            </span>
+          )}
+          {missingFromCatalog.length > 0 && (
+            <span style={{ color: 'var(--c-pending)' }}>
+              {' '}· not in catalog: {missingFromCatalog.join(', ')}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─── Adapter auto-pull picker ─────────────────────────────────────── */
+
+/**
+ * AdapterAutoPullPicker — surface tier-3 tool adapters and let the DC
+ * tick the ones their scenario will reference. Backend resolves each
+ * adapter's iac_module and auto-includes it in the bundle, so the
+ * operator never has to remember which module ships which tool.
+ *
+ * Visual: chips grouped by iac_module. A chip shows the adapter name +
+ * version + safety hint; clicking toggles selection.
+ */
+function AdapterAutoPullPicker({
+  adapters,
+  selectedAdapters,
+  selectedModules,
+  onToggleAdapter,
+}) {
+  // Group adapters by their resolved iac_module so the DC can see "ticking
+  // Rubeus + BloodHound both bring in itdr" at a glance.
+  const groups = useMemo(() => {
+    const byModule = new Map()
+    for (const a of adapters) {
+      // The summary payload does not carry install.iac_module (we'd need
+      // the detail endpoint for that). However the backend resolver
+      // re-binds it server-side at generate time. For UI grouping we
+      // fall back to the first plane as a rough bucket, then label it
+      // with a parenthetical hint sourced from category.
+      const bucket = a.category || 'other'
+      if (!byModule.has(bucket)) byModule.set(bucket, [])
+      byModule.get(bucket).push(a)
+    }
+    return Array.from(byModule.entries()).sort(([a], [b]) => a.localeCompare(b))
+  }, [adapters])
+
+  const tickedCount = selectedAdapters.size
+  const moduleHints = useMemo(() => {
+    // Heuristic preview of what the backend WILL pull: derived from the
+    // adapter's planes since the summary payload doesn't include
+    // iac_module. The real source of truth is the backend's resolver +
+    // ADAPTERS.md provenance file in the generated bundle.
+    const planes = new Set()
+    for (const a of adapters) {
+      if (!selectedAdapters.has(a.adapter_id)) continue
+      for (const p of (a.planes || [])) planes.add(p.toLowerCase())
+    }
+    return Array.from(planes).filter((p) => !selectedModules.has(p))
+  }, [adapters, selectedAdapters, selectedModules])
+
+  return (
+    <div className="lab__section" data-testid="adapter-auto-pull">
+      <div className="lab__section-title">
+        Tool adapters{' '}
+        <span className="mono" style={{
+          fontSize: 11,
+          color: 'var(--c-text-muted)',
+          fontWeight: 400,
+          marginLeft: 6,
+        }}>
+          (tier 3 only · backend auto-includes each adapter's iac_module)
+        </span>
+      </div>
+      <p className="mono" style={{ fontSize: 11, color: 'var(--c-text-secondary)', margin: '4px 0 10px' }}>
+        Tick adapters your scenario will reference via{' '}
+        <span className="mono">external_tools[].adapter_ref</span>.
+        {tickedCount > 0
+          ? ` ${tickedCount} ticked.`
+          : ' None ticked — bundle stays as-is.'}
+        {moduleHints.length > 0 && (
+          <span style={{ marginLeft: 6 }}>
+            ▸ likely +<span className="mono">{moduleHints.join(', +')}</span>
+          </span>
+        )}
+      </p>
+      {groups.map(([bucket, list]) => (
+        <div key={bucket} style={{ marginBottom: 8 }}>
+          <div className="mono" style={{
+            fontSize: 10,
+            color: 'var(--c-text-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            marginBottom: 4,
+          }}>
+            {bucket}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {list.map((a) => {
+              const ticked = selectedAdapters.has(a.adapter_id)
+              return (
+                <button
+                  key={a.adapter_id}
+                  type="button"
+                  className={'competitive__filter' + (ticked ? ' is-active' : '')}
+                  data-testid={`adapter-toggle-${a.adapter_id}`}
+                  onClick={() => onToggleAdapter(a.adapter_id)}
+                  title={`${a.adapter_id} · v${a.version} · ${a.safety_class} · ${a.license}`}
+                >
+                  {ticked && <span style={{ marginRight: 4 }}>✓</span>}
+                  {a.name}
+                  <span className="mono" style={{ marginLeft: 6, fontSize: 9, opacity: 0.7 }}>
+                    v{a.version}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

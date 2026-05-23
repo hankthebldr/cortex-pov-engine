@@ -209,4 +209,35 @@ describe('<ToolAdapterCatalog />', () => {
     fireEvent.click(screen.getByRole('button', { name: /clear filters/i }))
     expect(screen.getByText('Nmap')).toBeInTheDocument()
   })
+
+  it('detail panel TTP-ref chips render as clickable buttons', async () => {
+    installRoutes({
+      'GET /api/tools/adapters':              fixtureList,
+      'GET /api/tools/adapters/TOOL-MIMIKATZ': fixtureDetailMimikatz,
+    })
+    render(<ToolAdapterCatalog />)
+    await waitFor(() => expect(screen.getByText('Mimikatz')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Mimikatz'))
+    await waitFor(() => {
+      expect(screen.getByTestId('ttp-ref-chip-TTP-2026-0002')).toBeInTheDocument()
+    })
+    // The chip is now a <button>, not a <span>, so it's focusable + clickable
+    const chip = screen.getByTestId('ttp-ref-chip-TTP-2026-0002')
+    expect(chip.tagName).toBe('BUTTON')
+  })
+
+  it('detail panel equivalent chips render as clickable buttons', async () => {
+    installRoutes({
+      'GET /api/tools/adapters':              fixtureList,
+      'GET /api/tools/adapters/TOOL-MIMIKATZ': fixtureDetailMimikatz,
+    })
+    render(<ToolAdapterCatalog />)
+    await waitFor(() => expect(screen.getByText('Mimikatz')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Mimikatz'))
+    await waitFor(() => {
+      expect(screen.getByTestId('equivalent-chip-TOOL-PYPYKATZ')).toBeInTheDocument()
+    })
+    const chip = screen.getByTestId('equivalent-chip-TOOL-PYPYKATZ')
+    expect(chip.tagName).toBe('BUTTON')
+  })
 })

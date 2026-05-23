@@ -89,6 +89,28 @@ export async function getScenario(id) {
 }
 
 /**
+ * GET /api/scenarios/:id/infra-hints
+ *
+ * Resolve a scenario's external_tools[] into IaC generator hints
+ * (adapter_refs the scenario declares + suggested_modules derived
+ * from each adapter's install.iac_module). Used by the LabView's
+ * "Hint from scenario" affordance to auto-fill the auto-pull picker.
+ *
+ * @param {string} scenarioId
+ * @returns {Promise<{
+ *   scenario_id: string,
+ *   plane: string,
+ *   adapter_refs: string[],
+ *   resolved_adapters: Array<{adapter_ref, name, tier, safety_class, iac_module}>,
+ *   unresolved_refs: string[],
+ *   suggested_modules: string[],
+ * }>}
+ */
+export async function getScenarioInfraHints(scenarioId) {
+  return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/infra-hints`)
+}
+
+/**
  * GET /api/scenarios/:id/download?format=bash|k8s
  * Returns a Blob for file download.
  * @param {string|number} id
@@ -339,8 +361,14 @@ export async function getInfraModules(provider = 'aws') {
 
 /**
  * POST /api/infra/generate
- * @param {Object} body  { provider, region, modules, params }
- * @returns {Promise<Object>}
+ * @param {Object} body
+ * @param {string} body.provider          'aws' | 'gcp' | 'azure'
+ * @param {string} body.region            cloud region (e.g. 'us-east-1')
+ * @param {string[]} body.modules         IaC modules the operator picked
+ * @param {string[]} [body.adapter_refs]  optional adapter_ref ids — backend
+ *                                        auto-includes each adapter's iac_module
+ * @param {Object} body.params            project / SSH / sizing params
+ * @returns {Promise<Object>}             response includes auto_included_modules[]
  */
 export async function generateInfra(body) {
   return request('/api/infra/generate', {

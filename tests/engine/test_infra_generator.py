@@ -39,14 +39,25 @@ def generator(real_catalog: InfraCatalog, templates_dir: Path,
     )
 
 
-def _request(modules: list[str]) -> InfraGenerateRequest:
+def _request(modules: list[str], adapter_refs: list[str] | None = None) -> InfraGenerateRequest:
     return InfraGenerateRequest(
         provider="aws",
         region="us-east-1",
         modules=modules,
+        adapter_refs=adapter_refs or [],
         params=InfraGenerateParams(project_name="test-pov",
                                    dc_ssh_cidr="203.0.113.0/32"),
     )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _load_adapter_catalog():
+    """Populate the adapter-catalog singleton once for the module so the
+    auto-pull tests resolve TOOL-MIMIKATZ / TOOL-RUBEUS / etc."""
+    from tools.adapter_catalog import catalog  # noqa: PLC0415
+    repo = Path(__file__).resolve().parent.parent.parent
+    catalog.load(str(repo / "tools" / "packs"))
+    assert catalog.count() > 0
 
 
 class TestInfraGenerator:
@@ -123,3 +134,97 @@ class TestInfraGenerator:
         # Walk all files in the bundle
         for p in bundle_dir.rglob("*"):
             assert ".terraform" not in p.parts, f"unexpected .terraform artifact: {p}"
+
+
+class TestAdapterAutoPull:
+    """Auto-include IaC modules required by adapter_refs[].
+
+    Tier-3 adapters declare install.iac_module — e.g. TOOL-MIMIKATZ → edr,
+    TOOL-RUBEUS → itdr, TOOL-BLOODHOUND → itdr. A scenario that references
+    those adapters should not need the operator to also tick the module
+    boxes manually; the generator unions adapter-derived modules into the
+    bundle's module list.
+    """
+
+    def test_adapter_ref_pulls_in_required_module(self, generator: InfraGenerator):
+        bundle = generator.generate(_request(["base"], adapter_refs=["TOOL-RUBEUS"]))
+        # itdr is rubeus's iac_module — was not in the request's modules
+        # but the generator pulled it in.
+        assert "itdr" in bundle.modules
+        assert "itdr" in bundle.auto_included_modules
+
+    def test_multiple_adapters_collapse_to_same_module(self, generator: InfraGenerator):
+        # rubeus + bloodhound both bind to itdr — exactly one inclusion.
+        bundle = generator.generate(
+            _request(["base"], adapter_refs=["TOOL-RUBEUS", "TOOL-BLOODHOUND"])
+        )
+        assert bundle.modules.count("itdr") == 1
+        assert bundle.auto_included_modules == ["itdr"]
+
+    def test_adapters_span_multiple_modules(self, generator: InfraGenerator):
+        # mimikatz → edr, rubeus → itdr — both included, order preserved
+        bundle = generator.generate(
+            _request(["base"], adapter_refs=["TOOL-MIMIKATZ", "TOOL-RUBEUS"])
+        )
+        assert "edr" in bundle.modules
+        assert "itdr" in bundle.modules
+        assert bundle.auto_included_modules == ["edr", "itdr"]
+
+    def test_module_already_picked_not_double_listed(self, generator: InfraGenerator):
+        # Operator picked itdr explicitly + referenced rubeus → still one inclusion,
+        # and auto_included is EMPTY because the operator chose it.
+        bundle = generator.generate(_request(["itdr"], adapter_refs=["TOOL-RUBEUS"]))
+        assert bundle.modules.count("itdr") == 1
+        assert "itdr" not in bundle.auto_included_modules
+
+    def test_unresolved_adapter_ref_does_not_crash(self, generator: InfraGenerator):
+        # A stale adapter_ref must NEVER fail the bundle — the operator gets
+        # a row in ADAPTERS.md telling them what was unresolved.
+        bundle = generator.generate(
+            _request(["edr"], adapter_refs=["TOOL-DOES-NOT-EXIST"])
+        )
+        assert "edr" in bundle.modules
+        assert bundle.auto_included_modules == []
+
+    def test_adapter_with_no_iac_module_does_not_pull(self, generator: InfraGenerator):
+        # tier-4 nmap has no iac_module — adapter_refs should silently skip it.
+        bundle = generator.generate(
+            _request(["base"], adapter_refs=["TOOL-NMAP"])
+        )
+        # No auto-includes because nmap is runtime-fetched
+        assert bundle.auto_included_modules == []
+
+    def test_adapters_md_emitted_when_adapter_refs_present(
+        self, generator: InfraGenerator, blueprints_dir: Path,
+    ):
+        bundle = generator.generate(
+            _request(["base"], adapter_refs=[
+                "TOOL-MIMIKATZ", "TOOL-NMAP", "TOOL-DOES-NOT-EXIST",
+            ])
+        )
+        adapters_md = blueprints_dir / bundle.bundle_id / "ADAPTERS.md"
+        assert adapters_md.is_file()
+        body = adapters_md.read_text(encoding="utf-8")
+        # Every binding state surfaces:
+        assert "TOOL-MIMIKATZ" in body and "resolved" in body and "`edr`" in body
+        assert "TOOL-NMAP" in body and "no-iac" in body
+        assert "TOOL-DOES-NOT-EXIST" in body and "unresolved" in body
+
+    def test_adapters_md_omitted_when_no_adapter_refs(
+        self, generator: InfraGenerator, blueprints_dir: Path,
+    ):
+        """Legacy path: no adapter_refs[] → no ADAPTERS.md, no noise."""
+        bundle = generator.generate(_request(["edr"]))
+        adapters_md = blueprints_dir / bundle.bundle_id / "ADAPTERS.md"
+        assert not adapters_md.exists()
+
+    def test_adapter_module_lands_in_archive(
+        self, generator: InfraGenerator, blueprints_dir: Path,
+    ):
+        """The auto-pulled module must be IN the tar.gz, not just listed."""
+        bundle = generator.generate(_request(["base"], adapter_refs=["TOOL-RUBEUS"]))
+        archive = blueprints_dir / f"{bundle.bundle_id}.tar.gz"
+        with tarfile.open(archive, "r:gz") as tar:
+            names = tar.getnames()
+        assert any("modules/itdr" in n for n in names)
+        assert any(n.endswith("ADAPTERS.md") for n in names)

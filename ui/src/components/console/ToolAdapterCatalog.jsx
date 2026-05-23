@@ -194,6 +194,22 @@ export default function ToolAdapterCatalog() {
         <ToolAdapterDetail
           detail={selectedDetail}
           onClose={() => { setSelectedId(null); setSelectedDetail(null) }}
+          onNavigateAdapter={handleSelect}
+          onNavigateTtp={(ttpId) => {
+            // No TTP-card UI yet (see PR #46 NOT-list). Surface the
+            // TTP id via the global custom-event channel so a future
+            // TTP browser can subscribe, and offer a copy-to-clipboard
+            // fallback so the DC can paste it into the detection_scanner
+            // browser today.
+            try {
+              window.dispatchEvent(new CustomEvent('cortex:navigate-ttp', {
+                detail: { ttpId },
+              }))
+              if (navigator?.clipboard?.writeText) {
+                navigator.clipboard.writeText(ttpId).catch(() => {})
+              }
+            } catch { /* no-op */ }
+          }}
         />
       )}
     </div>
@@ -292,7 +308,7 @@ function ToolAdapterCard({ adapter, isSelected, onSelect }) {
 
 /* ─── Detail panel ───────────────────────────────────────────────── */
 
-function ToolAdapterDetail({ detail, onClose }) {
+function ToolAdapterDetail({ detail, onClose, onNavigateAdapter, onNavigateTtp }) {
   if (detail._error) {
     return (
       <div className="competitive__detail">
@@ -413,7 +429,21 @@ function ToolAdapterDetail({ detail, onClose }) {
                 ttp_refs:
               </span>
               {ttpRefs.map((r) => (
-                <span key={r} className="chip" style={{ marginLeft: 4 }}>{r}</span>
+                <button
+                  key={r}
+                  type="button"
+                  className="chip chip--clickable"
+                  style={{
+                    marginLeft: 4,
+                    border: 'none',
+                    cursor: onNavigateTtp ? 'pointer' : 'default',
+                  }}
+                  title="Copy TTP id to clipboard (TTP browser navigation lands in a follow-up PR)"
+                  data-testid={`ttp-ref-chip-${r}`}
+                  onClick={() => onNavigateTtp && onNavigateTtp(r)}
+                >
+                  {r}
+                </button>
               ))}
             </div>
           )}
@@ -426,7 +456,21 @@ function ToolAdapterDetail({ detail, onClose }) {
                 equivalents:
               </span>
               {equivs.map((r) => (
-                <span key={r} className="chip" style={{ marginLeft: 4 }}>{r}</span>
+                <button
+                  key={r}
+                  type="button"
+                  className="chip chip--clickable"
+                  style={{
+                    marginLeft: 4,
+                    border: 'none',
+                    cursor: onNavigateAdapter ? 'pointer' : 'default',
+                  }}
+                  title="Open this adapter's detail panel"
+                  data-testid={`equivalent-chip-${r}`}
+                  onClick={() => onNavigateAdapter && onNavigateAdapter(r)}
+                >
+                  {r}
+                </button>
               ))}
             </div>
           )}
