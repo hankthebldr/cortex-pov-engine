@@ -17,9 +17,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from database import get_db
 from engine.ttp_catalog import catalog as ttp_catalog
+from models import Result, Run
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.ttps")
@@ -170,3 +174,75 @@ async def get_ttp(ttp_id: str):
         **raw,
         "referenced_by_adapters": _adapters_referencing(ttp_id),
     }
+
+
+@router.get("/{ttp_id}/runs")
+async def get_ttp_runs(
+    ttp_id: str,
+    limit: int = Query(20, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run history for a TTP — every Run whose seeded Results cite this
+    ``ttp_id`` in ``Result.ttp_ref``.
+
+    Closes the temporal loop on the TTP card: the static detection
+    content + adapter cross-refs answer "what does this look like and
+    what runs it"; this endpoint answers "did we actually exercise it,
+    and how did it land?"
+
+    Each entry rolls up the per-Result rows for that TTP within the
+    Run into a single line: scenario_id · executed_at · observed /
+    expected counts · min MTTD (seconds) across observed detections.
+    Sorted newest-first.
+    """
+    if ttp_catalog.raw(ttp_id) is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error":  "TTP not found",
+                "code":   "TTP_NOT_FOUND",
+                "detail": f"ttp_id='{ttp_id}'",
+            },
+        )
+
+    # Join Result → Run so we can surface scenario_id + run.started_at
+    # in one shot. Results are filtered by ttp_ref (indexed column).
+    stmt = (
+        select(Result, Run)
+        .join(Run, Result.run_id == Run.run_id)
+        .where(Result.ttp_ref == ttp_id)
+        .order_by(Run.started_at.desc(), Result.id.asc())
+    )
+    rows = (await db.execute(stmt)).all()
+
+    # Roll up per run_id — the same run can fire multiple Result rows
+    # for one TTP (one per expected_detection).
+    by_run: dict[str, dict[str, Any]] = {}
+    for result, run in rows:
+        bucket = by_run.get(run.run_id)
+        if bucket is None:
+            bucket = {
+                "run_id":      run.run_id,
+                "scenario_id": run.scenario_id,
+                "run_status":  run.status,
+                "started_at":  run.started_at.isoformat() if run.started_at else None,
+                "expected":    0,
+                "observed":    0,
+                "min_mttd_seconds": None,
+                "detection_ids": [],
+            }
+            by_run[run.run_id] = bucket
+        bucket["expected"] += 1
+        if result.observed:
+            bucket["observed"] += 1
+        if result.detection_id and result.detection_id not in bucket["detection_ids"]:
+            bucket["detection_ids"].append(result.detection_id)
+        mttd = result.mttd_seconds
+        if mttd is not None:
+            cur = bucket["min_mttd_seconds"]
+            bucket["min_mttd_seconds"] = mttd if cur is None else min(cur, mttd)
+
+    runs = list(by_run.values())[:limit]
+    logger.info("get_ttp_runs ttp_id=%s runs=%d", ttp_id, len(runs))
+    return {"ttp_id": ttp_id, "runs": runs, "total": len(runs)}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
-import { getTtps, getTtp } from '../../api/client.js'
+import { getTtps, getTtp, getTtpRuns } from '../../api/client.js'
 
 /**
  * TtpBrowserView — surface the TTP corpus that lives under
@@ -22,6 +22,7 @@ export default function TtpBrowserView({ initialTtpId = null }) {
 
   const [selectedId, setSelectedId]         = useState(null)
   const [selectedDetail, setSelectedDetail] = useState(null)
+  const [selectedRuns, setSelectedRuns]     = useState(null)
 
   const [filterStatus, setFilterStatus]     = useState('all')
   const [filterTactic, setFilterTactic]     = useState('all')
@@ -40,12 +41,16 @@ export default function TtpBrowserView({ initialTtpId = null }) {
   const handleSelect = useCallback(async (ttpId) => {
     setSelectedId(ttpId)
     setSelectedDetail(null)
-    try {
-      const detail = await getTtp(ttpId)
-      setSelectedDetail(detail)
-    } catch (e) {
-      setSelectedDetail({ _error: e?.message || 'Failed to load TTP detail' })
-    }
+    setSelectedRuns(null)
+    // Detail + run history are independent — fire both in parallel.
+    // The runs panel renders in-place with its own loading affordance,
+    // so we don't block the static-content render on the DB read.
+    getTtp(ttpId)
+      .then(setSelectedDetail)
+      .catch((e) => setSelectedDetail({ _error: e?.message || 'Failed to load TTP detail' }))
+    getTtpRuns(ttpId)
+      .then(setSelectedRuns)
+      .catch(() => setSelectedRuns({ runs: [], total: 0, _error: true }))
   }, [])
 
   // When CoverageView passes initialTtpId (from a cortex:navigate-ttp
@@ -155,7 +160,12 @@ export default function TtpBrowserView({ initialTtpId = null }) {
       {selectedDetail && (
         <TtpDetail
           detail={selectedDetail}
-          onClose={() => { setSelectedId(null); setSelectedDetail(null) }}
+          runs={selectedRuns}
+          onClose={() => {
+            setSelectedId(null)
+            setSelectedDetail(null)
+            setSelectedRuns(null)
+          }}
         />
       )}
     </div>
@@ -266,7 +276,7 @@ function TtpCard({ ttp, isSelected, onSelect }) {
 
 /* ─── TTP detail panel ─────────────────────────────────────────────── */
 
-function TtpDetail({ detail, onClose }) {
+function TtpDetail({ detail, runs, onClose }) {
   if (detail._error) {
     return (
       <div className="competitive__detail">
@@ -389,6 +399,10 @@ function TtpDetail({ detail, onClose }) {
         </DetailSection>
       )}
 
+      <DetailSection label="Recent runs">
+        <RunHistory runs={runs} />
+      </DetailSection>
+
       {adapters.length > 0 && (
         <DetailSection label="Referenced by tool adapters">
           <p
@@ -436,6 +450,121 @@ function DetailSection({ label, children }) {
       {children}
     </div>
   )
+}
+
+/* ─── Run history table ────────────────────────────────────────────── */
+
+/**
+ * Render the rolled-up run history for the selected TTP — one row per
+ * Run that fired Results citing this ttp_ref. Closes the temporal loop
+ * the static detail panel left open: "did we exercise it, and how?"
+ */
+function RunHistory({ runs }) {
+  if (runs === null || runs === undefined) {
+    return (
+      <div className="coverage__empty mono" style={{ fontSize: 11 }} data-testid="ttp-runs-loading">
+        loading run history…
+      </div>
+    )
+  }
+  if (runs._error) {
+    return (
+      <div className="adapter-registry__error mono" style={{ fontSize: 11 }}>
+        couldn't load run history
+      </div>
+    )
+  }
+  const rows = runs.runs || []
+  if (rows.length === 0) {
+    return (
+      <div className="coverage__empty mono" style={{ fontSize: 11 }} data-testid="ttp-runs-empty">
+        no runs have exercised this TTP yet
+      </div>
+    )
+  }
+  return (
+    <table
+      style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}
+      data-testid="ttp-runs-table"
+    >
+      <thead>
+        <tr style={{ textAlign: 'left', color: 'var(--c-text-muted)' }}>
+          <th style={{ padding: '2px 6px 2px 0' }}>Run</th>
+          <th style={{ padding: '2px 6px 2px 0' }}>Scenario</th>
+          <th style={{ padding: '2px 6px 2px 0' }}>Started</th>
+          <th style={{ padding: '2px 6px 2px 0', textAlign: 'right' }}>Coverage</th>
+          <th style={{ padding: '2px 6px 2px 0', textAlign: 'right' }}>Min MTTD</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr
+            key={r.run_id}
+            data-testid={`ttp-run-${r.run_id}`}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('cortex:navigate-run', {
+                detail: { runId: r.run_id },
+              }))
+            }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                window.dispatchEvent(new CustomEvent('cortex:navigate-run', {
+                  detail: { runId: r.run_id },
+                }))
+              }
+            }}
+            style={{ cursor: 'pointer' }}
+            title={`Open run ${r.run_id} in the validation wizard`}
+          >
+            <td className="mono" style={{ padding: '2px 6px 2px 0' }}>{r.run_id}</td>
+            <td className="mono" style={{ padding: '2px 6px 2px 0' }}>{r.scenario_id}</td>
+            <td className="mono" style={{ padding: '2px 6px 2px 0', fontSize: 10 }}>
+              {formatStartedAt(r.started_at)}
+            </td>
+            <td className="mono" style={{ padding: '2px 6px 2px 0', textAlign: 'right' }}>
+              <span
+                className="chip"
+                style={{
+                  fontSize: 9,
+                  background:
+                    r.observed === r.expected
+                      ? 'var(--c-success-bg, rgba(0,255,160,0.1))'
+                      : r.observed === 0
+                        ? 'var(--c-error-bg, rgba(255,80,80,0.1))'
+                        : 'var(--c-warning-bg, rgba(255,200,0,0.1))',
+                }}
+              >
+                {r.observed}/{r.expected}
+              </span>
+            </td>
+            <td className="mono" style={{ padding: '2px 6px 2px 0', textAlign: 'right' }}>
+              {formatMttd(r.min_mttd_seconds)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function formatStartedAt(iso) {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+  } catch {
+    return iso
+  }
+}
+
+function formatMttd(seconds) {
+  if (seconds === null || seconds === undefined) return '—'
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  return `${(seconds / 3600).toFixed(1)}h`
 }
 
 /* ─── Detection accordion (XQL / BIOC / correlation body reveal) ───── */

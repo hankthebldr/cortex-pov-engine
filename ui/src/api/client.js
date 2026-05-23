@@ -456,6 +456,22 @@ export async function getTtp(ttpId) {
   return request(`/api/ttps/${encodeURIComponent(ttpId)}`)
 }
 
+/**
+ * GET /api/ttps/:ttp_id/runs
+ *
+ * Run history — every Run whose seeded Results cite this TTP, rolled
+ * up to one entry per run with expected/observed counts + min MTTD.
+ *
+ * @param {string} ttpId
+ * @param {Object} [opts]
+ * @param {number} [opts.limit=20]
+ * @returns {Promise<{ttp_id: string, runs: Array, total: number}>}
+ */
+export async function getTtpRuns(ttpId, { limit } = {}) {
+  const qs = limit ? `?limit=${encodeURIComponent(limit)}` : ''
+  return request(`/api/ttps/${encodeURIComponent(ttpId)}/runs${qs}`)
+}
+
 // ─── EAL Traffic Simulator ───────────────────────────────────────────────────
 //
 // API surface for the plugin-based EAL simulator (core/eal_simulator/).
