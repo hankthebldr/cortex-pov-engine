@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import useMitreCoverage from './useMitreCoverage.js'
 import StackCoverageView from './StackCoverageView.jsx'
 import CompetitiveView from './CompetitiveView.jsx'
 import AdapterRegistryView from './AdapterRegistryView.jsx'
 import ToolAdapterCatalog from './ToolAdapterCatalog.jsx'
+import TtpBrowserView from './TtpBrowserView.jsx'
 import { downloadLayer } from './exportNavigatorLayer.js'
 
 /**
@@ -24,7 +25,23 @@ import { downloadLayer } from './exportNavigatorLayer.js'
 export default function CoverageView({ onFilterByTechnique = () => {} }) {
   const { data, loading, error, refresh } = useMitreCoverage()
   const [selectedTechnique, setSelectedTechnique] = useState(null)
-  const [viewMode, setViewMode] = useState('attack') // 'attack' | 'stack' | 'advantage' | 'adapters' | 'tools'
+  const [viewMode, setViewMode] = useState('attack') // 'attack' | 'stack' | 'advantage' | 'adapters' | 'tools' | 'ttps'
+
+  // When an adapter detail panel emits a cortex:navigate-ttp custom
+  // event (PR #49's TTP-ref chip click), flip to the TTP browser sub-
+  // tab and pre-select the TTP whose id rode the event payload.
+  const [pendingTtpId, setPendingTtpId] = useState(null)
+  useEffect(() => {
+    const handler = (e) => {
+      const ttpId = e?.detail?.ttpId
+      if (typeof ttpId === 'string' && ttpId) {
+        setPendingTtpId(ttpId)
+        setViewMode('ttps')
+      }
+    }
+    window.addEventListener('cortex:navigate-ttp', handler)
+    return () => window.removeEventListener('cortex:navigate-ttp', handler)
+  }, [])
 
   if (viewMode === 'stack') {
     return (
@@ -99,6 +116,24 @@ export default function CoverageView({ onFilterByTechnique = () => {} }) {
           <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
         </div>
         <ToolAdapterCatalog />
+      </div>
+    )
+  }
+
+  if (viewMode === 'ttps') {
+    return (
+      <div className="coverage">
+        <div className="view-head">
+          <div>
+            <h1>TTP Browser</h1>
+            <div className="view-head__meta">
+              detection cards under <span className="mono">detection_scanner/ttps/</span> —
+              BIOC + XQL + correlation logic that catches each technique
+            </div>
+          </div>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+        </div>
+        <TtpBrowserView initialTtpId={pendingTtpId} />
       </div>
     )
   }
@@ -390,6 +425,16 @@ function ViewModeToggle({ viewMode, onChange }) {
         title="Static catalog of tool adapters scenarios can reference"
       >
         Tool Adapters
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={viewMode === 'ttps'}
+        className={viewMode === 'ttps' ? 'is-active' : ''}
+        onClick={() => onChange('ttps')}
+        title="TTP corpus — BIOC + XQL + correlation detection cards"
+      >
+        TTP Browser
       </button>
     </div>
   )

@@ -420,6 +420,42 @@ export async function getAgents() {
   return Array.isArray(data) ? data : data?.agents ?? []
 }
 
+// ─── TTP browser (detection_scanner/ttps/*.json) ────────────────────────────
+
+/**
+ * GET /api/ttps
+ *
+ * List the TTP corpus as slim summary cards. Filters compose with
+ * logical AND server-side; unknown values quietly return an empty list.
+ *
+ * @param {Object} [filters]
+ * @param {string} [filters.status]   'active' | 'draft' | 'deprecated'
+ * @param {string} [filters.tactic]   MITRE tactic id (e.g. 'TA0006')
+ * @param {string} [filters.platform] 'linux' | 'windows' | 'macos' | ...
+ * @returns {Promise<{ttps: Array<Object>, total: number}>}
+ */
+export async function getTtps(filters = {}) {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== '') qs.append(k, String(v))
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/ttps${suffix}`)
+}
+
+/**
+ * GET /api/ttps/:ttp_id
+ *
+ * Full TTP card document + reverse cross-references to the tool-adapter
+ * catalog (``referenced_by_adapters``).
+ *
+ * @param {string} ttpId  e.g. 'TTP-2026-0004'
+ * @returns {Promise<Object>}
+ */
+export async function getTtp(ttpId) {
+  return request(`/api/ttps/${encodeURIComponent(ttpId)}`)
+}
+
 // ─── EAL Traffic Simulator ───────────────────────────────────────────────────
 //
 // API surface for the plugin-based EAL simulator (core/eal_simulator/).
