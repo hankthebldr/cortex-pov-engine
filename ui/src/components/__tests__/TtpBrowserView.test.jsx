@@ -349,6 +349,49 @@ describe('<TtpBrowserView />', () => {
     }
   })
 
+  it('detail panel exposes an Export ATT&CK layer button when techniques exist', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    expect(screen.getByTestId('ttp-export-navigator')).toBeInTheDocument()
+  })
+
+  it('clicking Export ATT&CK layer triggers a layer download', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    // Stub the download plumbing — jsdom has no real anchor download.
+    const createEl = document.createElement.bind(document)
+    const clicks = []
+    vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+      const el = createEl(tag)
+      if (tag === 'a') {
+        el.click = () => clicks.push(el.download)
+      }
+      return el
+    })
+    const origCreate = URL.createObjectURL
+    const origRevoke = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:stub')
+    URL.revokeObjectURL = vi.fn()
+
+    try {
+      render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+      await waitFor(() => expect(screen.getByTestId('ttp-export-navigator')).toBeInTheDocument())
+      fireEvent.click(screen.getByTestId('ttp-export-navigator'))
+      expect(clicks).toHaveLength(1)
+      expect(clicks[0]).toBe('cortexsim-ttp-2026-0004-navigator.json')
+    } finally {
+      document.createElement.mockRestore()
+      URL.createObjectURL = origCreate
+      URL.revokeObjectURL = origRevoke
+    }
+  })
+
   it('empty run history renders the no-runs placeholder', async () => {
     installRoutes({
       'GET /api/ttps':                       fixtureList,
