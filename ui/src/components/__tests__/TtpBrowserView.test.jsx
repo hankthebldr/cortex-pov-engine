@@ -189,6 +189,59 @@ describe('<TtpBrowserView />', () => {
     expect(screen.getByText(/no TTPs match the current filters/i)).toBeInTheDocument()
   })
 
+  it('free-text search narrows the grid by name', async () => {
+    installRoutes({ 'GET /api/ttps': fixtureList })
+    render(<TtpBrowserView />)
+    await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
+    fireEvent.change(screen.getByTestId('ttp-search'), { target: { value: 'dcsync' } })
+    // Only TTP-2026-0004 (DCSync) matches
+    expect(screen.getByTestId('ttp-card-TTP-2026-0004')).toBeInTheDocument()
+    expect(screen.queryByTestId('ttp-card-TTP-2026-0002')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('ttp-card-TTP-2026-0003')).not.toBeInTheDocument()
+  })
+
+  it('search matches tags and is tokenised with AND semantics', async () => {
+    installRoutes({ 'GET /api/ttps': fixtureList })
+    render(<TtpBrowserView />)
+    await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
+    // 'mimikatz' tag lives on TTP-2026-0002
+    fireEvent.change(screen.getByTestId('ttp-search'), { target: { value: 'mimikatz' } })
+    expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument()
+    expect(screen.queryByTestId('ttp-card-TTP-2026-0004')).not.toBeInTheDocument()
+    // Two tokens that don't co-occur on any card → empty
+    fireEvent.change(screen.getByTestId('ttp-search'), { target: { value: 'mimikatz dcsync' } })
+    expect(screen.getByText(/no TTPs match the current filters/i)).toBeInTheDocument()
+  })
+
+  it('search matches technique ids', async () => {
+    installRoutes({ 'GET /api/ttps': fixtureList })
+    render(<TtpBrowserView />)
+    await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
+    fireEvent.change(screen.getByTestId('ttp-search'), { target: { value: 'T1003.006' } })
+    expect(screen.getByTestId('ttp-card-TTP-2026-0004')).toBeInTheDocument()
+    expect(screen.queryByTestId('ttp-card-TTP-2026-0002')).not.toBeInTheDocument()
+  })
+
+  it('Clear button resets search + chip filters', async () => {
+    installRoutes({ 'GET /api/ttps': fixtureList })
+    render(<TtpBrowserView />)
+    await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
+    fireEvent.change(screen.getByTestId('ttp-search'), { target: { value: 'dcsync' } })
+    expect(screen.queryByTestId('ttp-card-TTP-2026-0002')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('ttp-clear-filters'))
+    // All cards visible again
+    expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument()
+    expect(screen.getByTestId('ttp-card-TTP-2026-0003')).toBeInTheDocument()
+    expect(screen.getByTestId('ttp-card-TTP-2026-0004')).toBeInTheDocument()
+  })
+
+  it('Clear button is hidden when no filters are active', async () => {
+    installRoutes({ 'GET /api/ttps': fixtureList })
+    render(<TtpBrowserView />)
+    await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
+    expect(screen.queryByTestId('ttp-clear-filters')).not.toBeInTheDocument()
+  })
+
   it('clicking a card opens detail with summary + adapter cross-refs', async () => {
     installRoutes({
       'GET /api/ttps':                fixtureList,

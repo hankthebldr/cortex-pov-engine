@@ -28,6 +28,7 @@ export default function TtpBrowserView({ initialTtpId = null }) {
   const [filterStatus, setFilterStatus]     = useState('all')
   const [filterTactic, setFilterTactic]     = useState('all')
   const [filterPlatform, setFilterPlatform] = useState('all')
+  const [query, setQuery]                   = useState('')
 
   // Initial load — full corpus; chips derive from the response so the
   // catalog can grow without UI patches.
@@ -78,18 +79,36 @@ export default function TtpBrowserView({ initialTtpId = null }) {
   )
 
   const visible = useMemo(() => {
+    // Free-text match runs over the fields a DC actually searches by:
+    // id, name, summary, tags, technique ids, and actor names. Tokenised
+    // on whitespace so "dcsync windows" narrows by AND across tokens.
+    const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
     return ttps.filter((t) => {
       if (filterStatus   !== 'all' && t.status !== filterStatus)         return false
       if (filterTactic   !== 'all' && !(t.tactic_ids || []).includes(filterTactic))   return false
       if (filterPlatform !== 'all' && !(t.platforms  || []).includes(filterPlatform)) return false
+      if (tokens.length > 0) {
+        const haystack = [
+          t.id, t.name, t.summary,
+          ...(t.tags || []),
+          ...(t.technique_ids || []),
+          ...(t.actor_names || []),
+        ].join(' ').toLowerCase()
+        if (!tokens.every((tok) => haystack.includes(tok))) return false
+      }
       return true
     })
-  }, [ttps, filterStatus, filterTactic, filterPlatform])
+  }, [ttps, filterStatus, filterTactic, filterPlatform, query])
+
+  const hasActiveFilters =
+    filterStatus !== 'all' || filterTactic !== 'all' ||
+    filterPlatform !== 'all' || query.trim() !== ''
 
   const resetFilters = () => {
     setFilterStatus('all')
     setFilterTactic('all')
     setFilterPlatform('all')
+    setQuery('')
   }
 
   return (
@@ -126,6 +145,29 @@ export default function TtpBrowserView({ initialTtpId = null }) {
       {error && (
         <div className="adapter-registry__error mono" role="alert">{error}</div>
       )}
+
+      <div className="adapter-registry__search">
+        <input
+          type="search"
+          className="adapter-registry__search-input mono"
+          data-testid="ttp-search"
+          placeholder="Search id · name · summary · tag · technique · actor…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search TTP corpus"
+        />
+        {hasActiveFilters && (
+          <button
+            type="button"
+            className="btn"
+            data-testid="ttp-clear-filters"
+            style={{ height: 28, padding: '0 10px' }}
+            onClick={resetFilters}
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
       <FilterRow label="status"   active={filterStatus}   options={statuses}  onChange={setFilterStatus} />
       <FilterRow label="tactic"   active={filterTactic}   options={tactics}   onChange={setFilterTactic} />

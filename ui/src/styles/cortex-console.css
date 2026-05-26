@@ -3851,6 +3851,33 @@
   margin-bottom: 16px;
 }
 
+.theme-console .adapter-registry__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.theme-console .adapter-registry__search-input {
+  flex: 1;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  color: var(--c-text-primary);
+  font-size: 12px;
+}
+
+.theme-console .adapter-registry__search-input:focus {
+  outline: none;
+  border-color: var(--cortex-teal, #00C0E8);
+}
+
+.theme-console .adapter-registry__search-input::placeholder {
+  color: var(--c-text-muted);
+}
+
 .theme-console .adapter-registry__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
