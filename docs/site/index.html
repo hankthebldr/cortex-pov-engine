@@ -24,6 +24,7 @@
         <span class="cs-brand__name">Cortex<strong>Sim</strong></span>
       </a>
       <nav class="cs-nav" aria-label="Primary">
+        <a href="#platform">Platform</a>
         <a href="#install">Install</a>
         <a href="#downloads">Downloads</a>
         <a href="#verify">Verify</a>
@@ -51,6 +52,110 @@
           <div><dt>Latest version</dt><dd id="cs-version">loading&hellip;</dd></div>
           <div><dt>Published</dt><dd id="cs-published">&mdash;</dd></div>
         </dl>
+      </div>
+    </section>
+
+    <section id="platform" class="cs-section cs-section--board">
+      <div class="cs-section__inner">
+        <h2>Platform at a glance</h2>
+        <p class="cs-section__lede">
+          One engine, every Cortex detection plane. Each tile is a live
+          plane with UC/TC-aligned, MITRE-mapped scenarios driving real
+          signal into the customer's tenant.
+        </p>
+
+        <dl class="cs-statband">
+          <div><dt>Detection planes</dt><dd>13</dd></div>
+          <div><dt>Active scenarios</dt><dd>53+</dd></div>
+          <div><dt>AWS IaC modules</dt><dd>10</dd></div>
+          <div><dt>MITRE-mapped</dt><dd>100%</dd></div>
+        </dl>
+
+        <div class="cs-board" role="list" aria-label="Detection plane coverage">
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>EDR</h3>
+            <p class="cs-plane__engine">Cortex XDR Agent</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>CDR</h3>
+            <p class="cs-plane__engine">Cortex Cloud / Prisma Compute</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>NDR</h3>
+            <p class="cs-plane__engine">Network Security &middot; FW Analytics</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>ITDR</h3>
+            <p class="cs-plane__engine">Cortex ITDR</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>Cloud App</h3>
+            <p class="cs-plane__engine">Cortex Cloud App Security</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>AI Access</h3>
+            <p class="cs-plane__engine">Cortex AI Access Security</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>AIRS</h3>
+            <p class="cs-plane__engine">Cortex AI Runtime Security</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>Browser</h3>
+            <p class="cs-plane__engine">Prisma Browser</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>KOI</h3>
+            <p class="cs-plane__engine">Agentic / supply-chain</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>Analytics</h3>
+            <p class="cs-plane__engine">XSIAM Correlation Engine</p>
+            <span class="cs-plane__count">3 multi-plane</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="iac"></span>
+            <h3>CSPM</h3>
+            <p class="cs-plane__engine">Cortex Cloud Posture Mgmt</p>
+            <span class="cs-plane__count">IaC module</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="iac"></span>
+            <h3>ASM</h3>
+            <p class="cs-plane__engine">Attack Surface Mgmt</p>
+            <span class="cs-plane__count">IaC module</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="iac"></span>
+            <h3>TIM</h3>
+            <p class="cs-plane__engine">Threat Intel Mgmt</p>
+            <span class="cs-plane__count">IaC module</span>
+          </article>
+        </div>
+
+        <p class="cs-board__legend">
+          <span class="cs-legend"><span class="cs-plane__dot" data-state="live"></span> Active scenarios</span>
+          <span class="cs-legend"><span class="cs-plane__dot" data-state="iac"></span> IaC topology module</span>
+        </p>
       </div>
     </section>
 

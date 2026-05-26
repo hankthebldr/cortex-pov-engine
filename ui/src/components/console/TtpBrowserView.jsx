@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { getTtps, getTtp, getTtpRuns } from '../../api/client.js'
+import { downloadTtpLayer } from './exportNavigatorLayer.js'
 
 /**
  * TtpBrowserView — surface the TTP corpus that lives under
@@ -316,7 +317,20 @@ function TtpDetail({ detail, runs, onClose }) {
             {identity.name || detail.id}
           </h3>
         </div>
-        <button type="button" className="btn" onClick={onClose}>Close</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {techniques.length > 0 && (
+            <button
+              type="button"
+              className="btn"
+              data-testid="ttp-export-navigator"
+              title="Download a MITRE ATT&CK Navigator layer scoped to this TTP — paste into the customer's Navigator for the briefing"
+              onClick={() => downloadTtpLayer(detail)}
+            >
+              Export ATT&amp;CK layer
+            </button>
+          )}
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+        </div>
       </div>
 
       {identity.summary && (

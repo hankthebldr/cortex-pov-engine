@@ -175,3 +175,107 @@ function emptyLayer(options) {
     hideDisabled: false,
   }
 }
+
+/* ─── Single-TTP layer export ──────────────────────────────────────── */
+
+/**
+ * Build a Navigator v4.5 layer scoped to a single TTP card. Each
+ * technique the card maps gets a teal cell annotated with the TTP id,
+ * name, and tactic. This is the "paste into the customer's Navigator
+ * to show exactly what this one detection covers" artifact — the
+ * focused counterpart to the library-wide `buildLayer`.
+ *
+ * @param {object} detail  — the /api/ttps/:id payload (raw TTP JSON)
+ * @returns {object} Navigator v4.5 layer
+ */
+export function buildTtpLayer(detail) {
+  const mitre = (detail && detail.mitre_attack) || {}
+  const rawTechniques = mitre.techniques || []
+  const ttpId = (detail && detail.id) || 'TTP'
+  const ttpName = (detail && detail.identity && detail.identity.name) || ttpId
+
+  const techniques = []
+  for (const t of rawTechniques) {
+    if (!t || typeof t !== 'object') continue
+    // Navigator keys cells on the most-specific technique id available.
+    const techniqueID = t.subtechnique_id || t.technique_id
+    if (!techniqueID) continue
+    const tacticIds = t.tactic_ids || []
+    const comment = [
+      `${ttpId} — ${ttpName}`,
+      t.name ? `Technique: ${t.name}` : null,
+    ].filter(Boolean).join('\n')
+
+    if (tacticIds.length === 0) {
+      // No tactic context — emit a single untargeted cell.
+      techniques.push({
+        techniqueID,
+        score: 100,
+        color: '#00C0E8',
+        comment,
+        enabled: true,
+      })
+      continue
+    }
+    // One cell per (technique, tactic) pair so the cell lands in every
+    // column the technique belongs to — matches Navigator semantics.
+    for (const tid of tacticIds) {
+      techniques.push({
+        techniqueID,
+        tactic: tacticDisplayName(tid),
+        score: 100,
+        color: '#00C0E8',
+        comment,
+        enabled: true,
+      })
+    }
+  }
+
+  return {
+    name: `${ttpId} — ${ttpName}`,
+    versions: { attack: '15', navigator: '5.0.1', layer: '4.5' },
+    domain: 'enterprise-attack',
+    description:
+      `CortexSim ATT&CK Navigator layer for ${ttpId} (${ttpName}). ` +
+      `Highlights the technique(s) this detection card covers. ` +
+      `Generated ${new Date().toISOString()}.`,
+    sorting: 0,
+    layout: {
+      layout: 'side',
+      showID: true,
+      showName: true,
+    },
+    hideDisabled: false,
+    techniques,
+    legendItems: [
+      { label: `Covered by ${ttpId}`, color: '#00C0E8' },
+    ],
+    metadata: [
+      { name: 'generator', value: 'CortexSim' },
+      { name: 'ttp_id', value: ttpId },
+      { name: 'exported_at', value: new Date().toISOString() },
+    ],
+    selectTechniquesAcrossTactics: true,
+    selectSubtechniquesWithParent: false,
+  }
+}
+
+/**
+ * Trigger a browser download of a single-TTP Navigator layer.
+ * Returns the filename used so callers can surface it in a toast.
+ */
+export function downloadTtpLayer(detail, options = {}) {
+  const layer = buildTtpLayer(detail)
+  const ttpId = (detail && detail.id) || 'ttp'
+  const filename = options.filename || `cortexsim-${ttpId.toLowerCase()}-navigator.json`
+  const blob = new Blob([JSON.stringify(layer, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  return filename
+}
