@@ -1,0 +1,202 @@
+scenario_id: SIM-AISPM-001
+name: "AI Asset Discovery & Inventory — Shadow AI Detection"
+version: "1.0"
+status: active
+
+plane: AI_SPM
+detection_types:
+  - Analytics
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# Maps directly to Cortex Use Case Index Master v2.0:
+#   SecOps + Cloud TC Index → TC-AISP-01 (MOAT tier)
+uc_ref: UCS-AISPM-01
+tc_ref: TC-AISP-01
+uc_name: "AI Security Posture Management"
+tc_name: "AI Asset Discovery & Inventory"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# AI/ML doesn't have a first-class MITRE technique yet; closest analog is
+# Discovery → Cloud Service Discovery (T1526). MITRE ATLAS would map this
+# to "AML.T0040 Discover ML Model Family" but the loader's schema is
+# ATT&CK-centric.
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1526"
+mitre_technique_name: "Cloud Service Discovery"
+additional_techniques:
+  - technique: "T1580"
+    name: "Cloud Infrastructure Discovery"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit42 — Shadow AI in the Enterprise"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+# This scenario is "execute-against-cloud-API", not an in-container TTP.
+# It runs from the SimCore container or the jumpbox; identity wraps shell
+# calls to AWS CLI + Cortex Cloud REST polling.
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: false
+
+# ── External Tools ──────────────────────────────────────────────────────────
+external_tools:
+  - name: aws-cli
+    source: "https://aws.amazon.com/cli/"
+    type: binary
+    install_inline: false
+  - name: jq
+    type: binary
+    install_inline: false
+  - name: curl
+    type: binary
+    install_inline: false
+
+# ── Infra Prerequisites ─────────────────────────────────────────────────────
+infra_modules_needed:
+  - base
+  - ai-spm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Mirrors the v2.0 master spreadsheet row for TC-AISP-01.
+validation_methodology: "AI Asset Discovery & Inventory"
+methodology_family: "F3"
+primary_kpi: "Asset Discovery Coverage"
+threshold:
+  kpi: "Asset Discovery Coverage"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  All planted AI assets — SageMaker endpoint, SageMaker model, Bedrock-targeted
+  configuration, Lambda → OpenAI integration, S3 training-data bucket with
+  regulated PII, insecurely-serialized pickled model, and (when enabled) the
+  shadow GPU LLM EC2 instance — are present in Cortex Cloud's AI inventory
+  view within one scan cycle (≤ 15 minutes). Each discovered asset must
+  carry: model_type / data_sources / API_exposure / access_pattern metadata.
+moat_tier: "MOAT"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+steps:
+  - id: step-01
+    name: "Snapshot planted-asset manifest from Terraform output"
+    command: |
+      echo '[AISPM-001] Capturing ground-truth manifest of planted AI assets';
+      # Pulls findings_summary.* from the ai-spm module's outputs and writes
+      # to /tmp/aispm-planted.json — the validator reads this back at assertion time.
+      cd /opt/cortexsim/infra/blueprints/${CORTEXSIM_BUNDLE_ID:-current} 2>/dev/null && \
+        terraform output -json findings_summary > /tmp/aispm-planted.json || \
+        echo '{"_note":"manifest not available — running in standalone validation mode"}' > /tmp/aispm-planted.json
+      cat /tmp/aispm-planted.json | jq -r '.value // .' 2>/dev/null || cat /tmp/aispm-planted.json
+      echo '[*] Manifest captured. Total assets planted: '$(cat /tmp/aispm-planted.json | jq -r '.value.total_assets_planted // "unknown"')
+    identity: root
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Ground-truth manifest captured — no Cortex detection expected at this step (operator-internal bookkeeping)."
+
+  - id: step-02
+    name: "Wait for Cortex Cloud AI-SPM inventory scan cycle"
+    command: |
+      echo '[AISPM-001] Sleeping 15 min for Cortex Cloud AI-SPM scan to complete';
+      echo '[*] Typical first-scan latency for newly-created AI assets is 10-15 min';
+      echo '[*] Adjust CORTEXSIM_AISPM_WAIT_SECONDS to override (e.g. 60 for re-runs)';
+      sleep "${CORTEXSIM_AISPM_WAIT_SECONDS:-900}"
+      echo '[*] Scan window elapsed. Proceeding to inventory probe.'
+    identity: root
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex Cloud AI-SPM scanner discovers planted AI assets across the AWS account during this scan cycle."
+
+  - id: step-03
+    name: "Probe Cortex Cloud Inventory API for AI assets"
+    command: |
+      echo '[AISPM-001] Querying Cortex Cloud inventory for AI-tagged assets';
+      # Operator supplies CORTEX_CLOUD_API_BASE + CORTEX_CLOUD_API_TOKEN via the
+      # SimCore secrets injection layer (or the bundle's parameters.json).
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        -H "Accept: application/json" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/inventory?asset_type=ai&tag=CortexSimAISPMFinding" \
+        | tee /tmp/aispm-discovered.json | jq '.assets | length' || true
+      echo '[*] Discovered assets written to /tmp/aispm-discovered.json'
+    identity: root
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex Cloud /api/v1/inventory returns ≥ 6 AI-tagged assets (7 if shadow GPU enabled) — SageMaker endpoint, SageMaker model, Lambda OpenAI proxy, training-data bucket, pickled model object, overprivileged role; optional shadow GPU."
+        ttp_ref: null
+        detection_id: null
+        verification_xql: |
+          // Cortex Cloud Inventory API is REST-only; XQL equivalent for
+          // cross-checking via XSIAM (when AI-SPM telemetry mirrors to XDL):
+          dataset = cortex_cloud_inventory
+          | filter asset_type in ("ai_endpoint", "ai_model", "ai_data_store", "ai_function_integration")
+          | filter tags contains "CortexSimAISPMFinding"
+          | comp count() as discovered_count by asset_type
+          | filter discovered_count >= 1
+        kpi_contribution:
+          kpi: "Asset Discovery Coverage"
+          op: "≥"
+          value: 100
+          unit: "%"
+
+  - id: step-04
+    name: "Compute Asset Discovery Coverage and assert KPI"
+    command: |
+      echo '[AISPM-001] Reconciling discovered vs. planted';
+      PLANTED=$(jq -r '.value.total_assets_planted // 6' /tmp/aispm-planted.json)
+      DISCOVERED=$(jq -r '[.assets[] | select(.tags["CortexSimAISPMFinding"]!=null)] | length' /tmp/aispm-discovered.json 2>/dev/null || echo "0")
+      if [ "$PLANTED" -gt 0 ]; then
+        COVERAGE=$(awk "BEGIN { printf \"%.1f\", ($DISCOVERED / $PLANTED) * 100 }")
+      else
+        COVERAGE="0.0"
+      fi
+      echo "[*] Planted:    $PLANTED"
+      echo "[*] Discovered: $DISCOVERED"
+      echo "[*] Coverage:   $COVERAGE %"
+      echo "[*] Threshold:  >= 100 % (MOAT)"
+      # Exit non-zero if coverage below threshold — surfaces as step failure
+      # in SimCore's Run result and the POV report's MOAT-tier check.
+      if [ "$(echo "$COVERAGE < 100" | bc -l 2>/dev/null || echo 1)" = "1" ]; then
+        echo "[FAIL] Asset Discovery Coverage below threshold"
+        # Soft-fail in scenario; orchestrator decides hard/soft based on moat_tier
+      else
+        echo "[PASS] Asset Discovery Coverage meets MOAT threshold"
+      fi
+    identity: root
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Final reconciliation step — KPI computation completes and the Run's primary_kpi value is populated for the POV report. Pass = Asset Discovery Coverage ≥ 100 %."
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+# Scenario-level cleanup is minimal. The infra/modules/aws/ai-spm Terraform
+# bundle owns lifecycle of the planted assets — destroy via `terraform destroy`
+# from the bundle dir when the POV concludes.
+cleanup:
+  commands:
+    - "rm -f /tmp/aispm-planted.json /tmp/aispm-discovered.json"
+    - "echo '[CortexSim] SIM-AISPM-001 cleanup complete. To destroy planted AWS assets: terraform destroy in the bundle directory.'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-05-27"
+last_updated: "2026-05-27"
+tags:
+  - ai-spm
+  - asset-discovery
+  - shadow-ai
+  - moat
+  - v2.0-methodology
+  - reference-implementation

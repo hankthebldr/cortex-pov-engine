@@ -1,0 +1,26 @@
+tools:
+  ai_spm_validation:
+    - name: pyrit
+      repo: Azure/PyRIT
+      install: pip-install
+      purpose: "Python Risk Identification Tool for generative AI"
+    - name: garak
+      repo: NVIDIA/garak
+      install: pip-install
+      purpose: "LLM vulnerability scanner — overlaps AIRS but useful for AI-SPM static analysis demos"
+    - name: ai-exploits
+      repo: protectai/ai-exploits
+      install: git-clone
+      install_path: /opt/cortexsim/content/ai-spm/ai-exploits
+      purpose: "Real-world AI/ML exploits — useful for AISP-04 static analysis fixture refresh"
+    - name: model-scan
+      repo: protectai/modelscan
+      install: pip-install
+      purpose: "Open-source ML model scanner — comparison baseline for Cortex AI-SPM model assessment"
+  static_analysis:
+    - name: bandit
+      install: pip-install
+      purpose: "Python static analyzer for AISP-04 ML-pipeline secret detection"
+    - name: semgrep
+      install: pip-install
+      purpose: "Multi-language static analyzer with AI/ML-specific rule packs"
