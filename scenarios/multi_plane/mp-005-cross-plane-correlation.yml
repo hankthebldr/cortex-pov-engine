@@ -1,0 +1,245 @@
+scenario_id: SIM-MP-005
+name: "Cross-Plane Correlation MOAT — EDR + NDR + ITDR Stitch (TC-IR-05)"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - Analytics
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# Flagship MOAT scenario for the Cortex stitching narrative. Master sheet:
+# TC-IR-05 "Demonstrate correlation-based detections across endpoint +
+# network + identity telemetry" — MOAT tier across CrowdStrike/MSFT/S1.
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+uc_name: "Incident Response"
+tc_name: "Correlation-Based Detections Across EDR + NDR + ITDR"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+mitre_tactic: "TA0008"
+mitre_tactic_name: "Lateral Movement"
+mitre_technique: "T1078"
+mitre_technique_name: "Valid Accounts"
+additional_techniques:
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+  - technique: "T1110.003"
+    name: "Brute Force: Password Spraying"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit42 — Cross-Plane Attack Chains in Enterprise Breaches"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "3CORESec/testmynids.org"
+  - repo: "fortra/impacket"
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+  - itdr
+
+external_tools:
+  - name: testmynids
+    source: "https://github.com/3CORESec/testmynids.org"
+    type: script
+    install_inline: true
+  - name: kinit
+    type: binary
+    install_inline: false
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Mirrors HR-Cortex-Use-Case-Index-Master-v2.0.xlsx row for TC-IR-05.
+# Deep-dive: docs/uc_tc_mapping/methodology-multi-plane-stitching.md §3 TC-IR-05.
+#
+# Competitive positioning (from the master sheet):
+#   CrowdStrike: PARITY — Charlotte AI strong on triage; Cortex stitches deeper across non-EDR planes
+#   Microsoft:   PARITY — Sentinel + Defender unified inside Microsoft; Cortex vendor-agnostic across non-MSFT stacks
+#   SentinelOne: PARITY — Purple AI strong on EDR triage; Cortex broader cross-plane causality
+validation_methodology: "Cross-Plane Causality Correlation"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  Three coordinated signals from one src_host within ±30s stitch into a
+  single XSIAM incident_id whose causality chain spans all three planes
+  (EDR + NDR + ITDR). Over a 5-run batch, ≥ 80 % of runs must produce a
+  single stitched incident_id (flaky correlation is a real-world failure
+  mode and worth catching). Each successful run shows:
+    - one incident_id
+    - causality_chain.length ≥ 5
+    - planes ⊇ {EDR, NDR, ITDR}
+    - mttd ≤ 60 s from last signal emit to incident creation
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+# This is the canonical F2 scenario — fields used by the validation harness.
+correlation_window_seconds: 30
+required_planes_in_incident:
+  - EDR
+  - NDR
+  - ITDR
+stitching_key: src_host
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Three coordinated signals from one src_host. Order matters — the NDR
+# beacon precedes the EDR process anomaly which precedes the ITDR
+# auth-failure burst. Real adversaries don't fire all three simultaneously;
+# the ±30s window captures realistic timing while still proving stitching.
+steps:
+  - id: step-01
+    name: "NDR signal — outbound HTTP beacon to known IOC domain"
+    command: |
+      echo '[MP-005] NDR signal: outbound beacon from $(hostname -I | awk "{print \$1}")';
+      for i in 1 2 3 4 5; do
+        curl -sSL -m 10 -A 'Mozilla/5.0 (compatible; CortexSimMP005/1.0)' \
+          "http://testmynids.org/uid/index.html?signal=ndr&iter=$i" -o /dev/null || true;
+        sleep 2;
+      done
+      echo '[*] NGFW should record 5 outbound HTTP sessions to testmynids.org'
+    identity: www-data
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW — outbound HTTP to known IOC list (testmynids.org)"
+        verification_xql: |
+          dataset = pan_ngfw_traffic
+          | filter dst_host = "testmynids.org"
+          | comp count() as hits by source_ip
+          | filter hits >= 5
+        kpi_contribution:
+          kpi: "Cross-Source Correlation Rate"
+          op: "≥"
+          value: 80
+          unit: "%"
+
+  - id: step-02
+    name: "EDR signal — interactive bash spawned from www-data running curl"
+    command: |
+      echo '[MP-005] EDR signal: shell-from-service-context process anomaly';
+      # Same src_host as step-01. Same effective user (www-data).
+      # XDR's BIOC should fire on "interactive shell spawned from web service identity".
+      bash -c 'id; whoami; uname -a; curl --version' 2>&1 | head -20
+      echo '[*] XDR BIOC: bash invoked under www-data with interactive shell semantics'
+    identity: www-data
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR BIOC — interactive bash from www-data service context (process lineage anchor)"
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_sub_type = "Process"
+          | filter actor_process_image_name = "bash"
+          | filter actor_effective_user_name = "www-data"
+          | comp count() as proc_count by action_local_ip
+          | filter proc_count >= 1
+        kpi_contribution:
+          kpi: "Cross-Source Correlation Rate"
+          op: "≥"
+          value: 80
+          unit: "%"
+
+  - id: step-03
+    name: "ITDR signal — stale AD service-account auth attempts (password spray)"
+    command: |
+      echo '[MP-005] ITDR signal: invalid Kerberos pre-auth from same src_host';
+      # Targets a known seeded service account in the ITDR module (which
+      # plants 5 Kerberoast-vulnerable accounts). Wrong password on purpose —
+      # XSIAM ITDR should record the pre-auth failure burst.
+      ITDR_DC=${CORTEXSIM_ITDR_DC_HOST:-dc.corp.local}
+      ITDR_REALM=${CORTEXSIM_ITDR_REALM:-CORP.LOCAL}
+      for svc in svc-sql svc-backup svc-webapp svc-jenkins svc-monitor; do
+        echo "Wrong-Password!" | timeout 5 kinit "${svc}@${ITDR_REALM}" 2>&1 | head -2 || true
+        sleep 1
+      done
+      echo '[*] AD Security 4768 (TGT failure) burst recorded from this host'
+    identity: www-data
+    mitre_technique: "T1110.003"
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — Kerberos pre-auth failure burst against 5 service accounts from same client_ip"
+        verification_xql: |
+          dataset = ad_audit
+          | filter event_id = 4768
+          | filter result_code != "0x0"
+          | comp count_distinct(target_user_name) as targeted_users by client_ip
+          | filter targeted_users >= 3
+        kpi_contribution:
+          kpi: "Cross-Source Correlation Rate"
+          op: "≥"
+          value: 80
+          unit: "%"
+
+  - id: step-04
+    name: "Stitch verification — assert single incident_id spans all 3 planes"
+    command: |
+      echo '[MP-005] Stitch verification — polling for stitched incident';
+      # Allow XSIAM correlation engine to converge. Default ±30s window per
+      # F2 conventions; real XSIAM correlation usually fires within 60s.
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-90}"
+      echo '[*] Verifier should now run the F2 verification_xql against dataset=xdr_data'
+      echo '[*] Expected: count_distinct(_product) >= 3, count_distinct(incident_id) = 1'
+      echo '[*] Failure modes:'
+      echo '    - 3 separate incidents (stitching window missed) → Cross-Source Correlation Rate fails'
+      echo '    - Only 2 planes represented (ITDR not ingested) → required_planes_in_incident fails'
+      echo '    - mttd > 60s → causality timing fails'
+    identity: root
+    mitre_technique: "T1078"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Analytics
+        description: "XSIAM correlation — EDR + NDR + ITDR signals from same src_host stitch into one incident_id with full causality chain"
+        verification_xql: |
+          // F2 canonical verifier — distinct planes under one incident_id
+          dataset = xdr_data
+          | filter _time > timeago(10m)
+          | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by action_local_ip
+          | filter plane_count >= 3 and incident_count = 1
+        kpi_contribution:
+          kpi: "Cross-Source Correlation Rate"
+          op: "≥"
+          value: 80
+          unit: "%"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim_mp005_*"
+    - "echo '[CortexSim] SIM-MP-005 cleanup complete - no persistent artifacts'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-05-28"
+last_updated: "2026-05-28"
+tags:
+  - multi-plane
+  - stitching
+  - cross-plane-correlation
+  - edr-ndr-itdr
+  - moat
+  - tc-ir-05
+  - v2.0-methodology
+  - flagship
