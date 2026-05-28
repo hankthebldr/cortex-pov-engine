@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
-import { getTtps, getTtp, getTtpRuns } from '../../api/client.js'
+import { getTtps, getTtp, getTtpRuns, getScenarios, postRun } from '../../api/client.js'
 import { downloadTtpLayer } from './exportNavigatorLayer.js'
 
 /**
@@ -335,6 +335,8 @@ function TtpDetail({ detail, runs, onClose }) {
     )
   }
 
+  const [launcherOpen, setLauncherOpen] = useState(false)
+
   const identity = detail.identity || {}
   const metadata = detail.metadata || {}
   const mitre    = detail.mitre_attack || {}
@@ -360,6 +362,15 @@ function TtpDetail({ detail, runs, onClose }) {
           </h3>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            className="btn"
+            data-testid="ttp-launch-all"
+            title="Launch every scenario whose expected_detections cite this TTP"
+            onClick={() => setLauncherOpen(true)}
+          >
+            Launch all&hellip;
+          </button>
           {techniques.length > 0 && (
             <button
               type="button"
@@ -374,6 +385,13 @@ function TtpDetail({ detail, runs, onClose }) {
           <button type="button" className="btn" onClick={onClose}>Close</button>
         </div>
       </div>
+
+      {launcherOpen && (
+        <LaunchAllModal
+          ttpId={detail.id}
+          onClose={() => setLauncherOpen(false)}
+        />
+      )}
 
       {identity.summary && (
         <DetailSection label="Summary">
@@ -810,6 +828,236 @@ function DetectionItem({ kind, index, item, bodyKey }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/* ─── Launch-all modal ─────────────────────────────────────────────── */
+
+/**
+ * Modal — load scenarios citing this TTP, let the operator pick a
+ * subset + identity + mode, then fire one POST /api/run per
+ * selected scenario. The first successful launch emits
+ * cortex:navigate-run so App.jsx jumps to the validation wizard.
+ *
+ * Closes the action loop the TTP browser opened — the operator can
+ * exercise this technique end-to-end without leaving the panel.
+ */
+function LaunchAllModal({ ttpId, onClose }) {
+  const [scenarios, setScenarios] = useState(null)   // null = loading, [] = empty, [...] = loaded
+  const [error, setError]         = useState(null)
+  const [selected, setSelected]   = useState(() => new Set())
+  const [mode, setMode]           = useState('push')
+  const [identity, setIdentity]   = useState('')
+  const [launching, setLaunching] = useState(false)
+  const [launchSummary, setLaunchSummary] = useState(null)  // { ok: [...], failed: [...] }
+
+  useEffect(() => {
+    let cancelled = false
+    getScenarios({ ttp_ref: ttpId })
+      .then((s) => {
+        if (cancelled) return
+        const arr = Array.isArray(s) ? s : []
+        setScenarios(arr)
+        // Pre-select everything by default — the operator's intent is
+        // typically "run them all", and unchecking is one click.
+        setSelected(new Set(arr.map((sc) => sc.scenario_id)))
+      })
+      .catch((e) => { if (!cancelled) setError(e?.message || 'Failed to load scenarios') })
+    return () => { cancelled = true }
+  }, [ttpId])
+
+  const toggle = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const launchAll = async () => {
+    setLaunching(true)
+    const ok = []
+    const failed = []
+    // Fire in parallel — the orchestrator queues runs independently;
+    // serial launch would just stall the operator.
+    const calls = [...selected].map((scenario_id) =>
+      postRun({
+        scenario_id,
+        mode,
+        identity: identity || undefined,
+      })
+        .then((r) => ok.push({ scenario_id, run_id: r?.run_id || r?.id }))
+        .catch((e) => failed.push({ scenario_id, error: e?.message || String(e) }))
+    )
+    await Promise.all(calls)
+    setLaunching(false)
+    setLaunchSummary({ ok, failed })
+
+    // Drill into the first successful run — matches the
+    // cortex:navigate-run pattern the TTP run-history rows use.
+    if (ok.length > 0 && ok[0].run_id) {
+      window.dispatchEvent(new CustomEvent('cortex:navigate-run', {
+        detail: { runId: ok[0].run_id },
+      }))
+    }
+  }
+
+  return (
+    <div
+      className="ttp-launcher-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Launch scenarios for this TTP"
+      data-testid="ttp-launcher-modal"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 50,
+      }}
+    >
+      <div
+        className="ttp-launcher"
+        style={{
+          width: 'min(640px, 92vw)', maxHeight: '88vh',
+          background: 'var(--c-surface-raised, #121a26)',
+          border: '1px solid var(--c-hairline, rgba(255,255,255,0.08))',
+          borderRadius: 6, padding: '20px 22px',
+          display: 'flex', flexDirection: 'column', gap: 14,
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div>
+            <div className="competitive__detail-eyebrow mono">{ttpId}</div>
+            <h3 style={{ margin: 0, fontSize: 16 }}>Launch all citing scenarios</h3>
+          </div>
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+        </div>
+
+        {scenarios === null && !error && (
+          <div className="coverage__empty mono" style={{ fontSize: 11 }}>loading scenarios…</div>
+        )}
+        {error && (
+          <div className="adapter-registry__error mono" role="alert">{error}</div>
+        )}
+        {scenarios && scenarios.length === 0 && !error && (
+          <div className="coverage__empty mono" style={{ fontSize: 11 }} data-testid="ttp-launcher-empty">
+            no scenarios cite this TTP in their expected_detections — author one or
+            add a <span className="mono">ttp_ref</span> entry to an existing
+            step.
+          </div>
+        )}
+
+        {scenarios && scenarios.length > 0 && (
+          <>
+            <div
+              style={{
+                flex: 1, overflowY: 'auto',
+                border: '1px solid var(--c-hairline, rgba(255,255,255,0.08))',
+                borderRadius: 4,
+              }}
+            >
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--c-text-muted)' }}>
+                    <th style={{ padding: '6px 8px', width: 32 }}></th>
+                    <th style={{ padding: '6px 8px' }}>Scenario</th>
+                    <th style={{ padding: '6px 8px' }}>Plane</th>
+                    <th style={{ padding: '6px 8px' }}>Technique</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scenarios.map((s) => (
+                    <tr key={s.scenario_id} data-testid={`ttp-launcher-row-${s.scenario_id}`}>
+                      <td style={{ padding: '4px 8px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(s.scenario_id)}
+                          onChange={() => toggle(s.scenario_id)}
+                          aria-label={`Include ${s.scenario_id}`}
+                        />
+                      </td>
+                      <td className="mono" style={{ padding: '4px 8px' }}>
+                        <div>{s.scenario_id}</div>
+                        <div style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>{s.name}</div>
+                      </td>
+                      <td className="mono" style={{ padding: '4px 8px' }}>{s.plane}</td>
+                      <td className="mono" style={{ padding: '4px 8px' }}>{s.mitre_technique || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
+              <label style={{ fontSize: 11 }}>
+                Mode:{' '}
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value)}
+                  data-testid="ttp-launcher-mode"
+                  style={{ fontSize: 11, padding: '2px 4px' }}
+                >
+                  <option value="push">push</option>
+                  <option value="pull">pull</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 11, flex: 1 }}>
+                Identity (optional):{' '}
+                <input
+                  type="text"
+                  value={identity}
+                  onChange={(e) => setIdentity(e.target.value)}
+                  placeholder="leave blank for scenario default"
+                  data-testid="ttp-launcher-identity"
+                  style={{
+                    fontSize: 11, padding: '2px 6px', width: 220,
+                    background: 'var(--c-surface)', border: '1px solid var(--c-hairline)',
+                    color: 'var(--c-text-primary)',
+                  }}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>
+                {selected.size} of {scenarios.length} selected
+              </span>
+              <button
+                type="button"
+                className="btn"
+                data-testid="ttp-launcher-confirm"
+                disabled={launching || selected.size === 0}
+                onClick={launchAll}
+              >
+                {launching ? 'Launching…' : `Launch ${selected.size}`}
+              </button>
+            </div>
+          </>
+        )}
+
+        {launchSummary && (
+          <div
+            className="mono"
+            style={{ fontSize: 11, paddingTop: 8, borderTop: '1px solid var(--c-hairline)' }}
+            data-testid="ttp-launcher-summary"
+          >
+            <div>launched <strong>{launchSummary.ok.length}</strong>, failed <strong>{launchSummary.failed.length}</strong></div>
+            {launchSummary.failed.length > 0 && (
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {launchSummary.failed.map((f) => (
+                  <li key={f.scenario_id} style={{ color: 'var(--c-error, salmon)' }}>
+                    {f.scenario_id}: {f.error}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

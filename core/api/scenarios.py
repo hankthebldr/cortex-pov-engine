@@ -32,9 +32,10 @@ router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 async def list_scenarios(
     plane: Optional[str] = Query(None, description="Filter by detection plane (e.g. CDR)"),
     uc_ref: Optional[str] = Query(None, description="Filter by UC reference (e.g. UCS-CDR-03)"),
+    ttp_ref: Optional[str] = Query(None, description="Filter to scenarios whose steps[].expected_detections[].ttp_ref cites this TTP id"),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all scenarios, with optional plane and uc_ref filters."""
+    """List all scenarios, with optional plane / uc_ref / ttp_ref filters."""
     stmt = select(Scenario)
     if plane:
         stmt = stmt.where(Scenario.plane == plane.upper())
@@ -44,8 +45,28 @@ async def list_scenarios(
     result = await db.execute(stmt)
     scenarios = result.scalars().all()
 
-    logger.info("list_scenarios plane=%s uc_ref=%s count=%d", plane, uc_ref, len(scenarios))
+    # ttp_ref filter — applied in Python because expected_detections is
+    # nested in a JSON column and SQLite has no portable accessor for it.
+    # The scenario catalog is small (~50 today) so a full scan is fine.
+    if ttp_ref:
+        scenarios = [s for s in scenarios if _scenario_cites_ttp(s, ttp_ref)]
+
+    logger.info(
+        "list_scenarios plane=%s uc_ref=%s ttp_ref=%s count=%d",
+        plane, uc_ref, ttp_ref, len(scenarios),
+    )
     return {"scenarios": [s.to_dict() for s in scenarios], "total": len(scenarios)}
+
+
+def _scenario_cites_ttp(scenario: Scenario, ttp_ref: str) -> bool:
+    """Return True if any step's expected_detections cites ``ttp_ref``."""
+    for step in (scenario.steps or []):
+        if not isinstance(step, dict):
+            continue
+        for det in (step.get("expected_detections") or []):
+            if isinstance(det, dict) and det.get("ttp_ref") == ttp_ref:
+                return True
+    return False
 
 
 @router.get("/{scenario_id}")

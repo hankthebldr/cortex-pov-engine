@@ -445,6 +445,116 @@ describe('<TtpBrowserView />', () => {
     }
   })
 
+  // ── "Launch all" — scenarios-by-TTP action loop (issue #56) ──────
+
+  it('detail panel exposes a Launch all… button', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument()
+  })
+
+  it('clicking Launch all… opens the modal and loads matching scenarios', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/scenarios': [
+        { scenario_id: 'SIM-ITDR-002', name: 'DCSync chain', plane: 'ITDR', mitre_technique: 'T1003.006' },
+        { scenario_id: 'SIM-EDR-007',  name: 'mimikatz dcsync', plane: 'EDR',  mitre_technique: 'T1003.006' },
+      ],
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-launch-all'))
+    await waitFor(() => expect(screen.getByTestId('ttp-launcher-modal')).toBeInTheDocument())
+    expect(screen.getByTestId('ttp-launcher-row-SIM-ITDR-002')).toBeInTheDocument()
+    expect(screen.getByTestId('ttp-launcher-row-SIM-EDR-007')).toBeInTheDocument()
+    expect(screen.getByText('2 of 2 selected')).toBeInTheDocument()
+  })
+
+  it('confirming Launch fires N POSTs and navigates to the first run', async () => {
+    const runCalls = []
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/scenarios': [
+        { scenario_id: 'SIM-ITDR-002', name: 'DCSync chain', plane: 'ITDR', mitre_technique: 'T1003.006' },
+        { scenario_id: 'SIM-EDR-007',  name: 'mimikatz dcsync', plane: 'EDR',  mitre_technique: 'T1003.006' },
+      ],
+      'POST /api/run': (_url, init) => {
+        const body = JSON.parse(init.body || '{}')
+        runCalls.push(body)
+        return { run_id: `r-${body.scenario_id}` }
+      },
+    })
+    const navEvents = []
+    const listener = (e) => navEvents.push(e.detail?.runId)
+    window.addEventListener('cortex:navigate-run', listener)
+
+    try {
+      render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+      await waitFor(() => expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument())
+      fireEvent.click(screen.getByTestId('ttp-launch-all'))
+      await waitFor(() => expect(screen.getByTestId('ttp-launcher-modal')).toBeInTheDocument())
+      // Default mode = push, all scenarios pre-selected
+      fireEvent.click(screen.getByTestId('ttp-launcher-confirm'))
+      await waitFor(() => expect(screen.getByTestId('ttp-launcher-summary')).toBeInTheDocument())
+      expect(runCalls).toHaveLength(2)
+      const scenarioIds = runCalls.map((c) => c.scenario_id).sort()
+      expect(scenarioIds).toEqual(['SIM-EDR-007', 'SIM-ITDR-002'])
+      // First successful launch's run_id was dispatched
+      expect(navEvents.length).toBeGreaterThan(0)
+      expect(navEvents[0]).toMatch(/^r-SIM-/)
+      expect(screen.getByText(/launched/)).toBeInTheDocument()
+    } finally {
+      window.removeEventListener('cortex:navigate-run', listener)
+    }
+  })
+
+  it('unchecking scenarios narrows the launch set', async () => {
+    const runCalls = []
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/scenarios': [
+        { scenario_id: 'SIM-ITDR-002', name: 'DCSync chain', plane: 'ITDR', mitre_technique: 'T1003.006' },
+        { scenario_id: 'SIM-EDR-007',  name: 'mimikatz dcsync', plane: 'EDR',  mitre_technique: 'T1003.006' },
+      ],
+      'POST /api/run': (_url, init) => {
+        const body = JSON.parse(init.body || '{}')
+        runCalls.push(body)
+        return { run_id: `r-${body.scenario_id}` }
+      },
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-launch-all'))
+    await waitFor(() => expect(screen.getByTestId('ttp-launcher-modal')).toBeInTheDocument())
+    // Uncheck the EDR scenario
+    fireEvent.click(screen.getByLabelText(/Include SIM-EDR-007/))
+    expect(screen.getByText('1 of 2 selected')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('ttp-launcher-confirm'))
+    await waitFor(() => expect(screen.getByTestId('ttp-launcher-summary')).toBeInTheDocument())
+    expect(runCalls).toHaveLength(1)
+    expect(runCalls[0].scenario_id).toBe('SIM-ITDR-002')
+  })
+
+  it('renders the no-scenarios placeholder when no scenarios cite this TTP', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/scenarios': [],
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-launch-all'))
+    await waitFor(() => expect(screen.getByTestId('ttp-launcher-empty')).toBeInTheDocument())
+    expect(screen.queryByTestId('ttp-launcher-confirm')).not.toBeInTheDocument()
+  })
+
   it('empty run history renders the no-runs placeholder', async () => {
     installRoutes({
       'GET /api/ttps':                       fixtureList,
