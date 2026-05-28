@@ -23,10 +23,10 @@ or an alignment with a market shift CortexSim should ride.
 > Living section. Updated as phases land so leadership can read
 > "where are we" without scraping the git log. Newest first.
 
-### 2026-05 — Detection-content surface (TTP browser trilogy + Navigator export)
+### 2026-05 — Detection-content surface (TTP browser trilogy + Navigator export + search)
 
 The Coverage tab is now the operator's detection-content home, not
-just a heatmap. Five PRs landed an end-to-end loop from *discover a
+just a heatmap. Six PRs landed an end-to-end loop from *discover a
 technique* → *read the shipped detection* → *see what runs it* →
 *prove coverage to the customer*:
 
@@ -48,16 +48,30 @@ technique* → *read the shipped detection* → *see what runs it* →
   `Result.ttp_ref`. Detail panel renders a colour-coded run table;
   clicking a row emits `cortex:navigate-run` and jumps to the
   validation wizard.
-- **(this phase) — Per-TTP ATT&CK Navigator export.** "Export
-  ATT&CK layer" button on the detail panel downloads a Navigator
-  v4.5 layer scoped to the card's technique(s) — the focused
-  counterpart to the library-wide coverage export. The
+- **#53 — Per-TTP ATT&CK Navigator export + branded Pages board.**
+  "Export ATT&CK layer" button on the detail panel downloads a
+  Navigator v4.5 layer scoped to the card's technique(s) — the
   briefing-ready artifact a DC pastes into the customer's Navigator
-  to show "here's exactly what this detection covers."
+  to show "here's exactly what this detection covers." Ships
+  alongside a refreshed `docs/site/` landing page with a Cortex-
+  branded "Platform at a glance" coverage board.
+- **#54 — Free-text search in the TTP grid.** Tokenised AND search
+  over id / name / summary / tags / technique ids / actor names, plus
+  a Clear button that resets search + chips. Discovery scales to an
+  N-growing corpus.
 
 **Net operator value:** the TTP card answers all four POV questions
 in one panel — *what does it look like, what drives it, did we run it,
 how do I prove it* — and every answer is a copy-paste-able artifact.
+The grid is discoverable by chip filter *and* by full-text search.
+
+### Test floor (2026-05-26)
+
+- **Python:** 800 passed · 55 skipped
+- **UI (vitest):** 249 passed
+- **Build:** clean (~424 kB JS / ~120 kB gzipped)
+- **Open issues:** tracked in the `roadmap:next` and `roadmap:deferred`
+  labels — see "Tracker" section below.
 
 ### Earlier foundations (pre-2026-05)
 
@@ -78,23 +92,34 @@ how do I prove it* — and every answer is a copy-paste-able artifact.
   (`base`, `edr`, `cdr`, `content-library`, `itdr`, `ndr`, `cspm`,
   `asm`, `tim`, `telemetry-replay`) covering every active plane.
 
-### Next steps (immediate, post-this-phase)
+### Next steps (immediate, post-2026-05)
 
-Smallest-first, each a focused PR:
+Smallest-first, each a focused PR. Tracked in GitHub Issues with the
+`roadmap:next` label so the project board mirrors this list:
 
-1. **Free-text search in the TTP grid** — chip filters only today;
-   a search box over id / name / summary / tags closes the
-   discovery gap for a 15→N-growing corpus.
-2. **Scenarios-by-TTP + "launch all"** — new
+1. **Scenarios-by-TTP + "launch all"** — new
    `GET /api/scenarios?ttp_ref=` then a detail-panel button to launch
    every scenario citing the TTP. Closes the action loop the run
    history opened.
-3. **Syntax highlighting** on the detection-body `<pre>` blocks
+2. **Syntax highlighting** on the detection-body `<pre>` blocks
    (XQL / Sigma) — readability for the copy workflow.
-4. **Promote draft TTPs** (`_drafts/TTP-2026-0008/0009/0010`) to
+3. **Promote draft TTPs** (`_drafts/TTP-2026-0008/0009/0010`) to
    active after a content review.
 
+Deferred (`roadmap:deferred`):
+
+- **TTP authoring UI** — corpus mutations are still filesystem-only
+  + restart. Needs a git-write + reload story; reasonable scope as
+  its own focused phase, not a follow-up.
+
 Larger, horizon-aligned items continue below.
+
+### Tracker
+
+- `roadmap:next` → next-up queue mirrored from above
+- `roadmap:deferred` → larger items waiting on dependencies or staffing
+- Issues link back to this doc by section anchor so the conversation
+  lives in one place.
 
 ## Where the market is moving — 2026 BAS landscape
 
