@@ -10,7 +10,8 @@ import { test, expect } from './_fixtures'
  * to be reachable.
  *
  * Migrated to Mission Ops Console: the EAL list is no longer its own
- * tab — it lives under Coverage → Adapters sub-view (PR #44).
+ * tab — it lives under Coverage → EAL Plugins sub-view (PR #44; renamed
+ * from "Adapters" when the Tool Adapters catalog landed).
  */
 test('Adapter Registry opens and shows plugin surface', async ({ page, api, baseURL, request }) => {
   await api.health()
@@ -23,11 +24,11 @@ test('Adapter Registry opens and shows plugin surface', async ({ page, api, base
   expect(Array.isArray(pluginList)).toBe(true)
   expect(pluginList.length).toBeGreaterThan(0)
 
-  // UI side — navigate Operations → Coverage → Adapters
+  // UI side — navigate Operations → Coverage → EAL Plugins
   await page.goto('/')
   await page.getByRole('tab', { name: /Coverage/ }).first().click()
   await page.waitForLoadState('networkidle')
-  await page.getByRole('tab', { name: /^Adapters$/ }).click()
+  await page.getByRole('tab', { name: /^EAL Plugins$/ }).click()
   await page.waitForLoadState('networkidle')
 
   // At least one plugin name should surface in the Adapter Registry. Grab

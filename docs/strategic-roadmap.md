@@ -18,6 +18,84 @@ or an alignment with a market shift CortexSim should ride.
 > stack. Detection, stitching, response, all measured against
 > verifiable industry benchmarks.
 
+## Progress log — cumulative shipped state
+
+> Living section. Updated as phases land so leadership can read
+> "where are we" without scraping the git log. Newest first.
+
+### 2026-05 — Detection-content surface (TTP browser trilogy + Navigator export)
+
+The Coverage tab is now the operator's detection-content home, not
+just a heatmap. Five PRs landed an end-to-end loop from *discover a
+technique* → *read the shipped detection* → *see what runs it* →
+*prove coverage to the customer*:
+
+- **#50 — TTP Browser.** New Coverage sub-tab over the
+  `detection_scanner/ttps/*.json` corpus. Filter by status / tactic /
+  platform; card grid → detail panel with identity, MITRE chain,
+  threat actors, Cortex product mapping. Backend `GET /api/ttps` +
+  `GET /api/ttps/{id}`. Reverse cross-link `referenced_by_adapters`
+  closes the adapter→TTP navigation loop wired via the
+  `cortex:navigate-ttp` custom event.
+- **#51 — Detection-body reveal + copy.** The detail panel's
+  detection section went from counts-only to a per-kind accordion
+  (BIOC / XQL / correlation / IOC / analytics) with the raw logic
+  body and copy-to-clipboard — operators paste straight into XSIAM
+  Query Center.
+- **#52 — Run history per TTP + drill-down.** New
+  `GET /api/ttps/{id}/runs` rolls up every Run that exercised the
+  TTP (expected/observed counts, min MTTD) by joining the indexed
+  `Result.ttp_ref`. Detail panel renders a colour-coded run table;
+  clicking a row emits `cortex:navigate-run` and jumps to the
+  validation wizard.
+- **(this phase) — Per-TTP ATT&CK Navigator export.** "Export
+  ATT&CK layer" button on the detail panel downloads a Navigator
+  v4.5 layer scoped to the card's technique(s) — the focused
+  counterpart to the library-wide coverage export. The
+  briefing-ready artifact a DC pastes into the customer's Navigator
+  to show "here's exactly what this detection covers."
+
+**Net operator value:** the TTP card answers all four POV questions
+in one panel — *what does it look like, what drives it, did we run it,
+how do I prove it* — and every answer is a copy-paste-able artifact.
+
+### Earlier foundations (pre-2026-05)
+
+- **#43–#44 — Enterprise console MVP.** Live event stream, PANW
+  Advantage matrix, MTTD histogram, POV bundle export, run-history
+  badges. 149→210 UI tests.
+- **#45–#46 — Tool Adapter framework.** Static catalog under
+  `tools/packs/*.yml`; Coverage "Tool Adapters" picker surfaces every
+  offensive/defensive tool a scenario can reference via
+  `external_tools[].adapter_ref`. 18 adapters across cloud-audit,
+  Linux-credential, web-recon, identity, social.
+- **#47 — "Tools Used" report section.** POV report now carries a
+  licence + attribution audit trail of every tool a run touched.
+- **#48 — IaC auto-pull.** `adapter_refs[]` auto-includes each
+  adapter's declared `iac_module`; Lab picker pre-fills from a
+  scenario's tool requirements.
+- **Phase A/B IaC generator** — AWS feature-complete: 10 modules
+  (`base`, `edr`, `cdr`, `content-library`, `itdr`, `ndr`, `cspm`,
+  `asm`, `tim`, `telemetry-replay`) covering every active plane.
+
+### Next steps (immediate, post-this-phase)
+
+Smallest-first, each a focused PR:
+
+1. **Free-text search in the TTP grid** — chip filters only today;
+   a search box over id / name / summary / tags closes the
+   discovery gap for a 15→N-growing corpus.
+2. **Scenarios-by-TTP + "launch all"** — new
+   `GET /api/scenarios?ttp_ref=` then a detail-panel button to launch
+   every scenario citing the TTP. Closes the action loop the run
+   history opened.
+3. **Syntax highlighting** on the detection-body `<pre>` blocks
+   (XQL / Sigma) — readability for the copy workflow.
+4. **Promote draft TTPs** (`_drafts/TTP-2026-0008/0009/0010`) to
+   active after a content review.
+
+Larger, horizon-aligned items continue below.
+
 ## Where the market is moving — 2026 BAS landscape
 
 Five trends shape the next 12 months of BAS investment:

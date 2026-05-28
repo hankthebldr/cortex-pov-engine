@@ -228,6 +228,7 @@ from api.mitre import router as mitre_router            # noqa: E402
 from api.infra import router as infra_router            # noqa: E402
 from api.eal import router as eal_router                # noqa: E402
 from api.credentials import router as credentials_router  # noqa: E402
+from api.ttps import router as ttps_router              # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -238,6 +239,7 @@ app.include_router(mitre_router, prefix="/api")
 app.include_router(infra_router, prefix="/api")
 app.include_router(eal_router, prefix="/api")
 app.include_router(credentials_router, prefix="/api")
+app.include_router(ttps_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

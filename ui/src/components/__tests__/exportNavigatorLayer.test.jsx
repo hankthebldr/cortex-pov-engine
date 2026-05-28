@@ -4,7 +4,7 @@
  */
 import React from 'react'
 import { describe, it, expect } from 'vitest'
-import { buildLayer } from '../console/exportNavigatorLayer.js'
+import { buildLayer, buildTtpLayer } from '../console/exportNavigatorLayer.js'
 
 void React
 
@@ -147,5 +147,85 @@ describe('buildLayer (ATT&CK Navigator export)', () => {
     })
     expect(layer.name).toBe('POV-Q3-2026')
     expect(layer.description).toBe('Acme Q3 POV coverage')
+  })
+})
+
+describe('buildTtpLayer (single-TTP Navigator export)', () => {
+  const dcsync = {
+    id: 'TTP-2026-0004',
+    identity: { name: 'DCSync — Domain Replication Abuse' },
+    mitre_attack: {
+      techniques: [
+        {
+          technique_id: 'T1003',
+          subtechnique_id: 'T1003.006',
+          name: 'OS Credential Dumping: DCSync',
+          tactic_ids: ['TA0006'],
+        },
+      ],
+    },
+  }
+
+  it('names the layer after the TTP id + identity name', () => {
+    const layer = buildTtpLayer(dcsync)
+    expect(layer.name).toBe('TTP-2026-0004 — DCSync — Domain Replication Abuse')
+    expect(layer.domain).toBe('enterprise-attack')
+  })
+
+  it('keys the cell on the most-specific (sub)technique id', () => {
+    const layer = buildTtpLayer(dcsync)
+    expect(layer.techniques).toHaveLength(1)
+    expect(layer.techniques[0].techniqueID).toBe('T1003.006')
+    expect(layer.techniques[0].color).toBe('#00C0E8')
+    expect(layer.techniques[0].tactic).toBe('credential-access')
+  })
+
+  it('annotates each cell with the TTP id + technique name', () => {
+    const layer = buildTtpLayer(dcsync)
+    expect(layer.techniques[0].comment).toMatch(/TTP-2026-0004/)
+    expect(layer.techniques[0].comment).toMatch(/DCSync/)
+  })
+
+  it('emits one cell per tactic when a technique spans multiple tactics', () => {
+    const multiTactic = {
+      id: 'TTP-X',
+      identity: { name: 'Multi' },
+      mitre_attack: {
+        techniques: [
+          { technique_id: 'T1078', tactic_ids: ['TA0001', 'TA0003', 'TA0005'] },
+        ],
+      },
+    }
+    const layer = buildTtpLayer(multiTactic)
+    expect(layer.techniques).toHaveLength(3)
+    expect(layer.techniques.map((t) => t.tactic).sort()).toEqual(
+      ['defense-evasion', 'initial-access', 'persistence'],
+    )
+    // All key the same technique id
+    expect(new Set(layer.techniques.map((t) => t.techniqueID))).toEqual(new Set(['T1078']))
+  })
+
+  it('emits a single untargeted cell when a technique has no tactic_ids', () => {
+    const noTactic = {
+      id: 'TTP-Y',
+      identity: { name: 'NoTactic' },
+      mitre_attack: { techniques: [{ technique_id: 'T1059' }] },
+    }
+    const layer = buildTtpLayer(noTactic)
+    expect(layer.techniques).toHaveLength(1)
+    expect(layer.techniques[0].techniqueID).toBe('T1059')
+    expect(layer.techniques[0].tactic).toBeUndefined()
+  })
+
+  it('survives a detail payload with no MITRE data', () => {
+    const layer = buildTtpLayer({ id: 'TTP-Z', identity: { name: 'Empty' } })
+    expect(layer.techniques).toEqual([])
+    expect(layer.name).toBe('TTP-Z — Empty')
+  })
+
+  it('embeds ttp_id + generator metadata', () => {
+    const layer = buildTtpLayer(dcsync)
+    expect(layer.metadata.find((m) => m.name === 'ttp_id').value).toBe('TTP-2026-0004')
+    expect(layer.metadata.find((m) => m.name === 'generator').value).toBe('CortexSim')
   })
 })

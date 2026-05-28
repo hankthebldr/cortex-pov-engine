@@ -89,6 +89,28 @@ export async function getScenario(id) {
 }
 
 /**
+ * GET /api/scenarios/:id/infra-hints
+ *
+ * Resolve a scenario's external_tools[] into IaC generator hints
+ * (adapter_refs the scenario declares + suggested_modules derived
+ * from each adapter's install.iac_module). Used by the LabView's
+ * "Hint from scenario" affordance to auto-fill the auto-pull picker.
+ *
+ * @param {string} scenarioId
+ * @returns {Promise<{
+ *   scenario_id: string,
+ *   plane: string,
+ *   adapter_refs: string[],
+ *   resolved_adapters: Array<{adapter_ref, name, tier, safety_class, iac_module}>,
+ *   unresolved_refs: string[],
+ *   suggested_modules: string[],
+ * }>}
+ */
+export async function getScenarioInfraHints(scenarioId) {
+  return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/infra-hints`)
+}
+
+/**
  * GET /api/scenarios/:id/download?format=bash|k8s
  * Returns a Blob for file download.
  * @param {string|number} id
@@ -238,6 +260,42 @@ export async function getToolStatus(toolName) {
   return request(`/api/tools/${toolName}/status`)
 }
 
+// ─── Tool-adapter catalog (tools/packs/*.yml) ───────────────────────────────
+
+/**
+ * GET /api/tools/adapters
+ *
+ * List the static tool-adapter catalog. Filters compose with logical AND
+ * server-side; unknown values quietly return an empty list.
+ *
+ * @param {Object} [filters]
+ * @param {string} [filters.plane]         e.g. 'EDR' | 'CDR' | 'NDR' | 'ITDR' | ...
+ * @param {number} [filters.tier]          1..5
+ * @param {string} [filters.safety_class]  'safe' | 'dual-use-lab-only' | 'c2-framework' | 'destructive'
+ * @param {string} [filters.category]      controlled-vocab category
+ * @returns {Promise<{adapters: Array<Object>, total: number}>}
+ */
+export async function getToolAdapters(filters = {}) {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== '') qs.append(k, String(v))
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/tools/adapters${suffix}`)
+}
+
+/**
+ * GET /api/tools/adapters/:adapterId
+ *
+ * Full ToolAdapterSchema for a single entry — used by the drill-down panel.
+ *
+ * @param {string} adapterId  e.g. 'TOOL-NMAP'
+ * @returns {Promise<Object>}
+ */
+export async function getToolAdapter(adapterId) {
+  return request(`/api/tools/adapters/${encodeURIComponent(adapterId)}`)
+}
+
 // ─── Reports ────────────────────────────────────────────────────────────────
 
 /**
@@ -303,8 +361,14 @@ export async function getInfraModules(provider = 'aws') {
 
 /**
  * POST /api/infra/generate
- * @param {Object} body  { provider, region, modules, params }
- * @returns {Promise<Object>}
+ * @param {Object} body
+ * @param {string} body.provider          'aws' | 'gcp' | 'azure'
+ * @param {string} body.region            cloud region (e.g. 'us-east-1')
+ * @param {string[]} body.modules         IaC modules the operator picked
+ * @param {string[]} [body.adapter_refs]  optional adapter_ref ids — backend
+ *                                        auto-includes each adapter's iac_module
+ * @param {Object} body.params            project / SSH / sizing params
+ * @returns {Promise<Object>}             response includes auto_included_modules[]
  */
 export async function generateInfra(body) {
   return request('/api/infra/generate', {
@@ -354,6 +418,58 @@ export async function getMitreCoverage() {
 export async function getAgents() {
   const data = await request('/api/agents')
   return Array.isArray(data) ? data : data?.agents ?? []
+}
+
+// ─── TTP browser (detection_scanner/ttps/*.json) ────────────────────────────
+
+/**
+ * GET /api/ttps
+ *
+ * List the TTP corpus as slim summary cards. Filters compose with
+ * logical AND server-side; unknown values quietly return an empty list.
+ *
+ * @param {Object} [filters]
+ * @param {string} [filters.status]   'active' | 'draft' | 'deprecated'
+ * @param {string} [filters.tactic]   MITRE tactic id (e.g. 'TA0006')
+ * @param {string} [filters.platform] 'linux' | 'windows' | 'macos' | ...
+ * @returns {Promise<{ttps: Array<Object>, total: number}>}
+ */
+export async function getTtps(filters = {}) {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== '') qs.append(k, String(v))
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/ttps${suffix}`)
+}
+
+/**
+ * GET /api/ttps/:ttp_id
+ *
+ * Full TTP card document + reverse cross-references to the tool-adapter
+ * catalog (``referenced_by_adapters``).
+ *
+ * @param {string} ttpId  e.g. 'TTP-2026-0004'
+ * @returns {Promise<Object>}
+ */
+export async function getTtp(ttpId) {
+  return request(`/api/ttps/${encodeURIComponent(ttpId)}`)
+}
+
+/**
+ * GET /api/ttps/:ttp_id/runs
+ *
+ * Run history — every Run whose seeded Results cite this TTP, rolled
+ * up to one entry per run with expected/observed counts + min MTTD.
+ *
+ * @param {string} ttpId
+ * @param {Object} [opts]
+ * @param {number} [opts.limit=20]
+ * @returns {Promise<{ttp_id: string, runs: Array, total: number}>}
+ */
+export async function getTtpRuns(ttpId, { limit } = {}) {
+  const qs = limit ? `?limit=${encodeURIComponent(limit)}` : ''
+  return request(`/api/ttps/${encodeURIComponent(ttpId)}/runs${qs}`)
 }
 
 // ─── EAL Traffic Simulator ───────────────────────────────────────────────────

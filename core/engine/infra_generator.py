@@ -29,6 +29,7 @@ from engine.infra_models import (
     InfraGenerateRequest,
     InfraGenerateResponse,
 )
+from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.infra_generator")
 
@@ -82,28 +83,34 @@ class InfraGenerator:
     # ------------------------------------------------------------------
 
     def generate(self, request: InfraGenerateRequest) -> InfraGenerateResponse:
-        # 1. Normalize module list (always include base first, deduped)
-        modules = self._normalize_modules(request.modules)
+        # 1. Resolve adapter_refs[] → IaC modules + remember provenance so
+        #    we can surface what the auto-pull did (and write ADAPTERS.md).
+        adapter_bindings, auto_modules = self._resolve_adapter_modules(request.adapter_refs)
 
-        # 2. Validate modules exist on disk for this provider
+        # 2. Normalize module list — always base first, union of explicit
+        #    + adapter-derived modules, dedupe while preserving order.
+        modules = self._normalize_modules(list(request.modules) + auto_modules)
+        auto_included = [m for m in auto_modules if m not in set(request.modules)]
+
+        # 3. Validate modules exist on disk for this provider
         for m in modules:
             if self._catalog.module_path(request.provider, m) is None:
                 raise GenerationError(f"module '{m}' not available for provider '{request.provider}'")
 
-        # 3. Allocate bundle directory
+        # 4. Allocate bundle directory
         bundle_id = str(uuid.uuid4())
         bundle_dir = self._blueprints_dir / bundle_id
         bundle_dir.mkdir()
 
         try:
-            # 4. Copy module directories (excluding local terraform artifacts)
+            # 5. Copy module directories (excluding local terraform artifacts)
             modules_dst = bundle_dir / "modules"
             modules_dst.mkdir()
             for m in modules:
                 src = self._catalog.module_path(request.provider, m)
                 shutil.copytree(src, modules_dst / m, ignore=_copy_ignore)
 
-            # 5. Render templates
+            # 6. Render templates
             ctx = self._template_context(bundle_id, request, modules)
             file_names: list[str] = []
             for template_name in REQUIRED_TEMPLATES:
@@ -112,7 +119,16 @@ class InfraGenerator:
                 (bundle_dir / output_name).write_text(rendered, encoding="utf-8")
                 file_names.append(output_name)
 
-            # 6. Create tar.gz
+            # 7. Adapter provenance — write ADAPTERS.md so the operator
+            #    sees which adapter_refs drove which module inclusions.
+            #    Only emit when adapter_refs[] is non-empty; otherwise the
+            #    file would just be noise.
+            if adapter_bindings:
+                adapter_md = self._render_adapters_md(adapter_bindings, auto_included)
+                (bundle_dir / "ADAPTERS.md").write_text(adapter_md, encoding="utf-8")
+                file_names.append("ADAPTERS.md")
+
+            # 8. Create tar.gz
             archive = self._blueprints_dir / f"{bundle_id}.tar.gz"
             with tarfile.open(archive, "w:gz") as tar:
                 tar.add(bundle_dir, arcname=bundle_id)
@@ -122,8 +138,10 @@ class InfraGenerator:
             shutil.rmtree(bundle_dir, ignore_errors=True)
             raise GenerationError(f"generation failed: {e}") from e
 
-        logger.info("generated bundle id=%s provider=%s modules=%s",
-                    bundle_id, request.provider, modules)
+        logger.info(
+            "generated bundle id=%s provider=%s modules=%s auto_included=%s",
+            bundle_id, request.provider, modules, auto_included,
+        )
 
         return InfraGenerateResponse(
             bundle_id=bundle_id,
@@ -131,6 +149,7 @@ class InfraGenerator:
             modules=modules,
             download_url=f"/api/infra/bundles/{bundle_id}/download",
             files=file_names + [f"modules/{m}/" for m in modules],
+            auto_included_modules=auto_included,
         )
 
     # ------------------------------------------------------------------
@@ -162,6 +181,67 @@ class InfraGenerator:
             if m != "base" and m not in out:
                 out.append(m)
         return out
+
+    def _resolve_adapter_modules(
+        self, adapter_refs: list[str],
+    ) -> tuple[list[tuple[str, str, Optional[str]]], list[str]]:
+        """Resolve a list of adapter_ref ids against the catalog.
+
+        Returns ``(bindings, modules)`` where:
+          * ``bindings`` is a list of ``(adapter_ref, status, iac_module)``
+            tuples — status is "resolved" | "unresolved" | "no-iac" so the
+            ADAPTERS.md provenance trail surfaces every state.
+          * ``modules`` is the deduped list of IaC modules to fold into
+            the bundle, preserving the order adapter_refs appeared in.
+
+        Unresolved adapter_refs (stale ids, typos) are NEVER fatal — they
+        produce an "unresolved" binding so the operator sees the gap in
+        ADAPTERS.md and the bundle still generates.
+        """
+        bindings: list[tuple[str, str, Optional[str]]] = []
+        modules: list[str] = []
+        for ref in adapter_refs:
+            adapter = adapter_catalog.find(ref)
+            if adapter is None:
+                bindings.append((ref, "unresolved", None))
+                continue
+            iac_module = adapter.install.iac_module
+            if not iac_module:
+                bindings.append((ref, "no-iac", None))
+                continue
+            bindings.append((ref, "resolved", iac_module))
+            if iac_module not in modules:
+                modules.append(iac_module)
+        return bindings, modules
+
+    @staticmethod
+    def _render_adapters_md(
+        bindings: list[tuple[str, str, Optional[str]]],
+        auto_included: list[str],
+    ) -> str:
+        lines: list[str] = []
+        lines.append("# Adapter-driven module inclusions")
+        lines.append("")
+        lines.append(
+            "This bundle was generated with `adapter_refs[]`. Each row "
+            "below shows which IaC module a referenced tool adapter "
+            "required, and whether the generator auto-included it."
+        )
+        lines.append("")
+        lines.append("| adapter_ref | status | iac_module | auto-included |")
+        lines.append("|-------------|--------|------------|---------------|")
+        for ref, status, mod in bindings:
+            mod_label = mod or "—"
+            tag = "yes" if mod and mod in auto_included else "—"
+            lines.append(f"| `{ref}` | {status} | `{mod_label}` | {tag} |")
+        lines.append("")
+        if auto_included:
+            lines.append(
+                f"**Auto-included modules:** "
+                + ", ".join(f"`{m}`" for m in auto_included)
+            )
+            lines.append("")
+        return "\n".join(lines)
 
     def _template_context(
         self,

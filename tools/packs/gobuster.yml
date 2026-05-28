@@ -1,0 +1,62 @@
+adapter_id: TOOL-GOBUSTER
+name: gobuster
+version: "3.6.0"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/OJ/gobuster
+  license: Apache-2.0
+  attribution: OJ Reeves
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595.003  # Active Scanning: Wordlist Scanning
+    - T1083      # File and Directory Discovery (dir mode)
+    - T1087.001  # Account Discovery: Local Account (vhost / fuzz modes)
+    - T1590.002  # Gather Victim Network Information: DNS (dns mode)
+
+safety_class: dual-use-lab-only
+
+install:
+  # `go install` is the recommended path; falls back to the release
+  # binary for jumpboxes that lack a Go toolchain.
+  runtime_install_command: "command -v gobuster >/dev/null 2>&1 || (command -v go >/dev/null 2>&1 && go install github.com/OJ/gobuster/v3@v3.6.0) || (curl -sSL https://github.com/OJ/gobuster/releases/download/v3.6.0/gobuster_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin gobuster && chmod +x /usr/local/bin/gobuster)"
+  binary: gobuster
+
+invoke:
+  target_platform: linux
+  # gobuster is mode-driven (`dir`, `dns`, `vhost`, `fuzz`, `s3`, `gcs`).
+  # The adapter exposes {mode} as the first positional so a scenario can
+  # pivot the same adapter across surfaces. Default is web-dir against
+  # a lab target with the SecLists "common.txt" wordlist (provided by
+  # the content-library IaC module).
+  run_template: "{binary} {mode} -u {target_url} -w {wordlist} -o {output_path} -q"
+  default_args:
+    mode: "dir"
+    target_url: "http://127.0.0.1:8080"
+    wordlist: "/opt/seclists/Discovery/Web-Content/common.txt"
+    output_path: "/tmp/gobuster-cortexsim.txt"
+  identity_required: nobody
+
+cleanup:
+  commands:
+    - "rm -f /tmp/gobuster-cortexsim.txt"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-FEROXBUSTER
+
+author: Henry Reed
+created: "2026-05-21"
+last_updated: "2026-05-21"
+tags:
+  - web-recon
+  - dir-bruteforce
+  - dns-bruteforce
+  - vhost
+  - seclists

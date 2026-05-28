@@ -102,11 +102,17 @@ class TtpCatalog:
     Lookups by ``(ttp_ref, detection_id)``. Both are optional in scenario
     schema — if either is missing, ``find()`` returns ``None`` and the
     orchestrator falls back to the legacy free-text description.
+
+    The catalog also stashes the raw JSON dict per entry under
+    ``_raw_by_ttp`` so the API layer can serve rich card metadata
+    (tags, actors, full MITRE chain) without re-reading the corpus
+    from disk on every request.
     """
 
     def __init__(self) -> None:
         self._by_ttp: dict[str, TtpEntry] = {}
         self._by_pair: dict[tuple[str, str], DetectionCard] = {}
+        self._raw_by_ttp: dict[str, dict[str, Any]] = {}
 
     # ---- public API ----------------------------------------------------
 
@@ -116,6 +122,7 @@ class TtpCatalog:
         number of detection cards indexed."""
         self._by_ttp.clear()
         self._by_pair.clear()
+        self._raw_by_ttp.clear()
 
         if not os.path.isdir(ttps_dir):
             logger.warning(
@@ -151,6 +158,7 @@ class TtpCatalog:
                             entry.ttp_ref, entry.status)
 
             self._by_ttp[entry.ttp_ref] = entry
+            self._raw_by_ttp[entry.ttp_ref] = raw
             for det in entry.detections:
                 self._by_pair[(det.ttp_ref, det.detection_id)] = det
                 loaded += 1
@@ -172,6 +180,20 @@ class TtpCatalog:
 
     def all_entries(self) -> list[TtpEntry]:
         return list(self._by_ttp.values())
+
+    def raw(self, ttp_ref: str) -> Optional[dict[str, Any]]:
+        """Return the full unparsed TTP JSON for ``ttp_ref``, or None.
+
+        The browser API uses this so card detail panels can render the
+        rich metadata (actors, MITRE chain, panw_mapping, references)
+        the parsed dataclass deliberately drops.
+        """
+        return self._raw_by_ttp.get(ttp_ref)
+
+    def all_raw(self) -> dict[str, dict[str, Any]]:
+        """Read-only view of every raw TTP JSON keyed by ttp_ref. Used
+        by the list endpoint to render card-grid metadata cheaply."""
+        return dict(self._raw_by_ttp)
 
     def count(self) -> int:
         return len(self._by_pair)

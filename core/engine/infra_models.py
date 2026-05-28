@@ -69,6 +69,15 @@ class InfraGenerateRequest(BaseModel):
     region: str = Field(..., min_length=3, max_length=32)
     modules: list[str] = Field(..., min_length=1)
     params: InfraGenerateParams
+    adapter_refs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional adapter_ref ids (e.g. 'TOOL-MIMIKATZ'). Each tier-3 "
+            "adapter declares install.iac_module — the generator auto-"
+            "includes those modules so a scenario that references "
+            "{adapter:TOOL-RUBEUS} always ships with the itdr IaC module."
+        ),
+    )
 
     @field_validator("modules")
     @classmethod
@@ -91,6 +100,14 @@ class InfraGenerateResponse(BaseModel):
     modules: list[str]
     download_url: str
     files: list[str]
+    auto_included_modules: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Modules added by adapter_refs[] resolution that were NOT in the "
+            "request's modules[]. Surfaced to the UI so the operator sees "
+            "what the auto-pull did."
+        ),
+    )
 
 
 class InfraModuleMetadata(BaseModel):
