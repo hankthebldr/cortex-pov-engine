@@ -31,6 +31,18 @@ class ExecutionIdentitySchema(BaseModel):
     options: list[str]
 
 
+class KpiThreshold(BaseModel):
+    """v2.0 KPI threshold — structured form of the master sheet's `Threshold` column.
+
+    Optional and back-compatible. Existing scenarios without thresholds continue to load.
+    Used by F1/F2/F6 family harnesses to compute pass/fail on Run completion.
+    """
+    kpi: str                       # e.g. "MTTD", "Cross-Source Correlation Rate"
+    op: str                        # one of: ≤ ≥ < > = (unicode permitted for readability)
+    value: float
+    unit: Optional[str] = None     # "seconds", "%", "count", etc.
+
+
 class StepExpectedDetection(BaseModel):
     plane: str
     type: str
@@ -41,6 +53,12 @@ class StepExpectedDetection(BaseModel):
     # the POV report can render the deployable query inline.
     ttp_ref: Optional[str] = None       # e.g. "TTP-2026-0002"
     detection_id: Optional[str] = None  # e.g. "bioc-lsass-handle-open-with-sensitive-access-rights"
+    # v2.0 — optional XQL fragment that proves this detection fired. Run on a
+    # timer by the validation harness; auto-marks observed when count > 0.
+    verification_xql: Optional[str] = None
+    # v2.0 — per-detection KPI contribution (e.g. this detection contributes to
+    # the scenario-level MTTD measurement with its own threshold).
+    kpi_contribution: Optional[KpiThreshold] = None
 
 
 class StepSchema(BaseModel):
@@ -102,6 +120,44 @@ class ScenarioSchema(BaseModel):
     infra_modules_needed: list[str] = Field(default_factory=list,
         description="IaC generator module names for auto-suggest (e.g. ['base', 'edr'])")
 
+    # ── v2.0 KPI / methodology metadata (all optional, back-compatible) ─────
+    # Mirror the columns in HR-Cortex-Use-Case-Index-Master-v2.0.xlsx.
+    # Surfaced in POV reports and (later) used by the validation harness to
+    # drive family-specific verification. Not yet persisted to the ORM —
+    # validation-only in this pass. See docs/uc_tc_mapping/v2.0-methodology-master.md.
+    validation_methodology: Optional[str] = None         # e.g. "Causality Graph Stitching"
+    methodology_family: Optional[str] = None             # one of F1..F10
+    primary_kpi: Optional[str] = None                    # e.g. "Cross-Source Correlation Rate"
+    threshold: Optional[KpiThreshold] = None             # structured pass/fail threshold
+    success_criteria: Optional[str] = None               # multi-line natural language
+    moat_tier: Optional[str] = None                      # MOAT | LEAD | PARITY
+
+    # F2-family additional fields (required-by-convention for ANALYTICS-plane
+    # stitching scenarios; optional at schema level so non-F2 scenarios can omit).
+    correlation_window_seconds: Optional[int] = None     # default 60 in F2 docs
+    required_planes_in_incident: list[str] = Field(default_factory=list)
+    stitching_key: Optional[str] = None                  # src_host | session_id | user_principal | container_id
+
+    @field_validator("methodology_family")
+    @classmethod
+    def validate_methodology_family(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        allowed = {f"F{i}" for i in range(1, 11)}
+        if v not in allowed:
+            raise ValueError(f"methodology_family must be one of {sorted(allowed)}, got '{v}'")
+        return v
+
+    @field_validator("moat_tier")
+    @classmethod
+    def validate_moat_tier(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        allowed = {"MOAT", "LEAD", "PARITY"}
+        if v not in allowed:
+            raise ValueError(f"moat_tier must be one of {allowed}, got '{v}'")
+        return v
+
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str) -> str:
@@ -118,6 +174,7 @@ class ScenarioSchema(BaseModel):
             # AI / Browser / Agentic detection-set expansion
             "AI_ACCESS",   # Cortex AI Access Security — egress to AI providers
             "AIRS",        # Cortex AI Runtime Security — vulnerable LLM app
+            "AI_SPM",      # Cortex AI Security Posture Management — static AI asset inventory + config
             "BROWSER",     # Prisma Browser — DLP / extension / phishing
             "KOI",         # Agentic endpoint / supply-chain (MCPs, skills, exts)
         }

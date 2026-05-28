@@ -1,0 +1,198 @@
+scenario_id: SIM-AISPM-005
+name: "AI Sensitive Data Classification — PII/PHI/PCI in Training Sets"
+version: "1.0"
+status: active
+
+plane: AI_SPM
+detection_types:
+  - Analytics
+
+uc_ref: UCS-AISPM-01
+tc_ref: TC-AISP-05
+uc_name: "AI Security Posture Management"
+tc_name: "AI Sensitive Data Classification"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1530"
+mitre_technique_name: "Data from Cloud Storage Object"
+additional_techniques:
+  - technique: "T1213"
+    name: "Data from Information Repositories"
+
+threat_report: "Unit42 — Regulated Data Leakage in AI Training Pipelines"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: false
+
+external_tools:
+  - name: aws-cli
+    type: binary
+    install_inline: false
+  - name: jq
+    type: binary
+    install_inline: false
+  - name: curl
+    type: binary
+    install_inline: false
+
+infra_modules_needed:
+  - base
+  - ai-spm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Headline TC for regulated-industry POVs (finance/healthcare/insurance).
+# Direct answer to "is your AI training data leaking compliance scope?"
+validation_methodology: "AI Sensitive Data Classification"
+methodology_family: "F4"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  Cortex AI-SPM + DSPM cross-scan detects regulated data in the planted
+  training-data bucket and:
+    - Flags the S3 bucket with PII / PHI / PCI tags within 15 min
+    - Identifies specific canary patterns (SSN 000-00-000X, CC 4111-1111-1111-111X,
+      medical record IDs MRN-CORTEXSIM-00X) and counts ≥ 3 distinct regulated
+      data classes
+    - Traces data lineage: S3 bucket → SageMaker training job manifest → model
+    - Raises governance violation AI-GOV-001 (regulated_data_in_training_set)
+moat_tier: "MOAT"
+
+steps:
+  - id: step-01
+    name: "Anchor MTTD + verify PII canary fixtures are present in training-data bucket"
+    command: |
+      echo '[AISPM-005] Anchoring MTTD t0';
+      date -u +%s > /tmp/aispm-005-t0.txt
+
+      BUCKET=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `aispm-training-data`)].Name' --output text | head -1)
+      echo "[*] Training data bucket: $BUCKET"
+
+      # Sanity check the canaries exist in the seeded CSV
+      aws s3 cp "s3://$BUCKET/training/customer_profiles.csv" - 2>/dev/null \
+        | head -5 \
+        | tee /tmp/aispm-005-canary-preview.txt
+      echo "[*] Canary patterns present: $(grep -c 'CORTEXSIM' /tmp/aispm-005-canary-preview.txt) lines"
+    identity: root
+    mitre_technique: "T1530"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Anchor + canary verification — no Cortex detection at this step."
+
+  - id: step-02
+    name: "Wait for Cortex Cloud DSPM + AI-SPM cross-scan cycle"
+    command: |
+      echo '[AISPM-005] Sleeping for DSPM + AI-SPM cross-scan';
+      sleep "${CORTEXSIM_AISPM_WAIT_SECONDS:-900}"
+      date -u +%s > /tmp/aispm-005-t1.txt
+    identity: root
+    mitre_technique: "T1530"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex DSPM identifies PII/PHI/PCI canaries in the bucket; AI-SPM links the bucket to AI workloads via data-lineage graph."
+
+  - id: step-03
+    name: "Probe sensitive-data findings + lineage traversal + AI-GOV-001 violation"
+    command: |
+      echo '[AISPM-005] Querying DSPM + AI-SPM findings';
+
+      # 1. DSPM tags on the training-data bucket
+      BUCKET=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `aispm-training-data`)].Name' --output text | head -1)
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/dspm/data_stores?name=${BUCKET}" \
+        > /tmp/aispm-005-dspm.json
+
+      DATA_CLASSES=$(jq -r '[.data_stores[0].sensitive_data_classes[]?] | length' /tmp/aispm-005-dspm.json 2>/dev/null || echo 0)
+
+      # 2. AI lineage from bucket → SageMaker training
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/ai_spm/data_lineage?data_store=${BUCKET}" \
+        > /tmp/aispm-005-lineage.json
+
+      LINEAGE_HOPS=$(jq -r '.lineage_edges | length' /tmp/aispm-005-lineage.json 2>/dev/null || echo 0)
+
+      # 3. AI-GOV-001 governance violation
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/findings?finding_id=AI-GOV-001" \
+        > /tmp/aispm-005-gov.json
+
+      GOV_VIOLATIONS=$(jq -r '.findings | length' /tmp/aispm-005-gov.json 2>/dev/null || echo 0)
+
+      MTTD=$(( $(cat /tmp/aispm-005-t1.txt) - $(cat /tmp/aispm-005-t0.txt) ))
+
+      echo "[*] Sensitive data classes detected:    $DATA_CLASSES (expected >= 3: PII + PHI + PCI)"
+      echo "[*] Data lineage hops:                  $LINEAGE_HOPS (expected >= 1: bucket → SageMaker)"
+      echo "[*] AI-GOV-001 violations raised:       $GOV_VIOLATIONS (expected >= 1)"
+      echo "[*] MTTD seconds:                       $MTTD (threshold <= 900)"
+      if [ "$DATA_CLASSES" -ge 3 ] && [ "$LINEAGE_HOPS" -ge 1 ] && [ "$GOV_VIOLATIONS" -ge 1 ] && [ "$MTTD" -le 900 ]; then
+        echo '[PASS] Sensitive data classification meets MOAT threshold'
+      else
+        echo '[FAIL] Sensitive data classification below threshold'
+      fi
+    identity: root
+    mitre_technique: "T1213"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex DSPM flags training-data bucket with ≥ 3 sensitive data classes (PII / PHI / PCI), pattern-matching the planted SSN / CC / MRN canaries."
+        verification_xql: |
+          dataset = cortex_cloud_dspm_findings
+          | filter data_store contains "aispm-training-data"
+          | comp count_distinct(data_class) as class_count
+          | filter class_count >= 3
+        kpi_contribution:
+          kpi: "MTTD"
+          op: "≤"
+          value: 900
+          unit: "seconds"
+      - plane: AI_SPM
+        type: Analytics
+        description: "AI-SPM data-lineage edge links the training-data S3 bucket to the SageMaker training-job manifest, proving the regulated-data → model traceability chain."
+        verification_xql: |
+          dataset = cortex_cloud_inventory
+          | filter asset_type = "ai_data_lineage_edge"
+          | filter source_asset contains "aispm-training-data"
+          | filter target_asset_type = "ai_training_job"
+          | comp count() as lineage_edges
+          | filter lineage_edges >= 1
+      - plane: AI_SPM
+        type: Analytics
+        description: "AI-GOV-001 governance violation raised: regulated data present in AI training set."
+        verification_xql: |
+          dataset = cortex_cloud_findings
+          | filter finding_id = "AI-GOV-001"
+          | comp count() as violations
+          | filter violations >= 1
+
+cleanup:
+  commands:
+    - "rm -f /tmp/aispm-005-*"
+    - "echo '[CortexSim] SIM-AISPM-005 cleanup complete.'"
+
+author: "Henry Reed"
+created: "2026-05-28"
+last_updated: "2026-05-28"
+tags:
+  - ai-spm
+  - dspm
+  - sensitive-data
+  - pii-phi-pci
+  - moat
+  - v2.0-methodology
+  - regulated-industry
+  - ai-governance

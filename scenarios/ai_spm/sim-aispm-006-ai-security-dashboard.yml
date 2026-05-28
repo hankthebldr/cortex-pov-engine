@@ -1,0 +1,179 @@
+scenario_id: SIM-AISPM-006
+name: "AI Security Dashboard & Posture — Aggregate View Across All Discovered AI Assets"
+version: "1.0"
+status: active
+
+plane: AI_SPM
+detection_types:
+  - Analytics
+
+uc_ref: UCS-AISPM-01
+tc_ref: TC-AISP-06
+uc_name: "AI Security Posture Management"
+tc_name: "AI Security Dashboard & Posture"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1526"
+mitre_technique_name: "Cloud Service Discovery"
+
+threat_report: "Unit42 — Unifying AI Security Telemetry for Executive Visibility"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: false
+
+external_tools:
+  - name: jq
+    type: binary
+    install_inline: false
+  - name: curl
+    type: binary
+    install_inline: false
+
+infra_modules_needed:
+  - base
+  - ai-spm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# This scenario is the "closes the family" TC — small in scope but
+# critical for the executive readout. Verifies the dashboard API actually
+# aggregates what AISP-01..05 surfaced. F10-flavored (qualitative dashboard
+# tour) but the API contract behind the dashboard is verifiable.
+#
+# RUN ORDER: must run AFTER AISP-01..05 have planted + scanned, so the
+# dashboard has something to aggregate. The POV sequence in the deep-dive
+# doc (Day 1 → Day 2 → Day 3) explicitly schedules this last.
+validation_methodology: "AI Security Dashboard & Posture"
+methodology_family: "F3"
+primary_kpi: "Asset Discovery Coverage"
+threshold:
+  kpi: "Asset Discovery Coverage"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  Cortex AI-SPM dashboard summary endpoint reflects everything discovered
+  by AISP-01..05:
+    - Aggregate AI asset count = sum of planted assets across the fixture
+    - Risk category breakdown shows non-zero counts in:
+        * model_security  (from AISP-02)
+        * supply_chain    (from AISP-03)
+        * static_analysis (from AISP-04)
+        * data_governance (from AISP-05)
+    - Trend series endpoint returns ≥ 1 data point per risk category
+    - Executive summary returns aggregate risk score
+moat_tier: "MOAT"
+
+steps:
+  - id: step-01
+    name: "Snapshot expected aggregate counts from the AI-SPM module's findings_summary"
+    command: |
+      echo '[AISPM-006] Capturing expected aggregate counts';
+      # Reads from the Terraform output stored by the bundle apply
+      cd /opt/cortexsim/infra/blueprints/${CORTEXSIM_BUNDLE_ID:-current} 2>/dev/null && \
+        terraform output -json findings_summary > /tmp/aispm-006-expected.json || \
+        echo '{"value":{"total_assets_planted":6}}' > /tmp/aispm-006-expected.json
+
+      EXPECTED_ASSETS=$(jq -r '.value.total_assets_planted // 6' /tmp/aispm-006-expected.json)
+      echo "[*] Expected aggregate asset count: $EXPECTED_ASSETS"
+    identity: root
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Operator manifest capture — no Cortex detection at this step."
+
+  - id: step-02
+    name: "Fetch AI-SPM dashboard summary + verify aggregate counts"
+    command: |
+      echo '[AISPM-006] Fetching AI-SPM dashboard summary';
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/dashboards/ai_spm/summary" \
+        > /tmp/aispm-006-summary.json
+
+      AGGREGATE_ASSETS=$(jq -r '.total_ai_assets // 0' /tmp/aispm-006-summary.json)
+      MODEL_SEC=$(jq -r '.risk_categories.model_security // 0' /tmp/aispm-006-summary.json)
+      SUPPLY_CHAIN=$(jq -r '.risk_categories.supply_chain // 0' /tmp/aispm-006-summary.json)
+      STATIC_ANAL=$(jq -r '.risk_categories.static_analysis // 0' /tmp/aispm-006-summary.json)
+      DATA_GOV=$(jq -r '.risk_categories.data_governance // 0' /tmp/aispm-006-summary.json)
+      EXPECTED_ASSETS=$(jq -r '.value.total_assets_planted // 6' /tmp/aispm-006-expected.json)
+
+      echo "[*] Aggregate AI assets:    $AGGREGATE_ASSETS (expected = $EXPECTED_ASSETS)"
+      echo "[*] model_security count:   $MODEL_SEC   (expected >= 1)"
+      echo "[*] supply_chain count:     $SUPPLY_CHAIN (expected >= 1)"
+      echo "[*] static_analysis count:  $STATIC_ANAL (expected >= 1)"
+      echo "[*] data_governance count:  $DATA_GOV    (expected >= 1)"
+      if [ "$AGGREGATE_ASSETS" -ge "$EXPECTED_ASSETS" ] && \
+         [ "$MODEL_SEC" -ge 1 ] && [ "$SUPPLY_CHAIN" -ge 1 ] && \
+         [ "$STATIC_ANAL" -ge 1 ] && [ "$DATA_GOV" -ge 1 ]; then
+        echo '[PASS] AI-SPM dashboard accurately aggregates all 4 risk categories'
+      else
+        echo '[FAIL] AI-SPM dashboard aggregation incomplete'
+      fi
+    identity: root
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex AI-SPM /api/v1/dashboards/ai_spm/summary returns aggregate AI asset count matching planted manifest with all 4 risk categories populated."
+        verification_xql: |
+          // Dashboard backing data — cross-check via XQL when AI-SPM mirrors to XDL
+          dataset = cortex_cloud_ai_spm_aggregates
+          | filter _time > timeago(15m)
+          | comp last(total_ai_assets) as total, last(risk_categories) as cats
+          | filter total >= 6
+        kpi_contribution:
+          kpi: "Asset Discovery Coverage"
+          op: "≥"
+          value: 100
+          unit: "%"
+
+  - id: step-03
+    name: "Fetch dashboard trend series + verify non-empty time-series per category"
+    command: |
+      echo '[AISPM-006] Fetching dashboard trend series';
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/dashboards/ai_spm/trends?window=24h" \
+        > /tmp/aispm-006-trends.json
+
+      SERIES_COUNT=$(jq -r '.series | length' /tmp/aispm-006-trends.json 2>/dev/null || echo 0)
+      MIN_POINTS=$(jq -r '[.series[].data_points | length] | min // 0' /tmp/aispm-006-trends.json 2>/dev/null || echo 0)
+
+      echo "[*] Trend series count:      $SERIES_COUNT (expected >= 4: one per risk category)"
+      echo "[*] Min data points/series:  $MIN_POINTS  (expected >= 1)"
+      if [ "$SERIES_COUNT" -ge 4 ] && [ "$MIN_POINTS" -ge 1 ]; then
+        echo '[PASS] AI-SPM dashboard trends endpoint returns populated time series'
+      else
+        echo '[FAIL] AI-SPM dashboard trends incomplete — dashboard may show empty charts'
+      fi
+    identity: root
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Dashboard trends endpoint returns time-series data for all 4 risk categories, proving the executive view is wired through to live data (not stub)."
+
+cleanup:
+  commands:
+    - "rm -f /tmp/aispm-006-*"
+    - "echo '[CortexSim] SIM-AISPM-006 cleanup complete.'"
+
+author: "Henry Reed"
+created: "2026-05-28"
+last_updated: "2026-05-28"
+tags:
+  - ai-spm
+  - dashboard
+  - executive-summary
+  - aggregate
+  - moat
+  - v2.0-methodology
+  - closes-aispm-family

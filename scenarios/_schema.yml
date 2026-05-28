@@ -30,10 +30,11 @@ status: "active"
 plane: "CDR"
 # (required) Primary detection plane this scenario targets.
 # One of: EDR | CDR | NDR | ITDR | CLOUD_APP | ANALYTICS
-#       | AI_ACCESS | AIRS | BROWSER | KOI
+#       | AI_ACCESS | AIRS | AI_SPM | BROWSER | KOI
 # ANALYTICS is reserved for multi-plane correlation scenarios.
 # AI_ACCESS — Cortex AI Access Security (employee LLM usage / DLP)
 # AIRS      — Cortex AI Runtime Security (deployed LLM app protection)
+# AI_SPM    — Cortex AI Security Posture Management (static AI asset inventory + config)
 # BROWSER   — Prisma Browser (managed browser DLP / extension / phishing)
 # KOI       — Agentic endpoint / supply-chain risk (MCP, skills, extensions)
 
@@ -244,3 +245,67 @@ infra_modules_needed:
 # (optional) Hints which IaC generator modules should be selected when this
 # scenario is in the DC's bookmark set. Values: base, edr, cdr, ndr, itdr,
 # tim, asm, cspm, content-library, telemetry-replay.
+
+# ── v2.0 KPI / Methodology Metadata (all optional) ──────────────────────────
+# Mirrors the columns in HR-Cortex-Use-Case-Index-Master-v2.0.xlsx.
+# Used by POV reports + (later) the validation harness to drive
+# family-specific verification. Reference: docs/uc_tc_mapping/v2.0-methodology-master.md.
+
+validation_methodology: "Causality Graph Stitching"
+# (optional) Free-text label matching the v2.0 master sheet's
+# "Validation Methodology" column. Surfaced in UI and POV reports.
+
+methodology_family: "F2"
+# (optional) Family ID from the master methodology doc. One of F1..F10:
+#   F1  Signal Injection & Detection Accuracy
+#   F2  Causality Stitching Validation
+#   F3  Asset Discovery & Inventory Coverage
+#   F4  Posture & Compliance Scoring
+#   F5  Automation & Workflow
+#   F6  Response Timing
+#   F7  AI Triage & Summarization
+#   F8  Integration & Ingestion Health
+#   F9  Code-to-Cloud Traceability
+#   F10 Qualitative Evidence
+
+primary_kpi: "Cross-Source Correlation Rate"
+# (optional) The Primary KPI from the master sheet. Common values:
+#   MTTD | MTTR | Cross-Source Correlation Rate | Asset Discovery Coverage
+#   | Coverage % | Compliance Score | Automation Rate | Triage Automation Rate
+#   | Remediation Success Rate | Causality Chain Completeness | False Positive Rate
+#   | Detection Accuracy | Completeness % | SLA Compliance
+
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+# (optional) Structured pass/fail threshold. `op` is one of: ≤ ≥ < > =.
+# Validation harness applies this to the captured KPI on Run completion.
+
+success_criteria: |
+  Multi-source signals (NDR session + EDR process + ITDR auth) stitch into a
+  single incident_id within 60s, with causality chain covering all 3 planes.
+# (optional) Multi-line natural-language success criteria from the sheet.
+
+moat_tier: "MOAT"
+# (optional) Differentiation tier. One of: MOAT | LEAD | PARITY.
+# Drives POV report ordering and executive-summary highlighting.
+
+# ── F2-Specific Fields (optional, required-by-convention for plane: ANALYTICS) ─
+
+correlation_window_seconds: 60
+# (F2-conventional) The ±N second window inside which signals must fire
+# to qualify as stitched. Default 60. Verifier enforces this against XSIAM's
+# default correlation window.
+
+required_planes_in_incident:
+  - EDR
+  - NDR
+  - ITDR
+# (F2-conventional) Planes that MUST be present in the stitched incident's
+# causality chain. Verifier asserts each is represented in dataset=xdr_data.
+
+stitching_key: src_host
+# (F2-conventional) Field name used as the join key in verifier XQL.
+# One of: src_host | session_id | user_principal | container_id.

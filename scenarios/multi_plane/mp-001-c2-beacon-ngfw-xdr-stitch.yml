@@ -9,10 +9,10 @@ detection_types:
   - BIOC
   - IOC
 
-uc_ref: UCS-MP-01
-tc_ref: TC-MP-01
-uc_name: "Cross-Plane Incident Stitching"
-tc_name: "NGFW Session + XDR Process Lineage Correlation"
+uc_ref: UCS-NDR-01
+tc_ref: TC-NDR-01
+uc_name: "Network Detection & Response"
+tc_name: "Causality Graph Stitching — Network Events ↔ Endpoint Process Telemetry"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"
@@ -44,6 +44,32 @@ infra_modules_needed:
   - base
   - edr
   - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Mirrors HR-Cortex-Use-Case-Index-Master-v2.0.xlsx row for TC-NDR-01.
+# See docs/uc_tc_mapping/methodology-multi-plane-stitching.md §3 TC-NDR-01.
+validation_methodology: "Causality Graph Stitching"
+methodology_family: "F2"
+primary_kpi: "Causality Chain Completeness"
+threshold:
+  kpi: "Causality Chain Completeness"
+  op: "≥"
+  value: 2
+  unit: "planes"
+success_criteria: |
+  NDR (NGFW) and EDR (XDR) signals sharing src_host fire within ±60s and
+  stitch into a single XSIAM incident_id with the full causality chain
+  showing the curl process spawning from www-data → outbound HTTP session
+  → IOC match. Verifier asserts ≥ 2 distinct planes represented under
+  one incident_id in dataset=xdr_data.
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+correlation_window_seconds: 60
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: src_host
 
 external_tools:
   - name: testmynids
@@ -81,12 +107,34 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW — repetitive HTTP beacon to testmynids.org (known IOC list)"
+        verification_xql: |
+          dataset = pan_ngfw_traffic
+          | filter dst_host = "testmynids.org" and bytes_sent > 0
+          | comp count() as beacon_hits by source_ip
+          | filter beacon_hits >= 5
       - plane: EDR
         type: BIOC
         description: "XDR — curl executed from www-data with suspicious user-agent"
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_sub_type = "Process"
+          | filter process_command_line contains "curl"
+          | filter actor_effective_user_name = "www-data"
+          | comp count() as proc_events by action_local_ip
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM correlation — NGFW outbound session + XDR process event sharing src_host + session_time stitched into single incident"
+        verification_xql: |
+          // F2 stitching verifier — distinct planes under one incident_id
+          dataset = xdr_data
+          | filter actor_effective_user_name = "www-data"
+          | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by action_local_ip
+          | filter plane_count >= 2 and incident_count = 1
+        kpi_contribution:
+          kpi: "Causality Chain Completeness"
+          op: "≥"
+          value: 2
+          unit: "planes"
 
   - id: step-03
     name: "DNS tunneling exfil pattern"

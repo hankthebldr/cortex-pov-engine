@@ -1,0 +1,181 @@
+scenario_id: SIM-AISPM-004
+name: "AI Static Risk Analysis — Hardcoded Credentials + Insecure Pickle + Unvalidated Inputs"
+version: "1.0"
+status: active
+
+plane: AI_SPM
+detection_types:
+  - Analytics
+
+uc_ref: UCS-AISPM-01
+tc_ref: TC-AISP-04
+uc_name: "AI Security Posture Management"
+tc_name: "AI Static Risk Analysis"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1552.001"
+mitre_technique_name: "Unsecured Credentials: Credentials In Files"
+additional_techniques:
+  - technique: "T1027"
+    name: "Obfuscated Files or Information"
+  - technique: "T1565.001"
+    name: "Data Manipulation: Stored Data Manipulation"
+
+threat_report: "Unit42 — AI Pipeline Static Code Risks"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: false
+
+external_tools:
+  - name: aws-cli
+    type: binary
+    install_inline: false
+  - name: jq
+    type: binary
+    install_inline: false
+  - name: curl
+    type: binary
+    install_inline: false
+
+infra_modules_needed:
+  - base
+  - ai-spm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "AI Static Risk Analysis"
+methodology_family: "F4"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  Cortex AI-SPM static analysis raises ≥ 3 AI-specific findings against
+  the planted Lambda + pickled-model fixture within 15 min of scan start,
+  each tagged with the AI-specific attack taxonomy:
+    - MLSEC-STATIC-001 hardcoded_credentials_in_ml_pipeline
+      (canary `sk-DEMO-CORTEXSIM-AISP-04-PLANTED` in Lambda code + env)
+    - MLSEC-STATIC-002 insecure_model_serialization (pickled .pkl in S3)
+    - MLSEC-STATIC-003 unvalidated_model_inputs (Lambda handler has no schema validation)
+moat_tier: "MOAT"
+
+steps:
+  - id: step-01
+    name: "Anchor MTTD timestamp + verify static-analysis fixture is present"
+    command: |
+      echo '[AISPM-004] Anchoring MTTD t0';
+      date -u +%s > /tmp/aispm-004-t0.txt
+
+      # Verify the canary key is actually in the Lambda env (sanity check)
+      LAMBDA_FN=$(aws lambda list-functions --query 'Functions[?contains(FunctionName, `aispm-openai-proxy`)].FunctionName' --output text | head -1)
+      aws lambda get-function-configuration --function-name "$LAMBDA_FN" \
+        --query 'Environment.Variables.OPENAI_API_KEY' --output text > /tmp/aispm-004-canary.txt
+      echo "[*] Lambda env canary: $(cat /tmp/aispm-004-canary.txt)"
+
+      # Verify the pickled-model object is in the S3 bucket
+      BUCKET=$(aws s3api list-buckets --query 'Buckets[?contains(Name, `aispm-training-data`)].Name' --output text | head -1)
+      aws s3 ls "s3://$BUCKET/models/legacy_model.pkl" > /tmp/aispm-004-pickle-check.txt
+      echo "[*] Pickled model in S3: $(cat /tmp/aispm-004-pickle-check.txt)"
+    identity: root
+    mitre_technique: "T1552.001"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Anchor + fixture verification — no Cortex detection at this step."
+
+  - id: step-02
+    name: "Wait for Cortex Cloud AI-SPM static-analysis scan cycle"
+    command: |
+      echo '[AISPM-004] Sleeping for AI-SPM static-analysis scan';
+      sleep "${CORTEXSIM_AISPM_WAIT_SECONDS:-900}"
+      date -u +%s > /tmp/aispm-004-t1.txt
+    identity: root
+    mitre_technique: "T1552.001"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex AI-SPM static analyzer scans Lambda code, S3-resident model artifacts, and SageMaker training scripts."
+
+  - id: step-03
+    name: "Probe static-analysis findings + assert 3 categories + MTTD ≤ 900s"
+    command: |
+      echo '[AISPM-004] Querying static-analysis findings';
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/findings?category=ai_static_analysis&tag=CortexSimAISPMFinding" \
+        > /tmp/aispm-004-findings.json
+
+      HARDCODED=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-001" or .subcategory == "hardcoded_credentials_in_ml_pipeline")] | length' /tmp/aispm-004-findings.json 2>/dev/null || echo 0)
+      PICKLE=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-002" or .subcategory == "insecure_model_serialization")] | length' /tmp/aispm-004-findings.json 2>/dev/null || echo 0)
+      UNVALIDATED=$(jq -r '[.findings[] | select(.finding_id == "MLSEC-STATIC-003" or .subcategory == "unvalidated_model_inputs")] | length' /tmp/aispm-004-findings.json 2>/dev/null || echo 0)
+
+      MTTD=$(( $(cat /tmp/aispm-004-t1.txt) - $(cat /tmp/aispm-004-t0.txt) ))
+
+      echo "[*] Hardcoded creds findings:      $HARDCODED (expected >= 1)"
+      echo "[*] Insecure pickle findings:      $PICKLE (expected >= 1)"
+      echo "[*] Unvalidated input findings:    $UNVALIDATED (expected >= 1)"
+      echo "[*] MTTD seconds:                  $MTTD (threshold <= 900)"
+      if [ "$HARDCODED" -ge 1 ] && [ "$PICKLE" -ge 1 ] && [ "$UNVALIDATED" -ge 1 ] && [ "$MTTD" -le 900 ]; then
+        echo '[PASS] Static risk analysis meets MOAT threshold'
+      else
+        echo '[FAIL] Static risk analysis below threshold'
+      fi
+    identity: root
+    mitre_technique: "T1565.001"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "MLSEC-STATIC-001 — hardcoded credentials in ML pipeline detected against the planted `sk-DEMO-CORTEXSIM-AISP-04-PLANTED` canary in both Lambda source and env vars."
+        verification_xql: |
+          dataset = cortex_cloud_findings
+          | filter category = "ai_static_analysis"
+          | filter subcategory = "hardcoded_credentials_in_ml_pipeline"
+          | comp count() as hits
+          | filter hits >= 1
+        kpi_contribution:
+          kpi: "MTTD"
+          op: "≤"
+          value: 900
+          unit: "seconds"
+      - plane: AI_SPM
+        type: Analytics
+        description: "MLSEC-STATIC-002 — insecure model serialization (pickle) detected against `models/legacy_model.pkl` in the training-data bucket."
+        verification_xql: |
+          dataset = cortex_cloud_findings
+          | filter category = "ai_static_analysis"
+          | filter subcategory = "insecure_model_serialization"
+          | comp count() as hits
+          | filter hits >= 1
+      - plane: AI_SPM
+        type: Analytics
+        description: "MLSEC-STATIC-003 — unvalidated model inputs detected against the Lambda handler which accepts arbitrary `prompt` without schema validation."
+        verification_xql: |
+          dataset = cortex_cloud_findings
+          | filter category = "ai_static_analysis"
+          | filter subcategory = "unvalidated_model_inputs"
+          | comp count() as hits
+          | filter hits >= 1
+
+cleanup:
+  commands:
+    - "rm -f /tmp/aispm-004-*"
+    - "echo '[CortexSim] SIM-AISPM-004 cleanup complete.'"
+
+author: "Henry Reed"
+created: "2026-05-28"
+last_updated: "2026-05-28"
+tags:
+  - ai-spm
+  - static-analysis
+  - hardcoded-credentials
+  - insecure-pickle
+  - moat
+  - v2.0-methodology
