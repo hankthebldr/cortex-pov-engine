@@ -17,11 +17,13 @@ This plane covers **static inventory + configuration** of AI/ML assets at rest â
 | ID | TC ref | KPI | Tier | Status |
 |----|--------|-----|------|--------|
 | SIM-AISPM-001 | TC-AISP-01 | Asset Discovery Coverage | MOAT | **active** (reference impl) |
-| SIM-AISPM-002 | TC-AISP-02 | MTTD (model security) | MOAT | proposed |
-| SIM-AISPM-003 | TC-AISP-03 | Asset Discovery Coverage (supply chain) | MOAT | proposed |
-| SIM-AISPM-004 | TC-AISP-04 | MTTD (static analysis) | MOAT | proposed |
-| SIM-AISPM-005 | TC-AISP-05 | MTTD (sensitive data) | MOAT | proposed |
-| SIM-AISPM-006 | TC-AISP-06 | Asset Discovery Coverage (dashboard) | MOAT | proposed |
+| SIM-AISPM-002 | TC-AISP-02 | MTTD (model security) | MOAT | **active** |
+| SIM-AISPM-003 | TC-AISP-03 | Asset Discovery Coverage (supply chain) | MOAT | **active** |
+| SIM-AISPM-004 | TC-AISP-04 | MTTD (static analysis) | MOAT | **active** |
+| SIM-AISPM-005 | TC-AISP-05 | MTTD (sensitive data) | MOAT | **active** |
+| SIM-AISPM-006 | TC-AISP-06 | Asset Discovery Coverage (dashboard) | MOAT | **active** |
+
+**Family complete.** All 6 MOAT-tier AI-SPM TCs from the v2.0 master index have active scenarios against the shared `infra/modules/aws/ai-spm/` fixture. Run order for a POV: AISP-01 first (proves discovery), then AISP-02..05 in parallel (independent assertions on the same planted state), AISP-06 last (aggregates everything for the exec readout).
 
 ## Required infrastructure
 

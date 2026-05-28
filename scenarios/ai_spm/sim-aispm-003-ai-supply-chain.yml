@@ -1,0 +1,178 @@
+scenario_id: SIM-AISPM-003
+name: "AI Ecosystem & Supply Chain Risk — Vulnerable ML Dependencies + EU AI Act"
+version: "1.0"
+status: active
+
+plane: AI_SPM
+detection_types:
+  - Analytics
+
+uc_ref: UCS-AISPM-01
+tc_ref: TC-AISP-03
+uc_name: "AI Security Posture Management"
+tc_name: "AI Ecosystem & Supply Chain Risk"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1195.002"
+mitre_technique_name: "Supply Chain Compromise: Compromise Software Supply Chain"
+additional_techniques:
+  - technique: "T1574"
+    name: "Hijack Execution Flow"
+
+threat_report: "Unit42 — ML Supply Chain Compromise Patterns"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: false
+
+external_tools:
+  - name: aws-cli
+    type: binary
+    install_inline: false
+  - name: jq
+    type: binary
+    install_inline: false
+  - name: curl
+    type: binary
+    install_inline: false
+
+infra_modules_needed:
+  - base
+  - ai-spm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# EU AI Act tie-in: this TC explicitly assesses third-party ML dependencies
+# for risk classification under Article 6 / Annex III. High weight for
+# EMEA regulated-industry POVs through 2027 enforcement window.
+validation_methodology: "AI Ecosystem & Supply Chain Risk"
+methodology_family: "F3"
+primary_kpi: "Asset Discovery Coverage"
+threshold:
+  kpi: "Asset Discovery Coverage"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  Cortex AI-SPM identifies all third-party AI/ML dependencies in the
+  planted fixture and:
+    - Flags ≥ 2 known-CVE packages in the requirements.txt with their CVE IDs
+    - Annotates each finding with EU AI Act risk classification (Article 6 / Annex III)
+    - Traces the dependency graph: SageMaker model → Lambda runtime → OpenAI proxy → external provider
+    - Reports total third-party AI dependency count matching the planted manifest
+moat_tier: "MOAT"
+
+steps:
+  - id: step-01
+    name: "Capture supply-chain manifest from Terraform output + Lambda layer inspection"
+    command: |
+      echo '[AISPM-003] Capturing planted ML-dependency manifest';
+      # Pull the Lambda layer that ships vulnerable ML deps
+      LAMBDA_FN=$(aws lambda list-functions --query 'Functions[?contains(FunctionName, `aispm-openai-proxy`)].FunctionName' --output text | head -1)
+      aws lambda list-layer-versions --layer-name "${LAMBDA_FN}-vulnerable-ml-deps" 2>/dev/null \
+        | jq -r '.LayerVersions[0].LayerVersionArn' > /tmp/aispm-003-layer-arn.txt || \
+        echo "<<no layer found — fixture may be running in minimal mode>>" > /tmp/aispm-003-layer-arn.txt
+
+      # Expected vulnerable deps from the fixture's requirements.txt manifest
+      cat > /tmp/aispm-003-expected-cves.txt <<-EOF
+        transformers<4.30 CVE-2024-3568 model-loading-rce
+        tensorflow<2.13.1 CVE-2023-25660 saved-model-deser
+      EOF
+      echo "[*] Expected CVE findings:"
+      cat /tmp/aispm-003-expected-cves.txt
+    identity: root
+    mitre_technique: "T1195.002"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Operator manifest capture — no Cortex detection at this step."
+
+  - id: step-02
+    name: "Wait for Cortex Cloud AI-SPM supply-chain scan cycle"
+    command: |
+      echo '[AISPM-003] Sleeping for AI-SPM supply-chain scan';
+      sleep "${CORTEXSIM_AISPM_WAIT_SECONDS:-900}"
+      echo '[*] Scan window elapsed'
+    identity: root
+    mitre_technique: "T1195.002"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex AI-SPM supply-chain scan discovers third-party ML dependencies referenced by Lambda + SageMaker workloads."
+
+  - id: step-03
+    name: "Probe supply-chain findings + EU AI Act annotations + dependency graph"
+    command: |
+      echo '[AISPM-003] Querying AI-SPM supply-chain findings';
+
+      # 1. CVE findings on ML deps
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/findings?category=ai_supply_chain&tag=CortexSimAISPMFinding" \
+        > /tmp/aispm-003-findings.json
+
+      CVE_COUNT=$(jq -r '[.findings[] | select(.cve_id != null)] | length' /tmp/aispm-003-findings.json 2>/dev/null || echo 0)
+      EU_AI_ACT_COUNT=$(jq -r '[.findings[] | select(.regulatory_tags[]? | contains("EU_AI_ACT"))] | length' /tmp/aispm-003-findings.json 2>/dev/null || echo 0)
+
+      # 2. Dependency graph: assert chain length
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/inventory/dependency_graph?asset_type=ai" \
+        > /tmp/aispm-003-graph.json
+
+      CHAIN_LENGTH=$(jq -r '.nodes | length' /tmp/aispm-003-graph.json 2>/dev/null || echo 0)
+
+      echo "[*] CVE findings:       $CVE_COUNT (expected >= 2)"
+      echo "[*] EU AI Act annot:    $EU_AI_ACT_COUNT (expected >= 1)"
+      echo "[*] Dep chain nodes:    $CHAIN_LENGTH (expected >= 3: SageMaker → Lambda → external provider)"
+      if [ "$CVE_COUNT" -ge 2 ] && [ "$EU_AI_ACT_COUNT" -ge 1 ] && [ "$CHAIN_LENGTH" -ge 3 ]; then
+        echo '[PASS] Supply chain assessment meets MOAT threshold'
+      else
+        echo '[FAIL] Supply chain assessment below threshold'
+      fi
+    identity: root
+    mitre_technique: "T1574"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex AI-SPM /api/v1/findings returns ≥ 2 CVE-tagged ML-dependency findings (transformers + tensorflow), each annotated with EU AI Act risk classification."
+        verification_xql: |
+          dataset = cortex_cloud_findings
+          | filter category = "ai_supply_chain"
+          | filter cve_id != null
+          | comp count() as cve_findings, count_distinct(cve_id) as unique_cves
+          | filter unique_cves >= 2
+        kpi_contribution:
+          kpi: "Asset Discovery Coverage"
+          op: "≥"
+          value: 100
+          unit: "%"
+      - plane: AI_SPM
+        type: Analytics
+        description: "Dependency graph traces SageMaker → Lambda → OpenAI proxy, surfacing the third-party AI integration chain."
+        verification_xql: |
+          dataset = cortex_cloud_inventory
+          | filter asset_type = "ai_dependency_edge"
+          | comp count() as edges_in_chain
+          | filter edges_in_chain >= 2
+
+cleanup:
+  commands:
+    - "rm -f /tmp/aispm-003-*"
+    - "echo '[CortexSim] SIM-AISPM-003 cleanup complete.'"
+
+author: "Henry Reed"
+created: "2026-05-28"
+last_updated: "2026-05-28"
+tags:
+  - ai-spm
+  - supply-chain
+  - eu-ai-act
+  - moat
+  - v2.0-methodology
+  - regulated-industry

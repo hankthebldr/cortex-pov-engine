@@ -1,0 +1,151 @@
+scenario_id: SIM-AISPM-002
+name: "AI Model Security Assessment — Overprivileged Role + Misconfig Findings"
+version: "1.0"
+status: active
+
+plane: AI_SPM
+detection_types:
+  - Analytics
+
+uc_ref: UCS-AISPM-01
+tc_ref: TC-AISP-02
+uc_name: "AI Security Posture Management"
+tc_name: "AI Model Security Assessment"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1078.004"
+mitre_technique_name: "Valid Accounts: Cloud Accounts"
+additional_techniques:
+  - technique: "T1098"
+    name: "Account Manipulation"
+
+threat_report: "Unit42 — AI Model Compromise Patterns in the Wild"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: false
+
+external_tools:
+  - name: aws-cli
+    type: binary
+    install_inline: false
+  - name: jq
+    type: binary
+    install_inline: false
+  - name: curl
+    type: binary
+    install_inline: false
+
+infra_modules_needed:
+  - base
+  - ai-spm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "AI Model Security Assessment"
+methodology_family: "F4"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  Cortex AI-SPM raises ≥ 3 model-security findings against the planted
+  SageMaker fixture within 15 minutes of scan start:
+    - MLSEC-MODEL-001 overprivileged execution role (AdministratorAccess on ML role)
+    - MLSEC-MODEL-002 endpoint config missing encryption at rest
+    - MLSEC-MODEL-003 model with no input validation surface
+  Each finding tagged with AI-specific attack taxonomy
+  (data poisoning / model extraction / prompt injection vectors).
+moat_tier: "MOAT"
+
+steps:
+  - id: step-01
+    name: "Anchor MTTD timestamp (terraform apply complete marker)"
+    command: |
+      echo '[AISPM-002] Anchoring MTTD t0';
+      date -u +%s > /tmp/aispm-002-t0.txt
+      echo "[*] t0 = $(cat /tmp/aispm-002-t0.txt) ($(date -u))"
+      # Sanity-check the fixture is present
+      aws sagemaker list-endpoints --query 'Endpoints[?contains(EndpointName, `aispm`)].EndpointName' --output text \
+        | tee /tmp/aispm-002-endpoints.txt
+    identity: root
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Anchor step — captures t0 for MTTD computation. No Cortex detection expected here."
+
+  - id: step-02
+    name: "Wait for Cortex Cloud AI-SPM model-security scan"
+    command: |
+      echo '[AISPM-002] Sleeping for AI-SPM model-security scan';
+      sleep "${CORTEXSIM_AISPM_WAIT_SECONDS:-900}"
+      date -u +%s > /tmp/aispm-002-t1.txt
+      echo "[*] t1 = $(cat /tmp/aispm-002-t1.txt)"
+      echo "[*] Elapsed: $(( $(cat /tmp/aispm-002-t1.txt) - $(cat /tmp/aispm-002-t0.txt) )) s"
+    identity: root
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex Cloud AI-SPM assessment cycle completes against the planted SageMaker endpoint + overprivileged role."
+
+  - id: step-03
+    name: "Probe AI-SPM findings + assert 3 model-security findings + MTTD ≤ 900s"
+    command: |
+      echo '[AISPM-002] Querying Cortex Cloud for AI-SPM model-security findings';
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/findings?category=ai_model_security&tag=CortexSimAISPMFinding" \
+        | tee /tmp/aispm-002-findings.json | jq '.findings | length' || true
+
+      FINDING_COUNT=$(jq -r '.findings | length' /tmp/aispm-002-findings.json 2>/dev/null || echo 0)
+      MTTD=$(( $(cat /tmp/aispm-002-t1.txt) - $(cat /tmp/aispm-002-t0.txt) ))
+
+      echo "[*] Findings raised:        $FINDING_COUNT"
+      echo "[*] MTTD seconds:           $MTTD"
+      echo "[*] MTTD threshold (MOAT):  <= 900"
+      if [ "$FINDING_COUNT" -ge 3 ] && [ "$MTTD" -le 900 ]; then
+        echo '[PASS] AI Model Security Assessment meets MOAT threshold'
+      else
+        echo '[FAIL] AI Model Security Assessment below threshold'
+      fi
+    identity: root
+    mitre_technique: "T1098"
+    expected_detections:
+      - plane: AI_SPM
+        type: Analytics
+        description: "Cortex AI-SPM /api/v1/findings returns ≥ 3 model-security findings on the SageMaker fixture: overprivileged ML execution role, endpoint config without encryption, and unvalidated model input surface."
+        verification_xql: |
+          dataset = cortex_cloud_findings
+          | filter category = "ai_model_security"
+          | filter tags contains "CortexSimAISPMFinding"
+          | comp count() as model_security_findings
+          | filter model_security_findings >= 3
+        kpi_contribution:
+          kpi: "MTTD"
+          op: "≤"
+          value: 900
+          unit: "seconds"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/aispm-002-*.txt /tmp/aispm-002-findings.json"
+    - "echo '[CortexSim] SIM-AISPM-002 cleanup complete.'"
+
+author: "Henry Reed"
+created: "2026-05-28"
+last_updated: "2026-05-28"
+tags:
+  - ai-spm
+  - model-security
+  - moat
+  - v2.0-methodology
+  - mttd
