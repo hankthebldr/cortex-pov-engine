@@ -71,8 +71,9 @@ export async function getHealth() {
  */
 export async function getScenarios(params = {}) {
   const qs = new URLSearchParams()
-  if (params.plane)  qs.set('plane',  params.plane)
-  if (params.uc_ref) qs.set('uc_ref', params.uc_ref)
+  if (params.plane)   qs.set('plane',   params.plane)
+  if (params.uc_ref)  qs.set('uc_ref',  params.uc_ref)
+  if (params.ttp_ref) qs.set('ttp_ref', params.ttp_ref)
   const query = qs.toString() ? `?${qs.toString()}` : ''
   const data = await request(`/api/scenarios${query}`)
   // List endpoints wrap as {scenarios: [...], total: N}; components expect bare arrays.
