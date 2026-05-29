@@ -100,7 +100,7 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 |-------|--------------|--------|
 | CDR | Cortex Cloud / Prisma Cloud Compute | 5 scenarios + IaC module (EKS) |
 | EDR | Cortex XDR Agent | 5 scenarios + IaC module (diverse Linux targets) |
-| NDR | Network Security / Firewall Analytics | 5 scenarios + IaC module (3 stitching patterns) + EAL simulator |
+| NDR | Network Security / Firewall Analytics | 7 scenarios (C2 HTTP beacon · DNS tunnel · Stratum cryptojacking · SMB lateral sweep · bulk HTTPS exfil · FTP cleartext+STOR · SSH outbound+KEXINIT) + IaC module (3 stitching patterns) + per-protocol EAL plugins (`c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`, `bulk_https_exfil`, `ftp_egress`, `ssh_egress`) |
 | ITDR | Cortex ITDR | 5 scenarios (active) — synthetic IdP audit-log emission via the `idp_signin_emulator` EAL plugin (Phase 9) — impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout — plus IaC module (AD lab with seeded roastable accounts) |
 | CSPM | Cortex Cloud Posture Management | IaC module (intentional misconfigs) |
 | ASM | Cortex Attack Surface Management | IaC module (multi-service exposed host) |
