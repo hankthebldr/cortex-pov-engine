@@ -333,6 +333,81 @@ describe('<TtpBrowserView />', () => {
     )
   })
 
+  // ── Syntax highlighting (issue #57) ────────────────────────────────
+
+  it('renders XQL syntax-highlighted spans in the expanded body', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-det-biocs-0'))
+
+    const pre = screen.getByTestId('ttp-det-body-biocs-0')
+    // XQL keywords land on syn-keyword (the only ones in this body).
+    const keywordSpans = pre.querySelectorAll('.syn-keyword')
+    expect(keywordSpans.length).toBeGreaterThan(0)
+    const keywords = Array.from(keywordSpans).map((n) => n.textContent.toLowerCase())
+    expect(keywords).toContain('preset')
+    expect(keywords).toContain('filter')
+
+    // String literals get syn-string.
+    const stringSpan = pre.querySelector('.syn-string')
+    expect(stringSpan).toBeTruthy()
+    expect(stringSpan.textContent).toContain('"e3514235-...')
+
+    // Round-trip: the rendered text equals the corpus body.
+    expect(pre.textContent).toBe(
+      'preset = xdr_data\n| filter rpc_interface_uuid = "e3514235-..."',
+    )
+  })
+
+  it('renders YAML syntax-highlighted spans for analytics_modules', async () => {
+    // Provide a fixture with an analytics_modules entry carrying a Sigma-shaped body.
+    const yamlFixture = {
+      ...fixtureDetailDcsync,
+      detections: {
+        iocs: [], biocs: [], xql_queries: [],
+        correlation_rules: [],
+        analytics_modules: [
+          {
+            name: 'Sigma: DCSync',
+            description: 'Sigma rule mirroring DCSync',
+            logic:
+              'title: DCSync detection\n' +
+              'logsource:\n  product: windows\n' +
+              'detection:\n  selection:\n    EventID: 4662',
+          },
+        ],
+      },
+    }
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  yamlFixture,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-det-analytics_modules-0'))
+
+    const pre = screen.getByTestId('ttp-det-body-analytics_modules-0')
+    const keywords = Array.from(pre.querySelectorAll('.syn-keyword')).map(
+      (n) => n.textContent,
+    )
+    // YAML keys colour as syn-keyword.
+    expect(keywords).toEqual(expect.arrayContaining(['title', 'product']))
+
+    // Numeric scalar EventID = 4662
+    const numbers = Array.from(pre.querySelectorAll('.syn-number')).map((n) => n.textContent)
+    expect(numbers).toContain('4662')
+
+    // Body round-trips through the highlighter so copy still works.
+    expect(pre.textContent).toBe(
+      'title: DCSync detection\nlogsource:\n  product: windows\n' +
+        'detection:\n  selection:\n    EventID: 4662',
+    )
+  })
+
   // ── Run history (per-TTP run rollup) ───────────────────────────────
 
   it('renders the run history table with coverage chips + MTTD', async () => {

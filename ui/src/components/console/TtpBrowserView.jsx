@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { getTtps, getTtp, getTtpRuns, getScenarios, postRun } from '../../api/client.js'
 import { downloadTtpLayer } from './exportNavigatorLayer.js'
+import { tokeniserFor } from './syntaxHighlight.js'
 
 /**
  * TtpBrowserView — surface the TTP corpus that lives under
@@ -805,7 +806,8 @@ function DetectionItem({ kind, index, item, bodyKey }) {
                 </button>
               </div>
               <pre
-                className="mono"
+                className="mono ttp-detection-item__pre"
+                data-testid={`ttp-det-body-${kind}-${index}`}
                 style={{
                   fontSize: 10,
                   background: 'var(--c-bg-subtle, rgba(0,0,0,0.25))',
@@ -818,7 +820,11 @@ function DetectionItem({ kind, index, item, bodyKey }) {
                   overflowY: 'auto',
                 }}
               >
-                {body}
+                {tokeniserFor(kind)(body).map((tok, ti) => (
+                  <span key={ti} className={`syn syn-${tok.type}`}>
+                    {tok.text}
+                  </span>
+                ))}
               </pre>
             </>
           ) : (
