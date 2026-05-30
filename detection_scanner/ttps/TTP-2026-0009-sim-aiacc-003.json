@@ -2,10 +2,10 @@
   "id": "TTP-2026-0009",
   "schema_version": "1.0.0",
   "entry_version": "0.1.0",
-  "status": "draft",
+  "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:11+00:00",
-    "updated_at": "2026-05-20T21:16:11+00:00",
+    "updated_at": "2026-05-30",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -41,7 +41,7 @@
   },
   "identity": {
     "name": "AI Access \u2014 High-Volume Gemini Prompt Burst from Single User",
-    "summary": "Auto-generated draft from CortexSim scenario SIM-AIACC-003. Plane: AI_ACCESS. Primary technique: T1567. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "summary": "One user issues a sustained burst of prompts to Google Gemini (>30 in <90 s) \u2014 above their rolling baseline. AI Access flags the rate anomaly, the sanctioned-vs-unsanctioned-AI policy classifies Gemini as unsanctioned for this user, and NGFW corroborates with sustained generative-AI session count from one src IP. Below-baseline post-cooloff request must NOT alert.",
     "description": "Auto-generated draft from CortexSim scenario SIM-AIACC-003. Plane: AI_ACCESS. Primary technique: T1567. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-AIACC-003.\nUC: Anomalous AI Provider Usage Volume / TC: Burst of Outbound Prompts to Google Gemini API.",
     "severity": "high",
     "confidence": "medium"

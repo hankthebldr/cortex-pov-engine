@@ -2,10 +2,10 @@
   "id": "TTP-2026-0008",
   "schema_version": "1.0.0",
   "entry_version": "0.1.0",
-  "status": "draft",
+  "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:11+00:00",
-    "updated_at": "2026-05-20T21:16:11+00:00",
+    "updated_at": "2026-05-30",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -41,7 +41,7 @@
   },
   "identity": {
     "name": "AI Access \u2014 AWS Access Key Leaked to Anthropic API",
-    "summary": "Auto-generated draft from CortexSim scenario SIM-AIACC-002. Plane: AI_ACCESS. Primary technique: T1552. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
+    "summary": "A user pastes an AKIA-prefixed AWS access key into a prompt sent to Anthropic's API. Cortex AI Access classifies the outbound HTTPS as generative-AI, fires a DLP credential-pattern match on the request body, and the block-action policy denies subsequent sessions from the offending user context. Validates the credential-leak EAL on a non-sanctioned-user codepath.",
     "description": "Auto-generated draft from CortexSim scenario SIM-AIACC-002. Plane: AI_ACCESS. Primary technique: T1552. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-AIACC-002.\nUC: Cloud Credential Disclosure to External LLM / TC: AWS Access Key in Prompt Body to api.anthropic.com.",
     "severity": "high",
     "confidence": "medium"
