@@ -3878,6 +3878,47 @@
   color: var(--c-text-muted);
 }
 
+/* ── TTP detection-body syntax highlighting (issue #57) ─────────────── */
+/* Custom 1-KB tokeniser per syntaxHighlight.js; classes are applied to
+   every span inside .ttp-detection-item__pre. Themed against the
+   Cortex token set so the BIOC / XQL / Sigma body reads cleanly on
+   the navy <pre> background.                                          */
+
+.theme-console .ttp-detection-item__pre .syn {
+  color: inherit;
+}
+
+.theme-console .ttp-detection-item__pre .syn-keyword {
+  color: var(--cortex-teal, #00C0E8);
+  font-weight: 600;
+}
+
+.theme-console .ttp-detection-item__pre .syn-builtin {
+  color: #8fd1ff;
+}
+
+.theme-console .ttp-detection-item__pre .syn-string {
+  color: #f5a524;
+}
+
+.theme-console .ttp-detection-item__pre .syn-number {
+  color: #c9b3ff;
+}
+
+.theme-console .ttp-detection-item__pre .syn-operator {
+  color: var(--c-text-muted, #8a9cb1);
+}
+
+.theme-console .ttp-detection-item__pre .syn-comment {
+  color: #6b7e8e;
+  font-style: italic;
+}
+
+.theme-console .ttp-detection-item__pre .syn-ident,
+.theme-console .ttp-detection-item__pre .syn-plain {
+  color: inherit;
+}
+
 .theme-console .adapter-registry__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
