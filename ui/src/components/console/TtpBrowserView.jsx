@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { getTtps, getTtp, getTtpRuns, getScenarios, postRun } from '../../api/client.js'
 import { downloadTtpLayer } from './exportNavigatorLayer.js'
+import TtpEditorView from './TtpEditorView.jsx'
 import { tokeniserFor } from './syntaxHighlight.js'
 
 /**
@@ -30,6 +31,12 @@ export default function TtpBrowserView({ initialTtpId = null }) {
   const [filterTactic, setFilterTactic]     = useState('all')
   const [filterPlatform, setFilterPlatform] = useState('all')
   const [query, setQuery]                   = useState('')
+
+  // Issue #59 — TTP authoring. `editorMode` is:
+  //   null         → editor closed
+  //   'new'        → create a new draft
+  //   '<ttp_id>'   → edit existing
+  const [editorMode, setEditorMode] = useState(null)
 
   // Initial load — full corpus; chips derive from the response so the
   // catalog can grow without UI patches.
@@ -168,6 +175,16 @@ export default function TtpBrowserView({ initialTtpId = null }) {
             Clear
           </button>
         )}
+        <button
+          type="button"
+          className="btn"
+          data-testid="ttp-author-new"
+          style={{ height: 28, padding: '0 10px' }}
+          title="Author a new TTP card (requires CORTEXSIM_AUTHORING_ENABLED=true on the server)"
+          onClick={() => setEditorMode('new')}
+        >
+          Author new
+        </button>
       </div>
 
       <FilterRow label="status"   active={filterStatus}   options={statuses}  onChange={setFilterStatus} />
@@ -201,7 +218,7 @@ export default function TtpBrowserView({ initialTtpId = null }) {
         </div>
       )}
 
-      {selectedDetail && (
+      {selectedDetail && !editorMode && (
         <TtpDetail
           detail={selectedDetail}
           runs={selectedRuns}
@@ -209,6 +226,28 @@ export default function TtpBrowserView({ initialTtpId = null }) {
             setSelectedId(null)
             setSelectedDetail(null)
             setSelectedRuns(null)
+          }}
+          onEdit={() => setEditorMode(selectedDetail.id)}
+        />
+      )}
+
+      {editorMode && (
+        <TtpEditorView
+          editingTtpId={editorMode === 'new' ? null : editorMode}
+          onClose={() => setEditorMode(null)}
+          onSaved={(res) => {
+            // Reload the grid so the new/promoted card shows.
+            setLoading(true)
+            getTtps()
+              .then((d) => setTtps(Array.isArray(d?.ttps) ? d.ttps : []))
+              .catch(() => {})
+              .finally(() => setLoading(false))
+            // For promotion the card is now active — keep the editor
+            // open with the saved state visible so the operator can
+            // confirm before closing.
+            if (res?.status === 'active' && editorMode === 'new') {
+              setEditorMode(null)
+            }
           }}
         />
       )}
@@ -320,7 +359,7 @@ function TtpCard({ ttp, isSelected, onSelect }) {
 
 /* ─── TTP detail panel ─────────────────────────────────────────────── */
 
-function TtpDetail({ detail, runs, onClose }) {
+function TtpDetail({ detail, runs, onClose, onEdit }) {
   if (detail._error) {
     return (
       <div className="competitive__detail">
@@ -381,6 +420,17 @@ function TtpDetail({ detail, runs, onClose }) {
               onClick={() => downloadTtpLayer(detail)}
             >
               Export ATT&amp;CK layer
+            </button>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              className="btn"
+              data-testid="ttp-edit"
+              onClick={onEdit}
+              title="Open this TTP in the authoring editor"
+            >
+              Edit&hellip;
             </button>
           )}
           <button type="button" className="btn" onClick={onClose}>Close</button>

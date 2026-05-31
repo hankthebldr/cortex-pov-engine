@@ -130,6 +130,41 @@ const fixtureDetailDcsync = {
   ],
 }
 
+describe('<TtpBrowserView /> — authoring affordances (issue #59)', () => {
+  it('renders the Author new button next to search', async () => {
+    installRoutes({ 'GET /api/ttps': fixtureList })
+    render(<TtpBrowserView />)
+    await waitFor(() => {
+      expect(screen.getByTestId('ttp-author-new')).toBeInTheDocument()
+    })
+  })
+
+  it('clicking Author new opens the editor', async () => {
+    installRoutes({
+      'GET /api/ttps':         fixtureList,
+      'GET /api/ttps/_schema': { type: 'object', properties: {} },
+    })
+    render(<TtpBrowserView />)
+    await waitFor(() => expect(screen.getByTestId('ttp-author-new')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-author-new'))
+    await waitFor(() => expect(screen.getByTestId('ttp-editor')).toBeInTheDocument())
+  })
+
+  it('detail panel exposes an Edit… button that switches to the editor', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/ttps/_schema':        { type: 'object', properties: {} },
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-edit')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-edit'))
+    await waitFor(() => expect(screen.getByTestId('ttp-editor')).toBeInTheDocument())
+    // Detail panel no longer rendered while the editor is open.
+    expect(screen.queryByTestId('ttp-detail')).not.toBeInTheDocument()
+  })
+})
+
 describe('<TtpBrowserView />', () => {
   it('renders intro + stats derived from the API payload', async () => {
     installRoutes({ 'GET /api/ttps': fixtureList })
