@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CortexSim — an enterprise detection simulation engine for Palo Alto Networks Domain Consultants. It generates controlled, high-fidelity signals into customer Cortex environments (XSIAM/XDR) to validate detection logic (BIOC, Analytics, IOC, stitching/grouping). Think "MITRE Caldera's opinionated nephew" — not a red team C2, but a detection quality assurance engine.
 
-**No Cortex API connection.** SimCore is standalone — it generates signals INTO the environment via agent-based execution; it does not read alerts OUT of Cortex.
+**No Cortex API connection** *(Phase 1 rule; relaxed in Phase 9 Health & Config track)*. SimCore generates signals INTO the environment via agent-based execution. As of Phase 9 it MAY make **opt-in, read-only** calls to a registered XSIAM tenant for health/metrics (`/healthcheck`, XQL over `metrics_*`) — see `docs/superpowers/specs/2026-06-01-xsiam-tenant-health-config-integration-design.md`. It still does **not** write to Cortex and does **not** read alerts OUT for detection auto-validation (that track is parked).
 
 ## Build & Run Commands
 

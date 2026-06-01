@@ -602,6 +602,9 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--workers", 
 ## 10. Technical Constraints & Non-Negotiables
 
 1. **No Cortex API connection.** SimCore is standalone. It generates signals INTO the customer's Cortex environment via agent-based execution — it does not read alerts OUT of Cortex.
+   *(Phase 9 update: a read-only Health & Config integration may call a
+   registered XSIAM tenant for /healthcheck + XQL health metrics — opt-in,
+   no writes, no detection-alert read-back. See the 2026-06-01 spec.)*
 
 2. **No wrappers around external tools.** The Tool Instantiation Layer calls their real published binaries/scripts with native CLI arguments. SimCore is the process manager, not a translation layer.
 
