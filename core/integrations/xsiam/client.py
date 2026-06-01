@@ -6,6 +6,7 @@ code runs against a faked network (no live tenant, no new deps).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Optional
 
@@ -15,7 +16,7 @@ from .auth import standard_auth_headers
 from .config import AuthMode, XsiamTenantConfig
 from .exceptions import (
     XsiamApiError, XsiamAuthError, XsiamConfigError,
-    XsiamQuotaError,
+    XsiamQueryError, XsiamQuotaError,
 )
 
 logger = logging.getLogger("cortexsim.xsiam")
@@ -81,3 +82,48 @@ class XsiamClient:
             return resp.json()
         except Exception as exc:  # noqa: BLE001
             raise XsiamApiError("XSIAM returned a non-JSON response") from exc
+
+    async def start_xql_query(self, query: str, timeframe: dict[str, Any]) -> str:
+        body = {"request_data": {"query": query, "timeframe": timeframe}}
+        async with self._client() as c:
+            resp = await c.post("/public_api/v1/xql/start_xql_query", json=body)
+        data = self._unwrap(resp)
+        reply = data.get("reply", data) if isinstance(data, dict) else data
+        if not reply:
+            raise XsiamQueryError("XSIAM did not return a query id")
+        return reply
+
+    async def get_query_results(self, query_id: str, *, limit: int = 100) -> dict[str, Any]:
+        body = {"request_data": {
+            "query_id": query_id, "pending_flag": True,
+            "limit": limit, "format": "json",
+        }}
+        async with self._client() as c:
+            resp = await c.post("/public_api/v1/xql/get_query_results", json=body)
+        data = self._unwrap(resp)
+        return data.get("reply", data) if isinstance(data, dict) else {}
+
+    async def run_xql(
+        self, query: str, timeframe: dict[str, Any],
+        *, max_wait: float = 30.0, interval: float = 1.5, limit: int = 100,
+    ) -> dict[str, Any]:
+        """Start a query and poll until SUCCESS or timeout.
+
+        max_wait/interval are deliberately conservative defaults — health
+        metrics queries are cheap. Tune if your tenant's XQL latency differs.
+        """
+        query_id = await self.start_xql_query(query, timeframe)
+        waited = 0.0
+        while True:
+            reply = await self.get_query_results(query_id, limit=limit)
+            status = (reply or {}).get("status")
+            if status == "SUCCESS":
+                return reply
+            if status not in ("PENDING", None):
+                raise XsiamQueryError(f"XQL query {query_id} returned status {status!r}")
+            if waited >= max_wait:
+                raise XsiamQueryError(
+                    f"XQL query {query_id} still {status!r} after {max_wait}s"
+                )
+            await asyncio.sleep(interval)
+            waited += interval
