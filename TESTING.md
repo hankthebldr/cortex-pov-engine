@@ -149,9 +149,9 @@ pytest tests/engine/test_scenario_catalog.py -v   # rejects malformed YAML at PR
 - `agent/executor/shell_test.go` — stdout/stderr capture, non-zero exit is
   not an error, missing binary surfaces via exit code
 - `agent/beacon/client_test.go` — register, poll 404 = no task, poll → decode,
-  send-output and complete payload shape, **plus a pinned regression test**
-  for the known `{"task": {...}}` envelope mismatch (currently the Go client
-  decodes a bare `Task`; the test documents this and points at the fix)
+  send-output and complete payload shape, **plus pinned wire-contract tests**
+  (`TestPollTasks_DecodesWrappedTaskEnvelope`, `TestPollTasks_NullTaskIsIdle`)
+  proving the `{"task": …}` envelope is unwrapped correctly in both branches.
 
 ```bash
 cd agent
@@ -159,17 +159,15 @@ go vet ./...
 go test ./... -race -count=1 -v
 ```
 
-### Known contract gap
+### Task-envelope contract (resolved)
 
-`GET /api/agents/{id}/tasks` returns `{"task": null}` or `{"task": {...}}`
-from FastAPI. The Go beacon currently decodes a bare `Task{}` struct from
-that body — meaning on a real wire response it gets a zero-valued `Task` and
-silently treats it as "no task." The TODO is to update `beacon.PollTasks()`
-to unwrap the envelope.
-
-Tracking test:
-[`TestPollTasks_WrappedTaskContract_KnownGap`](agent/beacon/client_test.go)
-— flip its assertion when the client is fixed.
+`GET /api/agents/{id}/tasks` returns `{"task": null}` or `{"task": {...}}` from
+FastAPI. `beacon.PollTasks()` unwraps that envelope (decodes into an anonymous
+`struct{ Task *Task }`), so a `null` body maps cleanly to `(nil, nil)` / "no
+task" and a populated body returns the inner `*Task`. This was previously a
+known gap (the client decoded a bare `Task` and silently treated every real
+response as idle); it is now fixed in `client.go` and locked by the two wire-
+contract tests above.
 
 ## Tier 5 — Lab deployment verification
 

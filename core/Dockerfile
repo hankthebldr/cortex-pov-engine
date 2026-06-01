@@ -33,6 +33,12 @@ WORKDIR /app
 COPY core/      /app/core/
 COPY scenarios/ /app/scenarios/
 COPY infra/     /app/infra/
+# TTP detection-card corpus + tool-adapter packs. The TtpCatalog and
+# adapter_catalog read these from <base>/detection_scanner/ttps and
+# <base>/tools/packs at boot; without them the catalogs load empty and every
+# scenario with a ttp_ref/adapter_ref logs an "unresolved card" warning.
+COPY detection_scanner/ /app/detection_scanner/
+COPY tools/             /app/tools/
 
 # Drop the built React UI into the location SimCore mounts as StaticFiles (see core/main.py).
 COPY --from=ui-builder /ui/dist/ /app/core/static/
