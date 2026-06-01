@@ -89,9 +89,19 @@ class XsiamClient:
             resp = await c.post("/public_api/v1/xql/start_xql_query", json=body)
         data = self._unwrap(resp)
         reply = data.get("reply", data) if isinstance(data, dict) else data
+        # XSIAM returns HTTP 200 with an error object ({"err_code": ..., "err_msg": ...})
+        # for application-level failures (quota exceeded, bad syntax, etc.).
+        # A real query id is always a plain string — a dict reply is always an error.
+        if isinstance(reply, dict):
+            err_code = reply.get("err_code", "")
+            err_msg  = reply.get("err_msg") or str(reply)
+            err = f"{err_code}: {err_msg}" if err_code else err_msg
+            if err_code == "XQL_0003" or "quota" in err_msg.lower():
+                raise XsiamQuotaError(f"XQL quota exceeded: {err}")
+            raise XsiamQueryError(f"XSIAM XQL error: {err}")
         if not reply:
             raise XsiamQueryError("XSIAM did not return a query id")
-        return reply
+        return str(reply)
 
     async def get_query_results(self, query_id: str, *, limit: int = 100) -> dict[str, Any]:
         body = {"request_data": {

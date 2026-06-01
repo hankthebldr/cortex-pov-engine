@@ -63,3 +63,28 @@ async def test_run_xql_times_out_while_pending():
     with pytest.raises(XsiamQueryError):
         await client.run_xql("dataset=x", {"relativeTime": 1000},
                              max_wait=0, interval=0)
+
+
+@pytest.mark.asyncio
+async def test_start_xql_http200_error_dict_raises_query_error():
+    """XSIAM returns HTTP 200 with an error object for app-level failures.
+    The client must raise XsiamQueryError rather than returning the dict as a query_id."""
+    from integrations.xsiam.client import XsiamClient
+    from integrations.xsiam.exceptions import XsiamQueryError
+
+    client = XsiamClient(CFG, "key", transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"reply": {"err_code": "XQL_1001", "err_msg": "syntax error near 'x'"}})))
+    with pytest.raises(XsiamQueryError, match="XQL_1001"):
+        await client.start_xql_query("invalid = x", {"relativeTime": 1000})
+
+
+@pytest.mark.asyncio
+async def test_start_xql_http200_quota_error_raises_quota_error():
+    """XQL_0003 / 'quota' in err_msg should surface as XsiamQuotaError."""
+    from integrations.xsiam.client import XsiamClient
+    from integrations.xsiam.exceptions import XsiamQuotaError
+
+    client = XsiamClient(CFG, "key", transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"reply": {"err_code": "XQL_0003", "err_msg": "Daily quota exceeded"}})))
+    with pytest.raises(XsiamQuotaError):
+        await client.start_xql_query("dataset=x", {"relativeTime": 1000})
