@@ -18,11 +18,24 @@ export default function ConsoleRail({
   onSelectPlane = () => {},
   onSelectPinned = () => {},
   onUnpin = null,
+  collapsed = false,
+  onToggleCollapse = null,
 }) {
   return (
-    <aside className="rail">
+    <aside className={'rail' + (collapsed ? ' rail--collapsed' : '')}>
+      {onToggleCollapse && (
+        <button
+          type="button"
+          className="rail__toggle"
+          onClick={onToggleCollapse}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? '▶' : '◀'}
+        </button>
+      )}
       <div className="rail__group">
-        <div className="rail__section-title">Detection Planes</div>
+        {!collapsed && <div className="rail__section-title">Detection Planes</div>}
         {planes.map((p) => (
           <button
             key={p.code}

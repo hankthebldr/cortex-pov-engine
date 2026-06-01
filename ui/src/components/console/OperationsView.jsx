@@ -47,6 +47,7 @@ export default function OperationsView({
   onError = () => {},
   onSurfaceMessage = () => {},
   onOpenRunEvidence = () => {},
+  onArmScenario = () => {},
 }) {
   const [scenarios, setScenarios]       = useState([])
   const [loading, setLoading]           = useState(true)
@@ -89,13 +90,15 @@ export default function OperationsView({
     const id = summary.scenario_id || summary.id
     setSelected(summary)
     setDrawerOpen(true)
+    // Arm this scenario for the ③ Launch step (redesign v2).
+    onArmScenario(id)
     try {
       const detail = await getScenario(id)
       setSelected(detail || summary)
     } catch (err) {
       onError(err.message || `Failed to load ${id}`)
     }
-  }, [onError])
+  }, [onError, onArmScenario])
 
   // ── React to external open-by-id requests (rail click, palette) ──────
   useEffect(() => {

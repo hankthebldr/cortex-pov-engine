@@ -5,9 +5,11 @@ import InflightView from './components/console/InflightView.jsx'
 import EvidenceView from './components/console/EvidenceView.jsx'
 import CoverageView from './components/console/CoverageView.jsx'
 import LabView from './components/console/LabView.jsx'
+import TargetsView from './components/console/TargetsView.jsx'
+import LaunchView from './components/console/LaunchView.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
-import { getHealth, getRuns, getScenarios, downloadReportBundle } from './api/client.js'
+import { getHealth, getRuns, getScenarios, getScenario, downloadReportBundle } from './api/client.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -72,8 +74,26 @@ export default function AppConsole() {
   // returns to the active-run view.
   const [pinnedRun, setPinnedRun]                       = useState(null)
 
+  // Redesign v2 — guided workflow shared state:
+  //   selectedTarget — chosen in ① Targets, consumed by ③ Launch
+  //   armedScenarioId/armedScenario — armed in ② Library, consumed by ③ Launch
+  const [selectedTarget, setSelectedTarget]   = useState(null)
+  const [armedScenarioId, setArmedScenarioId] = useState(null)
+  const [armedScenario, setArmedScenario]     = useState(null)
+
   // Pinned scenarios — localStorage-backed
   const { pinnedIds, isPinned, toggle: togglePin, unpin } = usePinnedScenarios()
+
+  // Resolve the armed scenario's full detail (execution identity, push/pull
+  // flags) for the Launch step. Summary from the list isn't enough.
+  useEffect(() => {
+    if (!armedScenarioId) { setArmedScenario(null); return }
+    let cancelled = false
+    getScenario(armedScenarioId)
+      .then((d) => { if (!cancelled) setArmedScenario(d || null) })
+      .catch(() => { if (!cancelled) setArmedScenario(null) })
+    return () => { cancelled = true }
+  }, [armedScenarioId])
 
   // ── Health fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -395,7 +415,30 @@ export default function AppConsole() {
 
   // ── Render tab content ──────────────────────────────────────────────────
   let tabContent = null
-  if (activeTab === 'operations') {
+  if (activeTab === 'targets') {
+    tabContent = (
+      <TargetsView
+        selectedTarget={selectedTarget}
+        onSelectTarget={(t) => {
+          setSelectedTarget(t)
+          setToast({ message: `Target set: ${t.label || t.id} (${t.kind})`, type: 'success' })
+          setTimeout(() => setToast(null), 2500)
+        }}
+        onGoToLab={() => setActiveTab('lab')}
+      />
+    )
+  } else if (activeTab === 'launch') {
+    tabContent = (
+      <LaunchView
+        scenario={armedScenario}
+        selectedTarget={selectedTarget}
+        onRunComplete={handleRunComplete}
+        onError={(msg) => setToast({ message: msg, type: 'error' })}
+        onGoLibrary={() => setActiveTab('operations')}
+        onGoTargets={() => setActiveTab('targets')}
+      />
+    )
+  } else if (activeTab === 'operations') {
     tabContent = (
       <OperationsView
         selectedPlane={selectedPlane}
@@ -406,6 +449,7 @@ export default function AppConsole() {
         pinnedIds={pinnedIds}
         isPinned={isPinned}
         togglePin={togglePin}
+        onArmScenario={(sid) => setArmedScenarioId(sid)}
         onRunComplete={handleRunComplete}
         onOpenRunEvidence={(run) => {
           // Pin the run + switch to Evidence so the DC lands on
