@@ -170,21 +170,11 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Global error handler — all unhandled errors return structured JSON
+# Specific exception handlers — registered BEFORE the Exception catch-all so
+# Starlette's isinstance-based dispatch resolves the most-specific handler.
+# (Registration order matters: Exception registered first would shadow all
+# subclass handlers because isinstance(XsiamError(), Exception) is True.)
 # ---------------------------------------------------------------------------
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception("Unhandled error %s %s", request.method, request.url)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal server error",
-            "code": "INTERNAL_ERROR",
-            "detail": str(exc),
-        },
-    )
-
 
 from security.crypto import CryptoError  # noqa: E402
 
@@ -216,6 +206,23 @@ async def xsiam_error_handler(request: Request, exc: XsiamError) -> JSONResponse
     return JSONResponse(
         status_code=exc.http_status,
         content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Global error handler — catch-all for anything not matched above
+# ---------------------------------------------------------------------------
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error %s %s", request.method, request.url)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "code": "INTERNAL_ERROR",
+            "detail": str(exc),
+        },
     )
 
 
