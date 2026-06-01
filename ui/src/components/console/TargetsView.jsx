@@ -25,6 +25,23 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   const [agents, setAgents]   = useState([])
   const [bundles, setBundles] = useState([])
   const [loading, setLoading] = useState(true)
+  // Deploy-agent flow: pick OS → get install one-liner + downloadable installer.
+  const [deployOpen, setDeployOpen] = useState(false)
+  const [deployOS, setDeployOS]     = useState('linux')   // 'linux' | 'windows'
+  const [deployId, setDeployId]     = useState('jumpbox-01')
+  const [copied, setCopied]         = useState(false)
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const installUrl = `${origin}/api/agents/install?os=${deployOS}&id=${encodeURIComponent(deployId || 'jumpbox-01')}`
+  const oneLiner = deployOS === 'windows'
+    ? `iwr -useb "${installUrl}" | iex`
+    : `curl -fsSL "${installUrl}" | bash`
+  const copyOneLiner = useCallback(() => {
+    try {
+      navigator.clipboard.writeText(oneLiner)
+      setCopied(true); setTimeout(() => setCopied(false), 1800)
+    } catch { /* clipboard blocked — user can select manually */ }
+  }, [oneLiner])
 
   const refresh = useCallback(() => {
     setLoading(true)
@@ -71,6 +88,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
           <div className="target-col__title">
             <span className="plane-dot plane-dot--detected" /> Pull agents
             <span className="target-col__count">{agents.length}</span>
+            <button type="button" className="btn btn--xs target-col__action" onClick={() => setDeployOpen(true)}>
+              + Deploy agent
+            </button>
           </div>
           {loading && agents.length === 0 && <div className="target-card target-card--ghost">polling beacons…</div>}
           {!loading && agents.length === 0 && (
@@ -171,6 +191,63 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
           )}
         </section>
       </div>
+
+      {deployOpen && (
+        <div className="deploy-backdrop" onMouseDown={() => setDeployOpen(false)}>
+          <div className="deploy-modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label="Deploy agent">
+            <div className="deploy-modal__head">
+              <h2>Deploy a pull agent</h2>
+              <button type="button" className="deploy-modal__close" onClick={() => setDeployOpen(false)} aria-label="Close">×</button>
+            </div>
+            <p className="deploy-modal__lede">
+              Run the beacon on your target host. It registers with this SimCore and polls for tasks.
+              Requires Go 1.21+ on the target (stdlib-only build — no other dependencies).
+            </p>
+
+            <div className="deploy-field">
+              <span className="launch-field__label">Target OS</span>
+              <div className="deploy-os-toggle">
+                {['linux', 'windows'].map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    className={'deploy-os' + (deployOS === o ? ' is-active' : '')}
+                    onClick={() => setDeployOS(o)}
+                  >{o === 'linux' ? '🐧 Linux' : '🪟 Windows'}</button>
+                ))}
+              </div>
+            </div>
+
+            <label className="deploy-field">
+              <span className="launch-field__label">Agent ID</span>
+              <input
+                className="launch-select deploy-input"
+                value={deployId}
+                onChange={(e) => setDeployId(e.target.value)}
+                placeholder="jumpbox-01"
+                spellCheck={false}
+              />
+            </label>
+
+            <div className="deploy-field">
+              <span className="launch-field__label">One-line install ({deployOS === 'windows' ? 'PowerShell' : 'bash'})</span>
+              <div className="deploy-snippet">
+                <code>{oneLiner}</code>
+                <button type="button" className="btn btn--xs" onClick={copyOneLiner}>{copied ? '✓ copied' : 'Copy'}</button>
+              </div>
+            </div>
+
+            <div className="deploy-actions">
+              <a className="btn btn--primary btn--lg" href={installUrl} download>
+                ↓ Download installer ({deployOS === 'windows' ? '.ps1' : '.sh'})
+              </a>
+              <span className="deploy-hint mono">
+                or, once built: <code>cortexsim-agent --server {origin} --id {deployId || 'jumpbox-01'} --interval 10</code>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

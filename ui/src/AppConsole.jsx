@@ -143,9 +143,13 @@ export default function AppConsole() {
       .catch(() => setScenarioList([]))
   }, [])
 
-  // ── Derive active run (most recent running run) ──────────────────────────
+  // ── Derive active run (most recent truly in-flight run) ──────────────────
+  // Only 'running' counts as active. Push runs sit at 'pending' forever (the
+  // bundle executes offline), so treating 'pending' as active produced a
+  // phantom telemetry strip for stale runs. Pending pull runs surface once the
+  // beacon picks them up and flips them to 'running'.
   const activeRun = useMemo(() => {
-    const running = runs.find((r) => r && (r.status === 'running' || r.status === 'pending'))
+    const running = runs.find((r) => r && r.status === 'running')
     if (!running) return null
     const totalSteps = running.total_steps ?? running.steps?.length ?? 0
     const currentStep = running.current_step ?? running.step ?? 0

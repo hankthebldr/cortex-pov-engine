@@ -348,9 +348,9 @@
 
 /* ─── Header ─── */
 .theme-console .header {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 20px;
   padding: 0 20px;
   background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-void) 100%);
@@ -358,6 +358,15 @@
   position: relative;
   z-index: 10;
 }
+.theme-console .header__left  { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.theme-console .header__right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.theme-console .brand__version {
+  font-size: 10px; color: var(--c-text-muted);
+  padding: 1px 6px; border: 1px solid var(--c-hairline); border-radius: 2px;
+}
+.theme-console .header__divider { width: 1px; height: 22px; background: var(--c-hairline-strong); }
+.theme-console .cmd-trigger__label { color: var(--c-text-muted); }
+.theme-console .theater-toggle__label { margin-left: 6px; }
 .theme-console .header::after {
   content: '';
   position: absolute;
@@ -5052,3 +5061,54 @@
 /* Short grids must not leave an "unbound" gap — top-align content. */
 .theme-console .operations, .theme-console .targets, .theme-console .launch { min-height: 100%; }
 .theme-console .scenario-grid { align-content: start; }
+
+/* ─── Deploy-agent modal (Targets) ─── */
+.theme-console .target-col__action { margin-left: auto; }
+.theme-console .deploy-backdrop {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(5, 10, 20, 0.72);
+  display: grid; place-items: center;
+  backdrop-filter: blur(2px);
+}
+.theme-console .deploy-modal {
+  width: min(560px, 92vw);
+  background: var(--c-surface-modal);
+  border: 1px solid var(--c-hairline-strong);
+  border-radius: var(--r-modal);
+  box-shadow: var(--shadow-modal);
+  padding: 22px 24px 24px;
+}
+.theme-console .deploy-modal__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.theme-console .deploy-modal__close {
+  background: transparent; border: 0; color: var(--c-text-muted);
+  font-size: 22px; line-height: 1; cursor: pointer;
+}
+.theme-console .deploy-modal__close:hover { color: var(--c-text); }
+.theme-console .deploy-modal__lede { color: var(--c-text-secondary); font-size: 12px; margin-bottom: 18px; }
+.theme-console .deploy-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.theme-console .deploy-os-toggle { display: flex; gap: 8px; }
+.theme-console .deploy-os {
+  flex: 1; height: 38px; cursor: pointer;
+  background: var(--c-void); color: var(--c-text-secondary);
+  border: 1px solid var(--c-hairline-strong); border-radius: 4px;
+  font-family: var(--font-ui); font-size: 13px;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.theme-console .deploy-os:hover { color: var(--c-text); border-color: var(--c-action); }
+.theme-console .deploy-os.is-active {
+  color: var(--c-action-bright); border-color: var(--c-action);
+  background: var(--c-action-soft);
+}
+.theme-console .deploy-input { width: 100%; }
+.theme-console .deploy-snippet {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--c-void); border: 1px solid var(--c-hairline-strong);
+  border-radius: 4px; padding: 10px 12px;
+}
+.theme-console .deploy-snippet code {
+  flex: 1; font-family: var(--font-mono); font-size: 11px;
+  color: var(--c-action-bright); overflow-x: auto; white-space: nowrap;
+}
+.theme-console .deploy-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.theme-console .deploy-hint { font-size: 10px; color: var(--c-text-muted); }
+.theme-console .deploy-hint code { color: var(--c-text-secondary); }
