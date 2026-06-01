@@ -28,7 +28,7 @@ def _build_app(tmp_path, monkeypatch, stub_client):
         connect_args={"check_same_thread": False})
     from database import Base, get_db
     import models  # noqa: F401
-    asyncio.get_event_loop().run_until_complete(_create_all(engine, Base))
+    asyncio.run(_create_all(engine, Base))
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     async def _override_db():
