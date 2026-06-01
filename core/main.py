@@ -205,6 +205,20 @@ async def crypto_error_handler(request: Request, exc: CryptoError) -> JSONRespon
     )
 
 
+from integrations.xsiam.exceptions import XsiamError  # noqa: E402
+
+
+@app.exception_handler(XsiamError)
+async def xsiam_error_handler(request: Request, exc: XsiamError) -> JSONResponse:
+    """XSIAM integration failures → structured {error, code, detail} envelope.
+    API key values never appear in XsiamError.detail (only HTTP status text)."""
+    logger.warning("XsiamError on %s %s: %s", request.method, request.url, exc.detail)
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Health endpoint
 # ---------------------------------------------------------------------------
@@ -228,6 +242,7 @@ from api.mitre import router as mitre_router            # noqa: E402
 from api.infra import router as infra_router            # noqa: E402
 from api.eal import router as eal_router                # noqa: E402
 from api.credentials import router as credentials_router  # noqa: E402
+from api.xsiam import router as xsiam_router  # noqa: E402
 from api.ttps import router as ttps_router              # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
@@ -239,6 +254,7 @@ app.include_router(mitre_router, prefix="/api")
 app.include_router(infra_router, prefix="/api")
 app.include_router(eal_router, prefix="/api")
 app.include_router(credentials_router, prefix="/api")
+app.include_router(xsiam_router, prefix="/api")
 app.include_router(ttps_router, prefix="/api")
 
 

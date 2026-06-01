@@ -19,7 +19,7 @@ async def db_session(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("CORTEXSIM_BASE_DIR", str(tmp_path))
     for mod in ("database", "models", "config"):
         sys.modules.pop(mod, None)
-    for mod in [m for m in sys.modules if m.startswith("security")]:
+    for mod in [m for m in sys.modules if m.startswith("security") or m.startswith("integrations")]:
         sys.modules.pop(mod, None)
 
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
