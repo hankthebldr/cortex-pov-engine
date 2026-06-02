@@ -1,0 +1,48 @@
+adapter_id: TOOL-PRINTSPOOFER
+name: "PrintSpoofer"
+version: "1.0"
+
+tier: 3
+category: identity-credential
+
+upstream:
+  repo: https://github.com/itm4n/PrintSpoofer
+  license: "LicenseRef-itm4n"
+  attribution: "itm4n"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1134.002
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  content_library_entry:
+    name: printspoofer
+    repo: itm4n/PrintSpoofer
+    install: git-clone
+  binary: "PrintSpoofer.exe"
+
+invoke:
+  target_platform: windows
+  run_template: "\"{binary}\" -i -c {command}"
+  default_args:
+    command: "cmd"
+  identity_required: administrator
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-printspoofer-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - identity-credential

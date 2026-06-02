@@ -1,0 +1,40 @@
+adapter_id: TOOL-WHATWEB
+name: "WhatWeb"
+version: "0.5.5"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/urbanadventurer/WhatWeb
+  license: "GPL-3.0"
+  attribution: "Andrew Horton"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v whatweb >/dev/null 2>&1 || apt-get install -y whatweb"
+  binary: "whatweb"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {target}"
+  default_args:
+    target: "http://127.0.0.1"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - web-app

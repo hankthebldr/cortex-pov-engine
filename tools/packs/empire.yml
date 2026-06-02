@@ -1,0 +1,47 @@
+adapter_id: TOOL-EMPIRE
+name: "Empire"
+version: "5.x"
+
+tier: 3
+category: c2-framework
+
+upstream:
+  repo: https://github.com/BC-SECURITY/Empire
+  license: "BSD-3-Clause"
+  attribution: "BC Security"
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1059.001
+
+safety_class: c2-framework
+
+install:
+  iac_module: edr
+  content_library_entry:
+    name: empire
+    repo: BC-SECURITY/Empire
+    install: git-clone
+  binary: "empire"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} server"
+  default_args: {}
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-empire-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - c2-framework

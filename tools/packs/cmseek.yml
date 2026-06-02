@@ -1,0 +1,40 @@
+adapter_id: TOOL-CMSEEK
+name: "CMSeeK"
+version: "1.1.3"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/Tuhinshubhra/CMSeeK
+  license: "GPL-3.0"
+  attribution: "Tuhinshubhra"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595
+
+safety_class: safe
+
+install:
+  runtime_install_command: "test -d /tmp/CMSeeK || git clone --depth 1 https://github.com/Tuhinshubhra/CMSeeK /tmp/CMSeeK"
+  binary: "python3 /tmp/CMSeeK/cmseek.py"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -u {target}"
+  default_args:
+    target: "http://127.0.0.1"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - web-app

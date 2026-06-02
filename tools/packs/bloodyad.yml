@@ -1,0 +1,52 @@
+adapter_id: TOOL-BLOODYAD
+name: "bloodyAD"
+version: "2.x"
+
+tier: 3
+category: identity-credential
+
+upstream:
+  repo: https://github.com/CravateRouge/bloodyAD
+  license: "MIT"
+  attribution: "CravateRouge"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1098
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  content_library_entry:
+    name: bloodyad
+    repo: CravateRouge/bloodyAD
+    install: git-clone
+  binary: "bloodyAD"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} --host {dc} -d {domain} -u {user} -p {password} {action}"
+  default_args:
+    dc: "10.0.10.10"
+    domain: "cortexsim.local"
+    user: "svc"
+    password: "x"
+    action: "get writable"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-bloodyad-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - identity-credential

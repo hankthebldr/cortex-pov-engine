@@ -1,0 +1,47 @@
+adapter_id: TOOL-DVWA
+name: "Damn Vulnerable Web App"
+version: "master"
+
+tier: 3
+category: web-app
+
+upstream:
+  repo: https://github.com/digininja/DVWA
+  license: "GPL-3.0"
+  attribution: "digininja"
+
+cortex_signal:
+  planes: []
+  expected_techniques:
+    - T1190
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: asm
+  content_library_entry:
+    name: dvwa
+    repo: digininja/DVWA
+    install: git-clone
+  binary: "dvwa"
+
+invoke:
+  target_platform: linux
+  run_template: "docker run -d -p 80:80 {image}"
+  default_args:
+    image: "vulnerables/web-dvwa"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-dvwa-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - web-app

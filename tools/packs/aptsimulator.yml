@@ -1,0 +1,47 @@
+adapter_id: TOOL-APTSIMULATOR
+name: "APTSimulator"
+version: "0.9.4"
+
+tier: 3
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/NextronSystems/APTSimulator
+  license: "LicenseRef-Nextron"
+  attribution: "Nextron Systems"
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1059
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: edr
+  content_library_entry:
+    name: aptsimulator
+    repo: NextronSystems/APTSimulator
+    install: git-clone
+  binary: "APTSimulator.bat"
+
+invoke:
+  target_platform: windows
+  run_template: "\"{binary}\""
+  default_args: {}
+  identity_required: administrator
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-aptsimulator-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - adversary-simulation

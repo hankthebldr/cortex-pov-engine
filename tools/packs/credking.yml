@@ -1,0 +1,46 @@
+adapter_id: TOOL-CREDKING
+name: "CredKing"
+version: "1.0"
+
+tier: 4
+category: identity-credential
+
+upstream:
+  repo: https://github.com/ustayready/CredKing
+  license: "LicenseRef-ustayready"
+  attribution: "ustayready"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1110.003
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "test -d /tmp/CredKing || git clone --depth 1 https://github.com/ustayready/CredKing /tmp/CredKing"
+  binary: "python3 /tmp/CredKing/credking.py"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} --target {target} --userfile {users} --password {password}"
+  default_args:
+    target: "https://login.lab.local"
+    users: "users.txt"
+    password: "Spring2026!"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-credking-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - identity-credential

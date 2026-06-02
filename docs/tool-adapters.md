@@ -1,9 +1,10 @@
 # Tool Adapter Framework
 
-> **Status (2026-06-02):** Framework + **22 adapters** (tiers 1–4) shipped and
-> wired into the engine, API, and UI. **27 scenarios** reference adapters; push
-> bundles self-install tier-4 tools; the launch consent gate is wired end-to-end.
-> Remaining: tier-5 reference packs, Phase C fan-out — see
+> **Status (2026-06-02):** Framework + **69 adapters across all 5 tiers**
+> (Phase A/B/C complete). **27 scenarios** reference adapters; push bundles
+> self-install tier-4 tools; the launch consent gate is wired end-to-end. The
+> remaining design-spec work is operational (per-adapter CI version canary) and
+> ongoing scenario-to-adapter wiring — see
 > [§7 What's shipped vs. pending](#7-whats-shipped-vs-pending).
 >
 > This is the canonical doc. Background/intent: the design spec at
@@ -46,7 +47,19 @@ stay a separate peer abstraction — adapters are for **binary/script tools**.
 > `COPY tools/`). The adapter catalog reads `<base>/tools/packs`; if the dir is
 > absent the catalog loads empty and scenarios with `adapter_ref` warn at boot.
 
-## 3. The 22-adapter catalog (current)
+## 3. The adapter catalog (69, all 5 tiers)
+
+**By tier:** tier 1 ×3 (in-tree) · tier 2 ×8 · tier 3 ×20 · tier 4 ×27 · tier 5
+×11 (external/reference, `no_invoke`). **By safety:** safe ×33 ·
+dual-use-lab-only ×32 · c2-framework ×4 (Sliver, Empire, Starkiller, Havoc).
+
+The full list is the source of truth — see `tools/packs/*.yml` or
+`GET /api/tools/adapters`. Phase A/B's 22 reference packs are below; Phase C
+added 47 more (the remaining 🟢/🟡 verdicts from the design spec's 100-tool
+inventory, plus tier-5 analyst-workbench / RE / sandbox references). Phase-C
+packs carry a `phase-c` tag.
+
+### Phase A/B reference packs
 
 | Adapter | Tier | Category | Safety class |
 |---|---|---|---|
@@ -73,9 +86,9 @@ stay a separate peer abstraction — adapters are for **binary/script tools**.
 | TOOL-PACU | 4 | cloud-container | dual-use-lab-only |
 | TOOL-DEEPCE | 4 | cloud-container | dual-use-lab-only |
 
-**By tier:** tier 1 ×3 (in-tree) · tier 2 ×2 · tier 3 ×6 · tier 4 ×11 · (tier 5
-external: none yet). **By safety:** safe ×9 · dual-use-lab-only ×12 ·
-c2-framework ×1.
+*(The 47 Phase-C additions — caldera, empire, nuclei-adjacent scanners, AD tools,
+cloud auditors, social-eng kits, and the tier-5 references — are not tabulated
+here; query `GET /api/tools/adapters` or browse `tools/packs/`.)*
 
 ## 4. The 5-tier integration model
 
@@ -144,15 +157,27 @@ adapter_catalog  (in-memory singleton)
   - **Deliberately left legacy** (EAL traffic plugins / IdP emulator / posture /
     custom payloads — no differentiated tool to attribute): AI_ACCESS, AI_SPM,
     CLOUD_APP, ITDR, NDR-{001,002,003,005,006,007}, CDR-{002,003,004,005}.
+- **Phase C fan-out complete** — 47 additional packs covering the design spec's
+  remaining 🟢/🟡 verdicts: adversary-sim (caldera, purplesharp, aptsimulator,
+  chain-reactor, scythe), C2 (empire, starkiller, havoc), scanners (recon-ng,
+  nikto, whatweb, cmseek, commix, feroxbuster, chiron), AD (impacket, bloodyad,
+  krbrelayup, printspoofer, tokenvator), cloud (scoutsuite, gitleaks, kubescape,
+  cloudsplaining, skyark, gitgot), social-eng (set, phishery, credking,
+  crosslinked), data corpora (seclists, payloadsallthethings, yara), web target
+  (dvwa), pivots (frp), capture (tshark), enrichment (vt-cli).
+- **Tier-5 reference packs** — 11 external/reference tools (Ghidra, radare2,
+  Cutter, ILSpy, jadx, DidierStevensSuite, CAPEv2, Hayabusa, PTEF, PMA-Labs,
+  INetSim) with `no_invoke` (catalog/report reference only, never executed).
 - UI: Adapter Registry view, Tool Adapter catalog/picker, Coverage "Tool Adapters" sub-tab.
-- Tests: loader, packs, API adapter, run-lifecycle consent, and catalog-integrity suites.
+- Tests: loader, packs (all 69 schema-validated), API adapter, run-lifecycle
+  consent, and catalog-integrity suites.
 
 **Pending**
-- **Tier-5 (external/reference) packs** — none authored yet (Ghidra/Wireshark-class,
-  reference-only, `no_invoke: true`).
-- **Phase C fan-out** — remaining 🟢/🟡 verdicts from the design spec's 100-tool
-  inventory (~40 target), authored in waves.
-- Per-adapter CLI canary in CI (version drift guard).
+- Per-adapter CLI canary in CI (version drift guard — author packs pin a version;
+  upstream changes can break invocation).
+- Ongoing scenario→adapter wiring as new scenarios land (27 wired today).
+- Tier-2/3 adapters assume the tool is submoduled / IaC-provisioned; the actual
+  `sources/<tool>` submodules and content-library entries are added on demand.
 
 ## 8. Adding an adapter
 

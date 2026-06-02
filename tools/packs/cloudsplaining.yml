@@ -1,0 +1,40 @@
+adapter_id: TOOL-CLOUDSPLAINING
+name: "Cloudsplaining"
+version: "0.7"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/salesforce/cloudsplaining
+  license: "Apache-2.0"
+  attribution: "Salesforce"
+
+cortex_signal:
+  planes:
+    - CDR
+  expected_techniques:
+    - T1078
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v cloudsplaining >/dev/null 2>&1 || pip install cloudsplaining"
+  binary: "cloudsplaining"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} scan --input-file {file}"
+  default_args:
+    file: "account.json"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - cloud-container

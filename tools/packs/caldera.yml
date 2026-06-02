@@ -1,0 +1,48 @@
+adapter_id: TOOL-CALDERA
+name: "MITRE Caldera"
+version: "5.0.0"
+
+tier: 3
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/mitre/caldera
+  license: "Apache-2.0"
+  attribution: "MITRE"
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1059
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: edr
+  content_library_entry:
+    name: caldera
+    repo: mitre/caldera
+    install: git-clone
+  binary: "caldera"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} --ability {ability_id}"
+  default_args:
+    ability_id: "bd527b63-9f9e-46e0-9816-b8434d2b8989"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-caldera-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - adversary-simulation

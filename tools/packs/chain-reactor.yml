@@ -1,0 +1,46 @@
+adapter_id: TOOL-CHAIN-REACTOR
+name: "chain-reactor"
+version: "main"
+
+tier: 2
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/redcanaryco/chain-reactor
+  license: "MIT"
+  attribution: "Red Canary"
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1059
+    - T1106
+
+safety_class: dual-use-lab-only
+
+install:
+  source_path: sources/chain-reactor
+  build_cmd: "make"
+  binary: "./chain_reactor"
+
+invoke:
+  target_platform: any
+  run_template: "{binary} {recipe}"
+  default_args:
+    recipe: "recipe.json"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-chain-reactor-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - adversary-simulation

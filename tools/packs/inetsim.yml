@@ -1,0 +1,29 @@
+adapter_id: TOOL-INETSIM
+name: "INetSim"
+version: "1.3.2"
+
+tier: 5
+category: sandbox
+
+upstream:
+  repo: https://www.inetsim.org
+  license: "GPL-2.0"
+  attribution: "INetSim Project"
+
+cortex_signal:
+  planes: []
+  expected_techniques:
+    - T1071
+
+safety_class: safe
+
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - sandbox

@@ -1,0 +1,42 @@
+adapter_id: TOOL-TSHARK
+name: "tshark"
+version: "4.2"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/wireshark/wireshark
+  license: "GPL-2.0"
+  attribution: "Wireshark Foundation"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1040
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v tshark >/dev/null 2>&1 || apt-get install -y tshark"
+  binary: "tshark"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -i {iface} -c {count} -w {out}"
+  default_args:
+    iface: "eth0"
+    count: "500"
+    out: "/tmp/cortexsim-capture.pcap"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - network-scan

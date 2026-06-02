@@ -1,0 +1,29 @@
+adapter_id: TOOL-CAPEV2
+name: "CAPEv2"
+version: "master"
+
+tier: 5
+category: sandbox
+
+upstream:
+  repo: https://github.com/kevoreilly/CAPEv2
+  license: "GPL-3.0"
+  attribution: "kevoreilly"
+
+cortex_signal:
+  planes: []
+  expected_techniques:
+    - T1059
+
+safety_class: safe
+
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - sandbox
