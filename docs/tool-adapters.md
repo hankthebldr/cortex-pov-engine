@@ -114,15 +114,26 @@ adapter_catalog  (in-memory singleton)
 - Boot load with dangling-ref warnings; `GET /api/tools/adapters[/{id}]` (live: 18).
 - Scenario `adapter_ref` resolution; orchestrator `run_template` inlining.
 - IaC auto-pull (`adapter_refs[]` → `iac_module`).
+- **Safety consent gate wired end-to-end** — orchestrator refuses gated launches
+  without consent; `POST /api/run` accepts `consent: {simulation_authorized,
+  c2_authorized}`; the ③ Launch UI shows the consent prompt and blocks the
+  Launch button until authorized.
+- **POV report "Tools Used" section** — `core/api/runs.py` `_build_tools_used_rows()`
+  resolves each `adapter_ref` to name + version + tier + category + safety +
+  **license + upstream attribution** (the audit/compliance trail). Renders in
+  both markdown and JSON reports.
+- **First adapter-wired scenario** — `SIM-MP-002` (Kerberoast→PtH→DCSync)
+  references `TOOL-RUBEUS` / `TOOL-MIMIKATZ` / `TOOL-BLOODHOUND`, proving the
+  catalog → scenario → consent gate → report-audit loop (spec §10).
 - UI: Adapter Registry view, Tool Adapter catalog/picker, Coverage "Tool Adapters" sub-tab.
-- Tests: loader, packs, and API adapter suites.
+- Tests: loader, packs, API adapter, run-lifecycle consent, and catalog-integrity suites.
 
-**Pending (spec §5 "files to modify" not yet done)**
-- `core/engine/report_generator.py` — the POV report "**Tools used**" section
-  (adapter name + version + license per run) for audit/compliance evidence.
+**Pending**
 - `core/engine/push_generator.py` — emit tier-4 adapters' install scripts into
-  the self-contained push bundle.
+  the self-contained push bundle (so a downloaded bundle is self-installing).
 - **Tier-1 (in-tree) and tier-5 (external/reference) packs** — none authored yet.
+- **Wire the remaining scenarios** to their adapters — only `SIM-MP-002` is wired
+  so far; most scenarios still list legacy `external_tools` without `adapter_ref`.
 - **Phase C fan-out** — remaining 🟢/🟡 verdicts from the design spec's 100-tool
   inventory (~40 target), authored in waves.
 - Per-adapter CLI canary in CI (version drift guard).

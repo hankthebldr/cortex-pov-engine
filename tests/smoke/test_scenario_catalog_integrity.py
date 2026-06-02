@@ -39,10 +39,14 @@ def test_every_scenario_launches_push(client: httpx.Client, all_scenarios: list[
     successful 200 from /api/run + a queryable run_id is enough to prove
     that the orchestrator can ingest the YAML's step list end to end.
     """
+    # Authorize gated tool adapters (dual-use / c2) so scenarios wired to
+    # adapters launch — this is a catalog-integrity check, not a consent test
+    # (the consent gate itself is covered in the run-lifecycle/adapter suites).
+    consent = {"simulation_authorized": True, "c2_authorized": True}
     failures: list[tuple[str, int, str]] = []
     for s in all_scenarios:
         sid = s["scenario_id"]
-        r = client.post("/api/run", json={"scenario_id": sid, "mode": "push"})
+        r = client.post("/api/run", json={"scenario_id": sid, "mode": "push", "consent": consent})
         if r.status_code != 200:
             failures.append((sid, r.status_code, r.text[:200]))
             continue

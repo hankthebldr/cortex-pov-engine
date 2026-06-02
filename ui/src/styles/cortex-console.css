@@ -5143,3 +5143,23 @@
 .theme-console .card-action:hover { color: var(--c-action-bright); border-color: var(--c-action); }
 .theme-console .card-action--danger { margin-left: auto; }
 .theme-console .card-action--danger:hover { color: var(--c-missed); border-color: var(--c-missed); }
+
+/* ─── Launch consent gate (dual-use / c2 adapters) ─── */
+.theme-console .launch-consent {
+  margin: 4px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--c-pending);
+  background: var(--c-pending-soft);
+  border-radius: 4px;
+}
+.theme-console .launch-consent__title {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--c-pending); margin-bottom: 8px;
+}
+.theme-console .launch-consent__row {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px; color: var(--c-text-secondary); cursor: pointer; padding: 4px 0;
+}
+.theme-console .launch-consent__row input { margin-top: 2px; accent-color: var(--c-action); }
+.theme-console .launch-consent__row--c2 input { accent-color: var(--c-missed); }
+.theme-console .launch-consent__row strong { color: var(--c-text); }

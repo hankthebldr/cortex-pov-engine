@@ -52,6 +52,21 @@ external_tools:
     source: "https://github.com/fortra/impacket"
     type: script
     install_inline: false
+  - name: Rubeus
+    source: "https://github.com/GhostPack/Rubeus"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-RUBEUS
+  - name: Mimikatz
+    source: "https://github.com/gentilkiwi/mimikatz"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-MIMIKATZ
+  - name: BloodHound
+    source: "https://github.com/SpecterOps/BloodHound"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-BLOODHOUND
 
 steps:
   - id: step-01

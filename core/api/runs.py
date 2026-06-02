@@ -94,6 +94,10 @@ class LaunchRequest(BaseModel):
     mode: str  # "pull" | "push"
     target_agent_id: Optional[str] = None
     identity: Optional[str] = None
+    # Launch-time consent for gated tool adapters. Keys: simulation_authorized
+    # (dual-use-lab-only) and c2_authorized (c2-framework). The orchestrator
+    # refuses to create a Run for a gated adapter without the matching consent.
+    consent: Optional[dict[str, bool]] = None
 
 
 class OutputRequest(BaseModel):
@@ -136,6 +140,7 @@ async def launch_run(
         db=db,
         target_agent_id=body.target_agent_id,
         identity=body.identity,
+        consent=body.consent,
     )
 
     if not result.success:

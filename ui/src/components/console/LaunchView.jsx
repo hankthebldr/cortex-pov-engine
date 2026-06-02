@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import useLaunchScenario from './useLaunchScenario.js'
+import { getToolAdapters } from '../../api/client.js'
 
 /**
  * LaunchView — ③ Launch: arm a scenario against a target and fire.
@@ -35,6 +36,40 @@ export default function LaunchView({
     launch.setMode(targetMode)
     if (selectedTarget.kind === 'agent') launch.setSelectedAgent(selectedTarget.id)
   }, [selectedTarget, targetMode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Adapter consent gate ──────────────────────────────────────────────
+  // The orchestrator refuses launches that touch dual-use / c2 adapters
+  // without matching consent. Resolve the scenario's external_tools adapter
+  // refs against the catalog so we can prompt for exactly the right consent.
+  const [adapterIndex, setAdapterIndex] = useState({}) // adapter_id → {name, safety_class}
+  useEffect(() => {
+    let cancelled = false
+    getToolAdapters()
+      .then((d) => {
+        const list = Array.isArray(d) ? d : (d && d.adapters) || []
+        if (cancelled) return
+        setAdapterIndex(Object.fromEntries(list.map((a) => [a.adapter_id, a])))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  const gated = useMemo(() => {
+    const refs = (scenario?.external_tools || []).map((t) => t.adapter_ref).filter(Boolean)
+    const resolved = refs.map((r) => adapterIndex[r]).filter(Boolean)
+    return {
+      dualUse: resolved.filter((a) => a.safety_class === 'dual-use-lab-only'),
+      c2:      resolved.filter((a) => a.safety_class === 'c2-framework'),
+    }
+  }, [scenario, adapterIndex])
+
+  const needsSim = gated.dualUse.length > 0
+  const needsC2  = gated.c2.length > 0
+  const consentBlocked =
+    (needsSim && !launch.consent.simulation_authorized) ||
+    (needsC2 && !launch.consent.c2_authorized)
+  const toggleConsent = (key) =>
+    launch.setConsent((c) => ({ ...c, [key]: !c[key] }))
 
   // ── Guard rails — guide the operator back to the missing step ──────────
   if (!scenario) {
@@ -126,6 +161,39 @@ export default function LaunchView({
             </label>
           )}
 
+          {/* dual-use / c2 consent gate */}
+          {(needsSim || needsC2) && (
+            <div className="launch-consent">
+              <div className="launch-consent__title">⚠ Tool consent required</div>
+              {needsSim && (
+                <label className="launch-consent__row">
+                  <input
+                    type="checkbox"
+                    checked={!!launch.consent.simulation_authorized}
+                    onChange={() => toggleConsent('simulation_authorized')}
+                  />
+                  <span>
+                    I authorize <strong>lab-only</strong> use of dual-use tools (
+                    {gated.dualUse.map((a) => a.name).join(', ')}).
+                  </span>
+                </label>
+              )}
+              {needsC2 && (
+                <label className="launch-consent__row launch-consent__row--c2">
+                  <input
+                    type="checkbox"
+                    checked={!!launch.consent.c2_authorized}
+                    onChange={() => toggleConsent('c2_authorized')}
+                  />
+                  <span>
+                    I authorize <strong>C2 framework</strong> execution (
+                    {gated.c2.map((a) => a.name).join(', ')}) on authorized targets only.
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
+
           {/* primary action */}
           <div className="launch-actions">
             {targetMode === 'push' ? (
@@ -133,7 +201,7 @@ export default function LaunchView({
                 <button
                   type="button"
                   className="btn btn--primary btn--lg"
-                  disabled={launch.launching}
+                  disabled={launch.launching || consentBlocked}
                   onClick={launch.launch}
                 >
                   {launch.launching ? 'Launching…' : 'Launch run ▸'}
@@ -151,7 +219,7 @@ export default function LaunchView({
               <button
                 type="button"
                 className="btn btn--primary btn--lg"
-                disabled={launch.launchDisabled || !selectedTarget}
+                disabled={launch.launchDisabled || !selectedTarget || consentBlocked}
                 onClick={launch.launch}
               >
                 {launch.launching ? 'Launching…' : 'Launch run ▸'}

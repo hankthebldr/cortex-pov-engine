@@ -20,6 +20,8 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
   const [agents, setAgents]               = useState([])
   const [selectedAgent, setSelectedAgent] = useState('')
   const [pushFormat, setPushFormat]       = useState('bash')      // 'bash' | 'k8s'
+  // Launch-time consent for gated tool adapters (dual-use / c2-framework).
+  const [consent, setConsent]             = useState({})          // { simulation_authorized?, c2_authorized? }
   const [launching, setLaunching]         = useState(false)
   const [downloading, setDownloading]     = useState(false)
   const [lastRun, setLastRun]             = useState(null)        // { status, message }
@@ -63,6 +65,7 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
         identity: identity || undefined,
       }
       if (mode === 'pull' && selectedAgent) body.target_agent_id = selectedAgent
+      if (consent && Object.keys(consent).length) body.consent = consent
       const run = await postRun(body)
       setLastRun({ status: 'success', message: `Run ${run?.id || ''} started` })
       if (onRunComplete) onRunComplete(run)
@@ -75,7 +78,7 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
     } finally {
       setLaunching(false)
     }
-  }, [scenario, mode, identity, selectedAgent, onRunComplete, onError])
+  }, [scenario, mode, identity, selectedAgent, consent, onRunComplete, onError])
 
   const downloadPushBundle = useCallback(async () => {
     if (!scenario) return
@@ -110,6 +113,7 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
     agents,
     selectedAgent, setSelectedAgent,
     pushFormat, setPushFormat,
+    consent, setConsent,
     launching, downloading,
     lastRun,
     // derived
