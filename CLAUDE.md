@@ -153,6 +153,12 @@ In-tree (not submodules):
   shape rhymes with garak `Attempt` + cortex-prompt-attacker so SOC tooling
   consumes both streams the same way.
 
+## Tool Adapter Framework
+
+Declarative `ToolAdapter` model — one YAML per security tool under `tools/packs/<tool>.yml` — telling the engine where a tool lives, how to install/invoke it, its dual-use safety class, and which Cortex plane its signal lands on. Scenarios reference adapters by id (`external_tools[].adapter_ref: TOOL-NMAP`) instead of hand-rolling CLI. Loaded + validated at boot (`core/tools/adapter_loader.py` → `adapter_catalog.py`), consumed by scenario_loader, orchestrator, infra_generator, and `GET /api/tools/adapters`. 5-tier model (1 in-tree · 2 submodule · 3 IaC-provisioned · 4 runtime-fetched · 5 external-only). **18 reference packs** ship (tiers 2–4). `tools/` must be in the image (Dockerfile `COPY tools/`) or the catalog loads empty.
+
+**Full doc + current state (shipped vs pending): [`docs/tool-adapters.md`](docs/tool-adapters.md).** Design spec: `docs/superpowers/specs/2026-05-19-tool-adapter-framework-design.md`. Pack authoring: `tools/packs/README.md`.
+
 ## Cortex Branding
 
 UI uses specific Cortex design tokens — `--cortex-navy: #003366`, `--cortex-teal: #00C0E8`, `--cortex-steel: #6B7E8E`. Plain CSS (no Tailwind). Font: Inter for UI, JetBrains Mono for code. See `ui/src/styles/cortex-theme.css`.
