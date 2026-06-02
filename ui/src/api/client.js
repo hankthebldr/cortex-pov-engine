@@ -431,6 +431,25 @@ export async function getAgents() {
   return Array.isArray(data) ? data : data?.agents ?? []
 }
 
+/**
+ * DELETE /api/agents/:agentId — prune a registered beacon from the registry.
+ * @param {string} agentId
+ * @returns {Promise<{status:string, agent_id:string}>}
+ */
+export async function deleteAgent(agentId) {
+  return request(`/api/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' })
+}
+
+/**
+ * Build the installer download URL for an agent (bash .sh / PowerShell .ps1).
+ * Server URL is auto-derived server-side from the request.
+ * @param {{os?:string, id?:string, interval?:number}} opts
+ */
+export function agentInstallUrl({ os = 'linux', id = 'jumpbox-01', interval = 10 } = {}) {
+  const q = new URLSearchParams({ os, id, interval: String(interval) })
+  return `/api/agents/install?${q.toString()}`
+}
+
 // ─── TTP browser (detection_scanner/ttps/*.json) ────────────────────────────
 
 /**

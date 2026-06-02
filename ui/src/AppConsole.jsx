@@ -51,12 +51,21 @@ import { getHealth, getRuns, getScenarios, getScenario, downloadReportBundle } f
  *     every generated push bundle)
  */
 
+// All 11 detection planes present in the scenario library. Keep this in sync
+// with the planes that actually load (the rail must reconcile with the Library
+// total — previously only 6 of 11 were listed, so the rail summed to ~32 while
+// the Library showed 58). Names map Cortex codes → human labels.
 const PLANE_META = [
-  { code: 'EDR',  name: 'Endpoint'     },
-  { code: 'CDR',  name: 'Cloud'        },
-  { code: 'NDR',  name: 'Network'      },
-  { code: 'ITDR', name: 'Identity'     },
-  { code: 'CLOUD_APP', name: 'Cloud App' },
+  { code: 'EDR',       name: 'Endpoint'    },
+  { code: 'CDR',       name: 'Cloud'       },
+  { code: 'NDR',       name: 'Network'     },
+  { code: 'ITDR',      name: 'Identity'    },
+  { code: 'CLOUD_APP', name: 'Cloud App'   },
+  { code: 'AI_ACCESS', name: 'AI Access'   },
+  { code: 'AIRS',      name: 'AI Runtime'  },
+  { code: 'AI_SPM',    name: 'AI Posture'  },
+  { code: 'BROWSER',   name: 'Browser'     },
+  { code: 'KOI',       name: 'Agentic'     },
   { code: 'ANALYTICS', name: 'Multi-plane' },
 ]
 

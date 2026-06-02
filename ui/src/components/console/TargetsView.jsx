@@ -1,5 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getAgents, getInfraBundles } from '../../api/client.js'
+import { getAgents, getInfraBundles, deleteAgent, agentInstallUrl } from '../../api/client.js'
+
+// Compact relative time for last-seen ("12s" / "5m" / "3h" / "2d").
+function relTime(iso) {
+  if (!iso) return 'never'
+  const ms = Date.now() - new Date(iso).getTime()
+  if (Number.isNaN(ms)) return '—'
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s ago`
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`
+  return `${Math.floor(s / 86400)}d ago`
+}
+
+// Normalize an agent's reported OS to an installer target.
+function installerOS(os) {
+  return /win/i.test(os || '') ? 'windows' : 'linux'
+}
 
 /**
  * TargetsView — ① Targets: the unified "where does the simulation run?" hub.
@@ -30,6 +47,17 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   const [deployOS, setDeployOS]     = useState('linux')   // 'linux' | 'windows'
   const [deployId, setDeployId]     = useState('jumpbox-01')
   const [copied, setCopied]         = useState(false)
+  const [pendingDelete, setPendingDelete] = useState(null) // agent_id awaiting confirm
+  const [busyDelete, setBusyDelete] = useState(null)       // agent_id mid-delete
+
+  const removeAgent = useCallback(async (agentId) => {
+    setBusyDelete(agentId)
+    try {
+      await deleteAgent(agentId)
+      setAgents((prev) => prev.filter((a) => (a.agent_id || a.id) !== agentId))
+    } catch { /* surfaced via list refresh */ }
+    finally { setBusyDelete(null); setPendingDelete(null) }
+  }, [])
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const installUrl = `${origin}/api/agents/install?os=${deployOS}&id=${encodeURIComponent(deployId || 'jumpbox-01')}`
@@ -103,25 +131,59 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             </div>
           )}
           {agents.map((a) => {
-            const id = a.id || a.agent_id
+            const id = a.agent_id || a.id
             const st = agentStatus(a)
+            const os = a.os || a.platform || 'linux'
+            const confirming = pendingDelete === id
             return (
-              <button
+              <div
                 key={id}
-                type="button"
                 className={'target-card target-card--agent' + (isSel('agent', id) ? ' is-selected' : '')}
-                onClick={() => onSelectTarget({ kind: 'agent', id, label: id })}
               >
-                <div className="target-card__head">
-                  <span className={`status-dot status-dot--${st}`} />
-                  <span className="target-card__title mono">{id}</span>
-                  <span className={`target-card__pill target-card__pill--${st}`}>{st}</span>
-                </div>
-                <p className="target-card__sub">
-                  {a.hostname || a.host || 'unknown host'} · {a.os || a.platform || 'linux'}
-                </p>
-                {isSel('agent', id) && <span className="target-card__selected">✓ selected · pull mode</span>}
-              </button>
+                <button
+                  type="button"
+                  className="target-card__select"
+                  onClick={() => onSelectTarget({ kind: 'agent', id, label: id })}
+                >
+                  <div className="target-card__head">
+                    <span className={`status-dot status-dot--${st}`} />
+                    <span className="target-card__title mono">{id}</span>
+                    <span className={`target-card__pill target-card__pill--${st}`}>{st}</span>
+                  </div>
+                  <p className="target-card__sub">
+                    {a.hostname || a.host || 'unknown host'} · {os} · seen {relTime(a.last_seen || a.last_seen_at || a.updated_at)}
+                  </p>
+                  {isSel('agent', id) && <span className="target-card__selected">✓ selected · pull mode</span>}
+                </button>
+
+                {confirming ? (
+                  <div className="target-card__confirm">
+                    <span>Delete <strong className="mono">{id}</strong>?</span>
+                    <button type="button" className="btn btn--xs" onClick={() => setPendingDelete(null)}>Cancel</button>
+                    <button
+                      type="button"
+                      className="btn btn--xs btn--danger"
+                      disabled={busyDelete === id}
+                      onClick={() => removeAgent(id)}
+                    >{busyDelete === id ? '…' : 'Delete'}</button>
+                  </div>
+                ) : (
+                  <div className="target-card__actions">
+                    <a
+                      className="card-action"
+                      href={agentInstallUrl({ os: installerOS(os), id })}
+                      download
+                      title="Re-download this agent's installer"
+                    >↓ installer</a>
+                    <button
+                      type="button"
+                      className="card-action card-action--danger"
+                      onClick={() => setPendingDelete(id)}
+                      title="Delete this agent"
+                    >✕ delete</button>
+                  </div>
+                )}
+              </div>
             )
           })}
         </section>

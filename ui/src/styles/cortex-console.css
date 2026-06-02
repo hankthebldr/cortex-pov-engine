@@ -5112,3 +5112,34 @@
 .theme-console .deploy-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
 .theme-console .deploy-hint { font-size: 10px; color: var(--c-text-muted); }
 .theme-console .deploy-hint code { color: var(--c-text-secondary); }
+
+/* ─── Agent management card (Targets · Pull agents) ─── */
+.theme-console .target-card--agent { padding: 0; overflow: hidden; cursor: default; }
+.theme-console .target-card--agent:hover { transform: none; }
+.theme-console .target-card__select {
+  display: block; width: 100%; text-align: left;
+  background: transparent; border: 0; cursor: pointer;
+  padding: 14px 16px 10px;
+}
+.theme-console .target-card__actions,
+.theme-console .target-card__confirm {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--c-hairline);
+  background: var(--c-void);
+}
+.theme-console .target-card__confirm { font-size: 11px; color: var(--c-text-secondary); }
+.theme-console .target-card__confirm strong { color: var(--c-text); }
+.theme-console .target-card__confirm .btn { margin-left: 0; }
+.theme-console .target-card__confirm .btn:last-child { margin-left: auto; }
+.theme-console .card-action {
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: var(--tracking-mono); text-transform: uppercase;
+  color: var(--c-text-muted); background: transparent;
+  border: 1px solid var(--c-hairline); border-radius: 2px;
+  padding: 4px 8px; cursor: pointer; text-decoration: none;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.theme-console .card-action:hover { color: var(--c-action-bright); border-color: var(--c-action); }
+.theme-console .card-action--danger { margin-left: auto; }
+.theme-console .card-action--danger:hover { color: var(--c-missed); border-color: var(--c-missed); }

@@ -204,6 +204,26 @@ async def register_agent(
     }
 
 
+@router.delete("/{agent_id}")
+async def delete_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
+    """Remove a registered agent. Idempotent-friendly: 404 if it never existed.
+
+    Used by the Targets management UI to prune stale/old beacons. Does not touch
+    run history — only the agent registry row."""
+    result = await db.execute(select(Agent).where(Agent.agent_id == agent_id))
+    agent: Optional[Agent] = result.scalar_one_or_none()
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Agent not found", "code": "AGENT_NOT_FOUND",
+                    "detail": f"agent_id='{agent_id}'"},
+        )
+    await db.delete(agent)
+    await db.commit()
+    logger.info("delete_agent agent_id=%s", agent_id)
+    return {"status": "deleted", "agent_id": agent_id}
+
+
 @router.get("/{agent_id}/tasks")
 async def poll_tasks(
     agent_id: str,
