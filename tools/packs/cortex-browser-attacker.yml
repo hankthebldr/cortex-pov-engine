@@ -1,0 +1,52 @@
+adapter_id: TOOL-CORTEX-BROWSER-ATTACKER
+name: Cortex Browser Attacker
+version: "1.0"
+
+tier: 1
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/hankthebldr/cortex-pov-engine
+  license: LicenseRef-Internal
+  attribution: Palo Alto Networks — CortexSim (in-tree)
+
+cortex_signal:
+  planes:
+    - BROWSER
+  expected_techniques:
+    - T1539  # Steal Web Session Cookie
+    - T1059  # Command and Scripting Interpreter
+
+safety_class: safe
+# Tier-1 in-tree. Playwright is optional; unit tests use a StubDriver that never
+# spins up a browser. No launch consent gate.
+
+install:
+  source_path: sources/cortex-browser-attacker
+  build_cmd: "pip install -e .[playwright]"
+
+invoke:
+  target_platform: linux
+  run_template: "cortex-browser-attacker run --plan {plan} --out {out}"
+  default_args:
+    plan: "scenarios/browser/campaigns/cred-paste.yml"
+    out: "/tmp/cortexsim-browser-events.jsonl"
+  identity_required: container-runtime
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-browser-events.jsonl"
+
+ttp_refs:
+  - TTP-2026-0017
+
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - browser
+  - prisma-browser
+  - playwright
+  - in-tree

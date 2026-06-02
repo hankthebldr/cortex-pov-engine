@@ -39,6 +39,11 @@ infra_modules_needed:
   - base
 
 external_tools:
+  - name: Cortex Malicious Agentic Pack
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-AGENTIC-PACK
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: script

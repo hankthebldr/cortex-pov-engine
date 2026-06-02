@@ -1,0 +1,52 @@
+adapter_id: TOOL-CORTEX-PROMPT-ATTACKER
+name: Cortex Prompt Attacker
+version: "1.0"
+
+tier: 1
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/hankthebldr/cortex-pov-engine
+  license: LicenseRef-Internal
+  attribution: Palo Alto Networks — CortexSim (in-tree)
+
+cortex_signal:
+  planes:
+    - AIRS
+  expected_techniques:
+    - T1059  # Command and Scripting Interpreter (prompt-as-code)
+
+safety_class: safe
+# Tier-1 in-tree: we own the safety surface. No real LLM calls / API keys in the
+# default target; canaries are deterministic. No launch consent gate.
+
+install:
+  source_path: sources/cortex-prompt-attacker
+  build_cmd: "pip install -e ."
+
+invoke:
+  target_platform: linux
+  run_template: "cortex-prompt-attacker run --probes {probes} --target-url {target_url} --out {out}"
+  default_args:
+    probes: "scenarios/airs/probes"
+    target_url: "http://localhost:8089"
+    out: "/tmp/cortexsim-airs-events.jsonl"
+  identity_required: container-runtime
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-airs-events.jsonl"
+
+ttp_refs:
+  - TTP-2026-0012
+
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - airs
+  - prompt-injection
+  - owasp-llm
+  - in-tree

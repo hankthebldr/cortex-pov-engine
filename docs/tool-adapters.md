@@ -1,8 +1,10 @@
 # Tool Adapter Framework
 
-> **Status (2026-06-02):** Framework + 18 reference adapters shipped and wired
-> into the engine, API, and UI. Some engine consumers and adapter tiers are
-> still pending — see [§7 What's shipped vs. pending](#7-whats-shipped-vs-pending).
+> **Status (2026-06-02):** Framework + **22 adapters** (tiers 1–4) shipped and
+> wired into the engine, API, and UI. **27 scenarios** reference adapters; push
+> bundles self-install tier-4 tools; the launch consent gate is wired end-to-end.
+> Remaining: tier-5 reference packs, Phase C fan-out — see
+> [§7 What's shipped vs. pending](#7-whats-shipped-vs-pending).
 >
 > This is the canonical doc. Background/intent: the design spec at
 > [`docs/superpowers/specs/2026-05-19-tool-adapter-framework-design.md`](superpowers/specs/2026-05-19-tool-adapter-framework-design.md).
@@ -44,10 +46,13 @@ stay a separate peer abstraction — adapters are for **binary/script tools**.
 > `COPY tools/`). The adapter catalog reads `<base>/tools/packs`; if the dir is
 > absent the catalog loads empty and scenarios with `adapter_ref` warn at boot.
 
-## 3. The 18-adapter catalog (current)
+## 3. The 22-adapter catalog (current)
 
 | Adapter | Tier | Category | Safety class |
 |---|---|---|---|
+| TOOL-CORTEX-PROMPT-ATTACKER | 1 | adversary-simulation | safe (in-tree) |
+| TOOL-CORTEX-BROWSER-ATTACKER | 1 | adversary-simulation | safe (in-tree) |
+| TOOL-CORTEX-AGENTIC-PACK | 1 | adversary-simulation | safe (in-tree) |
 | TOOL-ATOMIC-RED-TEAM | 2 | adversary-simulation | dual-use-lab-only |
 | TOOL-SCAPY | 2 | network-scan | dual-use-lab-only |
 | TOOL-BLOODHOUND | 3 | identity-credential | dual-use-lab-only |
@@ -66,9 +71,10 @@ stay a separate peer abstraction — adapters are for **binary/script tools**.
 | TOOL-PROWLER | 4 | cloud-container | safe |
 | TOOL-KUBE-BENCH | 4 | cloud-container | safe |
 | TOOL-PACU | 4 | cloud-container | dual-use-lab-only |
+| TOOL-DEEPCE | 4 | cloud-container | dual-use-lab-only |
 
-**By tier:** tier 2 ×2 · tier 3 ×6 · tier 4 ×10 · (tier 1 in-tree & tier 5
-external: none yet). **By safety:** safe ×6 · dual-use-lab-only ×11 ·
+**By tier:** tier 1 ×3 (in-tree) · tier 2 ×2 · tier 3 ×6 · tier 4 ×11 · (tier 5
+external: none yet). **By safety:** safe ×9 · dual-use-lab-only ×12 ·
 c2-framework ×1.
 
 ## 4. The 5-tier integration model
@@ -122,18 +128,28 @@ adapter_catalog  (in-memory singleton)
   resolves each `adapter_ref` to name + version + tier + category + safety +
   **license + upstream attribution** (the audit/compliance trail). Renders in
   both markdown and JSON reports.
-- **First adapter-wired scenario** — `SIM-MP-002` (Kerberoast→PtH→DCSync)
-  references `TOOL-RUBEUS` / `TOOL-MIMIKATZ` / `TOOL-BLOODHOUND`, proving the
-  catalog → scenario → consent gate → report-audit loop (spec §10).
+- **Tier-1 in-tree packs** — `TOOL-CORTEX-PROMPT-ATTACKER` (AIRS),
+  `TOOL-CORTEX-BROWSER-ATTACKER` (BROWSER), `TOOL-CORTEX-AGENTIC-PACK` (KOI);
+  `safe` (we own the safety surface — no launch consent), so the 15 AI/Browser/
+  KOI scenarios stay launchable without friction.
+- **Push-bundle self-install** — `push_generator` resolves each `adapter_ref`,
+  emits tier-4 `runtime_install_command`s into the bundle, **refuses** to
+  auto-stage c2-framework adapters, and notes tier 1/2/3 as pre-provisioned.
+  Adapter-backed tools are excluded from the bundle's hard dependency check.
+- **27 scenarios wired** to adapters (up from 1):
+  - AIRS×5 → prompt-attacker · BROWSER×5 → browser-attacker · KOI×5 → agentic-pack
+  - EDR×5 → atomic-red-team (EDR-005 +nmap) · NDR-004 → nmap+masscan · CDR-001 → deepce
+  - MP-001 → sliver · MP-002 → rubeus+mimikatz+bloodhound · MP-003 → scapy ·
+    MP-004 → pacu+mimikatz+bloodhound · MP-005 → atomic+nmap
+  - **Deliberately left legacy** (EAL traffic plugins / IdP emulator / posture /
+    custom payloads — no differentiated tool to attribute): AI_ACCESS, AI_SPM,
+    CLOUD_APP, ITDR, NDR-{001,002,003,005,006,007}, CDR-{002,003,004,005}.
 - UI: Adapter Registry view, Tool Adapter catalog/picker, Coverage "Tool Adapters" sub-tab.
 - Tests: loader, packs, API adapter, run-lifecycle consent, and catalog-integrity suites.
 
 **Pending**
-- `core/engine/push_generator.py` — emit tier-4 adapters' install scripts into
-  the self-contained push bundle (so a downloaded bundle is self-installing).
-- **Tier-1 (in-tree) and tier-5 (external/reference) packs** — none authored yet.
-- **Wire the remaining scenarios** to their adapters — only `SIM-MP-002` is wired
-  so far; most scenarios still list legacy `external_tools` without `adapter_ref`.
+- **Tier-5 (external/reference) packs** — none authored yet (Ghidra/Wireshark-class,
+  reference-only, `no_invoke: true`).
 - **Phase C fan-out** — remaining 🟢/🟡 verdicts from the design spec's 100-tool
   inventory (~40 target), authored in waves.
 - Per-adapter CLI canary in CI (version drift guard).

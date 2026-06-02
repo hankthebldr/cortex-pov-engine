@@ -36,6 +36,11 @@ infra_modules_needed:
   - base
 
 external_tools:
+  - name: Cortex Browser Attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-BROWSER-ATTACKER
   - name: cortex-browser-attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: binary

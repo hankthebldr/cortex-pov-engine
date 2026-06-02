@@ -39,6 +39,11 @@ infra_modules_needed:
   - airs
 
 external_tools:
+  - name: Cortex Prompt Attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-PROMPT-ATTACKER
   - name: cortex-prompt-attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: binary

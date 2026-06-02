@@ -45,7 +45,12 @@ infra_modules_needed:
   - edr
   - ndr
 
-external_tools: []
+external_tools:
+  - name: Scapy
+    source: "https://github.com/secdev/scapy"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-SCAPY
 
 steps:
   - id: step-01

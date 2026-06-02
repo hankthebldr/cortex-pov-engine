@@ -54,6 +54,21 @@ infra_modules_needed:
   - tim
 
 external_tools:
+  - name: Pacu
+    source: "https://github.com/RhinoSecurityLabs/pacu"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-PACU
+  - name: Mimikatz
+    source: "https://github.com/gentilkiwi/mimikatz"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-MIMIKATZ
+  - name: BloodHound
+    source: "https://github.com/SpecterOps/BloodHound"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-BLOODHOUND
   - name: awscli
     source: "https://aws.amazon.com/cli/"
     type: binary

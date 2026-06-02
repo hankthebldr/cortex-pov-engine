@@ -41,6 +41,16 @@ infra_modules_needed:
   - itdr
 
 external_tools:
+  - name: Nmap
+    source: "https://github.com/nmap/nmap"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-NMAP
+  - name: masscan
+    source: "https://github.com/robertdavidgraham/masscan"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-MASSCAN
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: script

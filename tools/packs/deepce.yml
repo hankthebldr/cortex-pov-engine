@@ -1,0 +1,48 @@
+adapter_id: TOOL-DEEPCE
+name: DEEPCE
+version: "1.1"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/stealthcopter/deepce
+  license: GPL-3.0
+  attribution: stealthcopter (Matt)
+
+cortex_signal:
+  planes:
+    - CDR
+  expected_techniques:
+    - T1610  # Deploy Container
+    - T1613  # Container and Resource Discovery
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "command -v deepce.sh >/dev/null 2>&1 || curl -fsSLo /tmp/deepce.sh https://raw.githubusercontent.com/stealthcopter/deepce/main/deepce.sh && chmod +x /tmp/deepce.sh"
+  binary: /tmp/deepce.sh
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {flags}"
+  default_args:
+    flags: "--no-color"
+  identity_required: container-runtime
+
+cleanup:
+  commands:
+    - "rm -f /tmp/deepce.sh"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-KUBE-BENCH
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - container
+  - enumeration
+  - cdr

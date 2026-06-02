@@ -209,6 +209,10 @@ def generate_bash(scenario: dict[str, Any]) -> str:
     deps_seen: set[str] = {"curl", "bash"}  # always check basics
     for tool in external_tools:
         tool_name = tool.get("name", "")
+        # Tools backed by a tool adapter (adapter_ref) are installed by the
+        # adapter-install section below, so they must NOT be hard-checked here.
+        if tool.get("adapter_ref"):
+            continue
         if tool_name and tool.get("type") == "binary" and not tool.get("install_inline", False):
             deps_seen.add(tool_name)
     for dep in sorted(deps_seen):
@@ -227,6 +231,43 @@ def generate_bash(scenario: dict[str, Any]) -> str:
             script += f'log INFO "Downloading inline tool: {tname}"\n'
             script += f'curl -sSLo "/tmp/{tname}" "{tsource}" || log WARN "Failed to download {tname}"\n'
         script += "\n"
+
+    # --- Tool-adapter installs ---
+    # Resolve each external_tools[].adapter_ref against the catalog and emit a
+    # self-contained install for runtime-fetched (tier-4) tools, so a downloaded
+    # bundle installs its own dependencies on a clean host. C2 frameworks are
+    # never auto-staged from a push bundle (safety); tier 1/2/3 tools must be
+    # pre-provisioned (in-tree build / submodule / IaC lab) and are noted.
+    from tools.adapter_catalog import catalog as adapter_catalog  # local import avoids cycle
+    adapter_lines: list[str] = []
+    for tool in external_tools:
+        ref = tool.get("adapter_ref")
+        if not ref:
+            continue
+        ad = adapter_catalog.find(ref)
+        if ad is None:
+            adapter_lines.append(f'log WARN "Adapter {ref} not in catalog — install skipped"')
+            continue
+        if ad.safety_class == "c2-framework":
+            adapter_lines.append(
+                f'log WARN "Adapter {ad.name} is a C2 framework — NOT auto-installed '
+                f'from a push bundle; provision manually on an authorized target"'
+            )
+            continue
+        cmd = ad.install.runtime_install_command if ad.install else None
+        if ad.tier == 4 and cmd:
+            adapter_lines.append(f'log INFO "Installing adapter {ad.name} v{ad.version} (tier 4)"')
+            adapter_lines.append(cmd)
+        else:
+            adapter_lines.append(
+                f'log INFO "Adapter {ad.name} v{ad.version} (tier {ad.tier}, {ad.category}) '
+                f'must be pre-provisioned on the target"'
+            )
+    if adapter_lines:
+        script += "# ---------------------------------------------------------------------------\n"
+        script += "# Tool adapter installs (resolved from external_tools[].adapter_ref)\n"
+        script += "# ---------------------------------------------------------------------------\n"
+        script += "\n".join(adapter_lines) + "\n\n"
 
     # --- Cleanup registration ---
     cleanup_cmds = cleanup_data.get("commands", [])

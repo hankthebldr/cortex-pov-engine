@@ -37,7 +37,12 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
-external_tools: []
+external_tools:
+  - name: Atomic Red Team
+    source: "https://github.com/redcanaryco/atomic-red-team"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-ATOMIC-RED-TEAM
 
 steps:
   - id: step-01

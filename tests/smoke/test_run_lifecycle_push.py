@@ -36,7 +36,8 @@ def test_push_run_full_lifecycle(client: httpx.Client, known_scenario_id: str) -
     # 1. Launch ------------------------------------------------------------
     launch = client.post(
         "/api/run",
-        json={"scenario_id": known_scenario_id, "mode": "push"},
+        json={"scenario_id": known_scenario_id, "mode": "push",
+              "consent": {"simulation_authorized": True, "c2_authorized": True}},
     )
     assert launch.status_code == 200, launch.text
     body = launch.json()

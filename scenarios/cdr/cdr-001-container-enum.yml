@@ -35,6 +35,11 @@ push_supported: true
 pull_supported: true
 
 external_tools:
+  - name: DEEPCE
+    source: "https://github.com/stealthcopter/deepce"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-DEEPCE
   - name: deepce
     source: "https://github.com/stealthcopter/deepce"
     type: script

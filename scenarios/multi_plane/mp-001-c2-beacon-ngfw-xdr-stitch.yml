@@ -72,6 +72,11 @@ required_planes_in_incident:
 stitching_key: src_host
 
 external_tools:
+  - name: Sliver
+    source: "https://github.com/BishopFox/sliver"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-SLIVER
   - name: testmynids
     source: "https://github.com/3CORESec/testmynids.org"
     type: script

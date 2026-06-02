@@ -88,6 +88,9 @@ def test_pull_mode_full_cycle(
             "scenario_id": known_scenario_id,
             "mode": "pull",
             "target_agent_id": agent_id,
+            # known_scenario_id (SIM-EDR-001) is wired to a dual-use adapter,
+            # so the orchestrator requires launch consent.
+            "consent": {"simulation_authorized": True, "c2_authorized": True},
         },
     )
     assert launch.status_code == 200, launch.text
