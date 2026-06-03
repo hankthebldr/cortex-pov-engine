@@ -1,0 +1,272 @@
+{
+  "id": "TTP-2026-0055",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-28T00:00:00+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ai-spm",
+      "vector-misconfiguration",
+      "industry-all",
+      "severity-high",
+      "posture",
+      "model-security"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1200,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AI Model Security Assessment \u2014 Overprivileged Role + Misconfig (T1078.004)",
+    "summary": "Cortex Cloud AI-SPM assesses a planted SageMaker fixture and raises model-security findings: an execution role bound to AdministratorAccess, an endpoint configuration missing encryption at rest, and a model surface with no input validation. The scenario validates that at least three model-security findings appear within the MTTD threshold by querying the posture findings dataset, each annotated\u2026",
+    "description": "Once AI assets are discovered, posture management assesses how each model is configured and who can act on it. The most damaging model-security gaps are not exotic: an over-privileged execution role (AdministratorAccess on a SageMaker role lets a model-extraction or poisoning attacker pivot the whole account), an endpoint configuration that skips encryption at rest, and an inference surface with no input validation that invites prompt-injection and adversarial inputs. This scenario plants exactly those three misconfigurations on a SageMaker fixture and validates that Cortex Cloud AI-SPM raises a finding for each within the 900-second MTTD window. Detection is posture-oriented: validation queries run against the Cortex Cloud findings dataset mirrored into XSIAM, asserting each finding_type with its severity and the bound iam_role. A correlation rule groups the three findings on the same model into one high-severity model-security incident so the DC can show a single, prioritized model-risk story.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Persistence"
+        ],
+        "subtechnique_id": "T1078.004"
+      },
+      {
+        "technique_id": "T1098",
+        "name": "Account Manipulation",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Cloud Service: Cloud Service Metadata",
+      "User Account: User Account Metadata",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-AISPM-002 \u2014 Cortex Cloud AI-SPM model-security assessment + findings probe",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud AI-SPM enabled against the target AWS account with model-security policies active.",
+        "check_command": "curl -fsSL -H \"Authorization: Bearer $CORTEX_CLOUD_API_TOKEN\" \"$CORTEX_CLOUD_API_BASE/findings?category=ai_model_security\""
+      },
+      {
+        "description": "ai-spm IaC module applied so the SageMaker fixture with overprivileged role + misconfig is planted."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture validation \u2014 probe AI-SPM model-security findings.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/findings?category=ai_model_security&tag=CortexSimAISPMFinding\" | jq '.findings | length'",
+      "input_variables": [],
+      "timeout_seconds": 1200
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Overprivileged SageMaker execution role bound to AdministratorAccess.",
+        "expected_value": "finding_type = \"overprivileged_execution_role\" and iam_role contains \"AdministratorAccess\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Endpoint configuration missing encryption at rest.",
+        "expected_value": "finding_type = \"endpoint_missing_encryption\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Model inference surface with no input validation.",
+        "expected_value": "finding_type = \"unvalidated_model_input_surface\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aispm-002-*.txt /tmp/aispm-002-findings.json; echo '[CortexSim] SIM-AISPM-002 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AISPM-002 MTTD Anchor Bookkeeping",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and resource_type = \"sagemaker_endpoint\"\n| filter resource_name contains \"aispm\"\n| fields _time, operation_name, resource_name",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-002 Model Security Assessment Cycle Complete",
+        "query": "dataset = ai_spm_findings\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"assessment_completed\" and ai_service = \"sagemaker\"\n| filter model_name contains \"aispm\"\n| fields _time, ai_service, model_name, finding_type",
+        "expected_rows_min": 1,
+        "dataset": "ai_spm_findings"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-002 Three Model Security Findings On SageMaker Fixture",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type in (\"overprivileged_execution_role\", \"endpoint_missing_encryption\", \"unvalidated_model_input_surface\")\n| filter ai_service = \"sagemaker\" and tags contains \"CortexSimAISPMFinding\"\n| comp count_distinct(finding_type) as distinct_findings by model_name\n| filter distinct_findings >= 3\n| fields model_name, distinct_findings",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AI Model Security \u2014 Overprivileged Role Plus Misconfig Same Model",
+        "rule_id": "CR-AISPM-0002",
+        "logic": "XQL(AISPM-002 Model Security Assessment Cycle Complete) AND XQL(AISPM-002 Three Model Security Findings On SageMaker Fixture)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud AI-SPM \u2014 Model security assessment and IAM exposure analysis",
+      "Cortex Cloud Posture \u2014 Encryption-at-rest and input-validation policy checks"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "ai-spm",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "MLSEC-MODEL-001",
+          "MLSEC-MODEL-002",
+          "MLSEC-MODEL-003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter finding_type in (\"overprivileged_execution_role\",\"endpoint_missing_encryption\",\"unvalidated_model_input_surface\") | fields _time, model_name, finding_type, severity, iam_role"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AISPM-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AISPM-0002 groups overprivileged-role + misconfig findings on the same model into one model-security incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-AISPM-002",
+        "name": "AI Model Security Assessment",
+        "description": "Assess model configuration and IAM exposure; raise and stitch model-security findings within MTTD.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-AISP-002A",
+            "objective": "At least three model-security findings raised on the SageMaker fixture within 900s.",
+            "preconditions": [
+              "Cortex Cloud AI-SPM model-security policies enabled.",
+              "ai-spm fixture with overprivileged role + misconfig applied."
+            ],
+            "steps": [
+              "Run SIM-AISPM-002 steps 1-3.",
+              "Observe model-security findings in Cortex Cloud."
+            ],
+            "success_criteria": [
+              "Findings query returns a model with >= 3 distinct finding_types.",
+              "MTTD <= 900s.",
+              "Correlation CR-AISPM-0002 raises one model-security incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scope SageMaker execution roles to least privilege; never attach AdministratorAccess.",
+      "Enforce encryption at rest on all endpoint and model configurations via policy guardrails.",
+      "Require schema/input validation on every inference surface."
+    ],
+    "detection_engineering": [
+      "Alert on any AI execution role with wildcard or AdministratorAccess permissions.",
+      "Flag endpoint configs lacking KMS encryption.",
+      "Surface inference endpoints with no declared input schema."
+    ],
+    "response_playbook": "XSOAR-PB-AIModelMisconfigRemediation-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 \u2014 AI Model Compromise Patterns in the Wild",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 \u2014 Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-28",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft from scenario SIM-AISPM-002."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Authored real AI-SPM model-security XQL against cortex_cloud_posture / ai_spm_findings, added correlation CR-AISPM-0002, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

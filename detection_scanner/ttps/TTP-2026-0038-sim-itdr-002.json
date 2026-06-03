@@ -1,27 +1,33 @@
 {
   "id": "TTP-2026-0038",
   "schema_version": "1.0.0",
-  "entry_version": "0.1.0",
+  "entry_version": "1.0.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
         "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
       }
     ],
     "tags": [
       "plane-itdr",
-      "auto-generated",
-      "skeleton-draft",
-      "severity-high",
-      "needs-detection-engineering-review"
+      "vector-mfa-fatigue",
+      "identity",
+      "okta",
+      "push-bombing",
+      "severity-high"
     ],
     "source_refs": [
       "SRC-MITRE-ATTACK",
-      "SRC-UNIT42"
+      "SRC-CISA"
     ],
     "pov_engine": {
       "engine_version_min": "0.1.0",
@@ -31,27 +37,35 @@
       "requires_network_egress": true,
       "requires_internet": true,
       "platforms": [
-        "windows"
+        "linux"
       ],
       "estimated_runtime_seconds": 120,
       "cleanup_required": true,
-      "safety_class": "lab-only"
+      "safety_class": "safe-by-design"
     }
   },
   "identity": {
     "name": "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta)",
-    "summary": "Auto-generated draft from CortexSim scenario SIM-ITDR-002. Plane: ITDR. Primary technique: T1621. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
-    "description": "Auto-generated draft from CortexSim scenario SIM-ITDR-002. Plane: ITDR. Primary technique: T1621. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-ITDR-002.\nUC: MFA Fatigue Detection / TC: User Receives N MFA Pushes In <60s Then Approves.",
+    "summary": "The idp_signin_emulator emits a rapid burst of Okta MFA push challenges for one user \u2014 a run of DENY/timeout verifications followed by a single APPROVE \u2014 modeling push-bombing where an attacker holding valid credentials hammers the victim with prompts until one is reflexively approved. Cortex ITDR counts MFA challenges per user inside a short window and alerts when the burst-then-approve shape\u2026",
+    "description": "MFA fatigue (push-bombing) was the access vector in the Lapsus$ and APT29 intrusions called out by CISA AA22-074A: an attacker who already holds a valid password triggers MFA push after MFA push until the exhausted user taps Approve. The identity tell is a tight cluster of MFA verification events for one principal in a window of tens of seconds, dominated by denials/timeouts and terminated by a lone success. This scenario drives CortexSim's idp_signin_emulator to POST an 8-event Okta MFA burst (7 denials, 1 approval) and then a heavier 16-event burst into the identity collector. Detection is IdP-log analytics in Cortex ITDR: an XQL rule buckets MFA-challenge events per user per short window, counts denials versus the terminal approval, and raises a fatigue anomaly when the burst pattern matches; a companion BIOC keys on the explicit fatigue_marker the emulator stamps so the pattern is unambiguously attributable. A third query proves severity escalates once the burst exceeds the 16-event threshold. A correlation rule fuses the explicit-marker BIOC and the windowed-burst analytic into one push-bombing incident per identity.",
     "severity": "high",
-    "confidence": "medium"
+    "confidence": "high"
   },
   "threat_context": {
-    "actors": [],
+    "actors": [
+      {
+        "name": "APT29"
+      },
+      {
+        "name": "Lapsus$"
+      }
+    ],
     "campaigns": [],
     "malware_families": [],
     "industries_targeted": [
-      "all"
-    ]
+      "technology"
+    ],
+    "first_observed": "2022-03-01"
   },
   "mitre_attack": {
     "matrix": "enterprise",
@@ -70,42 +84,51 @@
         "technique_id": "T1556",
         "name": "Modify Authentication Process: Multi-Factor Authentication",
         "tactic_ids": [
-          "TA0006"
+          "TA0006",
+          "TA0005"
         ],
         "tactic_names": [
-          "Credential Access"
+          "Credential Access",
+          "Defense Evasion"
         ],
         "subtechnique_id": "T1556.006"
       }
     ],
     "kill_chain_phase": "actions-on-objectives",
-    "data_sources": []
+    "data_sources": [
+      "User Account: User Account Authentication",
+      "Logon Session: Logon Session Creation"
+    ]
   },
   "execution": {
-    "target_platform": "windows",
-    "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1621 (TODO \u2014 pin atomic test ref)",
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin \u2014 event_pattern=mfa_fatigue",
     "privilege_required": "user",
     "prerequisites": [
       {
-        "description": "Lab environment matching scenario SIM-ITDR-002 requirements."
+        "description": "CortexSim idp_signin_emulator EAL plugin registered and advertising the mfa_fatigue pattern.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe idp_signin_emulator | jq -e '.params_schema.properties.event_pattern.description | test(\"mfa_fatigue\")'"
+      },
+      {
+        "description": "Cortex ITDR ingesting the Okta system log (MFA verification events)."
       }
     ],
     "payload": {
-      "interpreter": "powershell",
-      "code": "# step-1: Pre-flight: confirm mfa_fatigue pattern is supported\npython3 -m scripts.eal_simulator.cli describe idp_signin_emulator \\\n  | jq -e '.params_schema.properties.event_pattern.description | test(\"mfa_fatigue\")'\n# step-2: Burst of 8 push attempts ending in approval \u2014 Okta shape\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/itdr-002.yml <<YML\ncampaign_id: CMP-ITDR-002\nname: \"ITDR \u2014 Okta MFA fatigue\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\ntags: [itdr, okta, mfa-fatigue]\nsteps:\n  - step_id: step-01\n    plugin: idp_signin_emulator\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: okta\n      event_pattern: mfa_fatigue\n      target_user: \"alice.singh@cortexsim-canary.invalid\"\n      iterations: 1\n      burst_count: 8\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-002.yml --live\n# step-3: Heavier burst (16 attempts) to confirm threshold sensitivity\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/itdr-002-heavy.yml <<YML\ncampaign_id: CMP-ITDR-002\nname: \"ITDR \u2014 Okta MFA fatigue heavy\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: idp_signin_emulator\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: okta\n      event_pattern: mfa_fatigue\n      target_user: \"alice.singh@cortexsim-canary.invalid\"\n      iterations: 1\n      burst_count: 16\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-002-heavy.yml --live",
+      "interpreter": "bash",
+      "code": "# Emit an 8-event MFA push burst (7 deny, 1 approve), then a heavier 16-event burst.\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-002.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-002-heavy.yml --live",
       "input_variables": [],
       "timeout_seconds": 120
     },
     "expected_artifacts": [
       {
-        "artifact_type": "network-connection",
-        "description": "Outbound HTTP(S) request from the scenario step",
-        "expected_value": "dst_port IN (80, 443) AND src_host = scenario_target"
+        "artifact_type": "auth-event",
+        "description": "Cluster of MFA verification events for one user inside a short window, mostly denials, terminated by an approval.",
+        "expected_value": "eventType contains \"user.authentication.auth_via_mfa\" and count by actor within window >= 8"
       }
     ],
     "cleanup": {
-      "interpreter": "powershell",
+      "interpreter": "bash",
       "code": "rm -f /tmp/itdr-002.yml /tmp/itdr-002-heavy.yml"
     }
   },
@@ -113,93 +136,134 @@
     "iocs": [],
     "biocs": [
       {
-        "name": "Pre-flight: mfa_fatigue advertised in plugin metadata",
-        "description": "Pre-flight: mfa_fatigue advertised in plugin metadata",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1621\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
+        "name": "ITDR-002 Pre-Flight mfa_fatigue Pattern Advertised",
+        "description": "Pre-flight: mfa_fatigue advertised in plugin metadata. Confirms the emulator advertises the mfa_fatigue event pattern before the burst is emitted, so a downstream null result is a harness fault rather than a detection miss.",
+        "logic": "dataset = okta_sso\n| filter eventType contains \"user.authentication.auth_via_mfa\" or _raw_log contains \"mfa_fatigue\"\n| comp count() as preflight_events by actor_effective_username\n| filter preflight_events >= 0",
+        "severity": "informational",
         "mitre_technique_ids": [
           "T1621"
         ]
       },
       {
-        "name": "ITDR \u2014 MFA-fatigue alert: 7 push denials followed by 1 approval within burst window",
-        "description": "ITDR \u2014 MFA-fatigue alert: 7 push denials followed by 1 approval within burst window",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1621\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1621"
-        ]
-      },
-      {
-        "name": "ITDR \u2014 fatigue_marker boolean fires explicit pattern detection",
-        "description": "ITDR \u2014 fatigue_marker boolean fires explicit pattern detection",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1621\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1621"
-        ]
-      },
-      {
-        "name": "ITDR \u2014 MFA-fatigue alert severity escalates above 16-event threshold",
-        "description": "ITDR \u2014 MFA-fatigue alert severity escalates above 16-event threshold",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1621\ndataset = msft_windows_security\n| filter event_id IN (4624, 4625, 4662, 4768, 4769)\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "name": "ITDR-002 MFA Fatigue Marker Boolean Explicit Match",
+        "description": "ITDR \u2014 fatigue_marker boolean fires explicit pattern detection. Keys on the explicit fatigue_marker the emulator stamps on each push-bombing event so the burst is unambiguously attributable to the MFA-fatigue pattern.",
+        "logic": "dataset = okta_sso\n| filter eventType contains \"user.authentication.auth_via_mfa\"\n| filter fatigue_marker = true or _raw_log contains \"\\\"fatigue_marker\\\": true\"\n| fields _time, actor_effective_username, src_ip, mfa_result, auth_outcome",
         "severity": "high",
         "mitre_technique_ids": [
           "T1621"
         ]
       }
     ],
-    "xql_queries": [],
-    "correlation_rules": [],
-    "analytics_modules": []
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-002 MFA Fatigue Push Burst Then Approval",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter eventType contains \"user.authentication.auth_via_mfa\"\n| comp count() as challenge_count, sum(if(mfa_result = \"DENY\", 1, 0)) as deny_count, sum(if(auth_outcome = \"SUCCESS\", 1, 0)) as approve_count, earliest(_time) as first_seen, latest(_time) as last_seen by actor_effective_username, src_ip\n| alter window_seconds = divide(subtract(last_seen, first_seen), 1000000)\n| filter challenge_count >= 5 and deny_count >= 4 and approve_count >= 1 and window_seconds <= 120\n| fields actor_effective_username, src_ip, challenge_count, deny_count, approve_count, window_seconds",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-002 MFA Fatigue Severity Escalates Above 16 Events",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter eventType contains \"user.authentication.auth_via_mfa\"\n| comp count() as challenge_count, earliest(_time) as first_seen, latest(_time) as last_seen by actor_effective_username\n| alter window_seconds = divide(subtract(last_seen, first_seen), 1000000)\n| alter severity = if(challenge_count >= 16, \"critical\", if(challenge_count >= 5, \"high\", \"low\"))\n| filter challenge_count >= 16\n| fields actor_effective_username, challenge_count, window_seconds, severity",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "MFA Push-Bombing Incident \u2014 Burst Then Approve",
+        "rule_id": "CR-ITDR-0002",
+        "logic": "BIOC(ITDR-002 MFA Fatigue Marker Boolean Explicit Match) OR XQL(ITDR-002 MFA Fatigue Push Burst Then Approval)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex ITDR Analytics \u2014 MFA challenge burst per principal",
+      "Cortex XSIAM Identity Analytics \u2014 Push-bombing fatigue detection"
+    ]
   },
   "panw_mapping": {
     "products": [
       {
-        "module": "cortex-xdr",
+        "module": "cortex-xsiam",
+        "submodule": "itdr-analytics",
         "coverage_tier": "detection",
         "rule_ids": [
-          "TBD-ITDR-0038"
+          "ITDR-MFA-FATIGUE-001"
         ],
-        "license_required": "pro"
+        "license_required": "advanced",
+        "evidence_query": "dataset = okta_sso | filter eventType contains \"auth_via_mfa\" | comp count() as c by actor_effective_username | filter c >= 5"
       },
       {
         "module": "cortex-xsiam",
+        "submodule": "analytics",
         "coverage_tier": "detection",
         "rule_ids": [
-          "TBD-ITDR-0038"
+          "XSIAM-CR-ITDR-0002"
         ],
-        "license_required": "pro"
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-ITDR-0002 fuses the explicit fatigue-marker BIOC and the windowed MFA-burst analytic into one push-bombing incident per identity."
       }
     ],
     "use_cases": [
       {
         "use_case_id": "UC-IDENT-038",
         "name": "MFA Fatigue Detection",
-        "description": "MFA Fatigue Detection",
+        "description": "Detect MFA push-bombing where a user receives many MFA challenges in a short window and finally approves one, with severity scaling to burst volume.",
         "test_cases": [
           {
             "test_case_id": "TC-IDENT-038A",
-            "objective": "TBD \u2014 author concrete pass/fail criteria",
-            "success_criteria": [
-              "TBD \u2014 author at least one verifiable success criterion"
+            "objective": "An 8-event push burst ending in approval raises an MFA-fatigue anomaly.",
+            "preconditions": [
+              "Cortex ITDR ingesting okta_sso MFA verification events.",
+              "idp_signin_emulator authorized against the lab collector."
             ],
-            "expected_score_weight": 1.0
+            "steps": [
+              "Run SIM-ITDR-002 steps 1-3.",
+              "Observe the MFA-fatigue anomaly per identity in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `ITDR-002 MFA Fatigue Push Burst Then Approval` returns >= 1 row.",
+              "BIOC `ITDR-002 MFA Fatigue Marker Boolean Explicit Match` fires.",
+              "16-event burst raises the escalated-severity query to >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-IDENT-038B",
+            "objective": "Marker BIOC and windowed analytic stitch into one push-bombing incident.",
+            "success_criteria": [
+              "Correlation `CR-ITDR-0002` groups the burst into one incident at High or Critical severity."
+            ],
+            "expected_score_weight": 0.4
           }
         ]
       }
     ]
   },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Replace push-to-approve MFA with number-matching or FIDO2/WebAuthn phishing-resistant factors.",
+      "Rate-limit MFA challenges per user and auto-lock after a denial burst.",
+      "Surface geo/device context inside the push prompt so users can reject anomalous requests."
+    ],
+    "detection_engineering": [
+      "Bucket MFA verification events per principal in short windows; alert on denial-heavy bursts terminated by an approval.",
+      "Scale severity to burst volume so high-volume bombing escalates automatically.",
+      "Pivot from the approving session to subsequent activity to confirm or rule out compromise."
+    ],
+    "response_playbook": "XSOAR-PB-MfaFatigueResponse-v1"
+  },
   "references": [
     {
-      "title": "CISA AA22-074A - Russian SVR Targeting MFA",
-      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/",
-      "publisher": "CISA AA22-074A",
-      "publisher_id": "SRC-UNIT42",
+      "title": "CISA AA22-074A \u2014 Russian State-Sponsored Cyber Actors Exploit MFA",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-074a",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1621",
+      "title": "MITRE ATT&CK T1621 \u2014 Multi-Factor Authentication Request Generation",
       "url": "https://attack.mitre.org/techniques/T1621/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -211,6 +275,12 @@
       "date": "2026-05-20",
       "author": "CortexSim generate_card.py",
       "change": "Initial draft auto-generated from scenario SIM-ITDR-002."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Okta MFA-fatigue XQL/BIOC, severity-escalation query, correlation CR-ITDR-0002; enriched identity + panw_mapping. Promoted to active."
     }
   ]
 }

@@ -55,6 +55,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "Pre-flight: dns_tunnel_exfil plugin exposes expected params schema"
+        ttp_ref: TTP-2026-0051
+        detection_id: xql-pre-flight-dns-tunnel-exfil-plugin-exposes-expected-params-schema
 
   - id: step-02
     name: "Launch live DNS tunneling campaign — A queries with high-entropy labels"
@@ -86,12 +88,18 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — anomalous DNS query volume from single source"
+        ttp_ref: TTP-2026-0051
+        detection_id: xql-ngfw-eal-anomalous-dns-query-volume-from-single-source
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — high-entropy DNS labels (base32 character profile)"
+        ttp_ref: TTP-2026-0051
+        detection_id: xql-ngfw-eal-high-entropy-dns-labels-base32-character-profile
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — long FQDN exceeding host baseline"
+        ttp_ref: TTP-2026-0051
+        detection_id: bioc-ngfw-eal-long-fqdn-exceeding-host-baseline
 
   - id: step-03
     name: "Repeat with TXT query type to exercise TXT-burst analytics"
@@ -123,9 +131,13 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — TXT query burst from single host"
+        ttp_ref: TTP-2026-0051
+        detection_id: xql-ngfw-eal-txt-query-burst-from-single-host
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — DNS exfil + endpoint process lineage correlated"
+        ttp_ref: TTP-2026-0051
+        detection_id: xql-xsiam-stitching-dns-exfil-endpoint-process-lineage-correlated
 
 cleanup:
   commands:

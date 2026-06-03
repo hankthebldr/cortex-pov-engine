@@ -1,0 +1,377 @@
+{
+  "id": "TTP-2026-0036",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02T00:00:00Z",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "vector-lateral-movement",
+      "industry-all",
+      "severity-high",
+      "endpoint",
+      "linux"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Linux Lateral Movement \u2014 SSH Abuse, Tunneling and Internal Recon (T1021.004)",
+    "summary": "A web service account runs internal recon (interfaces, routes, ARP), port-scans via bash /dev/tcp, attempts batch-mode SSH, builds SSH local-forward and SOCKS tunnels, then enumerates DNS and host files. Cortex XDR for Linux detects the scanning, SSH abuse and tunneling via command-line BIOCs and stitches the chain into one lateral-movement incident.",
+    "description": "Once on a Linux host, attackers map the internal network and reuse SSH to spread. Unit 42's Linux threat landscape reporting highlights SSH abuse and tunneling as the dominant lateral-movement pattern on servers. This scenario reproduces the full chain from a non-interactive service account: network reconnaissance with ip addr/route/neigh, a bash /dev/tcp port sweep across common service ports, batch-mode SSH (BatchMode=yes, StrictHostKeyChecking=no) to discovered hosts, SSH tunneling with -L local forward and -D SOCKS proxy, and remote-system discovery via /etc/hosts, resolv.conf and DNS lookups. The detection approach is command-line behavioral analysis: the /dev/tcp sweep, batch-mode SSH, and tunnel flags each map to a Cortex XDR BIOC, while analytics layers recognize a service account performing host/network discovery and automated SSH. A correlation rule fuses the recon, scan, SSH and tunnel activity into a single lateral-movement incident \u2014 all connections in the lab target localhost so the simulation is safe.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1021.004"
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1018",
+        "name": "Remote System Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1016",
+        "name": "System Network Configuration Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1021.004 / T1046 / T1572 \u2014 Linux SSH lateral-movement and tunneling atomic tests",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting healthy on the target.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-EDR-005 requirements (ssh client and ip/iproute2 available)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: network recon\nip addr show; ip route show; ip neigh show\n# step-2: port sweep via /dev/tcp (localhost for safety)\nfor port in 22 80 443 3306 5432 8080 8888; do timeout 1 bash -c \"echo >/dev/tcp/127.0.0.1/$port\" 2>/dev/null && echo \"localhost:$port OPEN\"; done\n# step-3: batch-mode SSH\ntimeout 5 ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no www-data@127.0.0.1 'whoami' 2>&1\n# step-4: SSH tunnels\ntimeout 5 ssh -o ConnectTimeout=3 -N -L 8443:127.0.0.1:443 localhost & sleep 2; timeout 5 ssh -o ConnectTimeout=3 -N -D 1080 localhost & sleep 2\n# step-5: remote system discovery\nhostname -f; cat /etc/hosts; cat /etc/resolv.conf",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "ip addr/route/neigh enumeration from a service account.",
+        "expected_value": "actor_process_image_name = \"ip\" and command_line contains_any (\"addr\", \"route\", \"neigh\")"
+      },
+      {
+        "artifact_type": "process",
+        "description": "bash /dev/tcp port sweep across multiple ports.",
+        "expected_value": "actor_process_image_name = \"bash\" and command_line contains \"/dev/tcp/\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "ssh invoked with BatchMode=yes and StrictHostKeyChecking=no.",
+        "expected_value": "actor_process_image_name = \"ssh\" and command_line contains \"BatchMode=yes\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "ssh invoked with -L or -D tunneling flags.",
+        "expected_value": "actor_process_image_name = \"ssh\" and command_line contains_any (\" -L \", \" -D \", \" -N \")"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Host/DNS enumeration via /etc/hosts, resolv.conf and nslookup/dig.",
+        "expected_value": "command_line contains_any (\"/etc/hosts\", \"resolv.conf\", \"nslookup\", \"dig\")"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound TCP connections to SSH/service ports during the sweep and SSH attempts.",
+        "expected_value": "dst_port in (22,80,443,3306,5432,8080,8888)"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "pkill -f 'ssh.*tunnel.*cortexsim' 2>/dev/null\necho '[CortexSim] SIM-EDR-005 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "EDR-005 Port Scan Via Bash devtcp",
+        "description": "Port scanning via bash /dev/tcp \u2014 network service discovery from web service account. A bash loop probes multiple ports through /dev/tcp.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"postgres\", \"apache\", \"nginx\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1046"
+        ]
+      },
+      {
+        "name": "EDR-005 Batch Mode SSH From Service Account",
+        "description": "SSH connection attempt from service account \u2014 lateral movement via remote service. ssh runs with BatchMode=yes and StrictHostKeyChecking=no under a service identity.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\"BatchMode=yes\", \"StrictHostKeyChecking=no\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"postgres\", \"apache\", \"nginx\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.004"
+        ]
+      },
+      {
+        "name": "EDR-005 SSH Tunnel Creation With Forward Flags",
+        "description": "SSH tunnel creation (-L/-D flags) \u2014 protocol tunneling for covert channel establishment. ssh is invoked with -L local forward, -D SOCKS, or -R remote forward.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\" -L \", \" -D \", \" -R \", \" -w \")\n| filter action_process_image_command_line contains \" -N\"",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1572"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-005 Analytics Network Interface And Routing Enumeration",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"ip\", \"ifconfig\", \"route\", \"arp\")\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-005 Analytics Sequential Port Connection Attempts",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\") and action_process_image_command_line contains \"/dev/tcp/\"\n| comp count() as probe_attempts by agent_hostname, causality_actor_process_instance_id\n| filter probe_attempts >= 3",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-005 Analytics Batch SSH StrictHostKey Disabled",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains \"StrictHostKeyChecking=no\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-005 Analytics SSH Port Forwarding From Service Account",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\" -L \", \" -D \", \" -R \")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-005 Analytics DNS And Host File Enumeration",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains_any (\"/etc/hosts\", \"resolv.conf\", \"nslookup\", \"dig\", \"getent hosts\", \"hostname -f\")\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Linux Lateral Movement Chain \u2014 Recon, Scan, SSH, Tunnel",
+        "rule_id": "CR-EDR-0005",
+        "logic": "BIOC(EDR-005 Port Scan Via Bash devtcp) OR BIOC(EDR-005 Batch Mode SSH From Service Account) OR BIOC(EDR-005 SSH Tunnel Creation With Forward Flags)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XDR Analytics \u2014 Service account performing internal network discovery",
+      "Cortex XDR Analytics \u2014 Automated SSH lateral movement"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-EDR-0036-PORTSCAN",
+          "XDR-BIOC-EDR-0036-SSHBATCH",
+          "XDR-BIOC-EDR-0036-SSHTUNNEL"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter actor_process_image_name = \"ssh\" and action_process_image_command_line contains_any (\" -L \", \" -D \") | fields _time, agent_hostname, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EDR-0005 fuses recon, port sweep, batch-mode SSH and tunneling into one lateral-movement incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-LateralMovementContainment-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook isolates the source host, kills SSH tunnels and revokes the service account's SSH keys."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-RANSOM-036",
+        "name": "Lateral Movement Detection \u2014 Linux SSH and Tunneling",
+        "description": "Detect internal recon, /dev/tcp port scanning, batch-mode SSH abuse and SSH tunneling from a service account and stitch them into one incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-RANSOM-036A",
+            "objective": "The scan, SSH and tunnel behaviors fire their corresponding Cortex XDR BIOCs.",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
+              "BIOCs from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-EDR-005 steps 1-5.",
+              "Observe BIOC alerts for port scan, batch SSH and tunneling in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `EDR-005 Port Scan Via Bash devtcp` fires within 60s.",
+              "BIOC `EDR-005 SSH Tunnel Creation With Forward Flags` fires within 60s.",
+              "All five XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-RANSOM-036B",
+            "objective": "Lateral-movement chain stitches into one incident.",
+            "success_criteria": [
+              "Correlation `CR-EDR-0005` groups recon, scan, SSH and tunnel activity on one host into a single incident.",
+              "Incident is attributed to the originating service account."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Deny SSH client use by service accounts; restrict outbound SSH with a default-deny egress policy.",
+      "Segment internal networks so a single foothold cannot scan or reach broad service ports.",
+      "Disable SSH port forwarding (AllowTcpForwarding no) where not required.",
+      "Require key-with-certificate SSH auth and rotate service-account keys regularly."
+    ],
+    "detection_engineering": [
+      "Alert on /dev/tcp loops, on ssh BatchMode=yes/StrictHostKeyChecking=no, and on ssh -L/-D/-R/-N from service accounts.",
+      "Correlate internal recon (ip/route/neigh, /etc/hosts, resolv.conf) with subsequent SSH attempts.",
+      "Flag short-interval connections to many internal ports as service discovery."
+    ],
+    "response_playbook": "XSOAR-PB-LateralMovementContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Linux Threat Landscape Report 2024",
+      "url": "https://unit42.paloaltonetworks.com/2024-linux-threat-landscape/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1021.004 \u2014 SSH",
+      "url": "https://attack.mitre.org/techniques/T1021/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-EDR-005."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Linux XDR lateral-movement BIOCs/XQL, added correlation CR-EDR-0005, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

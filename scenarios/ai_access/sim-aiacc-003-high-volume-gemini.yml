@@ -50,6 +50,8 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "Pre-flight: provider host resolvable from worker"
+        ttp_ref: TTP-2026-0009
+        detection_id: xql-aiacc-003-pre-flight-gemini-provider-host-resolvable
 
   - id: step-02
     name: "Fire 30 sequential prompts to trigger volume baseline"
@@ -79,12 +81,18 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — request rate per user exceeds rolling baseline (30 in <90s)"
+        ttp_ref: TTP-2026-0009
+        detection_id: xql-aiacc-003-gemini-request-rate-exceeds-per-user-baseline
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — sustained generative-AI session count from single src IP"
+        ttp_ref: TTP-2026-0009
+        detection_id: xql-aiacc-003-ngfw-sustained-generative-ai-session-count-single-source
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — sanctioned-vs-unsanctioned-AI policy: Gemini classified as unsanctioned for this user"
+        ttp_ref: TTP-2026-0009
+        detection_id: xql-aiacc-003-unsanctioned-ai-provider-gemini-for-user
 
   - id: step-03
     name: "Cool-off window then a single probe to confirm baseline restoration"
@@ -114,6 +122,8 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — single post-cooloff request below baseline, no detection"
+        ttp_ref: TTP-2026-0009
+        detection_id: xql-aiacc-003-post-cooloff-single-gemini-request-below-baseline
 
 cleanup:
   commands:

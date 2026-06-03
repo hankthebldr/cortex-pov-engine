@@ -70,9 +70,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "WildFire test file download in container — known-bad file signature matched by WildFire cloud intelligence"
+        ttp_ref: TTP-2026-0026
+        detection_id: bioc-cdr-005-wildfire-known-bad-elf-download-in-container
       - plane: CDR
         type: Analytics
         description: "Executable file downloaded to /tmp and made executable — download-then-execute pattern in container"
+        ttp_ref: TTP-2026-0026
+        detection_id: bioc-cdr-005-executable-downloaded-to-tmp-and-made-executable-in-container
 
   - id: step-02
     name: "Execute simulated backdoor in container context"
@@ -88,9 +92,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "WildFire test file execution — malicious ELF execution in container triggers CDR BIOC rule"
+        ttp_ref: TTP-2026-0026
+        detection_id: bioc-cdr-005-wildfire-elf-execution-in-container
       - plane: CDR
         type: Analytics
         description: "Downloaded binary executed from /tmp by www-data context — high-risk execution chain in container"
+        ttp_ref: TTP-2026-0026
+        detection_id: bioc-cdr-005-downloaded-binary-executed-by-service-account-in-container
 
   - id: step-03
     name: "Simulate C2 beacon (curl to test endpoint mimicking malware callback)"
@@ -111,9 +119,13 @@ steps:
       - plane: CDR
         type: Analytics
         description: "Regular periodic outbound HTTP connections from container — C2 beacon interval pattern (3 attempts to 192.0.2.1)"
+        ttp_ref: TTP-2026-0026
+        detection_id: bioc-cdr-005-periodic-outbound-http-beacon-from-container
       - plane: CDR
         type: BIOC
         description: "C2 communication pattern following malware execution — post-execution network activity in container"
+        ttp_ref: TTP-2026-0026
+        detection_id: bioc-cdr-005-post-execution-c2-network-activity-in-container
 
   - id: step-04
     name: "Attempt file encryption simulation on /tmp (ransomware behavior)"
@@ -142,9 +154,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Mass file modification pattern in container — ransomware-style encryption simulation matches T1486 behavioral rule"
+        ttp_ref: TTP-2026-0026
+        detection_id: bioc-cdr-005-mass-file-modification-ransomware-pattern-in-container
       - plane: CDR
         type: Analytics
         description: "Bulk file rename with .enc extension following malware execution — post-execution encryption behavior in container"
+        ttp_ref: TTP-2026-0026
+        detection_id: bioc-cdr-005-bulk-enc-extension-rename-after-execution-in-container
 
 cleanup:
   commands:

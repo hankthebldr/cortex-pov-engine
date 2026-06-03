@@ -1,0 +1,334 @@
+{
+  "id": "TTP-2026-0045",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-koi",
+      "vector-ide-extension",
+      "vector-supply-chain",
+      "industry-all",
+      "severity-high",
+      "agentic",
+      "persistence"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "supply-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Malicious VS Code Extension Reads Credentials On Activation (T1176 / T1195)",
+    "summary": "A developer installs 'helpful-ai-assistant' \u2014 an unverified-publisher VS Code extension whose package.json declares activationEvents:['*'] (loads on every workspace). Its dist/extension.js activate() reads ${HOME}/.aws/credentials and ${HOME}/.ssh/id_rsa and beacons them to C2 (gated on CORTEXSIM_C2_URL). Cortex Cloud Code flags the wildcard activation + credential reads at scan time; XDR catch\u2026",
+    "description": "IDE extensions run with the developer's full privileges and load silently, which makes them an ideal persistence + credential-access foothold on an agentic developer endpoint. The helpful-ai-assistant extension in cortex-malicious-agentic-pack ships package.json with activationEvents:['*'] (it activates on every workspace, not on a specific command), an unknown-publisher field, and an extension.js whose activate() builds paths to ${HOME}/.aws/credentials and ${HOME}/.ssh/id_rsa, fs.readFileSync's them, and POSTs the payload to a C2 host (gated on CORTEXSIM_C2_URL so static scanning is safe). Detection is layered: (1) Cortex Cloud Code static scan of package.json + extension.js flags wildcard activation, the credential-file reads, and the outbound beacon; (2) the agentic_egress EAL plugin drives a real .vsix fetch over HTTPS, which NGFW flags as a non-canonical Marketplace CDN and a marketplace risk score flags the unverified/new/overbroad-permission publisher; (3) at activation, XDR catches the VS Code child process reading credential files and opening an outbound connection to a non-Microsoft domain. A correlation rule fuses these into one incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2025-11-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1176",
+        "name": "Software Extensions",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1195",
+        "name": "Supply Chain Compromise",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1552.001"
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Process: Process Creation",
+      "File: File Access",
+      "Network Traffic: Network Connection Creation",
+      "Command: Command Execution"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1176 \u2014 Malicious IDE extension with wildcard activation + credential read (CortexSim cortex-malicious-agentic-pack/vscode/helpful-ai-assistant)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent installed and reporting healthy on the developer endpoint.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "cortex-malicious-agentic-pack content present and cortexsim-eal-cli available (scenario SIM-KOI-004 requirements)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: static scan of the extension source (safe \u2014 read only).\nEXT_ROOT=sources/cortex-malicious-agentic-pack/vscode/helpful-ai-assistant\nls -la \"$EXT_ROOT\"/extension/\njq '.contributes, .activationEvents, .extensionDependencies' \"$EXT_ROOT\"/extension/package.json\ngrep -nE 'fetch|http|XMLHttpRequest|webRequest|\\.aws/credentials|\\.ssh/' \"$EXT_ROOT\"/extension/dist/*.js | head -20 || true\n# step-2: fetch the .vsix via the agentic_egress EAL plugin (canary CDN only).\npython3 -m scripts.eal_simulator.cli run /tmp/koi-004.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "VS Code child process reads ~/.aws/credentials and ~/.ssh/id_rsa during activate().",
+        "expected_value": "action_file_path contains_any (\".aws/credentials\", \".ssh/id_rsa\") and causality_actor_process_image_name in (\"code\", \"node\")"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound beacon from the VS Code extension host to a non-Microsoft / non-canonical CDN.",
+        "expected_value": "dns_query_name contains \"cortexsim-canary\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/koi-004.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "cortexsim-canary.invalid",
+        "context": "Non-canonical Marketplace CDN / beacon C2 host for the malicious extension in the lab."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate",
+        "description": "Code scan \u2014 extension reads ${HOME}/.aws/credentials and ${HOME}/.ssh/ via fs.readFile in activate(). A VS Code / node child process reads credential and SSH key files during extension activation.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_path contains_any (\".aws/credentials\", \".ssh/id_rsa\")\n| filter actor_process_image_name in (\"code\", \"node\", \"Code\", \"code-server\") or causality_actor_process_image_name in (\"code\", \"node\", \"Code\")",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1176",
+          "T1552.001"
+        ]
+      },
+      {
+        "name": "KOI-004 VSCode Extension Activate Beacons Outbound To Non Microsoft Domain",
+        "description": "Code scan \u2014 extension activate() opens outbound HTTPS to non-Microsoft domain. The VS Code extension host process opens an outbound connection to a non-Microsoft / non-canonical domain right after activation.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter actor_process_image_name in (\"code\", \"node\", \"Code\", \"code-server\") or causality_actor_process_image_name in (\"code\", \"node\", \"Code\")\n| filter dst_action_external_hostname not contains \"microsoft.com\"\n| filter dst_action_external_hostname not contains \"visualstudio.com\"\n| filter dst_action_external_hostname not contains \"vscode.dev\"\n| filter action_external_port in (80, 443)",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1176",
+          "T1071.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "KOI-004 VSCode Extension Manifest Declares Wildcard Activation Events",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"jq\", \"grep\", \"cat\", \"cortexcloud\", \"checkov\")\n| filter action_process_image_command_line contains \"package.json\"\n| filter action_process_image_command_line contains_any (\"activationEvents\", \"helpful-ai-assistant\")\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-004 VSCode Marketplace VSIX Fetch From Non Canonical CDN",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dns_query_name contains \"cortexsim-canary\"\n| filter action_external_url contains \"/vsx/\" or action_external_url contains \".vsix\"\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_url",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-004 Extension Marketplace Risk Unverified Publisher Overbroad Permissions",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"helpful-ai-assistant\"\n| filter action_process_image_command_line contains_any (\"activationEvents\", \"package.json\", \"unknown-publisher\")\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-004 VSCode Child Process Emits Post Install Beacon Traffic",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter causality_actor_process_image_name in (\"code\", \"node\", \"Code\", \"code-server\") or actor_process_image_name in (\"code\", \"node\")\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dst_action_external_hostname not contains \"microsoft.com\"\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_port",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Agentic Supply Chain \u2014 Malicious IDE Extension Credential Theft",
+        "rule_id": "CR-KOI-0004",
+        "logic": "BIOC(KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate) OR BIOC(KOI-004 VSCode Extension Activate Beacons Outbound To Non Microsoft Domain)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud Code \u2014 IDE-extension manifest + source scanner (wildcard activation, credential reads, beacon)",
+      "Cortex XDR Analytics \u2014 editor child process reading credential files then beaconing outbound"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "code-security",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "CCS-IDEEXT-WILDCARD-ACTIVATION-001",
+          "CCS-IDEEXT-CRED-READ-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Cortex Cloud Code finding: wildcard activationEvents + ~/.aws/~/.ssh read + outbound beacon in sources/cortex-malicious-agentic-pack/vscode/helpful-ai-assistant"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-KOI-0045-CREDREAD",
+          "XDR-BIOC-KOI-0045-BEACON"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter action_file_path contains_any (\".aws/credentials\", \".ssh/id_rsa\") and causality_actor_process_image_name in (\"code\",\"node\") | fields _time, agent_hostname, actor_process_image_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-KOI-0004"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-KOI-0004 fuses the credential-read and outbound-beacon BIOCs into one IDE-extension credential-theft incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-SUPPLY-045",
+        "name": "Developer-Tool Extension Risk",
+        "description": "Detect a malicious VS Code extension with wildcard activation that reads developer credentials and beacons out, across static (Cortex Cloud Code) and runtime (XDR/NGFW) telemetry.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-SUPPLY-045A",
+            "objective": "Cortex Cloud Code flags wildcard activation + credential reads.",
+            "preconditions": [
+              "cortex-malicious-agentic-pack content present.",
+              "Cortex Cloud Code scan configured."
+            ],
+            "steps": [
+              "Run SIM-KOI-004 step-1 and step-3.",
+              "Observe Cortex Cloud Code findings."
+            ],
+            "success_criteria": [
+              "Finding `CCS-IDEEXT-WILDCARD-ACTIVATION-001` fires.",
+              "Finding `CCS-IDEEXT-CRED-READ-001` fires.",
+              "XQL `KOI-004 VSCode Extension Manifest Declares Wildcard Activation Events` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-SUPPLY-045B",
+            "objective": "Runtime credential read + beacon stitch into one incident.",
+            "success_criteria": [
+              "BIOC `KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate` fires.",
+              "Correlation `CR-KOI-0004` produces a single incident."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Allowlist IDE extensions to verified publishers; block extensions with activationEvents:['*'] from unverified publishers.",
+      "Run Cortex Cloud Code scanning of extension manifests + bundled JS as an install gate.",
+      "Store developer cloud credentials in short-lived SSO/STS rather than ~/.aws/credentials on disk.",
+      "Restrict developer-endpoint egress to an allowlist that excludes arbitrary beacon destinations."
+    ],
+    "detection_engineering": [
+      "Alert when an editor child process (code/node) reads ~/.aws/credentials or ~/.ssh/id_rsa.",
+      "Flag IDE-extension manifests with wildcard activation + unverified publisher + network/auth permissions.",
+      "Correlate the credential read with an immediate outbound beacon to a non-Microsoft domain into one incident."
+    ],
+    "response_playbook": "XSOAR-PB-AgenticSupplyChainResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 \u2014 VS Code Marketplace and IDE-Extension Risk",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1176 \u2014 Software Extensions",
+      "url": "https://attack.mitre.org/techniques/T1176/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-KOI-004."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real KOI IDE-extension BIOCs/XQL grounded in the helpful-ai-assistant artifact, added correlation CR-KOI-0004, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

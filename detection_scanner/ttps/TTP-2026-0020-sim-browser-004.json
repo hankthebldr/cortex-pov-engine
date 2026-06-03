@@ -1,0 +1,290 @@
+{
+  "id": "TTP-2026-0020",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-browser",
+      "vector-cross-origin-dlp",
+      "prisma-browser",
+      "exfiltration",
+      "insider-risk",
+      "industry-all",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Prisma Browser \u2014 Cross-Origin SaaS Copy-Paste DLP (T1567)",
+    "summary": "A managed user copies a record from a sanctioned CRM origin and pastes it into a personal webmail origin. Prisma Browser tags the clipboard write with the sanctioned-CRM origin, detects the destination-origin mismatch at paste time, and XSIAM stitches the copy and paste events by clipboard payload hash into one cross-origin DLP incident \u2014 browser-native insider exfiltration detection.",
+    "description": "Browser copy-paste is the most common insider exfiltration channel and is invisible to network DLP because the data never leaves as a file. Prisma Browser instruments the clipboard inside the rendering context: a copy from the sanctioned CRM (`crm.cortexsim-test.invalid/account/AC-12345`, selector `#account-detail`) tags the clipboard write with the source origin and a payload hash; the subsequent paste into personal webmail (`mail.cortexsim-test.invalid/compose`, `textarea[name=\"body\"]`) is recognized as a cross-origin movement because the destination origin differs from the clipboard-source tag. The cortex-browser-attacker EAL plugin drives navigate \u2192 copy \u2192 navigate \u2192 paste, emitting `prisma_browser_events` with `action` of copy/paste, `origin`, `clipboard_origin`, `clipboard_payload_hash`, and `data_classification`. Detection layers: a BIOC on cross-origin paste from sanctioned CRM into webmail; analytics on clipboard-origin vs. paste-destination mismatch; and two XSIAM correlation analytics that stitch the copy and paste by clipboard payload hash and render both origins on one incident timeline. A correlation rule fuses the BIOC with the origin-mismatch analytic into one exfiltration incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1005",
+        "name": "Data from Local System",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "User Interface: User Interface Events"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "browser_attack_runner \u2014 campaign scenarios/browser/campaigns/saas-cross-origin-dlp.yml (navigate + copy + navigate + paste actions)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Managed Prisma Browser with clipboard DLP enabled; reporting telemetry to XSIAM.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe browser_attack_runner | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-BROWSER-004 (cortex-browser-attacker installed; CRM + webmail origins reachable)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Drives the managed Prisma Browser through the cross-origin DLP campaign.\npython3 -m scripts.eal_simulator.cli run /tmp/sim-browser-004-eal.yml --live\n# Campaign: navigate crm.../account/AC-12345 ; copy #account-detail\n#           navigate mail.../compose ; paste into textarea[name=\"body\"]",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "Clipboard write tagged with the sanctioned-CRM source origin.",
+        "expected_value": "action = \"copy\" and origin = \"crm.cortexsim-test.invalid\" and clipboard_payload_hash != null"
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Paste into personal webmail whose origin differs from the clipboard-source tag.",
+        "expected_value": "action = \"paste\" and origin = \"mail.cortexsim-test.invalid\" and clipboard_origin = \"crm.cortexsim-test.invalid\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sim-browser-004-eal.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Prisma Browser \u2014 cross-origin paste from sanctioned CRM into personal webmail (DLP rule)",
+        "description": "Prisma Browser \u2014 cross-origin paste from sanctioned CRM into personal webmail (DLP rule). A paste whose clipboard-source origin is a sanctioned CRM lands in a personal webmail destination origin.",
+        "logic": "dataset = prisma_browser_events\n| filter action = \"paste\"\n| filter clipboard_origin in (\"crm.cortexsim-test.invalid\", \"crm.corp.example.com\", \"salesforce.com\")\n| filter origin in (\"mail.cortexsim-test.invalid\", \"mail.google.com\", \"outlook.live.com\")\n| filter clipboard_origin != origin",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567",
+          "T1005"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pre-flight: plugin metadata visible to operator",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter campaign_id = \"BC-BROWSER-004\"\n| filter action in (\"navigate\", \"copy\", \"paste\")\n| fields _time, campaign_id, action, origin, clipboard_origin, url\n| sort asc _time",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "Prisma Browser \u2014 clipboard origin tag mismatch with paste destination origin",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"paste\"\n| filter clipboard_origin != null and clipboard_origin != origin\n| fields _time, user, clipboard_origin, origin, url, clipboard_payload_hash, data_classification\n| sort desc _time",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "XSIAM stitching \u2014 copy + paste correlated by clipboard payload hash",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action in (\"copy\", \"paste\")\n| filter clipboard_payload_hash != null\n| comp count_distinct(action) as action_count, values(origin) as origins by user, clipboard_payload_hash\n| filter action_count >= 2\n| fields user, clipboard_payload_hash, action_count, origins",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "XSIAM \u2014 stitched cross-origin DLP incident with both origins on the timeline",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action in (\"copy\", \"paste\")\n| filter clipboard_payload_hash != null\n| comp min(_time) as first_seen, max(_time) as last_seen, values(origin) as origins, values(action) as actions by user, clipboard_payload_hash\n| filter array_length(origins) >= 2\n| fields user, clipboard_payload_hash, first_seen, last_seen, origins, actions",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Browser Cross-Origin Clipboard DLP \u2014 CRM to Webmail",
+        "rule_id": "CR-BROWSER-0004",
+        "logic": "BIOC(Prisma Browser \u2014 cross-origin paste from sanctioned CRM into personal webmail (DLP rule))"
+      }
+    ],
+    "analytics_modules": [
+      "Prisma Browser \u2014 Clipboard origin tagging + DLP",
+      "Cortex XSIAM Analytics \u2014 Clipboard payload-hash copy/paste stitching"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "clipboard-dlp",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "PB-DLP-XORIGIN-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = prisma_browser_events | filter action = \"paste\" and clipboard_origin != origin | fields _time, user, clipboard_origin, origin"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-BROWSER-0004",
+          "XSIAM-AN-CLIPBOARD-STITCH"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-BROWSER-0004 stitches copy+paste by clipboard payload hash into one cross-origin DLP incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-020",
+        "name": "Cross-SaaS Data Movement Detection",
+        "description": "Detect sanctioned-SaaS data copied and pasted into personal/external origins inside the managed Prisma Browser, stitched into one incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-020A",
+            "objective": "Cross-origin paste from sanctioned CRM into personal webmail fires the DLP BIOC.",
+            "preconditions": [
+              "Managed Prisma Browser with clipboard DLP enabled.",
+              "Sanctioned-origin list configured (CRM sanctioned, personal webmail not)."
+            ],
+            "steps": [
+              "Run SIM-BROWSER-004 step-02 (copy from CRM, paste into webmail).",
+              "Observe the DLP alert and stitched incident in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `Prisma Browser \u2014 cross-origin paste from sanctioned CRM into personal webmail (DLP rule)` fires within 60s.",
+              "Origin-mismatch and both stitching XQL queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-WEB-020B",
+            "objective": "Copy and paste stitch by clipboard payload hash into one incident with both origins.",
+            "success_criteria": [
+              "Correlation `CR-BROWSER-0004` produces a single exfiltration incident.",
+              "Incident timeline shows both the CRM and webmail origins."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Prisma Browser clipboard DLP to block pastes whose clipboard-source origin is sanctioned and destination is not.",
+      "Maintain a sanctioned-origin list and treat personal webmail / file-share origins as untrusted paste destinations.",
+      "Apply conditional-access friction (warn/justify) on cross-origin pastes of classified data."
+    ],
+    "detection_engineering": [
+      "Alert on any paste where clipboard_origin differs from the destination origin for classified clipboard content.",
+      "Stitch copy and paste events by clipboard payload hash to reconstruct the full movement.",
+      "Hunt for users repeatedly moving sanctioned-SaaS data into personal origins."
+    ],
+    "response_playbook": "XSOAR-PB-BrowserCrossOriginDLP-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Insider Risk via Browser Exfil 2026",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1567 \u2014 Exfiltration Over Web Service",
+      "url": "https://attack.mitre.org/techniques/T1567/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-BROWSER-004."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Prisma Browser clipboard-DLP BIOC/XQL + XSIAM payload-hash stitching, added correlation CR-BROWSER-0004, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

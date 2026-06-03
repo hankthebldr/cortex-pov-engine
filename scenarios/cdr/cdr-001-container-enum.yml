@@ -63,6 +63,8 @@ steps:
       - plane: CDR
         type: Analytics
         description: "Package manager execution inside running container — unusual install pattern indicates post-exploitation activity"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-package-manager-execution-inside-running-container
 
   - id: step-02
     name: "Download and execute DEEPCE container enumeration tool"
@@ -73,9 +75,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "DEEPCE container enumeration script execution — known tool signature matched by CDR BIOC rule"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-deepce-container-enumeration-script-execution
       - plane: CDR
         type: Analytics
         description: "Suspicious curl download followed by bash execution in container context (curl-pipe-bash pattern)"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-curl-pipe-bash-download-execute-in-container
 
   - id: step-03
     name: "Check for privileged container escape vectors"
@@ -86,9 +92,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Container privileged mode enumeration — /proc/1/status capability read indicating escape preparation"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-container-capability-mask-read-from-proc1-status
       - plane: CDR
         type: Analytics
         description: "Suspicious device enumeration and capability inspection sequence in container"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-container-device-enumeration-with-capability-inspection
 
   - id: step-04
     name: "Enumerate mounted secrets and service account tokens"
@@ -99,9 +109,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Service account token access from within container — credential harvesting behavior"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-service-account-token-access-from-container
       - plane: CDR
         type: Analytics
         description: "Broad filesystem credential search pattern (find / -name token) in container context"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-broad-filesystem-credential-search-in-container
 
   - id: step-05
     name: "Download and run LinPEAS for comprehensive container privilege escalation check"
@@ -112,9 +126,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "LinPEAS execution in container — post-exploitation privilege escalation tool signature"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-linpeas-privilege-escalation-tool-in-container
       - plane: CDR
         type: Analytics
         description: "Multiple system enumeration commands executed in sequence — automated discovery behavior"
+        ttp_ref: TTP-2026-0022
+        detection_id: bioc-cdr-001-automated-discovery-command-burst-in-container
 
 cleanup:
   commands:

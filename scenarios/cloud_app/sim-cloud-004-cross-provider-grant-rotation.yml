@@ -71,6 +71,8 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — first risky grant to Okta, identity marked active in IdP matrix"
+        ttp_ref: TTP-2026-0030
+        detection_id: xql-cloud-004-okta-first-risky-grant-identity-active-in-idp-matrix
 
   - id: step-02
     name: "Provider 2 — Microsoft admin-consent grant within 60s"
@@ -99,6 +101,8 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — same identity solicits admin-consent grant at second IdP within rotation window"
+        ttp_ref: TTP-2026-0030
+        detection_id: xql-cloud-004-microsoft-admin-consent-grant-second-idp-in-rotation-window
 
   - id: step-03
     name: "Provider 3 — Google risky drive grant completes triangle"
@@ -127,12 +131,18 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — three IdPs within 5 min from same identity — provider-hopping policy evasion alert"
+        ttp_ref: TTP-2026-0030
+        detection_id: xql-cloud-004-three-idps-same-identity-provider-hopping-policy-evasion
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — single identity correlates the three IdP sessions into one incident via X-Simulation-Run-ID prefix"
+        ttp_ref: TTP-2026-0030
+        detection_id: xql-cloud-004-xsiam-cross-provider-rotation-single-incident-stitch
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — three /authorize App-ID hits across three FQDNs sharing run marker"
+        ttp_ref: TTP-2026-0030
+        detection_id: xql-cloud-004-ngfw-three-authorize-hits-across-three-fqdns-shared-run-marker
 
 cleanup:
   commands:

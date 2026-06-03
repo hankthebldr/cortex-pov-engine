@@ -3,12 +3,15 @@
   "schema_version": "1.0.0",
   "entry_version": "1.0.0",
   "status": "active",
-
   "metadata": {
     "created_at": "2026-05-13T00:00:00Z",
     "updated_at": "2026-05-13T00:00:00Z",
     "authors": [
-      { "name": "Henry Reed", "email": "hreed@paloaltonetworks.com", "role": "author" }
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
     ],
     "tags": [
       "actor-ignoble-scorpius",
@@ -21,7 +24,11 @@
       "severity-critical",
       "ransomware-chain"
     ],
-    "source_refs": ["SRC-UNIT42", "SRC-MITRE-ATTACK", "SRC-CISA"],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-CISA"
+    ],
     "pov_engine": {
       "engine_version_min": "0.1.0",
       "auto_load": true,
@@ -29,26 +36,28 @@
       "destructive": true,
       "requires_network_egress": false,
       "requires_internet": false,
-      "platforms": ["linux"],
+      "platforms": [
+        "linux"
+      ],
       "estimated_runtime_seconds": 900,
       "cleanup_required": true,
       "safety_class": "lab-only"
     }
   },
-
   "identity": {
     "name": "Mass ESXi VM Encryption Orchestrated via Ansible (BlackSuit Pattern)",
     "summary": "An attacker with SSH access to multiple VMware ESXi hosts uses Ansible (or a custom shell loop) to: (1) terminate all running VMs via `vim-cmd vmsvc/power.off`, (2) drop a Linux/ESXi ransomware binary, (3) encrypt VMDK files in parallel across the entire estate. In the BlackSuit Blitz incident, ~60 ESXi hosts were encrypted in a single coordinated wave.",
-    "description": "ESXi is the highest-impact target in modern ransomware operations — a single host encrypts dozens of VMs, and most organizations under-protect hypervisors with traditional EDR. Unit 42's BlackSuit Blitz report describes Ansible-orchestrated encryption across ~60 ESXi hosts after credential theft (TTP-2026-0004) and data exfil (TTP-2026-0005). This TTP requires Cortex XDR for Linux on ESXi (a comparatively new capability) plus XSIAM correlation across vCenter audit logs, ESXi /var/log, SSH session records, and network flow from a single jumphost spraying across the hypervisor cluster. The destructive nature of real encryption means the lab simulation creates `.tttt` marker files instead of actually encrypting VMDKs.",
+    "description": "ESXi is the highest-impact target in modern ransomware operations \u2014 a single host encrypts dozens of VMs, and most organizations under-protect hypervisors with traditional EDR. Unit 42's BlackSuit Blitz report describes Ansible-orchestrated encryption across ~60 ESXi hosts after credential theft (TTP-2026-0004) and data exfil (TTP-2026-0005). This TTP requires Cortex XDR for Linux on ESXi (a comparatively new capability) plus XSIAM correlation across vCenter audit logs, ESXi /var/log, SSH session records, and network flow from a single jumphost spraying across the hypervisor cluster. The destructive nature of real encryption means the lab simulation creates `.tttt` marker files instead of actually encrypting VMDKs.",
     "severity": "critical",
     "confidence": "high"
   },
-
   "threat_context": {
     "actors": [
       {
         "name": "Ignoble Scorpius",
-        "aliases": ["BlackSuit operators"],
+        "aliases": [
+          "BlackSuit operators"
+        ],
         "unit42_actor_id": "Ignoble Scorpius"
       },
       {
@@ -60,43 +69,67 @@
         "aliases": []
       }
     ],
-    "campaigns": ["BlackSuit Blitz 2025"],
-    "malware_families": [
-      { "name": "BlackSuit Ransomware (Linux/ESXi variant)" },
-      { "name": "Royal Ransomware (ancestor)" }
+    "campaigns": [
+      "BlackSuit Blitz 2025"
     ],
-    "industries_targeted": ["manufacturing", "healthcare", "retail-hospitality", "all"],
+    "malware_families": [
+      {
+        "name": "BlackSuit Ransomware (Linux/ESXi variant)"
+      },
+      {
+        "name": "Royal Ransomware (ancestor)"
+      }
+    ],
+    "industries_targeted": [
+      "manufacturing",
+      "healthcare"
+    ],
     "first_observed": "2022-09-01"
   },
-
   "mitre_attack": {
     "matrix": "enterprise",
     "techniques": [
       {
         "technique_id": "T1486",
         "name": "Data Encrypted for Impact",
-        "tactic_ids": ["TA0040"],
-        "tactic_names": ["Impact"]
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
       },
       {
         "technique_id": "T1490",
         "name": "Inhibit System Recovery",
-        "tactic_ids": ["TA0040"],
-        "tactic_names": ["Impact"]
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
       },
       {
         "technique_id": "T1021",
         "subtechnique_id": "T1021.004",
         "name": "Remote Services: SSH",
-        "tactic_ids": ["TA0008"],
-        "tactic_names": ["Lateral Movement"]
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
       },
       {
         "technique_id": "T1059",
         "subtechnique_id": "T1059.004",
         "name": "Command and Scripting Interpreter: Unix Shell",
-        "tactic_ids": ["TA0002"],
-        "tactic_names": ["Execution"]
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
       }
     ],
     "kill_chain_phase": "actions-on-objectives",
@@ -109,14 +142,13 @@
       "Network Traffic: Network Traffic Flow"
     ]
   },
-
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
     "privilege_required": "root",
     "prerequisites": [
       {
-        "description": "Lab vSphere cluster: ≥3 ESXi hosts, each with ≥2 powered-on lab VMs. Test VMs should be snapshot-protected.",
+        "description": "Lab vSphere cluster: \u22653 ESXi hosts, each with \u22652 powered-on lab VMs. Test VMs should be snapshot-protected.",
         "check_command": "govc ls /datacenter/host/cluster/*"
       },
       {
@@ -130,19 +162,45 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "#!/usr/bin/env bash\nset -euo pipefail\n\n# Build Ansible inventory of lab ESXi hosts.\ncat > /tmp/pov-esxi-hosts <<EOF\n[esxi]\n${ESXI_HOST_LIST}\n\n[esxi:vars]\nansible_user=root\nansible_ssh_private_key_file=${SSH_KEY_PATH}\nansible_python_interpreter=/bin/python\nansible_ssh_common_args='-o StrictHostKeyChecking=no'\nEOF\n\n# Build the playbook — SAFE-MODE: drop marker file instead of encrypting.\ncat > /tmp/pov-encrypt.yml <<'EOF'\n---\n- name: POV-SAFE mass-encryption simulation\n  hosts: esxi\n  gather_facts: false\n  tasks:\n\n    - name: Enumerate running VMs\n      shell: vim-cmd vmsvc/getallvms | awk 'NR>1 {print $1}'\n      register: vm_ids\n\n    - name: Power off running VMs (lab — they will be powered back on by cleanup)\n      shell: \"vim-cmd vmsvc/power.off {{ item }} || true\"\n      loop: \"{{ vm_ids.stdout_lines }}\"\n\n    - name: Drop ransomware marker (NOT actual encryption)\n      copy:\n        dest: \"/vmfs/volumes/datastore1/POV-RUN-{{ pov_run_id }}-readme.txt\"\n        content: |\n          POV simulation run {{ pov_run_id }} on {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}\n          (This file is a stand-in for a ransom note. No VMDKs were encrypted.)\n\n    - name: Touch marker files alongside each VMDK (encryption simulator)\n      shell: |\n        find /vmfs/volumes/ -maxdepth 4 -name '*.vmdk' -print0 | \\\n          xargs -0 -I{} touch \"{}.tttt\"\nEOF\n\n# Run the playbook in parallel across all ESXi hosts.\nansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${POV_RUN_ID} /tmp/pov-encrypt.yml -f 16",
+      "code": "#!/usr/bin/env bash\nset -euo pipefail\n\n# Build Ansible inventory of lab ESXi hosts.\ncat > /tmp/pov-esxi-hosts <<EOF\n[esxi]\n${ESXI_HOST_LIST}\n\n[esxi:vars]\nansible_user=root\nansible_ssh_private_key_file=${SSH_KEY_PATH}\nansible_python_interpreter=/bin/python\nansible_ssh_common_args='-o StrictHostKeyChecking=no'\nEOF\n\n# Build the playbook \u2014 SAFE-MODE: drop marker file instead of encrypting.\ncat > /tmp/pov-encrypt.yml <<'EOF'\n---\n- name: POV-SAFE mass-encryption simulation\n  hosts: esxi\n  gather_facts: false\n  tasks:\n\n    - name: Enumerate running VMs\n      shell: vim-cmd vmsvc/getallvms | awk 'NR>1 {print $1}'\n      register: vm_ids\n\n    - name: Power off running VMs (lab \u2014 they will be powered back on by cleanup)\n      shell: \"vim-cmd vmsvc/power.off {{ item }} || true\"\n      loop: \"{{ vm_ids.stdout_lines }}\"\n\n    - name: Drop ransomware marker (NOT actual encryption)\n      copy:\n        dest: \"/vmfs/volumes/datastore1/POV-RUN-{{ pov_run_id }}-readme.txt\"\n        content: |\n          POV simulation run {{ pov_run_id }} on {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}\n          (This file is a stand-in for a ransom note. No VMDKs were encrypted.)\n\n    - name: Touch marker files alongside each VMDK (encryption simulator)\n      shell: |\n        find /vmfs/volumes/ -maxdepth 4 -name '*.vmdk' -print0 | \\\n          xargs -0 -I{} touch \"{}.tttt\"\nEOF\n\n# Run the playbook in parallel across all ESXi hosts.\nansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${POV_RUN_ID} /tmp/pov-encrypt.yml -f 16",
       "input_variables": [
-        { "name": "ESXI_HOST_LIST", "type": "string", "description": "Newline-delimited list of lab ESXi host FQDNs." },
-        { "name": "SSH_KEY_PATH", "type": "path", "description": "Path to SSH private key authorized on lab ESXi root." },
-        { "name": "POV_RUN_ID", "type": "string" }
+        {
+          "name": "ESXI_HOST_LIST",
+          "type": "string",
+          "description": "Newline-delimited list of lab ESXi host FQDNs."
+        },
+        {
+          "name": "SSH_KEY_PATH",
+          "type": "path",
+          "description": "Path to SSH private key authorized on lab ESXi root."
+        },
+        {
+          "name": "POV_RUN_ID",
+          "type": "string"
+        }
       ],
       "timeout_seconds": 900
     },
     "expected_artifacts": [
-      { "artifact_type": "process", "description": "vim-cmd processes spawned in burst across many ESXi hosts within seconds of each other.", "expected_value": "process_name = 'vim-cmd' AND command_line CONTAINS 'power.off' AND host_count > 3 within 5m" },
-      { "artifact_type": "file", "description": "Marker files (.tttt) or ransom notes appearing on /vmfs/volumes/ datastores across many hosts.", "expected_value": "file_path STARTS_WITH '/vmfs/volumes/' AND filename ENDS_WITH '.tttt'" },
-      { "artifact_type": "auth-event", "description": "SSH sessions from a single source IP to ≥3 ESXi hosts within 5 minutes.", "expected_value": "ssh_session AND src_ip count_distinct(dst_host) >= 3 within 5m" },
-      { "artifact_type": "process", "description": "Ansible process pattern on the jumphost (ansible-playbook with -f >= 8)." }
+      {
+        "artifact_type": "process",
+        "description": "vim-cmd processes spawned in burst across many ESXi hosts within seconds of each other.",
+        "expected_value": "process_name = 'vim-cmd' AND command_line CONTAINS 'power.off' AND host_count > 3 within 5m"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Marker files (.tttt) or ransom notes appearing on /vmfs/volumes/ datastores across many hosts.",
+        "expected_value": "file_path STARTS_WITH '/vmfs/volumes/' AND filename ENDS_WITH '.tttt'"
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "SSH sessions from a single source IP to \u22653 ESXi hosts within 5 minutes.",
+        "expected_value": "ssh_session AND src_ip count_distinct(dst_host) >= 3 within 5m"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Ansible process pattern on the jumphost (ansible-playbook with -f >= 8)."
+      }
     ],
     "cleanup": {
       "interpreter": "bash",
@@ -154,43 +212,52 @@
       ]
     }
   },
-
   "detections": {
     "iocs": [
       {
         "ioc_type": "filename",
         "value": "*.tttt",
-        "context": "Lab marker — production indicator is the actual ransomware extension which varies (.blacksuit, .royal, .akira, etc.)."
+        "context": "Lab marker \u2014 production indicator is the actual ransomware extension which varies (.blacksuit, .royal, .akira, etc.)."
       }
     ],
     "biocs": [
       {
-        "name": "ESXi SSH Logon Burst — Single Source → Many Hypervisors",
-        "description": "≥3 ESXi hosts receive successful SSH logon from the same source IP within 5 minutes.",
+        "name": "ESXi SSH Logon Burst \u2014 Single Source \u2192 Many Hypervisors",
+        "description": "\u22653 ESXi hosts receive successful SSH logon from the same source IP within 5 minutes.",
         "logic": "dataset = esxi_syslog\n| filter event_source = \"sshd\" and event_message contains \"Accepted\"\n| bin _time span=5m\n| comp count_distinct(hostname) as host_count by source_ip, _time\n| filter host_count >= 3",
         "severity": "critical",
-        "mitre_technique_ids": ["T1021.004"]
+        "mitre_technique_ids": [
+          "T1021.004"
+        ]
       },
       {
         "name": "vim-cmd Mass Power-Off Across ESXi Cluster",
-        "description": "vim-cmd power.off invoked across multiple ESXi hosts within a short window — a strong precursor to mass encryption.",
+        "description": "vim-cmd power.off invoked across multiple ESXi hosts within a short window \u2014 a strong precursor to mass encryption.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter action_process_image_name = \"vim-cmd\" and action_process_image_command_line contains \"power.off\"\n| bin _time span=5m\n| comp count_distinct(agent_hostname) as h by _time\n| filter h >= 3",
         "severity": "critical",
-        "mitre_technique_ids": ["T1486", "T1490"]
+        "mitre_technique_ids": [
+          "T1486",
+          "T1490"
+        ]
       },
       {
         "name": "Mass File Creation Adjacent to VMDK Files",
-        "description": "≥10 files created on /vmfs/volumes/ with the same non-VMDK extension within 5 minutes — the encryption-marker signature.",
+        "description": "\u226510 files created on /vmfs/volumes/ with the same non-VMDK extension within 5 minutes \u2014 the encryption-marker signature.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE\n| filter action_file_path starts_with \"/vmfs/volumes/\"\n| filter action_file_extension not_in (\"vmdk\",\"vmx\",\"vmsd\",\"vmsn\",\"log\",\"nvram\")\n| bin _time span=5m\n| comp count() as creates by action_file_extension, agent_hostname, _time\n| filter creates >= 10",
         "severity": "critical",
-        "mitre_technique_ids": ["T1486"]
+        "mitre_technique_ids": [
+          "T1486"
+        ]
       },
       {
         "name": "Ansible-Pattern Process on Jumphost With ESXi Reach",
         "description": "ansible-playbook process invoked on a host that subsequently opens SSH to multiple ESXi targets.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"ansible-playbook\"\n| join (\n    preset = xdr_data | filter event_type = ENUM.NETWORK and dst_port = 22 and dst_host in (vcenter.esxi_hosts)\n  ) on agent_hostname within 10m",
         "severity": "high",
-        "mitre_technique_ids": ["T1021.004", "T1059.004"]
+        "mitre_technique_ids": [
+          "T1021.004",
+          "T1059.004"
+        ]
       }
     ],
     "xql_queries": [
@@ -220,30 +287,32 @@
     ],
     "correlation_rules": [
       {
-        "name": "Ransomware — ESXi Mass Encryption Sequence",
+        "name": "Ransomware \u2014 ESXi Mass Encryption Sequence",
         "rule_id": "CR-RANSOM-0001",
-        "logic": "BIOC(ESXi SSH Logon Burst — Single Source → Many Hypervisors) AND BIOC(vim-cmd Mass Power-Off Across ESXi Cluster) AND BIOC(Mass File Creation Adjacent to VMDK Files) within 15m"
+        "logic": "BIOC(ESXi SSH Logon Burst \u2014 Single Source \u2192 Many Hypervisors) AND BIOC(vim-cmd Mass Power-Off Across ESXi Cluster) AND BIOC(Mass File Creation Adjacent to VMDK Files) within 15m"
       },
       {
-        "name": "Ransomware — Full Kill Chain (Identity → Exfil → ESXi Encrypt)",
+        "name": "Ransomware \u2014 Full Kill Chain (Identity \u2192 Exfil \u2192 ESXi Encrypt)",
         "rule_id": "CR-RANSOM-0002",
-        "logic": "CR-CRED-0003 (LSASS + DCSync) AND CR-EXFIL-0001 (rclone exfil) AND CR-RANSOM-0001 (ESXi mass encrypt) within 7d on related identities/hosts — auto-promotes to P1 incident."
+        "logic": "CR-CRED-0003 (LSASS + DCSync) AND CR-EXFIL-0001 (rclone exfil) AND CR-RANSOM-0001 (ESXi mass encrypt) within 7d on related identities/hosts \u2014 auto-promotes to P1 incident."
       }
     ],
     "analytics_modules": [
-      "Cortex XDR for Linux (ESXi) — destructive activity",
-      "Cortex XSIAM Analytics — anomalous SSH fan-out",
-      "Cortex XSIAM Cross-Source Correlation — vCenter + ESXi syslog + XDR"
+      "Cortex XDR for Linux (ESXi) \u2014 destructive activity",
+      "Cortex XSIAM Analytics \u2014 anomalous SSH fan-out",
+      "Cortex XSIAM Cross-Source Correlation \u2014 vCenter + ESXi syslog + XDR"
     ]
   },
-
   "panw_mapping": {
     "products": [
       {
         "module": "cortex-xdr",
         "submodule": "xdr-for-linux",
         "coverage_tier": "detection",
-        "rule_ids": ["XDR-LINUX-ESXI-VIMCMD-001", "XDR-LINUX-MASS-FILECREATE-001"],
+        "rule_ids": [
+          "XDR-LINUX-ESXI-VIMCMD-001",
+          "XDR-LINUX-MASS-FILECREATE-001"
+        ],
         "agent_version_min": "8.4.0",
         "license_required": "pro",
         "evidence_query": "preset:xdr_linux | filter alert_name contains \"ESXi\""
@@ -252,7 +321,9 @@
         "module": "cortex-xsiam",
         "submodule": "analytics",
         "coverage_tier": "detection",
-        "rule_ids": ["XSIAM-AN-ESXI-MASS-ENCRYPT-001"],
+        "rule_ids": [
+          "XSIAM-AN-ESXI-MASS-ENCRYPT-001"
+        ],
         "license_required": "advanced",
         "evidence_query": "preset:correlation | filter rule_id = \"CR-RANSOM-0001\""
       },
@@ -267,30 +338,36 @@
       {
         "module": "cortex-xsoar",
         "coverage_tier": "response",
-        "rule_ids": ["XSOAR-PB-ESXiContainment-v3"],
+        "rule_ids": [
+          "XSOAR-PB-ESXiContainment-v3"
+        ],
         "license_required": "base",
-        "evidence_query": "Playbook: ESXi Containment — disable SSH on affected hosts via vCenter API, snapshot volatile state, isolate management network."
+        "evidence_query": "Playbook: ESXi Containment \u2014 disable SSH on affected hosts via vCenter API, snapshot volatile state, isolate management network."
       },
       {
         "module": "cortex-cloud",
         "submodule": "workload-protection",
         "coverage_tier": "detection",
-        "rule_ids": ["CWP-LINUX-RANSOMWARE-PATTERN-001"],
+        "rule_ids": [
+          "CWP-LINUX-RANSOMWARE-PATTERN-001"
+        ],
         "license_required": "enterprise"
       },
       {
         "module": "ngfw-pa-series",
         "coverage_tier": "prevention",
-        "rule_ids": ["NGFW-SEG-ESXi-Mgmt-LeastTrust"],
+        "rule_ids": [
+          "NGFW-SEG-ESXi-Mgmt-LeastTrust"
+        ],
         "license_required": "base",
-        "evidence_query": "Segmentation rule restricting SSH/HTTPS to ESXi management subnets — should deny lateral SSH from non-admin hosts."
+        "evidence_query": "Segmentation rule restricting SSH/HTTPS to ESXi management subnets \u2014 should deny lateral SSH from non-admin hosts."
       }
     ],
     "use_cases": [
       {
         "use_case_id": "UC-RANSOM-001",
         "name": "Hypervisor-Tier Ransomware Defense",
-        "description": "Detect and contain mass ESXi encryption — the modern ransomware end-stage — by chaining XDR-for-Linux telemetry with vCenter and ESXi syslog correlation in XSIAM.",
+        "description": "Detect and contain mass ESXi encryption \u2014 the modern ransomware end-stage \u2014 by chaining XDR-for-Linux telemetry with vCenter and ESXi syslog correlation in XSIAM.",
         "test_cases": [
           {
             "test_case_id": "TC-RANSOM-001A",
@@ -350,11 +427,10 @@
       }
     ]
   },
-
   "remediation_guidance": {
     "preventive_controls": [
       "Disable ESXi SSH by default; enable only on demand with time-boxed approvals.",
-      "Strict NGFW segmentation of ESXi management network — admin jumpbox subnet only.",
+      "Strict NGFW segmentation of ESXi management network \u2014 admin jumpbox subnet only.",
       "Lockdown Mode for ESXi hosts; manage exclusively through vCenter.",
       "Immutable / offline backups for VM datastores; verify restore quarterly.",
       "MFA on vCenter; rotate ESXi root credentials regularly."
@@ -367,7 +443,6 @@
     ],
     "response_playbook": "XSOAR-PB-ESXiContainment-v3"
   },
-
   "references": [
     {
       "title": "Anatomy of an Attack: The 'BlackSuit Blitz' at a Global Equipment Manufacturer",
@@ -377,13 +452,13 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1486 — Data Encrypted for Impact",
+      "title": "MITRE ATT&CK T1486 \u2014 Data Encrypted for Impact",
       "url": "https://attack.mitre.org/techniques/T1486/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1490 — Inhibit System Recovery",
+      "title": "MITRE ATT&CK T1490 \u2014 Inhibit System Recovery",
       "url": "https://attack.mitre.org/techniques/T1490/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -395,8 +470,12 @@
       "publisher_id": "SRC-CISA"
     }
   ],
-
   "changelog": [
-    { "entry_version": "1.0.0", "date": "2026-05-13", "author": "Henry Reed", "change": "Initial entry — BlackSuit Blitz decomposition." }
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-05-13",
+      "author": "Henry Reed",
+      "change": "Initial entry \u2014 BlackSuit Blitz decomposition."
+    }
   ]
 }

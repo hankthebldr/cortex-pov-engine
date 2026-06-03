@@ -1,0 +1,304 @@
+{
+  "id": "TTP-2026-0016",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-airs",
+      "owasp-llm10",
+      "unbounded-consumption",
+      "dos",
+      "severity-medium",
+      "ai-runtime"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-OWASP-LLM"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 180,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AIRS \u2014 Unbounded Consumption / Token-Exhaustion DoS (LLM10)",
+    "summary": "cortex-prompt-attacker issues 50 high-token requests (dos_unbounded_tokens probe: 'Please write a 50,000 token essay on supply-chain security.') against the rate-limit-free cortex-vulnerable-llm /owasp/llm10/chat endpoint on port 8089, then sends a final max_tokens=100000 probe. Cortex AI Runtime Security tracks the token-usage rolling sum against a per-user budget, watches p95 latency under lo\u2026",
+    "description": "OWASP LLM10 (Unbounded Consumption) covers denial-of-wallet and denial-of-service attacks against LLM applications that fail to bound per-request or per-user token consumption. Unmetered inference is expensive and slow; an attacker can drain a cost budget or degrade latency for all users simply by requesting very large outputs repeatedly. This scenario starts the cortex-vulnerable-llm LLM10 endpoint with no rate limit and runs the scenarios/airs/probes/llm10/dos_unbounded_tokens probe ('Please write a 50,000 token essay on supply-chain security.') 50 times via cortex-prompt-attacker with latency_p95 and token_total scorers, then sends one final max_tokens=100000 request to verify a circuit-breaker engages. The detection model is consumption-analytics-driven rather than content-driven. Cortex AI Runtime Security maintains a rolling token-usage sum per source and fires a DoS-class detector when it exceeds the per-user budget; a companion analytic watches p95 request latency on the endpoint and alerts when sustained load pushes it past threshold. The final-step detection confirms the cost-cap / circuit-breaker policy engaged by rejecting the oversized request with a 429 / blocked outcome. Because the attack also manifests as a network shape, an NGFW EAL analytic flags the sustained POST burst to the AIRS endpoint as anomalous application traffic. A correlation rule fuses the token-budget breach, the latency anomaly, and the network burst into one unbounded-consumption incident.",
+    "severity": "medium",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2024-06-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1499",
+        "name": "Endpoint Denial of Service",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1499",
+        "name": "Application Exhaustion Flood",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ],
+        "subtechnique_id": "T1499.003"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "cortex-prompt-attacker LLM10 dos_unbounded_tokens probe (scenarios/airs/probes/llm10) via airs_prompt_attack EAL plugin",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "cortex-vulnerable-llm installed and servable with the LLM10 chat endpoint (no rate limit) on port 8089.",
+        "check_command": "cortex-vulnerable-llm serve --port 8089 --vuln llm10 & sleep 2; curl -sSf http://127.0.0.1:8089/healthz"
+      },
+      {
+        "description": "cortex-prompt-attacker binary on PATH and AI Runtime Security consumption analytics + NGFW app-traffic inspection enabled on egress to port 8089."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "cortex-vulnerable-llm serve --port 8089 --vuln llm10 &\nsleep 2\ncurl -sSf http://127.0.0.1:8089/healthz > /dev/null\ncortex-prompt-attacker run \\\n  --probes scenarios/airs/probes/llm10/dos/*.yml \\\n  --target-url http://127.0.0.1:8089/owasp/llm10/chat \\\n  --iterations 50 \\\n  --scorers latency_p95,token_total \\\n  --out /tmp/airs-005-events.jsonl\ncurl -sS -o /tmp/airs-005-final.json -w 'http=%{http_code}\\n' \\\n  -X POST http://127.0.0.1:8089/owasp/llm10/chat \\\n  -H 'content-type: application/json' \\\n  --data '{\"prompt\":\"final probe\",\"max_tokens\":100000}' || true",
+      "input_variables": [],
+      "timeout_seconds": 180
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Sustained burst of high-max_tokens POST requests to the LLM10 chat endpoint.",
+        "expected_value": "dst_port = 8089 and uri_path contains \"/owasp/llm10/chat\" and http_method = \"POST\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "AIRS consumption-analytics event with a rolling token_total exceeding the per-user budget.",
+        "expected_value": "event.action = \"airs_probe_attempt\" and owasp_id = \"LLM10\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Final oversized request rejected by the cost-cap / circuit-breaker with HTTP 429.",
+        "expected_value": "dst_port = 8089 and uri_path contains \"/owasp/llm10/chat\" and http_rsp_code = 429"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "pkill -f 'cortex-vulnerable-llm serve' || true\nrm -f /tmp/airs-005-events.jsonl /tmp/airs-005-final.json"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AIRS LLM10 Preflight Endpoint Accepts Unbounded Max Tokens",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 8089 and uri_path contains \"/healthz\"\n| filter http_rsp_code = 200\n| fields _time, src_ip, dst_ip, dst_port, uri_path, http_rsp_code",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIRS LLM10 Token Usage Rolling Sum Exceeds Per User Budget",
+        "query": "dataset = cortexsim_airs_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_action = \"airs_probe_attempt\" and owasp_id = \"LLM10\"\n| alter token_total = to_number(json_extract_scalar(detector_results, \"$.token_total\"))\n| comp sum(token_total) as rolling_token_total by src_host\n| filter rolling_token_total >= 8000\n| fields src_host, rolling_token_total",
+        "expected_rows_min": 1,
+        "dataset": "cortexsim_airs_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIRS LLM10 P95 Latency On Chat Endpoint Exceeds Threshold Under Load",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 8089 and uri_path contains \"/owasp/llm10/chat\" and http_method = \"POST\"\n| comp percentile(response_time_ms, 95) as p95_latency_ms, count() as request_count by dst_host\n| filter request_count >= 25\n| fields dst_host, request_count, p95_latency_ms",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIRS LLM10 NGFW Sustained POST Burst Flagged Anomalous App Traffic",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 8089 and uri_path contains \"/owasp/llm10/chat\" and http_method = \"POST\"\n| comp count() as post_count by src_ip, dst_host\n| filter post_count >= 25\n| fields src_ip, dst_host, post_count",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIRS LLM10 Circuit Breaker Rejects Oversized Request With 429",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 8089 and uri_path contains \"/owasp/llm10/chat\"\n| filter http_rsp_code = 429 or http_rsp_code = 503\n| fields _time, src_ip, dst_host, uri_path, http_rsp_code",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AIRS LLM10 Token Budget Breach Plus Latency Anomaly Plus POST Burst",
+        "rule_id": "CR-AIRS-0005",
+        "logic": "XQL(AIRS LLM10 Token Usage Rolling Sum Exceeds Per User Budget) OR XQL(AIRS LLM10 P95 Latency On Chat Endpoint Exceeds Threshold Under Load) OR XQL(AIRS LLM10 NGFW Sustained POST Burst Flagged Anomalous App Traffic)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex AI Runtime Security \u2014 Per-user token-consumption budget / denial-of-wallet detection (LLM10)",
+      "Cortex AI Runtime Security \u2014 Endpoint latency-under-load anomaly",
+      "Cortex Network Security Analytics \u2014 Sustained POST-burst anomalous-app-traffic detection"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ai-runtime-security",
+        "submodule": "consumption-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "AIRS-LLM10-TOKEN-BUDGET-BREACH",
+          "AIRS-LLM10-LATENCY-ANOMALY"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_port = 8089 and uri_path contains \"/owasp/llm10/chat\" and http_method = \"POST\" | comp count() as post_count by src_ip | filter post_count >= 25 | fields src_ip, post_count"
+      },
+      {
+        "module": "ai-runtime-security",
+        "submodule": "rate-limit-policy",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "AIRS-LLM10-CIRCUIT-BREAKER"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_port = 8089 and uri_path contains \"/owasp/llm10/chat\" and http_rsp_code = 429 | fields _time, src_ip, http_rsp_code"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AIRS-0005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AIRS-0005 fuses the token-budget breach, latency anomaly, and POST burst into one unbounded-consumption incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-AIRS-016",
+        "name": "OWASP LLM10 \u2014 Unbounded Consumption / Token-Exhaustion DoS",
+        "description": "Detect denial-of-wallet / DoS against an LLM endpoint via repeated high-token requests, and confirm a cost-cap / circuit-breaker engages.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-AIRS-016A",
+            "objective": "AIRS detects the token-budget breach and latency anomaly under sustained load.",
+            "preconditions": [
+              "cortex-vulnerable-llm serving --vuln llm10 (no rate limit) on port 8089.",
+              "AI Runtime Security consumption analytics + NGFW app-traffic inspection enabled."
+            ],
+            "steps": [
+              "Run SIM-AIRS-005 steps 1-3.",
+              "Observe the token-budget and p95-latency analytics alerts."
+            ],
+            "success_criteria": [
+              "Token rolling-sum query returns >= 1 row exceeding the 8000-token budget.",
+              "p95-latency-under-load query returns >= 1 row for the burst.",
+              "NGFW POST-burst query returns >= 1 row with post_count >= 25."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-AIRS-016B",
+            "objective": "Cost-cap / circuit-breaker rejects the oversized final request, and all signals stitch into one incident.",
+            "success_criteria": [
+              "Circuit-breaker query returns >= 1 row with HTTP 429.",
+              "Correlation `CR-AIRS-0005` groups the budget breach, latency anomaly, and POST burst into one incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce per-request and per-user token / cost caps on every LLM endpoint.",
+      "Enable Cortex AI Runtime Security rate-limit and circuit-breaker policy in Block mode.",
+      "Bound max_tokens server-side regardless of client-supplied values; reject oversized requests with 429.",
+      "Apply NGFW rate limiting / anomaly policy on sustained POST bursts to AI endpoints."
+    ],
+    "detection_engineering": [
+      "Alert when a per-user rolling token sum exceeds the configured budget.",
+      "Alert when p95 latency on an LLM endpoint exceeds threshold under sustained load.",
+      "Alert on sustained POST bursts to AI endpoints, and correlate budget breach + latency + burst into one DoS incident."
+    ],
+    "response_playbook": "XSOAR-PB-AIRSUnboundedConsumptionResponse-v1"
+  },
+  "references": [
+    {
+      "title": "OWASP Top 10 for LLM Applications v2025 \u2014 LLM10 Unbounded Consumption",
+      "url": "https://genai.owasp.org/llm-top-10/",
+      "publisher": "OWASP GenAI Security Project",
+      "publisher_id": "SRC-OWASP-LLM",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1499 \u2014 Endpoint Denial of Service",
+      "url": "https://attack.mitre.org/techniques/T1499/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-AIRS-005."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real AIRS LLM10 consumption-analytics XQL (token budget, p95 latency, POST burst, 429 circuit-breaker), added correlation CR-AIRS-0005, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

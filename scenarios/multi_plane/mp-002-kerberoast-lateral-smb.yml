@@ -85,12 +85,18 @@ steps:
       - plane: ITDR
         type: BIOC
         description: "ITDR - LDAP search filter (servicePrincipalName=*) from non-typical host"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "bioc-mp-002-ldap-spn-sweep-from-non-typical-host"
       - plane: ITDR
         type: Analytics
         description: "ITDR - Kerberos TGS-REQ flood from single source targeting multiple SPNs"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "xql-mp-002-kerberos-tgs-req-flood-from-single-source"
       - plane: NDR
         type: Analytics
         description: "NGFW - Kerberos (port 88) traffic spike from attacker host"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "xql-mp-002-ngfw-kerberos-port-88-traffic-spike-from-attacker-host"
 
   - id: step-02
     name: "Crack roasted hash (simulated offline)"
@@ -105,6 +111,8 @@ steps:
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM - MTTD clock: time-gap between Kerberoast (step-01) and lateral auth (step-03) = stitched attack timeline"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "xql-mp-002-xsiam-mttd-clock-kerberoast-recon-to-lateral-auth"
 
   - id: step-03
     name: "Use cracked credential for lateral SMB access"
@@ -121,15 +129,23 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR (workstation) - sql-svc account authenticated remotely via SMB from non-typical host"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "bioc-mp-002-service-account-remote-smb-authentication-on-workstation"
       - plane: NDR
         type: Analytics
         description: "NGFW - SMB (port 445) session from attack endpoint to workstation subnet"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "xql-mp-002-ngfw-smb-port-445-session-attacker-to-workstation"
       - plane: ITDR
         type: BIOC
         description: "ITDR - service account used interactively (normally machine-only context)"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "bioc-mp-002-service-account-used-interactively"
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching - same user+hash observed on DC auth logs + NGFW SMB session + XDR remote login = single lateral movement incident"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "xql-mp-002-xsiam-stitch-same-identity-across-dc-workstation-and-ngfw"
 
   - id: step-04
     name: "DCSync attempt for full credential dump"
@@ -155,6 +171,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW - DCE/RPC (port 135 + ephemeral) traffic to DC from attack endpoint"
+        ttp_ref: "TTP-2026-0063"
+        detection_id: "xql-mp-002-ngfw-dce-rpc-port-135-ephemeral-traffic-to-dc"
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM - full attack chain incident: recon -> Kerberoast -> PtH lateral -> DCSync, unified timeline"

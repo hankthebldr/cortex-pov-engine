@@ -58,6 +58,8 @@ steps:
       - plane: AI_ACCESS
         type: BIOC
         description: "Pre-flight: jailbreak payload contains 'DAN' and 'Ignore all previous instructions' markers"
+        ttp_ref: TTP-2026-0010
+        detection_id: bioc-aiacc-004-pre-flight-jailbreak-payload-contains-dan-markers
 
   - id: step-02
     name: "Single jailbreak POST to api.openai.com via EAL plugin"
@@ -86,9 +88,13 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — content classifier flags jailbreak fingerprint (DAN, Ignore previous instructions, role-play frames)"
+        ttp_ref: TTP-2026-0010
+        detection_id: xql-aiacc-004-jailbreak-fingerprint-dan-ignore-previous-instructions
       - plane: AI_ACCESS
         type: BIOC
         description: "AI Access — outbound prompt requests circumvention of corporate DLP — policy violation"
+        ttp_ref: TTP-2026-0010
+        detection_id: bioc-aiacc-004-outbound-prompt-requests-dlp-circumvention-policy-violation
 
   - id: step-03
     name: "Repeat across two providers to validate detector breadth"
@@ -120,6 +126,8 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — jailbreak detection consistent across multiple providers"
+        ttp_ref: TTP-2026-0010
+        detection_id: xql-aiacc-004-jailbreak-detection-consistent-across-providers
 
 cleanup:
   commands:

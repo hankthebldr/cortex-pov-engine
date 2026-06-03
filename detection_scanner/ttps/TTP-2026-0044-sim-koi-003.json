@@ -1,0 +1,338 @@
+{
+  "id": "TTP-2026-0044",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-koi",
+      "vector-pypi-typosquat",
+      "vector-supply-chain",
+      "industry-all",
+      "severity-high",
+      "agentic"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "supply-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "macos"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Backdoored PyPI Package With Import-Time Subprocess (T1195.002)",
+    "summary": "An agent's tooling pulls 'mcp-server-helpers' \u2014 a typosquat of canonical 'mcp-server-helper' \u2014 whose __init__.py runs a post-install/import-time side effect: it spawns subprocess.run on a python one-liner that reads ~/.aws/credentials and POSTs them to C2 (gated on CORTEXSIM_C2_URL). Cortex Cloud SCA flags the typosquat name and post-install hook, NGFW catches the fetch from a non-canonical PyP\u2026",
+    "description": "Language-package supply-chain compromise is the most prolific agentic attack vector: an agent that auto-installs a Python helper inherits arbitrary code execution at import time. The mcp-server-helpers package in cortex-malicious-agentic-pack is a typosquat of canonical 'mcp-server-helper'; its package __init__.py calls _post_install_beacon() at module load, which invokes subprocess.run on a python one-liner reading ~/.aws/credentials and exfiltrating via urllib to C2. The side effect is gated on CORTEXSIM_C2_URL so static scanners still flag the *shape* of import-time subprocess + credential read without any real traffic. Detection is layered: (1) Cortex Cloud SCA / SAST flags the import-time subprocess.run and the typosquatted name + unverified publisher; (2) the agentic_egress EAL plugin drives the package fetch over HTTPS with a pip/python-requests User-Agent against a non-canonical PyPI mirror, which NGFW and URL filtering flag as typosquat-of-pypi.org; (3) Cortex XDR's endpoint telemetry catches the python interpreter spawning an unexpected child subprocess immediately after a pip install. A correlation rule fuses the SCA finding and the runtime child-spawn into one agentic-supply-chain incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2025-11-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1195",
+        "name": "Supply Chain Compromise: Compromise Software Supply Chain",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1195.002"
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter: Python",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1059.006"
+      },
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1552.001"
+      }
+    ],
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Access",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1195.002 \u2014 Backdoored PyPI package with import-time subprocess (CortexSim cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent installed and reporting healthy on the agentic/build endpoint.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "cortex-malicious-agentic-pack content present and cortexsim-eal-cli available (scenario SIM-KOI-003 requirements)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: static scan of the backdoored package source (safe \u2014 read only).\nls -la sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/\ncat sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/pyproject.toml | head -20\ngrep -n 'subprocess\\|exec\\|eval\\|requests\\|urllib' \\\n  sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/src/*.py || true\n# step-2: fetch the package over HTTPS via the agentic_egress EAL plugin (canary mirror only).\npython3 -m scripts.eal_simulator.cli run /tmp/koi-003.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "python interpreter spawns a child subprocess at import time (post-install beacon shape).",
+        "expected_value": "causality_actor_process_image_name in (\"python\",\"python3\",\"pip\") and actor_process_image_name in (\"python\",\"python3\")"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS to a non-canonical PyPI mirror with a pip/python-requests User-Agent.",
+        "expected_value": "dns_query_name contains \"cortexsim-canary\" and action_external_port = 443"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-KOI-003 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "cortexsim-canary.invalid",
+        "context": "Non-canonical PyPI mirror serving the typosquat package in the lab."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "mcp-server-helpers",
+        "context": "Typosquat package name; canonical is 'mcp-server-helper' (singular)."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook",
+        "description": "Code scan \u2014 package __init__.py contains subprocess.run on import (post-install hook pattern). A python interpreter spawns a child process immediately on package import \u2014 the import-time subprocess shape a SAST/EDR control must flag.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"python\", \"python3\", \"pip\", \"pip3\")\n| filter actor_process_image_name in (\"python\", \"python3\")\n| filter action_process_image_command_line contains_any (\".aws/credentials\", \"urllib.request\", \"urlopen\", \"-c\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1195.002",
+          "T1059.006",
+          "T1552.001"
+        ]
+      },
+      {
+        "name": "KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint",
+        "description": "Cortex Cloud SCA \u2014 SBOM correlates package digest with known-bad fingerprint. The SCA/SBOM scan surfaces the typosquat package by name in the build toolchain command line, matching a known-bad fingerprint.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"pip\", \"pip3\", \"python\", \"python3\", \"twistcli\", \"cortexcloud\", \"syft\")\n| filter action_process_image_command_line contains \"mcp-server-helpers\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1195.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "KOI-003 Backdoored PyPI Package Name Typosquats Canonical Helper",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"mcp-server-helpers\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-003 Outbound HTTPS To Non Canonical PyPI Mirror With Pip User Agent",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dns_query_name contains \"cortexsim-canary\"\n| filter action_external_port = 443\n| filter http_req_user_agent contains_any (\"pip\", \"python-requests\", \"python-urllib\") or actor_process_image_name in (\"pip\", \"pip3\", \"python\", \"python3\")\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, http_req_user_agent",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-003 PyPI Mirror Domain Matches Typosquat Of PyPI Org",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\"\n| filter action_external_url contains \"/simple\" or action_app_id_transitions contains \"pypi\"\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_url",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-003 Cortex Cloud SCA Package Fails Publisher And Post Install Policy",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"pip\", \"pip3\", \"twistcli\", \"cortexcloud\", \"syft\", \"grep\")\n| filter action_process_image_command_line contains_any (\"mcp-server-helpers\", \"subprocess\", \"__init__\")\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Agentic Supply Chain \u2014 Backdoored PyPI Package Post-Install Hook",
+        "rule_id": "CR-KOI-0003",
+        "logic": "BIOC(KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook) OR BIOC(KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud SCA \u2014 typosquat + post-install hook + SBOM fingerprint scanner",
+      "Cortex XDR Analytics \u2014 python interpreter spawning child subprocess at package import"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "software-composition-analysis",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "CCS-SCA-TYPOSQUAT-001",
+          "CCS-SCA-POSTINSTALL-HOOK-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Cortex Cloud SCA finding: typosquat name + import-time subprocess + unverified publisher for sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-KOI-0044-IMPORTSUBPROC"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter causality_actor_process_image_name in (\"python\",\"python3\",\"pip\") and actor_process_image_name in (\"python\",\"python3\") | fields _time, agent_hostname, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-KOI-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-KOI-0003 fuses the SCA finding with the runtime import-time child-spawn into one agentic-supply-chain incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-SUPPLY-044",
+        "name": "Language-Package Supply-Chain Compromise",
+        "description": "Detect a typosquatted PyPI package with an import-time post-install hook across static (Cortex Cloud SCA) and runtime (XDR/NGFW) telemetry, and stitch into one incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-SUPPLY-044A",
+            "objective": "Cortex Cloud SCA flags the typosquat name + post-install hook.",
+            "preconditions": [
+              "cortex-malicious-agentic-pack content present.",
+              "Cortex Cloud SCA configured on the agentic-tooling build."
+            ],
+            "steps": [
+              "Run SIM-KOI-003 step-1 and step-3.",
+              "Observe Cortex Cloud SCA findings."
+            ],
+            "success_criteria": [
+              "Finding `CCS-SCA-TYPOSQUAT-001` fires on the name near-miss.",
+              "Finding `CCS-SCA-POSTINSTALL-HOOK-001` fires on import-time subprocess.",
+              "XQL `KOI-003 Backdoored PyPI Package Name Typosquats Canonical Helper` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-SUPPLY-044B",
+            "objective": "Runtime import-time child-spawn + fetch stitch into one incident.",
+            "success_criteria": [
+              "BIOC `KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook` fires.",
+              "Correlation `CR-KOI-0003` groups SCA + runtime into one incident."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Install only from a signed, mirrored internal PyPI index; block typosquat names within edit-distance 2 of approved packages.",
+      "Run Cortex Cloud SCA as a build gate that fails on import-time subprocess / network / credential-read patterns.",
+      "Run pip installs with --no-build-isolation in sandboxed, network-restricted build agents.",
+      "Deny build/agent identities read access to credential files (~/.aws, ~/.ssh)."
+    ],
+    "detection_engineering": [
+      "Alert when a python interpreter spawns a child subprocess immediately after a pip install (import-time hook).",
+      "Match typosquat package names and unverified publishers in SCA/SBOM output.",
+      "Correlate the SCA finding with the runtime import-time child-spawn from the same host into one incident."
+    ],
+    "response_playbook": "XSOAR-PB-AgenticSupplyChainResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 \u2014 PyPI Typosquatting in AI Agent Tooling",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1195.002 \u2014 Compromise Software Supply Chain",
+      "url": "https://attack.mitre.org/techniques/T1195/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-KOI-003."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real KOI backdoored-PyPI BIOCs/XQL grounded in the mcp-server-helpers-typo artifact, added correlation CR-KOI-0003, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

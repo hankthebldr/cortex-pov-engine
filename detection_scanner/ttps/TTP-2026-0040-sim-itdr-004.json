@@ -1,0 +1,302 @@
+{
+  "id": "TTP-2026-0040",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-token-replay",
+      "identity",
+      "okta",
+      "aitm",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-MANDIANT"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "ITDR \u2014 Session Token Replay Across Geo / User-Agent",
+    "summary": "The idp_signin_emulator issues a session token to one user from a US-West Chrome session, then replays the same session_token_id from an EU-Central curl client \u2014 the AiTM cookie-theft shape where a stolen session is reused from attacker infrastructure with a different geo and user-agent. Cortex ITDR keys on one session token observed from two source geos / user-agents in a short window, and sti\u2026",
+    "description": "Stolen-session replay is how APT29 and AiTM phishing kits sidestep MFA entirely: rather than re-authenticate, the attacker lifts the post-MFA session cookie / refresh token and replays it from their own host. The identity tell is one session_token_id appearing on two source contexts that can't both be the legitimate user \u2014 different country and different user-agent inside a window too short for genuine roaming. This scenario drives CortexSim's idp_signin_emulator to issue a token from a US-West Chrome session and replay the same session_token_id from an EU-Central curl client, then repeat the replay three times. Detection is IdP-log analytics in Cortex ITDR: an XQL rule groups authentication events by session_token_id and alerts when one token shows >=2 distinct source-geo countries and >=2 distinct user-agents within the window; a companion BIOC keys on the explicit replay_marker the emulator stamps. A third query proves the three independent replays inside 5 minutes collapse into one incident, and an ANALYTICS-plane query demonstrates XSIAM stitching grouping the replay incidents under the same identity. A correlation rule fuses the replay-marker BIOC and the token-reuse analytic into one session-hijack incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "APT29"
+      }
+    ],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-06-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1539",
+        "name": "Steal Web Session Cookie",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "name": "Use Alternate Authentication Material: Web Session Cookie",
+        "tactic_ids": [
+          "TA0005",
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1550.004"
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1078.004"
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Web Credential: Web Credential Usage",
+      "Logon Session: Logon Session Creation",
+      "User Account: User Account Authentication"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin \u2014 event_pattern=token_replay",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "CortexSim idp_signin_emulator EAL plugin registered and exposing token_replay targets.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe idp_signin_emulator | jq -e '.eal_targets'"
+      },
+      {
+        "description": "Cortex ITDR ingesting the Okta system log with session_token_id and user_agent fields."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Issue a token (US-West Chrome) then replay the same session_token_id (EU-Central curl), x3.\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-004.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-004-rep.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "One session_token_id observed from two distinct source-geo countries and two user-agents within a short window.",
+        "expected_value": "count_distinct(src_geo_country) >= 2 and count_distinct(user_agent) >= 2 by session_token_id"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/itdr-004.yml /tmp/itdr-004-rep.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "ITDR-004 Pre-Flight idp_signin_emulator Metadata Visible",
+        "description": "Pre-flight: idp_signin_emulator metadata visible to operator. Confirms the EAL plugin is registered and exposes token_replay targets before the token is issued, so a null downstream result is a harness fault rather than a detection miss.",
+        "logic": "dataset = okta_sso\n| filter eventType = \"user.session.start\" or _raw_log contains \"token_replay\"\n| comp count() as preflight_events by actor_effective_username\n| filter preflight_events >= 0",
+        "severity": "informational",
+        "mitre_technique_ids": [
+          "T1539"
+        ]
+      },
+      {
+        "name": "ITDR-004 Replay Marker Boolean Explicit Match",
+        "description": "ITDR \u2014 replay_marker boolean fires explicit detection rule. Keys on the explicit replay_marker the emulator stamps on the reused-session event so the replay is unambiguously attributable to the token-replay pattern.",
+        "logic": "dataset = okta_sso\n| filter eventType = \"user.session.start\"\n| filter replay_marker = true or _raw_log contains \"\\\"replay_marker\\\": true\"\n| fields _time, actor_effective_username, session_token_id, src_ip, src_geo_country, user_agent",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550.004"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-004 Session Token Reused Across Geo And User-Agent",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter eventType = \"user.session.start\"\n| comp count_distinct(src_geo_country) as geo_count, count_distinct(user_agent) as ua_count, count() as use_count, earliest(_time) as first_seen, latest(_time) as last_seen, values(src_geo_city) as cities by session_token_id, actor_effective_username\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter geo_count >= 2 and ua_count >= 2 and window_minutes <= 5\n| fields session_token_id, actor_effective_username, geo_count, ua_count, use_count, cities, window_minutes",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-004 Three Token-Replay Alerts Stitch Into One Incident",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter eventType = \"user.session.start\" and (replay_marker = true or _raw_log contains \"replay_marker\")\n| comp count() as replay_count, count_distinct(session_token_id) as token_count, earliest(_time) as first_seen, latest(_time) as last_seen by actor_effective_username\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter replay_count >= 3 and window_minutes <= 5\n| fields actor_effective_username, replay_count, token_count, window_minutes",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-004 XSIAM Token-Replay Incidents Grouped By Identity",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter eventType = \"user.session.start\" and (replay_marker = true or _raw_log contains \"replay_marker\")\n| comp count() as replay_events, count_distinct(src_geo_country) as geo_count, values(session_token_id) as tokens by actor_effective_username\n| filter replay_events >= 1\n| fields actor_effective_username, replay_events, geo_count, tokens",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Session Token Replay Hijack \u2014 Same Identity",
+        "rule_id": "CR-ITDR-0004",
+        "logic": "BIOC(ITDR-004 Replay Marker Boolean Explicit Match) OR XQL(ITDR-004 Session Token Reused Across Geo And User-Agent)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex ITDR Analytics \u2014 Session token reused across geo/user-agent",
+      "Cortex XSIAM Identity Analytics \u2014 Token-replay incident grouping per principal"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "itdr-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "ITDR-TOKEN-REPLAY-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = okta_sso | comp count_distinct(src_geo_country) as g, count_distinct(user_agent) as ua by session_token_id | filter g >= 2 and ua >= 2"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-ITDR-0004"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-ITDR-0004 fuses the replay-marker BIOC and the token-reuse analytic into one session-hijack incident per identity."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-IDENT-040",
+        "name": "Stolen Session-Token Detection",
+        "description": "Detect one session token reused from two distinct geos / user-agents within a short window, and stitch repeated replays for the same identity into one incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-IDENT-040A",
+            "objective": "A session token reused across geo and user-agent raises a token-replay anomaly.",
+            "preconditions": [
+              "Cortex ITDR ingesting okta_sso with session_token_id and user_agent fields.",
+              "idp_signin_emulator authorized against the lab collector."
+            ],
+            "steps": [
+              "Run SIM-ITDR-004 steps 1-3.",
+              "Observe the token-replay anomaly per identity in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `ITDR-004 Session Token Reused Across Geo And User-Agent` returns >= 1 row.",
+              "BIOC `ITDR-004 Replay Marker Boolean Explicit Match` fires.",
+              "Three-replay stitch query returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-IDENT-040B",
+            "objective": "Repeated replays stitch into one session-hijack incident per identity.",
+            "success_criteria": [
+              "Correlation `CR-ITDR-0004` groups the replays under one incident keyed on identity."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Bind sessions to client TLS / device-bound tokens (DPoP, token binding) so a lifted cookie is unusable elsewhere.",
+      "Shorten session lifetimes and re-evaluate conditional access on network/geo change.",
+      "Revoke and re-issue sessions on any geo/user-agent mismatch for a live token."
+    ],
+    "detection_engineering": [
+      "Group authentication events by session token and alert on >=2 distinct geos and user-agents within a short window.",
+      "Stitch repeated replays for one identity into a single incident to avoid alert flooding.",
+      "Pivot from the replayed token to downstream API calls to scope the hijack."
+    ],
+    "response_playbook": "XSOAR-PB-SessionTokenReplayResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Mandiant \u2014 APT29 OAuth Token Theft via AiTM",
+      "url": "https://cloud.google.com/blog/topics/threat-intelligence/",
+      "publisher": "Mandiant",
+      "publisher_id": "SRC-MANDIANT",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1539 \u2014 Steal Web Session Cookie",
+      "url": "https://attack.mitre.org/techniques/T1539/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-ITDR-004."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real token-replay XQL/BIOC, three-replay stitch and XSIAM grouping queries, correlation CR-ITDR-0004; enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

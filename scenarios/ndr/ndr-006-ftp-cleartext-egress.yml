@@ -57,6 +57,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "Pre-flight: FTP sinkhole reachable on port 21"
+        ttp_ref: TTP-2026-0061
+        detection_id: xql-pre-flight-ftp-sinkhole-reachable-on-port-21
 
   - id: step-02
     name: "Drive a cleartext FTP session with USER/PASS + STOR data egress"
@@ -90,12 +92,18 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW App-ID — FTP identified on outbound session from non-admin endpoint"
+        ttp_ref: TTP-2026-0061
+        detection_id: xql-ngfw-app-id-ftp-outbound-session-from-non-admin-endpoint
       - plane: NDR
         type: IOC
         description: "NGFW EAL — cleartext FTP credentials observed (USER + PASS commands in session)"
+        ttp_ref: TTP-2026-0061
+        detection_id: ioc-user-agent-ftp-cleartext-credentials-user-pass
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — outbound file transfer via FTP STOR command + 4 KB data payload"
+        ttp_ref: TTP-2026-0061
+        detection_id: bioc-ngfw-eal-outbound-ftp-stor-file-transfer-with-data-payload
 
 cleanup:
   commands:

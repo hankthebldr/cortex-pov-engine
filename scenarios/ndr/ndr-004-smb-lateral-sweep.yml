@@ -86,6 +86,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "Dry-run report shows planned host count and ports"
+        ttp_ref: TTP-2026-0053
+        detection_id: xql-dry-run-report-shows-planned-host-count-and-ports
 
   - id: step-02
     name: "Live SMB/RPC sweep against ITDR lab subnet"
@@ -116,12 +118,18 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — host sweeping pattern (1 src → many dst on TCP/445)"
+        ttp_ref: TTP-2026-0053
+        detection_id: xql-ngfw-eal-host-sweeping-pattern-1-src-to-many-dst-on-tcp-445
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — anomalous SMB traffic outside admin baseline"
+        ttp_ref: TTP-2026-0053
+        detection_id: bioc-ngfw-eal-anomalous-smb-traffic-outside-admin-baseline
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM correlation — sweep src host stitched with workstation context"
+        ttp_ref: TTP-2026-0053
+        detection_id: xql-xsiam-correlation-sweep-src-host-stitched-with-workstation-context
 
 cleanup:
   commands:

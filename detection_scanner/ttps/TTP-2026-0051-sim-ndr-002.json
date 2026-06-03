@@ -1,0 +1,326 @@
+{
+  "id": "TTP-2026-0051",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-dns-tunnel",
+      "protocol-dns",
+      "industry-all",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "DNS Tunneling Exfiltration \u2014 High-Entropy Label Burst (T1048.003 / T1572)",
+    "summary": "An implant encodes data into the labels of DNS queries to a single attacker-controlled zone, producing a burst of long, high-entropy subdomain (and TXT) lookups from one source. The CortexSim dns_tunnel_exfil EAL plugin chunks a payload into base32/base64 labels and emits A and TXT queries against the authorised testmynids.org zone. NGFW DNS Security Enhanced Application Logs feed XSIAM Network\u2026",
+    "description": "DNS tunneling is a durable exfiltration and C2 channel because recursive DNS is almost universally allowed outbound, even from segmented networks. Tools such as iodine and dnscat2 (and bespoke implants) encode payload bytes into the leftmost labels of queries to a zone whose authoritative server the attacker controls; responses (often in TXT records) carry data back. The telemetry is entirely network/DNS: NGFW DNS Security logs the query name, type, source and zone into the Enhanced Application Log, and XSIAM Network Security Analytics models three independent signals \u2014 a sudden spike in queries-per-source to one zone, an abnormally high character-entropy/base32-base64 label profile, and FQDN lengths far above the host's normal baseline. This card detects the tunnel from panw_ngfw_traffic_raw / network_story using dns_query_name, the query type, the destination zone (dst_host), and per-source aggregation. A correlation rule fuses the volume, entropy and length signals (plus the TXT burst) into one exfiltration incident, and an analytics-plane stitch ties the DNS exfil back to the originating endpoint's process lineage in XSIAM.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [
+      {
+        "name": "iodine"
+      },
+      {
+        "name": "dnscat2"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2010-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1048",
+        "name": "Exfiltration Over Unencrypted Non-C2 Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ],
+        "subtechnique_id": "T1048.003"
+      },
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1048.003 / T1572 \u2014 CortexSim dns_tunnel_exfil EAL plugin (base32/base64-encoded A and TXT label bursts to one zone)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-002 requirements (NGFW with DNS Security + EAL forwarding to XSIAM; recursive DNS resolution for testmynids.org permitted).",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe dns_tunnel_exfil"
+      },
+      {
+        "description": "NGFW forwards DNS Enhanced Application Logs into XSIAM (panw_ngfw_traffic_raw / network_story carries dns_query_name)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Inspect DNS tunnel plugin params schema\npython3 -m scripts.eal_simulator.cli describe dns_tunnel_exfil\n# step-2: Launch live DNS tunneling campaign \u2014 A queries with high-entropy labels\ncat > /tmp/dns-tunnel-live.yml <<'YML'\ncampaign_id: CMP-NDR-002\nname: \"NDR validation \u2014 DNS tunnel live\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - testmynids.org\ndry_run: false\ntags: [ndr, dns-tunnel, eal]\nsteps:\n  - step_id: step-01\n    plugin: dns_tunnel_exfil\n    params:\n      base_domain: testmynids.org\n      chunks: 30\n      chunk_size_bytes: 24\n      sleep_seconds: 1.0\n      encoding: base32\n      query_type: A\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/dns-tunnel-live.yml --live\n# step-3: Repeat with TXT query type to exercise TXT-burst analytics\ncat > /tmp/dns-tunnel-txt.yml <<'YML'\ncampaign_id: CMP-NDR-002\nname: \"NDR validation \u2014 DNS tunnel TXT\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - testmynids.org\ndry_run: false\ntags: [ndr, dns-tunnel, eal]\nsteps:\n  - step_id: step-01\n    plugin: dns_tunnel_exfil\n    params:\n      base_domain: testmynids.org\n      chunks: 25\n      chunk_size_bytes: 32\n      sleep_seconds: 0.5\n      encoding: base64\n      query_type: TXT\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/dns-tunnel-txt.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Burst of A queries to subdomains of testmynids.org from a single source within a short window.",
+        "expected_value": "dns_query_name CONTAINS \".testmynids.org\" AND dns_query_type = \"A\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "High-entropy base32/base64 leftmost labels in the query name.",
+        "expected_value": "dns_query_name MATCHES high-entropy label profile"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "FQDN length well above the host baseline (encoded chunk labels).",
+        "expected_value": "len(dns_query_name) > 60"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "TXT query burst to the same zone (data-return channel).",
+        "expected_value": "dns_query_name CONTAINS \".testmynids.org\" AND dns_query_type = \"TXT\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/dns-tunnel-live.yml /tmp/dns-tunnel-txt.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "NGFW EAL \u2014 long FQDN exceeding host baseline",
+        "description": "NGFW EAL \u2014 long FQDN exceeding host baseline",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"dns\" or app = \"dns-base\"\n| filter dst_host = \"testmynids.org\" or dns_query_name contains \".testmynids.org\"\n| alter fqdn_len = len(dns_query_name)\n| filter fqdn_len > 60\n| fields _time, src_ip, dst_ip, dns_query_name, dns_query_type, fqdn_len",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048.003"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pre-flight: dns_tunnel_exfil plugin exposes expected params schema",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"dns\", \"dns-base\")\n| filter dns_query_name contains \".testmynids.org\"\n| comp count() as dns_queries by src_ip, dst_host\n| fields src_ip, dst_host, dns_queries",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW EAL \u2014 anomalous DNS query volume from single source",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"dns\", \"dns-base\")\n| filter dns_query_name contains \".testmynids.org\"\n| comp count() as query_count, count_distinct(dns_query_name) as unique_labels by src_ip, dst_host\n| filter query_count >= 20\n| fields src_ip, dst_host, query_count, unique_labels",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW EAL \u2014 high-entropy DNS labels (base32 character profile)",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"dns\", \"dns-base\")\n| filter dns_query_name contains \".testmynids.org\"\n| filter dns_query_type = \"A\"\n| alter leftmost_label = arrayindex(split(dns_query_name, \".\"), 0)\n| alter label_len = len(leftmost_label)\n| filter label_len >= 16\n| comp count() as high_entropy_labels by src_ip, dst_host\n| fields src_ip, dst_host, high_entropy_labels",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW EAL \u2014 TXT query burst from single host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"dns\", \"dns-base\")\n| filter dns_query_name contains \".testmynids.org\"\n| filter dns_query_type = \"TXT\"\n| comp count() as txt_query_count by src_ip, dst_host\n| filter txt_query_count >= 15\n| fields src_ip, dst_host, txt_query_count",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "XSIAM stitching \u2014 DNS exfil + endpoint process lineage correlated",
+        "query": "preset = network_story\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"dns\", \"dns-base\")\n| filter dns_query_name contains \".testmynids.org\"\n| join type=inner (xdr_data\n    | filter event_type = ENUM.NETWORK\n    | fields agent_hostname, actor_process_image_name, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip\n| comp count() as stitched_dns by src_ip, ep.agent_hostname, ep.actor_process_image_name\n| fields src_ip, ep.agent_hostname, ep.actor_process_image_name, stitched_dns",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "DNS Tunneling Exfiltration \u2014 Volume Entropy And Length",
+        "rule_id": "CR-NDR-0002",
+        "logic": "BIOC(NGFW EAL \u2014 long FQDN exceeding host baseline) OR (XQL(NGFW EAL \u2014 anomalous DNS query volume from single source) AND XQL(NGFW EAL \u2014 high-entropy DNS labels (base32 character profile))) OR XQL(NGFW EAL \u2014 TXT query burst from single host)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Network Security Analytics \u2014 DNS Tunneling / Exfiltration",
+      "Cortex XSIAM Analytics \u2014 High-entropy DNS query name scoring",
+      "Cortex XSIAM Analytics \u2014 Excessive DNS queries to a single domain"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "dns-security-enhanced-application-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-DNS-TUNNEL-001",
+          "NGFW-EAL-DNS-ENTROPY-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app = \"dns\" and dns_query_name contains \".testmynids.org\" | fields _time, src_ip, dns_query_name, dns_query_type"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-DNS-TUNNEL",
+          "XSIAM-CR-NDR-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = network_story | filter app = \"dns\" and dns_query_name contains \".testmynids.org\" | comp count() by src_ip"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-DNSTunnelResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: sinkhole the abused zone, block at DNS Security, isolate the source endpoint, open exfiltration DFIR ticket."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-051",
+        "name": "DNS Anomaly Detection via NGFW EAL \u2014 Tunneling Exfiltration",
+        "description": "Validate that NGFW DNS Security EAL + XSIAM Network Security Analytics detect high-entropy, high-volume, over-baseline-length DNS queries and TXT bursts to a single zone.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-051A",
+            "objective": "A-record tunnel burst is detected on volume, entropy and FQDN length.",
+            "preconditions": [
+              "NGFW DNS Security enabled with EAL forwarding to XSIAM.",
+              "Recursive resolution for testmynids.org permitted for the simulator pod."
+            ],
+            "steps": [
+              "Run SIM-NDR-002 step-02 (base32 A-record tunnel, 30 chunks).",
+              "Inspect Network Security Analytics / network_story for the source IP."
+            ],
+            "success_criteria": [
+              "XQL `NGFW EAL \u2014 anomalous DNS query volume from single source` returns >= 1 row with query_count >= 20.",
+              "XQL `NGFW EAL \u2014 high-entropy DNS labels (base32 character profile)` returns >= 1 row.",
+              "BIOC `NGFW EAL \u2014 long FQDN exceeding host baseline` matches the encoded queries."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-WEB-051B",
+            "objective": "TXT burst is detected and stitched to the originating endpoint.",
+            "success_criteria": [
+              "XQL `NGFW EAL \u2014 TXT query burst from single host` returns >= 1 row.",
+              "Correlation `CR-NDR-0002` raises one exfiltration incident; XSIAM stitch ties DNS exfil to the endpoint process lineage."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable NGFW DNS Security with tunneling/DGA signatures in block mode.",
+      "Force all endpoints to use sanctioned internal resolvers; deny direct outbound DNS (UDP/TCP 53) from clients.",
+      "Apply per-zone query-rate limits and block resolution of newly-registered domains."
+    ],
+    "detection_engineering": [
+      "Baseline per-host DNS query volume and FQDN length; alert on bursts and over-baseline label lengths.",
+      "Score leftmost-label character entropy and base32/base64 profiles per source.",
+      "Correlate volume + entropy + length + TXT burst into one exfiltration incident and stitch to endpoint process lineage."
+    ],
+    "response_playbook": "XSOAR-PB-DNSTunnelResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - DNS Tunneling Tradecraft Survey",
+      "url": "https://unit42.paloaltonetworks.com/dns-tunneling/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1048.003 \u2014 Exfiltration Over Unencrypted Non-C2 Protocol",
+      "url": "https://attack.mitre.org/techniques/T1048/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-002."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real NGFW DNS EAL network XQL/BIOC for high-entropy DNS tunneling, added correlation CR-NDR-0002, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

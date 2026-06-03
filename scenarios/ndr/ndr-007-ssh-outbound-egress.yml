@@ -57,6 +57,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "Pre-flight: SSH sinkhole reachable on port 22"
+        ttp_ref: TTP-2026-0062
+        detection_id: xql-pre-flight-ssh-sinkhole-reachable-on-port-22
 
   - id: step-02
     name: "Drive outbound SSH-2.0 banner + KEXINIT against sinkhole"
@@ -88,12 +90,18 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW App-ID — SSH identified on outbound session from non-admin endpoint"
+        ttp_ref: TTP-2026-0062
+        detection_id: xql-ngfw-app-id-ssh-outbound-session-from-non-admin-endpoint
       - plane: NDR
         type: IOC
         description: "NGFW EAL — atypical SSH client banner observed (SSH-2.0-Cortex_atypical_lateral_001)"
+        ttp_ref: TTP-2026-0062
+        detection_id: ioc-user-agent-ssh-2-0-cortex-atypical-lateral-001
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — repeated short-lived outbound SSH handshakes from single source"
+        ttp_ref: TTP-2026-0062
+        detection_id: bioc-ngfw-eal-repeated-short-lived-outbound-ssh-handshakes-from-single-source
 
 cleanup:
   commands:

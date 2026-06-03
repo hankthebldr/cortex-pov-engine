@@ -1,0 +1,263 @@
+{
+  "id": "TTP-2026-0031",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "vector-oauth-grant",
+      "baseline",
+      "fp-suppression",
+      "control",
+      "casb"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "saas-okta",
+        "saas-m365",
+        "saas-google-workspace"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Cloud App \u2014 Benign OAuth Baseline FP-Suppression Control (T1078.004)",
+    "summary": "A control scenario that emits benign OIDC grants (openid email profile, Microsoft User.Read) to Okta, Microsoft, and Google. The detection content here is the suppression/baseline assertion: these low-risk scopes must be logged informationally and must NOT be promoted to risky-scope alerts or incidents. The XQL queries assert the grants are present in the audit feed and confirm they carry no ri\u2026",
+    "description": "A detection stack is only trustworthy if its false-positive rate is measured, so this control scenario emits the benign scope preset (openid, email, profile, and Microsoft User.Read) against all three IdP authorize endpoints. There is no malicious behaviour here by design \u2014 the value is negative-space validation: the same Cortex Cloud App Security rules that fire on risky_drive, admin_consent, and full_mailbox grants (cards 0027-0030) must stay silent on these low-risk OIDC sign-in scopes. The detection content is therefore framed as baseline / suppression assertions rather than threat detections. Each XQL query confirms the benign grant reached the audit feed (proving telemetry is flowing) while asserting that it carries none of the risky scope markers (drive, Files.ReadWrite.All, Directory.ReadWrite.All, Application.ReadWrite.All, mail.google.com, Mail.ReadWrite, offline_access) \u2014 i.e. the row count for the risky-scope projection must be zero. A final assertion confirms the three benign /authorize hits are classified informational and are NOT promoted to an incident. The correlation rule expresses the suppression invariant: no risky-grant correlation should match these benign events. All requests use bogus client_ids against canary endpoints.",
+    "severity": "informational",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2017-05-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1078.004"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Logon Session: Logon Session Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "oauth_grant_emulator (provider=okta|microsoft|google, scope_preset=benign)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "oauth_grant_emulator registered and Cortex Cloud App Security ingesting all three IdP OAuth grant audit feeds.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe oauth_grant_emulator | jq -e '.eal_targets'"
+      },
+      {
+        "description": "The risky-scope detections from cards 0027-0030 are imported and enabled so this control can prove they stay silent."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Benign OIDC sign-in grants to all three IdPs \u2014 must be logged informationally, must NOT alert.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-005-okta.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-005-ms.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-005-google.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "Benign OIDC grant audit events carrying only low-risk scopes (openid/email/profile/User.Read).",
+        "expected_value": "dataset = saas_audit_logs and oauth_scopes contains \"openid\" and oauth_scopes not contains \"drive\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cloud-005-*.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CLOUD-005 Benign Okta OIDC Grant Informational Not Risky",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter oauth_scopes contains \"openid\"\n| filter oauth_scopes not contains_any (\"drive\", \"Files.ReadWrite.All\", \"okta.users.manage\", \"okta.apps.manage\")\n| fields _time, user, app_name, client_id, oauth_scopes, consent_type, source_ip",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-005 Benign Microsoft User Read Grant Informational Not Risky",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter oauth_scopes contains_any (\"User.Read\", \"openid\")\n| filter oauth_scopes not contains_any (\"Directory.ReadWrite.All\", \"Application.ReadWrite.All\", \"Mail.ReadWrite\", \"offline_access\")\n| fields _time, user, app_name, client_id, oauth_scopes, consent_type, source_ip",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-005 Benign Google OIDC Grant Informational Not Risky",
+        "query": "dataset = google_workspace_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter oauth_scopes contains \"openid\"\n| filter oauth_scopes not contains_any (\"mail.google.com\", \"gmail.modify\", \"drive\", \"admin.directory\")\n| fields _time, user, app_name, client_id, oauth_scopes, consent_type, source_ip",
+        "expected_rows_min": 1,
+        "dataset": "google_workspace_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-005 NGFW Benign Authorize Hits Informational Not Promoted",
+        "query": "dataset = saas_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter uri_path contains \"/authorize\" or uri_path contains \"/o/oauth2/v2/auth\"\n| filter oauth_scopes not contains_any (\"drive\", \"Files.ReadWrite.All\", \"Directory.ReadWrite.All\", \"Application.ReadWrite.All\", \"mail.google.com\", \"Mail.ReadWrite\", \"offline_access\")\n| comp count() as benign_authorize_hits by user\n| filter benign_authorize_hits >= 3\n| fields user, benign_authorize_hits",
+        "expected_rows_min": 1,
+        "dataset": "saas_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Benign OAuth Baseline Suppression Invariant \u2014 No Risky Correlation",
+        "rule_id": "CR-CLOUDAPP-0005",
+        "logic": "NOT (XQL(CLOUD-005 Benign Okta OIDC Grant Informational Not Risky) OR XQL(CLOUD-005 Benign Microsoft User Read Grant Informational Not Risky) OR XQL(CLOUD-005 Benign Google OIDC Grant Informational Not Risky)) matched by any CR-CLOUDAPP-0001..0004 risky-grant correlation"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud App Security \u2014 Benign OIDC sign-in scopes logged informationally (suppression baseline)",
+      "Cortex XSIAM Analytics \u2014 FP-suppression control: risky-grant correlations must not match benign events"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-app-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CASB-OAUTH-BASELINE-ALLOWLIST-005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = saas_audit_logs | filter oauth_scopes contains \"openid\" and oauth_scopes not contains \"drive\" | fields _time, user, app_name, oauth_scopes"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CLOUDAPP-0005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Suppression control CR-CLOUDAPP-0005 asserts no risky-grant correlation (CR-CLOUDAPP-0001..0004) matches the benign baseline events."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUDAPP-031",
+        "name": "OAuth Baseline / False-Positive Validation",
+        "description": "Prove the risky-OAuth-grant detections (cards 0027-0030) stay silent on benign OIDC sign-in scopes \u2014 measure and validate the false-positive rate.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUDAPP-031A",
+            "objective": "Benign grants reach the audit feed and carry no risky scope.",
+            "preconditions": [
+              "oauth_grant_emulator registered and all IdP audit feeds ingested.",
+              "Risky-grant detections from cards 0027-0030 imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-CLOUD-005 steps 1-3.",
+              "Confirm the benign baseline validation queries return rows and that no risky-scope alert fired."
+            ],
+            "success_criteria": [
+              "All three benign baseline XQL queries return >= 1 row (telemetry flowing, scopes low-risk).",
+              "No risky-scope alert from CASB-OAUTH-RISKY-SCOPE-001 / ADMIN-CONSENT-002 / FULL-MAILBOX-003 fires on these events."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-CLOUDAPP-031B",
+            "objective": "The risky-grant correlations do not promote the benign events to an incident.",
+            "success_criteria": [
+              "XQL `CLOUD-005 NGFW Benign Authorize Hits Informational Not Promoted` returns >= 1 row.",
+              "Suppression invariant CR-CLOUDAPP-0005 holds \u2014 no CR-CLOUDAPP-0001..0004 incident is raised."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Maintain a vetted allowlist of low-risk OIDC scopes (openid, email, profile, User.Read) so benign sign-ins are auto-suppressed.",
+      "Periodically re-run this baseline control to detect detection-rule drift that introduces false positives."
+    ],
+    "detection_engineering": [
+      "Author risky-scope detections so they require an explicit risky scope marker, never a bare openid/profile grant.",
+      "Use this control as a regression gate: any benign baseline grant that trips a risky-scope rule is a tuning defect.",
+      "Track the benign-grant false-positive count over time as a detection-quality KPI."
+    ],
+    "response_playbook": "none \u2014 control scenario, no response expected"
+  },
+  "references": [
+    {
+      "title": "CortexSim - OAuth Detection Baseline Control",
+      "url": "https://github.com/hankthebldr/cortex-pov-engine",
+      "publisher": "CortexSim",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 \u2014 Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-CLOUD-005."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real benign-baseline / FP-suppression XQL assertions, added suppression invariant CR-CLOUDAPP-0005, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

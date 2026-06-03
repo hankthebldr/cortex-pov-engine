@@ -67,9 +67,13 @@ steps:
       - plane: KOI
         type: BIOC
         description: "Code scan — skill.md contains 'Ignore previous instructions' / exfil instructions in body"
+        ttp_ref: TTP-2026-0046
+        detection_id: bioc-koi-005-claude-skill-body-contains-instruction-injection-and-exfil-directives
       - plane: KOI
         type: Analytics
         description: "Code scan — skill bundle metadata claims 'verified publisher' without matching signature"
+        ttp_ref: TTP-2026-0046
+        detection_id: xql-koi-005-claude-skill-claims-verified-publisher-with-mismatched-signature
 
   - id: step-02
     name: "Emulate Claude client fetching the skill bundle"
@@ -99,9 +103,13 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — Claude client User-Agent fetches .skill from non-anthropic CDN"
+        ttp_ref: TTP-2026-0046
+        detection_id: xql-koi-005-claude-client-fetches-skill-bundle-from-non-anthropic-cdn
       - plane: KOI
         type: Analytics
         description: "URL filter — destination not in Anthropic-published skill registry allowlist"
+        ttp_ref: TTP-2026-0046
+        detection_id: xql-koi-005-skill-fetch-destination-not-in-anthropic-registry-allowlist
 
   - id: step-03
     name: "Confirm AIRS would catch the embedded injection on first invocation"
@@ -115,9 +123,13 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "AIRS — indirect-injection scorer fires when skill.md is concatenated into prompt"
+        ttp_ref: TTP-2026-0046
+        detection_id: xql-koi-005-airs-indirect-injection-scorer-on-skill-body-in-prompt
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — KOI artifact + AIRS detection chain into single agentic incident"
+        ttp_ref: TTP-2026-0046
+        detection_id: xql-koi-005-xsiam-stitch-skill-injection-artifact-with-airs-detection
 
 cleanup:
   commands:

@@ -69,6 +69,8 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — first egress to api.openai.com, user marked active in provider matrix"
+        ttp_ref: TTP-2026-0011
+        detection_id: xql-aiacc-005-first-egress-to-openai-user-active-in-provider-matrix
 
   - id: step-02
     name: "Provider 2 — Gemini (overlapping content within 60s)"
@@ -97,6 +99,8 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — same user observed at second provider (Gemini) within rotation window"
+        ttp_ref: TTP-2026-0011
+        detection_id: xql-aiacc-005-same-user-second-provider-gemini-within-rotation-window
 
   - id: step-03
     name: "Provider 3 — Anthropic completes the rotation triangle"
@@ -125,12 +129,18 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — three providers within 5 min from same user — provider-hopping policy evasion alert"
+        ttp_ref: TTP-2026-0011
+        detection_id: xql-aiacc-005-three-providers-within-five-minutes-provider-hopping
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — single user identity correlates the three provider sessions into one incident"
+        ttp_ref: TTP-2026-0011
+        detection_id: xql-aiacc-005-xsiam-stitch-single-user-three-provider-sessions
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — generative-AI App-ID across three FQDNs sharing X-Simulation-Run-ID prefix"
+        ttp_ref: TTP-2026-0011
+        detection_id: xql-aiacc-005-ngfw-generative-ai-app-id-across-three-fqdns-shared-run-id
 
 cleanup:
   commands:

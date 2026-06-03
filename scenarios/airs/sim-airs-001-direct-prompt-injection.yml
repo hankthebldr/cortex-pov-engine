@@ -65,6 +65,8 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "Pre-flight: vulnerable target /healthz responds 200"
+        ttp_ref: "TTP-2026-0012"
+        detection_id: "xql-airs-llm01-preflight-vulnerable-target-healthz-responds"
 
   - id: step-02
     name: "Run cortex-prompt-attacker LLM01 probe pack with mutator chain"
@@ -82,12 +84,18 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "AIRS — direct prompt-injection classifier fires on 'Ignore previous instructions' family"
+        ttp_ref: "TTP-2026-0012"
+        detection_id: "xql-airs-llm01-direct-prompt-injection-classifier-ignore-previous-instructions"
       - plane: AIRS
         type: BIOC
         description: "AIRS — system prompt or hidden context appears verbatim in model response"
+        ttp_ref: "TTP-2026-0012"
+        detection_id: "bioc-airs-llm01-system-prompt-or-hidden-context-echoed-in-model-response"
       - plane: AIRS
         type: Analytics
         description: "AIRS — base64-mutated injection evades naive filter, still caught by content classifier"
+        ttp_ref: "TTP-2026-0012"
+        detection_id: "xql-airs-llm01-base64-mutated-injection-evades-naive-filter-caught-by-classifier"
 
   - id: step-03
     name: "Verify the prompt-attacker JSONL conforms to garak Attempt schema"
@@ -101,6 +109,8 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "Audit pipeline ingests JSONL events correctly (schema check)"
+        ttp_ref: "TTP-2026-0012"
+        detection_id: "xql-airs-llm01-audit-pipeline-ingests-probe-attempt-jsonl-schema"
 
 cleanup:
   commands:

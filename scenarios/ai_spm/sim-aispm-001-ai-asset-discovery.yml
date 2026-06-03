@@ -100,6 +100,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Ground-truth manifest captured — no Cortex detection expected at this step (operator-internal bookkeeping)."
+        ttp_ref: TTP-2026-0054
+        detection_id: xql-aispm-001-ground-truth-manifest-capture-bookkeeping
 
   - id: step-02
     name: "Wait for Cortex Cloud AI-SPM inventory scan cycle"
@@ -115,6 +117,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Cortex Cloud AI-SPM scanner discovers planted AI assets across the AWS account during this scan cycle."
+        ttp_ref: TTP-2026-0054
+        detection_id: xql-aispm-001-ai-asset-scan-cycle-discovery
 
   - id: step-03
     name: "Probe Cortex Cloud Inventory API for AI assets"
@@ -134,8 +138,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Cortex Cloud /api/v1/inventory returns ≥ 6 AI-tagged assets (7 if shadow GPU enabled) — SageMaker endpoint, SageMaker model, Lambda OpenAI proxy, training-data bucket, pickled model object, overprivileged role; optional shadow GPU."
-        ttp_ref: null
-        detection_id: null
+        ttp_ref: TTP-2026-0054
+        detection_id: xql-aispm-001-inventory-api-ai-tagged-assets-count
         verification_xql: |
           // Cortex Cloud Inventory API is REST-only; XQL equivalent for
           // cross-checking via XSIAM (when AI-SPM telemetry mirrors to XDL):
@@ -179,6 +183,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Final reconciliation step — KPI computation completes and the Run's primary_kpi value is populated for the POV report. Pass = Asset Discovery Coverage ≥ 100 %."
+        ttp_ref: TTP-2026-0054
+        detection_id: xql-aispm-001-asset-discovery-coverage-reconciliation
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 # Scenario-level cleanup is minimal. The infra/modules/aws/ai-spm Terraform

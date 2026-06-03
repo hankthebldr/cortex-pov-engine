@@ -70,9 +70,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR - /etc/passwd read followed by write to /tmp staging directory"
+        ttp_ref: TTP-2026-0048
+        detection_id: bioc-mp-003-passwd-read-then-write-to-tmp-staging-dir
       - plane: EDR
         type: Analytics
         description: "XDR - sensitive-file-path access from non-admin service account"
+        ttp_ref: TTP-2026-0048
+        detection_id: xql-mp-003-sensitive-file-path-access-from-service-account
 
   - id: step-02
     name: "Stage data in compressed format"
@@ -87,6 +91,8 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR - data staging: tar compression of recently-written files in /tmp by service account"
+        ttp_ref: TTP-2026-0048
+        detection_id: bioc-mp-003-tar-gzip-compression-of-tmp-staging-by-service-account
 
   - id: step-03
     name: "Exfiltrate staged data over DNS tunnel"
@@ -107,15 +113,23 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW - DNS anomaly: sustained TXT query burst with high-entropy 60-char labels = tunneling signature"
+        ttp_ref: TTP-2026-0048
+        detection_id: xql-mp-003-ngfw-dns-txt-tunneling-burst-high-entropy-labels
       - plane: NDR
         type: Analytics
         description: "NGFW - DNS query rate spike: >10x baseline from single source"
+        ttp_ref: TTP-2026-0048
+        detection_id: xql-mp-003-ngfw-dns-query-rate-spike-from-single-source
       - plane: EDR
         type: BIOC
         description: "XDR - dig invocation in tight loop from service account (shell one-liner DNS exfil)"
+        ttp_ref: TTP-2026-0048
+        detection_id: bioc-mp-003-dig-txt-tight-loop-from-service-account
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching - /tmp stage write (XDR) + DNS tunnel burst (NGFW) + same hostname = end-to-end exfiltration incident, MTTD measured from stage-to-tunnel"
+        ttp_ref: TTP-2026-0048
+        detection_id: xql-mp-003-stitch-tmp-stage-write-with-dns-tunnel-burst
 
   - id: step-04
     name: "Alternative exfil: HTTPS POST to known-bad endpoint"
@@ -130,12 +144,18 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW - HTTP POST with file upload to IOC-listed domain"
+        ttp_ref: TTP-2026-0048
+        detection_id: xql-mp-003-ngfw-http-post-file-upload-to-ioc-domain
       - plane: EDR
         type: BIOC
         description: "XDR - curl -F file upload of recently-staged data by service account"
+        ttp_ref: TTP-2026-0048
+        detection_id: bioc-mp-003-curl-form-upload-of-staged-data-by-service-account
       - plane: ANALYTICS
         type: IOC
         description: "XSIAM - IOC match on destination domain correlates with staged data hash"
+        ttp_ref: TTP-2026-0048
+        detection_id: ioc-domain-testmynids-org
 
 cleanup:
   commands:

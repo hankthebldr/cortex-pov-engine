@@ -61,6 +61,8 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "Pre-flight: plugin metadata visible to operator"
+        ttp_ref: TTP-2026-0018
+        detection_id: xql-pre-flight-plugin-metadata-visible-to-operator
 
   - id: step-02
     name: "Drive Prisma Browser to phishing page; expect auto-download"
@@ -91,12 +93,18 @@ steps:
       - plane: BROWSER
         type: BIOC
         description: "Prisma Browser — auto-download initiated by JS without user gesture"
+        ttp_ref: TTP-2026-0018
+        detection_id: bioc-prisma-browser-auto-download-initiated-by-js-without-user-gesture
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — downloaded artifact MIME application/x-msdownload from non-SaaS origin"
+        ttp_ref: TTP-2026-0018
+        detection_id: xql-prisma-browser-downloaded-artifact-mime-application-x-msdownload-from-non-saas-origin
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — file-type download policy matches downloaded artifact"
+        ttp_ref: TTP-2026-0018
+        detection_id: xql-ngfw-eal-file-type-download-policy-matches-downloaded-artifact
 
   - id: step-03
     name: "Confirm WildFire submission path on the downloaded artifact"
@@ -109,6 +117,8 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "PB → WildFire submission within download-policy MTTD"
+        ttp_ref: TTP-2026-0018
+        detection_id: xql-pb-wildfire-submission-within-download-policy-mttd
 
 cleanup:
   commands:

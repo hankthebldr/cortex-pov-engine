@@ -1,0 +1,320 @@
+{
+  "id": "TTP-2026-0050",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-c2-beacon",
+      "protocol-http",
+      "industry-all",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Periodic HTTP C2 Beaconing \u2014 NGFW EAL Network Detection (T1071.001)",
+    "summary": "A compromised host emits a regular, low-jitter cadence of small outbound HTTP requests to a single destination \u2014 the canonical Cobalt Strike / Mirai beacon shape. The CortexSim c2_http_beacon EAL plugin reproduces this against the authorised testmynids.org endpoint with a rotating anomalous User-Agent, an optional DGA-style URI query parameter, and an X-Simulation-Run-ID operator header. NGFW E\u2026",
+    "description": "HTTP beaconing is the most common command-and-control channel because it blends with normal web traffic and traverses egress proxies. Cobalt Strike Malleable C2 profiles let operators tune the sleep/jitter and User-Agent to mimic legitimate clients, while commodity botnets such as Mirai use plain periodic GETs. The detection surface for Cortex is purely network: NGFW App-ID classifies the session as web-browsing, the Enhanced Application Log captures the HTTP method, URI, User-Agent and host, and Network Security Analytics in XSIAM models the regular inter-request interval (low jitter), the low byte volume per request, the rare/anomalous User-Agent, and any high-entropy DGA-style query parameter. This card detects the beacon entirely from panw_ngfw_traffic_raw / network_story telemetry: a single internal source repeatedly contacting one external destination at a near-constant interval, with small payloads and an unusual web client signature. A correlation rule fuses the periodicity, User-Agent anomaly and DGA-URI signals into one C2 incident, and the operator filter on the X-Simulation-Run-ID header lets a DC isolate the simulated sessions from production traffic during a POV.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Cobalt Strike Malleable C2"
+    ],
+    "malware_families": [
+      {
+        "name": "Cobalt Strike"
+      },
+      {
+        "name": "Mirai"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2012-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ],
+        "subtechnique_id": "T1071.001"
+      },
+      {
+        "technique_id": "T1568",
+        "name": "Dynamic Resolution",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1071.001 \u2014 CortexSim c2_http_beacon EAL plugin (periodic HTTP GET with jitter, anomalous User-Agent, DGA query param)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-001 requirements (NGFW inline with EAL forwarding to XSIAM/log collector; egress to testmynids.org permitted).",
+        "check_command": "python3 -m scripts.eal_simulator.cli list-plugins | jq -e '.total >= 4'"
+      },
+      {
+        "description": "NGFW forwards Enhanced Application Logs into XSIAM (panw_ngfw_traffic_raw populated / network_story preset available)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Deploy EAL traffic simulator pod and confirm registry\npython3 -m scripts.eal_simulator.cli list-plugins | jq -e '.total >= 4'\n# step-3: Live campaign \u2014 periodic beacon to authorised test endpoint\ncat > /tmp/c2-beacon-live.yml <<'YML'\ncampaign_id: CMP-NDR-001\nname: \"NDR validation \u2014 C2 beacon live\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - testmynids.org\ndry_run: false\ntags: [ndr, c2-beacon, eal]\nsteps:\n  - step_id: step-01\n    plugin: c2_http_beacon\n    params:\n      target_url: http://testmynids.org/uid/index.html\n      iterations: 12\n      sleep_seconds: 30\n      jitter_pct: 25\n      method: GET\n      dga_query_param: true\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-live.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Repeated outbound HTTP GET sessions from one source to a single destination at a near-constant ~30s interval (low jitter).",
+        "expected_value": "app = \"web-browsing\" AND dst_host = \"testmynids.org\" AND action = \"allow\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Anomalous / rotating User-Agent string on the outbound HTTP requests.",
+        "expected_value": "http_user_agent NOT IN (host baseline)"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "DGA-style high-entropy query parameter appended to the request URI (q=<random token>).",
+        "expected_value": "uri CONTAINS \"q=\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Operator header X-Simulation-Run-ID present on every simulated HTTP request for POV filtering.",
+        "expected_value": "http_req_headers CONTAINS \"X-Simulation-Run-ID\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/c2-beacon-dry.yml /tmp/c2-beacon-live.yml\necho '[CortexSim] SIM-NDR-001 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "NGFW EAL \u2014 outbound HTTP carrying X-Simulation-Run-ID header (operator filter)",
+        "description": "NGFW EAL \u2014 outbound HTTP carrying X-Simulation-Run-ID header (operator filter)",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"web-browsing\" or app = \"http\"\n| filter http_req_headers contains \"X-Simulation-Run-ID\"\n| filter action = \"allow\"\n| fields _time, src_ip, dst_ip, dst_host, app, uri, http_user_agent, http_req_headers",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pre-flight: simulator manifest visible to operator",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"web-browsing\", \"http\", \"ssl\")\n| filter dst_host = \"testmynids.org\"\n| comp count() as sessions by src_ip, dst_host\n| fields src_ip, dst_host, sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "Dry-run: no NGFW EAL fires (safety policy active)",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"web-browsing\", \"http\")\n| filter dst_host = \"testmynids.org\"\n| filter http_req_headers contains \"X-Simulation-Run-ID\"\n| comp count() as simulated_sessions by src_ip\n| fields src_ip, simulated_sessions",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW EAL \u2014 periodic HTTP beacon (regular interval, anomalous User-Agent)",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"web-browsing\", \"http\")\n| filter dst_host = \"testmynids.org\"\n| filter action = \"allow\"\n| comp count() as beacon_count, count_distinct(http_user_agent) as ua_variants, avg(bytes_sent) as avg_bytes_sent by src_ip, dst_ip, dst_host\n| filter beacon_count >= 8\n| fields src_ip, dst_ip, dst_host, beacon_count, ua_variants, avg_bytes_sent",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW EAL \u2014 DGA-style URI parameter on outbound HTTP",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"web-browsing\", \"http\")\n| filter dst_host = \"testmynids.org\"\n| filter uri contains \"q=\"\n| comp count() as dga_uri_count by src_ip, dst_host, uri\n| fields src_ip, dst_host, uri, dga_uri_count",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "C2 HTTP Beacon \u2014 Periodic Outbound With Anomalous Client",
+        "rule_id": "CR-NDR-0001",
+        "logic": "BIOC(NGFW EAL \u2014 outbound HTTP carrying X-Simulation-Run-ID header (operator filter)) OR (XQL(NGFW EAL \u2014 periodic HTTP beacon (regular interval, anomalous User-Agent)) AND XQL(NGFW EAL \u2014 DGA-style URI parameter on outbound HTTP))"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Network Security Analytics \u2014 Periodic Beaconing / C2 over HTTP",
+      "Cortex XSIAM Analytics \u2014 Rare User-Agent for destination",
+      "Cortex XSIAM Analytics \u2014 DGA-style domain/URI scoring"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id-enhanced-application-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-EAL-HTTP-BEACON-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app in (\"web-browsing\",\"http\") and dst_host = \"testmynids.org\" | fields _time, src_ip, dst_host, uri, http_user_agent"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-C2-BEACON-HTTP",
+          "XSIAM-CR-NDR-0001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = network_story | filter dst_host = \"testmynids.org\" | comp count() by src_ip, dst_host"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-C2BeaconTriage-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: enrich destination reputation, block URL/host at NGFW, isolate beaconing source endpoint, open DFIR ticket."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-050",
+        "name": "NGFW Enhanced Application Log Validation \u2014 HTTP C2 Beacon",
+        "description": "Validate that NGFW EAL + XSIAM Network Security Analytics detect periodic low-jitter HTTP beaconing with anomalous User-Agent and DGA-style URI from a single source.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-050A",
+            "objective": "Periodic HTTP beacon to a single destination is surfaced by Network Security Analytics.",
+            "preconditions": [
+              "NGFW inline with EAL forwarding to XSIAM.",
+              "Egress to testmynids.org permitted for the simulator pod."
+            ],
+            "steps": [
+              "Run SIM-NDR-001 step-03 (live beacon, 12 iterations, 30s sleep, 25% jitter).",
+              "Inspect Network Security Analytics / network_story for the source IP."
+            ],
+            "success_criteria": [
+              "XQL `NGFW EAL \u2014 periodic HTTP beacon (regular interval, anomalous User-Agent)` returns >= 1 row with beacon_count >= 8.",
+              "XQL `NGFW EAL \u2014 DGA-style URI parameter on outbound HTTP` returns >= 1 row.",
+              "Correlation `CR-NDR-0001` raises a single C2 incident for the source."
+            ],
+            "expected_score_weight": 0.7
+          },
+          {
+            "test_case_id": "TC-WEB-050B",
+            "objective": "Operator can isolate simulated sessions via the X-Simulation-Run-ID header.",
+            "success_criteria": [
+              "BIOC `NGFW EAL \u2014 outbound HTTP carrying X-Simulation-Run-ID header (operator filter)` matches every simulated request.",
+              "Dry-run (step-02) produces zero simulated sessions in panw_ngfw_traffic_raw."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce URL Filtering and Advanced Threat Prevention on egress NGFW policy; block newly-registered and high-entropy/DGA domains.",
+      "Require authenticated egress proxy for all outbound web traffic; deny direct internet from server subnets.",
+      "Apply App-ID least-privilege egress rules so only sanctioned applications leave the network."
+    ],
+    "detection_engineering": [
+      "Baseline per-host destination cardinality and inter-request interval; alert on low-jitter periodic sessions to a single external host.",
+      "Score rare User-Agent strings per destination and flag DGA-style high-entropy URI parameters.",
+      "Correlate periodicity + User-Agent anomaly + DGA-URI into one C2 incident rather than alerting on each signal."
+    ],
+    "response_playbook": "XSOAR-PB-C2BeaconTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Cobalt Strike Malleable C2 Profile Analysis",
+      "url": "https://unit42.paloaltonetworks.com/cobalt-strike-malleable-c2-profile/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1071.001 \u2014 Web Protocols",
+      "url": "https://attack.mitre.org/techniques/T1071/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-001."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real NGFW EAL network XQL/BIOC for periodic HTTP beaconing, added correlation CR-NDR-0001, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

@@ -63,9 +63,13 @@ steps:
       - plane: KOI
         type: BIOC
         description: "Code scan — package __init__.py contains subprocess.run on import (post-install hook pattern)"
+        ttp_ref: TTP-2026-0044
+        detection_id: bioc-koi-003-pypi-package-import-time-subprocess-spawn-post-install-hook
       - plane: KOI
         type: Analytics
         description: "Code scan — package name 'mcp-server-helpers' typosquats canonical 'mcp-server-helper'"
+        ttp_ref: TTP-2026-0044
+        detection_id: xql-koi-003-backdoored-pypi-package-name-typosquats-canonical-helper
 
   - id: step-02
     name: "Emulate pip install fetching the package over HTTPS"
@@ -95,9 +99,13 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — outbound HTTPS to non-canonical PyPI mirror with python-requests/pip User-Agent"
+        ttp_ref: TTP-2026-0044
+        detection_id: xql-koi-003-outbound-https-to-non-canonical-pypi-mirror-with-pip-user-agent
       - plane: KOI
         type: Analytics
         description: "URL filter — pypi-mirror domain matches typosquat-of-pypi.org rule"
+        ttp_ref: TTP-2026-0044
+        detection_id: xql-koi-003-pypi-mirror-domain-matches-typosquat-of-pypi-org
 
   - id: step-03
     name: "Confirm Cortex Cloud SCA / SBOM scan flags the package"
@@ -110,9 +118,13 @@ steps:
       - plane: KOI
         type: Analytics
         description: "Cortex Cloud SCA — package fails publisher allowlist + post-install hook policy"
+        ttp_ref: TTP-2026-0044
+        detection_id: xql-koi-003-cortex-cloud-sca-package-fails-publisher-and-post-install-policy
       - plane: KOI
         type: BIOC
         description: "Cortex Cloud SCA — SBOM correlates package digest with known-bad fingerprint"
+        ttp_ref: TTP-2026-0044
+        detection_id: bioc-koi-003-cortex-cloud-sca-sbom-digest-matches-known-bad-fingerprint
 
 cleanup:
   commands:

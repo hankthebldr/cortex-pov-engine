@@ -66,6 +66,8 @@ steps:
       - plane: EDR
         type: Analytics
         description: "Network interface and routing enumeration from service account — internal recon preceding lateral movement"
+        ttp_ref: "TTP-2026-0036"
+        detection_id: "xql-edr-005-analytics-network-interface-and-routing-enumeration"
 
   - id: step-02
     name: "Port scan local subnet for SSH and common services"
@@ -82,9 +84,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Port scanning via bash /dev/tcp — network service discovery from web service account"
+        ttp_ref: "TTP-2026-0036"
+        detection_id: "bioc-edr-005-port-scan-via-bash-devtcp"
       - plane: EDR
         type: Analytics
         description: "Sequential port connection attempts across multiple services — automated service enumeration"
+        ttp_ref: "TTP-2026-0036"
+        detection_id: "xql-edr-005-analytics-sequential-port-connection-attempts"
 
   - id: step-03
     name: "SSH lateral movement attempt to discovered hosts"
@@ -101,9 +107,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "SSH connection attempt from service account — lateral movement via remote service"
+        ttp_ref: "TTP-2026-0036"
+        detection_id: "bioc-edr-005-batch-mode-ssh-from-service-account"
       - plane: EDR
         type: Analytics
         description: "Batch-mode SSH with StrictHostKeyChecking disabled — automated lateral movement tool behavior"
+        ttp_ref: "TTP-2026-0036"
+        detection_id: "xql-edr-005-analytics-batch-ssh-stricthostkey-disabled"
 
   - id: step-04
     name: "Establish SSH tunnel for data exfiltration channel"
@@ -125,9 +135,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "SSH tunnel creation (-L/-D flags) — protocol tunneling for covert channel establishment"
+        ttp_ref: "TTP-2026-0036"
+        detection_id: "bioc-edr-005-ssh-tunnel-creation-with-forward-flags"
       - plane: EDR
         type: Analytics
         description: "SSH invoked with port forwarding from service account — data exfiltration channel pattern"
+        ttp_ref: "TTP-2026-0036"
+        detection_id: "xql-edr-005-analytics-ssh-port-forwarding-from-service-account"
 
   - id: step-05
     name: "Remote system discovery via DNS and host enumeration"
@@ -145,6 +159,8 @@ steps:
       - plane: EDR
         type: Analytics
         description: "DNS and host file enumeration from service account — remote system discovery for lateral movement planning"
+        ttp_ref: "TTP-2026-0036"
+        detection_id: "xql-edr-005-analytics-dns-and-host-file-enumeration"
 
 cleanup:
   commands:

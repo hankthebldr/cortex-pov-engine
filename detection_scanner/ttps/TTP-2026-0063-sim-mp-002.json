@@ -1,0 +1,426 @@
+{
+  "id": "TTP-2026-0063",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "plane-itdr",
+      "plane-edr",
+      "plane-ndr",
+      "vector-kerberoast",
+      "vector-pass-the-hash",
+      "vector-lateral-movement",
+      "industry-all",
+      "severity-critical",
+      "identity",
+      "multi-plane-stitch",
+      "windows"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 240,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Kerberoast \u2192 Pass-the-Hash \u2192 DCSync Multi-Plane Stitch (T1558.003 / T1550.002 / T1003.006)",
+    "summary": "An attacker enumerates Active Directory service accounts by LDAP servicePrincipalName filter, floods the KDC with TGS-REQ to roast crackable service tickets, cracks sql-svc offline, replays the credential over SMB to a workstation (Pass-the-Hash), then escalates to a DCSync replication pull from the DC. Cortex ITDR fires identity BIOCs (LDAP SPN sweep, service-account interactive logon), Cortex\u2026",
+    "description": "This is the flagship multi-plane identity attack chain. It begins with reconnaissance: impacket-GetUserSPNs issues an LDAP query filtered on servicePrincipalName=* from a non-typical host, which Cortex ITDR recognizes as a Kerberoasting precursor. The same tool requests TGS service tickets for every roastable SPN, producing a burst of Kerberos 4769 TGS-REQ events from a single source against multiple service principals \u2014 an analytics-grade anomaly on the ITDR plane and a corresponding spike of port-88 Kerberos traffic on the NGFW. The sql-svc ticket is cracked offline (simulated). The cracked credential is then replayed against a domain workstation over SMB (Pass-the-Hash): Cortex XDR for the workstation flags a service account authenticating remotely from a non-typical host, ITDR flags the same service account used in an interactive/network logon context it never normally uses, and the NGFW records a port-445 SMB session from the attack endpoint into the workstation subnet. Finally the attacker pulls directory replication via DRSUAPI GetNCChanges (DCSync) \u2014 covered by the canonical DCSync card (TTP-2026-0004) for the ITDR legs, while this card supplies the NGFW DCE/RPC (port 135 + ephemeral) network leg. Two XSIAM correlation rules tie it together: CR-MP-0011 stitches the same identity+hash observed across DC auth logs, the NGFW SMB session, and the XDR remote logon into one lateral-movement incident; CR-MP-0012 measures the MTTD clock between the Kerberoast recon stage and the later lateral-auth stage, proving XSIAM's cross-plane timeline reconstruction.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2017-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1558",
+        "name": "Steal or Forge Kerberos Tickets: Kerberoasting",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1558.003"
+      },
+      {
+        "technique_id": "T1550",
+        "name": "Use Alternate Authentication Material: Pass the Hash",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1550.002"
+      },
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1021.002"
+      },
+      {
+        "technique_id": "T1003",
+        "name": "OS Credential Dumping: DCSync",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1003.006"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Active Directory: Active Directory Object Access",
+      "Logon Session: Logon Session Creation",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "impacket-GetUserSPNs / impacket-smbclient / impacket-secretsdump (SIM-MP-002)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex ITDR connected to the Active Directory domain (security event + LDAP/Kerberos telemetry) and a healthy Cortex XDR agent on the target workstation.",
+        "check_command": "nslookup -type=SRV _ldap._tcp.cortexsim.local"
+      },
+      {
+        "description": "Lab matching scenario SIM-MP-002: ITDR AD lab with seeded Kerberoastable service accounts, EDR workstation, and NDR firewall/flow telemetry forwarding to XSIAM.",
+        "check_command": "impacket-GetUserSPNs cortexsim.local/Administrator -dc-ip 10.0.10.10 2>&1 | head -3"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# All activity targets the authorised SIM-MP-002 lab AD/workstation.\nimpacket-GetUserSPNs cortexsim.local/Administrator:$ADMIN_PWD -dc-ip 10.0.10.10 -request\nimpacket-smbclient cortexsim.local/sql-svc:Summer2024@10.0.10.20 -c 'ls \\\\ADMIN$'\nimpacket-secretsdump -just-dc-user krbtgt cortexsim.local/sql-svc:Summer2024@10.0.10.10",
+      "input_variables": [],
+      "timeout_seconds": 240
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "LDAP search with a servicePrincipalName filter from a non-DC, non-admin host (SPN sweep).",
+        "expected_value": "search_filter contains \"servicePrincipalName\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Burst of Kerberos 4769 TGS-REQ for multiple service principals from one source within a short window.",
+        "expected_value": "event_id = 4769 and count_distinct(service_name) >= 3"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Spike of outbound Kerberos (TCP/UDP 88) sessions from the attacker host to the DC.",
+        "expected_value": "dst_port = 88 from attacker host"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Service account sql-svc authenticating remotely over SMB to a workstation it never logs into.",
+        "expected_value": "account_name = \"sql-svc\" and logon_type in (3, 9) and dst_host = workstation"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "SMB (TCP 445) session from the attack endpoint to the workstation subnet.",
+        "expected_value": "dst_port = 445 from attacker host"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "DCE/RPC endpoint-mapper (TCP 135) + high ephemeral port traffic to the DC from the attacker (DCSync replication).",
+        "expected_value": "dst_port = 135 or (dst_port >= 49152 and dst_host = DC)"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-MP-002 cleanup complete \u2014 removing simulated crack artifact'; rm -f /tmp/cortexsim_mp002_cracked.txt"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "MP-002 LDAP SPN Sweep From Non-Typical Host",
+        "description": "ITDR - LDAP search filter (servicePrincipalName=*) from non-typical host. An LDAP query enumerating servicePrincipalName attributes (Kerberoasting recon) originates from a host that is not a domain controller and not an established admin workstation.",
+        "logic": "dataset = okta_sso\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter operation_name in (\"LDAP_SEARCH\", \"DirectorySearch\")\n| filter lower(search_filter) contains \"serviceprincipalname\"\n| filter src_host not in (\"DC01\", \"DC02\")\n| filter actor_effective_username not in (\"Administrator\", \"svc-bloodhound\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1558.003"
+        ]
+      },
+      {
+        "name": "MP-002 Service Account Used Interactively",
+        "description": "ITDR - service account used interactively (normally machine-only context). The sql-svc service account, which only ever authenticates as a machine/service principal, is observed in an interactive or network logon \u2014 a hallmark of a cracked-then-replayed Kerberoast credential.",
+        "logic": "dataset = okta_sso\n| filter event_type = ENUM.AUTHENTICATION\n| filter lower(account_name) in (\"sql-svc\", \"cortexsim\\\\sql-svc\")\n| filter logon_type in (2, 3, 9, 10)\n| filter account_is_service_account = true\n| fields _time, account_name, logon_type, src_host, dst_host",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550.002",
+          "T1021.002"
+        ]
+      },
+      {
+        "name": "MP-002 Service Account Remote SMB Authentication On Workstation",
+        "description": "XDR (workstation) - sql-svc account authenticated remotely via SMB from non-typical host. The workstation's Cortex XDR agent observes a network logon (type 3) for the sql-svc service account sourced from the attack endpoint \u2014 Pass-the-Hash lateral movement.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.AUTHENTICATION\n| filter auth_logon_type = 3\n| filter lower(auth_username) contains \"sql-svc\"\n| filter auth_remote_ip != null and auth_remote_ip not in (\"10.0.10.10\")\n| fields _time, agent_hostname, auth_username, auth_remote_ip, auth_logon_type",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1550.002",
+          "T1021.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-002 Kerberos TGS-REQ Flood From Single Source",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter event_id = 4769\n| comp count_distinct(service_name) as spn_count by src_host, actor_effective_username\n| filter spn_count >= 3\n| fields src_host, actor_effective_username, spn_count",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-002 NGFW Kerberos Port 88 Traffic Spike From Attacker Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 88\n| filter app in (\"kerberos\", \"ms-kerberos\") or proto in (\"tcp\", \"udp\")\n| comp count(session_id) as kerb_sessions by source_ip, dest_ip\n| filter kerb_sessions >= 5\n| fields source_ip, dest_ip, kerb_sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-002 NGFW SMB Port 445 Session Attacker To Workstation",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 445\n| filter app in (\"ms-ds-smbv3\", \"ms-ds-smb\", \"smb\")\n| fields _time, source_ip, dest_ip, dst_port, app, bytes_total",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-002 NGFW DCE RPC Port 135 Ephemeral Traffic To DC",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 135 or (dst_port >= 49152 and dst_port <= 65535)\n| filter app in (\"msrpc\", \"ms-ds-smbv3\", \"dcerpc\")\n| filter dest_ip = \"10.0.10.10\"\n| fields _time, source_ip, dest_ip, dst_port, app",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-002 XSIAM Stitch Same Identity Across DC Workstation And NGFW",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter lower(account_name) contains \"sql-svc\"\n| union (dataset = xdr_data | filter event_type = ENUM.AUTHENTICATION | filter lower(auth_username) contains \"sql-svc\" | alter account_name = auth_username, _product = \"xdr\")\n| union (dataset = panw_ngfw_traffic_raw | filter dst_port in (445, 135) | alter account_name = \"sql-svc\", _product = \"ngfw\")\n| comp count_distinct(_product) as plane_count by account_name\n| filter plane_count >= 2\n| fields account_name, plane_count",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-002 XSIAM MTTD Clock Kerberoast Recon To Lateral Auth",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 7200)\n| filter (event_id = 4769 and lower(account_name) contains \"sql-svc\") or (event_type = ENUM.AUTHENTICATION and logon_type = 3 and lower(account_name) contains \"sql-svc\")\n| comp min(_time) as first_roast, max(_time) as lateral_auth by account_name\n| alter mttd_seconds = timestamp_diff(lateral_auth, first_roast, \"SECOND\")\n| fields account_name, first_roast, lateral_auth, mttd_seconds",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Kerberoast PtH Lateral Movement Same Identity Stitch",
+        "rule_id": "CR-MP-0011",
+        "logic": "BIOC(MP-002 LDAP SPN Sweep From Non-Typical Host) OR BIOC(MP-002 Service Account Used Interactively) OR BIOC(MP-002 Service Account Remote SMB Authentication On Workstation)"
+      },
+      {
+        "name": "Kerberoast To Lateral Auth MTTD Timeline Window",
+        "rule_id": "CR-MP-0012",
+        "logic": "BIOC(MP-002 LDAP SPN Sweep From Non-Typical Host) AND (BIOC(MP-002 Service Account Used Interactively) OR BIOC(MP-002 Service Account Remote SMB Authentication On Workstation))"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex ITDR \u2014 Kerberoasting recon (LDAP SPN sweep + TGS-REQ burst)",
+      "Cortex XDR Analytics \u2014 Service account remote authentication anomaly",
+      "Cortex XSIAM \u2014 Cross-plane identity stitching and MTTD timeline reconstruction"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "identity-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "ITDR-BIOC-MP-0063-SPN-SWEEP",
+          "ITDR-ANL-MP-0063-TGS-FLOOD",
+          "ITDR-BIOC-MP-0063-SVC-INTERACTIVE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = okta_sso | filter lower(search_filter) contains \"serviceprincipalname\" or event_id = 4769 | fields _time, src_host, actor_effective_username, search_filter, service_name"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-MP-0063-SVC-REMOTE-SMB"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter event_type = ENUM.AUTHENTICATION | filter lower(auth_username) contains \"sql-svc\" and auth_logon_type = 3 | fields _time, agent_hostname, auth_username, auth_remote_ip"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-ANL-MP-0063-KERB88",
+          "NGFW-ANL-MP-0063-SMB445",
+          "NGFW-ANL-MP-0063-DCERPC135"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_port in (88, 445, 135) | comp count(session_id) as sessions by source_ip, dest_ip, dst_port"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-MP-0011",
+          "XSIAM-CR-MP-0012"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-MP-0011 stitches the same identity across DC/XDR/NGFW into one lateral-movement incident; CR-MP-0012 measures the Kerberoast\u2192lateral-auth MTTD timeline."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CRED-063",
+        "name": "Cross-Plane Identity Attack Chain \u2014 Kerberoast to DCSync",
+        "description": "Detect and stitch the full Kerberoasting \u2192 Pass-the-Hash \u2192 DCSync kill chain across the Cortex ITDR, XDR, NDR and XSIAM correlation planes into a single high-severity incident with an end-to-end MTTD timeline.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CRED-063A",
+            "objective": "Each plane fires its corresponding detection during SIM-MP-002.",
+            "preconditions": [
+              "Cortex ITDR connected to AD with the seeded Kerberoastable accounts.",
+              "Cortex XDR agent healthy on the target workstation.",
+              "NGFW/flow telemetry forwarding to XSIAM."
+            ],
+            "steps": [
+              "Run SIM-MP-002 steps 1-4.",
+              "Observe ITDR/XDR/NGFW detections per plane in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `MP-002 LDAP SPN Sweep From Non-Typical Host` fires on step-01.",
+              "XQL `MP-002 Kerberos TGS-REQ Flood From Single Source` returns >= 1 row.",
+              "BIOC `MP-002 Service Account Remote SMB Authentication On Workstation` fires on step-03.",
+              "All six NGFW/ITDR XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-CRED-063B",
+            "objective": "Cross-plane signals stitch into one incident with an MTTD timeline.",
+            "success_criteria": [
+              "Correlation `CR-MP-0011` groups the ITDR + XDR + NGFW signals for sql-svc into one lateral-movement incident.",
+              "Correlation `CR-MP-0012` reports a non-zero MTTD window between Kerberoast recon and lateral auth.",
+              "Incident severity is Critical."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Set long (25+ character) random passwords or use group Managed Service Accounts (gMSA) for all SPN-bearing service accounts.",
+      "Deny interactive/network logon rights to service accounts via Group Policy (Logon As A Service only).",
+      "Restrict DCSync (Replicating Directory Changes) rights to domain controllers only and audit who holds them.",
+      "Segment server and workstation subnets and restrict SMB (445) and DCE-RPC (135 + ephemeral) east-west with the NGFW."
+    ],
+    "detection_engineering": [
+      "Alert on LDAP searches filtering servicePrincipalName from non-DC, non-admin hosts.",
+      "Alert on a burst of Kerberos 4769 TGS-REQ for multiple SPNs from a single source.",
+      "Alert on any service account performing interactive/network logon, and correlate it with the matching NGFW SMB/DCE-RPC session.",
+      "Stitch identity, endpoint and network signals for the same account into one incident and report the MTTD across stages."
+    ],
+    "response_playbook": "XSOAR-PB-KerberoastLateralMovementResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Active Directory Attack Paths",
+      "url": "https://unit42.paloaltonetworks.com/active-directory-attack-paths/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1558.003 \u2014 Kerberoasting",
+      "url": "https://attack.mitre.org/techniques/T1558/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1550.002 \u2014 Pass the Hash",
+      "url": "https://attack.mitre.org/techniques/T1550/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1003.006 \u2014 DCSync",
+      "url": "https://attack.mitre.org/techniques/T1003/006/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-MP-002."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Authored real multi-plane detections for the 9 previously-unlinked SIM-MP-002 expected_detections (ITDR LDAP SPN sweep + service-account interactive BIOCs, XDR remote-SMB BIOC, Kerberos/SMB/DCE-RPC NGFW XQL, XSIAM stitch + MTTD XQL), added correlation CR-MP-0011/CR-MP-0012, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

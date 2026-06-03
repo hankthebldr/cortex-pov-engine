@@ -56,6 +56,8 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "Pre-flight: oauth_grant_emulator metadata visible to operator"
+        ttp_ref: TTP-2026-0029
+        detection_id: bioc-cloud-003-pre-flight-oauth-grant-emulator-plugin-registered
 
   - id: step-02
     name: "Single full-mailbox grant request to Google OAuth endpoint"
@@ -84,9 +86,13 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — full mail.google.com scope grant attempt detected"
+        ttp_ref: TTP-2026-0029
+        detection_id: xql-cloud-003-google-full-mailbox-scope-grant-attempt
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — outbound /o/oauth2/v2/auth App-ID match to accounts.google.com"
+        ttp_ref: TTP-2026-0029
+        detection_id: xql-cloud-003-ngfw-google-oauth-authorize-mailbox-scope-egress
 
   - id: step-03
     name: "Microsoft mailbox grant in parallel — cross-provider mailbox-collection pattern"
@@ -114,9 +120,13 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — Mail.ReadWrite + offline_access grant to Microsoft within 5 min of Google attempt"
+        ttp_ref: TTP-2026-0029
+        detection_id: xql-cloud-003-microsoft-mail-readwrite-offline-access-token-replay-grant
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — same identity targeting two mail providers within rotation window"
+        ttp_ref: TTP-2026-0029
+        detection_id: xql-cloud-003-cross-provider-mailbox-collection-same-identity-stitch
 
 cleanup:
   commands:

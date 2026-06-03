@@ -1,0 +1,283 @@
+{
+  "id": "TTP-2026-0037",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-impossible-travel",
+      "identity",
+      "okta",
+      "microsoft-entra",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "ITDR \u2014 Impossible Travel (Okta + Entra sign-ins from US-West and APAC-East)",
+    "summary": "The idp_signin_emulator emits two SUCCESS sign-in events for one user from geographically distant source IPs (US-West then APAC-East) within an interval shorter than any feasible flight. Cortex ITDR analyzes the IdP sign-in stream \u2014 Okta system log and Microsoft Entra signInLogs \u2014 and raises an impossible-travel anomaly on the same identity, then proves the rule fires identically across both pr\u2026",
+    "description": "Impossible travel is the canonical session-hijack / stolen-credential tell in identity telemetry: the same principal authenticates successfully from two locations whose great-circle distance cannot be covered in the elapsed time between logins. Adversaries who phish credentials or replay an AiTM-stolen session cookie trip this signal because their infrastructure sits in a different geo than the legitimate user. This scenario drives CortexSim's idp_signin_emulator to POST two SUCCESS authentication events for ada.lovelace \u2014 first from a US-West source IP/city, then seconds later from an APAC-East source IP/city \u2014 into the identity log collector, in both Okta system-log shape and Microsoft Entra signInLogs shape. Detection is pure IdP-log analytics in Cortex ITDR: an XQL rule windows successful authentications per user, computes distinct source-geo count inside a travel-infeasibility window, and alerts when one user logs in successfully from two far-apart countries inside it. A second validation query proves the same logic resolves over the Microsoft Entra dataset, and an NGFW EAL query confirms the outbound POST burst to the collector so the network plane corroborates the identity signal. A correlation rule fuses the Okta and Microsoft anomalies for one identity into a single account-compromise incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1078.004"
+      },
+      {
+        "technique_id": "T1539",
+        "name": "Steal Web Session Cookie",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Logon Session: Logon Session Creation",
+      "User Account: User Account Authentication",
+      "Cloud Service: Cloud Service Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin \u2014 event_pattern=impossible_travel",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "CortexSim idp_signin_emulator EAL plugin registered and an authorized identity log collector endpoint reachable.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe idp_signin_emulator | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Cortex ITDR ingesting the Okta system log and Microsoft Entra signInLogs datasets."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Emit two SUCCESS sign-ins for one user from distant geos (Okta then Microsoft shape).\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-001.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-001-ms.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "Two SUCCESS sign-in events for the same user from distant source-geo countries within a travel-infeasibility window.",
+        "expected_value": "auth_outcome = \"SUCCESS\" and distinct src_geo_country >= 2 for one actor within window"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS POST burst from the scenario runner to the identity log collector.",
+        "expected_value": "dst_port = 443 and url contains \"/idp/events\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/itdr-001.yml /tmp/itdr-001-ms.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "ITDR-001 Pre-Flight idp_signin_emulator Metadata Visible",
+        "description": "Pre-flight: idp_signin_emulator metadata visible to operator. Confirms the EAL plugin is registered and exposes IdP sign-in targets before any events are emitted, so a null result means a harness fault rather than a detection miss.",
+        "logic": "dataset = okta_sso\n| filter eventType in (\"system.api_token.create\", \"application.lifecycle.activate\") or _raw_log contains \"idp_signin_emulator\"\n| comp count() as preflight_events by actor_effective_username\n| filter preflight_events >= 0",
+        "severity": "informational",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-001 Impossible Travel Two Distant Geos Within Window",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter eventType = \"user.session.start\" and auth_outcome = \"SUCCESS\"\n| comp count_distinct(src_geo_country) as geo_count, count_distinct(src_ip) as ip_count, earliest(_time) as first_seen, latest(_time) as last_seen, values(src_geo_city) as cities by actor_effective_username\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter geo_count >= 2 and window_minutes <= 300\n| fields actor_effective_username, geo_count, ip_count, cities, window_minutes, first_seen, last_seen",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-001 NGFW Outbound POST Burst To Identity Collector",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"web-browsing\", \"ssl\") and dst_port = 443\n| filter uri_path contains \"/idp/events\" or url contains \"/idp/events\"\n| comp count() as post_count, sum(bytes_sent) as bytes_out by src_ip, dst_host\n| filter post_count >= 1\n| fields src_ip, dst_host, post_count, bytes_out",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-001 Impossible Travel Microsoft SignInLogs Shape",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 1800)\n| filter auth_outcome = \"SUCCESS\"\n| comp count_distinct(src_geo_country) as geo_count, earliest(_time) as first_seen, latest(_time) as last_seen, values(src_geo_city) as cities by user_name\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter geo_count >= 2 and window_minutes <= 300\n| fields user_name, geo_count, cities, window_minutes, first_seen, last_seen",
+        "expected_rows_min": 1,
+        "dataset": "msft_azure_ad_signin"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Impossible Travel Account Compromise \u2014 Cross-Provider Identity",
+        "rule_id": "CR-ITDR-0001",
+        "logic": "XQL(ITDR-001 Impossible Travel Two Distant Geos Within Window) OR XQL(ITDR-001 Impossible Travel Microsoft SignInLogs Shape)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex ITDR Analytics \u2014 Impossible travel between successful authentications",
+      "Cortex XSIAM Identity Analytics \u2014 Geo-velocity anomaly per principal"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "itdr-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "ITDR-IMPOSSIBLE-TRAVEL-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = okta_sso | filter auth_outcome = \"SUCCESS\" | comp count_distinct(src_geo_country) as geo by actor_effective_username | filter geo >= 2"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-ITDR-0001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-ITDR-0001 fuses Okta and Microsoft Entra impossible-travel anomalies for one identity into one account-compromise incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-IDENT-037",
+        "name": "Geo-Anomaly Sign-In Detection",
+        "description": "Detect a single identity authenticating successfully from geographically impossible locations within a travel-infeasibility window, across both Okta and Microsoft Entra log shapes.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-IDENT-037A",
+            "objective": "Two SUCCESS sign-ins from distant geos within 5 minutes raise an impossible-travel anomaly.",
+            "preconditions": [
+              "Cortex ITDR ingesting okta_sso and msft_azure_ad_signin datasets.",
+              "idp_signin_emulator authorized against the lab collector."
+            ],
+            "steps": [
+              "Run SIM-ITDR-001 steps 1-3.",
+              "Observe the impossible-travel anomaly per identity in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `ITDR-001 Impossible Travel Two Distant Geos Within Window` returns >= 1 row.",
+              "XQL `ITDR-001 Impossible Travel Microsoft SignInLogs Shape` returns >= 1 row.",
+              "NGFW POST-burst query corroborates the collector egress."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-IDENT-037B",
+            "objective": "Okta and Microsoft anomalies for one identity stitch into a single incident.",
+            "success_criteria": [
+              "Correlation `CR-ITDR-0001` groups both provider anomalies under one account-compromise incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce conditional-access policies that block or step-up authentications from anomalous geographies.",
+      "Bind sessions to device posture and require re-authentication on network/geo change.",
+      "Shorten session and refresh-token lifetimes for privileged identities."
+    ],
+    "detection_engineering": [
+      "Window successful authentications per principal and alert when distinct source-geo count exceeds 1 inside a travel-infeasibility window.",
+      "Normalize Okta system-log and Microsoft Entra signInLogs into one identity schema so the rule fires regardless of provider.",
+      "Corroborate the identity anomaly with the NGFW egress shape to the IdP/collector."
+    ],
+    "response_playbook": "XSOAR-PB-IdentityImpossibleTravel-v1"
+  },
+  "references": [
+    {
+      "title": "Okta - Identity Threat Trends 2025",
+      "url": "https://www.okta.com/identity-101/",
+      "publisher": "Okta",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 \u2014 Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-ITDR-001."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real IdP-log impossible-travel XQL (Okta + Entra), pre-flight BIOC, NGFW corroboration query, correlation CR-ITDR-0001; enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

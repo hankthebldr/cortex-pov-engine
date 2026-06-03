@@ -53,6 +53,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "Pre-flight: sinkhole port 3333 reachable"
+        ttp_ref: TTP-2026-0052
+        detection_id: xql-pre-flight-sinkhole-port-3333-reachable
 
   - id: step-02
     name: "Launch Stratum JSON-RPC sessions against sinkhole"
@@ -83,12 +85,18 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW App-ID — Stratum/cryptocurrency-mining identified on outbound TCP"
+        ttp_ref: TTP-2026-0052
+        detection_id: xql-ngfw-app-id-stratum-cryptocurrency-mining-identified-on-outbound-tcp
       - plane: NDR
         type: IOC
         description: "NGFW EAL — JSON-RPC mining.subscribe payload observed in session"
+        ttp_ref: TTP-2026-0052
+        detection_id: ioc-user-agent-stratum-json-rpc-mining-subscribe
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — repeated short-lived TCP sessions to mining pool port"
+        ttp_ref: TTP-2026-0052
+        detection_id: bioc-ngfw-eal-repeated-short-lived-tcp-sessions-to-mining-pool-port
 
 cleanup:
   commands:

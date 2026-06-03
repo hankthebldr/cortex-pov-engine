@@ -61,6 +61,8 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "Pre-flight: target /owasp/llm10/chat accepts unbounded max_tokens"
+        ttp_ref: "TTP-2026-0016"
+        detection_id: "xql-airs-llm10-preflight-endpoint-accepts-unbounded-max-tokens"
 
   - id: step-02
     name: "Issue 50 high-token requests to drain the cost / latency budget"
@@ -78,12 +80,18 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "AIRS — token-usage rolling sum exceeds per-user budget (DoS-class detector)"
+        ttp_ref: "TTP-2026-0016"
+        detection_id: "xql-airs-llm10-token-usage-rolling-sum-exceeds-per-user-budget"
       - plane: AIRS
         type: Analytics
         description: "AIRS — p95 latency on /owasp/llm10/chat exceeds threshold under load"
+        ttp_ref: "TTP-2026-0016"
+        detection_id: "xql-airs-llm10-p95-latency-on-chat-endpoint-exceeds-threshold-under-load"
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — sustained POST burst to AIRS endpoint flagged as anomalous app traffic"
+        ttp_ref: "TTP-2026-0016"
+        detection_id: "xql-airs-llm10-ngfw-sustained-post-burst-flagged-anomalous-app-traffic"
 
   - id: step-03
     name: "Verify AIRS rate-limit / circuit-breaker engaged"
@@ -99,6 +107,8 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "AIRS — circuit-breaker / cost-cap policy engaged, request rejected with 429 / blocked"
+        ttp_ref: "TTP-2026-0016"
+        detection_id: "xql-airs-llm10-circuit-breaker-rejects-oversized-request-with-429"
 
 cleanup:
   commands:

@@ -58,6 +58,8 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "Pre-flight: plugin metadata visible to operator"
+        ttp_ref: TTP-2026-0021
+        detection_id: xql-pre-flight-plugin-metadata-visible-to-operator
 
   - id: step-02
     name: "Drive Prisma Browser to sensitive page and attempt screen captures"
@@ -88,9 +90,13 @@ steps:
       - plane: BROWSER
         type: BIOC
         description: "Prisma Browser — page.screenshot() called against origin tagged sensitive — block + alert"
+        ttp_ref: TTP-2026-0021
+        detection_id: bioc-prisma-browser-page-screenshot-called-against-origin-tagged-sensitive-block-alert
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — screen-capture-attempt counter increments under sensitive-content policy"
+        ttp_ref: TTP-2026-0021
+        detection_id: xql-prisma-browser-screen-capture-attempt-counter-increments-under-sensitive-content-policy
 
   - id: step-03
     name: "Confirm repeat-capture risk-score elevation"
@@ -102,9 +108,13 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — repeat screen-capture from same user counts toward elevated risk score"
+        ttp_ref: TTP-2026-0021
+        detection_id: xql-prisma-browser-repeat-screen-capture-from-same-user-counts-toward-elevated-risk-score
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM — user risk score elevated, conditional-access policy triggered downstream"
+        ttp_ref: TTP-2026-0021
+        detection_id: xql-xsiam-user-risk-score-elevated-conditional-access-policy-triggered-downstream
 
 cleanup:
   commands:

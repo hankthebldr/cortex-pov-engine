@@ -54,6 +54,8 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "Pre-flight: oauth_grant_emulator metadata visible to operator"
+        ttp_ref: TTP-2026-0027
+        detection_id: bioc-cloud-001-pre-flight-oauth-grant-emulator-plugin-registered
 
   - id: step-02
     name: "Single risky-drive grant request to Okta authorize endpoint"
@@ -82,9 +84,13 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — outbound OAuth authorize to Okta carrying drive-wide scope"
+        ttp_ref: TTP-2026-0027
+        detection_id: xql-cloud-001-okta-risky-drive-wide-oauth-scope-grant
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — outbound /oauth2/v1/authorize App-ID match to *.okta.com"
+        ttp_ref: TTP-2026-0027
+        detection_id: xql-cloud-001-ngfw-okta-oauth-authorize-risky-scope-egress
 
   - id: step-03
     name: "Repeated grant attempts (x3) to confirm rate-pattern detection"
@@ -113,6 +119,8 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — repeated risky grant attempts (3 in <60s) flagged as enumeration pattern"
+        ttp_ref: TTP-2026-0027
+        detection_id: xql-cloud-001-okta-repeated-risky-grant-enumeration-burst
 
 cleanup:
   commands:
