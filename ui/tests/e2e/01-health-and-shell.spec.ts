@@ -42,7 +42,7 @@ test.describe('app shell', () => {
     }
     // More-menu items
     for (const label of [/Environments/, /ATT&CK Coverage/]) {
-      await page.getByRole('button', { name: /More/ }).click()
+      await page.locator('button[aria-haspopup="menu"]').click()
       await page.getByRole('menuitem', { name: label }).click()
       await page.waitForLoadState('networkidle')
     }

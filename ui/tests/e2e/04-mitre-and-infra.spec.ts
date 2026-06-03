@@ -20,7 +20,7 @@ test('ATT&CK Coverage tab renders with MITRE coverage data', async ({ page, api 
   // "More ▾ → ATT&CK Coverage" (role="menuitem"), so two clicks are needed;
   // the listener must precede both to avoid a race.
   const respPromise = page.waitForResponse('**/api/mitre/coverage', { timeout: 10_000 })
-  await page.getByRole('button', { name: /More/ }).click()
+  await page.locator('button[aria-haspopup="menu"]').click()
   await page.getByRole('menuitem', { name: /ATT&CK Coverage/ }).click()
   const resp = await respPromise
   expect(resp.ok()).toBe(true)
@@ -36,7 +36,7 @@ test('Lab tab lists Infra Generator AWS modules and exposes Generate action', as
   await api.health()
   await page.goto('/')
   // Redesign v2: Lab is now "Environments" under the More menu.
-  await page.getByRole('button', { name: /More/ }).click()
+  await page.locator('button[aria-haspopup="menu"]').click()
   await page.getByRole('menuitem', { name: /Environments/ }).click()
   await page.waitForLoadState('networkidle')
 

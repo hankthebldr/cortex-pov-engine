@@ -26,7 +26,7 @@ test('Adapter Registry opens and shows plugin surface', async ({ page, api, base
 
   // UI side — navigate to Coverage (via More menu in redesign v2) → EAL Plugins sub-tab
   await page.goto('/')
-  await page.getByRole('button', { name: /More/ }).click()
+  await page.locator('button[aria-haspopup="menu"]').click()
   await page.getByRole('menuitem', { name: /ATT&CK Coverage/ }).click()
   await page.waitForLoadState('networkidle')
   await page.getByRole('tab', { name: /^EAL Plugins$/ }).click()
