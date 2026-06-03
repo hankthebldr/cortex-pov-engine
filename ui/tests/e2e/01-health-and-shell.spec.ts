@@ -31,19 +31,19 @@ test.describe('app shell', () => {
 
   test('view toggles flip the main panel without errors', async ({ page }) => {
     await page.goto('/')
-    // Migrated from the legacy theme: the Mission Ops Console (default)
-    // has tabs Operations / In-Flight / Evidence / Lab / Coverage. The
-    // legacy MITRE/Deploy/EAL/Runs labels are still reachable via
-    // ?theme=legacy but are no longer the default render path.
-    const tabs = [
-      { role: 'tab', name: /Operations/   },
-      { role: 'tab', name: /In-Flight/    },
-      { role: 'tab', name: /Evidence/     },
-      { role: 'tab', name: /Lab/          },
-      { role: 'tab', name: /Coverage/     },
-    ]
-    for (const t of tabs) {
-      await page.getByRole(t.role as 'tab', { name: t.name }).first().click()
+    // Redesign v2 (PR console-redesign-v2): the flat tab bar was replaced by
+    // a numbered ConsoleStepper. Primary steps use role="tab"; secondary views
+    // (ATT&CK Coverage, Environments/Lab, Tenants) live behind a "More" menu
+    // with role="menuitem".
+    // Step labels: Targets | Library | Launch | Live | Evidence
+    for (const name of [/Library/, /Launch/, /Live/, /Evidence/]) {
+      await page.getByRole('tab', { name }).first().click()
+      await page.waitForLoadState('networkidle')
+    }
+    // More-menu items
+    for (const label of [/Environments/, /ATT&CK Coverage/]) {
+      await page.getByRole('button', { name: /More/ }).click()
+      await page.getByRole('menuitem', { name: label }).click()
       await page.waitForLoadState('networkidle')
     }
   })

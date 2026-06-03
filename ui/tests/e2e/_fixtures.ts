@@ -43,7 +43,11 @@ export const test = base.extend<Helpers>({
       },
       async launchPush(scenarioId: string) {
         const r = await request.post(`${baseURL}/api/run`, {
-          data: { scenario_id: scenarioId, mode: 'push' },
+          // consent.simulation_authorized is required for scenarios that use
+          // dual-use tool adapters (e.g. TOOL-ATOMIC-RED-TEAM). Safe to always
+          // pass in e2e tests — the engine only checks it when a gated adapter
+          // is actually present, and it has no effect otherwise.
+          data: { scenario_id: scenarioId, mode: 'push', consent: { simulation_authorized: true } },
         })
         if (!r.ok()) throw new Error(`launch failed: ${await r.text()}`)
         const body = await r.json()

@@ -24,9 +24,10 @@ test('Adapter Registry opens and shows plugin surface', async ({ page, api, base
   expect(Array.isArray(pluginList)).toBe(true)
   expect(pluginList.length).toBeGreaterThan(0)
 
-  // UI side — navigate Operations → Coverage → EAL Plugins
+  // UI side — navigate to Coverage (via More menu in redesign v2) → EAL Plugins sub-tab
   await page.goto('/')
-  await page.getByRole('tab', { name: /Coverage/ }).first().click()
+  await page.getByRole('button', { name: /More/ }).click()
+  await page.getByRole('menuitem', { name: /ATT&CK Coverage/ }).click()
   await page.waitForLoadState('networkidle')
   await page.getByRole('tab', { name: /^EAL Plugins$/ }).click()
   await page.waitForLoadState('networkidle')

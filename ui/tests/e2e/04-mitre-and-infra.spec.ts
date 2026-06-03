@@ -15,11 +15,13 @@ test('ATT&CK Coverage tab renders with MITRE coverage data', async ({ page, api 
   await api.health()
   await page.goto('/')
 
-  // Set up the response listener BEFORE the click — the network call
-  // fires as soon as CoverageView mounts, and a post-click waitForResponse
-  // would race against an already-completed fetch.
+  // Set up the response listener BEFORE any click — the network call fires
+  // as soon as CoverageView mounts. Redesign v2: Coverage is behind
+  // "More ▾ → ATT&CK Coverage" (role="menuitem"), so two clicks are needed;
+  // the listener must precede both to avoid a race.
   const respPromise = page.waitForResponse('**/api/mitre/coverage', { timeout: 10_000 })
-  await page.getByRole('tab', { name: /Coverage/ }).first().click()
+  await page.getByRole('button', { name: /More/ }).click()
+  await page.getByRole('menuitem', { name: /ATT&CK Coverage/ }).click()
   const resp = await respPromise
   expect(resp.ok()).toBe(true)
 
@@ -33,7 +35,9 @@ test('Lab tab lists Infra Generator AWS modules and exposes Generate action', as
 }) => {
   await api.health()
   await page.goto('/')
-  await page.getByRole('tab', { name: /^Lab$/ }).first().click()
+  // Redesign v2: Lab is now "Environments" under the More menu.
+  await page.getByRole('button', { name: /More/ }).click()
+  await page.getByRole('menuitem', { name: /Environments/ }).click()
   await page.waitForLoadState('networkidle')
 
   // base module is always shown per CLAUDE.md design rule
