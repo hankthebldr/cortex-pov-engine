@@ -1,8 +1,9 @@
-import { test, expect } from './_fixtures'
+import { test, expect, gotoView } from './_fixtures'
 
 /**
  * Golden path #1 — application shell loads, health is green, header chrome
- * renders, plane selector pulls scenario counts.
+ * renders, the detection-plane rail pulls scenario counts, and every
+ * primary + secondary view is reachable through the guided stepper.
  *
  * If this fails, every other E2E test is meaningless — keep it first.
  */
@@ -12,39 +13,28 @@ test.describe('app shell', () => {
     expect(body.status).toBe('ok')
   })
 
-  test('UI loads and shows the Cortex header + plane selector', async ({ page }) => {
+  test('UI loads and shows the Cortex header + detection-plane rail', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByText(/Cortex/).first()).toBeVisible()
+    await expect(page.getByText(/cortex/i).first()).toBeVisible()
     await expect(page.getByText(/Detection Simulation Engine/i)).toBeVisible()
 
-    // Plane selector renders all six core planes. The Mission Ops Console
-    // (PR #35) packs 49 scenario cards into a single ScenarioGrid and each
-    // card surfaces its plane name in the accessible label, so a
-    // name-regex selector matched 50+ buttons and tripped Playwright's
-    // strict-mode guard. Plane buttons now carry a stable data-testid for
-    // any test that needs the *plane button specifically*, not any button
-    // whose accessible name happens to contain a plane id.
+    // The rail lists all 11 detection planes; each plane button carries a
+    // stable data-testid (the scenario grid also surfaces plane names, so a
+    // name-regex would trip strict-mode). Check the core planes render.
     for (const id of ['EDR', 'CDR', 'NDR', 'ITDR', 'CLOUD_APP', 'ANALYTICS']) {
       await expect(page.getByTestId(`plane-button-${id}`)).toBeVisible()
     }
   })
 
-  test('view toggles flip the main panel without errors', async ({ page }) => {
+  test('stepper + More menu flip the workspace without errors', async ({ page }) => {
     await page.goto('/')
-    // Migrated from the legacy theme: the Mission Ops Console (default)
-    // has tabs Operations / In-Flight / Evidence / Lab / Coverage. The
-    // legacy MITRE/Deploy/EAL/Runs labels are still reachable via
-    // ?theme=legacy but are no longer the default render path.
-    const tabs = [
-      { role: 'tab', name: /Operations/   },
-      { role: 'tab', name: /In-Flight/    },
-      { role: 'tab', name: /Evidence/     },
-      { role: 'tab', name: /Lab/          },
-      { role: 'tab', name: /Coverage/     },
-    ]
-    for (const t of tabs) {
-      await page.getByRole(t.role as 'tab', { name: t.name }).first().click()
-      await page.waitForLoadState('networkidle')
+    // Redesign v2: primary workflow is a numbered stepper (Targets /
+    // Library / Launch / Live / Evidence); ATT&CK Coverage + Environments
+    // live under the "More ▾" menu. gotoView handles both.
+    for (const name of ['Targets', 'Library', 'Live', 'Evidence', 'ATT&CK Coverage', 'Environments', 'Launch']) {
+      await gotoView(page, name)
     }
+    // App is still alive after the full tour
+    await expect(page.getByText(/Detection Simulation Engine/i)).toBeVisible()
   })
 })

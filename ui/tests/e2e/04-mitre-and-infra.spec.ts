@@ -1,48 +1,39 @@
-import { test, expect } from './_fixtures'
+import { test, expect, gotoView } from './_fixtures'
 
 /**
- * Golden paths #4 + #5 — the two views DCs spend the most secondary time in:
- *   - MITRE/ATT&CK heatmap renders + the coverage endpoint is hit
- *   - Infra topology generator (Lab tab) lists AWS modules and exposes
- *     a Generate action
- *
- * Migrated to Mission Ops Console (PR #44):
- *   - MITRE heatmap now lives under the ATT&CK Coverage tab
- *   - Infra Generator now lives under the Lab tab (the legacy "Deploy"
- *     tab was renamed during the dark-console rework)
+ * Golden paths #4 + #5 — the two secondary views, now under the "More ▾"
+ * menu of the redesigned stepper:
+ *   - ATT&CK Coverage (MITRE heatmap + /api/mitre/coverage)
+ *   - Environments (the IaC topology generator, formerly the "Lab" tab)
  */
-test('ATT&CK Coverage tab renders with MITRE coverage data', async ({ page, api }) => {
+test('ATT&CK Coverage renders with MITRE coverage data', async ({ page, api }) => {
   await api.health()
   await page.goto('/')
 
-  // Set up the response listener BEFORE the click — the network call
-  // fires as soon as CoverageView mounts, and a post-click waitForResponse
-  // would race against an already-completed fetch.
+  // Arm the response listener BEFORE navigating — the fetch fires as soon
+  // as CoverageView mounts.
   const respPromise = page.waitForResponse('**/api/mitre/coverage', { timeout: 10_000 })
-  await page.getByRole('tab', { name: /Coverage/ }).first().click()
+  await gotoView(page, 'ATT&CK Coverage')
   const resp = await respPromise
   expect(resp.ok()).toBe(true)
 
-  // Either the heatmap grid or the words "MITRE" / "ATT&CK" / "Coverage" show
   await expect(page.locator('body')).toContainText(/MITRE|ATT&CK|Coverage/i)
 })
 
-test('Lab tab lists Infra Generator AWS modules and exposes Generate action', async ({
+test('Environments lists Infra Generator AWS modules and exposes Generate', async ({
   page,
   api,
 }) => {
   await api.health()
   await page.goto('/')
-  await page.getByRole('tab', { name: /^Lab$/ }).first().click()
-  await page.waitForLoadState('networkidle')
+  await gotoView(page, 'Environments')
 
-  // base module is always shown per CLAUDE.md design rule
+  // base module is always shown per CLAUDE.md design rule; EDR is in the
+  // feature-complete AWS catalog.
   await expect(page.getByText(/\bbase\b/).first()).toBeVisible({ timeout: 10_000 })
-  // EDR module is present in feature-complete AWS catalog
   await expect(page.getByText(/\bedr\b/i).first()).toBeVisible()
 
-  // Generate action surface exists (we don't click it — bundle generation
-  // takes 5–10s on a fresh box and is covered by API smoke).
+  // Generate action exists (not clicked — bundle gen is covered by API smoke).
   const generateBtn = page.getByRole('button', { name: /Generate|Build|Create/i }).first()
   await expect(generateBtn).toBeVisible()
 })
