@@ -5,6 +5,7 @@ import InflightView from './components/console/InflightView.jsx'
 import EvidenceView from './components/console/EvidenceView.jsx'
 import CoverageView from './components/console/CoverageView.jsx'
 import LabView from './components/console/LabView.jsx'
+import TenantManager from './components/console/TenantManager.jsx'
 import TargetsView from './components/console/TargetsView.jsx'
 import LaunchView from './components/console/LaunchView.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
@@ -329,6 +330,15 @@ export default function AppConsole() {
       },
       {
         section: 'Actions',
+        id: 'tab-tenants',
+        title: 'Go to Tenants',
+        meta: 'XSIAM tenant health & config',
+        icon: '\u26a1',
+        shortcut: ['G', 'T'],
+        onSelect: () => setActiveTab('tenants'),
+      },
+      {
+        section: 'Actions',
         id: 'global-export',
         title: 'Export POV report',
         meta: 'markdown \u00b7 active or most recent run',
@@ -366,6 +376,7 @@ export default function AppConsole() {
       evidence:   activeRun ? `${activeRun.detected}/${activeRun.total}` : null,
       lab:        null,
       coverage:   null,
+      tenants:    null,
     }
     return b
   }, [scenarioList, activeRun])
@@ -503,6 +514,8 @@ export default function AppConsole() {
         onError={(msg) => setToast({ message: msg, type: 'error' })}
       />
     )
+  } else if (activeTab === 'tenants') {
+    tabContent = <TenantManager />
   } else if (activeTab === 'coverage') {
     tabContent = (
       <CoverageView

@@ -6,10 +6,11 @@ const TABS = [
   { id: 'evidence',   label: 'Evidence'  },
   { id: 'lab',        label: 'Lab'       },
   { id: 'coverage',   label: 'ATT\u0026CK Coverage' },
+  { id: 'tenants',    label: 'Tenants'  },
 ]
 
 /**
- * ConsoleTabs — five-tab workspace switcher.
+ * ConsoleTabs — six-tab workspace switcher.
  *
  * Props:
  *   activeTab    — string id

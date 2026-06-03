@@ -26,6 +26,7 @@ ALLOWED_MODULES = (
     "tim",
     "asm",
     "cspm",
+    "ai-spm",
     "content-library",
     "telemetry-replay",
 )

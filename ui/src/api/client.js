@@ -625,3 +625,103 @@ export async function getEalRuns(params = {}) {
 export async function getEalRun(runId) {
   return request(`/api/eal/runs/${encodeURIComponent(runId)}`)
 }
+
+// ─── XSIAM Tenant Management ─────────────────────────────────────────────────
+//
+// Tenant CRUD uses the generic /api/credentials/integrations surface (kind=xsiam_tenant).
+// Live-tenant operations (/test, /metrics, /xql) use the typed /api/xsiam router.
+
+/**
+ * GET /api/credentials/integrations?kind=xsiam_tenant
+ * Returns registered XSIAM tenants (credentials redacted).
+ * @returns {Promise<Array>}
+ */
+export async function listXsiamTenants() {
+  const data = await request('/api/credentials/integrations?kind=xsiam_tenant')
+  return Array.isArray(data) ? data : data?.integrations ?? []
+}
+
+/**
+ * PUT /api/credentials/integrations
+ * Register or replace an XSIAM tenant. The API key is accepted but never returned.
+ * @param {{ name, base_url, region, api_key_id, api_key, auth_mode? }} tenant
+ * @returns {Promise<Object>}  IntegrationCredential row (redacted)
+ */
+export async function registerXsiamTenant({ name, base_url, region, api_key_id, api_key, auth_mode = 'standard' }) {
+  return request('/api/credentials/integrations', {
+    method: 'PUT',
+    body: JSON.stringify({
+      name,
+      kind: 'xsiam_tenant',
+      plaintext_secret: api_key,
+      config: { base_url, region, auth_mode, api_key_id },
+      secret_type_hint: 'xsiam_api_key',
+      description: `XSIAM tenant: ${name}`,
+    }),
+  })
+}
+
+/**
+ * DELETE /api/credentials/integrations/:name
+ * Remove a registered tenant and its encrypted key.
+ * @param {string} name
+ * @returns {Promise<null>}
+ */
+export async function deleteXsiamTenant(name) {
+  return request(`/api/credentials/integrations/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+/**
+ * POST /api/xsiam/tenants/:name/test
+ * Run a live liveness/health probe against the tenant.
+ * @param {string} name
+ * @returns {Promise<{ ok: boolean, status: object, last_verified_at: string }>}
+ */
+export async function testXsiamTenant(name) {
+  return request(`/api/xsiam/tenants/${encodeURIComponent(name)}/test`, { method: 'POST' })
+}
+
+/**
+ * GET /api/xsiam/tenants/:name/health
+ * Cached health pill data (last verified status + timestamp).
+ * @param {string} name
+ * @returns {Promise<Object>}
+ */
+export async function getXsiamTenantHealth(name) {
+  return request(`/api/xsiam/tenants/${encodeURIComponent(name)}/health`)
+}
+
+/**
+ * GET /api/xsiam/tenants/:name/metrics
+ * Run the curated ingestion-health XQL and return shaped per-source metrics.
+ * @param {string} name
+ * @returns {Promise<{ sources: Array, remaining_quota: number }>}
+ */
+export async function getXsiamTenantMetrics(name) {
+  return request(`/api/xsiam/tenants/${encodeURIComponent(name)}/metrics`)
+}
+
+/**
+ * POST /api/xsiam/tenants/:name/xql
+ * Start an ad-hoc XQL query. Returns a query_id for polling.
+ * @param {string} name
+ * @param {{ query: string, timeframe?: object }} body
+ * @returns {Promise<{ query_id: string }>}
+ */
+export async function startXsiamXql(name, body) {
+  return request(`/api/xsiam/tenants/${encodeURIComponent(name)}/xql`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/**
+ * GET /api/xsiam/tenants/:name/xql/:queryId
+ * Poll an XQL query result.
+ * @param {string} name
+ * @param {string} queryId
+ * @returns {Promise<{ status: string, results: object, remaining_quota: number }>}
+ */
+export async function getXsiamXqlResults(name, queryId) {
+  return request(`/api/xsiam/tenants/${encodeURIComponent(name)}/xql/${encodeURIComponent(queryId)}`)
+}
