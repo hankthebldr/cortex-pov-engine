@@ -1,11 +1,9 @@
-import { test as base, expect } from '@playwright/test'
+import { test as base, expect, type Page } from '@playwright/test'
 
 /**
- * Shared Playwright fixtures.
- *
- * Each test gets a small set of API helpers so we can pre-seed runs,
- * register agents, etc. without leaning on UI clicks for setup (faster
- * and less flaky).  The fixtures use baseURL from playwright.config.ts.
+ * Shared Playwright fixtures + nav helpers for the Mission Ops Console
+ * (redesign v2 — guided stepper). Each test gets API helpers so we can
+ * pre-seed runs/agents without leaning on UI clicks for setup.
  */
 
 type Helpers = {
@@ -17,19 +15,39 @@ type Helpers = {
   }
 }
 
+/**
+ * Navigate to a console view. Primary workflow steps (Targets / Library /
+ * Launch / Live / Evidence) are stepper tabs (role=tab). Secondary views
+ * (ATT&CK Coverage / Environments) live behind the "More ▾" menu
+ * (role=menuitem). This helper handles both.
+ */
+export async function gotoView(page: Page, name: RegExp | string): Promise<void> {
+  // Non-anchored: stepper tab accessible names include the step number and
+  // any badge (e.g. "5Evidence0/0"), so we match on a substring.
+  const re = typeof name === 'string'
+    ? new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    : name
+  const step = page.getByRole('tab', { name: re })
+  if (await step.count()) {
+    await step.first().click()
+  } else {
+    // The More button relabels to the active secondary view once one is
+    // selected, so match it structurally (aria-haspopup) not by name.
+    await page.locator('.step--more').click()
+    await page.getByRole('menuitem', { name: re }).first().click()
+  }
+  await page.waitForLoadState('networkidle')
+}
+
 export const test = base.extend<Helpers>({
-  // Suppress the first-run HelpOverlay across every test. Without this,
-  // the overlay intercepts clicks on the first page load and the early
-  // shell tests flake. We pre-seed every localStorage key the console
-  // checks on mount so the UI renders in its "returning user" mode.
+  // Returning-user mode: suppress first-run overlay + pin the console theme
+  // so the redesigned shell renders deterministically.
   page: async ({ page }, use) => {
     await page.addInitScript(() => {
       try {
         window.localStorage.setItem('cortexsim.helpOverlay.seenV1', 'true')
-      } catch {
-        // localStorage can be blocked in cross-origin iframes; the
-        // overlay handles its own try/catch and won't crash the app.
-      }
+        window.localStorage.setItem('cortexsim.theme', 'console')
+      } catch { /* localStorage may be blocked; app handles it */ }
     })
     await use(page)
   },
@@ -42,12 +60,14 @@ export const test = base.extend<Helpers>({
         return r.json()
       },
       async launchPush(scenarioId: string) {
+        // Authorize gated (dual-use / c2) tool adapters so any scenario
+        // launches — the consent gate itself is covered in spec 02 + unit tests.
         const r = await request.post(`${baseURL}/api/run`, {
-          // consent.simulation_authorized is required for scenarios that use
-          // dual-use tool adapters (e.g. TOOL-ATOMIC-RED-TEAM). Safe to always
-          // pass in e2e tests — the engine only checks it when a gated adapter
-          // is actually present, and it has no effect otherwise.
-          data: { scenario_id: scenarioId, mode: 'push', consent: { simulation_authorized: true } },
+          data: {
+            scenario_id: scenarioId,
+            mode: 'push',
+            consent: { simulation_authorized: true, c2_authorized: true },
+          },
         })
         if (!r.ok()) throw new Error(`launch failed: ${await r.text()}`)
         const body = await r.json()

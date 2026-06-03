@@ -1,46 +1,44 @@
-import { test, expect } from './_fixtures'
+import { test, expect, gotoView } from './_fixtures'
 
 /**
- * Golden path #2 — the most common DC workflow:
- *   pick plane → pick scenario → switch to Push mode → trigger Launch.
+ * Golden path #2 — the redesigned guided launch flow (console v2):
+ *   ① Targets (pick push bundle) → ② Library (arm a scenario) →
+ *   ③ Launch (authorize the dual-use tool consent gate) → fire.
  *
- * Migrated to Mission Ops Console (PR #44):
- *   - Plane button selector uses the stable data-testid
- *   - "Scenario Library" heading no longer exists; we wait for a card to
- *     render instead
- *   - Launch lives in the right-side ScenarioInspector drawer, not a
- *     separate Launch Panel heading
+ * SIM-EDR-001 is wired to TOOL-ATOMIC-RED-TEAM (dual-use-lab-only), so the
+ * Launch step must surface the consent prompt and block the button until
+ * it's checked — this exercises that gate end-to-end.
  */
-test('DC can launch a push run from the UI', async ({ page, api }) => {
-  await api.health() // bail early if SimCore is down
-
+test('DC arms a scenario against a target and launches through the consent gate', async ({ page, api }) => {
+  await api.health()
   await page.goto('/')
 
-  // Filter to EDR plane via the stable testid
+  // ① Targets — pick the always-ready offline push bundle
+  await gotoView(page, 'Targets')
+  await page.locator('.target-card--push').first().click()
+
+  // ② Library — filter to EDR and arm a scenario (clicking the card arms it)
+  await gotoView(page, 'Library')
   await page.getByTestId('plane-button-EDR').click()
+  const card = page.getByText(/SIM-EDR-001/).first()
+  await expect(card).toBeVisible({ timeout: 10_000 })
+  await card.click()
 
-  // Wait for an EDR scenario card to render — confirms the grid populated
-  const firstScenario = page.getByText(/SIM-EDR-\d+/).first()
-  await expect(firstScenario).toBeVisible({ timeout: 10_000 })
-  await firstScenario.click()
+  // ③ Launch — armed scenario + selected target compose here
+  await gotoView(page, 'Launch')
+  await expect(page.locator('.launch-card__title').first()).toBeVisible({ timeout: 10_000 })
 
-  // Inspector drawer opens with the pinned launch CTA at top — look for
-  // the "ready to launch" label which is part of every drawer head
-  await expect(page.getByText(/ready to launch/i).first()).toBeVisible({
-    timeout: 5_000,
-  })
+  // dual-use consent gate: button is disabled until consent is granted
+  const launchBtn = page.getByRole('button', { name: /Launch run/i })
+  const consent = page.locator('.launch-consent input[type="checkbox"]').first()
+  await expect(consent).toBeVisible({ timeout: 5_000 })
+  await expect(launchBtn).toBeDisabled()
+  await consent.check()
+  await expect(launchBtn).toBeEnabled()
 
-  // Switch to Push mode (avoids needing a connected agent). The segmented
-  // control has two buttons labeled Pull/Push.
-  await page.getByRole('button', { name: /^Push$/ }).click()
-
-  // Launch — the inspector's primary CTA. The accessible name is
-  // "Launch ⌘L" (button bundles the label + kbd hint), so we anchor
-  // on the prefix.
-  await page.getByRole('button', { name: /^Launch\b/ }).click()
-
-  // Either a success toast OR the inspector's inline status string
-  await expect(page.getByText(/started|success|launched|run /i).first()).toBeVisible({
-    timeout: 15_000,
-  })
+  // fire — expect the success result banner / toast
+  await launchBtn.click()
+  await expect(
+    page.getByText(/started|success|launched|run /i).first(),
+  ).toBeVisible({ timeout: 15_000 })
 })
