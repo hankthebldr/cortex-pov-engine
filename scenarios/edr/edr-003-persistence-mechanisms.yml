@@ -38,7 +38,12 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
-external_tools: []
+external_tools:
+  - name: Atomic Red Team
+    source: "https://github.com/redcanaryco/atomic-red-team"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-ATOMIC-RED-TEAM
 
 steps:
   - id: step-01
@@ -56,9 +61,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Cron job creation with suspicious command path — persistence mechanism via scheduled task"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "bioc-edr-003-cron-job-creation-with-suspicious-command-path"
       - plane: EDR
         type: Analytics
         description: "Crontab modification from non-interactive session — automated persistence installation pattern"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "xql-edr-003-analytics-crontab-modification-non-interactive"
 
   - id: step-02
     name: "Create malicious systemd service unit (staging only)"
@@ -86,9 +95,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Systemd service unit creation with suspicious ExecStart path — persistence via system service"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "bioc-edr-003-systemd-unit-with-suspicious-execstart"
       - plane: EDR
         type: Analytics
         description: "Service unit file written with restart=always and hidden binary path — malware persistence pattern"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "xql-edr-003-analytics-service-unit-restart-always-hidden-path"
 
   - id: step-03
     name: "Attempt to create backdoor user account"
@@ -104,9 +117,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Local account creation with sudo group membership — backdoor account for persistent access"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "bioc-edr-003-local-account-created-with-sudo-group"
       - plane: EDR
         type: Analytics
         description: "User account creation from non-login session — automated account provisioning pattern"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "xql-edr-003-analytics-user-account-creation-non-login-session"
 
   - id: step-04
     name: "Plant SSH authorized_keys for persistent access"
@@ -123,9 +140,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "SSH key generation followed by authorized_keys write — key-based persistence installation"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "bioc-edr-003-ssh-key-generation-then-authorized-keys-write"
       - plane: EDR
         type: Analytics
         description: "ssh-keygen invocation from non-interactive session — automated SSH persistence setup"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "xql-edr-003-analytics-ssh-keygen-non-interactive-persistence"
 
   - id: step-05
     name: "Modify shell profile for login-triggered persistence"
@@ -141,9 +162,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Shell profile modification with nohup background execution — login-triggered persistence"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "bioc-edr-003-shell-profile-modified-with-background-execution"
       - plane: EDR
         type: Analytics
         description: "Shell initialization file modification pattern — persistence via user profile"
+        ttp_ref: "TTP-2026-0034"
+        detection_id: "xql-edr-003-analytics-shell-init-file-modification"
 
 cleanup:
   commands:

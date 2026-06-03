@@ -1,0 +1,303 @@
+{
+  "id": "TTP-2026-0029",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "vector-oauth-grant",
+      "saas-google-workspace",
+      "saas-m365",
+      "severity-high",
+      "casb",
+      "mailbox-takeover"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "saas-google-workspace",
+        "saas-m365"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Cloud App \u2014 Google Full-Mailbox + Offline Token Replay Risk (T1114.002)",
+    "summary": "An OAuth authorize request to the Google Identity endpoint (accounts.google.com/o/oauth2/v2/auth) requests https://mail.google.com/ full-mailbox scope, and a parallel Microsoft grant requests Mail.ReadWrite + offline_access. Cortex Cloud App Security flags full-mailbox scopes, treats offline_access (refresh token) as a token-replay risk, and an analytics layer stitches the same identity targeti\u2026",
+    "description": "Granting a third-party app the full Gmail scope (https://mail.google.com/) or the Microsoft Mail.ReadWrite scope together with offline_access hands an attacker durable, MFA-independent remote access to a victim's mailbox \u2014 the long-lived refresh token can be replayed for months to read, exfiltrate, and send mail. This is the precise grant shape seen in commodity OAuth mailbox-hijack phishing campaigns. This scenario drives oauth_grant_emulator with the full_mailbox preset against Google (requesting https://mail.google.com/ and gmail.modify) and then against Microsoft (requesting Mail.ReadWrite, Mail.Send, offline_access). Cortex Cloud App Security fires on the full-mailbox scope on the google_workspace_audit event and, separately, on the Mail.ReadWrite + offline_access combination on the msft_o365_audit event \u2014 the offline_access scope being the token-replay primitive. A cross-provider analytics rule recognises the same identity soliciting mailbox access at two providers inside the rotation window, and a XSIAM stitching rule fuses both grants into one mailbox-collection incident. All requests use bogus client_ids against canary endpoints, so no token is ever issued \u2014 detection is on the requested-scope shape, not a granted token.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2017-05-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1114",
+        "name": "Email Collection: Remote Email Collection",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ],
+        "subtechnique_id": "T1114.002"
+      },
+      {
+        "technique_id": "T1528",
+        "name": "Steal Application Access Token",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "name": "Use Alternate Authentication Material: Application Access Token",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1550.001"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Logon Session: Logon Session Creation",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "oauth_grant_emulator (provider=google|microsoft, scope_preset=full_mailbox)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "oauth_grant_emulator supports the google provider and Cortex Cloud App Security ingests Google Workspace + Microsoft 365 OAuth grant audit events.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe oauth_grant_emulator | jq -e '.eal_targets'"
+      },
+      {
+        "description": "Outbound HTTPS egress to accounts.google.com and login.microsoftonline.com passes through the in-path NGFW EAL stack."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Full Gmail mailbox scope grant against the canary Google authorize endpoint \u2014 bogus client_id, no token issued.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-003.yml --live\n# Parallel Microsoft Mail.ReadWrite + offline_access grant \u2014 same identity, second mail provider.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-003-ms.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "Google OAuth grant audit event requesting the full mail.google.com scope.",
+        "expected_value": "dataset = google_workspace_audit and oauth_scopes contains \"mail.google.com\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Microsoft OAuth grant audit event requesting Mail.ReadWrite together with offline_access.",
+        "expected_value": "dataset = msft_o365_audit and oauth_scopes contains \"Mail.ReadWrite\" and grant_type = \"offline\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cloud-003.yml /tmp/cloud-003-ms.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "CLOUD-003 Pre-Flight oauth_grant_emulator Plugin Registered",
+        "description": "Pre-flight: oauth_grant_emulator metadata visible to operator. Confirms the EAL plugin is registered and its eal_targets enumerate the Cloud App OAuth-grant detections before any grant is emitted.",
+        "logic": "dataset = saas_audit_logs\n| filter event_type = \"eal_plugin_describe\" or action contains \"oauth_grant_emulator\"\n| filter app_name = \"oauth_grant_emulator\"\n| fields _time, user, app_name, action",
+        "severity": "informational",
+        "mitre_technique_ids": [
+          "T1114.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CLOUD-003 Google Full Mailbox Scope Grant Attempt",
+        "query": "dataset = google_workspace_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter oauth_scopes contains_any (\"mail.google.com\", \"gmail.modify\", \"gmail.readonly\")\n| filter client_id != null\n| fields _time, user, app_name, client_id, oauth_scopes, consent_type, source_ip, geo",
+        "expected_rows_min": 1,
+        "dataset": "google_workspace_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-003 NGFW Google OAuth Authorize Mailbox-Scope Egress",
+        "query": "dataset = saas_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"accounts.google.com\"\n| filter uri_path contains \"/o/oauth2/v2/auth\"\n| filter oauth_scopes contains \"mail.google.com\"\n| fields _time, user, dst_host, uri_path, oauth_scopes, source_ip",
+        "expected_rows_min": 1,
+        "dataset": "saas_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-003 Microsoft Mail ReadWrite Offline Access Token-Replay Grant",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter oauth_scopes contains \"Mail.ReadWrite\"\n| filter oauth_scopes contains \"offline_access\" or grant_type in (\"offline\", \"refresh\")\n| fields _time, user, app_name, client_id, oauth_scopes, grant_type, source_ip",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-003 Cross-Provider Mailbox Collection Same Identity Stitch",
+        "query": "dataset = saas_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter oauth_scopes contains_any (\"mail.google.com\", \"gmail.modify\", \"Mail.ReadWrite\", \"Mail.Send\")\n| comp count_distinct(app_name) as mail_providers, values(app_name) as providers by user\n| filter mail_providers >= 2\n| fields user, mail_providers, providers",
+        "expected_rows_min": 1,
+        "dataset": "saas_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Cross-Provider OAuth Mailbox Takeover Token Replay \u2014 Same Identity",
+        "rule_id": "CR-CLOUDAPP-0003",
+        "logic": "XQL(CLOUD-003 Google Full Mailbox Scope Grant Attempt) OR XQL(CLOUD-003 Microsoft Mail ReadWrite Offline Access Token-Replay Grant) OR XQL(CLOUD-003 Cross-Provider Mailbox Collection Same Identity Stitch)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud App Security \u2014 Third-party app requests full-mailbox scope",
+      "Cortex Cloud App Security \u2014 offline_access refresh-token grant flagged as token-replay risk",
+      "Cortex XSIAM Analytics \u2014 Same identity solicits mailbox access at two providers"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-app-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CASB-OAUTH-FULL-MAILBOX-003",
+          "CASB-OAUTH-OFFLINE-TOKEN-003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = google_workspace_audit | filter oauth_scopes contains \"mail.google.com\" | fields _time, user, app_name, oauth_scopes"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CLOUDAPP-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CLOUDAPP-0003 fuses the Google full-mailbox grant, the Microsoft Mail.ReadWrite+offline_access grant, and the cross-provider same-identity stitch into one mailbox-collection incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUDAPP-029",
+        "name": "Mailbox Takeover via OAuth Detection",
+        "description": "Detect full-mailbox and offline-access OAuth grants and stitch a single identity targeting two mail providers into one mailbox-collection incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUDAPP-029A",
+            "objective": "Full-mailbox and offline-access grants fire their Cloud App detections.",
+            "preconditions": [
+              "oauth_grant_emulator google provider available and Workspace + M365 audit logs ingested.",
+              "Detections from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-CLOUD-003 step-02 and step-03.",
+              "Observe the Google full-mailbox alert and the Microsoft offline-access alert."
+            ],
+            "success_criteria": [
+              "XQL `CLOUD-003 Google Full Mailbox Scope Grant Attempt` returns >= 1 row.",
+              "XQL `CLOUD-003 Microsoft Mail ReadWrite Offline Access Token-Replay Grant` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-CLOUDAPP-029B",
+            "objective": "Same identity at two mail providers stitches into one incident.",
+            "success_criteria": [
+              "XQL `CLOUD-003 Cross-Provider Mailbox Collection Same Identity Stitch` returns >= 1 row.",
+              "Correlation `CR-CLOUDAPP-0003` produces a single incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Block third-party apps requesting full-mailbox scopes via app-governance policy.",
+      "Treat offline_access / refresh-token grants to unverified publishers as high risk and require admin review.",
+      "Revoke and re-issue tokens on any suspected mailbox-grant; enforce short token lifetimes."
+    ],
+    "detection_engineering": [
+      "Alert on https://mail.google.com/, gmail.modify, and Mail.ReadWrite scope grants to third-party apps.",
+      "Flag offline_access / refresh-token grants as token-replay risk distinct from short-lived access tokens.",
+      "Correlate the same identity granting mailbox scopes at multiple providers within a short window."
+    ],
+    "response_playbook": "XSOAR-PB-OAuthMailboxTakeoverResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Mandiant - OAuth Mailbox Hijack via Phishing Apps",
+      "url": "https://cloud.google.com/blog/topics/threat-intelligence/",
+      "publisher": "Mandiant",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1114.002 \u2014 Remote Email Collection",
+      "url": "https://attack.mitre.org/techniques/T1114/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-CLOUD-003."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Google/Microsoft full-mailbox + offline-access OAuth XQL, added correlation CR-CLOUDAPP-0003, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

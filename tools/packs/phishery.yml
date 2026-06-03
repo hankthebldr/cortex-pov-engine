@@ -1,0 +1,48 @@
+adapter_id: TOOL-PHISHERY
+name: "phishery"
+version: "1.0"
+
+tier: 3
+category: social-engineering
+
+upstream:
+  repo: https://github.com/ryhanson/phishery
+  license: "BSD-3-Clause"
+  attribution: "Ryan Hanson"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1566.001
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  content_library_entry:
+    name: phishery
+    repo: ryhanson/phishery
+    install: git-clone
+  binary: "phishery"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -u {url} -i in.docx -o out.docx"
+  default_args:
+    url: "https://lab.local/auth"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-phishery-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - social-engineering

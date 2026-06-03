@@ -1,0 +1,295 @@
+{
+  "id": "TTP-2026-0057",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-28T00:00:00+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ai-spm",
+      "vector-static-analysis",
+      "industry-all",
+      "severity-high",
+      "posture",
+      "insecure-pickle"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1200,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AI Static Risk Analysis \u2014 Hardcoded Creds + Insecure Pickle + Unvalidated Inputs (T1552.001)",
+    "summary": "Cortex Cloud AI-SPM statically analyzes Lambda code, S3-resident model artifacts, and SageMaker training scripts and raises three AI-specific findings: a hardcoded credential canary in the ML pipeline, an insecurely-serialized pickle model object, and an unvalidated model-input handler. The scenario validates each static-analysis finding subcategory against the posture findings dataset within t\u2026",
+    "description": "Static risk analysis inspects AI pipeline code and artifacts before they run, catching the gaps that posture-at-runtime would only see after exploitation. Three recur across real ML pipelines: hardcoded credentials (an API key committed into Lambda source and environment), insecure model serialization (a Python pickle .pkl that executes arbitrary code on load), and unvalidated model inputs (an inference handler that accepts an arbitrary prompt with no schema). This scenario plants all three \u2014 a planted canary key sk-DEMO-CORTEXSIM-AISP-04-PLANTED in Lambda code/env, a legacy_model.pkl in the training-data bucket, and a Lambda handler with no input validation \u2014 and validates that Cortex Cloud AI-SPM static analysis raises a finding for each subcategory within 900 seconds. Detection is posture-oriented: validation queries assert each finding subcategory (hardcoded_credentials_in_ml_pipeline, insecure_model_serialization, unvalidated_model_inputs) with its severity and secret_type. A correlation rule groups the three static findings on the same pipeline into one AI static-risk incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1552.001"
+      },
+      {
+        "technique_id": "T1027",
+        "name": "Obfuscated Files or Information",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1565",
+        "name": "Data Manipulation: Stored Data Manipulation",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ],
+        "subtechnique_id": "T1565.001"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "File: File Content",
+      "Application Log: Application Log Content",
+      "Cloud Storage: Cloud Storage Object Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-AISPM-004 \u2014 Cortex Cloud AI-SPM static analysis + static-finding probe",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud AI-SPM static-analysis scanning enabled against the target AWS account.",
+        "check_command": "curl -fsSL -H \"Authorization: Bearer $CORTEX_CLOUD_API_TOKEN\" \"$CORTEX_CLOUD_API_BASE/findings?category=ai_static_analysis\""
+      },
+      {
+        "description": "ai-spm IaC module applied so the Lambda + pickled-model static fixture is planted."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture validation \u2014 probe AI-SPM static-analysis findings.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/findings?category=ai_static_analysis&tag=CortexSimAISPMFinding\" | jq '.findings | length'",
+      "input_variables": [],
+      "timeout_seconds": 1200
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Hardcoded credential canary in Lambda source and env.",
+        "expected_value": "subcategory = \"hardcoded_credentials_in_ml_pipeline\" and secret_type = \"api_key\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Insecure model serialization (pickle .pkl in S3).",
+        "expected_value": "subcategory = \"insecure_model_serialization\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Unvalidated model inputs in Lambda handler.",
+        "expected_value": "subcategory = \"unvalidated_model_inputs\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aispm-004-*; echo '[CortexSim] SIM-AISPM-004 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AISPM-004 MTTD Anchor And Fixture Verify Bookkeeping",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and resource_type in (\"lambda_function\", \"s3_object\")\n| filter resource_name contains \"aispm\"\n| fields _time, operation_name, resource_type, resource_name",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-004 Static Analyzer Scans AI Pipeline Artifacts",
+        "query": "dataset = ai_spm_findings\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"static_scan_completed\"\n| filter ai_service in (\"lambda\", \"sagemaker\", \"s3\")\n| fields _time, ai_service, finding_type",
+        "expected_rows_min": 1,
+        "dataset": "ai_spm_findings"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-004 Hardcoded Credentials In ML Pipeline Finding",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"ai_static_analysis\" and subcategory = \"hardcoded_credentials_in_ml_pipeline\"\n| filter secret_type = \"api_key\" and tags contains \"CortexSimAISPMFinding\"\n| comp count() as hits by model_name\n| filter hits >= 1\n| fields model_name, hits",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-004 Insecure Model Serialization Pickle Finding",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"ai_static_analysis\" and subcategory = \"insecure_model_serialization\"\n| filter tags contains \"CortexSimAISPMFinding\"\n| comp count() as hits\n| filter hits >= 1\n| fields hits",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-004 Unvalidated Model Inputs Finding",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"ai_static_analysis\" and subcategory = \"unvalidated_model_inputs\"\n| filter tags contains \"CortexSimAISPMFinding\"\n| comp count() as hits\n| filter hits >= 1\n| fields hits",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AI Static Risk \u2014 Hardcoded Creds Plus Insecure Pickle Plus Unvalidated Input",
+        "rule_id": "CR-AISPM-0004",
+        "logic": "XQL(AISPM-004 Hardcoded Credentials In ML Pipeline Finding) OR XQL(AISPM-004 Insecure Model Serialization Pickle Finding) OR XQL(AISPM-004 Unvalidated Model Inputs Finding)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud AI-SPM \u2014 Static analysis of ML pipeline code and artifacts",
+      "Cortex Cloud Posture \u2014 Secret detection and insecure-serialization policy checks"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "ai-spm",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "MLSEC-STATIC-001",
+          "MLSEC-STATIC-002",
+          "MLSEC-STATIC-003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter finding_type = \"ai_static_analysis\" | fields _time, subcategory, secret_type, severity, model_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AISPM-0004"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AISPM-0004 groups hardcoded-credential, insecure-pickle, and unvalidated-input static findings on the same pipeline into one static-risk incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-AISPM-004",
+        "name": "AI Static Risk Analysis",
+        "description": "Statically analyze AI pipeline code and artifacts; raise and stitch static-risk findings within MTTD.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-AISP-004A",
+            "objective": "All three static-analysis subcategories raised within 900s.",
+            "preconditions": [
+              "Cortex Cloud AI-SPM static-analysis policies enabled.",
+              "ai-spm static fixture (canary key + pickle + unvalidated handler) applied."
+            ],
+            "steps": [
+              "Run SIM-AISPM-004 steps 1-3.",
+              "Observe static-analysis findings in Cortex Cloud."
+            ],
+            "success_criteria": [
+              "Each of the three subcategory queries returns >= 1 row.",
+              "MTTD <= 900s.",
+              "Correlation CR-AISPM-0004 raises one static-risk incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Never commit credentials into ML pipeline code or env; use a secrets manager.",
+      "Forbid pickle for model serialization; use safetensors or a vetted format.",
+      "Enforce input-schema validation on every model handler."
+    ],
+    "detection_engineering": [
+      "Alert on secret canary patterns in Lambda source and environment variables.",
+      "Flag any .pkl model artifact loaded by AI workloads.",
+      "Surface inference handlers that accept unvalidated free-form input."
+    ],
+    "response_playbook": "XSOAR-PB-AIStaticRiskRemediation-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 \u2014 AI Pipeline Static Code Risks",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1552.001 \u2014 Credentials In Files",
+      "url": "https://attack.mitre.org/techniques/T1552/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-28",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft from scenario SIM-AISPM-004."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Authored real AI-SPM static-analysis XQL against cortex_cloud_posture / ai_spm_findings, added correlation CR-AISPM-0004, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

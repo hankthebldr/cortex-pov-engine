@@ -100,7 +100,7 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 |-------|--------------|--------|
 | CDR | Cortex Cloud / Prisma Cloud Compute | 5 scenarios + IaC module (EKS) |
 | EDR | Cortex XDR Agent | 5 scenarios + IaC module (diverse Linux targets) |
-| NDR | Network Security / Firewall Analytics | 5 scenarios + IaC module (3 stitching patterns) + EAL simulator |
+| NDR | Network Security / Firewall Analytics | 7 scenarios (C2 HTTP beacon · DNS tunnel · Stratum cryptojacking · SMB lateral sweep · bulk HTTPS exfil · FTP cleartext+STOR · SSH outbound+KEXINIT) + IaC module (3 stitching patterns) + per-protocol EAL plugins (`c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`, `bulk_https_exfil`, `ftp_egress`, `ssh_egress`) |
 | ITDR | Cortex ITDR | 5 scenarios (active) — synthetic IdP audit-log emission via the `idp_signin_emulator` EAL plugin (Phase 9) — impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout — plus IaC module (AD lab with seeded roastable accounts) |
 | CSPM | Cortex Cloud Posture Management | IaC module (intentional misconfigs) |
 | ASM | Cortex Attack Surface Management | IaC module (multi-service exposed host) |
@@ -152,6 +152,12 @@ In-tree (not submodules):
   with the same shell-out-to-CLI pattern as `airs_prompt_attack`. JSONL output
   shape rhymes with garak `Attempt` + cortex-prompt-attacker so SOC tooling
   consumes both streams the same way.
+
+## Tool Adapter Framework
+
+Declarative `ToolAdapter` model — one YAML per security tool under `tools/packs/<tool>.yml` — telling the engine where a tool lives, how to install/invoke it, its dual-use safety class, and which Cortex plane its signal lands on. Scenarios reference adapters by id (`external_tools[].adapter_ref: TOOL-NMAP`) instead of hand-rolling CLI. Loaded + validated at boot (`core/tools/adapter_loader.py` → `adapter_catalog.py`), consumed by scenario_loader, orchestrator, infra_generator, and `GET /api/tools/adapters`. 5-tier model (1 in-tree · 2 submodule · 3 IaC-provisioned · 4 runtime-fetched · 5 external-only). **69 packs** ship across all 5 tiers (Phase A/B/C complete; 27 scenarios wired). Push bundles self-install tier-4 tools and refuse to auto-stage c2 frameworks; gated adapters require launch consent (`consent.simulation_authorized` / `c2_authorized`). `tools/` must be in the image (Dockerfile `COPY tools/`) or the catalog loads empty.
+
+**Full doc + current state (shipped vs pending): [`docs/tool-adapters.md`](docs/tool-adapters.md).** Design spec: `docs/superpowers/specs/2026-05-19-tool-adapter-framework-design.md`. Pack authoring: `tools/packs/README.md`.
 
 ## Cortex Branding
 

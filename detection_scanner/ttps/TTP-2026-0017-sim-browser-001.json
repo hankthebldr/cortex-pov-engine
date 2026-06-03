@@ -1,23 +1,29 @@
 {
   "id": "TTP-2026-0017",
   "schema_version": "1.0.0",
-  "entry_version": "0.1.0",
+  "entry_version": "1.0.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
         "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
       }
     ],
     "tags": [
       "plane-browser",
-      "auto-generated",
-      "skeleton-draft",
-      "severity-high",
-      "needs-detection-engineering-review"
+      "vector-credential-paste",
+      "prisma-browser",
+      "dlp",
+      "industry-all",
+      "severity-high"
     ],
     "source_refs": [
       "SRC-MITRE-ATTACK",
@@ -29,7 +35,7 @@
       "simulation_class": "web",
       "destructive": false,
       "requires_network_egress": true,
-      "requires_internet": true,
+      "requires_internet": false,
       "platforms": [
         "windows",
         "macos"
@@ -40,19 +46,20 @@
     }
   },
   "identity": {
-    "name": "Browser \u2014 Credential Paste into Untrusted Origin",
-    "summary": "Auto-generated draft from CortexSim scenario SIM-BROWSER-001. Plane: BROWSER. Primary technique: T1552. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
-    "description": "Auto-generated draft from CortexSim scenario SIM-BROWSER-001. Plane: BROWSER. Primary technique: T1552. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-BROWSER-001.\nUC: Browser DLP \u2014 Credential Disclosure / TC: User Pastes SSO Credential Pattern Into Non-Sanctioned Form.",
+    "name": "Prisma Browser \u2014 Credential Paste into Untrusted Origin (T1552)",
+    "summary": "A managed user navigates the Prisma Browser to a non-sanctioned phishing origin and pastes a corporate-SSO-shaped secret into the page's password field. Prisma Browser DLP inspects the clipboard/keystroke payload at paste time, recognizes the credential pattern, and fires because the destination origin is not on the sanctioned allowlist \u2014 the canonical browser data-loss vector for credential ph\u2026",
+    "description": "Credential phishing succeeds at the moment a user types or pastes a real secret into an attacker-controlled page. Prisma Browser closes that gap by enforcing DLP inside the rendering context itself: it sees the paste/keystroke content and the destination origin before the form is submitted, so a secret-shaped string (`MyCorpSSO!@#-CORTEXSIM-CANARY-2026`, carrying canary `CANARY-CRED-001`) landing in `input[name=\"password\"]` on `login.cortexsim-test.invalid` \u2014 an origin absent from the sanctioned SaaS allowlist \u2014 trips the credential-paste DLP rule. The cortex-browser-attacker EAL plugin drives a real Chromium/Prisma Browser session through navigate \u2192 paste actions, emitting `prisma_browser_events` telemetry with `action=paste`, `origin`, `url`, `data_classification`, and the canary marker. Detection layers: a BIOC matches the credential-shape paste into a non-sanctioned origin; an analytics query flags the paste-source vs. destination-origin mismatch; a delivery-path query confirms the alert reached XSIAM. A correlation rule fuses the BIOC and origin-mismatch analytic into one DLP incident.",
     "severity": "high",
-    "confidence": "medium"
+    "confidence": "high"
   },
   "threat_context": {
     "actors": [],
     "campaigns": [],
     "malware_families": [],
     "industries_targeted": [
-      "all"
-    ]
+      "technology"
+    ],
+    "first_observed": "2024-01-01"
   },
   "mitre_attack": {
     "matrix": "enterprise",
@@ -66,32 +73,57 @@
         "tactic_names": [
           "Credential Access"
         ]
+      },
+      {
+        "technique_id": "T1056",
+        "name": "Input Capture: Web Portal Capture",
+        "tactic_ids": [
+          "TA0006",
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Credential Access",
+          "Collection"
+        ],
+        "subtechnique_id": "T1056.003"
       }
     ],
     "kill_chain_phase": "actions-on-objectives",
-    "data_sources": []
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "User Interface: User Interface Events"
+    ]
   },
   "execution": {
     "target_platform": "windows",
-    "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1552 (TODO \u2014 pin atomic test ref)",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "browser_attack_runner \u2014 campaign scenarios/browser/campaigns/cred-paste.yml (navigate + paste actions)",
     "privilege_required": "user",
     "prerequisites": [
       {
-        "description": "Lab environment matching scenario SIM-BROWSER-001 requirements."
+        "description": "Managed Prisma Browser deployed and reporting telemetry to XSIAM.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe browser_attack_runner | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-BROWSER-001 (cortex-browser-attacker installed; Playwright Chromium/Prisma channel available)."
       }
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# step-1: Pre-flight: confirm cortex-browser-attacker is registered\npython3 -m scripts.eal_simulator.cli describe browser_attack_runner \\\n  | jq -e '.eal_targets | length > 0'\n# step-2: Drive Prisma Browser to phishing form via browser_attack_runner\ncat > /tmp/sim-browser-001-eal.yml <<'YML'\ncampaign_id: CMP-BROWSER-001\nname: \"Browser \u2014 credential paste\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - login.cortexsim-test.invalid\ndry_run: false\ntags: [browser, prisma-browser, credential-paste]\nsteps:\n  - step_id: step-01\n    plugin: browser_attack_runner\n    params:\n      campaign_path: scenarios/browser/campaigns/cred-paste.yml\n      allowlist_host: login.cortexsim-test.invalid\n      browser_channel: prisma\n      headless: true\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/sim-browser-001-eal.yml --live\n# step-3: Verify PB \u2192 XSIAM telemetry path delivered the alert\necho \"[CortexSim] Confirm corresponding alert in XSIAM (manual step).\"\necho \"[CortexSim] XQL: dataset = prisma_browser_dlp\"\necho \"[CortexSim]      | filter cortex_canary = 'CANARY-CRED-001'\"",
+      "code": "# Drives the managed Prisma Browser through the cred-paste campaign.\npython3 -m scripts.eal_simulator.cli run /tmp/sim-browser-001-eal.yml --live\n# Campaign: navigate https://login.cortexsim-test.invalid/signin\n#           paste \"MyCorpSSO!@#-CORTEXSIM-CANARY-2026\" into input[name=\"password\"]\n#           cortex_canary: CANARY-CRED-001",
       "input_variables": [],
       "timeout_seconds": 120
     },
     "expected_artifacts": [
       {
-        "artifact_type": "process",
-        "description": "TODO \u2014 author at least one concrete expected artifact for this scenario",
-        "expected_value": "TODO"
+        "artifact_type": "saas-event",
+        "description": "Paste action into a password field on a non-sanctioned origin carrying the credential canary.",
+        "expected_value": "action = \"paste\" and origin = \"login.cortexsim-test.invalid\" and data_classification = \"credential\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Navigation to a non-sanctioned origin immediately preceding the paste.",
+        "expected_value": "action = \"navigate\" and url contains \"login.cortexsim-test.invalid/signin\""
       }
     ],
     "cleanup": {
@@ -103,85 +135,133 @@
     "iocs": [],
     "biocs": [
       {
-        "name": "Pre-flight: plugin metadata visible to operator",
-        "description": "Pre-flight: plugin metadata visible to operator",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1552\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1552"
-        ]
-      },
-      {
         "name": "Prisma Browser \u2014 credential-shape paste into non-sanctioned origin (DLP rule)",
-        "description": "Prisma Browser \u2014 credential-shape paste into non-sanctioned origin (DLP rule)",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1552\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "description": "Prisma Browser \u2014 credential-shape paste into non-sanctioned origin (DLP rule). A paste action carrying a credential-classified payload lands in a password/secret field on an origin that is not on the sanctioned SaaS allowlist.",
+        "logic": "dataset = prisma_browser_events\n| filter action = \"paste\"\n| filter data_classification in (\"credential\", \"secret\", \"password\")\n| filter origin not in (\"login.corp.example.com\", \"okta.corp.example.com\", \"login.microsoftonline.com\")\n| filter target_selector contains \"password\" or url contains \"signin\" or url contains \"login\"",
         "severity": "high",
         "mitre_technique_ids": [
-          "T1552"
-        ]
-      },
-      {
-        "name": "Prisma Browser \u2014 paste source vs. destination origin mismatch",
-        "description": "Prisma Browser \u2014 paste source vs. destination origin mismatch",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1552\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1552"
-        ]
-      },
-      {
-        "name": "PB \u2192 XSIAM \u2014 alert with origin URL + paste DLP rule fires within MTTD target",
-        "description": "PB \u2192 XSIAM \u2014 alert with origin URL + paste DLP rule fires within MTTD target",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1552\ndataset = browser_telemetry\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1552"
+          "T1552",
+          "T1056.003"
         ]
       }
     ],
-    "xql_queries": [],
-    "correlation_rules": [],
-    "analytics_modules": []
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pre-flight: plugin metadata visible to operator",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter campaign_id = \"BC-BROWSER-001\"\n| filter action in (\"navigate\", \"paste\")\n| fields _time, campaign_id, action, origin, url, user\n| sort asc _time",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "Prisma Browser \u2014 paste source vs. destination origin mismatch",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"paste\"\n| filter data_classification in (\"credential\", \"secret\", \"password\")\n| filter origin not in (\"login.corp.example.com\", \"okta.corp.example.com\", \"login.microsoftonline.com\")\n| fields _time, user, origin, url, action, data_classification, cortex_canary\n| sort desc _time",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "PB \u2192 XSIAM \u2014 alert with origin URL + paste DLP rule fires within MTTD target",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"paste\" and cortex_canary = \"CANARY-CRED-001\"\n| fields _time, user, origin, url, dlp_rule_name, data_classification, cortex_canary\n| sort desc _time",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Browser Credential Paste DLP \u2014 Non-Sanctioned Origin",
+        "rule_id": "CR-BROWSER-0001",
+        "logic": "BIOC(Prisma Browser \u2014 credential-shape paste into non-sanctioned origin (DLP rule))"
+      }
+    ],
+    "analytics_modules": [
+      "Prisma Browser DLP \u2014 Credential pattern inspection at paste time",
+      "Cortex XSIAM Analytics \u2014 Sanctioned-origin allowlist deviation"
+    ]
   },
   "panw_mapping": {
     "products": [
       {
+        "module": "cortex-xdr",
+        "submodule": "dlp",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "PB-DLP-CREDPASTE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = prisma_browser_events | filter action = \"paste\" and data_classification = \"credential\" | fields _time, user, origin, url"
+      },
+      {
         "module": "cortex-xsiam",
+        "submodule": "analytics",
         "coverage_tier": "detection",
         "rule_ids": [
-          "TBD-BROWSER-0017"
+          "XSIAM-CR-BROWSER-0001"
         ],
-        "license_required": "pro"
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-BROWSER-0001 raises a DLP incident when a credential-shape paste hits a non-sanctioned origin."
       }
     ],
     "use_cases": [
       {
         "use_case_id": "UC-WEB-017",
         "name": "Browser DLP \u2014 Credential Disclosure",
-        "description": "Browser DLP \u2014 Credential Disclosure",
+        "description": "Detect and block corporate-secret-shaped data pasted into non-sanctioned origins inside the managed Prisma Browser.",
         "test_cases": [
           {
             "test_case_id": "TC-WEB-017A",
-            "objective": "TBD \u2014 author concrete pass/fail criteria",
-            "success_criteria": [
-              "TBD \u2014 author at least one verifiable success criterion"
+            "objective": "Credential-shape paste into a non-sanctioned origin fires the Prisma Browser DLP BIOC.",
+            "preconditions": [
+              "Managed Prisma Browser reporting to XSIAM.",
+              "PB DLP credential-paste rule imported and enabled."
             ],
-            "expected_score_weight": 1.0
+            "steps": [
+              "Run SIM-BROWSER-001 step-02 (navigate + paste campaign).",
+              "Observe the DLP alert in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `Prisma Browser \u2014 credential-shape paste into non-sanctioned origin (DLP rule)` fires within 60s.",
+              "All three XQL validation queries return >= 1 row.",
+              "Alert carries origin URL and canary CANARY-CRED-001."
+            ],
+            "expected_score_weight": 0.7
+          },
+          {
+            "test_case_id": "TC-WEB-017B",
+            "objective": "Origin-mismatch analytic and BIOC stitch into one incident.",
+            "success_criteria": [
+              "Correlation `CR-BROWSER-0001` produces a single DLP incident."
+            ],
+            "expected_score_weight": 0.3
           }
         ]
       }
     ]
   },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Prisma Browser DLP credential-pattern inspection in Block mode for non-sanctioned origins.",
+      "Maintain a tight sanctioned-SaaS allowlist and treat all other origins as untrusted for secret entry.",
+      "Deploy phishing-resistant MFA (FIDO2) so a pasted password alone is not sufficient to authenticate."
+    ],
+    "detection_engineering": [
+      "Alert on any paste classified as credential/secret into an origin outside the sanctioned allowlist.",
+      "Correlate the paste origin against the corporate IdP origin to confirm phishing intent.",
+      "Hunt for repeated credential-shape pastes from the same user across multiple untrusted origins."
+    ],
+    "response_playbook": "XSOAR-PB-BrowserCredentialDLP-v1"
+  },
   "references": [
     {
       "title": "Unit42 - Credential Phishing Trends 2026",
       "url": "https://unit42.paloaltonetworks.com/",
-      "publisher": "Unit42",
+      "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1552",
+      "title": "MITRE ATT&CK T1552 \u2014 Unsecured Credentials",
       "url": "https://attack.mitre.org/techniques/T1552/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -193,6 +273,12 @@
       "date": "2026-05-20",
       "author": "CortexSim generate_card.py",
       "change": "Initial draft auto-generated from scenario SIM-BROWSER-001."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Prisma Browser credential-paste DLP BIOC/XQL, added correlation CR-BROWSER-0001, enriched identity + panw_mapping. Promoted to active."
     }
   ]
 }

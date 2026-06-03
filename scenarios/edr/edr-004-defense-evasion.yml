@@ -38,7 +38,12 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
-external_tools: []
+external_tools:
+  - name: Atomic Red Team
+    source: "https://github.com/redcanaryco/atomic-red-team"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-ATOMIC-RED-TEAM
 
 steps:
   - id: step-01
@@ -57,9 +62,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Bash history clearing — HISTFILE manipulation and history -c execution detected"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "bioc-edr-004-bash-history-clearing-and-histfile-manipulation"
       - plane: EDR
         type: Analytics
         description: "Multiple history evasion commands in sequence — anti-forensics behavior pattern"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "xql-edr-004-analytics-history-evasion-sequence"
 
   - id: step-02
     name: "Tamper with system log files"
@@ -75,9 +84,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "System log file access and truncation attempt — log tampering to hide intrusion evidence"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "bioc-edr-004-system-log-access-or-truncation"
       - plane: EDR
         type: Analytics
         description: "Auth.log and syslog access from non-syslog process — unauthorized log manipulation"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "xql-edr-004-analytics-auth-log-access-non-syslog-process"
 
   - id: step-03
     name: "Timestomp files to evade forensic timeline analysis"
@@ -93,9 +106,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "File timestamp modification via touch -t — timestomping to evade forensic analysis"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "bioc-edr-004-file-timestomp-via-touch"
       - plane: EDR
         type: Analytics
         description: "Timestamp manipulation using reference file (-r flag) — anti-forensics file metadata spoofing"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "xql-edr-004-analytics-timestomp-reference-file"
 
   - id: step-04
     name: "Masquerade malicious process as legitimate system binary"
@@ -113,9 +130,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Binary copied and renamed to match kernel thread name — process masquerading as kworker"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "bioc-edr-004-binary-masquerade-as-kernel-thread"
       - plane: EDR
         type: Analytics
         description: "Shell binary copied to /tmp with system process name — masquerading to evade process listing"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "xql-edr-004-analytics-shell-binary-copied-to-system-name"
 
   - id: step-05
     name: "Attempt to disable security tooling"
@@ -132,9 +153,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Security product enumeration — process search for EDR/AV agent names indicates evasion preparation"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "bioc-edr-004-security-product-enumeration"
       - plane: EDR
         type: Analytics
         description: "Systematic security tool discovery via process listing — pre-evasion reconnaissance behavior"
+        ttp_ref: "TTP-2026-0035"
+        detection_id: "xql-edr-004-analytics-security-tool-discovery-via-process-listing"
 
 cleanup:
   commands:

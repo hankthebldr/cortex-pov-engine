@@ -35,7 +35,10 @@ def catalog():
 
 
 def test_catalog_loads_inrepo_corpus(catalog):
-    """At minimum the six committed TTP files must index."""
+    """At minimum the committed TTP files must index. Issue #58 promoted
+    three AI Access drafts (0008/0009/0010) — assert they're indexed
+    AND in active status so the browser surfaces them without a
+    status filter."""
     entries = catalog.all_entries()
     assert len(entries) >= 6, f"expected ≥6 TTP entries, got {len(entries)}"
 
@@ -49,6 +52,32 @@ def test_catalog_loads_inrepo_corpus(catalog):
         "TTP-2026-0006",
     }
     assert expected.issubset(by_ref)
+
+
+def test_catalog_indexes_promoted_aiacc_drafts(catalog):
+    """Regression for issue #58 — 0008/0009/0010 promoted out of
+    _drafts/ to active. Verifies both the entry is reachable AND the
+    summary isn't the auto-generated placeholder."""
+    for ttp_id in ("TTP-2026-0008", "TTP-2026-0009", "TTP-2026-0010"):
+        entry = catalog.get_entry(ttp_id)
+        assert entry is not None, f"{ttp_id} not loaded — still in _drafts/?"
+        assert entry.status == "active", (
+            f"{ttp_id} is status={entry.status}; promotion didn't land"
+        )
+        # The raw dict surfaces the customer-grade summary the API
+        # serves via /api/ttps/{id}.
+        raw = catalog.raw(ttp_id)
+        assert raw is not None
+        summary = raw.get("identity", {}).get("summary", "")
+        assert "Auto-generated draft" not in summary, (
+            f"{ttp_id} still has the auto-generated draft summary — "
+            "promotion didn't include a real human edit"
+        )
+        assert "Requires human" not in summary
+        assert len(summary) > 80, (
+            f"{ttp_id} summary is too short ({len(summary)}ch) to be "
+            "customer-grade"
+        )
 
 
 def test_catalog_resolves_known_bioc(catalog):

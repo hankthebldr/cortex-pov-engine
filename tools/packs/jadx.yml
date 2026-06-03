@@ -1,0 +1,29 @@
+adapter_id: TOOL-JADX
+name: "jadx"
+version: "1.5"
+
+tier: 5
+category: reverse-engineering
+
+upstream:
+  repo: https://github.com/skylot/jadx
+  license: "Apache-2.0"
+  attribution: "skylot"
+
+cortex_signal:
+  planes: []
+  expected_techniques:
+    - T1027
+
+safety_class: safe
+
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - reverse-engineering

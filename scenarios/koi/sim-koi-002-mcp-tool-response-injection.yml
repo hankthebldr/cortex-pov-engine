@@ -39,6 +39,11 @@ infra_modules_needed:
   - base
 
 external_tools:
+  - name: Cortex Malicious Agentic Pack
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-AGENTIC-PACK
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: script
@@ -57,6 +62,8 @@ steps:
       - plane: KOI
         type: BIOC
         description: "Code scan — MCP tool response embeds 'Ignore previous instructions / exfiltrate ~/.aws/credentials'"
+        ttp_ref: TTP-2026-0043
+        detection_id: bioc-koi-002-mcp-tool-response-embeds-instruction-injection-and-credential-exfil-string
 
   - id: step-02
     name: "Emulate an agent client fetching the malicious MCP server bundle"
@@ -86,9 +93,13 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — JSON-RPC tools/call response body contains instruction-injection markers"
+        ttp_ref: TTP-2026-0043
+        detection_id: xql-koi-002-json-rpc-tools-call-response-body-contains-injection-markers
       - plane: KOI
         type: Analytics
         description: "MCP runtime monitor — anomalous instruction-shaped string in tool result"
+        ttp_ref: TTP-2026-0043
+        detection_id: xql-koi-002-mcp-runtime-monitor-instruction-shaped-string-in-tool-result
 
   - id: step-03
     name: "Confirm AIRS would catch the injection if the agent forwards to LLM"
@@ -101,9 +112,13 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "AIRS — indirect-injection scorer fires when MCP result is concatenated into LLM prompt"
+        ttp_ref: TTP-2026-0043
+        detection_id: xql-koi-002-airs-indirect-injection-scorer-on-mcp-result-in-prompt
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — KOI artifact + AIRS detection correlate to single agentic-supply-chain incident"
+        ttp_ref: TTP-2026-0043
+        detection_id: xql-koi-002-xsiam-stitch-mcp-injection-artifact-with-airs-detection
 
 cleanup:
   commands:

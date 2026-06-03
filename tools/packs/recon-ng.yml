@@ -1,0 +1,41 @@
+adapter_id: TOOL-RECON-NG
+name: "recon-ng"
+version: "5.1.2"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/lanmaster53/recon-ng
+  license: "GPL-3.0"
+  attribution: "Tim Tomes"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595
+    - T1592
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v recon-ng >/dev/null 2>&1 || pip install recon-ng"
+  binary: "recon-ng"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -m {module} -x run"
+  default_args:
+    module: "recon/domains-hosts/hackertarget"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - network-scan

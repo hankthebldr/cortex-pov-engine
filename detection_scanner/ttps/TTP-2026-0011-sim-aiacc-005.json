@@ -1,0 +1,296 @@
+{
+  "id": "TTP-2026-0011",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:11+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ai-access",
+      "vector-policy-evasion",
+      "industry-all",
+      "severity-high",
+      "cross-provider",
+      "stitching"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws",
+        "azure",
+        "gcp"
+      ],
+      "estimated_runtime_seconds": 180,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AI Access \u2014 Cross-Provider Rotation (OpenAI \u2192 Gemini \u2192 Anthropic)",
+    "summary": "A single user rotates the same source-code content across all three AI providers within five minutes to evade per-provider policy. The llm_provider_egress plugin POSTs source payloads to api.openai.com, then generativelanguage.googleapis.com, then api.anthropic.com \u2014 each request sharing an X-Simulation-Run-ID prefix. Cortex AI Access Security flags the provider-hopping pattern and XSIAM stitch\u2026",
+    "description": "Provider hopping is a defense-evasion pattern: a user who is blocked or throttled at one AI provider rotates the same content to another to stay under per-provider thresholds. This scenario rotates a marked source-code payload across all three providers within five minutes from a single user \u2014 OpenAI, then Gemini, then Anthropic \u2014 with each outbound request sharing an X-Simulation-Run-ID prefix so the SOC can tie them together. Detection is sequence-based: (1) the first egress to OpenAI marks the user active in the provider matrix; (2) the same user appearing at the second provider within the rotation window raises the hop signal; (3) hitting all three providers within five minutes fires the provider-hopping policy-evasion alert; (4) XSIAM correlates the three provider sessions on the single user identity into one incident; (5) the NGFW sees the generative-AI App-ID across three FQDNs sharing the run-ID prefix. A correlation rule fuses the per-provider analytics signals into one cross-provider-rotation incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2024-06-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1090",
+        "name": "Proxy",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "llm_provider_egress (provider rotation: openai -> gemini -> anthropic, payload_type=source)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex AI Access Security licensed with cross-provider behaviour stitching enabled in XSIAM.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe llm_provider_egress | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-AIACC-005 requirements (egress allowed to all three provider FQDNs)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Provider 1 \u2014 OpenAI\ncat > /tmp/aiacc-005-openai.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access \u2014 rotation step 1 OpenAI\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\ntags: [ai-access, cross-provider, rotation]\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-openai.yml --live\n# step-2: Provider 2 \u2014 Gemini (overlapping content within 60s)\nsleep 30\ncat > /tmp/aiacc-005-gemini.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access \u2014 rotation step 2 Gemini\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - generativelanguage.googleapis.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: gemini\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-gemini.yml --live\n# step-3: Provider 3 \u2014 Anthropic completes the rotation triangle\nsleep 30\ncat > /tmp/aiacc-005-anthropic.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access \u2014 rotation step 3 Anthropic\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.anthropic.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: anthropic\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-anthropic.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 240
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Three outbound HTTPS POSTs from one user to three distinct provider FQDNs within five minutes.",
+        "expected_value": "dst_host in (\"api.openai.com\",\"generativelanguage.googleapis.com\",\"api.anthropic.com\")"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "All three requests share an X-Simulation-Run-ID prefix tying the rotation together.",
+        "expected_value": "http_header_name = \"x-simulation-run-id\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aiacc-005-*.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AIACC-005 First Egress to OpenAI User Active in Provider Matrix",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"api.openai.com\" or tls_sni = \"api.openai.com\"\n| filter http_method = \"POST\" and uri_path contains \"/v1/chat/completions\"\n| comp min(_time) as first_seen by source_user, src_ip, dst_host\n| fields source_user, src_ip, dst_host, first_seen",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-005 Same User Second Provider Gemini Within Rotation Window",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host in (\"api.openai.com\", \"generativelanguage.googleapis.com\")\n| filter http_method = \"POST\"\n| comp count_distinct(dst_host) as provider_count, min(_time) as first_seen, max(_time) as last_seen by source_user, src_ip\n| filter provider_count >= 2\n| fields source_user, src_ip, provider_count, first_seen, last_seen",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-005 Three Providers Within Five Minutes Provider Hopping",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host in (\"api.openai.com\", \"generativelanguage.googleapis.com\", \"api.anthropic.com\")\n| filter http_method = \"POST\"\n| comp count_distinct(dst_host) as provider_count, min(_time) as first_seen, max(_time) as last_seen by source_user, src_ip\n| alter window_seconds = timestamp_diff(last_seen, first_seen, \"SECOND\")\n| filter provider_count = 3 and window_seconds <= 300\n| fields source_user, src_ip, provider_count, window_seconds",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-005 XSIAM Stitch Single User Three Provider Sessions",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host in (\"api.openai.com\", \"generativelanguage.googleapis.com\", \"api.anthropic.com\")\n| filter http_method = \"POST\"\n| comp count() as sessions, values(dst_host) as providers by source_user\n| filter array_length(providers) = 3\n| fields source_user, sessions, providers",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-005 NGFW Generative AI App-ID Across Three FQDNs Shared Run ID",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host in (\"api.openai.com\", \"generativelanguage.googleapis.com\", \"api.anthropic.com\")\n| filter app_category in (\"generative-ai\", \"ai-ml-application\")\n| filter http_request_headers contains \"x-simulation-run-id\"\n| comp count_distinct(dst_host) as fqdn_count by src_ip\n| filter fqdn_count = 3\n| fields src_ip, fqdn_count",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Cross-Provider Rotation Policy Evasion Single User",
+        "rule_id": "CR-AIACC-0005",
+        "logic": "XQL(AIACC-005 Same User Second Provider Gemini Within Rotation Window) OR XQL(AIACC-005 Three Providers Within Five Minutes Provider Hopping) OR XQL(AIACC-005 XSIAM Stitch Single User Three Provider Sessions) OR XQL(AIACC-005 NGFW Generative AI App-ID Across Three FQDNs Shared Run ID)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex AI Access Security \u2014 Cross-provider behaviour stitching",
+      "Cortex XSIAM \u2014 Identity-based session correlation across data planes"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ai-access-security",
+        "submodule": "cross-provider-stitch",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "AIACC-PROVIDER-HOP-005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_host in (\"api.openai.com\",\"generativelanguage.googleapis.com\",\"api.anthropic.com\") | comp count_distinct(dst_host) as providers by source_user | filter providers = 3"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "APPID-GENAI-MULTI-005"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app_category = \"generative-ai\" and http_request_headers contains \"x-simulation-run-id\" | comp count_distinct(dst_host) as fqdns by src_ip | filter fqdns = 3"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AIACC-0005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AIACC-0005 stitches the three per-provider sessions on the single user identity into one cross-provider-rotation incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-INSIDER-011",
+        "name": "Cross-Provider Behaviour Stitching",
+        "description": "Detect a single user rotating content across all three AI providers within five minutes to evade per-provider policy and stitch the sessions into one incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-INSIDER-011A",
+            "objective": "Hitting all three providers within five minutes fires the provider-hopping alert.",
+            "preconditions": [
+              "Cortex AI Access Security inline across all three provider FQDNs.",
+              "Cross-provider stitching enabled in XSIAM."
+            ],
+            "steps": [
+              "Run SIM-AIACC-005 steps 1-3.",
+              "Observe the provider-hopping alert in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `AIACC-005 Three Providers Within Five Minutes Provider Hopping` returns >= 1 row.",
+              "XQL `AIACC-005 NGFW Generative AI App-ID Across Three FQDNs Shared Run ID` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-INSIDER-011B",
+            "objective": "XSIAM stitches the three provider sessions on the user identity into one incident.",
+            "success_criteria": [
+              "XQL `AIACC-005 XSIAM Stitch Single User Three Provider Sessions` returns >= 1 row.",
+              "Correlation `CR-AIACC-0005` groups the sessions into one incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Apply a single AI-usage policy across all providers so blocking one does not push users to another.",
+      "Track per-user cross-provider activity and alert on rotation within a short window.",
+      "Route all GenAI traffic through one sanctioned gateway with unified DLP and policy."
+    ],
+    "detection_engineering": [
+      "Key detections on user identity, not provider FQDN, so rotation is visible end-to-end.",
+      "Alert when one user touches multiple providers within a rolling rotation window.",
+      "Use the shared X-Simulation-Run-ID (or session correlation keys) to stitch the sessions in XSIAM."
+    ],
+    "response_playbook": "XSOAR-PB-CrossProviderRotationResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - AI Provider Hopping for Policy Evasion",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1090 \u2014 Proxy",
+      "url": "https://attack.mitre.org/techniques/T1090/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-AIACC-005."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real cross-provider rotation / XSIAM stitching XQL against panw_ngfw_traffic_raw, added correlation CR-AIACC-0005, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

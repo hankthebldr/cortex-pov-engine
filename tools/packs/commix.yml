@@ -1,0 +1,44 @@
+adapter_id: TOOL-COMMIX
+name: "commix"
+version: "4.0"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/commixproject/commix
+  license: "GPL-3.0"
+  attribution: "Anastasios Stasinopoulos"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1059
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "command -v commix >/dev/null 2>&1 || pip install commix"
+  binary: "commix"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} --url={url} --batch"
+  default_args:
+    url: "http://127.0.0.1/?q=1"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-commix-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - web-app

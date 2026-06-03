@@ -130,6 +130,41 @@ const fixtureDetailDcsync = {
   ],
 }
 
+describe('<TtpBrowserView /> — authoring affordances (issue #59)', () => {
+  it('renders the Author new button next to search', async () => {
+    installRoutes({ 'GET /api/ttps': fixtureList })
+    render(<TtpBrowserView />)
+    await waitFor(() => {
+      expect(screen.getByTestId('ttp-author-new')).toBeInTheDocument()
+    })
+  })
+
+  it('clicking Author new opens the editor', async () => {
+    installRoutes({
+      'GET /api/ttps':         fixtureList,
+      'GET /api/ttps/_schema': { type: 'object', properties: {} },
+    })
+    render(<TtpBrowserView />)
+    await waitFor(() => expect(screen.getByTestId('ttp-author-new')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-author-new'))
+    await waitFor(() => expect(screen.getByTestId('ttp-editor')).toBeInTheDocument())
+  })
+
+  it('detail panel exposes an Edit… button that switches to the editor', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/ttps/_schema':        { type: 'object', properties: {} },
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-edit')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-edit'))
+    await waitFor(() => expect(screen.getByTestId('ttp-editor')).toBeInTheDocument())
+    // Detail panel no longer rendered while the editor is open.
+    expect(screen.queryByTestId('ttp-detail')).not.toBeInTheDocument()
+  })
+})
+
 describe('<TtpBrowserView />', () => {
   it('renders intro + stats derived from the API payload', async () => {
     installRoutes({ 'GET /api/ttps': fixtureList })
@@ -333,6 +368,81 @@ describe('<TtpBrowserView />', () => {
     )
   })
 
+  // ── Syntax highlighting (issue #57) ────────────────────────────────
+
+  it('renders XQL syntax-highlighted spans in the expanded body', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-det-biocs-0'))
+
+    const pre = screen.getByTestId('ttp-det-body-biocs-0')
+    // XQL keywords land on syn-keyword (the only ones in this body).
+    const keywordSpans = pre.querySelectorAll('.syn-keyword')
+    expect(keywordSpans.length).toBeGreaterThan(0)
+    const keywords = Array.from(keywordSpans).map((n) => n.textContent.toLowerCase())
+    expect(keywords).toContain('preset')
+    expect(keywords).toContain('filter')
+
+    // String literals get syn-string.
+    const stringSpan = pre.querySelector('.syn-string')
+    expect(stringSpan).toBeTruthy()
+    expect(stringSpan.textContent).toContain('"e3514235-...')
+
+    // Round-trip: the rendered text equals the corpus body.
+    expect(pre.textContent).toBe(
+      'preset = xdr_data\n| filter rpc_interface_uuid = "e3514235-..."',
+    )
+  })
+
+  it('renders YAML syntax-highlighted spans for analytics_modules', async () => {
+    // Provide a fixture with an analytics_modules entry carrying a Sigma-shaped body.
+    const yamlFixture = {
+      ...fixtureDetailDcsync,
+      detections: {
+        iocs: [], biocs: [], xql_queries: [],
+        correlation_rules: [],
+        analytics_modules: [
+          {
+            name: 'Sigma: DCSync',
+            description: 'Sigma rule mirroring DCSync',
+            logic:
+              'title: DCSync detection\n' +
+              'logsource:\n  product: windows\n' +
+              'detection:\n  selection:\n    EventID: 4662',
+          },
+        ],
+      },
+    }
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  yamlFixture,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-det-analytics_modules-0'))
+
+    const pre = screen.getByTestId('ttp-det-body-analytics_modules-0')
+    const keywords = Array.from(pre.querySelectorAll('.syn-keyword')).map(
+      (n) => n.textContent,
+    )
+    // YAML keys colour as syn-keyword.
+    expect(keywords).toEqual(expect.arrayContaining(['title', 'product']))
+
+    // Numeric scalar EventID = 4662
+    const numbers = Array.from(pre.querySelectorAll('.syn-number')).map((n) => n.textContent)
+    expect(numbers).toContain('4662')
+
+    // Body round-trips through the highlighter so copy still works.
+    expect(pre.textContent).toBe(
+      'title: DCSync detection\nlogsource:\n  product: windows\n' +
+        'detection:\n  selection:\n    EventID: 4662',
+    )
+  })
+
   // ── Run history (per-TTP run rollup) ───────────────────────────────
 
   it('renders the run history table with coverage chips + MTTD', async () => {
@@ -443,6 +553,116 @@ describe('<TtpBrowserView />', () => {
       URL.createObjectURL = origCreate
       URL.revokeObjectURL = origRevoke
     }
+  })
+
+  // ── "Launch all" — scenarios-by-TTP action loop (issue #56) ──────
+
+  it('detail panel exposes a Launch all… button', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument()
+  })
+
+  it('clicking Launch all… opens the modal and loads matching scenarios', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/scenarios': [
+        { scenario_id: 'SIM-ITDR-002', name: 'DCSync chain', plane: 'ITDR', mitre_technique: 'T1003.006' },
+        { scenario_id: 'SIM-EDR-007',  name: 'mimikatz dcsync', plane: 'EDR',  mitre_technique: 'T1003.006' },
+      ],
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-launch-all'))
+    await waitFor(() => expect(screen.getByTestId('ttp-launcher-modal')).toBeInTheDocument())
+    expect(screen.getByTestId('ttp-launcher-row-SIM-ITDR-002')).toBeInTheDocument()
+    expect(screen.getByTestId('ttp-launcher-row-SIM-EDR-007')).toBeInTheDocument()
+    expect(screen.getByText('2 of 2 selected')).toBeInTheDocument()
+  })
+
+  it('confirming Launch fires N POSTs and navigates to the first run', async () => {
+    const runCalls = []
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/scenarios': [
+        { scenario_id: 'SIM-ITDR-002', name: 'DCSync chain', plane: 'ITDR', mitre_technique: 'T1003.006' },
+        { scenario_id: 'SIM-EDR-007',  name: 'mimikatz dcsync', plane: 'EDR',  mitre_technique: 'T1003.006' },
+      ],
+      'POST /api/run': (_url, init) => {
+        const body = JSON.parse(init.body || '{}')
+        runCalls.push(body)
+        return { run_id: `r-${body.scenario_id}` }
+      },
+    })
+    const navEvents = []
+    const listener = (e) => navEvents.push(e.detail?.runId)
+    window.addEventListener('cortex:navigate-run', listener)
+
+    try {
+      render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+      await waitFor(() => expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument())
+      fireEvent.click(screen.getByTestId('ttp-launch-all'))
+      await waitFor(() => expect(screen.getByTestId('ttp-launcher-modal')).toBeInTheDocument())
+      // Default mode = push, all scenarios pre-selected
+      fireEvent.click(screen.getByTestId('ttp-launcher-confirm'))
+      await waitFor(() => expect(screen.getByTestId('ttp-launcher-summary')).toBeInTheDocument())
+      expect(runCalls).toHaveLength(2)
+      const scenarioIds = runCalls.map((c) => c.scenario_id).sort()
+      expect(scenarioIds).toEqual(['SIM-EDR-007', 'SIM-ITDR-002'])
+      // First successful launch's run_id was dispatched
+      expect(navEvents.length).toBeGreaterThan(0)
+      expect(navEvents[0]).toMatch(/^r-SIM-/)
+      expect(screen.getByText(/launched/)).toBeInTheDocument()
+    } finally {
+      window.removeEventListener('cortex:navigate-run', listener)
+    }
+  })
+
+  it('unchecking scenarios narrows the launch set', async () => {
+    const runCalls = []
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/scenarios': [
+        { scenario_id: 'SIM-ITDR-002', name: 'DCSync chain', plane: 'ITDR', mitre_technique: 'T1003.006' },
+        { scenario_id: 'SIM-EDR-007',  name: 'mimikatz dcsync', plane: 'EDR',  mitre_technique: 'T1003.006' },
+      ],
+      'POST /api/run': (_url, init) => {
+        const body = JSON.parse(init.body || '{}')
+        runCalls.push(body)
+        return { run_id: `r-${body.scenario_id}` }
+      },
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-launch-all'))
+    await waitFor(() => expect(screen.getByTestId('ttp-launcher-modal')).toBeInTheDocument())
+    // Uncheck the EDR scenario
+    fireEvent.click(screen.getByLabelText(/Include SIM-EDR-007/))
+    expect(screen.getByText('1 of 2 selected')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('ttp-launcher-confirm'))
+    await waitFor(() => expect(screen.getByTestId('ttp-launcher-summary')).toBeInTheDocument())
+    expect(runCalls).toHaveLength(1)
+    expect(runCalls[0].scenario_id).toBe('SIM-ITDR-002')
+  })
+
+  it('renders the no-scenarios placeholder when no scenarios cite this TTP', async () => {
+    installRoutes({
+      'GET /api/ttps':                fixtureList,
+      'GET /api/ttps/TTP-2026-0004':  fixtureDetailDcsync,
+      'GET /api/scenarios': [],
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-launch-all')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('ttp-launch-all'))
+    await waitFor(() => expect(screen.getByTestId('ttp-launcher-empty')).toBeInTheDocument())
+    expect(screen.queryByTestId('ttp-launcher-confirm')).not.toBeInTheDocument()
   })
 
   it('empty run history renders the no-runs placeholder', async () => {

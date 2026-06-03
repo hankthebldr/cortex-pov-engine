@@ -29,7 +29,17 @@ async function request(path, options = {}) {
     let errorMessage = `HTTP ${response.status} — ${response.statusText}`
     try {
       const errorBody = await response.json()
-      errorMessage = errorBody.detail || errorBody.error || errorBody.message || errorMessage
+      // FastAPI returns errors as { detail: ... } where detail may be a
+      // plain string OR a structured object {error, code, detail, ...}.
+      // Stringifying an object error to "[object Object]" loses the code,
+      // so unpack it here.
+      if (errorBody.detail && typeof errorBody.detail === 'object') {
+        const d = errorBody.detail
+        const code = d.code ? ` [${d.code}]` : ''
+        errorMessage = `${d.error || d.detail || errorMessage}${code}`
+      } else {
+        errorMessage = errorBody.detail || errorBody.error || errorBody.message || errorMessage
+      }
     } catch {
       // Response body was not JSON — keep the HTTP status message
     }
@@ -71,8 +81,9 @@ export async function getHealth() {
  */
 export async function getScenarios(params = {}) {
   const qs = new URLSearchParams()
-  if (params.plane)  qs.set('plane',  params.plane)
-  if (params.uc_ref) qs.set('uc_ref', params.uc_ref)
+  if (params.plane)   qs.set('plane',   params.plane)
+  if (params.uc_ref)  qs.set('uc_ref',  params.uc_ref)
+  if (params.ttp_ref) qs.set('ttp_ref', params.ttp_ref)
   const query = qs.toString() ? `?${qs.toString()}` : ''
   const data = await request(`/api/scenarios${query}`)
   // List endpoints wrap as {scenarios: [...], total: N}; components expect bare arrays.
@@ -420,6 +431,25 @@ export async function getAgents() {
   return Array.isArray(data) ? data : data?.agents ?? []
 }
 
+/**
+ * DELETE /api/agents/:agentId — prune a registered beacon from the registry.
+ * @param {string} agentId
+ * @returns {Promise<{status:string, agent_id:string}>}
+ */
+export async function deleteAgent(agentId) {
+  return request(`/api/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' })
+}
+
+/**
+ * Build the installer download URL for an agent (bash .sh / PowerShell .ps1).
+ * Server URL is auto-derived server-side from the request.
+ * @param {{os?:string, id?:string, interval?:number}} opts
+ */
+export function agentInstallUrl({ os = 'linux', id = 'jumpbox-01', interval = 10 } = {}) {
+  const q = new URLSearchParams({ os, id, interval: String(interval) })
+  return `/api/agents/install?${q.toString()}`
+}
+
 // ─── TTP browser (detection_scanner/ttps/*.json) ────────────────────────────
 
 /**
@@ -470,6 +500,51 @@ export async function getTtp(ttpId) {
 export async function getTtpRuns(ttpId, { limit } = {}) {
   const qs = limit ? `?limit=${encodeURIComponent(limit)}` : ''
   return request(`/api/ttps/${encodeURIComponent(ttpId)}/runs${qs}`)
+}
+
+/**
+ * GET /api/ttps/_schema — full JSON Schema for live-validating the
+ * authoring wizard payload. Cacheable client-side; the schema rarely
+ * changes.
+ */
+export async function getTtpSchema() {
+  return request('/api/ttps/_schema')
+}
+
+/**
+ * POST /api/ttps — create a new draft TTP card.
+ * The backend forces ``status: draft`` regardless of payload value.
+ */
+export async function createTtp(payload) {
+  return request('/api/ttps', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+/**
+ * PUT /api/ttps/:ttp_id — update an existing TTP in place.
+ * The payload's ``id`` must equal ``ttpId``.
+ */
+export async function updateTtp(ttpId, payload) {
+  return request(`/api/ttps/${encodeURIComponent(ttpId)}`, {
+    method: 'PUT', body: JSON.stringify(payload),
+  })
+}
+
+/**
+ * POST /api/ttps/:ttp_id/promote — move a draft to active.
+ * Idempotent — already-active cards return ``moved: false``.
+ */
+export async function promoteTtp(ttpId) {
+  return request(`/api/ttps/${encodeURIComponent(ttpId)}/promote`, {
+    method: 'POST',
+  })
+}
+
+/**
+ * POST /api/ttps/_reload — hot-reload the catalog from disk.
+ * Useful when the operator edits a TTP file out-of-band.
+ */
+export async function reloadTtpCatalog() {
+  return request('/api/ttps/_reload', { method: 'POST' })
 }
 
 // ─── EAL Traffic Simulator ───────────────────────────────────────────────────

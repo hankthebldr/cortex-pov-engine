@@ -1,0 +1,48 @@
+adapter_id: TOOL-HAVOC
+name: "Havoc"
+version: "0.7"
+
+tier: 3
+category: c2-framework
+
+upstream:
+  repo: https://github.com/HavocFramework/Havoc
+  license: "GPL-3.0"
+  attribution: "C5pider"
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1059
+
+safety_class: c2-framework
+
+install:
+  iac_module: edr
+  content_library_entry:
+    name: havoc
+    repo: HavocFramework/Havoc
+    install: git-clone
+  binary: "havoc"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} server --profile {profile}"
+  default_args:
+    profile: "profiles/havoc.yaotl"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-havoc-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - c2-framework

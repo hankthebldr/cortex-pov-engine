@@ -1,0 +1,291 @@
+{
+  "id": "TTP-2026-0052",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-cryptojacking",
+      "protocol-stratum",
+      "industry-all",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Cryptojacking \u2014 Stratum Mining Pool Connection via App-ID (T1496)",
+    "summary": "A compromised host opens repeated short-lived TCP sessions to a mining pool on a Stratum port and speaks the Stratum JSON-RPC protocol (mining.subscribe / mining.authorize). The CortexSim stratum_tcp_connect EAL plugin reproduces this against an authorised in-lab sinkhole on 10.50.0.42:3333. NGFW App-ID classifies the session as cryptocurrency-mining / stratum, the Enhanced Application Log capt\u2026",
+    "description": "Resource hijacking (cryptojacking) monetises compromised compute by mining cryptocurrency, almost always against a pool over the Stratum JSON-RPC protocol. Stratum miners connect to a pool over TCP on characteristic ports (3333, 4444, 5555, 14444, 45700, etc.), send a mining.subscribe followed by mining.authorize handshake, then receive mining.notify jobs. The detection surface for Cortex is network: NGFW App-ID identifies the application as cryptocurrency-mining / stratum regardless of port, the Enhanced Application Log records the JSON-RPC method strings, and XSIAM Network Security Analytics flags the behavioural shape of repeated, short-lived TCP sessions to a single mining-pool destination/port. This card detects the activity from panw_ngfw_traffic_raw / network_story using app (App-ID), dst_port, dst_ip and session counts, plus an IOC for the stratum mining.subscribe JSON-RPC method observed in the session payload. A correlation rule fuses the App-ID classification, the JSON-RPC payload IOC and the repeated-session behaviour into one resource-hijacking incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [
+      {
+        "name": "XMRig"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2017-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1496",
+        "name": "Resource Hijacking",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1496 \u2014 CortexSim stratum_tcp_connect EAL plugin (Stratum JSON-RPC mining.subscribe/authorize to pool port)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-003 requirements (NGFW inline with App-ID + EAL; in-lab TCP sinkhole reachable on 10.50.0.42:3333).",
+        "check_command": "nc -zv 10.50.0.42 3333"
+      },
+      {
+        "description": "NGFW forwards Enhanced Application Logs into XSIAM (panw_ngfw_traffic_raw / network_story carries app and dst_port)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Stand up sinkhole TCP listener inside lab CIDR\nnc -zv 10.50.0.42 3333 || echo \"[CortexSim] sinkhole reachable check (best-effort)\"\n# step-2: Launch Stratum JSON-RPC sessions against sinkhole\ncat > /tmp/stratum-live.yml <<'YML'\ncampaign_id: CMP-NDR-003\nname: \"NDR validation \u2014 Stratum App-ID\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.0.0/24\ndry_run: false\ntags: [ndr, cryptojacking, stratum, eal]\nsteps:\n  - step_id: step-01\n    plugin: stratum_tcp_connect\n    params:\n      target_host: \"10.50.0.42\"\n      target_port: 3333\n      iterations: 5\n      sleep_seconds: 15\n      wallet: \"cortexsim-test-wallet\"\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/stratum-live.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound TCP sessions to a mining-pool port classified by App-ID as cryptocurrency-mining / stratum.",
+        "expected_value": "app IN (\"stratum\", \"cryptocurrency-mining\", \"bitcoin\", \"mining-pool\") AND dst_port IN (3333, 4444, 5555, 14444)"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Stratum JSON-RPC mining.subscribe method observed in the session payload.",
+        "expected_value": "payload CONTAINS \"mining.subscribe\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Repeated short-lived TCP sessions to the same mining-pool destination/port.",
+        "expected_value": "dst_ip = \"10.50.0.42\" AND dst_port = 3333 AND session_count >= 4"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/stratum-live.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "stratum-json-rpc-mining-subscribe",
+        "context": "NGFW EAL \u2014 JSON-RPC mining.subscribe payload observed in session. Stratum protocol handshake method string present in the outbound mining-pool session content."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port",
+        "description": "NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter dst_port in (3333, 4444, 5555, 7777, 14444, 45700)\n| filter action = \"allow\"\n| comp count() as session_count, avg(bytes_sent + bytes_received) as avg_bytes by src_ip, dst_ip, dst_port\n| filter session_count >= 4\n| fields src_ip, dst_ip, dst_port, session_count, avg_bytes",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1496"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pre-flight: sinkhole port 3333 reachable",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_ip = \"10.50.0.42\" and dst_port = 3333\n| comp count() as sessions by src_ip, dst_ip, dst_port\n| fields src_ip, dst_ip, dst_port, sessions",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW App-ID \u2014 Stratum/cryptocurrency-mining identified on outbound TCP",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"stratum\", \"cryptocurrency-mining\", \"bitcoin\", \"mining-pool\") or dst_port in (3333, 4444, 5555, 14444)\n| filter dst_ip = \"10.50.0.42\"\n| comp count() as mining_sessions by src_ip, dst_ip, dst_port, app\n| filter mining_sessions >= 1\n| fields src_ip, dst_ip, dst_port, app, mining_sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Cryptojacking \u2014 Stratum Mining Pool Resource Hijacking",
+        "rule_id": "CR-NDR-0003",
+        "logic": "BIOC(NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port) OR XQL(NGFW App-ID \u2014 Stratum/cryptocurrency-mining identified on outbound TCP) OR IOC(stratum-json-rpc-mining-subscribe)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Network Security Analytics \u2014 Cryptocurrency Mining / Stratum",
+      "Cortex XSIAM Analytics \u2014 Repeated short-lived sessions to a single destination port"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id-enhanced-application-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-APPID-STRATUM-001",
+          "NGFW-EAL-CRYPTOMINE-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app in (\"stratum\",\"cryptocurrency-mining\") or dst_port in (3333,4444,5555) | fields _time, src_ip, dst_ip, dst_port, app"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-CRYPTOMINE",
+          "XSIAM-CR-NDR-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = network_story | filter dst_port in (3333,4444,5555) | comp count() by src_ip, dst_ip, dst_port"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-CryptojackResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: block mining-pool destination at NGFW, isolate the mining host, kill the miner process, open Impact DFIR ticket."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-052",
+        "name": "Cryptojacking App-ID Detection \u2014 Stratum Mining",
+        "description": "Validate that NGFW App-ID + EAL and XSIAM Network Security Analytics detect Stratum JSON-RPC mining-pool connections and repeated short-lived sessions to a mining port.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-052A",
+            "objective": "Stratum mining sessions are classified by App-ID and surfaced as cryptojacking.",
+            "preconditions": [
+              "NGFW inline with App-ID + EAL forwarding to XSIAM.",
+              "In-lab TCP sinkhole reachable on 10.50.0.42:3333."
+            ],
+            "steps": [
+              "Run SIM-NDR-003 step-02 (5 Stratum JSON-RPC sessions, 15s apart).",
+              "Inspect Network Security Analytics / network_story for the source IP."
+            ],
+            "success_criteria": [
+              "XQL `NGFW App-ID \u2014 Stratum/cryptocurrency-mining identified on outbound TCP` returns >= 1 row.",
+              "BIOC `NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port` matches the source with session_count >= 4.",
+              "IOC `stratum-json-rpc-mining-subscribe` matches the session payload."
+            ],
+            "expected_score_weight": 0.7
+          },
+          {
+            "test_case_id": "TC-WEB-052B",
+            "objective": "Signals fuse into one resource-hijacking incident.",
+            "success_criteria": [
+              "Correlation `CR-NDR-0003` raises a single cryptojacking incident for the source.",
+              "Incident severity is High."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Block known mining-pool destinations and Stratum App-ID at the egress NGFW.",
+      "Apply App-ID least-privilege egress; deny outbound to non-standard high TCP ports from server subnets.",
+      "Enforce workload runtime protection to kill unauthorised miner processes (Cortex Cloud / XDR)."
+    ],
+    "detection_engineering": [
+      "Alert on App-ID = cryptocurrency-mining/stratum regardless of destination port.",
+      "Baseline per-host destination-port cardinality; flag repeated short-lived sessions to a single high port.",
+      "Match Stratum JSON-RPC method strings (mining.subscribe/mining.authorize) in session content as an IOC."
+    ],
+    "response_playbook": "XSOAR-PB-CryptojackResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Large-Scale Monero Cryptomining Operation",
+      "url": "https://unit42.paloaltonetworks.com/cryptojacking-additional-techniques/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1496 \u2014 Resource Hijacking",
+      "url": "https://attack.mitre.org/techniques/T1496/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-003."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real NGFW App-ID/EAL network XQL/BIOC/IOC for Stratum cryptojacking, added correlation CR-NDR-0003, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

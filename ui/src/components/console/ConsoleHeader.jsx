@@ -34,43 +34,45 @@ export default function ConsoleHeader({
 
   return (
     <header className="header">
-      <div className="brand">
-        <div className="brand__wordmark">cortex<em>sim</em></div>
-        <div className="brand__subtitle">Detection Simulation Engine · {version}</div>
+      <div className="header__left">
+        <div className="brand">
+          <div className="brand__wordmark">cortex<em>sim</em></div>
+          <div className="brand__subtitle">Detection Simulation Engine</div>
+        </div>
+        <span className="brand__version mono">{version}</span>
       </div>
 
-      <div />
+      <div className="header__right">
+        <div className="env-pill" title={sensorSummary}>
+          <span className={
+            'env-pill__dot' +
+            (worstStatus === 'warn' ? ' env-pill__dot--warn' : '') +
+            (worstStatus === 'bad'  ? ' env-pill__dot--bad'  : '')
+          } />
+          <span className="env-pill__label">{hostname.toUpperCase()}</span>
+          <span className="env-pill__meta">/ {sensorSummary}</span>
+        </div>
 
-      <div className="env-pill" title={sensorSummary}>
-        <span className={
-          'env-pill__dot' +
-          (worstStatus === 'warn' ? ' env-pill__dot--warn' : '') +
-          (worstStatus === 'bad'  ? ' env-pill__dot--bad'  : '')
-        } />
-        <span className="env-pill__label">{hostname.toUpperCase()}</span>
-        <span className="env-pill__meta">/ {sensorSummary}</span>
-      </div>
-
-      <button className="cmd-trigger" onClick={onOpenPalette} aria-label="Open command palette">
-        <span>⌘K</span>
-        <span style={{ color: 'var(--c-text-muted)' }}>search · launch · export</span>
-      </button>
-
-      {onToggleTheater && (
-        <button
-          type="button"
-          className={'theater-toggle' + (theaterMode ? ' is-active' : '')}
-          onClick={onToggleTheater}
-          aria-pressed={theaterMode}
-          aria-label={theaterMode ? 'Exit theater mode' : 'Enter theater mode for sales demos and briefings'}
-          title={theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly, hides debug chrome'}
-        >
-          {theaterMode ? '◼ theater' : '◻ theater'}
+        <button className="cmd-trigger" onClick={onOpenPalette} aria-label="Open command palette (search, launch, export)" title="Search · launch · export">
+          <span className="kbd">⌘K</span>
+          <span className="cmd-trigger__label">Search</span>
         </button>
-      )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <div className="user-avatar">{userInitials}</div>
+        {onToggleTheater && (
+          <button
+            type="button"
+            className={'theater-toggle' + (theaterMode ? ' is-active' : '')}
+            onClick={onToggleTheater}
+            aria-pressed={theaterMode}
+            aria-label={theaterMode ? 'Exit theater mode' : 'Enter theater mode for sales demos and briefings'}
+            title={theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly, hides debug chrome'}
+          >
+            {theaterMode ? '◼' : '◻'}<span className="theater-toggle__label">Theater</span>
+          </button>
+        )}
+
+        <span className="header__divider" aria-hidden="true" />
+        <div className="user-avatar" title="Domain Consultant">{userInitials}</div>
         <div className="panw-mark">palo alto <span>networks</span></div>
       </div>
     </header>

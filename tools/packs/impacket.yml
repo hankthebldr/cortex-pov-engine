@@ -1,0 +1,46 @@
+adapter_id: TOOL-IMPACKET
+name: "Impacket"
+version: "0.12.0"
+
+tier: 2
+category: identity-credential
+
+upstream:
+  repo: https://github.com/fortra/impacket
+  license: "Apache-1.1"
+  attribution: "Fortra (SecureAuth)"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1021
+    - T1003.006
+
+safety_class: dual-use-lab-only
+
+install:
+  source_path: sources/impacket
+  build_cmd: "pip install ."
+
+invoke:
+  target_platform: any
+  run_template: "{tool} {args}"
+  default_args:
+    tool: "secretsdump.py"
+    args: "-just-dc DOMAIN/USER@DC"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-impacket-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - identity-credential

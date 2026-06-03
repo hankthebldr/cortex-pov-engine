@@ -1,0 +1,47 @@
+adapter_id: TOOL-SET
+name: "Social-Engineer Toolkit"
+version: "8.x"
+
+tier: 3
+category: social-engineering
+
+upstream:
+  repo: https://github.com/trustedsec/social-engineer-toolkit
+  license: "LicenseRef-TrustedSec"
+  attribution: "TrustedSec"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1566
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  content_library_entry:
+    name: set
+    repo: trustedsec/social-engineer-toolkit
+    install: git-clone
+  binary: "setoolkit"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary}"
+  default_args: {}
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-set-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - social-engineering

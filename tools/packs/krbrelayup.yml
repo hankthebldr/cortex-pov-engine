@@ -1,0 +1,48 @@
+adapter_id: TOOL-KRBRELAYUP
+name: "KrbRelayUp"
+version: "1.0"
+
+tier: 3
+category: identity-credential
+
+upstream:
+  repo: https://github.com/Dec0ne/KrbRelayUp
+  license: "MIT"
+  attribution: "Dec0ne"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1558
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  content_library_entry:
+    name: krbrelayup
+    repo: Dec0ne/KrbRelayUp
+    install: git-clone
+  binary: "KrbRelayUp.exe"
+
+invoke:
+  target_platform: windows
+  run_template: "\"{binary}\" relay -d {domain}"
+  default_args:
+    domain: "cortexsim.local"
+  identity_required: administrator
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-krbrelayup-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - identity-credential

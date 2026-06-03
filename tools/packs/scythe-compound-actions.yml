@@ -1,0 +1,45 @@
+adapter_id: TOOL-SCYTHE-COMPOUND-ACTIONS
+name: "SCYTHE compound-actions"
+version: "main"
+
+tier: 2
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/scythe-io/community-threats
+  license: "LicenseRef-Community"
+  attribution: "SCYTHE"
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1059
+
+safety_class: dual-use-lab-only
+
+install:
+  source_path: sources/scythe-community-threats
+  build_cmd: "true"
+
+invoke:
+  target_platform: any
+  run_template: "python3 {runner} {plan}"
+  default_args:
+    runner: "run.py"
+    plan: "plan.json"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-scythe-compound-actions-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - adversary-simulation

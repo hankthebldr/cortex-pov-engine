@@ -90,6 +90,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Anchor + fixture verification — no Cortex detection at this step."
+        ttp_ref: TTP-2026-0057
+        detection_id: xql-aispm-004-mttd-anchor-and-fixture-verify-bookkeeping
 
   - id: step-02
     name: "Wait for Cortex Cloud AI-SPM static-analysis scan cycle"
@@ -103,6 +105,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Cortex AI-SPM static analyzer scans Lambda code, S3-resident model artifacts, and SageMaker training scripts."
+        ttp_ref: TTP-2026-0057
+        detection_id: xql-aispm-004-static-analyzer-scans-ai-pipeline-artifacts
 
   - id: step-03
     name: "Probe static-analysis findings + assert 3 categories + MTTD ≤ 900s"
@@ -134,6 +138,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "MLSEC-STATIC-001 — hardcoded credentials in ML pipeline detected against the planted `sk-DEMO-CORTEXSIM-AISP-04-PLANTED` canary in both Lambda source and env vars."
+        ttp_ref: TTP-2026-0057
+        detection_id: xql-aispm-004-hardcoded-credentials-in-ml-pipeline-finding
         verification_xql: |
           dataset = cortex_cloud_findings
           | filter category = "ai_static_analysis"
@@ -148,6 +154,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "MLSEC-STATIC-002 — insecure model serialization (pickle) detected against `models/legacy_model.pkl` in the training-data bucket."
+        ttp_ref: TTP-2026-0057
+        detection_id: xql-aispm-004-insecure-model-serialization-pickle-finding
         verification_xql: |
           dataset = cortex_cloud_findings
           | filter category = "ai_static_analysis"
@@ -157,6 +165,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "MLSEC-STATIC-003 — unvalidated model inputs detected against the Lambda handler which accepts arbitrary `prompt` without schema validation."
+        ttp_ref: TTP-2026-0057
+        detection_id: xql-aispm-004-unvalidated-model-inputs-finding
         verification_xql: |
           dataset = cortex_cloud_findings
           | filter category = "ai_static_analysis"

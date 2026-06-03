@@ -57,6 +57,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "Pre-flight: simulator manifest visible to operator"
+        ttp_ref: TTP-2026-0050
+        detection_id: xql-pre-flight-simulator-manifest-visible-to-operator
 
   - id: step-02
     name: "Launch dry-run campaign — confirm safety policy holds"
@@ -85,6 +87,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "Dry-run: no NGFW EAL fires (safety policy active)"
+        ttp_ref: TTP-2026-0050
+        detection_id: xql-dry-run-no-ngfw-eal-fires-safety-policy-active
 
   - id: step-03
     name: "Live campaign — periodic beacon to authorised test endpoint"
@@ -116,12 +120,18 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — periodic HTTP beacon (regular interval, anomalous User-Agent)"
+        ttp_ref: TTP-2026-0050
+        detection_id: xql-ngfw-eal-periodic-http-beacon-regular-interval-anomalous-user-agent
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — DGA-style URI parameter on outbound HTTP"
+        ttp_ref: TTP-2026-0050
+        detection_id: xql-ngfw-eal-dga-style-uri-parameter-on-outbound-http
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — outbound HTTP carrying X-Simulation-Run-ID header (operator filter)"
+        ttp_ref: TTP-2026-0050
+        detection_id: bioc-ngfw-eal-outbound-http-carrying-x-simulation-run-id-header-operator-filter
 
 cleanup:
   commands:

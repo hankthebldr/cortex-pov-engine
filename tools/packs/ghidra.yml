@@ -1,0 +1,29 @@
+adapter_id: TOOL-GHIDRA
+name: "Ghidra"
+version: "11.1"
+
+tier: 5
+category: reverse-engineering
+
+upstream:
+  repo: https://github.com/NationalSecurityAgency/ghidra
+  license: "Apache-2.0"
+  attribution: "NSA"
+
+cortex_signal:
+  planes: []
+  expected_techniques:
+    - T1027
+
+safety_class: safe
+
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - reverse-engineering

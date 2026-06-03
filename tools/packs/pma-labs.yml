@@ -1,0 +1,29 @@
+adapter_id: TOOL-PMA-LABS
+name: "Practical Malware Analysis Labs"
+version: "master"
+
+tier: 5
+category: sandbox
+
+upstream:
+  repo: https://github.com/mikesiko/PracticalMalwareAnalysis-Labs
+  license: "LicenseRef-PMA"
+  attribution: "Sikorski & Honig"
+
+cortex_signal:
+  planes: []
+  expected_techniques:
+    - T1059
+
+safety_class: safe
+
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - sandbox

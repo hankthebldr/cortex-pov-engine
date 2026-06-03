@@ -1,0 +1,308 @@
+{
+  "id": "TTP-2026-0053",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-lateral-recon",
+      "protocol-smb",
+      "industry-all",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "SMB/RPC Lateral Sweep \u2014 Internal Host Discovery (T1046 / T1018 / T1021.002)",
+    "summary": "A single internal host rapidly opens TCP connections to SMB/RPC ports (445/139/135) across many internal hosts in a short window \u2014 the classic pre-lateral-movement reconnaissance sweep. The CortexSim smb_rpc_sweep EAL plugin reproduces this across the ITDR lab subnet. East-west NGFW traffic logs feed XSIAM Network Security Analytics, which detects the high destination-host fan-out from one sour\u2026",
+    "description": "Before lateral movement, operators (and worms/ransomware affiliates) sweep the internal network to find reachable SMB/RPC services \u2014 TCP/445 (SMB), TCP/139 (NetBIOS session) and TCP/135 (RPC endpoint mapper). The signature on the wire is a single source contacting an unusually large number of distinct internal destinations on those ports within a short window. The detection surface for Cortex is east-west network telemetry: NGFW (or internal sensor) traffic logs record src_ip, dst_ip, dst_port and app per session, and XSIAM Network Security Analytics models the destination-host fan-out per source against the admin/scanner baseline. This card detects the sweep from panw_ngfw_traffic_raw / network_story using count_distinct(dst_ip) per src_ip on SMB/RPC ports, plus an SMB-app behavioural BIOC for traffic outside the admin baseline. A correlation rule fuses the fan-out and the SMB-anomaly signals, and an analytics-plane stitch ties the sweeping source IP back to its workstation/endpoint context in XSIAM so the SOC sees one lateral-recon incident instead of hundreds of connection logs.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2017-05-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1018",
+        "name": "Remote System Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1021.002"
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1046 / T1018 \u2014 CortexSim smb_rpc_sweep EAL plugin (1 src \u2192 many internal dst on 445/139/135)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-004 requirements (east-west NGFW/internal sensor logging the ITDR lab subnet to XSIAM).",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe smb_rpc_sweep"
+      },
+      {
+        "description": "NGFW/internal sensor forwards east-west traffic logs into XSIAM (panw_ngfw_traffic_raw / network_story carries src_ip, dst_ip, dst_port)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Dry-run: verify CIDR coverage and authorisation\ncat > /tmp/smb-sweep-dry.yml <<'YML'\ncampaign_id: CMP-NDR-004\nname: \"NDR validation \u2014 SMB sweep dry\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.10.0/24\ndry_run: true\ntags: [ndr, lateral, eal]\nsteps:\n  - step_id: step-01\n    plugin: smb_rpc_sweep\n    params:\n      target_cidr: \"10.50.10.0/24\"\n      ports: [445, 139, 135]\n      connect_timeout: 1.0\n      inter_host_delay: 0.05\n      max_hosts: 64\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-dry.yml\n# step-2: Live SMB/RPC sweep against ITDR lab subnet\ncat > /tmp/smb-sweep-live.yml <<'YML'\ncampaign_id: CMP-NDR-004\nname: \"NDR validation \u2014 SMB sweep live\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.10.0/24\ndry_run: false\ntags: [ndr, lateral, eal]\nsteps:\n  - step_id: step-01\n    plugin: smb_rpc_sweep\n    params:\n      target_cidr: \"10.50.10.0/28\"\n      ports: [445, 139, 135]\n      connect_timeout: 1.0\n      inter_host_delay: 0.1\n      max_hosts: 16\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-live.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "One source IP connecting to many distinct internal destinations on TCP/445 in a short window.",
+        "expected_value": "dst_port = 445 AND count_distinct(dst_ip) per src_ip >= 8"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "SMB/RPC connection attempts on ports 445, 139 and 135 from a single source.",
+        "expected_value": "dst_port IN (445, 139, 135)"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "SMB application traffic from a non-admin source outside the normal admin baseline.",
+        "expected_value": "app IN (\"smb\", \"ms-ds-smb\", \"msrpc\", \"netbios-ss\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/smb-sweep-dry.yml /tmp/smb-sweep-live.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "NGFW EAL \u2014 anomalous SMB traffic outside admin baseline",
+        "description": "NGFW EAL \u2014 anomalous SMB traffic outside admin baseline",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter dst_port in (445, 139, 135) or app in (\"smb\", \"ms-ds-smb\", \"msrpc\", \"netbios-ss\")\n| filter src_ip != null\n| comp count_distinct(dst_ip) as dst_host_count, count() as session_count by src_ip, dst_port\n| filter dst_host_count >= 8\n| fields src_ip, dst_port, dst_host_count, session_count",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1018",
+          "T1021.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Dry-run report shows planned host count and ports",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port in (445, 139, 135)\n| filter dst_ip in (\"10.50.10.0/24\")\n| comp count_distinct(dst_ip) as planned_hosts by src_ip, dst_port\n| fields src_ip, dst_port, planned_hosts",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW EAL \u2014 host sweeping pattern (1 src to many dst on TCP/445)",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 445\n| filter dst_ip in (\"10.50.10.0/24\")\n| comp count_distinct(dst_ip) as swept_hosts, count() as sessions by src_ip, dst_port\n| filter swept_hosts >= 8\n| fields src_ip, dst_port, swept_hosts, sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "XSIAM correlation \u2014 sweep src host stitched with workstation context",
+        "query": "preset = network_story\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port in (445, 139, 135)\n| filter dst_ip in (\"10.50.10.0/24\")\n| join type=inner (xdr_data\n    | filter event_type = ENUM.NETWORK\n    | fields agent_hostname, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip\n| comp count_distinct(dst_ip) as swept_hosts by src_ip, ep.agent_hostname\n| filter swept_hosts >= 8\n| fields src_ip, ep.agent_hostname, swept_hosts",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "SMB RPC Lateral Sweep \u2014 Host Fan-Out From One Source",
+        "rule_id": "CR-NDR-0004",
+        "logic": "BIOC(NGFW EAL \u2014 anomalous SMB traffic outside admin baseline) OR XQL(NGFW EAL \u2014 host sweeping pattern (1 src to many dst on TCP/445)) OR XQL(XSIAM correlation \u2014 sweep src host stitched with workstation context)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Network Security Analytics \u2014 Internal Network Scan / Host Sweep",
+      "Cortex XSIAM Analytics \u2014 Lateral Movement reconnaissance over SMB/RPC"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "east-west-traffic-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-SMB-SWEEP-001",
+          "NGFW-EAL-INTERNAL-SCAN-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_port in (445,139,135) | comp count_distinct(dst_ip) by src_ip"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-INTERNAL-SCAN",
+          "XSIAM-CR-NDR-0004"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = network_story | filter dst_port = 445 | comp count_distinct(dst_ip) as swept by src_ip | filter swept >= 8"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-LateralReconResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: isolate the sweeping host, quarantine its AD account, enumerate reached hosts, open lateral-movement DFIR ticket."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-053",
+        "name": "Lateral Reconnaissance Detection via NGFW EAL \u2014 SMB/RPC Sweep",
+        "description": "Validate that east-west NGFW traffic logs + XSIAM Network Security Analytics detect a single source sweeping SMB/RPC ports across many internal hosts.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-053A",
+            "objective": "Host sweep fan-out on TCP/445 is detected from east-west telemetry.",
+            "preconditions": [
+              "East-west NGFW/internal sensor logging the ITDR lab subnet to XSIAM.",
+              "Reachable internal hosts in 10.50.10.0/24."
+            ],
+            "steps": [
+              "Run SIM-NDR-004 step-02 (live sweep of 10.50.10.0/28 on 445/139/135).",
+              "Inspect Network Security Analytics / network_story for the source IP."
+            ],
+            "success_criteria": [
+              "XQL `NGFW EAL \u2014 host sweeping pattern (1 src to many dst on TCP/445)` returns >= 1 row with swept_hosts >= 8.",
+              "BIOC `NGFW EAL \u2014 anomalous SMB traffic outside admin baseline` matches the source."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-WEB-053B",
+            "objective": "Sweep is stitched to the originating workstation and raised as one incident.",
+            "success_criteria": [
+              "XQL `XSIAM correlation \u2014 sweep src host stitched with workstation context` returns >= 1 row.",
+              "Correlation `CR-NDR-0004` raises a single lateral-recon incident for the source."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Segment internal networks and apply default-deny east-west policy so SMB/RPC is only permitted from sanctioned management hosts.",
+      "Disable SMBv1 and restrict TCP/445/139/135 reachability between workstations.",
+      "Require host-based firewall rules denying inbound SMB except from approved admin jump hosts."
+    ],
+    "detection_engineering": [
+      "Baseline per-source destination-host cardinality on SMB/RPC ports; alert on fan-out above the admin baseline.",
+      "Distinguish sanctioned scanners/admin hosts from anomalous sources via an allowlist.",
+      "Stitch the sweeping source IP to its endpoint/workstation context and correlate into one lateral-recon incident."
+    ],
+    "response_playbook": "XSOAR-PB-LateralReconResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Lateral Movement Tradecraft 2025",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1046 \u2014 Network Service Discovery",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-004."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real NGFW east-west network XQL/BIOC for SMB/RPC lateral sweep, added correlation CR-NDR-0004, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

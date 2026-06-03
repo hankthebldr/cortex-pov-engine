@@ -1,0 +1,406 @@
+{
+  "id": "TTP-2026-0035",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02T00:00:00Z",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "vector-defense-evasion",
+      "actor-xhunt",
+      "industry-all",
+      "severity-high",
+      "endpoint",
+      "linux"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "destructive-with-cleanup"
+    }
+  },
+  "identity": {
+    "name": "Linux Defense Evasion \u2014 Log Tampering, Timestomping, Masquerading (T1070.002)",
+    "summary": "An operator covers tracks on a Linux host: clearing bash history, truncating/accessing auth.log and syslog, timestomping with touch -t/-r, copying a shell to a kernel-thread name to masquerade in process listings, and enumerating EDR/AV agents to plan tamper. Cortex XDR for Linux detects each anti-forensics action via command-line and file BIOCs and stitches them into one defense-evasion incident.",
+    "description": "Defense evasion is where attackers buy dwell time. Unit 42's xHunt campaign showed operators tampering with logs and disguising tooling to frustrate responders. This scenario reproduces five Linux anti-forensics techniques: bash history clearing via HISTFILE manipulation and history -c, system log access and truncation against /var/log/auth.log and syslog, file timestamp manipulation with touch -t and touch -r, process masquerading by copying /bin/sh to a kernel-thread-style name like [kworker/0:1], and security-tool reconnaissance by grepping the process table for falcon/crowd/cortex/sentinel agents. The detection approach is command-line behavioral analysis plus file-write telemetry: history/log/timestomp/masquerade actions each map to a Cortex XDR BIOC, an analytics layer recognizes the anti-forensics sequence, and a correlation rule fuses the activity into a single defense-evasion incident. The security-tool enumeration step is deliberately a discovery behavior often missed by default that the custom BIOC closes \u2014 exactly the gap-coverage POV narrative.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "xHunt",
+        "aliases": [
+          "Hive0081"
+        ]
+      }
+    ],
+    "campaigns": [
+      "xHunt Campaign"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2019-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1070",
+        "name": "Indicator Removal: Clear Linux or Mac System Logs",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1070.002"
+      },
+      {
+        "technique_id": "T1070",
+        "name": "Indicator Removal: Clear Command History",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1070.003"
+      },
+      {
+        "technique_id": "T1070",
+        "name": "Indicator Removal: Timestomp",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1070.006"
+      },
+      {
+        "technique_id": "T1036",
+        "name": "Masquerading: Match Legitimate Name or Location",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1036.005"
+      },
+      {
+        "technique_id": "T1562",
+        "name": "Impair Defenses: Disable or Modify Tools",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1562.001"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Modification",
+      "File: File Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1070.002 / T1070.003 / T1070.006 / T1036.005 \u2014 Linux anti-forensics atomic tests",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting healthy on the target.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "Root privilege to access /var/log and modify file timestamps."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: clear bash history\nexport HISTFILE=/dev/null; unset HISTFILE; history -c 2>/dev/null; echo '' > ~/.bash_history\n# step-2: tamper system logs\ncp /var/log/auth.log /tmp/cortexsim_auth_backup 2>/dev/null; echo '' > /tmp/cortexsim_fake_auth.log; wc -l /var/log/syslog /var/log/auth.log 2>/dev/null\n# step-3: timestomp\ntouch -t 202301010000 /tmp/cortexsim_timestomp_test; touch -r /usr/bin/ls /tmp/cortexsim_timestomp_test\n# step-4: masquerade\ncp /bin/sh /tmp/cortexsim_masq_test; mv /tmp/cortexsim_masq_test '/tmp/[kworker/0:1]' 2>/dev/null\n# step-5: enumerate security tools\nps aux | grep -E 'falcon|crowd|cortex|sentinel|cylance|carbon' | grep -v grep",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "history -c / HISTFILE manipulation to clear shell history.",
+        "expected_value": "command_line contains_any (\"history -c\", \"HISTFILE\", \".bash_history\")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Access/truncation of /var/log/auth.log or syslog by a non-syslog process.",
+        "expected_value": "action_file_path contains_any (\"/var/log/auth.log\", \"/var/log/syslog\")"
+      },
+      {
+        "artifact_type": "process",
+        "description": "touch invoked with -t or -r to manipulate timestamps.",
+        "expected_value": "actor_process_image_name = \"touch\" and command_line contains_any (\"-t \", \"-r \")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Shell binary copied to a kernel-thread style name.",
+        "expected_value": "action_file_path contains_any (\"[kworker\", \"systemd-journald\")"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process table grep for EDR/AV agent names.",
+        "expected_value": "command_line contains_any (\"falcon\", \"crowd\", \"cortex\", \"sentinel\", \"cylance\", \"carbon\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cortexsim_auth_backup /tmp/cortexsim_fake_auth.log /tmp/cortexsim_timestomp_test\nrm -f '/tmp/[kworker/0:1]' '/tmp/systemd-journald' /tmp/cortexsim_masq*\necho '[CortexSim] SIM-EDR-004 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "EDR-004 Bash History Clearing And HISTFILE Manipulation",
+        "description": "Bash history clearing \u2014 HISTFILE manipulation and history -c execution detected. A shell unsets/redirects HISTFILE or truncates .bash_history.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains_any (\"history -c\", \"HISTFILE=/dev/null\", \"unset HISTFILE\", \"> ~/.bash_history\", \"rm -f ~/.bash_history\", \"HISTSIZE=0\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1070.003"
+        ]
+      },
+      {
+        "name": "EDR-004 System Log Access Or Truncation",
+        "description": "System log file access and truncation attempt \u2014 log tampering to hide intrusion evidence. A non-syslog process reads, copies or truncates auth.log/syslog.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter action_file_path contains_any (\"/var/log/auth.log\", \"/var/log/syslog\", \"/var/log/secure\", \"/var/log/messages\", \"/var/log/wtmp\", \"/var/log/btmp\")\n| filter actor_process_image_name not in (\"rsyslogd\", \"syslog-ng\", \"systemd-journald\", \"logrotate\", \"auditd\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1070.002"
+        ]
+      },
+      {
+        "name": "EDR-004 File Timestomp Via Touch",
+        "description": "File timestamp modification via touch -t \u2014 timestomping to evade forensic analysis. touch is invoked with -t (explicit time) or -r (reference file).",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"touch\"\n| filter action_process_image_command_line contains_any (\" -t \", \" -r \", \" -d \", \"--date\", \"--reference\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1070.006"
+        ]
+      },
+      {
+        "name": "EDR-004 Binary Masquerade As Kernel Thread",
+        "description": "Binary copied and renamed to match kernel thread name \u2014 process masquerading as kworker. A shell/binary is copied to a [kworker..]/systemd-* style name.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"cp\", \"mv\", \"install\", \"ln\")\n| filter action_process_image_command_line contains_any (\"[kworker\", \"[kthreadd]\", \"systemd-journald\", \"[migration\", \"[ksoftirqd\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1036.005"
+        ]
+      },
+      {
+        "name": "EDR-004 Security Product Enumeration",
+        "description": "Security product enumeration \u2014 process search for EDR/AV agent names indicates evasion preparation. The process table is grepped for common EDR/AV vendor strings.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"grep\", \"egrep\", \"pgrep\", \"ps\")\n| filter action_process_image_command_line contains_any (\"falcon\", \"crowdstrike\", \"crowd\", \"cortex\", \"traps\", \"sentinel\", \"cylance\", \"carbon\", \"defender\", \"clamav\")",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1562.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-004 Analytics History Evasion Sequence",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains_any (\"history -c\", \"HISTFILE\", \".bash_history\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-004 Analytics Auth Log Access Non-Syslog Process",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and action_file_path contains_any (\"/var/log/auth.log\", \"/var/log/syslog\")\n| filter actor_process_image_name not in (\"rsyslogd\", \"systemd-journald\", \"logrotate\")\n| fields _time, agent_hostname, actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-004 Analytics Timestomp Reference File",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"touch\"\n| filter action_process_image_command_line contains_any (\" -r \", \" -t \")\n| fields _time, agent_hostname, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-004 Analytics Shell Binary Copied To System Name",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"cp\", \"mv\")\n| filter action_process_image_command_line contains_any (\"/bin/sh\", \"/bin/bash\") and action_process_image_command_line contains_any (\"kworker\", \"systemd-\", \"/tmp/\")\n| fields _time, agent_hostname, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-004 Analytics Security Tool Discovery Via Process Listing",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"grep\", \"egrep\", \"pgrep\")\n| filter action_process_image_command_line contains_any (\"falcon\", \"crowd\", \"cortex\", \"sentinel\", \"cylance\", \"carbon\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Linux Anti-Forensics And Defense Evasion Chain",
+        "rule_id": "CR-EDR-0004",
+        "logic": "BIOC(EDR-004 Bash History Clearing And HISTFILE Manipulation) OR BIOC(EDR-004 System Log Access Or Truncation) OR BIOC(EDR-004 File Timestomp Via Touch) OR BIOC(EDR-004 Binary Masquerade As Kernel Thread) OR BIOC(EDR-004 Security Product Enumeration)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XDR Analytics \u2014 Anti-forensics activity on host",
+      "Cortex XDR Analytics \u2014 Security tooling reconnaissance"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-EDR-0035-HISTORY",
+          "XDR-BIOC-EDR-0035-LOGTAMPER",
+          "XDR-BIOC-EDR-0035-TIMESTOMP",
+          "XDR-BIOC-EDR-0035-MASQ"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter actor_process_image_name = \"touch\" and action_process_image_command_line contains \" -r \" | fields _time, agent_hostname, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0004"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EDR-0004 fuses history-clear, log-tamper, timestomp, masquerade and tool-recon into one defense-evasion incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-DefenseEvasionResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook snapshots host forensics before the operator finishes covering tracks and isolates on correlation match."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-RANSOM-035",
+        "name": "Defense Evasion Detection \u2014 Linux Anti-Forensics",
+        "description": "Detect log tampering, timestomping, masquerading and EDR reconnaissance on Linux even when the operator tries to erase evidence.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-RANSOM-035A",
+            "objective": "Each anti-forensics action fires its corresponding Cortex XDR BIOC.",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
+              "BIOCs from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-EDR-004 steps 1-5.",
+              "Observe per-action BIOC alerts in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `EDR-004 File Timestomp Via Touch` fires within 60s.",
+              "BIOC `EDR-004 Security Product Enumeration` fires (gap-coverage BIOC).",
+              "All five XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-RANSOM-035B",
+            "objective": "Anti-forensics activity stitches into one defense-evasion incident.",
+            "success_criteria": [
+              "Correlation `CR-EDR-0004` groups the evasion actions on one host into a single incident.",
+              "Forensic snapshot is captured before evidence destruction completes."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Forward all logs off-host in real time so local tampering does not destroy evidence.",
+      "Make /var/log append-only (chattr +a) and restrict writers to the logging daemons.",
+      "Enable Cortex XDR tamper protection so agent reconnaissance/kill attempts are blocked.",
+      "Use file-integrity monitoring on system binaries to catch masquerade copies."
+    ],
+    "detection_engineering": [
+      "Alert on history -c / HISTFILE unset, on touch -t/-r, and on cp/mv to kernel-thread-style names.",
+      "Treat any non-logging-daemon write to auth.log/syslog as high-severity.",
+      "Flag process-table greps for EDR/AV vendor strings as evasion preparation."
+    ],
+    "response_playbook": "XSOAR-PB-DefenseEvasionResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - xHunt Campaign: Attacks on Kuwait Shipping and Transportation",
+      "url": "https://unit42.paloaltonetworks.com/xhunt-campaign-attacks-on-kuwait-shipping/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1070.002 \u2014 Clear Linux or Mac System Logs",
+      "url": "https://attack.mitre.org/techniques/T1070/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-EDR-004."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Linux XDR defense-evasion BIOCs/XQL, added correlation CR-EDR-0004, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

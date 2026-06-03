@@ -39,6 +39,11 @@ infra_modules_needed:
   - base
 
 external_tools:
+  - name: Cortex Malicious Agentic Pack
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-AGENTIC-PACK
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: script
@@ -58,9 +63,13 @@ steps:
       - plane: KOI
         type: Analytics
         description: "Code scan — manifest name 'anthroopic-calculator' typosquats 'anthropic-calculator'"
+        ttp_ref: TTP-2026-0042
+        detection_id: xql-koi-001-typosquat-mcp-manifest-name-near-miss-of-anthropic-publisher
       - plane: KOI
         type: BIOC
         description: "Code scan — tool description embeds 'Ignore previous instructions' / AKIA canary"
+        ttp_ref: TTP-2026-0042
+        detection_id: bioc-koi-001-mcp-tool-description-embeds-instruction-injection-and-akia-canary
 
   - id: step-02
     name: "Emulate Claude Desktop fetching the manifest via agentic_egress"
@@ -90,9 +99,13 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — Claude Desktop User-Agent fetches MCP manifest from non-canonical FQDN"
+        ttp_ref: TTP-2026-0042
+        detection_id: xql-koi-001-claude-desktop-fetches-mcp-manifest-from-non-canonical-fqdn
       - plane: KOI
         type: Analytics
         description: "URL filtering — destination matches typosquat pattern of approved AI tool publisher"
+        ttp_ref: TTP-2026-0042
+        detection_id: xql-koi-001-outbound-url-matches-typosquat-of-approved-ai-publisher-domain
 
   - id: step-03
     name: "Confirm Cortex Cloud Code scan flags the artifact in CI"
@@ -105,9 +118,13 @@ steps:
       - plane: KOI
         type: Analytics
         description: "Cortex Cloud Code — typosquat package-name detector fires"
+        ttp_ref: TTP-2026-0042
+        detection_id: xql-koi-001-cortex-cloud-code-typosquat-package-name-detector
       - plane: KOI
         type: BIOC
         description: "Cortex Cloud Code — instruction-injection in tool description detected"
+        ttp_ref: TTP-2026-0042
+        detection_id: bioc-koi-001-cortex-cloud-code-instruction-injection-in-tool-description
 
 cleanup:
   commands:

@@ -42,6 +42,11 @@ infra_modules_needed:
   - airs
 
 external_tools:
+  - name: Cortex Prompt Attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-PROMPT-ATTACKER
   - name: cortex-prompt-attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: binary
@@ -64,6 +69,8 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "Pre-flight: agent endpoint advertises three tool functions"
+        ttp_ref: "TTP-2026-0015"
+        detection_id: "xql-airs-llm06-preflight-agent-endpoint-advertises-three-tool-functions"
 
   - id: step-02
     name: "Submit adversarial prompt that coerces unsafe tool call"
@@ -80,12 +87,18 @@ steps:
       - plane: AIRS
         type: BIOC
         description: "AIRS — exec_shell tool invoked from a non-developer-context prompt — policy violation"
+        ttp_ref: "TTP-2026-0015"
+        detection_id: "bioc-airs-llm06-exec-shell-tool-invoked-from-non-developer-context-prompt"
       - plane: AIRS
         type: Analytics
         description: "AIRS — tool-call argument carries shell metacharacters (rm/curl/wget) — unsafe input"
+        ttp_ref: "TTP-2026-0015"
+        detection_id: "xql-airs-llm06-tool-call-argument-carries-shell-metacharacters-unsafe-input"
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — agentic tool-call correlates with downstream EDR process event"
+        ttp_ref: "TTP-2026-0015"
+        detection_id: "xql-airs-llm06-stitch-agentic-tool-call-with-downstream-edr-process-event"
 
   - id: step-03
     name: "Confirm AIRS detection on send_email tool used for exfil"
@@ -98,6 +111,8 @@ steps:
       - plane: AIRS
         type: BIOC
         description: "AIRS — send_email tool argument contains exfil URL (smtp to external) — flagged"
+        ttp_ref: "TTP-2026-0015"
+        detection_id: "bioc-airs-llm06-send-email-tool-argument-contains-external-exfil-recipient"
 
 cleanup:
   commands:

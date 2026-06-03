@@ -328,3 +328,256 @@ def test_runs_by_ttp_respects_limit(client, seeded_ttp_runs):
     assert body["total"] == 1
     # Newest-first — r-dcsync-1 wins
     assert body["runs"][0]["run_id"] == "r-dcsync-1"
+
+
+# ---------------------------------------------------------------------------
+# Authoring endpoints (issue #59)
+# ---------------------------------------------------------------------------
+#
+# These tests redirect the corpus dir to a tmp_path so they don't touch the
+# in-repo TTP files. The CORTEXSIM_AUTHORING_ENABLED env gate is flipped
+# per-test so we exercise both the enabled and disabled code paths.
+
+
+import os
+import shutil
+import json
+
+
+@pytest.fixture
+def authoring_corpus(tmp_path, monkeypatch):
+    """Spin up an isolated corpus directory + drafts subdir, point the
+    api.ttps module's helpers at it, and enable authoring for the test.
+    Yields (corpus_dir, drafts_dir)."""
+    corpus = tmp_path / "ttps"
+    drafts = corpus / "_drafts"
+    drafts.mkdir(parents=True)
+
+    # Seed one already-active TTP we can target with PUT. Cloning a real
+    # entry keeps the fixture in lockstep with the schema.
+    seed_src = REPO_ROOT / "detection_scanner" / "ttps" / "TTP-2026-0004-dcsync-credential-replication.json"
+    seed = json.loads(seed_src.read_text(encoding="utf-8"))
+    seed["id"] = "TTP-2026-9001"
+    seed["status"] = "active"
+    seed["identity"]["name"]    = "Seed Test TTP"
+    seed["identity"]["summary"] = (
+        "Pre-existing active TTP used by the authoring tests to exercise "
+        "the update and promote paths."
+    )
+    (corpus / "TTP-2026-9001-seed.json").write_text(
+        json.dumps(seed, indent=2) + "\n", encoding="utf-8",
+    )
+
+    # Schema lives at detection_scanner/schema/ — copy into tmp so the
+    # module's _SCHEMA_PATH resolves under our tmp BASE_DIR.
+    real_schema = REPO_ROOT / "detection_scanner" / "schema" / "ttp-entry.schema.json"
+    (tmp_path / "detection_scanner" / "schema").mkdir(parents=True)
+    shutil.copy(real_schema, tmp_path / "detection_scanner" / "schema" / "ttp-entry.schema.json")
+
+    # Move the corpus to the conventional path under our tmp BASE_DIR.
+    (tmp_path / "detection_scanner").mkdir(exist_ok=True)
+    final_corpus = tmp_path / "detection_scanner" / "ttps"
+    if corpus.resolve() != final_corpus.resolve():
+        if final_corpus.exists():
+            shutil.rmtree(final_corpus)
+        shutil.move(str(corpus), str(final_corpus))
+
+    from api import ttps as ttps_module
+    monkeypatch.setattr(ttps_module, "_BASE_DIR",   tmp_path)
+    monkeypatch.setattr(ttps_module, "_CORPUS_DIR", final_corpus)
+    monkeypatch.setattr(ttps_module, "_DRAFTS_DIR", final_corpus / "_drafts")
+    monkeypatch.setattr(ttps_module, "_SCHEMA_PATH",
+                        tmp_path / "detection_scanner" / "schema" / "ttp-entry.schema.json")
+    monkeypatch.setattr(ttps_module, "_ALLOWED_PARENTS", {
+        final_corpus.resolve(), (final_corpus / "_drafts").resolve(),
+    })
+    monkeypatch.setenv("CORTEXSIM_AUTHORING_ENABLED", "true")
+
+    # Load the catalog from the tmp dir so list/detail calls in the
+    # same test see the seed and any writes the test makes.
+    from engine.ttp_catalog import catalog as ttp_catalog
+    ttp_catalog.load(str(final_corpus))
+
+    yield final_corpus, final_corpus / "_drafts"
+
+    # Restore the in-repo catalog so unrelated tests keep their floor.
+    ttp_catalog.load(str(REPO_ROOT / "detection_scanner" / "ttps"))
+
+
+def _make_valid_payload(ttp_id: str) -> dict:
+    """Clone a known-good live TTP and overwrite the id/name/summary.
+
+    Chasing every required field by hand is brittle — the schema is
+    deep and changes over time. Cloning a real entry guarantees the
+    fixture stays in sync with the schema floor `test_every_active_ttp_validates`
+    enforces.
+    """
+    src = REPO_ROOT / "detection_scanner" / "ttps" / "TTP-2026-0004-dcsync-credential-replication.json"
+    doc = json.loads(src.read_text(encoding="utf-8"))
+    doc["id"] = ttp_id
+    doc["status"] = "draft"
+    doc["identity"]["name"]    = f"Authoring Test {ttp_id}"
+    doc["identity"]["summary"] = (
+        "Customer-grade test summary, deliberately longer than twenty "
+        "characters so the schema minLength constraint is satisfied "
+        "and shorter than the 400-char cap."
+    )
+    return doc
+
+
+def test_authoring_get_schema_returns_jsonschema(client):
+    resp = client.get("/api/ttps/_schema")
+    assert resp.status_code == 200
+    body = resp.json()
+    # Sanity: it's the TTP schema, not the runs endpoint or detail.
+    assert body.get("$schema") or body.get("type") == "object"
+    # Identity.summary is a known property of the schema.
+    summary_prop = body["properties"]["identity"]["properties"]["summary"]
+    assert summary_prop["maxLength"] == 400
+
+
+def test_authoring_post_requires_env_gate(client):
+    resp = client.post("/api/ttps", json=_make_valid_payload("TTP-2026-7777"))
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["code"] == "AUTHORING_DISABLED"
+
+
+def test_authoring_create_draft_writes_to_drafts_dir(client, authoring_corpus):
+    _, drafts = authoring_corpus
+    payload = _make_valid_payload("TTP-2026-7777")
+    payload["status"] = "active"  # we set status=active in payload; backend forces draft
+    resp = client.post("/api/ttps", json=payload)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["ttp_id"] == "TTP-2026-7777"
+    assert body["status"] == "draft", "create endpoint must force status=draft"
+    assert "_drafts" in body["path"]
+    # File lands on disk
+    files = list(drafts.glob("TTP-2026-7777-*.json"))
+    assert len(files) == 1
+    # And status got rewritten to draft regardless of payload value
+    written = json.loads(files[0].read_text())
+    assert written["status"] == "draft"
+
+
+def test_authoring_create_rejects_conflict(client, authoring_corpus):
+    payload = _make_valid_payload("TTP-2026-9001")  # already on disk
+    resp = client.post("/api/ttps", json=payload)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "TTP_ID_CONFLICT"
+
+
+def test_authoring_create_rejects_bad_id_format(client, authoring_corpus):
+    payload = _make_valid_payload("not-a-ttp-id")
+    payload["id"] = "../../etc/passwd"
+    resp = client.post("/api/ttps", json=payload)
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "TTP_ID_INVALID"
+
+
+def test_authoring_create_rejects_schema_invalid_payload(client, authoring_corpus):
+    payload = _make_valid_payload("TTP-2026-7778")
+    # Summary too short to pass the schema's minLength=20.
+    payload["identity"]["summary"] = "x"
+    resp = client.post("/api/ttps", json=payload)
+    assert resp.status_code == 422
+    body = resp.json()["detail"]
+    assert body["code"] == "TTP_SCHEMA_INVALID"
+    assert body["path"] == ["identity", "summary"]
+
+
+def test_authoring_put_updates_existing_in_place(client, authoring_corpus):
+    corpus, _ = authoring_corpus
+    payload = _make_valid_payload("TTP-2026-9001")
+    payload["status"] = "active"
+    payload["identity"]["name"] = "Updated Name"
+    resp = client.put("/api/ttps/TTP-2026-9001", json=payload)
+    assert resp.status_code == 200, resp.text
+    files = list(corpus.glob("TTP-2026-9001-*.json"))
+    assert len(files) == 1
+    written = json.loads(files[0].read_text())
+    assert written["identity"]["name"] == "Updated Name"
+
+
+def test_authoring_put_rejects_id_mismatch(client, authoring_corpus):
+    payload = _make_valid_payload("TTP-2026-9001")
+    payload["id"] = "TTP-2026-9999"
+    resp = client.put("/api/ttps/TTP-2026-9001", json=payload)
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "ID_MISMATCH"
+
+
+def test_authoring_put_404_unknown(client, authoring_corpus):
+    payload = _make_valid_payload("TTP-2026-8888")
+    resp = client.put("/api/ttps/TTP-2026-8888", json=payload)
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "TTP_NOT_FOUND"
+
+
+def test_authoring_promote_moves_draft_to_active(client, authoring_corpus):
+    corpus, drafts = authoring_corpus
+    # Create a draft first
+    client.post("/api/ttps", json=_make_valid_payload("TTP-2026-7779"))
+    assert (list(drafts.glob("TTP-2026-7779-*.json")))
+
+    resp = client.post("/api/ttps/TTP-2026-7779/promote")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "active"
+    assert body["moved"] is True
+
+    # File moved from drafts to active corpus root
+    assert not list(drafts.glob("TTP-2026-7779-*.json"))
+    actives = list(corpus.glob("TTP-2026-7779-*.json"))
+    assert len(actives) == 1
+    written = json.loads(actives[0].read_text())
+    assert written["status"] == "active"
+
+
+def test_authoring_promote_is_idempotent_on_active(client, authoring_corpus):
+    resp = client.post("/api/ttps/TTP-2026-9001/promote")
+    assert resp.status_code == 200
+    assert resp.json()["moved"] is False
+
+
+def test_authoring_reload_endpoint_reindexes(client, authoring_corpus):
+    resp = client.post("/api/ttps/_reload")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["loaded"] >= 1
+
+
+def test_authoring_full_lifecycle_e2e(client, authoring_corpus):
+    """Create → list (draft visible? no, drafts are skipped) →
+    update body → promote → list (now visible as active)."""
+    corpus, _ = authoring_corpus
+    new_id = "TTP-2026-7780"
+
+    # 1. Create draft
+    resp = client.post("/api/ttps", json=_make_valid_payload(new_id))
+    assert resp.status_code == 201
+
+    # 2. Draft must NOT appear in the active list (catalog skips _drafts/)
+    listing = client.get("/api/ttps").json()
+    assert new_id not in [t["id"] for t in listing["ttps"]]
+
+    # 3. Update — bump the summary
+    payload = _make_valid_payload(new_id)
+    payload["identity"]["summary"] = (
+        "Updated summary that still exceeds twenty characters and is "
+        "customer-grade per the schema cap."
+    )
+    resp = client.put(f"/api/ttps/{new_id}", json=payload)
+    assert resp.status_code == 200
+
+    # 4. Promote
+    resp = client.post(f"/api/ttps/{new_id}/promote")
+    assert resp.status_code == 200
+    assert resp.json()["moved"] is True
+
+    # 5. Now visible in the list as active
+    listing = client.get("/api/ttps").json()
+    assert new_id in [t["id"] for t in listing["ttps"]]
+    target = next(t for t in listing["ttps"] if t["id"] == new_id)
+    assert target["status"] == "active"
+    assert "Updated summary" in target["summary"]

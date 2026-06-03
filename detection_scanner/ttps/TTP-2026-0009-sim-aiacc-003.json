@@ -1,0 +1,281 @@
+{
+  "id": "TTP-2026-0009",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:11+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ai-access",
+      "vector-shadow-ai",
+      "industry-all",
+      "severity-medium",
+      "volume-anomaly",
+      "gemini"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws",
+        "azure",
+        "gcp"
+      ],
+      "estimated_runtime_seconds": 240,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AI Access \u2014 High-Volume Gemini Prompt Burst",
+    "summary": "A single user fires a burst of prompts at the Google Gemini API. The llm_provider_egress plugin POSTs 30 sequential requests to generativelanguage.googleapis.com within ~90s; Cortex AI Access Security profiles the per-user request rate against a rolling baseline and the NGFW counts sustained generative-AI sessions from one source IP. Gemini is classified as unsanctioned for this user.",
+    "description": "Anomalous AI provider usage volume is an early indicator of bulk data exposure, automated scraping or runaway agent loops. This scenario emits 30 sequential POSTs to generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent from one user within roughly 90 seconds, then \u2014 after a cool-off window \u2014 a single probe to confirm the baseline restores and no alert fires. Detection is volume-based: (1) an analytics rule profiles per-user request count to each provider over a rolling window and alerts when it exceeds baseline; (2) the NGFW counts sustained generative-AI sessions from a single source IP; (3) a sanctioned-vs-unsanctioned policy classifies Gemini as unsanctioned for this user. The cool-off probe is the negative control \u2014 its single request stays below baseline and produces no detection. A correlation rule groups the burst signals into one anomalous-usage incident keyed on the user identity.",
+    "severity": "medium",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-12-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "llm_provider_egress (provider=gemini, payload_type=benign, iterations=30)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex AI Access Security licensed with per-user volume baselining enabled.",
+        "check_command": "getent hosts generativelanguage.googleapis.com"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-AIACC-003 requirements (egress allowed to generativelanguage.googleapis.com)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Pre-flight DNS resolution for generativelanguage.googleapis.com\ngetent hosts generativelanguage.googleapis.com || true\necho \"[CortexSim] burst target reachable\"\n# step-2: Fire 30 sequential prompts to trigger volume baseline\ncat > /tmp/aiacc-003.yml <<'YML'\ncampaign_id: CMP-AIACC-003\nname: \"AI Access \u2014 Gemini burst\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - generativelanguage.googleapis.com\ndry_run: false\ntags: [ai-access, gemini, volume-anomaly]\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: gemini\n      payload_type: benign\n      iterations: 30\n      sleep_seconds: 2\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-003.yml --live\n# step-3: Cool-off window then a single probe to confirm baseline restoration\nsleep 120\ncat > /tmp/aiacc-003-cool.yml <<'YML'\ncampaign_id: CMP-AIACC-003\nname: \"AI Access \u2014 Gemini cool-off probe\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - generativelanguage.googleapis.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: gemini\n      payload_type: benign\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-003-cool.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "30 outbound HTTPS POSTs to generativelanguage.googleapis.com within ~90s from one source.",
+        "expected_value": "dst_host = \"generativelanguage.googleapis.com\" and http_method = \"POST\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aiacc-003.yml /tmp/aiacc-003-cool.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AIACC-003 Pre-flight Gemini Provider Host Resolvable",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"generativelanguage.googleapis.com\" or tls_sni = \"generativelanguage.googleapis.com\"\n| comp count() as sessions by src_ip\n| filter sessions >= 1\n| fields src_ip, sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-003 Gemini Request Rate Exceeds Per User Baseline",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"generativelanguage.googleapis.com\"\n| filter http_method = \"POST\" and uri_path contains \":generateContent\"\n| comp count() as request_count, sum(bytes_sent) as total_bytes by source_user, src_ip\n| filter request_count >= 20\n| fields source_user, src_ip, request_count, total_bytes",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-003 NGFW Sustained Generative AI Session Count Single Source",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"generativelanguage.googleapis.com\" or tls_sni = \"generativelanguage.googleapis.com\"\n| filter app in (\"google-gemini\", \"gemini-api\", \"generative-ai\", \"ai-ml-application\")\n| comp count() as session_count by src_ip, app\n| filter session_count >= 20\n| fields src_ip, app, session_count",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-003 Unsanctioned AI Provider Gemini For User",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"generativelanguage.googleapis.com\"\n| filter app_category in (\"generative-ai\", \"ai-ml-application\") and app_sanctioned = false\n| fields _time, source_user, src_ip, dst_host, app, app_sanctioned, action",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-003 Post Cooloff Single Gemini Request Below Baseline",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 300)\n| filter dst_host = \"generativelanguage.googleapis.com\"\n| filter http_method = \"POST\" and uri_path contains \":generateContent\"\n| comp count() as request_count by source_user, src_ip\n| filter request_count <= 3\n| fields source_user, src_ip, request_count",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Anomalous Gemini Usage Volume Single User",
+        "rule_id": "CR-AIACC-0003",
+        "logic": "XQL(AIACC-003 Gemini Request Rate Exceeds Per User Baseline) OR XQL(AIACC-003 NGFW Sustained Generative AI Session Count Single Source) OR XQL(AIACC-003 Unsanctioned AI Provider Gemini For User)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex AI Access Security \u2014 Per-user provider request-rate baselining",
+      "Cortex AI Access Security \u2014 Sanctioned-vs-unsanctioned provider classification"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ai-access-security",
+        "submodule": "usage-anomaly",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "AIACC-VOL-GEMINI-003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_host = \"generativelanguage.googleapis.com\" | comp count() as request_count by source_user | filter request_count >= 20 | fields source_user, request_count"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "APPID-GENAI-GEMINI-003"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app in (\"google-gemini\",\"gemini-api\",\"generative-ai\") | comp count() as sessions by src_ip | filter sessions >= 20"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AIACC-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AIACC-0003 groups the per-user rate, NGFW session count and unsanctioned-provider signals into one anomalous-usage incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-INSIDER-009",
+        "name": "Anomalous AI Provider Usage Volume",
+        "description": "Detect a single user bursting prompts at an unsanctioned AI provider above their rolling baseline and confirm the baseline restores after cool-off.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-INSIDER-009A",
+            "objective": "A 30-request burst to Gemini fires the per-user volume-anomaly rule.",
+            "preconditions": [
+              "Cortex AI Access Security inline with per-user volume baselining enabled.",
+              "Gemini classified as unsanctioned for the test user."
+            ],
+            "steps": [
+              "Run SIM-AIACC-003 steps 1-2.",
+              "Observe the volume-anomaly alert in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `AIACC-003 Gemini Request Rate Exceeds Per User Baseline` returns >= 1 row.",
+              "XQL `AIACC-003 NGFW Sustained Generative AI Session Count Single Source` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.7
+          },
+          {
+            "test_case_id": "TC-INSIDER-009B",
+            "objective": "After cool-off, a single request stays below baseline and produces no alert.",
+            "success_criteria": [
+              "XQL `AIACC-003 Post Cooloff Single Gemini Request Below Baseline` returns >= 1 row.",
+              "No new volume-anomaly alert fires for the cool-off probe."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Apply per-user rate limits on generative-AI App-IDs via the NGFW and Cortex AI Access Security.",
+      "Classify approved providers as sanctioned and block or throttle unsanctioned ones.",
+      "Alert and require justification when a user crosses their usage baseline."
+    ],
+    "detection_engineering": [
+      "Baseline per-user request counts to each provider and alert on bursts above the rolling window.",
+      "Count sustained generative-AI sessions per source IP on the NGFW as a corroborating signal.",
+      "Use a negative-control probe after cool-off to validate the baseline restores cleanly."
+    ],
+    "response_playbook": "XSOAR-PB-AnomalousAIUsageVolume-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Generative AI Misuse Patterns",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1567 \u2014 Exfiltration Over Web Service",
+      "url": "https://attack.mitre.org/techniques/T1567/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-AIACC-003."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real per-user volume-anomaly XQL against panw_ngfw_traffic_raw, added correlation CR-AIACC-0003, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+adapter_id: TOOL-YARA
+name: "YARA"
+version: "4.5.0"
+
+tier: 2
+category: reverse-engineering
+
+upstream:
+  repo: https://github.com/VirusTotal/yara
+  license: "BSD-3-Clause"
+  attribution: "VirusTotal"
+
+cortex_signal:
+  planes:
+    - KOI
+  expected_techniques:
+    - T1027
+
+safety_class: safe
+
+install:
+  source_path: sources/yara
+  build_cmd: "./bootstrap.sh && ./configure && make"
+  binary: "yara"
+
+invoke:
+  target_platform: any
+  run_template: "{binary} {rules} {target}"
+  default_args:
+    rules: "rules.yar"
+    target: "/tmp/sample"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - reverse-engineering

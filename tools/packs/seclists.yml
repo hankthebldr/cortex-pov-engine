@@ -1,0 +1,40 @@
+adapter_id: TOOL-SECLISTS
+name: "SecLists"
+version: "master"
+
+tier: 2
+category: web-app
+
+upstream:
+  repo: https://github.com/danielmiessler/SecLists
+  license: "MIT"
+  attribution: "Daniel Miessler"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1110
+
+safety_class: safe
+
+install:
+  source_path: sources/SecLists
+  build_cmd: "true"
+
+invoke:
+  target_platform: any
+  run_template: "ls {wordlist_dir}"
+  default_args:
+    wordlist_dir: "sources/SecLists/Passwords"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - web-app

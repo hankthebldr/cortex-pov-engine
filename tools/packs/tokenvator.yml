@@ -1,0 +1,47 @@
+adapter_id: TOOL-TOKENVATOR
+name: "Tokenvator"
+version: "3.0"
+
+tier: 3
+category: identity-credential
+
+upstream:
+  repo: https://github.com/0xbadjuju/Tokenvator
+  license: "BSD-3-Clause"
+  attribution: "0xbadjuju"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1134
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: itdr
+  content_library_entry:
+    name: tokenvator
+    repo: 0xbadjuju/Tokenvator
+    install: git-clone
+  binary: "Tokenvator.exe"
+
+invoke:
+  target_platform: windows
+  run_template: "\"{binary}\""
+  default_args: {}
+  identity_required: administrator
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-tokenvator-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - identity-credential

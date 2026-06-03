@@ -1,0 +1,53 @@
+adapter_id: TOOL-CORTEX-AGENTIC-PACK
+name: Cortex Malicious Agentic Pack
+version: "1.0"
+
+tier: 1
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/hankthebldr/cortex-pov-engine
+  license: LicenseRef-Internal
+  attribution: Palo Alto Networks — CortexSim (in-tree)
+
+cortex_signal:
+  planes:
+    - KOI
+  expected_techniques:
+    - T1195  # Supply Chain Compromise
+    - T1059  # Command and Scripting Interpreter
+
+safety_class: safe
+# Tier-1 in-tree. Every side effect is gated on CORTEXSIM_C2_URL so static
+# scanning is safe; the agentic_egress EAL plugin only POSTs the tarball to an
+# authorized staging host. No launch consent gate.
+
+install:
+  source_path: sources/cortex-malicious-agentic-pack
+  build_cmd: "true"   # static artifact tree; no build step
+
+invoke:
+  target_platform: linux
+  run_template: "python3 -m scripts.eal_simulator.cli run {campaign} --live"
+  default_args:
+    campaign: "scenarios/koi/campaigns/typosquat-mcp.yml"
+  identity_required: container-runtime
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-agentic-*.tar.gz"
+
+ttp_refs:
+  - TTP-2026-0042
+
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - koi
+  - agentic
+  - supply-chain
+  - mcp
+  - in-tree

@@ -1,0 +1,405 @@
+{
+  "id": "TTP-2026-0034",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02T00:00:00Z",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "vector-persistence",
+      "actor-teamtnt",
+      "industry-all",
+      "severity-high",
+      "endpoint",
+      "linux"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": true,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "destructive-with-cleanup"
+    }
+  },
+  "identity": {
+    "name": "Linux Persistence \u2014 Cron, Systemd, Backdoor User and SSH Keys (T1053.003)",
+    "summary": "An operator establishes multiple persistence footholds on a Linux host: a cron entry pointing at a hidden beacon, a systemd unit with Restart=always, a backdoor account added to the sudo group, an SSH authorized_keys plant, and a shell-profile login trigger. Cortex XDR for Linux detects each mechanism via file-write and process BIOCs and stitches them into one persistence incident.",
+    "description": "After gaining root on a Linux host, threat actors such as TeamTNT layer several persistence mechanisms so a single cleanup does not evict them. This scenario reproduces five Linux persistence techniques: a malicious cron job referencing a hidden binary, a systemd service unit with Restart=always and a /tmp ExecStart, a backdoor local account added to the sudo group, an SSH key plant into authorized_keys, and a shell-profile (.bashrc/.profile) login trigger with nohup. The detection approach combines process telemetry (crontab, useradd, ssh-keygen, systemctl) with file-write telemetry into the persistence-relevant paths (/etc/cron*, /etc/systemd/system, ~/.ssh/authorized_keys, shell init files). Each mechanism maps to a dedicated Cortex XDR BIOC; an analytics layer recognizes automated, non-interactive provisioning; and a correlation rule fuses any combination of these footholds into one persistence incident so the SOC sees the full picture rather than five disconnected alerts.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "TeamTNT",
+        "aliases": [
+          "Watchdog operators"
+        ]
+      }
+    ],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2020-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1053",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ],
+        "subtechnique_id": "T1053.003"
+      },
+      {
+        "technique_id": "T1543",
+        "name": "Create or Modify System Process: Systemd Service",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ],
+        "subtechnique_id": "T1543.002"
+      },
+      {
+        "technique_id": "T1136",
+        "name": "Create Account: Local Account",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ],
+        "subtechnique_id": "T1136.001"
+      },
+      {
+        "technique_id": "T1098",
+        "name": "Account Manipulation: SSH Authorized Keys",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ],
+        "subtechnique_id": "T1098.004"
+      },
+      {
+        "technique_id": "T1546",
+        "name": "Event Triggered Execution: Unix Shell Configuration Modification",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ],
+        "subtechnique_id": "T1546.004"
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Modification",
+      "User Account: User Account Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1053.003 / T1543.002 / T1136.001 / T1098.004 \u2014 Linux persistence atomic tests",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting healthy on the target.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "Root privilege on the target (useradd/systemd persistence require it)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: cron persistence (staged)\necho '*/15 * * * * /tmp/.cortexsim_beacon 2>/dev/null' > /tmp/cortexsim_cron_test\n# step-2: systemd unit (staged)\nprintf '[Service]\\nExecStart=/tmp/.cortexsim_beacon\\nRestart=always\\n' > /tmp/cortexsim-backdoor.service\n# step-3: backdoor user\nuseradd -M -s /bin/bash -G sudo cortexsim_testuser 2>/dev/null && echo 'cortexsim_testuser:TempP@ss123' | chpasswd\n# step-4: ssh key plant (staged)\nssh-keygen -t ed25519 -f /tmp/.cortexsim_ssh_test/id_ed25519 -N '' -q\n# step-5: shell profile login trigger (staged)\necho 'nohup /tmp/.cortexsim_beacon &>/dev/null &' > /tmp/cortexsim_profile_test",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "scheduled-task",
+        "description": "Cron entry referencing a hidden /tmp beacon path.",
+        "expected_value": "command_line contains \"crontab\" or action_file_path contains \"/cron\""
+      },
+      {
+        "artifact_type": "service",
+        "description": "Systemd unit with Restart=always and a /tmp ExecStart.",
+        "expected_value": "action_file_path contains \".service\" and file_content contains \"Restart=always\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "useradd adding an account to the sudo group.",
+        "expected_value": "actor_process_image_name = \"useradd\" and command_line contains \"sudo\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "ssh-keygen generating a key followed by authorized_keys write.",
+        "expected_value": "actor_process_image_name = \"ssh-keygen\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Shell profile modification with nohup background execution.",
+        "expected_value": "action_file_path contains_any (\".bashrc\", \".profile\", \".bash_profile\") and file_content contains \"nohup\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "userdel cortexsim_testuser 2>/dev/null\nrm -f /tmp/cortexsim_cron_test /tmp/cortexsim_cron_backup /tmp/cortexsim-backdoor.service /tmp/cortexsim_profile_test\nrm -rf /tmp/.cortexsim_ssh_test\necho '[CortexSim] SIM-EDR-003 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "EDR-003 Cron Job Creation With Suspicious Command Path",
+        "description": "Cron job creation with suspicious command path \u2014 persistence mechanism via scheduled task. crontab installs an entry, or a cron file is written referencing a hidden/temp binary.",
+        "logic": "preset = xdr_data\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = \"crontab\") or (event_type = ENUM.FILE and action_file_path contains_any (\"/etc/cron\", \"/var/spool/cron\"))\n| filter action_process_image_command_line contains_any (\"/tmp/\", \"/dev/shm/\", \"/.\", \"curl\", \"wget\") or action_file_path contains \"cron\"",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1053.003"
+        ]
+      },
+      {
+        "name": "EDR-003 Systemd Unit With Suspicious ExecStart",
+        "description": "Systemd service unit creation with suspicious ExecStart path \u2014 persistence via system service. A .service file is written with Restart=always and an ExecStart in /tmp or /dev/shm.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains \".service\"\n| filter action_file_path contains_any (\"/etc/systemd/system\", \"/usr/lib/systemd/system\", \"/.config/systemd\", \"/tmp/\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1543.002"
+        ]
+      },
+      {
+        "name": "EDR-003 Local Account Created With Sudo Group",
+        "description": "Local account creation with sudo group membership \u2014 backdoor account for persistent access. useradd/usermod adds an account to sudo/wheel/admin.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"useradd\", \"usermod\", \"adduser\")\n| filter action_process_image_command_line contains_any (\"sudo\", \"wheel\", \"admin\", \"root\")",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1136.001"
+        ]
+      },
+      {
+        "name": "EDR-003 SSH Key Generation Then Authorized Keys Write",
+        "description": "SSH key generation followed by authorized_keys write \u2014 key-based persistence installation. ssh-keygen runs and an authorized_keys file is written.",
+        "logic": "preset = xdr_data\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = \"ssh-keygen\") or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE) and action_file_path contains \"authorized_keys\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1098.004"
+        ]
+      },
+      {
+        "name": "EDR-003 Shell Profile Modified With Background Execution",
+        "description": "Shell profile modification with nohup background execution \u2014 login-triggered persistence. A shell init file is written containing nohup/disown background launch.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains_any (\".bashrc\", \".bash_profile\", \".profile\", \"/etc/profile\", \".zshrc\")\n| filter actor_process_image_name in (\"bash\", \"sh\", \"echo\", \"tee\", \"cat\", \"vi\", \"vim\", \"sed\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1546.004"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-003 Analytics Crontab Modification Non-Interactive",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"crontab\" or action_process_image_command_line contains \"crontab\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-003 Analytics Service Unit Restart Always Hidden Path",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and action_file_path contains \".service\"\n| fields _time, agent_hostname, actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-003 Analytics User Account Creation Non-Login Session",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"useradd\", \"adduser\", \"chpasswd\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-003 Analytics ssh-keygen Non-Interactive Persistence",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh-keygen\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-003 Analytics Shell Init File Modification",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains_any (\".bashrc\", \".profile\", \".bash_profile\", \".zshrc\")\n| fields _time, agent_hostname, actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Linux Multi-Mechanism Persistence Installation",
+        "rule_id": "CR-EDR-0003",
+        "logic": "BIOC(EDR-003 Cron Job Creation With Suspicious Command Path) OR BIOC(EDR-003 Systemd Unit With Suspicious ExecStart) OR BIOC(EDR-003 Local Account Created With Sudo Group) OR BIOC(EDR-003 SSH Key Generation Then Authorized Keys Write) OR BIOC(EDR-003 Shell Profile Modified With Background Execution)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XDR Analytics \u2014 New persistence mechanism on host",
+      "Cortex XDR Analytics \u2014 Rare local account creation"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-EDR-0034-CRON",
+          "XDR-BIOC-EDR-0034-SYSTEMD",
+          "XDR-BIOC-EDR-0034-USERADD",
+          "XDR-BIOC-EDR-0034-SSHKEY"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter actor_process_image_name in (\"crontab\",\"useradd\",\"ssh-keygen\") | fields _time, agent_hostname, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EDR-0003 groups cron/systemd/user/ssh/profile persistence into one incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-LinuxPersistenceEviction-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook removes the cron entry, disables/deletes the unit, deletes the backdoor user, strips planted keys and reverts shell init files."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-RANSOM-034",
+        "name": "Persistence Mechanism Detection \u2014 Linux",
+        "description": "Detect and evict layered Linux persistence (cron, systemd, backdoor user, SSH keys, shell profile) installed after compromise.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-RANSOM-034A",
+            "objective": "Each persistence mechanism fires its corresponding Cortex XDR BIOC.",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
+              "BIOCs from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-EDR-003 steps 1-5.",
+              "Observe per-mechanism BIOC alerts in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `EDR-003 Local Account Created With Sudo Group` fires within 60s when useradd succeeds.",
+              "BIOC `EDR-003 SSH Key Generation Then Authorized Keys Write` fires within 60s.",
+              "All five XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-RANSOM-034B",
+            "objective": "Layered persistence stitches into one incident.",
+            "success_criteria": [
+              "Correlation `CR-EDR-0003` groups the mechanisms on one host into a single persistence incident.",
+              "XSOAR eviction playbook is offered as a response action."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict cron and systemd unit directories to root and audit writes with auditd/fapolicyd.",
+      "Enforce centralized account management; alert on local account creation outside provisioning tooling.",
+      "Monitor ~/.ssh/authorized_keys integrity and disallow password-based SSH for service accounts.",
+      "Make shell init files immutable for service accounts where feasible."
+    ],
+    "detection_engineering": [
+      "Alert on crontab/useradd/ssh-keygen run by non-interactive sessions or service accounts.",
+      "Watch .service file writes that include Restart=always with an ExecStart outside trusted paths.",
+      "Correlate multiple persistence writes on one host within a short window into a single incident."
+    ],
+    "response_playbook": "XSOAR-PB-LinuxPersistenceEviction-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - TeamTNT Targets Exposed Docker APIs",
+      "url": "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1053.003 \u2014 Cron",
+      "url": "https://attack.mitre.org/techniques/T1053/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-EDR-003."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Linux XDR persistence BIOCs/XQL, added correlation CR-EDR-0003, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

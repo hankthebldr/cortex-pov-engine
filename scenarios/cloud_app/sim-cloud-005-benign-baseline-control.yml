@@ -66,6 +66,8 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — benign OIDC grant to Okta logged informationally (NO risky-scope alert expected)"
+        ttp_ref: TTP-2026-0031
+        detection_id: xql-cloud-005-benign-okta-oidc-grant-informational-not-risky
 
   - id: step-02
     name: "Benign OIDC grant to Microsoft — must NOT alert"
@@ -93,6 +95,8 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — benign User.Read grant to Microsoft logged informationally (NO risky-scope alert expected)"
+        ttp_ref: TTP-2026-0031
+        detection_id: xql-cloud-005-benign-microsoft-user-read-grant-informational-not-risky
 
   - id: step-03
     name: "Benign OIDC grant to Google — must NOT alert"
@@ -120,9 +124,13 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — benign OIDC grant to Google logged informationally (NO risky-scope alert expected)"
+        ttp_ref: TTP-2026-0031
+        detection_id: xql-cloud-005-benign-google-oidc-grant-informational-not-risky
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — three /authorize App-ID hits classified informational, NOT promoted to incident"
+        ttp_ref: TTP-2026-0031
+        detection_id: xql-cloud-005-ngfw-benign-authorize-hits-informational-not-promoted
 
 cleanup:
   commands:

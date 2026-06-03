@@ -88,6 +88,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Operator manifest capture — no Cortex detection at this step."
+        ttp_ref: TTP-2026-0059
+        detection_id: xql-aispm-006-expected-aggregate-counts-bookkeeping
 
   - id: step-02
     name: "Fetch AI-SPM dashboard summary + verify aggregate counts"
@@ -123,6 +125,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Cortex AI-SPM /api/v1/dashboards/ai_spm/summary returns aggregate AI asset count matching planted manifest with all 4 risk categories populated."
+        ttp_ref: TTP-2026-0059
+        detection_id: xql-aispm-006-dashboard-summary-aggregate-across-all-risk-categories
         verification_xql: |
           // Dashboard backing data — cross-check via XQL when AI-SPM mirrors to XDL
           dataset = cortex_cloud_ai_spm_aggregates
@@ -160,6 +164,8 @@ steps:
       - plane: AI_SPM
         type: Analytics
         description: "Dashboard trends endpoint returns time-series data for all 4 risk categories, proving the executive view is wired through to live data (not stub)."
+        ttp_ref: TTP-2026-0059
+        detection_id: xql-aispm-006-dashboard-trend-series-per-risk-category
 
 cleanup:
   commands:

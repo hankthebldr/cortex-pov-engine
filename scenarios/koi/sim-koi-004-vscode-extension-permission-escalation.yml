@@ -39,6 +39,11 @@ infra_modules_needed:
   - base
 
 external_tools:
+  - name: Cortex Malicious Agentic Pack
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-AGENTIC-PACK
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: script
@@ -62,9 +67,13 @@ steps:
       - plane: KOI
         type: Analytics
         description: "Code scan — package.json declares activationEvents on '*' (loads on every workspace)"
+        ttp_ref: TTP-2026-0045
+        detection_id: xql-koi-004-vscode-extension-manifest-declares-wildcard-activation-events
       - plane: KOI
         type: BIOC
         description: "Code scan — extension reads ${HOME}/.aws/credentials and ${HOME}/.ssh/ via fs.readFile in activate()"
+        ttp_ref: TTP-2026-0045
+        detection_id: bioc-koi-004-vscode-extension-reads-aws-credentials-and-ssh-keys-in-activate
 
   - id: step-02
     name: "Emulate marketplace fetch of the .vsix over HTTPS"
@@ -94,9 +103,13 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — VS Code Marketplace fetch from non-canonical CDN"
+        ttp_ref: TTP-2026-0045
+        detection_id: xql-koi-004-vscode-marketplace-vsix-fetch-from-non-canonical-cdn
       - plane: KOI
         type: Analytics
         description: "Extension marketplace risk score — publisher unverified + new + overbroad permissions"
+        ttp_ref: TTP-2026-0045
+        detection_id: xql-koi-004-extension-marketplace-risk-unverified-publisher-overbroad-permissions
 
   - id: step-03
     name: "Confirm post-install C2 pattern would fire on activation"
@@ -111,9 +124,13 @@ steps:
       - plane: KOI
         type: BIOC
         description: "Code scan — extension activate() opens outbound HTTPS to non-Microsoft domain"
+        ttp_ref: TTP-2026-0045
+        detection_id: bioc-koi-004-vscode-extension-activate-beacons-outbound-to-non-microsoft-domain
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — VS Code child process emits beacon traffic post-install"
+        ttp_ref: TTP-2026-0045
+        detection_id: xql-koi-004-vscode-child-process-emits-post-install-beacon-traffic
 
 cleanup:
   commands:

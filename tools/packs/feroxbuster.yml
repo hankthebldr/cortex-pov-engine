@@ -1,0 +1,46 @@
+adapter_id: TOOL-FEROXBUSTER
+name: "feroxbuster"
+version: "2.10"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/epi052/feroxbuster
+  license: "MIT"
+  attribution: "epi052"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595
+    - T1083
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "command -v feroxbuster >/dev/null 2>&1 || (apt-get install -y feroxbuster 2>/dev/null || cargo install feroxbuster)"
+  binary: "feroxbuster"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -u {url} -w {wordlist}"
+  default_args:
+    url: "http://127.0.0.1"
+    wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-feroxbuster-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - web-app

@@ -1,23 +1,29 @@
 {
   "id": "TTP-2026-0007",
   "schema_version": "1.0.0",
-  "entry_version": "0.1.0",
+  "entry_version": "1.0.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:11+00:00",
-    "updated_at": "2026-05-20T21:16:11+00:00",
+    "updated_at": "2026-06-02",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
         "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
       }
     ],
     "tags": [
       "plane-ai-access",
-      "auto-generated",
-      "skeleton-draft",
+      "vector-shadow-ai",
+      "industry-all",
       "severity-high",
-      "needs-detection-engineering-review"
+      "source-code-dlp",
+      "openai"
     ],
     "source_refs": [
       "SRC-MITRE-ATTACK",
@@ -42,18 +48,19 @@
   },
   "identity": {
     "name": "AI Access \u2014 Source Code Paste to Public ChatGPT",
-    "summary": "Auto-generated draft from CortexSim scenario SIM-AIACC-001. Plane: AI_ACCESS. Primary technique: T1567. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
-    "description": "Auto-generated draft from CortexSim scenario SIM-AIACC-001. Plane: AI_ACCESS. Primary technique: T1567. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-AIACC-001.\nUC: Shadow-AI Source Code Disclosure / TC: Multi-File Source Code Paste to OpenAI ChatGPT API.",
+    "summary": "A developer pastes proprietary source code into the public OpenAI ChatGPT API. The llm_provider_egress plugin POSTs a marked source snippet (CORTEXSIM-CANARY) to api.openai.com/v1/chat/completions; Cortex AI Access Security and the NGFW generative-AI App-ID flag the egress and the DLP source-code classifier matches the prompt body.",
+    "description": "Shadow-AI source-code disclosure is the most common GenAI data-loss pattern in the enterprise: an engineer pastes a confidential file into ChatGPT to refactor or debug it, exfiltrating intellectual property over an encrypted channel that bypasses traditional egress controls. This scenario emits authentic-shape HTTPS POSTs to api.openai.com/v1/chat/completions carrying a planted proprietary Python snippet tagged with the CORTEXSIM-CANARY marker. Detection is layered: (1) the NGFW classifies the destination as a generative-AI application via App-ID on the outbound TLS session; (2) Cortex AI Access Security DLP inspects the decrypted prompt body and matches source-code structure markers; (3) an analytics rule profiles repeated source-paste bursts from a single user. A correlation rule fuses the App-ID match, the DLP content hit and the burst pattern into a single Shadow-AI data-exfiltration incident. Every request carries an X-Simulation-Run-ID header so the SOC can filter the simulated traffic.",
     "severity": "high",
-    "confidence": "medium"
+    "confidence": "high"
   },
   "threat_context": {
     "actors": [],
     "campaigns": [],
     "malware_families": [],
     "industries_targeted": [
-      "all"
-    ]
+      "technology"
+    ],
+    "first_observed": "2023-04-01"
   },
   "mitre_attack": {
     "matrix": "enterprise",
@@ -80,16 +87,24 @@
       }
     ],
     "kill_chain_phase": "actions-on-objectives",
-    "data_sources": []
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Application Log: Application Log Content"
+    ]
   },
   "execution": {
     "target_platform": "cross-platform",
-    "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1567 (TODO \u2014 pin atomic test ref)",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "llm_provider_egress (provider=openai, payload_type=source)",
     "privilege_required": "user",
     "prerequisites": [
       {
-        "description": "Lab environment matching scenario SIM-AIACC-001 requirements."
+        "description": "Cortex AI Access Security licensed and inline (NGFW App-ID + DLP decrypt on the egress path).",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe llm_provider_egress | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-AIACC-001 requirements (egress allowed to api.openai.com)."
       }
     ],
     "payload": {
@@ -100,9 +115,19 @@
     },
     "expected_artifacts": [
       {
-        "artifact_type": "process",
-        "description": "TODO \u2014 author at least one concrete expected artifact for this scenario",
-        "expected_value": "TODO"
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS POST to api.openai.com on the chat-completions path.",
+        "expected_value": "dst_host = \"api.openai.com\" and uri_path = \"/v1/chat/completions\" and http_method = \"POST\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Prompt body carries the source-code canary marker.",
+        "expected_value": "request_body contains \"CORTEXSIM-CANARY\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Every simulated request carries an X-Simulation-Run-ID header for SOC filtering.",
+        "expected_value": "http_header_name = \"x-simulation-run-id\""
       }
     ],
     "cleanup": {
@@ -114,83 +139,138 @@
     "iocs": [],
     "biocs": [
       {
-        "name": "Pre-flight: plugin metadata visible to operator",
-        "description": "Pre-flight: plugin metadata visible to operator",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1567"
-        ]
-      },
-      {
-        "name": "AI Access \u2014 outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)",
-        "description": "AI Access \u2014 outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1567"
-        ]
-      },
-      {
-        "name": "AI Access \u2014 DLP regex match on source-code structure in prompt body",
-        "description": "AI Access \u2014 DLP regex match on source-code structure in prompt body",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1567"
-        ]
-      },
-      {
-        "name": "NGFW EAL \u2014 generative-AI App-ID match on outbound HTTPS to api.openai.com",
-        "description": "NGFW EAL \u2014 generative-AI App-ID match on outbound HTTPS to api.openai.com",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1567"
-        ]
-      },
-      {
-        "name": "AI Access \u2014 repeated POST pattern (3 in <60s) flagged as policy violation",
-        "description": "AI Access \u2014 repeated POST pattern (3 in <60s) flagged as policy violation",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1567\ndataset = http_proxy\n| filter dst_host IN (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
+        "name": "AIACC-001 Pre-flight LLM Provider Egress Plugin Registered",
+        "description": "Pre-flight: plugin metadata visible to operator. Confirms the llm_provider_egress EAL plugin is registered before the scenario emits any provider traffic; matches the describe/registration audit event on the simulation worker.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"python\", \"python3\")\n| filter action_process_image_command_line contains \"scripts.eal_simulator.cli\"\n| filter action_process_image_command_line contains \"describe\"\n| filter action_process_image_command_line contains \"llm_provider_egress\"",
+        "severity": "informational",
         "mitre_technique_ids": [
           "T1567"
         ]
       }
     ],
-    "xql_queries": [],
-    "correlation_rules": [],
-    "analytics_modules": []
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AIACC-001 Source Code Shape POST to OpenAI With Canary Marker",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"api.openai.com\" or tls_sni = \"api.openai.com\"\n| filter http_method = \"POST\" and uri_path contains \"/v1/chat/completions\"\n| filter request_body contains \"CORTEXSIM-CANARY\" or request_body contains \"def settle_transactions\"\n| fields _time, source_user, src_ip, dst_host, uri_path, bytes_sent, app",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-001 DLP Source Code Structure Regex Match in LLM Prompt",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host in (\"api.openai.com\", \"api.anthropic.com\", \"generativelanguage.googleapis.com\")\n| filter request_body ~= \"(?:^|\\n)\\s*(?:def |class |import |from\\s+\\w+\\s+import|#\\s*CORTEXSIM-CANARY)\"\n| fields _time, source_user, src_ip, dst_host, uri_path, bytes_sent",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-001 NGFW Generative AI App-ID Outbound HTTPS to OpenAI",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"api.openai.com\" or tls_sni = \"api.openai.com\"\n| filter app in (\"openai-api\", \"chatgpt\", \"generative-ai\", \"ai-ml-application\")\n| fields _time, source_user, src_ip, dst_host, app, app_category, bytes_sent, action",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-001 Repeated Source Paste Burst to OpenAI Single User",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"api.openai.com\"\n| filter http_method = \"POST\" and uri_path contains \"/v1/chat/completions\"\n| comp count() as post_count, sum(bytes_sent) as total_bytes by source_user, src_ip\n| filter post_count >= 3\n| fields source_user, src_ip, post_count, total_bytes",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Shadow-AI Source Code Disclosure to OpenAI",
+        "rule_id": "CR-AIACC-0001",
+        "logic": "BIOC(AIACC-001 Pre-flight LLM Provider Egress Plugin Registered) OR XQL(AIACC-001 Source Code Shape POST to OpenAI With Canary Marker) OR XQL(AIACC-001 DLP Source Code Structure Regex Match in LLM Prompt) OR XQL(AIACC-001 NGFW Generative AI App-ID Outbound HTTPS to OpenAI) OR XQL(AIACC-001 Repeated Source Paste Burst to OpenAI Single User)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex AI Access Security \u2014 Generative-AI App-ID classification",
+      "Cortex AI Access Security \u2014 Source-code DLP content inspection"
+    ]
   },
   "panw_mapping": {
     "products": [
       {
         "module": "ai-access-security",
+        "submodule": "dlp-content-inspection",
         "coverage_tier": "detection",
         "rule_ids": [
-          "TBD-AI_ACCESS-0007"
+          "AIACC-DLP-SOURCECODE-001"
         ],
-        "license_required": "pro"
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_host = \"api.openai.com\" and request_body contains \"CORTEXSIM-CANARY\" | fields _time, source_user, dst_host, uri_path, bytes_sent"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "APPID-GENAI-OPENAI-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app in (\"openai-api\",\"chatgpt\",\"generative-ai\") | fields _time, source_user, dst_host, app, action"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AIACC-0001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AIACC-0001 fuses the App-ID match, source-code DLP hit and repeated-paste burst into one Shadow-AI data-exfiltration incident."
       }
     ],
     "use_cases": [
       {
         "use_case_id": "UC-INSIDER-007",
         "name": "Shadow-AI Source Code Disclosure",
-        "description": "Shadow-AI Source Code Disclosure",
+        "description": "Detect proprietary source code pasted into the public OpenAI ChatGPT API and stitch App-ID, DLP and burst signals into one incident.",
         "test_cases": [
           {
             "test_case_id": "TC-INSIDER-007A",
-            "objective": "TBD \u2014 author concrete pass/fail criteria",
-            "success_criteria": [
-              "TBD \u2014 author at least one verifiable success criterion"
+            "objective": "A single source-code paste to api.openai.com fires the generative-AI App-ID and the source-code DLP classifier.",
+            "preconditions": [
+              "Cortex AI Access Security inline with TLS decrypt on the egress path.",
+              "Source-code DLP profile and generative-AI App-ID enabled."
             ],
-            "expected_score_weight": 1.0
+            "steps": [
+              "Run SIM-AIACC-001 steps 1-2.",
+              "Observe the App-ID and DLP alerts in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `AIACC-001 NGFW Generative AI App-ID Outbound HTTPS to OpenAI` returns >= 1 row.",
+              "XQL `AIACC-001 Source Code Shape POST to OpenAI With Canary Marker` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-INSIDER-007B",
+            "objective": "Repeated source pastes from one user stitch into a single Shadow-AI incident.",
+            "success_criteria": [
+              "XQL `AIACC-001 Repeated Source Paste Burst to OpenAI Single User` returns >= 1 row.",
+              "Correlation `CR-AIACC-0001` groups the signals into one incident."
+            ],
+            "expected_score_weight": 0.4
           }
         ]
       }
     ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Cortex AI Access Security source-code DLP in Block mode for unsanctioned generative-AI destinations.",
+      "Steer users to a sanctioned enterprise GenAI gateway and block direct egress to public provider APIs.",
+      "Apply generative-AI App-ID egress policy with TLS decrypt so prompt bodies are inspectable."
+    ],
+    "detection_engineering": [
+      "Alert on POST bodies to LLM provider FQDNs that match source-code structure (def/class/import or canary markers).",
+      "Profile per-user request counts to each provider and alert on bursts above a rolling baseline.",
+      "Correlate App-ID classification with DLP content hits to confirm proprietary-code exfiltration intent."
+    ],
+    "response_playbook": "XSOAR-PB-ShadowAISourceCodeDisclosure-v1"
   },
   "references": [
     {
@@ -201,7 +281,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1567",
+      "title": "MITRE ATT&CK T1567 \u2014 Exfiltration Over Web Service",
       "url": "https://attack.mitre.org/techniques/T1567/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -213,6 +293,12 @@
       "date": "2026-05-20",
       "author": "CortexSim generate_card.py",
       "change": "Initial draft auto-generated from scenario SIM-AIACC-001."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real AI Access Security / NGFW egress XQL against panw_ngfw_traffic_raw, added correlation CR-AIACC-0001, enriched identity + panw_mapping. Promoted to active."
     }
   ]
 }

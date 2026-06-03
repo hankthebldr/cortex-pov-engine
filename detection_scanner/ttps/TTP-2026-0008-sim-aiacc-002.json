@@ -1,0 +1,300 @@
+{
+  "id": "TTP-2026-0008",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:11+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ai-access",
+      "vector-shadow-ai",
+      "industry-all",
+      "severity-critical",
+      "secrets-dlp",
+      "anthropic",
+      "aws-credentials"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws",
+        "azure",
+        "gcp"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "AI Access \u2014 AWS Access Key Leaked to Anthropic API",
+    "summary": "A user pastes a debugging snippet containing live-looking AWS credentials into Anthropic Claude. The llm_provider_egress plugin POSTs a secret payload carrying an AKIA-prefixed access key (AKIA0000CORTEXSIMCANARY) and a DB connection string to api.anthropic.com/v1/messages; Cortex AI Access Security DLP matches the AWS-key regex AKIA[0-9A-Z]{16} in the prompt body and a block-action policy fires.",
+    "description": "Cloud-credential disclosure to external LLMs is a high-severity insider data-loss path: a developer pastes a failing boto3 script \u2014 keys and all \u2014 into a public model to debug it, leaking long-lived AWS credentials over TLS. This scenario emits an authentic-shape POST to api.anthropic.com/v1/messages whose prompt body contains an AKIA-prefixed access key, an AWS secret-access-key string and a Postgres connection URI, each carrying the CORTEXSIM-CANARY marker. Detection is layered: (1) an IOC/DLP regex AKIA[0-9A-Z]{16} matches the access key in the decrypted prompt body; (2) an analytics rule flags the POST to a non-sanctioned provider from this user context; (3) the NGFW generative-AI App-ID classifies the egress; (4) a block-action policy denies subsequent secret-bearing sessions after the first DLP hit. A correlation rule fuses the regex hit with the App-ID match into one critical Credential-Disclosure-to-LLM incident.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-05-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1552.001"
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Traffic Content",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "llm_provider_egress (provider=anthropic, payload_type=secret)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex AI Access Security licensed and inline with secrets DLP profile enabled.",
+        "check_command": "python3 -c \"from core.eal_simulator.plugins.llm_provider_egress import _render_payload; assert 'AKIA0000CORTEXSIMCANARY' in _render_payload('secret')\""
+      },
+      {
+        "description": "Lab environment matching scenario SIM-AIACC-002 requirements (egress allowed to api.anthropic.com)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: Pre-flight: confirm secret payload contains the canary AKIA key\npython3 -c \"\nfrom core.eal_simulator.plugins.llm_provider_egress import _render_payload\nassert 'AKIA0000CORTEXSIMCANARY' in _render_payload('secret')\nprint('canary marker present in secret payload')\n\"\n# step-2: Single secret POST to api.anthropic.com via EAL plugin\ncat > /tmp/aiacc-002.yml <<'YML'\ncampaign_id: CMP-AIACC-002\nname: \"AI Access \u2014 AWS key leak to Anthropic\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.anthropic.com\ndry_run: false\ntags: [ai-access, anthropic, secret-dlp]\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: anthropic\n      payload_type: secret\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-002.yml --live\n# step-3: Verify per-session block-action policy (4 attempts)\ncat > /tmp/aiacc-002-burst.yml <<'YML'\ncampaign_id: CMP-AIACC-002\nname: \"AI Access \u2014 secret burst\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.anthropic.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: anthropic\n      payload_type: secret\n      iterations: 4\n      sleep_seconds: 3\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-002-burst.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Prompt body to api.anthropic.com contains an AKIA-prefixed AWS access key.",
+        "expected_value": "request_body ~= \"AKIA[0-9A-Z]{16}\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS POST to api.anthropic.com on the messages path.",
+        "expected_value": "dst_host = \"api.anthropic.com\" and uri_path = \"/v1/messages\" and http_method = \"POST\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aiacc-002.yml /tmp/aiacc-002-burst.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "cloud-account-id",
+        "value": "AKIA[0-9A-Z]{16}",
+        "context": "AI Access \u2014 DLP regex match: AKIA-prefixed AWS access key in outbound LLM prompt. The canary access key AKIA0000CORTEXSIMCANARY matches the AWS access-key pattern AKIA[0-9A-Z]{16} inside a prompt body POSTed to api.anthropic.com. In a real environment this slot is the live leaked key; the DLP regex match on the decrypted prompt body is the IOC.",
+        "cortex_severity_override": "critical"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "AIACC-002 Pre-flight Secret Payload Contains AKIA Canary",
+        "description": "Pre-flight: secret payload contains AKIA-prefixed canary. Confirms the secret payload renders the AKIA0000CORTEXSIMCANARY marker on the worker before any egress; matches the python self-check process invocation.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"python\", \"python3\")\n| filter action_process_image_command_line contains \"_render_payload\"\n| filter action_process_image_command_line contains \"AKIA0000CORTEXSIMCANARY\"",
+        "severity": "informational",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AIACC-002 POST to Anthropic From Non-Sanctioned User Context",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"api.anthropic.com\" or tls_sni = \"api.anthropic.com\"\n| filter http_method = \"POST\" and uri_path contains \"/v1/messages\"\n| filter request_body ~= \"AKIA[0-9A-Z]{16}\"\n| fields _time, source_user, src_ip, dst_host, uri_path, bytes_sent, app",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-002 NGFW Generative AI App-ID Outbound HTTPS to Anthropic",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"api.anthropic.com\" or tls_sni = \"api.anthropic.com\"\n| filter app in (\"anthropic-api\", \"claude\", \"generative-ai\", \"ai-ml-application\")\n| fields _time, source_user, src_ip, dst_host, app, app_category, bytes_sent, action",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "AIACC-002 Repeated Secret Egress to Anthropic Block Policy Trigger",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"api.anthropic.com\"\n| filter http_method = \"POST\" and uri_path contains \"/v1/messages\"\n| filter request_body ~= \"AKIA[0-9A-Z]{16}\"\n| comp count() as attempts, count_distinct(action) as action_kinds by source_user, src_ip\n| filter attempts >= 2\n| fields source_user, src_ip, attempts, action_kinds",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AWS Credential Disclosure to Anthropic LLM",
+        "rule_id": "CR-AIACC-0002",
+        "logic": "BIOC(AIACC-002 Pre-flight Secret Payload Contains AKIA Canary) OR XQL(AIACC-002 POST to Anthropic From Non-Sanctioned User Context) OR XQL(AIACC-002 NGFW Generative AI App-ID Outbound HTTPS to Anthropic) OR XQL(AIACC-002 Repeated Secret Egress to Anthropic Block Policy Trigger)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex AI Access Security \u2014 Secrets DLP regex (AWS access keys)",
+      "Cortex AI Access Security \u2014 Sanctioned-vs-unsanctioned provider policy"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ai-access-security",
+        "submodule": "dlp-secrets",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "AIACC-DLP-AWSKEY-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_host = \"api.anthropic.com\" and request_body ~= \"AKIA[0-9A-Z]{16}\" | fields _time, source_user, dst_host, bytes_sent, action"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "APPID-GENAI-ANTHROPIC-002"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app in (\"anthropic-api\",\"claude\",\"generative-ai\") | fields _time, source_user, dst_host, app, action"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AIACC-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AIACC-0002 fuses the AKIA regex DLP hit with the generative-AI App-ID match into one critical credential-disclosure incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-INSIDER-008",
+        "name": "Cloud Credential Disclosure to External LLM",
+        "description": "Detect AWS access keys pasted into a public LLM provider and enforce a block-action policy after the first DLP hit.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-INSIDER-008A",
+            "objective": "A secret POST to api.anthropic.com fires the AKIA AWS-key DLP regex.",
+            "preconditions": [
+              "Cortex AI Access Security inline with TLS decrypt and secrets DLP profile.",
+              "AWS access-key DLP pattern enabled in Block mode."
+            ],
+            "steps": [
+              "Run SIM-AIACC-002 steps 1-2.",
+              "Observe the secrets DLP block alert in the Cortex console."
+            ],
+            "success_criteria": [
+              "IOC `aws-access-key: AKIA[0-9A-Z]{16}` matches the prompt body.",
+              "XQL `AIACC-002 POST to Anthropic From Non-Sanctioned User Context` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-INSIDER-008B",
+            "objective": "Repeated secret-bearing sessions are denied by the block-action policy and stitch into one incident.",
+            "success_criteria": [
+              "XQL `AIACC-002 Repeated Secret Egress to Anthropic Block Policy Trigger` returns >= 1 row.",
+              "Correlation `CR-AIACC-0002` groups the signals into one critical incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Cortex AI Access Security secrets DLP (AWS access keys) in Block mode for all generative-AI destinations.",
+      "Rotate and short-TTL all AWS credentials; replace static keys with IAM roles / IRSA so leaked keys are useless.",
+      "Block direct egress to public LLM provider APIs and route through a sanctioned, DLP-inspected gateway."
+    ],
+    "detection_engineering": [
+      "Match the AKIA[0-9A-Z]{16} regex (and provider secret patterns) in decrypted LLM prompt bodies.",
+      "Flag any secret-bearing POST to a non-sanctioned provider from a corporate user context.",
+      "Alert when a block-action policy denies repeated secret egress from the same user."
+    ],
+    "response_playbook": "XSOAR-PB-CredentialDisclosureToLLM-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Cloud Credentials in LLM Prompts",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1552.001 \u2014 Unsecured Credentials: Credentials In Files",
+      "url": "https://attack.mitre.org/techniques/T1552/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-AIACC-002."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real AKIA DLP IOC + AI Access / NGFW egress XQL, added correlation CR-AIACC-0002, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

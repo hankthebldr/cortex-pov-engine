@@ -36,6 +36,11 @@ infra_modules_needed:
   - base
 
 external_tools:
+  - name: Cortex Browser Attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-BROWSER-ATTACKER
   - name: cortex-browser-attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: binary
@@ -53,6 +58,8 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "Pre-flight: plugin metadata visible to operator"
+        ttp_ref: TTP-2026-0020
+        detection_id: xql-pre-flight-plugin-metadata-visible-to-operator
 
   - id: step-02
     name: "Drive Prisma Browser: copy from CRM, paste into webmail"
@@ -84,12 +91,18 @@ steps:
       - plane: BROWSER
         type: BIOC
         description: "Prisma Browser — cross-origin paste from sanctioned CRM into personal webmail (DLP rule)"
+        ttp_ref: TTP-2026-0020
+        detection_id: bioc-prisma-browser-cross-origin-paste-from-sanctioned-crm-into-personal-webmail-dlp-rule
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — clipboard origin tag mismatch with paste destination origin"
+        ttp_ref: TTP-2026-0020
+        detection_id: xql-prisma-browser-clipboard-origin-tag-mismatch-with-paste-destination-origin
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — copy + paste correlated by clipboard payload hash"
+        ttp_ref: TTP-2026-0020
+        detection_id: xql-xsiam-stitching-copy-paste-correlated-by-clipboard-payload-hash
 
   - id: step-03
     name: "Confirm PB → XSIAM stitched alert"
@@ -101,6 +114,8 @@ steps:
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM — stitched cross-origin DLP incident with both origins on the timeline"
+        ttp_ref: TTP-2026-0020
+        detection_id: xql-xsiam-stitched-cross-origin-dlp-incident-with-both-origins-on-the-timeline
 
 cleanup:
   commands:

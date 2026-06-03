@@ -59,9 +59,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Kubernetes API server enumeration from within pod using mounted service account token"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-pod-api-server-enumeration-with-service-account-token
       - plane: CDR
         type: Analytics
         description: "Service account token used for API server discovery — anomalous cluster enumeration behavior"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-service-account-token-used-for-api-discovery-audit
 
   - id: step-02
     name: "Steal service account token from mounted secret"
@@ -79,9 +83,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Service account token read and copied — Kubernetes credential theft from mounted secret volume"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-service-account-token-read-and-copied-in-pod
       - plane: CDR
         type: Analytics
         description: "Sensitive Kubernetes credential file access pattern — token exfiltration to /tmp staging directory"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-service-account-token-staged-to-tmp-in-pod
 
   - id: step-03
     name: "kubectl get pods --all-namespaces via stolen SA token"
@@ -100,9 +108,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "kubectl --all-namespaces enumeration from within pod — cross-namespace discovery using stolen token"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-kubectl-all-namespaces-enumeration-from-pod
       - plane: CDR
         type: Analytics
         description: "Cluster-wide pod discovery via kubectl in container — lateral movement reconnaissance pattern"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-cluster-wide-pod-discovery-audit-anomaly
 
   - id: step-04
     name: "kubectl exec into adjacent pod (lateral movement)"
@@ -124,9 +136,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "kubectl exec into pod in different namespace — lateral movement via Kubernetes API (high fidelity CDR BIOC)"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-kubectl-exec-into-adjacent-pod-lateral-movement
       - plane: CDR
         type: Analytics
         description: "Cross-namespace pod exec from compromised container — Kubernetes lateral movement chain detected"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-pod-exec-subresource-create-audit-anomaly
 
   - id: step-05
     name: "Create malicious Kubernetes CronJob for persistence"
@@ -163,9 +179,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Kubernetes CronJob creation via kubectl — scheduled task persistence mechanism in cluster"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-malicious-cronjob-creation-via-kubectl-from-pod
       - plane: CDR
         type: Analytics
         description: "CronJob creation anomaly — new batch workload created from compromised pod context, cross-namespace pattern"
+        ttp_ref: TTP-2026-0025
+        detection_id: bioc-cdr-004-cronjob-resource-create-audit-anomaly
 
 cleanup:
   commands:

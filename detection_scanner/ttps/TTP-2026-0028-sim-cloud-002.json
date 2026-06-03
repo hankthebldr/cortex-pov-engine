@@ -1,0 +1,308 @@
+{
+  "id": "TTP-2026-0028",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "vector-oauth-grant",
+      "saas-m365",
+      "severity-high",
+      "casb",
+      "persistence"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "saas-m365"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Cloud App \u2014 Microsoft Admin-Consent-Required Scope Request (T1078.004)",
+    "summary": "An OAuth authorize request to the Microsoft Identity Platform (login.microsoftonline.com/common/oauth2/v2.0/authorize) requests Directory.ReadWrite.All and Application.ReadWrite.All \u2014 scopes that require tenant admin consent. Cortex Cloud App Security flags any non-admin identity soliciting an admin-consent-required scope, treats Application.ReadWrite.All in the same grant body as a tenant-take\u2026",
+    "description": "Admin-consent-required Microsoft Graph scopes such as Directory.ReadWrite.All and Application.ReadWrite.All cannot be self-granted by an end user \u2014 they hand an app tenant-wide control over directory objects and app registrations, the exact primitive used to plant a backdoor service principal for durable cloud persistence. This scenario drives oauth_grant_emulator against the Microsoft v2.0 authorize endpoint with the admin_consent scope preset, requesting Directory.ReadWrite.All and Application.ReadWrite.All. Detection is on the audit-event shape: Cortex Cloud App Security flags any grant where consent_type is user (or unconsented) yet the requested oauth_scopes include an admin-consent-required scope \u2014 an impossible self-grant that signals consent-phishing or a rogue app registration. A second BIOC fires when Application.ReadWrite.All appears in the same grant body (the highest-risk app-management scope). A repeat attempt is treated as persistence intent rather than a one-off mistake, and the NGFW EAL plane corroborates the outbound /oauth2/v2.0/authorize request to login.microsoftonline.com. A correlation rule fuses the scope-request, app-management, and repeat signals into one cloud-persistence incident. The request uses a bogus client_id against the common tenant, so the authorize endpoint returns a 4xx and no consent is granted \u2014 detection happens on the request, not a successful grant.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Volt Typhoon"
+      }
+    ],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2021-06-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Persistence"
+        ],
+        "subtechnique_id": "T1078.004"
+      },
+      {
+        "technique_id": "T1098",
+        "name": "Account Manipulation: Additional Cloud Roles",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ],
+        "subtechnique_id": "T1098.003"
+      },
+      {
+        "technique_id": "T1528",
+        "name": "Steal Application Access Token",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Cloud Service: Cloud Service Modification",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "oauth_grant_emulator (provider=microsoft, scope_preset=admin_consent)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "oauth_grant_emulator supports the microsoft provider and Cortex Cloud App Security ingests Microsoft 365 unified audit / Entra sign-in logs.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe oauth_grant_emulator | jq -e '.params_schema.properties.provider'"
+      },
+      {
+        "description": "Outbound HTTPS egress to login.microsoftonline.com passes through the in-path NGFW EAL stack."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Admin-consent-required scope request against the Microsoft v2.0 authorize endpoint \u2014 bogus client_id, no consent granted.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-002.yml --live\n# Repeat to demonstrate deterministic persistence-intent signalling.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-002-rep.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "Microsoft audit event requesting an admin-consent-required scope from a non-admin identity.",
+        "expected_value": "dataset = msft_o365_audit and consent_type != \"admin\" and oauth_scopes contains \"Directory.ReadWrite.All\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Application.ReadWrite.All present in the same grant body.",
+        "expected_value": "dataset = msft_o365_audit and oauth_scopes contains \"Application.ReadWrite.All\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cloud-002.yml /tmp/cloud-002-rep.yml"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "CLOUD-002 Pre-Flight Microsoft Provider Supported",
+        "description": "Pre-flight: provider list includes microsoft. Confirms the oauth_grant_emulator params schema advertises the microsoft provider before any grant is emitted.",
+        "logic": "dataset = saas_audit_logs\n| filter event_type = \"eal_plugin_describe\" or action contains \"oauth_grant_emulator\"\n| filter app_name = \"oauth_grant_emulator\"\n| fields _time, user, app_name, action",
+        "severity": "informational",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "CLOUD-002 Microsoft Application ReadWrite All In Same Grant Body",
+        "description": "Cloud App \u2014 Application.ReadWrite.All in same grant body. The highest-risk app-management Graph scope appears in the authorize request, enabling rogue service-principal creation for tenant persistence.",
+        "logic": "dataset = msft_o365_audit\n| filter oauth_scopes contains \"Application.ReadWrite.All\"\n| filter consent_type != \"admin\"\n| filter client_id != null\n| fields _time, user, app_name, client_id, oauth_scopes, consent_type, source_ip",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1098.003"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CLOUD-002 Microsoft Directory ReadWrite All Admin-Consent Scope Request",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter consent_type != \"admin\"\n| filter oauth_scopes contains_any (\"Directory.ReadWrite.All\", \".default\")\n| filter client_id != null\n| fields _time, user, app_name, client_id, oauth_scopes, consent_type, source_ip, geo",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-002 NGFW Microsoft v2 Authorize Admin-Consent Egress",
+        "query": "dataset = saas_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"login.microsoftonline.com\"\n| filter uri_path contains \"/oauth2/v2.0/authorize\"\n| filter oauth_scopes contains_any (\"Directory.ReadWrite.All\", \"Application.ReadWrite.All\")\n| fields _time, user, dst_host, uri_path, oauth_scopes, source_ip",
+        "expected_rows_min": 1,
+        "dataset": "saas_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-002 Microsoft Repeat Admin-Consent Persistence Attempt",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter consent_type != \"admin\"\n| filter oauth_scopes contains_any (\"Directory.ReadWrite.All\", \"Application.ReadWrite.All\")\n| comp count() as attempts by user, client_id, app_name\n| filter attempts >= 2\n| fields user, client_id, app_name, attempts",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Microsoft Admin-Consent OAuth Abuse Cloud Persistence \u2014 Same Identity",
+        "rule_id": "CR-CLOUDAPP-0002",
+        "logic": "XQL(CLOUD-002 Microsoft Directory ReadWrite All Admin-Consent Scope Request) OR BIOC(CLOUD-002 Microsoft Application ReadWrite All In Same Grant Body) OR XQL(CLOUD-002 Microsoft Repeat Admin-Consent Persistence Attempt)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud App Security \u2014 Non-admin identity requests admin-consent-required Graph scope",
+      "Cortex XSIAM Analytics \u2014 Repeated admin-consent grant attempts indicate persistence intent"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-app-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CASB-OAUTH-ADMIN-CONSENT-002",
+          "CASB-OAUTH-APP-RW-ALL-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_o365_audit | filter oauth_scopes contains \"Directory.ReadWrite.All\" and consent_type != \"admin\" | fields _time, user, app_name, oauth_scopes"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CLOUDAPP-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CLOUDAPP-0002 fuses the admin-consent scope request, Application.ReadWrite.All app-management scope, and repeat attempts into one cloud-persistence incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUDAPP-028",
+        "name": "Admin-Consent OAuth Abuse Detection",
+        "description": "Detect a non-admin identity requesting admin-consent-required Microsoft Graph scopes and correlate repeat attempts into a cloud-persistence incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUDAPP-028A",
+            "objective": "An admin-consent scope request from a non-admin identity fires the Cloud App detection.",
+            "preconditions": [
+              "oauth_grant_emulator microsoft provider available and M365 audit logs ingested.",
+              "Detections from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-CLOUD-002 step-02.",
+              "Observe the admin-consent and Application.ReadWrite.All alerts."
+            ],
+            "success_criteria": [
+              "XQL `CLOUD-002 Microsoft Directory ReadWrite All Admin-Consent Scope Request` returns >= 1 row.",
+              "BIOC `CLOUD-002 Microsoft Application ReadWrite All In Same Grant Body` fires."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-CLOUDAPP-028B",
+            "objective": "A repeat attempt confirms persistence intent and stitches into one incident.",
+            "success_criteria": [
+              "XQL `CLOUD-002 Microsoft Repeat Admin-Consent Persistence Attempt` returns >= 1 row.",
+              "Correlation `CR-CLOUDAPP-0002` produces a single incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Disable user consent for apps; require admin consent workflow for all third-party apps.",
+      "Restrict who can register applications and consent on behalf of the tenant in Entra ID.",
+      "Alert on and review any app granted Directory.ReadWrite.All or Application.ReadWrite.All."
+    ],
+    "detection_engineering": [
+      "Flag any grant where the requested scope requires admin consent but the consenting identity is not an admin.",
+      "Treat Application.ReadWrite.All as a tenant-takeover-risk scope and alert at critical severity.",
+      "Correlate repeat admin-consent attempts from the same identity/app as persistence intent."
+    ],
+    "response_playbook": "XSOAR-PB-OAuthConsentPhishingResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Microsoft - Volt Typhoon OAuth Persistence Patterns",
+      "url": "https://www.microsoft.com/en-us/security/blog/",
+      "publisher": "Microsoft",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 \u2014 Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-CLOUD-002."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Microsoft admin-consent OAuth CASB/NGFW XQL+BIOC, added correlation CR-CLOUDAPP-0002, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

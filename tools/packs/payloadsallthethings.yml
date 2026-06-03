@@ -1,0 +1,40 @@
+adapter_id: TOOL-PAYLOADSALLTHETHINGS
+name: "PayloadsAllTheThings"
+version: "master"
+
+tier: 2
+category: web-app
+
+upstream:
+  repo: https://github.com/swisskyrepo/PayloadsAllTheThings
+  license: "MIT"
+  attribution: "Swissky"
+
+cortex_signal:
+  planes:
+    - BROWSER
+  expected_techniques:
+    - T1059
+
+safety_class: safe
+
+install:
+  source_path: sources/PayloadsAllTheThings
+  build_cmd: "true"
+
+invoke:
+  target_platform: any
+  run_template: "ls {payload_dir}"
+  default_args:
+    payload_dir: "sources/PayloadsAllTheThings"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - web-app

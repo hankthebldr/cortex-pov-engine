@@ -1,0 +1,41 @@
+adapter_id: TOOL-VT-CLI
+name: "VirusTotal CLI"
+version: "1.0"
+
+tier: 4
+category: sandbox
+
+upstream:
+  repo: https://github.com/VirusTotal/vt-cli
+  license: "Apache-2.0"
+  attribution: "VirusTotal"
+
+cortex_signal:
+  planes:
+    - ANALYTICS
+  expected_techniques:
+    - T1071
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v vt >/dev/null 2>&1 || go install github.com/VirusTotal/vt-cli/vt@latest"
+  binary: "vt"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {subcommand} {arg}"
+  default_args:
+    subcommand: "file"
+    arg: "<hash>"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - sandbox

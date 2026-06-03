@@ -1,0 +1,40 @@
+adapter_id: TOOL-NIKTO
+name: "Nikto"
+version: "2.5.0"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/sullo/nikto
+  license: "GPL-2.0"
+  attribution: "Chris Sullo"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v nikto >/dev/null 2>&1 || apt-get install -y nikto"
+  binary: "nikto"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -h {target}"
+  default_args:
+    target: "http://127.0.0.1"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - web-app

@@ -1,0 +1,49 @@
+adapter_id: TOOL-PURPLESHARP
+name: "PurpleSharp"
+version: "1.3"
+
+tier: 3
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/mvelazc0/PurpleSharp
+  license: "MIT"
+  attribution: "Mauricio Velazco"
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1059
+    - T1055
+
+safety_class: dual-use-lab-only
+
+install:
+  iac_module: edr
+  content_library_entry:
+    name: purplesharp
+    repo: mvelazc0/PurpleSharp
+    install: git-clone
+  binary: "PurpleSharp.exe"
+
+invoke:
+  target_platform: windows
+  run_template: "\"{binary}\" {playbook}"
+  default_args:
+    playbook: "-p playbook.json"
+  identity_required: administrator
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-purplesharp-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - adversary-simulation

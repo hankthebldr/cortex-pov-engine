@@ -6,9 +6,11 @@ import EvidenceView from './components/console/EvidenceView.jsx'
 import CoverageView from './components/console/CoverageView.jsx'
 import LabView from './components/console/LabView.jsx'
 import TenantManager from './components/console/TenantManager.jsx'
+import TargetsView from './components/console/TargetsView.jsx'
+import LaunchView from './components/console/LaunchView.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
-import { getHealth, getRuns, getScenarios, downloadReportBundle } from './api/client.js'
+import { getHealth, getRuns, getScenarios, getScenario, downloadReportBundle } from './api/client.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -50,12 +52,21 @@ import { getHealth, getRuns, getScenarios, downloadReportBundle } from './api/cl
  *     every generated push bundle)
  */
 
+// All 11 detection planes present in the scenario library. Keep this in sync
+// with the planes that actually load (the rail must reconcile with the Library
+// total — previously only 6 of 11 were listed, so the rail summed to ~32 while
+// the Library showed 58). Names map Cortex codes → human labels.
 const PLANE_META = [
-  { code: 'EDR',  name: 'Endpoint'     },
-  { code: 'CDR',  name: 'Cloud'        },
-  { code: 'NDR',  name: 'Network'      },
-  { code: 'ITDR', name: 'Identity'     },
-  { code: 'CLOUD_APP', name: 'Cloud App' },
+  { code: 'EDR',       name: 'Endpoint'    },
+  { code: 'CDR',       name: 'Cloud'       },
+  { code: 'NDR',       name: 'Network'     },
+  { code: 'ITDR',      name: 'Identity'    },
+  { code: 'CLOUD_APP', name: 'Cloud App'   },
+  { code: 'AI_ACCESS', name: 'AI Access'   },
+  { code: 'AIRS',      name: 'AI Runtime'  },
+  { code: 'AI_SPM',    name: 'AI Posture'  },
+  { code: 'BROWSER',   name: 'Browser'     },
+  { code: 'KOI',       name: 'Agentic'     },
   { code: 'ANALYTICS', name: 'Multi-plane' },
 ]
 
@@ -73,8 +84,26 @@ export default function AppConsole() {
   // returns to the active-run view.
   const [pinnedRun, setPinnedRun]                       = useState(null)
 
+  // Redesign v2 — guided workflow shared state:
+  //   selectedTarget — chosen in ① Targets, consumed by ③ Launch
+  //   armedScenarioId/armedScenario — armed in ② Library, consumed by ③ Launch
+  const [selectedTarget, setSelectedTarget]   = useState(null)
+  const [armedScenarioId, setArmedScenarioId] = useState(null)
+  const [armedScenario, setArmedScenario]     = useState(null)
+
   // Pinned scenarios — localStorage-backed
   const { pinnedIds, isPinned, toggle: togglePin, unpin } = usePinnedScenarios()
+
+  // Resolve the armed scenario's full detail (execution identity, push/pull
+  // flags) for the Launch step. Summary from the list isn't enough.
+  useEffect(() => {
+    if (!armedScenarioId) { setArmedScenario(null); return }
+    let cancelled = false
+    getScenario(armedScenarioId)
+      .then((d) => { if (!cancelled) setArmedScenario(d || null) })
+      .catch(() => { if (!cancelled) setArmedScenario(null) })
+    return () => { cancelled = true }
+  }, [armedScenarioId])
 
   // ── Health fetch ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -124,9 +153,13 @@ export default function AppConsole() {
       .catch(() => setScenarioList([]))
   }, [])
 
-  // ── Derive active run (most recent running run) ──────────────────────────
+  // ── Derive active run (most recent truly in-flight run) ──────────────────
+  // Only 'running' counts as active. Push runs sit at 'pending' forever (the
+  // bundle executes offline), so treating 'pending' as active produced a
+  // phantom telemetry strip for stale runs. Pending pull runs surface once the
+  // beacon picks them up and flips them to 'running'.
   const activeRun = useMemo(() => {
-    const running = runs.find((r) => r && (r.status === 'running' || r.status === 'pending'))
+    const running = runs.find((r) => r && r.status === 'running')
     if (!running) return null
     const totalSteps = running.total_steps ?? running.steps?.length ?? 0
     const currentStep = running.current_step ?? running.step ?? 0
@@ -406,7 +439,30 @@ export default function AppConsole() {
 
   // ── Render tab content ──────────────────────────────────────────────────
   let tabContent = null
-  if (activeTab === 'operations') {
+  if (activeTab === 'targets') {
+    tabContent = (
+      <TargetsView
+        selectedTarget={selectedTarget}
+        onSelectTarget={(t) => {
+          setSelectedTarget(t)
+          setToast({ message: `Target set: ${t.label || t.id} (${t.kind})`, type: 'success' })
+          setTimeout(() => setToast(null), 2500)
+        }}
+        onGoToLab={() => setActiveTab('lab')}
+      />
+    )
+  } else if (activeTab === 'launch') {
+    tabContent = (
+      <LaunchView
+        scenario={armedScenario}
+        selectedTarget={selectedTarget}
+        onRunComplete={handleRunComplete}
+        onError={(msg) => setToast({ message: msg, type: 'error' })}
+        onGoLibrary={() => setActiveTab('operations')}
+        onGoTargets={() => setActiveTab('targets')}
+      />
+    )
+  } else if (activeTab === 'operations') {
     tabContent = (
       <OperationsView
         selectedPlane={selectedPlane}
@@ -417,6 +473,7 @@ export default function AppConsole() {
         pinnedIds={pinnedIds}
         isPinned={isPinned}
         togglePin={togglePin}
+        onArmScenario={(sid) => setArmedScenarioId(sid)}
         onRunComplete={handleRunComplete}
         onOpenRunEvidence={(run) => {
           // Pin the run + switch to Evidence so the DC lands on

@@ -181,10 +181,12 @@ class TestCatalog:
     def test_list_for_plane(self, loaded_catalog):
         ndr = loaded_catalog.list_for_plane("NDR")
         assert any(a.adapter_id == "TOOL-NMAP" for a in ndr)
-        # Unused plane returns an empty list, not None. AIRS is served by
-        # the in-tree cortex-prompt-attacker (tier 1, doesn't ship as an
-        # adapter pack) so the adapter catalog never lists it.
-        assert loaded_catalog.list_for_plane("AIRS") == []
+        # AIRS is served by the in-tree cortex-prompt-attacker, now shipped as a
+        # tier-1 adapter pack (TOOL-CORTEX-PROMPT-ATTACKER).
+        airs = loaded_catalog.list_for_plane("AIRS")
+        assert any(a.adapter_id == "TOOL-CORTEX-PROMPT-ATTACKER" for a in airs)
+        # A plane with no adapter still returns an empty list, not None.
+        assert loaded_catalog.list_for_plane("AI_SPM") == []
 
     def test_load_missing_dir(self, tmp_path):
         from tools.adapter_catalog import AdapterCatalog  # noqa: PLC0415

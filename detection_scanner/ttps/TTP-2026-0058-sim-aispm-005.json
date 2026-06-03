@@ -1,0 +1,294 @@
+{
+  "id": "TTP-2026-0058",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-28T00:00:00+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ai-spm",
+      "vector-data-governance",
+      "industry-regulated",
+      "severity-high",
+      "posture",
+      "pii-phi-pci"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1200,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AI Sensitive-Data Classification \u2014 PII/PHI/PCI In Training Sets (T1530)",
+    "summary": "Cortex Cloud DSPM + AI-SPM cross-scan classifies a planted training-data S3 bucket, flags at least three regulated data classes (PII, PHI, PCI) from SSN / credit-card / medical-record-number canaries, traces data lineage from bucket to the SageMaker training job, and raises governance violation AI-GOV-001. The scenario validates the data-class count, the lineage edge, and the governance violati\u2026",
+    "description": "Regulated data leaking into AI training sets is the headline risk for finance, healthcare, and insurance POVs: a model trained on un-scoped PII/PHI/PCI inherits compliance obligations and can be coaxed to regurgitate that data. AI Security Posture Management answers it by cross-scanning data stores with DSPM and linking the regulated data to the AI workloads that consume it. This scenario plants a training-data bucket seeded with canary patterns \u2014 SSN 000-00-000X, credit-card 4111-1111-1111-111X, and medical-record-number MRN-CORTEXSIM-00X \u2014 and validates that Cortex Cloud detects at least three distinct regulated data classes, traces the lineage edge from the bucket to the SageMaker training-job manifest, and raises governance violation AI-GOV-001 (regulated_data_in_training_set), all within 900 seconds. Detection is posture-oriented: validation queries assert the data-class count from DSPM findings, the AI data-lineage edge from inventory, and the governance violation by finding_type. A correlation rule fuses the three signals into one AI data-governance incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "financial-services",
+      "healthcare"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage Object",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1213",
+        "name": "Data from Information Repositories",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Storage: Cloud Storage Object Content",
+      "Asset: Asset Inventory",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-AISPM-005 \u2014 Cortex Cloud DSPM + AI-SPM cross-scan + sensitive-data/lineage/governance probe",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud DSPM and AI-SPM enabled against the target AWS account.",
+        "check_command": "curl -fsSL -H \"Authorization: Bearer $CORTEX_CLOUD_API_TOKEN\" \"$CORTEX_CLOUD_API_BASE/dspm/data_stores\""
+      },
+      {
+        "description": "ai-spm IaC module applied so the training-data bucket with PII/PHI/PCI canaries is planted."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture validation \u2014 probe DSPM sensitive-data classes + AI lineage + AI-GOV-001.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/dspm/data_stores?name=aispm-training-data\" | jq '[.data_stores[0].sensitive_data_classes[]?] | length'",
+      "input_variables": [],
+      "timeout_seconds": 1200
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Training-data bucket flagged with PII / PHI / PCI data classes.",
+        "expected_value": "data_classification in (\"PII\",\"PHI\",\"PCI\") and data_store contains \"aispm-training-data\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "AI data-lineage edge from bucket to SageMaker training job.",
+        "expected_value": "asset_type = \"ai_data_lineage_edge\" and target_asset_type = \"ai_training_job\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "AI-GOV-001 governance violation (regulated data in training set).",
+        "expected_value": "finding_type = \"AI-GOV-001\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aispm-005-*; echo '[CortexSim] SIM-AISPM-005 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AISPM-005 MTTD Anchor And Canary Verify Bookkeeping",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and resource_type = \"s3_object\"\n| filter resource_name contains \"aispm-training-data\"\n| fields _time, operation_name, resource_name",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-005 DSPM AISPM Cross Scan Links Bucket To AI",
+        "query": "dataset = ai_spm_findings\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"data_lineage_linked\"\n| filter data_classification in (\"PII\", \"PHI\", \"PCI\")\n| comp count() as linked by data_classification\n| fields data_classification, linked",
+        "expected_rows_min": 1,
+        "dataset": "ai_spm_findings"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-005 DSPM Three Regulated Data Classes In Training Bucket",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"sensitive_data_class\" and asset_type = \"ai_data_store\"\n| filter data_classification in (\"PII\", \"PHI\", \"PCI\") and asset_id contains \"aispm-training-data\"\n| comp count_distinct(data_classification) as class_count\n| filter class_count >= 3\n| fields class_count",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-005 Data Lineage Edge Bucket To Training Job",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter asset_type = \"ai_data_lineage_edge\"\n| filter asset_id contains \"aispm-training-data\" and target_asset_type = \"ai_training_job\"\n| comp count() as lineage_edges\n| filter lineage_edges >= 1\n| fields lineage_edges",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-005 Governance Violation Regulated Data In Training Set",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"AI-GOV-001\" and tags contains \"CortexSimAISPMFinding\"\n| comp count() as violations\n| filter violations >= 1\n| fields violations",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AI Data Governance \u2014 Regulated Data In Training Set With Lineage",
+        "rule_id": "CR-AISPM-0005",
+        "logic": "XQL(AISPM-005 DSPM Three Regulated Data Classes In Training Bucket) AND XQL(AISPM-005 Data Lineage Edge Bucket To Training Job) AND XQL(AISPM-005 Governance Violation Regulated Data In Training Set)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud DSPM \u2014 Regulated-data classification of AI training stores",
+      "Cortex Cloud AI-SPM \u2014 Data lineage and AI governance violation detection"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "dspm",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "DSPM-CLASS-PII",
+          "DSPM-CLASS-PHI",
+          "DSPM-CLASS-PCI"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter finding_type = \"sensitive_data_class\" | fields _time, asset_id, data_classification, severity"
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "ai-spm",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "AI-GOV-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter finding_type = \"AI-GOV-001\" | fields _time, asset_id, data_classification, severity"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AISPM-0005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AISPM-0005 fuses regulated-data classification, AI lineage edge, and AI-GOV-001 into one data-governance incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-AISPM-005",
+        "name": "AI Sensitive-Data Classification",
+        "description": "Classify regulated data in AI training stores, trace lineage to models, and raise governance violations.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-AISP-005A",
+            "objective": "Three regulated data classes, a lineage edge, and AI-GOV-001 surface within 900s.",
+            "preconditions": [
+              "Cortex Cloud DSPM + AI-SPM enabled.",
+              "ai-spm training-data fixture with PII/PHI/PCI canaries applied."
+            ],
+            "steps": [
+              "Run SIM-AISPM-005 steps 1-3.",
+              "Observe DSPM classes, lineage, and governance violation in Cortex Cloud."
+            ],
+            "success_criteria": [
+              "Data-class query returns class_count >= 3.",
+              "Lineage and AI-GOV-001 queries each return >= 1 row.",
+              "Correlation CR-AISPM-0005 raises one data-governance incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scrub or tokenize regulated data before it enters AI training stores.",
+      "Apply DSPM policy guardrails that block training jobs sourcing un-scoped PII/PHI/PCI.",
+      "Maintain explicit data-lineage records for every training set."
+    ],
+    "detection_engineering": [
+      "Alert when a training store is classified with PII/PHI/PCI.",
+      "Trace lineage from regulated data stores to training jobs and models.",
+      "Raise a governance violation whenever regulated data reaches a training set."
+    ],
+    "response_playbook": "XSOAR-PB-AIDataGovernanceRemediation-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 \u2014 Regulated Data Leakage in AI Training Pipelines",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1530 \u2014 Data from Cloud Storage Object",
+      "url": "https://attack.mitre.org/techniques/T1530/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-28",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft from scenario SIM-AISPM-005."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Authored real DSPM + AI-SPM data-governance XQL against cortex_cloud_posture / ai_spm_findings, added correlation CR-AISPM-0005, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

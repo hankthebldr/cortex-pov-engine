@@ -1,0 +1,44 @@
+adapter_id: TOOL-GITGOT
+name: "GitGot"
+version: "1.0"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/BishopFox/GitGot
+  license: "GPL-3.0"
+  attribution: "Bishop Fox"
+
+cortex_signal:
+  planes:
+    - CDR
+  expected_techniques:
+    - T1552
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "test -d /tmp/GitGot || git clone --depth 1 https://github.com/BishopFox/GitGot /tmp/GitGot"
+  binary: "python3 /tmp/GitGot/gitgot.py"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -q {query}"
+  default_args:
+    query: "example.com"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-gitgot-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - cloud-container

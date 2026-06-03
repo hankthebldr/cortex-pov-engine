@@ -1,0 +1,279 @@
+{
+  "id": "TTP-2026-0056",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-28T00:00:00+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ai-spm",
+      "vector-supply-chain",
+      "industry-all",
+      "severity-high",
+      "posture",
+      "eu-ai-act"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1200,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AI Ecosystem & Supply-Chain Risk \u2014 Vulnerable ML Dependencies (T1195.002)",
+    "summary": "Cortex Cloud AI-SPM enumerates third-party ML dependencies shipped in a Lambda layer and SageMaker workload, flags known-CVE packages (transformers and tensorflow), annotates each with EU AI Act risk classification, and traces the dependency graph SageMaker -> Lambda -> OpenAI proxy -> external provider. The scenario validates the CVE findings and the dependency-edge chain against the posture f\u2026",
+    "description": "AI workloads inherit risk from a deep, fast-moving open-source supply chain \u2014 model loaders, tokenizers, and serving frameworks with documented RCE and deserialization CVEs. AI Security Posture Management must enumerate those third-party ML dependencies, match them to known CVEs, and trace where a compromised package could reach. This scenario plants a Lambda layer carrying vulnerable ML deps (transformers < 4.30 / CVE-2024-3568 model-loading RCE; tensorflow < 2.13.1 / CVE-2023-25660 saved-model deserialization) wired into a SageMaker -> Lambda -> OpenAI-proxy chain, and validates that Cortex Cloud AI-SPM raises at least two CVE-tagged dependency findings and reconstructs the dependency graph. Detection is posture-oriented: validation queries assert distinct CVE findings on ML dependencies and count the dependency edges in the inventory graph. For EMEA regulated POVs, each finding is annotated with EU AI Act (Article 6 / Annex III) risk classification. A correlation rule fuses the CVE findings with the traced chain into one AI supply-chain risk incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1195",
+        "name": "Supply Chain Compromise: Compromise Software Supply Chain",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1195.002"
+      },
+      {
+        "technique_id": "T1574",
+        "name": "Hijack Execution Flow",
+        "tactic_ids": [
+          "TA0004",
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Persistence"
+        ]
+      }
+    ],
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "File: File Metadata",
+      "Cloud Service: Cloud Service Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-AISPM-003 \u2014 Cortex Cloud AI-SPM supply-chain scan + CVE/dependency-graph probe",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud AI-SPM supply-chain scanning enabled against the target AWS account.",
+        "check_command": "curl -fsSL -H \"Authorization: Bearer $CORTEX_CLOUD_API_TOKEN\" \"$CORTEX_CLOUD_API_BASE/findings?category=ai_supply_chain\""
+      },
+      {
+        "description": "ai-spm IaC module applied so the Lambda layer with vulnerable ML deps is planted."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture validation \u2014 probe AI-SPM supply-chain CVE findings + dependency graph.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/findings?category=ai_supply_chain&tag=CortexSimAISPMFinding\" | jq '[.findings[] | select(.cve_id != null)] | length'",
+      "input_variables": [],
+      "timeout_seconds": 1200
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "CVE-tagged transformers dependency (model-loading RCE).",
+        "expected_value": "dependency contains \"transformers\" and cve = \"CVE-2024-3568\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "CVE-tagged tensorflow dependency (saved-model deserialization).",
+        "expected_value": "dependency contains \"tensorflow\" and cve = \"CVE-2023-25660\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Dependency-edge chain SageMaker -> Lambda -> external provider.",
+        "expected_value": "asset_type = \"ai_dependency_edge\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aispm-003-*; echo '[CortexSim] SIM-AISPM-003 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AISPM-003 Supply Chain Manifest Capture Bookkeeping",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and resource_type = \"lambda_layer_version\"\n| filter resource_name contains \"vulnerable-ml-deps\"\n| fields _time, operation_name, resource_name",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-003 Supply Chain Scan Discovers ML Dependencies",
+        "query": "dataset = ai_spm_findings\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"dependency_discovered\"\n| filter dependency in (\"transformers\", \"tensorflow\")\n| comp count() as found by dependency\n| fields dependency, found",
+        "expected_rows_min": 1,
+        "dataset": "ai_spm_findings"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-003 CVE Tagged ML Dependency Findings",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter finding_type = \"vulnerable_dependency\" and cve != null\n| filter dependency in (\"transformers\", \"tensorflow\") and tags contains \"CortexSimAISPMFinding\"\n| comp count_distinct(cve) as unique_cves by dependency\n| filter unique_cves >= 1\n| fields dependency, cve, unique_cves",
+        "expected_rows_min": 2,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-003 Dependency Graph Chain SageMaker Lambda Provider",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter asset_type = \"ai_dependency_edge\"\n| filter ai_service in (\"sagemaker\", \"lambda\", \"openai_proxy\")\n| comp count() as edges_in_chain\n| filter edges_in_chain >= 2\n| fields edges_in_chain",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AI Supply Chain Risk \u2014 CVE Dependency In Traced AI Chain",
+        "rule_id": "CR-AISPM-0003",
+        "logic": "XQL(AISPM-003 CVE Tagged ML Dependency Findings) AND XQL(AISPM-003 Dependency Graph Chain SageMaker Lambda Provider)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud AI-SPM \u2014 ML dependency CVE enrichment and EU AI Act classification",
+      "Cortex Cloud Posture \u2014 AI dependency-graph reconstruction"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "ai-spm",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "AISPM-SC-CVE-TRANSFORMERS",
+          "AISPM-SC-CVE-TENSORFLOW",
+          "AISPM-SC-DEPGRAPH"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter finding_type = \"vulnerable_dependency\" | fields _time, dependency, cve, severity, regulatory_tags"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AISPM-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AISPM-0003 fuses CVE-tagged ML-dependency findings with the traced AI dependency chain into one supply-chain risk incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-AISPM-003",
+        "name": "AI Ecosystem & Supply Chain Risk",
+        "description": "Enumerate third-party ML dependencies, flag CVEs, annotate EU AI Act risk, and trace the AI dependency graph.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-AISP-003A",
+            "objective": "At least two CVE-tagged ML-dependency findings and a >= 3-node dependency chain surface.",
+            "preconditions": [
+              "Cortex Cloud AI-SPM supply-chain scanning enabled.",
+              "ai-spm fixture with vulnerable Lambda layer applied."
+            ],
+            "steps": [
+              "Run SIM-AISPM-003 steps 1-3.",
+              "Observe supply-chain findings and dependency graph in Cortex Cloud."
+            ],
+            "success_criteria": [
+              "CVE findings query returns >= 2 distinct CVEs.",
+              "Dependency-graph query returns >= 1 row.",
+              "Correlation CR-AISPM-0003 raises one supply-chain risk incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Pin and continuously patch ML dependencies; block known-CVE versions in CI.",
+      "Vendor and verify model-loading and serving frameworks before deployment.",
+      "Gate third-party LLM provider integrations through an approved-egress proxy."
+    ],
+    "detection_engineering": [
+      "Alert on any ML dependency matching a known-CVE version range.",
+      "Reconstruct the AI dependency graph and alert on edges reaching external providers.",
+      "Annotate findings with regulatory classification for EMEA POVs."
+    ],
+    "response_playbook": "XSOAR-PB-AISupplyChainRemediation-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 \u2014 ML Supply Chain Compromise Patterns",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1195.002 \u2014 Compromise Software Supply Chain",
+      "url": "https://attack.mitre.org/techniques/T1195/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-28",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft from scenario SIM-AISPM-003."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Authored real AI-SPM supply-chain XQL against cortex_cloud_posture / ai_spm_findings, added correlation CR-AISPM-0003, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

@@ -55,6 +55,8 @@ steps:
       - plane: ITDR
         type: BIOC
         description: "Pre-flight: idp_signin_emulator metadata visible to operator"
+        ttp_ref: TTP-2026-0041
+        detection_id: bioc-itdr-005-pre-flight-idp-signin-emulator-metadata-visible
 
   - id: step-02
     name: "10 failed sign-ins triggering account lockout — Microsoft shape"
@@ -88,9 +90,13 @@ steps:
       - plane: ITDR
         type: Analytics
         description: "ITDR — 10 consecutive failed sign-ins from same IP detected as brute-force"
+        ttp_ref: TTP-2026-0041
+        detection_id: xql-itdr-005-ten-consecutive-failed-sign-ins-brute-force
       - plane: ITDR
         type: BIOC
         description: "ITDR — user.account.lock state-transition event recorded"
+        ttp_ref: TTP-2026-0041
+        detection_id: bioc-itdr-005-account-lock-state-transition-recorded
 
   - id: step-03
     name: "Same target user, second source IP — password spray pattern"
@@ -123,9 +129,13 @@ steps:
       - plane: ITDR
         type: Analytics
         description: "ITDR — second lockout within 1h on same identity escalates incident severity"
+        ttp_ref: TTP-2026-0041
+        detection_id: xql-itdr-005-second-lockout-within-one-hour-escalates-severity
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — repeat-lockout pattern grouped under single password-spray incident"
+        ttp_ref: TTP-2026-0041
+        detection_id: xql-itdr-005-xsiam-repeat-lockout-grouped-password-spray
 
 cleanup:
   commands:

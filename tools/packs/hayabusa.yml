@@ -1,0 +1,29 @@
+adapter_id: TOOL-HAYABUSA
+name: "Hayabusa"
+version: "2.16"
+
+tier: 5
+category: analyst-workbench
+
+upstream:
+  repo: https://github.com/Yamato-Security/hayabusa
+  license: "AGPL-3.0"
+  attribution: "Yamato Security"
+
+cortex_signal:
+  planes: []
+  expected_techniques:
+    - T1059
+
+safety_class: safe
+
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - analyst-workbench

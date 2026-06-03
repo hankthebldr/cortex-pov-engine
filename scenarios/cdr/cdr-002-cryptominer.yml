@@ -54,6 +54,8 @@ steps:
       - plane: CDR
         type: Analytics
         description: "System limit modification in container — ulimit/sysctl tuning consistent with cryptominer pre-deployment"
+        ttp_ref: TTP-2026-0023
+        detection_id: bioc-cdr-002-container-resource-limit-tuning-pre-mining
 
   - id: step-02
     name: "Download XMRig binary (Unit 42 observed delivery mechanism)"
@@ -71,9 +73,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "XMRig binary download and extraction — cryptominer tool transfer signature"
+        ttp_ref: TTP-2026-0023
+        detection_id: bioc-cdr-002-xmrig-binary-download-and-extraction-in-container
       - plane: CDR
         type: Analytics
         description: "Compressed binary downloaded and extracted to /tmp hidden directory in container"
+        ttp_ref: TTP-2026-0023
+        detection_id: bioc-cdr-002-compressed-binary-extracted-to-hidden-tmp-in-container
 
   - id: step-03
     name: "Configure XMRig mining pool connection"
@@ -97,6 +103,8 @@ steps:
       - plane: CDR
         type: Analytics
         description: "Known cryptomining pool domain/IP in config file — pool.minexmr.com association"
+        ttp_ref: TTP-2026-0023
+        detection_id: bioc-cdr-002-known-mining-pool-in-config-file-in-container
 
   - id: step-04
     name: "Execute XMRig miner (limited to 30 seconds for simulation)"
@@ -107,9 +115,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Cryptominer binary execution — XMRig process tree detected by CDR runtime BIOC"
+        ttp_ref: TTP-2026-0023
+        detection_id: bioc-cdr-002-xmrig-process-execution-in-container
       - plane: CDR
         type: Analytics
         description: "Sustained CPU spike from container process consistent with cryptomining workload"
+        ttp_ref: TTP-2026-0023
+        detection_id: bioc-cdr-002-sustained-high-cpu-mining-workload-in-container
 
   - id: step-05
     name: "Attempt persistence via cron (Unit 42 observed TTPs)"
@@ -123,9 +135,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Crontab modification to persist cryptominer — scheduled task creation from container"
+        ttp_ref: TTP-2026-0023
+        detection_id: bioc-cdr-002-crontab-modification-to-persist-cryptominer-in-container
       - plane: CDR
         type: Analytics
         description: "Cryptominer binary added to cron schedule — multi-stage malware persistence behavior"
+        ttp_ref: TTP-2026-0023
+        detection_id: bioc-cdr-002-cryptominer-added-to-cron-schedule-in-container
 
 cleanup:
   commands:

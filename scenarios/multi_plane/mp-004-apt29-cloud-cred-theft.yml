@@ -54,6 +54,21 @@ infra_modules_needed:
   - tim
 
 external_tools:
+  - name: Pacu
+    source: "https://github.com/RhinoSecurityLabs/pacu"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-PACU
+  - name: Mimikatz
+    source: "https://github.com/gentilkiwi/mimikatz"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-MIMIKATZ
+  - name: BloodHound
+    source: "https://github.com/SpecterOps/BloodHound"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-BLOODHOUND
   - name: awscli
     source: "https://aws.amazon.com/cli/"
     type: binary
@@ -77,9 +92,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR — recursive credential-pattern grep from non-interactive service account"
+        ttp_ref: TTP-2026-0049
+        detection_id: bioc-mp-004-recursive-aws-key-pattern-grep-from-service-account
       - plane: EDR
         type: Analytics
         description: "XDR — www-data traversing /home and /root (unusual access pattern)"
+        ttp_ref: TTP-2026-0049
+        detection_id: xql-mp-004-service-account-traversing-home-and-root-dirs
 
   - id: step-02
     name: "Endpoint: stage discovered keys and invoke cloud API"
@@ -95,12 +114,18 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR — aws cli invoked by www-data with inline access-key env vars"
+        ttp_ref: TTP-2026-0049
+        detection_id: bioc-mp-004-aws-cli-invoked-by-www-data-with-inline-access-key-env
       - plane: CLOUD_APP
         type: Analytics
         description: "CDR — CloudTrail sts:GetCallerIdentity from unenrolled source IP"
+        ttp_ref: TTP-2026-0049
+        detection_id: xql-mp-004-cloudtrail-getcalleridentity-from-unenrolled-source-ip
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — endpoint process event + cloud audit event sharing principal within 60s window → single incident"
+        ttp_ref: TTP-2026-0049
+        detection_id: xql-mp-004-stitch-endpoint-process-with-cloud-audit-by-principal
 
   - id: step-03
     name: "Cloud: enumerate cloud environment (discovery phase)"
@@ -116,9 +141,13 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "CDR — multi-service describe/list burst (EC2+IAM+S3) from single principal in <30s"
+        ttp_ref: TTP-2026-0049
+        detection_id: bioc-mp-004-cloud-multi-service-describe-list-burst-from-single-principal
       - plane: CLOUD_APP
         type: Analytics
         description: "CDR — UEBA deviation: principal performing first-time broad discovery pattern"
+        ttp_ref: TTP-2026-0049
+        detection_id: xql-mp-004-ueba-first-time-broad-cloud-discovery-pattern
 
   - id: step-04
     name: "Cloud: access sensitive S3 bucket (collection phase)"
@@ -134,9 +163,13 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "CDR — GetBucketAcl + ListObjects on sensitivity-tagged bucket by unauthorized principal"
+        ttp_ref: TTP-2026-0049
+        detection_id: bioc-mp-004-getbucketacl-and-listobjects-on-sensitive-tagged-bucket
       - plane: ANALYTICS
         type: IOC
         description: "XSIAM — IOC match on bucket name from watchlist cross-referenced with discovery burst from step-03"
+        ttp_ref: TTP-2026-0049
+        detection_id: ioc-user-agent-cortexsim-attacker-drop
 
   - id: step-05
     name: "Exfiltration: copy data to attacker-controlled destination"
@@ -152,12 +185,18 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "CDR — S3 CopyObject to non-owned destination account/bucket"
+        ttp_ref: TTP-2026-0049
+        detection_id: bioc-mp-004-s3-copyobject-to-non-owned-destination-bucket
       - plane: CLOUD_APP
         type: Analytics
         description: "CDR — data egress volume anomaly from sensitivity-tagged source"
+        ttp_ref: TTP-2026-0049
+        detection_id: xql-mp-004-cloud-data-egress-volume-anomaly-from-tagged-source
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM — final stitched incident: cred-dump (EDR) → cloud pivot (CDR) → enumeration → collection → exfil, all under one story"
+        ttp_ref: TTP-2026-0049
+        detection_id: xql-mp-004-stitch-full-kill-chain-cred-dump-to-cloud-exfil
 
 cleanup:
   commands:

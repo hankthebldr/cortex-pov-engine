@@ -59,9 +59,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Container privilege enumeration — /proc/self/status capability read combined with /dev device access"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-container-capability-read-with-block-device-access
       - plane: CDR
         type: Analytics
         description: "Privileged container anomaly — process capability set indicates full host capabilities"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-privileged-container-full-capability-set-anomaly
 
   - id: step-02
     name: "Enumerate host filesystem via /proc/1 namespace links"
@@ -78,9 +82,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Host filesystem access via /proc/1/root from container — namespace traversal attempt"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-host-filesystem-access-via-proc1-root-from-container
       - plane: CDR
         type: Analytics
         description: "Suspicious /proc/1/root traversal in container context — host namespace enumeration"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-proc1-root-traversal-host-namespace-enumeration
 
   - id: step-03
     name: "Use nsenter to break into host mount namespace"
@@ -94,9 +102,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "nsenter execution targeting PID 1 mount namespace — container escape via privileged mode (high fidelity)"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-nsenter-into-pid1-mount-namespace-container-escape
       - plane: CDR
         type: Analytics
         description: "Host namespace access via nsenter — anomalous namespace switch from container process"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-anomalous-namespace-switch-from-container-process
 
   - id: step-04
     name: "Access host /etc/passwd via escaped namespace"
@@ -111,9 +123,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Host /etc/passwd access from container via namespace escape — credential harvesting post-escape"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-host-passwd-read-from-container-via-namespace-escape
       - plane: CDR
         type: Analytics
         description: "Sensitive host file read following successful container escape — multi-stage attack chain detected"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-sensitive-host-file-read-following-container-escape
 
   - id: step-05
     name: "Drop persistence in host /etc/cron.d via escaped namespace"
@@ -129,9 +145,13 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Cron persistence written to host filesystem from container escape — T1611 + T1053 chained"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-host-cron-persistence-written-from-escaped-container
       - plane: CDR
         type: Analytics
         description: "Host cron.d file creation following container namespace escape — kill chain stitching signal"
+        ttp_ref: TTP-2026-0024
+        detection_id: bioc-cdr-003-host-crond-file-creation-after-namespace-escape
 
 cleanup:
   commands:

@@ -1,0 +1,118 @@
+scenario_id: SIM-NDR-007
+name: "NDR — SSH Outbound App-ID + Atypical Client-Banner EAL Validation"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - Analytics
+  - IOC
+  - BIOC
+
+uc_ref: UCS-NDR-07
+tc_ref: TC-NDR-07
+uc_name: "SSH Outbound App-ID + Banner Anomaly Detection"
+tc_name: "Outbound SSH-2.0 Banner + KEXINIT from Non-Admin Endpoint"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1572"
+mitre_technique_name: "Protocol Tunneling"
+additional_techniques:
+  - "T1021.004"  # Remote Services: SSH
+
+threat_report: "Unit42 - SSH Tunneling for C2 + Lateral Movement"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ndr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Stand up sinkhole TCP listener on SSH port inside lab CIDR"
+    command: |
+      # Operator must pre-deploy any TCP listener on 10.50.0.42:22 inside the
+      # lab CIDR. A throwaway OpenSSH server or even `nc -lk 22` works — the
+      # simulator only exchanges the banner + KEXINIT and disconnects.
+      nc -zv 10.50.0.42 22 || echo "[CortexSim] sinkhole reachable check (best-effort)"
+    identity: container-runtime
+    mitre_technique: "T1572"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "Pre-flight: SSH sinkhole reachable on port 22"
+        ttp_ref: TTP-2026-0062
+        detection_id: xql-pre-flight-ssh-sinkhole-reachable-on-port-22
+
+  - id: step-02
+    name: "Drive outbound SSH-2.0 banner + KEXINIT against sinkhole"
+    command: |
+      cat > /tmp/ssh-egress-live.yml <<'YML'
+      campaign_id: CMP-NDR-007
+      name: "NDR validation — SSH outbound App-ID + banner anomaly"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - 10.50.0.0/24
+      dry_run: false
+      tags: [ndr, ssh, eal, banner, c2]
+      steps:
+        - step_id: step-01
+          plugin: ssh_egress
+          params:
+            target_host: "10.50.0.42"
+            target_port: 22
+            client_banner: "SSH-2.0-Cortex_atypical_lateral_001"
+            iterations: 5
+            sleep_seconds: 12
+            send_kexinit: true
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/ssh-egress-live.yml --live
+    identity: container-runtime
+    mitre_technique: "T1572"
+    expected_detections:
+      - plane: NDR
+        type: Analytics
+        description: "NGFW App-ID — SSH identified on outbound session from non-admin endpoint"
+        ttp_ref: TTP-2026-0062
+        detection_id: xql-ngfw-app-id-ssh-outbound-session-from-non-admin-endpoint
+      - plane: NDR
+        type: IOC
+        description: "NGFW EAL — atypical SSH client banner observed (SSH-2.0-Cortex_atypical_lateral_001)"
+        ttp_ref: TTP-2026-0062
+        detection_id: ioc-user-agent-ssh-2-0-cortex-atypical-lateral-001
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — repeated short-lived outbound SSH handshakes from single source"
+        ttp_ref: TTP-2026-0062
+        detection_id: bioc-ngfw-eal-repeated-short-lived-outbound-ssh-handshakes-from-single-source
+
+cleanup:
+  commands:
+    - "rm -f /tmp/ssh-egress-live.yml"
+
+author: "Henry Reed"
+created: "2026-05-29"
+last_updated: "2026-05-29"
+tags:
+  - ndr
+  - eal
+  - ssh
+  - app-id
+  - tunneling

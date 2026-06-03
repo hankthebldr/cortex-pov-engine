@@ -57,6 +57,8 @@ steps:
       - plane: ITDR
         type: BIOC
         description: "Pre-flight: idp_signin_emulator metadata visible to operator"
+        ttp_ref: TTP-2026-0040
+        detection_id: bioc-itdr-004-pre-flight-idp-signin-emulator-metadata-visible
 
   - id: step-02
     name: "Issue token from US-West Chrome, replay from EU-Central curl"
@@ -89,9 +91,13 @@ steps:
       - plane: ITDR
         type: Analytics
         description: "ITDR — same session_token_id observed from two geos and two user-agents within 5 min"
+        ttp_ref: TTP-2026-0040
+        detection_id: xql-itdr-004-session-token-reused-across-geo-and-user-agent
       - plane: ITDR
         type: BIOC
         description: "ITDR — replay_marker boolean fires explicit detection rule"
+        ttp_ref: TTP-2026-0040
+        detection_id: bioc-itdr-004-replay-marker-boolean-explicit-match
 
   - id: step-03
     name: "Replay 3 iterations to confirm rule deterministically fires"
@@ -124,9 +130,13 @@ steps:
       - plane: ITDR
         type: Analytics
         description: "ITDR — three independent token-replay alerts within 5 min stitch into one incident"
+        ttp_ref: TTP-2026-0040
+        detection_id: xql-itdr-004-three-token-replay-alerts-stitch-into-one-incident
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — token-replay incidents grouped under same identity"
+        ttp_ref: TTP-2026-0040
+        detection_id: xql-itdr-004-xsiam-token-replay-incidents-grouped-by-identity
 
 cleanup:
   commands:

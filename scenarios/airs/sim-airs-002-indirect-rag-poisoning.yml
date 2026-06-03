@@ -42,6 +42,11 @@ infra_modules_needed:
   - airs
 
 external_tools:
+  - name: Cortex Prompt Attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-PROMPT-ATTACKER
   - name: cortex-prompt-attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: binary
@@ -61,6 +66,8 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "Pre-flight: RAG endpoint /owasp/llm08/rag responds"
+        ttp_ref: "TTP-2026-0013"
+        detection_id: "xql-airs-llm08-preflight-rag-endpoint-responds"
 
   - id: step-02
     name: "Upload a poisoned document into the RAG corpus"
@@ -81,6 +88,8 @@ steps:
       - plane: AIRS
         type: Analytics
         description: "AIRS — RAG ingestion classifier flags embedded SYSTEM_OVERRIDE / instruction-shaped block"
+        ttp_ref: "TTP-2026-0013"
+        detection_id: "xql-airs-llm08-rag-ingestion-classifier-flags-embedded-system-override-block"
 
   - id: step-03
     name: "Issue a benign user query that triggers the poisoned doc"
@@ -97,12 +106,18 @@ steps:
       - plane: AIRS
         type: BIOC
         description: "AIRS — model response contains AKIA-prefixed canary leaked from poisoned RAG doc"
+        ttp_ref: "TTP-2026-0013"
+        detection_id: "bioc-airs-llm08-rag-response-contains-akia-canary-from-poisoned-document"
       - plane: AIRS
         type: Analytics
         description: "AIRS — indirect-injection scorer fires (instruction in retrieved context, not user input)"
+        ttp_ref: "TTP-2026-0013"
+        detection_id: "xql-airs-llm08-indirect-injection-scorer-fires-on-retrieved-context"
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — RAG upload + later query correlate into single indirect-injection incident"
+        ttp_ref: "TTP-2026-0013"
+        detection_id: "xql-airs-llm08-stitch-rag-upload-with-later-retrieval-leak-into-one-incident"
 
 cleanup:
   commands:

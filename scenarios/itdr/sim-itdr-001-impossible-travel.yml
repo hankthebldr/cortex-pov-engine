@@ -55,6 +55,8 @@ steps:
       - plane: ITDR
         type: BIOC
         description: "Pre-flight: idp_signin_emulator metadata visible to operator"
+        ttp_ref: TTP-2026-0037
+        detection_id: bioc-itdr-001-pre-flight-idp-signin-emulator-metadata-visible
 
   - id: step-02
     name: "Emit two successful Okta sign-in events from US-West then APAC-East"
@@ -87,9 +89,13 @@ steps:
       - plane: ITDR
         type: Analytics
         description: "ITDR — impossible-travel alert: same user signed in from two distant geos within travel-impossibility window"
+        ttp_ref: TTP-2026-0037
+        detection_id: xql-itdr-001-impossible-travel-two-distant-geos-within-window
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — outbound POST burst to identity log-collector App-ID match"
+        ttp_ref: TTP-2026-0037
+        detection_id: xql-itdr-001-ngfw-outbound-post-burst-to-identity-collector
 
   - id: step-03
     name: "Repeat the pattern with Microsoft event shape — confirm parser works for both"
@@ -121,6 +127,8 @@ steps:
       - plane: ITDR
         type: Analytics
         description: "ITDR — impossible-travel alert fires identically for Microsoft signInLogs shape"
+        ttp_ref: TTP-2026-0037
+        detection_id: xql-itdr-001-impossible-travel-microsoft-signinlogs-shape
 
 cleanup:
   commands:

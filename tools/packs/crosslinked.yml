@@ -1,0 +1,41 @@
+adapter_id: TOOL-CROSSLINKED
+name: "CrossLinked"
+version: "0.3"
+
+tier: 4
+category: social-engineering
+
+upstream:
+  repo: https://github.com/m8sec/CrossLinked
+  license: "MIT"
+  attribution: "m8sec"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1589
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v crosslinked >/dev/null 2>&1 || pip install crosslinked"
+  binary: "crosslinked"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -f '{fmt}' {company}"
+  default_args:
+    fmt: "{first}.{last}@lab.local"
+    company: "AcmeCorp"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - social-engineering

@@ -56,6 +56,16 @@ infra_modules_needed:
   - itdr
 
 external_tools:
+  - name: Atomic Red Team
+    source: "https://github.com/redcanaryco/atomic-red-team"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-ATOMIC-RED-TEAM
+  - name: Nmap
+    source: "https://github.com/nmap/nmap"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-NMAP
   - name: testmynids
     source: "https://github.com/3CORESec/testmynids.org"
     type: script
@@ -123,6 +133,8 @@ steps:
       - plane: NDR
         type: Analytics
         description: "NGFW — outbound HTTP to known IOC list (testmynids.org)"
+        ttp_ref: TTP-2026-0060
+        detection_id: xql-mp-005-ngfw-outbound-http-to-known-ioc-testmynids
         verification_xql: |
           dataset = pan_ngfw_traffic
           | filter dst_host = "testmynids.org"
@@ -148,6 +160,8 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR BIOC — interactive bash from www-data service context (process lineage anchor)"
+        ttp_ref: TTP-2026-0060
+        detection_id: bioc-mp-005-interactive-bash-from-www-data-service-context
         verification_xql: |
           dataset = xdr_data
           | filter event_sub_type = "Process"
@@ -181,6 +195,8 @@ steps:
       - plane: ITDR
         type: Analytics
         description: "ITDR — Kerberos pre-auth failure burst against 5 service accounts from same client_ip"
+        ttp_ref: TTP-2026-0060
+        detection_id: xql-mp-005-itdr-kerberos-preauth-failure-burst-against-service-accounts
         verification_xql: |
           dataset = ad_audit
           | filter event_id = 4768
@@ -212,6 +228,8 @@ steps:
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM correlation — EDR + NDR + ITDR signals from same src_host stitch into one incident_id with full causality chain"
+        ttp_ref: TTP-2026-0060
+        detection_id: xql-mp-005-cross-plane-stitch-single-incident-spanning-multiple-products
         verification_xql: |
           // F2 canonical verifier — distinct planes under one incident_id
           dataset = xdr_data

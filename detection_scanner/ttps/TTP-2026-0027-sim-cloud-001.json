@@ -1,23 +1,28 @@
 {
   "id": "TTP-2026-0027",
   "schema_version": "1.0.0",
-  "entry_version": "0.1.0",
+  "entry_version": "1.0.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
         "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
       }
     ],
     "tags": [
       "plane-cloud-app",
-      "auto-generated",
-      "skeleton-draft",
+      "vector-oauth-grant",
+      "saas-okta",
       "severity-high",
-      "needs-detection-engineering-review"
+      "casb"
     ],
     "source_refs": [
       "SRC-MITRE-ATTACK",
@@ -31,29 +36,28 @@
       "requires_network_egress": true,
       "requires_internet": true,
       "platforms": [
-        "saas-okta",
-        "saas-m365",
-        "saas-google-workspace"
+        "saas-okta"
       ],
       "estimated_runtime_seconds": 120,
       "cleanup_required": true,
-      "safety_class": "lab-only"
+      "safety_class": "safe-by-design"
     }
   },
   "identity": {
-    "name": "Cloud App \u2014 Okta Risky OAuth Drive-Scope Grant",
-    "summary": "Auto-generated draft from CortexSim scenario SIM-CLOUD-001. Plane: CLOUD_APP. Primary technique: T1550.001. Requires human enrichment of BIOC logic + panw_mapping rule_ids.",
-    "description": "Auto-generated draft from CortexSim scenario SIM-CLOUD-001. Plane: CLOUD_APP. Primary technique: T1550.001. Requires human enrichment of BIOC logic + panw_mapping rule_ids.\n\nSource scenario: SIM-CLOUD-001.\nUC: Risky OAuth Scope Grant Detection / TC: Okta \u2014 User Grants Drive-Wide Scope to Untrusted App.",
+    "name": "Cloud App \u2014 Okta Risky OAuth Drive-Scope Grant (T1550.001)",
+    "summary": "An OAuth authorize request is sent to an Okta org authorize endpoint (/oauth2/v1/authorize) carrying a drive-wide third-party scope. Cortex Cloud App Security tags the broad scope on the okta_sso audit event, the in-path NGFW EAL flags the outbound /authorize request shape, and an analytics rule recognises three risky-grant attempts inside 60s as a consent-phishing enumeration burst.",
+    "description": "OAuth application-consent phishing is the dominant initial-access vector against SaaS-first enterprises: an attacker registers a third-party app, lures a user to the IdP authorize endpoint, and harvests a long-lived access/refresh token instead of a password \u2014 bypassing MFA entirely. This scenario drives the oauth_grant_emulator plugin against an Okta org authorize endpoint with the risky_drive scope preset, which plants a drive-wide third-party scope (okta.users.read.self plus a broad files/Drive scope) into the authorize request. The detection approach is twofold: Cortex Cloud App Security parses the okta_sso OAuth grant audit event and flags any third-party (non-first-party client_id) app that requests a drive/files-wide scope, while a Cortex XSIAM analytics layer correlates repeated risky-grant attempts from one user/source into an enumeration-burst signal. The NGFW EAL plane independently sees the outbound HTTPS /oauth2/v1/authorize request to *.okta.com and contributes a network-side corroboration. A correlation rule fuses the CASB grant detection and the burst detection into one OAuth-consent-phishing incident. All requests carry a bogus canary client_id and resolve against a canary tenant, so no real token is ever issued \u2014 detection is on the outbound request and audit-event shape, not on a successful grant.",
     "severity": "high",
-    "confidence": "medium"
+    "confidence": "high"
   },
   "threat_context": {
     "actors": [],
     "campaigns": [],
     "malware_families": [],
     "industries_targeted": [
-      "all"
-    ]
+      "technology"
+    ],
+    "first_observed": "2017-05-01"
   },
   "mitre_attack": {
     "matrix": "enterprise",
@@ -62,10 +66,12 @@
         "technique_id": "T1550",
         "name": "Use Alternate Authentication Material: Application Access Token",
         "tactic_ids": [
-          "TA0001"
+          "TA0001",
+          "TA0005"
         ],
         "tactic_names": [
-          "Initial Access"
+          "Initial Access",
+          "Defense Evasion"
         ],
         "subtechnique_id": "T1550.001"
       },
@@ -73,37 +79,50 @@
         "technique_id": "T1528",
         "name": "Steal Application Access Token",
         "tactic_ids": [
-          "TA0001"
+          "TA0006"
         ],
         "tactic_names": [
-          "Initial Access"
+          "Credential Access"
         ]
       }
     ],
-    "kill_chain_phase": "actions-on-objectives",
-    "data_sources": []
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Logon Session: Logon Session Creation",
+      "Network Traffic: Network Connection Creation"
+    ]
   },
   "execution": {
     "target_platform": "cross-platform",
-    "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1550.001 (TODO \u2014 pin atomic test ref)",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "oauth_grant_emulator (provider=okta, scope_preset=risky_drive)",
     "privilege_required": "user",
     "prerequisites": [
       {
-        "description": "Lab environment matching scenario SIM-CLOUD-001 requirements."
+        "description": "oauth_grant_emulator EAL plugin registered and Cortex Cloud App Security ingesting Okta system-log / OAuth grant audit events.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe oauth_grant_emulator | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Outbound HTTPS egress to the canary Okta authorize endpoint passes through the in-path NGFW EAL stack."
       }
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# step-1: Pre-flight: confirm oauth_grant_emulator plugin is registered\npython3 -m scripts.eal_simulator.cli describe oauth_grant_emulator \\\n  | jq -e '.eal_targets | length > 0'\n# step-2: Single risky-drive grant request to Okta authorize endpoint\ncat > /tmp/cloud-001.yml <<'YML'\ncampaign_id: CMP-CLOUDAPP-001\nname: \"Cloud App \u2014 Okta risky drive grant\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - cortexsim-canary.okta.com\ndry_run: false\ntags: [cloud-app, okta, oauth, risky-scope]\nsteps:\n  - step_id: step-01\n    plugin: oauth_grant_emulator\n    params:\n      provider: okta\n      scope_preset: risky_drive\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-001.yml --live\n# step-3: Repeated grant attempts (x3) to confirm rate-pattern detection\ncat > /tmp/cloud-001-burst.yml <<'YML'\ncampaign_id: CMP-CLOUDAPP-001\nname: \"Cloud App \u2014 Okta risky grant burst\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - cortexsim-canary.okta.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: oauth_grant_emulator\n    params:\n      provider: okta\n      scope_preset: risky_drive\n      iterations: 3\n      sleep_seconds: 5\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-001-burst.yml --live",
+      "code": "# Drive-wide third-party OAuth grant against the canary Okta authorize endpoint \u2014 bogus client_id, no token issued.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-001.yml --live\n# Repeat x3 within 60s to exercise the enumeration-burst analytics.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-001-burst.yml --live",
       "input_variables": [],
       "timeout_seconds": 120
     },
     "expected_artifacts": [
       {
-        "artifact_type": "process",
-        "description": "TODO \u2014 author at least one concrete expected artifact for this scenario",
-        "expected_value": "TODO"
+        "artifact_type": "saas-event",
+        "description": "Okta OAuth grant audit event for a third-party app requesting a drive-wide scope.",
+        "expected_value": "dataset = okta_sso and consent_type = \"user\" and oauth_scopes contains \"drive\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS GET to the Okta /oauth2/v1/authorize endpoint carrying the scope query param.",
+        "expected_value": "dst_host contains \".okta.com\" and uri_path contains \"/oauth2/v1/authorize\""
       }
     ],
     "cleanup": {
@@ -115,86 +134,133 @@
     "iocs": [],
     "biocs": [
       {
-        "name": "Pre-flight: oauth_grant_emulator metadata visible to operator",
-        "description": "Pre-flight: oauth_grant_emulator metadata visible to operator",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1550.001\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1550.001"
-        ]
-      },
-      {
-        "name": "Cloud App \u2014 outbound OAuth authorize to Okta carrying drive-wide scope",
-        "description": "Cloud App \u2014 outbound OAuth authorize to Okta carrying drive-wide scope",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1550.001\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1550.001"
-        ]
-      },
-      {
-        "name": "NGFW EAL \u2014 outbound /oauth2/v1/authorize App-ID match to *.okta.com",
-        "description": "NGFW EAL \u2014 outbound /oauth2/v1/authorize App-ID match to *.okta.com",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1550.001\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
-        "mitre_technique_ids": [
-          "T1550.001"
-        ]
-      },
-      {
-        "name": "Cloud App \u2014 repeated risky grant attempts (3 in <60s) flagged as enumeration pattern",
-        "description": "Cloud App \u2014 repeated risky grant attempts (3 in <60s) flagged as enumeration pattern",
-        "logic": "// AUTO-GENERATED SKELETON \u2014 replace with real XQL before promotion.\n// MITRE technique: T1550.001\ndataset = okta_audit OR dataset = azure_signin OR dataset = google_workspace_audit\n| filter /* TODO: predicate matching the BIOC name */\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
-        "severity": "high",
+        "name": "CLOUD-001 Pre-Flight oauth_grant_emulator Plugin Registered",
+        "description": "Pre-flight: oauth_grant_emulator metadata visible to operator. Confirms the EAL plugin is registered and its eal_targets enumerate the Cloud App OAuth-grant detections before any grant is emitted.",
+        "logic": "dataset = saas_audit_logs\n| filter event_type = \"eal_plugin_describe\" or action contains \"oauth_grant_emulator\"\n| filter app_name = \"oauth_grant_emulator\" or client_id = \"oauth_grant_emulator\"\n| fields _time, user, app_name, action",
+        "severity": "informational",
         "mitre_technique_ids": [
           "T1550.001"
         ]
       }
     ],
-    "xql_queries": [],
-    "correlation_rules": [],
-    "analytics_modules": []
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CLOUD-001 Okta Risky Drive-Wide OAuth Scope Grant",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter consent_type = \"user\"\n| filter oauth_scopes contains_any (\"drive\", \"Files.ReadWrite.All\", \"okta.users.read\")\n| filter client_id != null and client_id not contains \"first_party\"\n| fields _time, user, app_name, client_id, oauth_scopes, consent_type, source_ip, geo",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-001 NGFW Okta OAuth Authorize Risky-Scope Egress",
+        "query": "dataset = saas_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app_name = \"okta-oauth\" or dst_host contains \".okta.com\"\n| filter uri_path contains \"/oauth2/v1/authorize\"\n| filter oauth_scopes contains_any (\"drive\", \"Files.ReadWrite.All\")\n| fields _time, user, dst_host, uri_path, oauth_scopes, source_ip",
+        "expected_rows_min": 1,
+        "dataset": "saas_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CLOUD-001 Okta Repeated Risky Grant Enumeration Burst",
+        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter consent_type = \"user\"\n| filter oauth_scopes contains_any (\"drive\", \"Files.ReadWrite.All\")\n| comp count() as grant_attempts by user, source_ip, app_name\n| filter grant_attempts >= 3\n| fields user, source_ip, app_name, grant_attempts",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Okta Risky OAuth Drive-Scope Consent Phishing \u2014 Same Identity",
+        "rule_id": "CR-CLOUDAPP-0001",
+        "logic": "XQL(CLOUD-001 Okta Risky Drive-Wide OAuth Scope Grant) OR XQL(CLOUD-001 NGFW Okta OAuth Authorize Risky-Scope Egress) OR XQL(CLOUD-001 Okta Repeated Risky Grant Enumeration Burst)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud App Security \u2014 Third-party app requests drive-wide OAuth scope",
+      "Cortex XSIAM Analytics \u2014 Repeated risky OAuth consent attempts from one identity"
+    ]
   },
   "panw_mapping": {
     "products": [
       {
-        "module": "cortex-xsiam",
+        "module": "cortex-cloud",
+        "submodule": "cloud-app-security",
         "coverage_tier": "detection",
         "rule_ids": [
-          "TBD-CLOUD_APP-0027"
+          "CASB-OAUTH-RISKY-SCOPE-001"
         ],
-        "license_required": "pro"
+        "license_required": "advanced",
+        "evidence_query": "dataset = okta_sso | filter oauth_scopes contains \"drive\" and consent_type = \"user\" | fields _time, user, app_name, oauth_scopes"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CLOUDAPP-0001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CLOUDAPP-0001 fuses the CASB risky-scope grant, NGFW authorize egress, and enumeration burst into one consent-phishing incident."
       }
     ],
     "use_cases": [
       {
-        "use_case_id": "UC-CLOUD-027",
+        "use_case_id": "UC-CLOUDAPP-027",
         "name": "Risky OAuth Scope Grant Detection",
-        "description": "Risky OAuth Scope Grant Detection",
+        "description": "Detect a third-party app soliciting a drive-wide OAuth scope at the Okta authorize endpoint and correlate repeated attempts into a consent-phishing incident.",
         "test_cases": [
           {
-            "test_case_id": "TC-CLOUD-027A",
-            "objective": "TBD \u2014 author concrete pass/fail criteria",
-            "success_criteria": [
-              "TBD \u2014 author at least one verifiable success criterion"
+            "test_case_id": "TC-CLOUDAPP-027A",
+            "objective": "A single risky_drive grant fires the Cloud App risky-scope detection.",
+            "preconditions": [
+              "oauth_grant_emulator registered and Okta audit logs ingested.",
+              "Detections from this card imported and enabled."
             ],
-            "expected_score_weight": 1.0
+            "steps": [
+              "Run SIM-CLOUD-001 step-02.",
+              "Observe the CASB risky-scope alert and confirm the validation XQL returns >= 1 row."
+            ],
+            "success_criteria": [
+              "XQL `CLOUD-001 Okta Risky Drive-Wide OAuth Scope Grant` returns >= 1 row.",
+              "NGFW egress validation query returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-CLOUDAPP-027B",
+            "objective": "Three risky grants in <60s stitch into one enumeration-burst incident.",
+            "success_criteria": [
+              "XQL `CLOUD-001 Okta Repeated Risky Grant Enumeration Burst` returns >= 1 row.",
+              "Correlation `CR-CLOUDAPP-0001` produces a single incident."
+            ],
+            "expected_score_weight": 0.4
           }
         ]
       }
     ]
   },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict OAuth app consent to admin-approved apps; disable end-user consent for third-party apps requesting drive/files scopes.",
+      "Maintain an allowlist of vetted first-party client_ids and block unverified publishers.",
+      "Require admin review for any app requesting broad data-access scopes."
+    ],
+    "detection_engineering": [
+      "Alert on any third-party client_id requesting drive/files-wide scopes via the IdP audit log.",
+      "Aggregate risky-grant attempts per user/source to catch enumeration bursts.",
+      "Corroborate the audit event with the outbound /authorize request seen at the NGFW."
+    ],
+    "response_playbook": "XSOAR-PB-OAuthConsentPhishingResponse-v1"
+  },
   "references": [
     {
       "title": "Unit42 - OAuth Phishing Apps in the Enterprise",
       "url": "https://unit42.paloaltonetworks.com/",
-      "publisher": "Unit42",
+      "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1550.001",
-      "url": "https://attack.mitre.org/techniques/T1550/",
+      "title": "MITRE ATT&CK T1550.001 \u2014 Application Access Token",
+      "url": "https://attack.mitre.org/techniques/T1550/001/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     }
@@ -205,6 +271,12 @@
       "date": "2026-05-20",
       "author": "CortexSim generate_card.py",
       "change": "Initial draft auto-generated from scenario SIM-CLOUD-001."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Okta OAuth-grant CASB/NGFW XQL, added correlation CR-CLOUDAPP-0001, enriched identity + panw_mapping. Promoted to active."
     }
   ]
 }

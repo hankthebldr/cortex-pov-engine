@@ -1,0 +1,29 @@
+adapter_id: TOOL-PTEF
+name: "Purple Team Exercise Framework"
+version: "master"
+
+tier: 5
+category: analyst-workbench
+
+upstream:
+  repo: https://github.com/scythe-io/purple-team-exercise-framework
+  license: "LicenseRef-SCYTHE"
+  attribution: "SCYTHE"
+
+cortex_signal:
+  planes: []
+  expected_techniques:
+    - T1059
+
+safety_class: safe
+
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - analyst-workbench

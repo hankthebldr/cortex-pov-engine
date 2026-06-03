@@ -1,0 +1,279 @@
+{
+  "id": "TTP-2026-0021",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-browser",
+      "vector-screen-capture",
+      "prisma-browser",
+      "collection",
+      "insider-risk",
+      "industry-all",
+      "severity-medium"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "macos"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Prisma Browser \u2014 Screen Capture of Sensitive SaaS Page (T1113)",
+    "summary": "A user programmatically screenshots a sanctioned CRM detail page tagged sensitive. Prisma Browser's screen-capture policy blocks/alerts on the capture against a sensitive-tagged origin, increments a screen-capture-attempt counter, and repeated captures from the same user drive an elevated user risk score that triggers a downstream conditional-access response in XSIAM.",
+    "description": "Screen capture defeats traditional DLP because no text or file ever leaves the page \u2014 the data is exfiltrated as pixels. Prisma Browser closes this by enforcing screen-capture policy against origins tagged sensitive: a `page.screenshot()` (or OS capture surface) against the sanctioned CRM detail page (`crm.cortexsim-test.invalid/account/AC-12345`, `#account-detail`) is blocked and logged, with each attempt incrementing a per-user counter. The cortex-browser-attacker EAL plugin drives navigate \u2192 screenshot \u2192 screenshot (two captures), emitting `prisma_browser_events` with `action=screen-capture`, `origin`, `data_classification`, `out_path`, and a running `screen_capture_attempt_count`. Repeated captures elevate the user's risk score, which XSIAM consumes to trigger a downstream conditional-access policy. Detection layers: a BIOC on screen capture against a sensitive-tagged origin; analytics on the attempt counter under sensitive-content policy; analytics on repeat captures contributing to the risk score; and an XSIAM analytic on the elevated risk score driving conditional access. A correlation rule fuses the screen-capture BIOC with the repeat-capture analytic into one collection incident.",
+    "severity": "medium",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1113",
+        "name": "Screen Capture",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "User Interface: User Interface Events"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "browser_attack_runner \u2014 campaign scenarios/browser/campaigns/screen-capture.yml (navigate + 2x screenshot actions)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Managed Prisma Browser with screen-capture policy enabled on sensitive-tagged origins; reporting telemetry to XSIAM.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe browser_attack_runner | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-BROWSER-005 (cortex-browser-attacker installed; CRM origin tagged sensitive)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Drives the managed Prisma Browser through the screen-capture campaign.\npython3 -m scripts.eal_simulator.cli run /tmp/sim-browser-005-eal.yml --live\n# Campaign: navigate crm.../account/AC-12345 ; screenshot /tmp/browser-005-cap.png\n#           screenshot /tmp/browser-005-cap-2.png (repeat -> risk-score elevation)",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "Screen-capture action against an origin tagged sensitive.",
+        "expected_value": "action = \"screen-capture\" and data_classification = \"sensitive\" and origin = \"crm.cortexsim-test.invalid\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Repeat screen-capture from the same user incrementing the attempt counter.",
+        "expected_value": "action = \"screen-capture\" and screen_capture_attempt_count >= 2"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sim-browser-005-eal.yml /tmp/browser-005-cap*.png"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert",
+        "description": "Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert. A programmatic screen capture targets a page whose origin is classified sensitive; policy blocks and alerts.",
+        "logic": "dataset = prisma_browser_events\n| filter action = \"screen-capture\"\n| filter data_classification in (\"sensitive\", \"confidential\", \"restricted\")\n| filter origin in (\"crm.cortexsim-test.invalid\", \"crm.corp.example.com\", \"salesforce.com\")\n| filter capture_method in (\"page.screenshot\", \"getDisplayMedia\", \"os-capture\")",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1113"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pre-flight: plugin metadata visible to operator",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter campaign_id = \"BC-BROWSER-005\"\n| filter action in (\"navigate\", \"screen-capture\")\n| fields _time, campaign_id, action, origin, url, out_path\n| sort asc _time",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "Prisma Browser \u2014 screen-capture-attempt counter increments under sensitive-content policy",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"screen-capture\"\n| filter data_classification in (\"sensitive\", \"confidential\", \"restricted\")\n| comp count() as capture_attempts by user, origin\n| filter capture_attempts >= 1\n| fields user, origin, capture_attempts",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "Prisma Browser \u2014 repeat screen-capture from same user counts toward elevated risk score",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"screen-capture\"\n| comp count() as captures by user\n| filter captures >= 2\n| fields user, captures",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "XSIAM \u2014 user risk score elevated, conditional-access policy triggered downstream",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"screen-capture\"\n| comp count() as captures, max(user_risk_score) as risk_score by user\n| filter captures >= 2 or risk_score >= 60\n| fields user, captures, risk_score",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Browser Sensitive Screen Capture \u2014 Repeat Collection",
+        "rule_id": "CR-BROWSER-0005",
+        "logic": "BIOC(Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert)"
+      }
+    ],
+    "analytics_modules": [
+      "Prisma Browser \u2014 Screen-capture policy on sensitive origins",
+      "Cortex XSIAM Analytics \u2014 User risk scoring + conditional-access trigger"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "screen-capture-policy",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "PB-SC-SENSITIVE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = prisma_browser_events | filter action = \"screen-capture\" and data_classification = \"sensitive\" | fields _time, user, origin"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-BROWSER-0005",
+          "XSIAM-RISK-USER-SCORE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-BROWSER-0005 raises a collection incident; repeat captures elevate the user risk score and trigger conditional access."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-WEB-021",
+        "name": "Browser Screen-Capture Policy Enforcement",
+        "description": "Block and detect screen captures of sensitive-tagged SaaS pages in the managed Prisma Browser, and escalate repeat offenders via user risk scoring.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-WEB-021A",
+            "objective": "Screen capture of a sensitive-tagged origin fires the Prisma Browser BIOC.",
+            "preconditions": [
+              "Managed Prisma Browser with screen-capture policy enabled.",
+              "CRM origin tagged sensitive in policy."
+            ],
+            "steps": [
+              "Run SIM-BROWSER-005 step-02 (navigate + two screenshots).",
+              "Observe the screen-capture alert in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert` fires within 60s.",
+              "Attempt-counter and repeat-capture XQL queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-WEB-021B",
+            "objective": "Repeat captures elevate user risk score and trigger conditional access.",
+            "success_criteria": [
+              "Correlation `CR-BROWSER-0005` produces a collection incident.",
+              "User risk-score XQL returns >= 1 row; downstream conditional-access policy is triggered."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Prisma Browser screen-capture policy in Block mode on origins tagged sensitive/confidential.",
+      "Apply watermarking and capture-deny to high-value SaaS detail pages.",
+      "Feed repeat screen-capture attempts into user risk scoring to drive step-up auth / conditional access."
+    ],
+    "detection_engineering": [
+      "Alert on any screen-capture action against an origin classified sensitive.",
+      "Track per-user screen-capture attempt counts and escalate on repeat offenders.",
+      "Correlate elevated user risk score with the originating capture events for investigation context."
+    ],
+    "response_playbook": "XSOAR-PB-BrowserScreenCapture-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Insider Screen-Capture Tradecraft 2026",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1113 \u2014 Screen Capture",
+      "url": "https://attack.mitre.org/techniques/T1113/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-BROWSER-005."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Prisma Browser screen-capture BIOC/XQL + XSIAM user-risk validation, added correlation CR-BROWSER-0005, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

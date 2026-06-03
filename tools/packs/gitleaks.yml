@@ -1,0 +1,40 @@
+adapter_id: TOOL-GITLEAKS
+name: "gitleaks"
+version: "8.18"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/gitleaks/gitleaks
+  license: "MIT"
+  attribution: "Zachary Rice"
+
+cortex_signal:
+  planes:
+    - CDR
+  expected_techniques:
+    - T1552.001
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v gitleaks >/dev/null 2>&1 || (apt-get install -y gitleaks 2>/dev/null || go install github.com/gitleaks/gitleaks/v8@latest)"
+  binary: "gitleaks"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} detect --source {path}"
+  default_args:
+    path: "."
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - cloud-container

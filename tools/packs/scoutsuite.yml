@@ -1,0 +1,40 @@
+adapter_id: TOOL-SCOUTSUITE
+name: "Scout Suite"
+version: "5.13"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/nccgroup/ScoutSuite
+  license: "GPL-2.0"
+  attribution: "NCC Group"
+
+cortex_signal:
+  planes:
+    - CDR
+  expected_techniques:
+    - T1526
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v scout >/dev/null 2>&1 || pip install scoutsuite"
+  binary: "scout"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {provider}"
+  default_args:
+    provider: "aws"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - cloud-container

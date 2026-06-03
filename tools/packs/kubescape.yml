@@ -1,0 +1,40 @@
+adapter_id: TOOL-KUBESCAPE
+name: "Kubescape"
+version: "3.0"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/kubescape/kubescape
+  license: "Apache-2.0"
+  attribution: "ARMO"
+
+cortex_signal:
+  planes:
+    - CDR
+  expected_techniques:
+    - T1610
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v kubescape >/dev/null 2>&1 || curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | /bin/bash"
+  binary: "kubescape"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} scan {framework}"
+  default_args:
+    framework: "framework nsa"
+  identity_required: root
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-06-02"
+last_updated: "2026-06-02"
+tags:
+  - phase-c
+  - cloud-container

@@ -58,6 +58,8 @@ steps:
       - plane: AI_ACCESS
         type: BIOC
         description: "Pre-flight: secret payload contains AKIA-prefixed canary"
+        ttp_ref: TTP-2026-0008
+        detection_id: bioc-aiacc-002-pre-flight-secret-payload-contains-akia-canary
 
   - id: step-02
     name: "Single secret POST to api.anthropic.com via EAL plugin"
@@ -86,12 +88,18 @@ steps:
       - plane: AI_ACCESS
         type: IOC
         description: "AI Access — DLP regex match: AKIA-prefixed AWS access key in outbound LLM prompt"
+        ttp_ref: TTP-2026-0008
+        detection_id: ioc-cloud-account-id-akia-0-9a-z-16
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — POST to api.anthropic.com from non-sanctioned user context"
+        ttp_ref: TTP-2026-0008
+        detection_id: xql-aiacc-002-post-to-anthropic-from-non-sanctioned-user-context
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — generative-ai App-ID match on outbound HTTPS to anthropic.com"
+        ttp_ref: TTP-2026-0008
+        detection_id: xql-aiacc-002-ngfw-generative-ai-app-id-outbound-https-to-anthropic
 
   - id: step-03
     name: "Verify per-session block-action policy (4 attempts)"
@@ -120,6 +128,8 @@ steps:
       - plane: AI_ACCESS
         type: Analytics
         description: "AI Access — block-action policy fires after first DLP hit, subsequent sessions denied"
+        ttp_ref: TTP-2026-0008
+        detection_id: xql-aiacc-002-repeated-secret-egress-to-anthropic-block-policy-trigger
 
 cleanup:
   commands:

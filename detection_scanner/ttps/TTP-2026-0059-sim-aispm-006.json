@@ -1,0 +1,252 @@
+{
+  "id": "TTP-2026-0059",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-28T00:00:00+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ai-spm",
+      "vector-posture-rollup",
+      "industry-all",
+      "severity-medium",
+      "posture",
+      "executive-dashboard"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AI Security Dashboard & Posture \u2014 Aggregate Rollup Across All AI Findings (T1526)",
+    "summary": "The closing scenario of the AI-SPM family verifies that the Cortex Cloud AI security dashboard aggregates everything AISP-01..05 surfaced: a total AI asset count matching the planted manifest, non-zero counts across the model_security / supply_chain / static_analysis / data_governance risk categories, and a populated trend series per category. Detections are framed as aggregate rollup queries (\u2026",
+    "description": "The executive readout for AI Security Posture Management is a single dashboard that rolls up discovery, model-security, supply-chain, static-analysis, and data-governance findings into a prioritized posture view. This scenario closes the AISP family by verifying the dashboard's backing data is real and complete: the aggregate AI asset count matches the planted manifest, every risk category has a non-zero count, and the trend series returns at least one data point per category so charts are not empty. It must run after AISP-01..05 have planted and scanned, so the rollup has something to aggregate. Detection is posture-oriented and explicitly aggregate: validation queries summarize the findings produced by the other scenarios with comp count() by severity and by risk_category over the posture dataset, plus a time-bucketed rollup that proves a populated trend series. A correlation rule fires the executive posture-rollup event when the aggregate covers all four risk categories.",
+    "severity": "medium",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1526",
+        "name": "Cloud Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Asset: Asset Inventory",
+      "Cloud Service: Cloud Service Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-AISPM-006 \u2014 Cortex Cloud AI-SPM dashboard summary + trend-series probe",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud AI-SPM enabled and AISP-01..05 already planted + scanned.",
+        "check_command": "curl -fsSL -H \"Authorization: Bearer $CORTEX_CLOUD_API_TOKEN\" \"$CORTEX_CLOUD_API_BASE/dashboards/ai_spm/summary\""
+      },
+      {
+        "description": "ai-spm IaC module applied; SIM-AISPM-001..005 executed first."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture validation \u2014 fetch AI-SPM dashboard summary + trends.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/dashboards/ai_spm/summary\" | jq '.total_ai_assets, .risk_categories'",
+      "input_variables": [],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Aggregate AI asset count and per-category risk rollup.",
+        "expected_value": "total_ai_assets >= 6 and risk_categories populated for all four families"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Trend series with at least one data point per risk category.",
+        "expected_value": "series_count >= 4 and min_data_points >= 1"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/aispm-006-*; echo '[CortexSim] SIM-AISPM-006 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "AISPM-006 Expected Aggregate Counts Bookkeeping",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter operation_name = \"terraform.output\" and resource_tags contains \"CortexSimAISPMFinding\"\n| fields _time, operation_name, resource_tags",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-006 Dashboard Summary Aggregate Across All Risk Categories",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter tags contains \"CortexSimAISPMFinding\"\n| filter risk_category in (\"model_security\", \"supply_chain\", \"static_analysis\", \"data_governance\")\n| comp count() as findings by risk_category, severity\n| filter findings >= 1\n| fields risk_category, severity, findings",
+        "expected_rows_min": 4,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "AISPM-006 Dashboard Trend Series Per Risk Category",
+        "query": "dataset = ai_spm_findings\n| filter _time > to_timestamp(current_time() - 86400)\n| filter risk_category in (\"model_security\", \"supply_chain\", \"static_analysis\", \"data_governance\")\n| comp count() as data_points by risk_category, bin(_time, 1h) as time_bucket\n| comp count_distinct(time_bucket) as buckets by risk_category\n| filter buckets >= 1\n| fields risk_category, buckets",
+        "expected_rows_min": 4,
+        "dataset": "ai_spm_findings"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AI Posture Rollup \u2014 Executive Dashboard Covers All Risk Categories",
+        "rule_id": "CR-AISPM-0006",
+        "logic": "XQL(AISPM-006 Dashboard Summary Aggregate Across All Risk Categories) AND XQL(AISPM-006 Dashboard Trend Series Per Risk Category)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud AI-SPM \u2014 Aggregate posture rollup and executive summary",
+      "Cortex Cloud Posture \u2014 Risk-category trend-series aggregation"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "ai-spm",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "AISPM-DASH-SUMMARY",
+          "AISPM-DASH-TRENDS"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter tags contains \"CortexSimAISPMFinding\" | comp count() by risk_category, severity"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-AISPM-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-AISPM-0006 fires the executive posture-rollup event when the aggregate covers all four AI risk categories."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-AISPM-006",
+        "name": "AI Security Dashboard & Posture",
+        "description": "Aggregate all AI findings into an executive posture view with per-category counts and trend series.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-AISP-006A",
+            "objective": "Dashboard aggregates all four risk categories with populated trend series.",
+            "preconditions": [
+              "SIM-AISPM-001..005 executed and scanned.",
+              "Cortex Cloud AI-SPM dashboard enabled."
+            ],
+            "steps": [
+              "Run SIM-AISPM-006 steps 1-3.",
+              "Tour the AI-SPM dashboard in Cortex Cloud."
+            ],
+            "success_criteria": [
+              "Summary rollup query returns >= 4 risk-category rows.",
+              "Trend-series query returns >= 4 series rows.",
+              "Correlation CR-AISPM-0006 fires the posture-rollup event."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Wire the AI-SPM dashboard to live posture data, not stub aggregates.",
+      "Set risk-score thresholds that gate AI deployment promotion.",
+      "Review the executive AI posture rollup on a recurring cadence."
+    ],
+    "detection_engineering": [
+      "Aggregate findings by risk_category and severity for the executive view.",
+      "Maintain per-category trend series to surface posture drift over time.",
+      "Alert when any risk category transitions from zero to non-zero findings."
+    ],
+    "response_playbook": "XSOAR-PB-AIPostureRollupReview-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 \u2014 Unifying AI Security Telemetry for Executive Visibility",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1526 \u2014 Cloud Service Discovery",
+      "url": "https://attack.mitre.org/techniques/T1526/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-28",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft from scenario SIM-AISPM-006."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Authored real aggregate posture-rollup XQL against cortex_cloud_posture / ai_spm_findings, added correlation CR-AISPM-0006, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

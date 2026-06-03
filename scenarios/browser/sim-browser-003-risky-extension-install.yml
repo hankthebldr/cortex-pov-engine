@@ -37,6 +37,11 @@ infra_modules_needed:
   - base
 
 external_tools:
+  - name: Cortex Browser Attacker
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-CORTEX-BROWSER-ATTACKER
   - name: cortex-browser-attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
     type: binary
@@ -55,6 +60,8 @@ steps:
       - plane: KOI
         type: Analytics
         description: "Code scan — extension manifest declares <all_urls> + cookies + webRequest + webRequestBlocking"
+        ttp_ref: TTP-2026-0019
+        detection_id: xql-code-scan-extension-manifest-declares-all-urls-cookies-webrequest-webrequestblocking
 
   - id: step-02
     name: "Attempt sideload via browser_attack_runner; expect policy block"
@@ -84,12 +91,18 @@ steps:
       - plane: BROWSER
         type: BIOC
         description: "Prisma Browser — sideloaded extension blocked by managed-extension policy"
+        ttp_ref: TTP-2026-0019
+        detection_id: bioc-prisma-browser-sideloaded-extension-blocked-by-managed-extension-policy
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — extension permission risk score exceeds threshold"
+        ttp_ref: TTP-2026-0019
+        detection_id: xql-prisma-browser-extension-permission-risk-score-exceeds-threshold
       - plane: KOI
         type: Analytics
         description: "KOI — extension manifest signature does not match approved publisher list"
+        ttp_ref: TTP-2026-0019
+        detection_id: xql-koi-extension-manifest-signature-does-not-match-approved-publisher-list
 
   - id: step-03
     name: "Confirm post-block telemetry"
@@ -101,6 +114,8 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "Browser-attacker JSONL records install_extension outcome=blocked"
+        ttp_ref: TTP-2026-0019
+        detection_id: xql-browser-attacker-jsonl-records-install-extension-outcome-blocked
 
 cleanup:
   commands:

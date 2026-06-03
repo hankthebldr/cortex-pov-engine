@@ -56,6 +56,8 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "Pre-flight: provider list includes microsoft"
+        ttp_ref: TTP-2026-0028
+        detection_id: bioc-cloud-002-pre-flight-microsoft-provider-supported
 
   - id: step-02
     name: "Single admin-consent grant request to Microsoft Identity Platform"
@@ -84,12 +86,18 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — Directory.ReadWrite.All scope request from non-admin user"
+        ttp_ref: TTP-2026-0028
+        detection_id: xql-cloud-002-microsoft-directory-readwrite-all-admin-consent-scope-request
       - plane: CLOUD_APP
         type: BIOC
         description: "Cloud App — Application.ReadWrite.All in same grant body"
+        ttp_ref: TTP-2026-0028
+        detection_id: bioc-cloud-002-microsoft-application-readwrite-all-in-same-grant-body
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — outbound v2.0/authorize App-ID match to login.microsoftonline.com"
+        ttp_ref: TTP-2026-0028
+        detection_id: xql-cloud-002-ngfw-microsoft-v2-authorize-admin-consent-egress
 
   - id: step-03
     name: "Confirm a second attempt produces same alert deterministically"
@@ -118,6 +126,8 @@ steps:
       - plane: CLOUD_APP
         type: Analytics
         description: "Cloud App — repeat admin-consent attempt confirms persistence intent"
+        ttp_ref: TTP-2026-0028
+        detection_id: xql-cloud-002-microsoft-repeat-admin-consent-persistence-attempt
 
 cleanup:
   commands:

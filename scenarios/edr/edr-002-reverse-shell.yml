@@ -37,7 +37,12 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
-external_tools: []
+external_tools:
+  - name: Atomic Red Team
+    source: "https://github.com/redcanaryco/atomic-red-team"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-ATOMIC-RED-TEAM
 
 steps:
   - id: step-01
@@ -52,9 +57,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Bash reverse shell pattern — /dev/tcp redirection detected by XDR Agent behavioral rule"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "bioc-edr-002-bash-devtcp-reverse-shell-redirection"
       - plane: EDR
         type: Analytics
         description: "Interactive bash spawned from service account with network redirect — C2 callback pattern"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "xql-edr-002-analytics-interactive-shell-network-redirect"
 
   - id: step-02
     name: "Python reverse shell attempt (simulated — localhost target)"
@@ -68,9 +77,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Python reverse shell pattern — socket+subprocess import with connect call from service account"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "bioc-edr-002-python-socket-subprocess-reverse-shell"
       - plane: EDR
         type: Analytics
         description: "Python process spawned by www-data with socket operations — scripting interpreter abuse"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "xql-edr-002-analytics-python-socket-ops-by-service-account"
 
   - id: step-03
     name: "Netcat reverse shell attempt (simulated)"
@@ -86,9 +99,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Netcat with -e flag — classic reverse shell pattern detected by endpoint BIOC rule"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "bioc-edr-002-netcat-shell-exec-flag-reverse-shell"
       - plane: EDR
         type: Analytics
         description: "Network utility (nc/ncat) invoked with shell execution flag from web service context"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "xql-edr-002-analytics-network-utility-shell-flag"
 
   - id: step-04
     name: "Perl one-liner reverse shell attempt"
@@ -102,6 +119,8 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Perl socket-based reverse shell pattern — one-liner execution from service account"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "bioc-edr-002-perl-socket-reverse-shell-one-liner"
 
   - id: step-05
     name: "Openssl encrypted reverse shell attempt"
@@ -115,9 +134,13 @@ steps:
       - plane: EDR
         type: BIOC
         description: "OpenSSL s_client invoked from non-interactive service account — encrypted C2 channel attempt"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "bioc-edr-002-openssl-s-client-encrypted-c2-from-service-account"
       - plane: EDR
         type: Analytics
         description: "Sequence of multiple reverse shell methods from same process lineage — automated C2 testing behavior"
+        ttp_ref: "TTP-2026-0033"
+        detection_id: "xql-edr-002-analytics-multi-method-reverse-shell-sequence"
 
 cleanup:
   commands:

