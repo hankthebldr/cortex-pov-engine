@@ -6,7 +6,8 @@ status: active
 plane: ANALYTICS
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
+  - Correlation
 
 uc_ref: UCS-MP-02
 tc_ref: TC-MP-02
@@ -88,12 +89,12 @@ steps:
         ttp_ref: "TTP-2026-0063"
         detection_id: "bioc-mp-002-ldap-spn-sweep-from-non-typical-host"
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR - Kerberos TGS-REQ flood from single source targeting multiple SPNs"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-kerberos-tgs-req-flood-from-single-source"
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - Kerberos (port 88) traffic spike from attacker host"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-ngfw-kerberos-port-88-traffic-spike-from-attacker-host"
@@ -109,7 +110,7 @@ steps:
     mitre_technique: "T1110.002"
     expected_detections:
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM - MTTD clock: time-gap between Kerberoast (step-01) and lateral auth (step-03) = stitched attack timeline"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-xsiam-mttd-clock-kerberoast-recon-to-lateral-auth"
@@ -132,7 +133,7 @@ steps:
         ttp_ref: "TTP-2026-0063"
         detection_id: "bioc-mp-002-service-account-remote-smb-authentication-on-workstation"
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - SMB (port 445) session from attack endpoint to workstation subnet"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-ngfw-smb-port-445-session-attacker-to-workstation"
@@ -142,7 +143,7 @@ steps:
         ttp_ref: "TTP-2026-0063"
         detection_id: "bioc-mp-002-service-account-used-interactively"
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching - same user+hash observed on DC auth logs + NGFW SMB session + XDR remote login = single lateral movement incident"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-xsiam-stitch-same-identity-across-dc-workstation-and-ngfw"
@@ -169,12 +170,12 @@ steps:
         ttp_ref: "TTP-2026-0004"
         detection_id: "bioc-windows-event-4662-replicating-directory-changes-by-non-dc-principal"
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - DCE/RPC (port 135 + ephemeral) traffic to DC from attack endpoint"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-ngfw-dce-rpc-port-135-ephemeral-traffic-to-dc"
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM - full attack chain incident: recon -> Kerberoast -> PtH lateral -> DCSync, unified timeline"
         ttp_ref: "TTP-2026-0004"
         detection_id: "CR-CRED-0003"

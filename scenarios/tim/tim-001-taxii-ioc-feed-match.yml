@@ -1,0 +1,191 @@
+scenario_id: SIM-TIM-001
+name: "TIM — TAXII IOC Feed Match + Outbound NDR Session Stitch"
+version: "1.0"
+status: active
+
+plane: TIM
+detection_types:
+  - IOC
+  - XQL
+  - BIOC
+  - Correlation
+
+uc_ref: UCS-TIM-01
+tc_ref: TC-TIM-01
+uc_name: "Threat Intel Management — TAXII Feed IOC Matching"
+tc_name: "TAXII-Fed C2 Indicator Match Stitched to Outbound NDR Session"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1071.001"
+mitre_technique_name: "Application Layer Protocol: Web Protocols"
+additional_techniques:
+  - technique: "T1568"
+    name: "Dynamic Resolution"
+
+threat_report: "Unit42 - Cobalt Strike Malleable C2 Profile Analysis"
+threat_report_url: "https://unit42.paloaltonetworks.com/cobalt-strike-malleable-c2-profile/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "PaloAltoNetworks/mocktaxii"
+
+infra_modules_needed:
+  - base
+  - tim
+  - ndr
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Confirm mocktaxii TAXII 2.1 collection is reachable and feed indicators are ingested"
+    command: |
+      curl -sf "http://localhost:9000/taxii2/" -H 'Accept: application/taxii+json;version=2.1' | jq -e '.api_roots | length >= 1'
+      python3 -m scripts.eal_simulator.cli list-plugins | jq -e '.total >= 4'
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "Pre-flight: mocktaxii TAXII feed indicators ingested into the XSIAM threat_intel dataset"
+        ttp_ref: TTP-2026-0067
+        detection_id: xql-tim-pre-flight-taxii-feed-indicators-ingested-into-threat-intel
+
+  - id: step-02
+    name: "Dry-run beacon campaign — confirm safety policy holds before generating IOC traffic"
+    command: |
+      TIM_ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
+      cat > /tmp/tim-ioc-beacon-dry.yml <<YML
+      campaign_id: CMP-TIM-001
+      name: "TIM validation — IOC feed match dry run"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: false
+      target_allowlist: []
+      dry_run: true
+      tags: [tim, ioc-match, c2-beacon, eal]
+      steps:
+        - step_id: step-01
+          plugin: c2_http_beacon
+          params:
+            target_url: http://c2-beacon.${TIM_ZONE}:8000/checkin
+            iterations: 5
+            sleep_seconds: 2
+            jitter_pct: 20
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/tim-ioc-beacon-dry.yml
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "Dry-run: no IOC feed match fires (safety policy active, no live traffic)"
+        ttp_ref: TTP-2026-0067
+        detection_id: xql-tim-any-host-resolving-a-dga-style-feed-listed-subdomain-t1568
+
+  - id: step-03
+    name: "Live beacon to TAXII-fed IOC subdomain — fire IOC match + NDR session + stitch"
+    command: |
+      TIM_ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
+      cat > /tmp/tim-ioc-beacon-live.yml <<YML
+      campaign_id: CMP-TIM-001
+      name: "TIM validation — IOC feed match live beacon"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - c2-beacon.${TIM_ZONE}
+      dry_run: false
+      tags: [tim, ioc-match, c2-beacon, eal]
+      steps:
+        - step_id: step-01
+          plugin: c2_http_beacon
+          params:
+            target_url: http://c2-beacon.${TIM_ZONE}:8000/checkin
+            iterations: 12
+            sleep_seconds: 30
+            jitter_pct: 20
+            method: GET
+            dga_query_param: true
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/tim-ioc-beacon-live.yml --live
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: TIM
+        type: IOC
+        description: "TIM IOC match — outbound destination matches the planted c2-beacon indicator from the mocktaxii TAXII feed"
+        ttp_ref: TTP-2026-0067
+        detection_id: ioc-domain-c2-beacon-cortexsim-tim-internal
+      - plane: TIM
+        type: XQL
+        description: "TIM IOC match — outbound session to a TAXII-fed C2 domain (join threat_intel feed to NGFW session)"
+        ttp_ref: TTP-2026-0067
+        detection_id: xql-tim-ioc-match-outbound-session-to-taxii-fed-c2-domain
+      - plane: NDR
+        type: XQL
+        description: "NDR leg — periodic HTTP beacon to the feed-listed IOC domain (beacon_count >= 8)"
+        ttp_ref: TTP-2026-0067
+        detection_id: xql-tim-periodic-beacon-to-feed-listed-ioc-domain-ndr-leg
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — outbound HTTP to a planted IOC subdomain carrying X-Simulation-Run-ID operator header"
+        ttp_ref: TTP-2026-0067
+        detection_id: bioc-tim-outbound-session-to-taxii-fed-ioc-domain-carrying-simulation-header
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Stitch — IOC feed match joined to the outbound NDR session on src_host within 60s into one C2 incident"
+        ttp_ref: TTP-2026-0067
+        detection_id: CR-TIM-0001
+      - plane: ANALYTICS
+        type: XQL
+        description: "Stitch validation — IOC feed match joined to NDR session on source host"
+        ttp_ref: TTP-2026-0067
+        detection_id: xql-tim-stitch-ioc-feed-match-joined-to-ndr-session-on-source-host
+
+cleanup:
+  commands:
+    - "rm -f /tmp/tim-ioc-beacon-dry.yml /tmp/tim-ioc-beacon-live.yml"
+    - "echo '[CortexSim] SIM-TIM-001 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-06-08"
+last_updated: "2026-06-08"
+tags:
+  - tim
+  - threat-intel
+  - taxii
+  - ioc-match
+  - c2-beacon
+  - eal
+
+validation_methodology: "IOC Feed Match + Causality Graph Stitching"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  The subscribed mocktaxii TAXII feed is ingested into threat_intel, an outbound
+  beacon to the planted c2-beacon IOC subdomain raises a TIM IOC match, and the
+  IOC-feed-match stitches with the NGFW outbound session on src_host into a single
+  C2 incident within 60s.
+moat_tier: "MOAT"
+correlation_window_seconds: 60
+required_planes_in_incident:
+  - TIM
+  - NDR
+stitching_key: src_host

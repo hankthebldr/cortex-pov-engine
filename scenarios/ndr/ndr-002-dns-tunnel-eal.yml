@@ -5,8 +5,8 @@ status: active
 
 plane: NDR
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-NDR-02
 tc_ref: TC-NDR-02
@@ -53,7 +53,7 @@ steps:
     mitre_technique: "T1572"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "Pre-flight: dns_tunnel_exfil plugin exposes expected params schema"
         ttp_ref: TTP-2026-0051
         detection_id: xql-pre-flight-dns-tunnel-exfil-plugin-exposes-expected-params-schema
@@ -86,12 +86,12 @@ steps:
     mitre_technique: "T1048.003"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — anomalous DNS query volume from single source"
         ttp_ref: TTP-2026-0051
         detection_id: xql-ngfw-eal-anomalous-dns-query-volume-from-single-source
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — high-entropy DNS labels (base32 character profile)"
         ttp_ref: TTP-2026-0051
         detection_id: xql-ngfw-eal-high-entropy-dns-labels-base32-character-profile
@@ -129,12 +129,12 @@ steps:
     mitre_technique: "T1572"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — TXT query burst from single host"
         ttp_ref: TTP-2026-0051
         detection_id: xql-ngfw-eal-txt-query-burst-from-single-host
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — DNS exfil + endpoint process lineage correlated"
         ttp_ref: TTP-2026-0051
         detection_id: xql-xsiam-stitching-dns-exfil-endpoint-process-lineage-correlated

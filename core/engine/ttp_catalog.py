@@ -195,6 +195,63 @@ class TtpCatalog:
         by the list endpoint to render card-grid metadata cheaply."""
         return dict(self._raw_by_ttp)
 
+    def card_techniques(self, ttp_ref: str) -> list[dict[str, str]]:
+        """Return the authoritative ATT&CK techniques a card maps to.
+
+        Reads ``mitre_attack.techniques[]`` from the raw card JSON — the
+        multi-technique view the parsed :class:`TtpEntry` deliberately drops.
+        Each item is normalized to ``{technique, name, tactic_id, tactic_name}``
+        where ``technique`` is the most-specific id (``subtechnique_id`` when
+        present, else ``technique_id``). Returns ``[]`` for an unknown card.
+
+        This is the join the coverage heatmap uses to fuse the full authored
+        card corpus (82 techniques) into the otherwise scenario-thin view —
+        see ``core/api/mitre.py`` (GAP-6).
+        """
+        raw = self._raw_by_ttp.get(ttp_ref)
+        if not raw:
+            return []
+        mitre = raw.get("mitre_attack") or {}
+        out: list[dict[str, str]] = []
+        for t in mitre.get("techniques") or []:
+            if not isinstance(t, dict):
+                continue
+            tid = t.get("subtechnique_id") or t.get("technique_id")
+            if not isinstance(tid, str) or not tid:
+                continue
+            tactic_ids = t.get("tactic_ids") or []
+            tactic_names = t.get("tactic_names") or []
+            out.append({
+                "technique": tid,
+                "name": t.get("name") or "",
+                "tactic_id": tactic_ids[0] if tactic_ids else "",
+                "tactic_name": tactic_names[0] if tactic_names else "",
+            })
+        return out
+
+    def card_detection_kind_counts(self, ttp_ref: str) -> dict[str, int]:
+        """Per-card tally of deployable detection objects by kind.
+
+        Returns a dict keyed by ``bioc | xql | correlation | ioc | analytics``
+        with the count of each family on the card. Reads the raw
+        ``detections`` block so the coverage heatmap can surface *which*
+        Cortex detection kinds back a technique (notably ``correlation`` —
+        XSIAM's headline differentiator — and named ``analytics`` modules,
+        which GAP-11 flags as mapped-but-not-logic). Returns all-zero for an
+        unknown card.
+        """
+        raw = self._raw_by_ttp.get(ttp_ref)
+        counts = {"bioc": 0, "xql": 0, "correlation": 0, "ioc": 0, "analytics": 0}
+        if not raw:
+            return counts
+        det = raw.get("detections") or {}
+        counts["bioc"] = len(det.get("biocs") or [])
+        counts["xql"] = len(det.get("xql_queries") or [])
+        counts["correlation"] = len(det.get("correlation_rules") or [])
+        counts["ioc"] = len(det.get("iocs") or [])
+        counts["analytics"] = len(det.get("analytics_modules") or [])
+        return counts
+
     def count(self) -> int:
         return len(self._by_pair)
 

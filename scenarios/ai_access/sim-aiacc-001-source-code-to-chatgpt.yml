@@ -5,8 +5,8 @@ status: active
 
 plane: AI_ACCESS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-AIACC-01
 tc_ref: TC-AIACC-01
@@ -82,17 +82,17 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)"
         ttp_ref: TTP-2026-0007
         detection_id: xql-aiacc-001-source-code-shape-post-to-openai-with-canary-marker
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — DLP regex match on source-code structure in prompt body"
         ttp_ref: TTP-2026-0007
         detection_id: xql-aiacc-001-dlp-source-code-structure-regex-match-in-llm-prompt
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — generative-AI App-ID match on outbound HTTPS to api.openai.com"
         ttp_ref: TTP-2026-0007
         detection_id: xql-aiacc-001-ngfw-generative-ai-app-id-outbound-https-to-openai
@@ -122,7 +122,7 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — repeated POST pattern (3 in <60s) flagged as policy violation"
         ttp_ref: TTP-2026-0007
         detection_id: xql-aiacc-001-repeated-source-paste-burst-to-openai-single-user

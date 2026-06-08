@@ -5,8 +5,8 @@ status: active
 
 plane: ANALYTICS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
   - IOC
 
 uc_ref: UCS-MP-04
@@ -95,7 +95,7 @@ steps:
         ttp_ref: TTP-2026-0049
         detection_id: bioc-mp-004-recursive-aws-key-pattern-grep-from-service-account
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "XDR — www-data traversing /home and /root (unusual access pattern)"
         ttp_ref: TTP-2026-0049
         detection_id: xql-mp-004-service-account-traversing-home-and-root-dirs
@@ -117,12 +117,12 @@ steps:
         ttp_ref: TTP-2026-0049
         detection_id: bioc-mp-004-aws-cli-invoked-by-www-data-with-inline-access-key-env
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "CDR — CloudTrail sts:GetCallerIdentity from unenrolled source IP"
         ttp_ref: TTP-2026-0049
         detection_id: xql-mp-004-cloudtrail-getcalleridentity-from-unenrolled-source-ip
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — endpoint process event + cloud audit event sharing principal within 60s window → single incident"
         ttp_ref: TTP-2026-0049
         detection_id: xql-mp-004-stitch-endpoint-process-with-cloud-audit-by-principal
@@ -144,7 +144,7 @@ steps:
         ttp_ref: TTP-2026-0049
         detection_id: bioc-mp-004-cloud-multi-service-describe-list-burst-from-single-principal
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "CDR — UEBA deviation: principal performing first-time broad discovery pattern"
         ttp_ref: TTP-2026-0049
         detection_id: xql-mp-004-ueba-first-time-broad-cloud-discovery-pattern
@@ -188,12 +188,12 @@ steps:
         ttp_ref: TTP-2026-0049
         detection_id: bioc-mp-004-s3-copyobject-to-non-owned-destination-bucket
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "CDR — data egress volume anomaly from sensitivity-tagged source"
         ttp_ref: TTP-2026-0049
         detection_id: xql-mp-004-cloud-data-egress-volume-anomaly-from-tagged-source
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM — final stitched incident: cred-dump (EDR) → cloud pivot (CDR) → enumeration → collection → exfil, all under one story"
         ttp_ref: TTP-2026-0049
         detection_id: xql-mp-004-stitch-full-kill-chain-cred-dump-to-cloud-exfil

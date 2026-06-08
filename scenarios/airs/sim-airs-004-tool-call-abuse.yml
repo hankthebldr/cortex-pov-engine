@@ -5,8 +5,8 @@ status: active
 
 plane: AIRS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-AIRS-04
 tc_ref: TC-AIRS-04
@@ -37,9 +37,10 @@ required_content:
   - repo: "hankthebldr/cortex-vulnerable-llm"
   - repo: "hankthebldr/cortex-prompt-attacker"
 
+# AIRS target is the in-tree cortex-vulnerable-llm Flask app (no dedicated AWS module);
+# the base jumpbox is the only infra needed. A dedicated infra/modules/aws/airs/ lab is future content.
 infra_modules_needed:
   - base
-  - airs
 
 external_tools:
   - name: Cortex Prompt Attacker
@@ -67,7 +68,7 @@ steps:
     mitre_technique: "T1059"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "Pre-flight: agent endpoint advertises three tool functions"
         ttp_ref: "TTP-2026-0015"
         detection_id: "xql-airs-llm06-preflight-agent-endpoint-advertises-three-tool-functions"
@@ -90,12 +91,12 @@ steps:
         ttp_ref: "TTP-2026-0015"
         detection_id: "bioc-airs-llm06-exec-shell-tool-invoked-from-non-developer-context-prompt"
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — tool-call argument carries shell metacharacters (rm/curl/wget) — unsafe input"
         ttp_ref: "TTP-2026-0015"
         detection_id: "xql-airs-llm06-tool-call-argument-carries-shell-metacharacters-unsafe-input"
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — agentic tool-call correlates with downstream EDR process event"
         ttp_ref: "TTP-2026-0015"
         detection_id: "xql-airs-llm06-stitch-agentic-tool-call-with-downstream-edr-process-event"

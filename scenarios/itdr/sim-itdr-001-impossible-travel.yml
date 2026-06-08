@@ -5,8 +5,8 @@ status: active
 
 plane: ITDR
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-ITDR-01
 tc_ref: TC-ITDR-01
@@ -87,12 +87,12 @@ steps:
     mitre_technique: "T1078.004"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — impossible-travel alert: same user signed in from two distant geos within travel-impossibility window"
         ttp_ref: TTP-2026-0037
         detection_id: xql-itdr-001-impossible-travel-two-distant-geos-within-window
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — outbound POST burst to identity log-collector App-ID match"
         ttp_ref: TTP-2026-0037
         detection_id: xql-itdr-001-ngfw-outbound-post-burst-to-identity-collector
@@ -125,7 +125,7 @@ steps:
     mitre_technique: "T1078.004"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — impossible-travel alert fires identically for Microsoft signInLogs shape"
         ttp_ref: TTP-2026-0037
         detection_id: xql-itdr-001-impossible-travel-microsoft-signinlogs-shape

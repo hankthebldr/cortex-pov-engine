@@ -1,0 +1,252 @@
+scenario_id: SIM-CSPM-001
+name: "Cloud Posture Misconfiguration Sweep — Cortex Cloud CSPM"
+version: "1.0"
+status: active
+
+plane: CSPM
+detection_types:
+  - XQL
+  - BIOC
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# Maps to the Cortex Use Case Index Master v2.0 Cloud/Posture family:
+#   Cloud Posture Management → TC-CSPM-01 (MOAT tier — F4 Posture & Compliance).
+uc_ref: UCS-CSPM-01
+tc_ref: TC-CSPM-01
+uc_name: "Cloud Security Posture Management"
+tc_name: "Misconfiguration Detection & Compliance Scoring"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# CSPM findings are pre-attack posture, mapped to the techniques the
+# misconfigurations enable: data exposure (T1530), valid-accounts compromise of
+# world-open services (T1078.004), and identity over-permission (T1098).
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1530"
+mitre_technique_name: "Data from Cloud Storage"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1098"
+    name: "Account Manipulation"
+  - technique: "T1580"
+    name: "Cloud Infrastructure Discovery"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit42 — Cloud Threat Report: Misconfigurations Remain the Top Cloud Risk"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report-misconfigurations/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+# "Execute-against-cloud-API" posture scan, not an in-host TTP. Runs from the
+# SimCore container or jumpbox; identity wraps shell calls to the read-only
+# posture scanners (Prowler / ScoutSuite) + AWS CLI + Cortex Cloud REST polling.
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: false
+
+# ── External Tools (adapter-backed posture scanners) ────────────────────────
+# Wires the previously-orphan CDR cloud scanners via adapter_ref (closes part of
+# GAP-ADAPT-02). Both are read-only audit tools (safety_class: safe) that never
+# mutate the target account.
+external_tools:
+  - name: prowler
+    source: "https://github.com/prowler-cloud/prowler"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-PROWLER
+  - name: scoutsuite
+    source: "https://github.com/nccgroup/ScoutSuite"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-SCOUTSUITE
+  - name: aws-cli
+    source: "https://aws.amazon.com/cli/"
+    type: binary
+    install_inline: false
+  - name: jq
+    type: binary
+    install_inline: false
+  - name: curl
+    type: binary
+    install_inline: false
+
+# ── Infra Prerequisites ─────────────────────────────────────────────────────
+infra_modules_needed:
+  - base
+  - cspm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Posture & Compliance Scoring"
+methodology_family: "F4"
+primary_kpi: "Compliance Score"
+threshold:
+  kpi: "Posture Finding Coverage"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  All nine planted CSPM misconfigurations — public-read S3, unversioned S3,
+  no-KMS S3, SSH-open-to-world security group, DB-ports-open security group,
+  IAM AdministratorAccess role, IAM iam:* wildcard user, unencrypted EBS volume,
+  and weak CloudTrail (no log-file validation / not multi-region / no global
+  events) — surface as Cortex Cloud CSPM findings within one scan cycle
+  (≤ 60 minutes), each tagged CortexSimCSPMFinding. Coverage reconciliation
+  returns distinct_findings ≥ 9 and correlation CR-CSPM-0001 raises a single
+  cloud-posture coverage event.
+moat_tier: "MOAT"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+steps:
+  - id: step-01
+    name: "Snapshot ground-truth manifest of planted misconfigurations"
+    command: |
+      echo '[CSPM-001] Capturing ground-truth manifest of planted CSPM findings';
+      # Pull findings_summary.* from the cspm module's Terraform outputs. The
+      # validator reads this back at reconciliation time. Falls back to a tag
+      # query against the account if the bundle output is unavailable.
+      cd /opt/cortexsim/infra/blueprints/${CORTEXSIM_BUNDLE_ID:-current} 2>/dev/null && \
+        terraform output -json findings_summary > /tmp/cspm-planted.json || \
+        aws resourcegroupstaggingapi get-resources \
+          --tag-filters Key=CortexSimCSPMFinding \
+          --profile "${AWS_PROFILE:-cortexsim-lab}" > /tmp/cspm-planted.json 2>/dev/null || \
+        echo '{"_note":"manifest not available — running in standalone validation mode"}' > /tmp/cspm-planted.json
+      cat /tmp/cspm-planted.json | jq -r '.value // .' 2>/dev/null || cat /tmp/cspm-planted.json
+      echo '[*] Expected planted finding classes: 9'
+    identity: root
+    mitre_technique: "T1580"
+    expected_detections:
+      - plane: CSPM
+        type: XQL
+        description: "Ground-truth manifest captured — control-plane enumeration of the CortexSim-tagged resources; no Cortex finding expected at this step (operator-internal bookkeeping)."
+        ttp_ref: TTP-2026-0065
+        detection_id: xql-cspm-001-ground-truth-planted-finding-manifest-capture
+
+  - id: step-02
+    name: "Run Prowler read-only posture scan (S3 + network exposure)"
+    command: |
+      echo '[CSPM-001] Running Prowler AWS posture scan against the CortexSim lab account';
+      # adapter_ref TOOL-PROWLER — read-only audit; emits OCSF JSON consumed by
+      # the POV report's cloud-posture block. The SimCore tool layer renders the
+      # adapter run_template; this command is the equivalent invocation for the
+      # push bundle / standalone path.
+      prowler aws \
+        --profile "${AWS_PROFILE:-cortexsim-lab}" \
+        --output-formats json-ocsf \
+        --output-directory /tmp/prowler-cortexsim 2>&1 | tail -20 || \
+        echo '[!] Prowler unavailable in this context — relying on Cortex Cloud native CSPM scan'
+      echo '[*] Prowler scan complete — Cortex Cloud CSPM should independently surface S3 + SG findings'
+    identity: root
+    mitre_technique: "T1530"
+    expected_detections:
+      - plane: CSPM
+        type: XQL
+        description: "Cortex Cloud CSPM surfaces the three S3 data-exposure findings (public-read, versioning-disabled, no-customer-managed-kms) tagged CortexSimCSPMFinding."
+        ttp_ref: TTP-2026-0065
+        detection_id: xql-cspm-001-s3-data-exposure-findings-surfaced
+      - plane: CSPM
+        type: XQL
+        description: "Cortex Cloud CSPM surfaces the two network-exposure security-group findings (ssh-open-to-world, database-port-open-to-world)."
+        ttp_ref: TTP-2026-0065
+        detection_id: xql-cspm-001-network-exposure-security-group-findings-surfaced
+      - plane: CDR
+        type: BIOC
+        description: "If a public source reaches the world-open SSH/DB security group during the POV window, the static finding promotes to a runtime CDR/NDR detection."
+        ttp_ref: TTP-2026-0065
+        detection_id: bioc-inbound-connection-accepted-on-world-open-ssh-db-security-group
+
+  - id: step-03
+    name: "Run ScoutSuite cross-check (IAM over-permission + EBS/CloudTrail gaps)"
+    command: |
+      echo '[CSPM-001] Running ScoutSuite AWS cross-check for IAM + logging findings';
+      # adapter_ref TOOL-SCOUTSUITE — second read-only auditor; cross-confirms
+      # the IAM over-permission and encryption/logging findings independently of
+      # Prowler and of Cortex Cloud's native scan.
+      scout aws --profile "${AWS_PROFILE:-cortexsim-lab}" 2>&1 | tail -20 || \
+        echo '[!] ScoutSuite unavailable in this context — relying on Cortex Cloud native CSPM scan'
+      echo '[*] ScoutSuite cross-check complete — Cortex Cloud CSPM should surface IAM + EBS + CloudTrail findings'
+    identity: root
+    mitre_technique: "T1098"
+    expected_detections:
+      - plane: CSPM
+        type: XQL
+        description: "Cortex Cloud CSPM surfaces the two IAM over-permission findings (role-with-admin-access, user-with-wildcard-iam)."
+        ttp_ref: TTP-2026-0065
+        detection_id: xql-cspm-001-iam-over-permission-findings-surfaced
+      - plane: CSPM
+        type: XQL
+        description: "Cortex Cloud CSPM surfaces the EBS encryption gap (ebs-unencrypted) and the weak-CloudTrail logging gap (cloudtrail-weak-config)."
+        ttp_ref: TTP-2026-0065
+        detection_id: xql-cspm-001-ebs-encryption-and-cloudtrail-logging-gaps-surfaced
+      - plane: ITDR
+        type: BIOC
+        description: "If the over-privileged IAM principal (admin role / iam:* user) performs a control-plane action during the POV window, the static finding promotes to a runtime identity-abuse detection."
+        ttp_ref: TTP-2026-0065
+        detection_id: bioc-over-privileged-cspm-iam-principal-used-for-control-plane-action
+
+  - id: step-04
+    name: "Reconcile total finding coverage and assert posture KPI"
+    command: |
+      echo '[CSPM-001] Reconciling discovered CSPM findings vs. planted manifest';
+      # Probe Cortex Cloud posture API for CortexSim-tagged findings and compute
+      # coverage against the 9 planted classes.
+      curl -fsSL \
+        -H "Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN:-MISSING}" \
+        -H "Accept: application/json" \
+        "${CORTEX_CLOUD_API_BASE:-https://cortex.cloud.example/api/v1}/posture/findings?tag=CortexSimCSPMFinding" \
+        | tee /tmp/cspm-discovered.json \
+        | jq -r '[.findings[].finding_class] | unique | length' 2>/dev/null || echo "0"
+      DISCOVERED=$(jq -r '[.findings[].finding_class] | unique | length' /tmp/cspm-discovered.json 2>/dev/null || echo "0")
+      PLANTED=9
+      COVERAGE=$(awk "BEGIN { printf \"%.1f\", ($DISCOVERED / $PLANTED) * 100 }" 2>/dev/null || echo "0.0")
+      echo "[*] Planted finding classes:    $PLANTED"
+      echo "[*] Discovered finding classes: $DISCOVERED"
+      echo "[*] Posture Finding Coverage:   $COVERAGE %"
+      echo "[*] Threshold:                  >= 100 % (MOAT)"
+      if [ "$(echo "$COVERAGE >= 100" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+        echo "[PASS] Posture Finding Coverage meets MOAT threshold"
+      else
+        echo "[FAIL] Posture Finding Coverage below threshold"
+      fi
+    identity: root
+    mitre_technique: "T1530"
+    expected_detections:
+      - plane: CSPM
+        type: XQL
+        description: "Total coverage reconciliation — distinct_findings ≥ 9 across all nine planted CortexSimCSPMFinding classes; populates the Run's posture-coverage KPI for the POV report."
+        ttp_ref: TTP-2026-0065
+        detection_id: xql-cspm-001-total-planted-finding-coverage-reconciliation
+      - plane: CSPM
+        type: Correlation
+        description: "Correlation CR-CSPM-0001 fuses the five per-class posture validation queries into a single cloud-posture coverage event for the executive readout."
+        ttp_ref: TTP-2026-0065
+        detection_id: CR-CSPM-0001
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+# Cleanup is a no-op for cloud state — the cspm Terraform module owns the
+# lifecycle of the nine planted resources. Destroy via `terraform destroy` from
+# the bundle directory when the POV concludes. This scenario only clears its
+# local scratch artifacts.
+cleanup:
+  commands:
+    - "rm -rf /tmp/prowler-cortexsim"
+    - "rm -f /tmp/cspm-planted.json /tmp/cspm-discovered.json"
+    - "echo '[CortexSim] SIM-CSPM-001 cleanup complete (local scratch only). To destroy the planted AWS misconfigurations: terraform destroy in the cspm bundle directory — IaC owns teardown.'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-06-08"
+last_updated: "2026-06-08"
+tags:
+  - cspm
+  - cloud-posture
+  - misconfiguration
+  - aws
+  - prowler
+  - scoutsuite
+  - moat
+  - v2.0-methodology

@@ -7,7 +7,8 @@ status: active
 plane: ANALYTICS
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
+  - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
 # Flagship MOAT scenario for the Cortex stitching narrative. Master sheet:
@@ -131,7 +132,7 @@ steps:
     mitre_technique: "T1071.001"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW — outbound HTTP to known IOC list (testmynids.org)"
         ttp_ref: TTP-2026-0060
         detection_id: xql-mp-005-ngfw-outbound-http-to-known-ioc-testmynids
@@ -193,7 +194,7 @@ steps:
     mitre_technique: "T1110.003"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — Kerberos pre-auth failure burst against 5 service accounts from same client_ip"
         ttp_ref: TTP-2026-0060
         detection_id: xql-mp-005-itdr-kerberos-preauth-failure-burst-against-service-accounts
@@ -226,10 +227,10 @@ steps:
     mitre_technique: "T1078"
     expected_detections:
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM correlation — EDR + NDR + ITDR signals from same src_host stitch into one incident_id with full causality chain"
         ttp_ref: TTP-2026-0060
-        detection_id: xql-mp-005-cross-plane-stitch-single-incident-spanning-multiple-products
+        detection_id: CR-MP-0010
         verification_xql: |
           // F2 canonical verifier — distinct planes under one incident_id
           dataset = xdr_data

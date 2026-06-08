@@ -6,7 +6,6 @@ status: active
 plane: CDR
 detection_types:
   - BIOC
-  - Analytics
 
 uc_ref: UCS-CDR-03
 tc_ref: TC-CDR-03
@@ -62,7 +61,7 @@ steps:
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-container-capability-read-with-block-device-access
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Privileged container anomaly — process capability set indicates full host capabilities"
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-privileged-container-full-capability-set-anomaly
@@ -85,7 +84,7 @@ steps:
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-host-filesystem-access-via-proc1-root-from-container
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Suspicious /proc/1/root traversal in container context — host namespace enumeration"
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-proc1-root-traversal-host-namespace-enumeration
@@ -105,7 +104,7 @@ steps:
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-nsenter-into-pid1-mount-namespace-container-escape
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Host namespace access via nsenter — anomalous namespace switch from container process"
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-anomalous-namespace-switch-from-container-process
@@ -126,7 +125,7 @@ steps:
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-host-passwd-read-from-container-via-namespace-escape
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Sensitive host file read following successful container escape — multi-stage attack chain detected"
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-sensitive-host-file-read-following-container-escape
@@ -148,7 +147,7 @@ steps:
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-host-cron-persistence-written-from-escaped-container
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Host cron.d file creation following container namespace escape — kill chain stitching signal"
         ttp_ref: TTP-2026-0024
         detection_id: bioc-cdr-003-host-crond-file-creation-after-namespace-escape

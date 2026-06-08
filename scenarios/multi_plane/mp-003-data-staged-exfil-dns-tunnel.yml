@@ -6,7 +6,9 @@ status: active
 plane: ANALYTICS
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
+  - IOC
+  - Correlation
 
 uc_ref: UCS-MP-03
 tc_ref: TC-MP-03
@@ -73,7 +75,7 @@ steps:
         ttp_ref: TTP-2026-0048
         detection_id: bioc-mp-003-passwd-read-then-write-to-tmp-staging-dir
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "XDR - sensitive-file-path access from non-admin service account"
         ttp_ref: TTP-2026-0048
         detection_id: xql-mp-003-sensitive-file-path-access-from-service-account
@@ -111,12 +113,12 @@ steps:
     mitre_technique: "T1048.003"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - DNS anomaly: sustained TXT query burst with high-entropy 60-char labels = tunneling signature"
         ttp_ref: TTP-2026-0048
         detection_id: xql-mp-003-ngfw-dns-txt-tunneling-burst-high-entropy-labels
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - DNS query rate spike: >10x baseline from single source"
         ttp_ref: TTP-2026-0048
         detection_id: xql-mp-003-ngfw-dns-query-rate-spike-from-single-source
@@ -126,10 +128,10 @@ steps:
         ttp_ref: TTP-2026-0048
         detection_id: bioc-mp-003-dig-txt-tight-loop-from-service-account
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM stitching - /tmp stage write (XDR) + DNS tunnel burst (NGFW) + same hostname = end-to-end exfiltration incident, MTTD measured from stage-to-tunnel"
         ttp_ref: TTP-2026-0048
-        detection_id: xql-mp-003-stitch-tmp-stage-write-with-dns-tunnel-burst
+        detection_id: CR-MP-0004
 
   - id: step-04
     name: "Alternative exfil: HTTPS POST to known-bad endpoint"
@@ -142,7 +144,7 @@ steps:
     mitre_technique: "T1048"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - HTTP POST with file upload to IOC-listed domain"
         ttp_ref: TTP-2026-0048
         detection_id: xql-mp-003-ngfw-http-post-file-upload-to-ioc-domain

@@ -5,7 +5,8 @@ status: active
 
 plane: NDR
 detection_types:
-  - Analytics
+  - BIOC
+  - XQL
   - IOC
 
 uc_ref: UCS-NDR-03
@@ -51,7 +52,7 @@ steps:
     mitre_technique: "T1496"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "Pre-flight: sinkhole port 3333 reachable"
         ttp_ref: TTP-2026-0052
         detection_id: xql-pre-flight-sinkhole-port-3333-reachable
@@ -83,7 +84,7 @@ steps:
     mitre_technique: "T1496"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW App-ID — Stratum/cryptocurrency-mining identified on outbound TCP"
         ttp_ref: TTP-2026-0052
         detection_id: xql-ngfw-app-id-stratum-cryptocurrency-mining-identified-on-outbound-tcp

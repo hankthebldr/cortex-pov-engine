@@ -1,0 +1,145 @@
+scenario_id: SIM-EDR-007
+name: "ESXi Mass-Encryption / Inhibit Recovery — SAFE-MODE (Linux → ESXi)"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It reproduces the *telemetry
+# shape* of a big-game ransomware ESXi event so Cortex XDR / XSIAM can be shown
+# to detect it — WITHOUT encrypting anything. The anchor card TTP-2026-0006 is
+# explicitly SAFE-MODE: it powers lab VMs off/on and drops inert marker files
+# (.tttt) alongside VMDKs instead of encrypting, and ships an Ansible cleanup
+# playbook that powers the VMs back on and removes the markers. This file only
+# orchestrates the detection check and references that card's detections.
+# LAB ONLY: requires an isolated, snapshot-protected vSphere lab cluster.
+
+plane: EDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UCS-EDR-07
+tc_ref: TC-EDR-07
+uc_name: "Ransomware Impact Detection (ESXi Hypervisor)"
+tc_name: "ESXi Mass VM Power-Off + Inhibit Recovery"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1490"
+mitre_technique_name: "Inhibit System Recovery"
+additional_techniques:
+  - technique: "T1486"
+    name: "Data Encrypted for Impact"
+  - technique: "T1021.004"
+    name: "Remote Services: SSH"
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+
+threat_report: "Unit42 - Ignoble Scorpius (BlackSuit) · Akira · LockBit ESXi affiliates"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "SSH logon burst from a single jumphost to many ESXi hosts"
+    command: "ansible -i /tmp/pov-esxi-hosts -m ping esxi -f 16; echo '[*] SSH fan-out to lab ESXi cluster complete (single source -> many hypervisors)'"
+    identity: root
+    mitre_technique: "T1021.004"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "SSH sessions from one source IP to >=3 ESXi hosts within 5 minutes"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "bioc-esxi-ssh-logon-burst-single-source-many-hypervisors"
+      - plane: EDR
+        type: XQL
+        description: "Confirm SSH logon burst at the ESXi syslog layer"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "xql-confirm-ssh-logon-burst-at-esxi-syslog-layer"
+      - plane: EDR
+        type: XQL
+        description: "ESXi hosts receiving SSH from unusual source ASNs in the last 7 days"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "xql-esxi-hosts-with-ssh-from-unusual-source-asns-in-last-7d"
+
+  - id: step-02
+    name: "Mass VM power-off across the cluster (lab — reversed by cleanup)"
+    command: "ansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /tmp/pov-encrypt.yml --tags poweroff -f 16; echo '[*] vim-cmd power.off burst issued across cluster'"
+    identity: root
+    mitre_technique: "T1490"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "vim-cmd power.off issued in a burst across many ESXi hosts within seconds"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "bioc-vim-cmd-mass-power-off-across-esxi-cluster"
+      - plane: EDR
+        type: XQL
+        description: "Confirm mass vim-cmd power.off across the cluster"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "xql-confirm-mass-vim-cmd-power-off-across-cluster"
+      - plane: EDR
+        type: BIOC
+        description: "Ansible-pattern process on the jumphost (ansible-playbook -f >= 8) with ESXi reach"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "bioc-ansible-pattern-process-on-jumphost-with-esxi-reach"
+
+  - id: step-03
+    name: "Drop inert encryption-marker files adjacent to VMDKs (SAFE-MODE — no encryption)"
+    command: "ansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /tmp/pov-encrypt.yml --tags markers -f 16; echo '[*] SAFE-MODE markers (.tttt) dropped — NO VMDKs were encrypted'"
+    identity: root
+    mitre_technique: "T1486"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Mass file creation adjacent to VMDK files on /vmfs/volumes datastores"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "bioc-mass-file-creation-adjacent-to-vmdk-files"
+      - plane: EDR
+        type: XQL
+        description: "Confirm marker files dropped on datastores"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "xql-confirm-marker-files-dropped-on-datastores"
+      - plane: EDR
+        type: IOC
+        description: "Inert ransomware marker file extension (.tttt) on ESXi datastores"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "ioc-filename-tttt"
+      - plane: EDR
+        type: Correlation
+        description: "Ransomware — ESXi Mass Encryption Sequence: SSH burst + mass power-off + marker drop stitched into one incident"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "CR-RANSOM-0001"
+      - plane: EDR
+        type: Correlation
+        description: "Ransomware — Full Kill Chain (Identity -> Exfil -> ESXi Encrypt) cross-plane stitch"
+        ttp_ref: "TTP-2026-0006"
+        detection_id: "CR-RANSOM-0002"
+
+cleanup:
+  commands:
+    - "ansible-playbook -i /tmp/pov-esxi-hosts /tmp/pov-cleanup.yml -f 16 || echo '[CortexSim] run the TTP-2026-0006 cleanup playbook to power VMs back on and remove markers'"
+    - "rm -f /tmp/pov-esxi-hosts /tmp/pov-encrypt.yml /tmp/pov-cleanup.yml"
+    - "echo '[CortexSim] SIM-EDR-007 cleanup complete — markers removed, VMs powered back on'"
+
+author: "Henry Reed"
+created: "2026-06-08"
+last_updated: "2026-06-08"
+tags:
+  - impact
+  - ransomware
+  - esxi
+  - inhibit-recovery
+  - safe-mode
+  - hypervisor
+  - lab-only

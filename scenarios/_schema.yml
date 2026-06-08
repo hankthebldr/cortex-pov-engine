@@ -42,8 +42,15 @@ detection_types:
   - BIOC
   - Analytics
 # (required) List of Cortex detection engine types expected to fire.
-# Valid values: BIOC | Analytics | IOC
+# Valid values: BIOC | XQL | Analytics | Correlation | IOC
+#   BIOC        — Behavioral Indicator of Compromise rule
+#   XQL         — XSIAM Query Language scheduled/saved query detection
+#   Analytics   — XSIAM analytics / ML behavioral detector
+#   Correlation — XSIAM correlation rule stitching signals across sources
+#   IOC         — atomic indicator (hash / domain / IP) match
 # At least one value required.
+# The loader emits a (non-fatal) WARNING when this declared set drifts from
+# the union of the steps' expected_detections[].type values (S-09).
 
 # ── UC/TC Alignment ──────────────────────────────────────────────────────────
 
@@ -78,8 +85,15 @@ mitre_technique_name: "Container and Resource Discovery"
 additional_techniques:
   - technique: "T1082"
     name: "System Information Discovery"
-# (optional) Additional MITRE techniques exercised by this scenario.
-# List of {technique, name} pairs.
+  - "T1021.004"   # bare-string form is also accepted (name left empty)
+# (optional, default: []) Additional MITRE techniques exercised by this
+# scenario beyond the primary mitre_technique. Persisted to the Scenario ORM
+# so the coverage heatmap (/api/mitre/coverage) can fuse them in (GAP-5).
+# Two accepted entry shapes — the loader normalizes BOTH to {technique, name}:
+#   - technique: "T1082"           # {technique, name} mapping (name optional)
+#     name: "System Information Discovery"
+#   - "T1021.004"                  # bare technique-id string → {technique, name: ""}
+# Loaded as a list of {technique: <id>, name: <str>} dicts (name may be "").
 
 # ── Threat Intelligence ──────────────────────────────────────────────────────
 
@@ -167,7 +181,7 @@ steps:
       - plane: CDR
         # (required) Detection plane expected to produce signal.
         type: Analytics
-        # (required) Detection type. One of: BIOC | Analytics | IOC
+        # (required) Detection type. One of: BIOC | XQL | Analytics | Correlation | IOC
         description: "Package manager execution in container — unusual install pattern"
         # (required) Human-readable description of the expected alert/detection.
         # Used in ResultsViewer to show expected vs observed.
@@ -199,8 +213,11 @@ steps:
         type: Analytics
         description: "Suspicious curl-pipe-bash pattern in container context"
 
-# Steps can have 1–10 entries. At least 3 steps required per scenario.
 # Steps execute in list order. Each step is independently logged and reported.
+# There is no hard minimum — some intentionally terse NDR egress scenarios run
+# 2 steps (SIM-NDR-003..007). The loader emits a soft WARNING for scenarios
+# with fewer than 2 steps (S-01) and for any step whose expected_detections is
+# empty (S-02); neither warning rejects the scenario.
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 

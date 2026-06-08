@@ -5,7 +5,7 @@ status: active
 
 plane: AI_ACCESS
 detection_types:
-  - Analytics
+  - XQL
 
 uc_ref: UCS-AIACC-03
 tc_ref: TC-AIACC-03
@@ -48,7 +48,7 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "Pre-flight: provider host resolvable from worker"
         ttp_ref: TTP-2026-0009
         detection_id: xql-aiacc-003-pre-flight-gemini-provider-host-resolvable
@@ -79,17 +79,17 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — request rate per user exceeds rolling baseline (30 in <90s)"
         ttp_ref: TTP-2026-0009
         detection_id: xql-aiacc-003-gemini-request-rate-exceeds-per-user-baseline
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — sustained generative-AI session count from single src IP"
         ttp_ref: TTP-2026-0009
         detection_id: xql-aiacc-003-ngfw-sustained-generative-ai-session-count-single-source
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — sanctioned-vs-unsanctioned-AI policy: Gemini classified as unsanctioned for this user"
         ttp_ref: TTP-2026-0009
         detection_id: xql-aiacc-003-unsanctioned-ai-provider-gemini-for-user
@@ -120,7 +120,7 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — single post-cooloff request below baseline, no detection"
         ttp_ref: TTP-2026-0009
         detection_id: xql-aiacc-003-post-cooloff-single-gemini-request-below-baseline

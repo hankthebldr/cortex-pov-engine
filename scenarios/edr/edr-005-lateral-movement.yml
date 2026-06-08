@@ -6,7 +6,7 @@ status: active
 plane: EDR
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
 
 uc_ref: UCS-EDR-05
 tc_ref: TC-EDR-05
@@ -64,7 +64,7 @@ steps:
     mitre_technique: "T1016"
     expected_detections:
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Network interface and routing enumeration from service account — internal recon preceding lateral movement"
         ttp_ref: "TTP-2026-0036"
         detection_id: "xql-edr-005-analytics-network-interface-and-routing-enumeration"
@@ -87,7 +87,7 @@ steps:
         ttp_ref: "TTP-2026-0036"
         detection_id: "bioc-edr-005-port-scan-via-bash-devtcp"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Sequential port connection attempts across multiple services — automated service enumeration"
         ttp_ref: "TTP-2026-0036"
         detection_id: "xql-edr-005-analytics-sequential-port-connection-attempts"
@@ -110,7 +110,7 @@ steps:
         ttp_ref: "TTP-2026-0036"
         detection_id: "bioc-edr-005-batch-mode-ssh-from-service-account"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Batch-mode SSH with StrictHostKeyChecking disabled — automated lateral movement tool behavior"
         ttp_ref: "TTP-2026-0036"
         detection_id: "xql-edr-005-analytics-batch-ssh-stricthostkey-disabled"
@@ -138,7 +138,7 @@ steps:
         ttp_ref: "TTP-2026-0036"
         detection_id: "bioc-edr-005-ssh-tunnel-creation-with-forward-flags"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "SSH invoked with port forwarding from service account — data exfiltration channel pattern"
         ttp_ref: "TTP-2026-0036"
         detection_id: "xql-edr-005-analytics-ssh-port-forwarding-from-service-account"
@@ -157,7 +157,7 @@ steps:
     mitre_technique: "T1018"
     expected_detections:
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "DNS and host file enumeration from service account — remote system discovery for lateral movement planning"
         ttp_ref: "TTP-2026-0036"
         detection_id: "xql-edr-005-analytics-dns-and-host-file-enumeration"

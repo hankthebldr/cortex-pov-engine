@@ -5,8 +5,8 @@ status: active
 
 plane: KOI
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-KOI-02
 tc_ref: TC-KOI-02
@@ -91,12 +91,12 @@ steps:
     mitre_technique: "T1059"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — JSON-RPC tools/call response body contains instruction-injection markers"
         ttp_ref: TTP-2026-0043
         detection_id: xql-koi-002-json-rpc-tools-call-response-body-contains-injection-markers
       - plane: KOI
-        type: Analytics
+        type: XQL
         description: "MCP runtime monitor — anomalous instruction-shaped string in tool result"
         ttp_ref: TTP-2026-0043
         detection_id: xql-koi-002-mcp-runtime-monitor-instruction-shaped-string-in-tool-result
@@ -110,12 +110,12 @@ steps:
     mitre_technique: "T1656"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — indirect-injection scorer fires when MCP result is concatenated into LLM prompt"
         ttp_ref: TTP-2026-0043
         detection_id: xql-koi-002-airs-indirect-injection-scorer-on-mcp-result-in-prompt
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — KOI artifact + AIRS detection correlate to single agentic-supply-chain incident"
         ttp_ref: TTP-2026-0043
         detection_id: xql-koi-002-xsiam-stitch-mcp-injection-artifact-with-airs-detection

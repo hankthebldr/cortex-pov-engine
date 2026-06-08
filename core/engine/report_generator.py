@@ -62,10 +62,17 @@ def _severity_from_detection_type(detection_type: str | None,
                                   observed: bool) -> str:
     """Derive a customer-facing severity tag from the result's signal type
     + observation outcome. Conservative defaults; can be overridden later
-    by a future ``severity`` column on ``Result``."""
+    by a future ``severity`` column on ``Result``.
+
+    The detection-type vocabulary is ``BIOC | XQL | Analytics | Correlation |
+    IOC`` (GAP-2 — XQL and Correlation were added to the scenario schema so the
+    report no longer mislabels XQL as Analytics and no longer drops Correlation,
+    XSIAM's headline differentiator). Correlation is the highest-severity signal
+    because it stitches multiple planes into one incident; BIOC/XQL are
+    deployable detection logic; Analytics/IOC are mapped signals."""
     if detection_type == "Correlation":
         return "Critical"
-    if detection_type in ("BIOC", "Analytics", "ITDR"):
+    if detection_type in ("BIOC", "XQL", "Analytics", "ITDR"):
         return "High" if observed else "Medium"
     return "Medium"
 

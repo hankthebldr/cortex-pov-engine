@@ -21,6 +21,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger("cortexsim.loader")
 
 
+# Canonical Cortex detection-engine vocabulary. XQL + Correlation are
+# first-class alongside the original BIOC | Analytics | IOC set (GAP-2):
+#   BIOC        — Behavioral Indicator of Compromise rule
+#   XQL         — XSIAM Query Language scheduled/saved query detection
+#   Analytics   — XSIAM analytics / ML behavioral detector
+#   Correlation — XSIAM correlation rule stitching signals across sources
+#   IOC         — atomic indicator (hash / domain / IP) match
+DETECTION_TYPES: frozenset[str] = frozenset(
+    {"BIOC", "XQL", "Analytics", "Correlation", "IOC"}
+)
+
+
 # ---------------------------------------------------------------------------
 # Pydantic validation schema (mirrors the YAML _schema.yml structure)
 # ---------------------------------------------------------------------------
@@ -47,6 +59,16 @@ class StepExpectedDetection(BaseModel):
     plane: str
     type: str
     description: str
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, v: str) -> str:
+        if v not in DETECTION_TYPES:
+            raise ValueError(
+                f"expected_detection type must be one of "
+                f"{sorted(DETECTION_TYPES)}, got '{v}'"
+            )
+        return v
     # Phase 1 — optional bridge to detection_scanner/ttps/*.json.
     # When both fields resolve in the TTP catalog at startup, the orchestrator
     # copies the card's BIOC / XQL / correlation logic onto the Result row so
@@ -88,6 +110,21 @@ class CleanupSchema(BaseModel):
     k8s_teardown: Optional[str] = None
 
 
+class AdditionalTechnique(BaseModel):
+    """A secondary MITRE ATT&CK technique exercised by a scenario beyond the
+    primary ``mitre_technique`` (GAP-5).
+
+    Author-facing YAML accepts two shapes, both normalized to this model:
+      * mapping  — ``{technique: "T1082", name: "System Information Discovery"}``
+      * string   — ``"T1021.004"`` → ``{technique: "T1021.004", name: ""}``
+
+    Persisted to the Scenario ORM so the coverage heatmap can fuse these in.
+    """
+
+    technique: str
+    name: str = ""
+
+
 class ScenarioSchema(BaseModel):
     scenario_id: str
     name: str
@@ -103,6 +140,10 @@ class ScenarioSchema(BaseModel):
     mitre_tactic_name: str
     mitre_technique: str
     mitre_technique_name: str
+    # GAP-5 — secondary techniques exercised by the scenario. Accepts bare
+    # technique-id strings or {technique, name} mappings; normalized to
+    # AdditionalTechnique and persisted so the coverage heatmap fuses them in.
+    additional_techniques: list[AdditionalTechnique] = Field(default_factory=list)
     threat_report: Optional[str] = None
     threat_report_url: Optional[str] = None
     execution_identity: ExecutionIdentitySchema
@@ -177,10 +218,54 @@ class ScenarioSchema(BaseModel):
             "AI_SPM",      # Cortex AI Security Posture Management — static AI asset inventory + config
             "BROWSER",     # Prisma Browser — DLP / extension / phishing
             "KOI",         # Agentic endpoint / supply-chain (MCPs, skills, exts)
+            # Exposure-management / posture / intel planes (IaC-backed surfaces)
+            "ASM",         # Cortex ASM / Xpanse — internet-exposed attack-surface discovery
+            "CSPM",        # Cortex Cloud Posture Management — misconfig findings
+            "TIM",         # Cortex Threat Intel Management — IOC feed + matching traffic
         }
         if v not in allowed:
             raise ValueError(f"plane must be one of {allowed}, got '{v}'")
         return v
+
+    @field_validator("detection_types")
+    @classmethod
+    def validate_detection_types(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("detection_types must contain at least one value")
+        invalid = [t for t in v if t not in DETECTION_TYPES]
+        if invalid:
+            raise ValueError(
+                f"detection_types values must each be one of "
+                f"{sorted(DETECTION_TYPES)}, got invalid {invalid}"
+            )
+        return v
+
+    @field_validator("additional_techniques", mode="before")
+    @classmethod
+    def normalize_additional_techniques(cls, v: Any) -> Any:
+        """Normalize the heterogeneous YAML shapes to {technique, name} dicts.
+
+        Accepts a list whose entries are either bare technique-id strings or
+        {technique, name} mappings. Runs before the AdditionalTechnique model
+        coercion so both shapes land on the same persisted structure.
+        """
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            raise ValueError("additional_techniques must be a list")
+        normalized: list[dict[str, str]] = []
+        for entry in v:
+            if isinstance(entry, str):
+                normalized.append({"technique": entry, "name": ""})
+            elif isinstance(entry, dict):
+                # leave dict as-is; AdditionalTechnique validates the keys
+                normalized.append(entry)
+            else:
+                raise ValueError(
+                    "additional_techniques entries must be a technique-id "
+                    f"string or a {{technique, name}} mapping, got {type(entry).__name__}"
+                )
+        return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +346,9 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
         # Phase A (tool adapter framework) — same warn-not-fail pattern for
         # external_tools.adapter_ref pointing at tools/packs/<id>.yml.
         _warn_dangling_adapter_refs(schema, filepath)
+        # Wave-2 schema hygiene (warn, never reject): detection_types drift
+        # (S-09), too-thin step lists (S-01), and detection-less steps (S-02).
+        _warn_scenario_hygiene(schema, filepath)
 
         # Upsert: check if the scenario_id already exists
         result = await db.execute(
@@ -336,6 +424,49 @@ def _warn_dangling_adapter_refs(schema: "ScenarioSchema", filepath: str) -> None
             )
 
 
+def _warn_scenario_hygiene(schema: "ScenarioSchema", filepath: str) -> None:
+    """Emit soft warnings for schema-hygiene drift. Never raises — these are
+    advisory and must not block boot.
+
+    S-09 — declared ``detection_types`` differs from the union of the steps'
+           ``expected_detections[].type`` values.
+    S-01 — fewer than 2 steps (genuinely too thin to model a TTP chain).
+    S-02 — a step with an empty ``expected_detections`` list reduces report
+           coverage silently.
+    """
+    # S-01: too-thin step lists.
+    if len(schema.steps) < 2:
+        logger.warning(
+            "scenario=%s declares only %d step(s) — fewer than 2 is unusually "
+            "thin (from %s)",
+            schema.scenario_id, len(schema.steps), filepath,
+        )
+
+    # S-02: detection-less steps.
+    emitted_types: set[str] = set()
+    for step in schema.steps:
+        if not step.expected_detections:
+            logger.warning(
+                "scenario=%s step=%s has empty expected_detections — this step "
+                "contributes no detection coverage (from %s)",
+                schema.scenario_id, step.id, filepath,
+            )
+        for det in step.expected_detections:
+            emitted_types.add(det.type)
+
+    # S-09: declared detection_types vs. union of step-emitted kinds.
+    declared = set(schema.detection_types)
+    if emitted_types and declared != emitted_types:
+        missing_from_declared = sorted(emitted_types - declared)
+        declared_but_unemitted = sorted(declared - emitted_types)
+        logger.warning(
+            "scenario=%s detection_types drift: declared=%s but steps emit=%s "
+            "(emitted-not-declared=%s declared-not-emitted=%s) (from %s)",
+            schema.scenario_id, sorted(declared), sorted(emitted_types),
+            missing_from_declared, declared_but_unemitted, filepath,
+        )
+
+
 def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
     """Convert a validated ScenarioSchema into keyword args for the Scenario ORM model."""
     return {
@@ -353,6 +484,7 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "mitre_tactic_name": schema.mitre_tactic_name,
         "mitre_technique": schema.mitre_technique,
         "mitre_technique_name": schema.mitre_technique_name,
+        "additional_techniques": [t.model_dump() for t in schema.additional_techniques],
         "threat_report": schema.threat_report,
         "threat_report_url": schema.threat_report_url,
         "execution_identity": schema.execution_identity.model_dump(),

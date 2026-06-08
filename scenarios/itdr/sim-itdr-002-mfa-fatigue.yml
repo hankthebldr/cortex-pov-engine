@@ -5,8 +5,8 @@ status: active
 
 plane: ITDR
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-ITDR-02
 tc_ref: TC-ITDR-02
@@ -88,7 +88,7 @@ steps:
     mitre_technique: "T1621"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — MFA-fatigue alert: 7 push denials followed by 1 approval within burst window"
         ttp_ref: TTP-2026-0038
         detection_id: xql-itdr-002-mfa-fatigue-push-burst-then-approval
@@ -127,7 +127,7 @@ steps:
     mitre_technique: "T1621"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — MFA-fatigue alert severity escalates above 16-event threshold"
         ttp_ref: TTP-2026-0038
         detection_id: xql-itdr-002-mfa-fatigue-severity-escalates-above-16-events

@@ -5,9 +5,9 @@ status: active
 
 plane: NDR
 detection_types:
-  - Analytics
-  - IOC
   - BIOC
+  - XQL
+  - IOC
 
 uc_ref: UCS-NDR-06
 tc_ref: TC-NDR-06
@@ -55,7 +55,7 @@ steps:
     mitre_technique: "T1071"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "Pre-flight: FTP sinkhole reachable on port 21"
         ttp_ref: TTP-2026-0061
         detection_id: xql-pre-flight-ftp-sinkhole-reachable-on-port-21
@@ -90,7 +90,7 @@ steps:
     mitre_technique: "T1071"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW App-ID — FTP identified on outbound session from non-admin endpoint"
         ttp_ref: TTP-2026-0061
         detection_id: xql-ngfw-app-id-ftp-outbound-session-from-non-admin-endpoint

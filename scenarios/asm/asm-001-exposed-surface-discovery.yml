@@ -1,0 +1,172 @@
+scenario_id: SIM-ASM-001
+name: "ASM — Internet-Exposed Attack-Surface Discovery & Enumeration"
+version: "1.0"
+status: active
+
+plane: ASM
+detection_types:
+  - XQL
+  - BIOC
+  - IOC
+  - Correlation
+
+uc_ref: UCS-ASM-01
+tc_ref: TC-ASM-01
+uc_name: "Attack Surface Discovery & Enumeration via Cortex ASM"
+tc_name: "Exposed Multi-Service Host + Public S3 Website Discovery"
+
+mitre_tactic: "TA0043"
+mitre_tactic_name: "Reconnaissance"
+mitre_technique: "T1595"
+mitre_technique_name: "Active Scanning"
+additional_techniques:
+  - technique: "T1046"
+    name: "Network Service Discovery"
+  - technique: "T1190"
+    name: "Exploit Public-Facing Application"
+
+threat_report: "Unit42 - Attack Surface Threat Report (Internet-Exposed Assets)"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - asm
+
+external_tools:
+  - name: Nmap
+    source: "https://github.com/nmap/nmap"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-NMAP
+  - name: Nuclei
+    source: "https://github.com/projectdiscovery/nuclei"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-NUCLEI
+
+steps:
+  - id: step-01
+    name: "Ground-truth manifest capture — confirm planted exposed surface exists"
+    command: |
+      # Confirm the infra/modules/aws/asm planted resources are inventoried
+      # (CortexSimASMFinding-tagged) before scanning, so the POV report can
+      # reconcile discovered assets against ground truth.
+      aws resourcegroupstaggingapi get-resources \
+        --tag-filters Key=CortexSimASMFinding \
+        --query 'ResourceTagMappingList[].ResourceARN' --output text || true
+    identity: root
+    mitre_technique: "T1595"
+    expected_detections:
+      - plane: ASM
+        type: XQL
+        description: "Ground-truth manifest confirms the planted CortexSimASMFinding-tagged resources exist in the cloud inventory"
+        ttp_ref: TTP-2026-0070
+        detection_id: xql-asm-001-ground-truth-manifest-capture-bookkeeping
+
+  - id: step-02
+    name: "nmap service + version enumeration of the exposed host (T1046)"
+    command: |
+      # Full service/version enumeration across the exposed ports so Cortex ASM
+      # / Xpanse discovery findings can enumerate each open service. The active
+      # scan also fans out across ports on a single destination — the NGFW
+      # active-scan egress shape.
+      nmap -sS -sV -Pn -T4 -p 80,443,2222,6379,9001,9200 \
+        -oX /tmp/nmap-cortexsim-asm.xml ${ASM_TARGET_HOST}
+    identity: root
+    mitre_technique: "T1046"
+    expected_detections:
+      - plane: ASM
+        type: XQL
+        description: "Cortex ASM exposed-service discovery findings enumerate each open port on the host"
+        ttp_ref: TTP-2026-0070
+        detection_id: xql-asm-exposed-service-discovery-findings-by-port
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — active-scan port fan-out from a single source against the exposed host"
+        ttp_ref: TTP-2026-0070
+        detection_id: bioc-asm-eal-active-scan-port-fan-out-against-exposed-host
+      - plane: NDR
+        type: XQL
+        description: "NGFW EAL — active-scan port fan-out (1 src → many ports on exposed host)"
+        ttp_ref: TTP-2026-0070
+        detection_id: xql-asm-eal-active-scan-port-fan-out-1-src-to-many-ports-on-exposed-host
+
+  - id: step-03
+    name: "nuclei exposure / misconfig / CVE scan + unauthenticated-service probes (T1595/T1190)"
+    command: |
+      # Template-driven exposure/misconfig/CVE scan against the exposed web
+      # surface, then directly probe the unauthenticated services so Cortex ASM
+      # prioritises the high-risk exposures (weak TLS, EOL ES banner, world-bound
+      # Redis).
+      nuclei -target http://${ASM_TARGET_HOST} -severity medium,high,critical \
+        -t exposures,misconfigurations,cves -o /tmp/nuclei-cortexsim.json -j -rate-limit 150
+      redis-cli -h ${ASM_TARGET_HOST} -p 6379 INFO server 2>/dev/null | head -5 || true
+      curl -sk https://${ASM_TARGET_HOST}:9200/ | head -1 || true
+    identity: root
+    mitre_technique: "T1190"
+    expected_detections:
+      - plane: ASM
+        type: XQL
+        description: "Cortex ASM high-risk exposure roll-up — weak TLS, EOL Elasticsearch banner, unauthenticated Redis"
+        ttp_ref: TTP-2026-0070
+        detection_id: xql-asm-high-risk-exposure-roll-up-weak-tls-eol-banner-unauth-data-store
+      - plane: ASM
+        type: IOC
+        description: "Exposed-service signature — vulnerable Elasticsearch 1.7.0 banner on :9200"
+        ttp_ref: TTP-2026-0070
+        detection_id: ioc-user-agent-elasticsearch-1-7-0
+      - plane: ASM
+        type: IOC
+        description: "Exposed-service signature — self-signed RSA-1024 weak TLS certificate on :443"
+        ttp_ref: TTP-2026-0070
+        detection_id: ioc-filename-cortexsim-weak-crt
+      - plane: ASM
+        type: IOC
+        description: "Exposed-service signature — unauthenticated world-bound Redis on :6379"
+        ttp_ref: TTP-2026-0070
+        detection_id: ioc-url-redis-0-0-0-0-6379
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Exposure Management — internet-exposed surface discovered AND actively scanned, stitched into one incident"
+        ttp_ref: TTP-2026-0070
+        detection_id: CR-ASM-0001
+
+cleanup:
+  commands:
+    - "rm -f /tmp/nmap-cortexsim-asm.xml /tmp/nuclei-cortexsim.json"
+
+author: "Henry Reed"
+created: "2026-06-08"
+last_updated: "2026-06-08"
+tags:
+  - asm
+  - attack-surface
+  - exposure-management
+  - active-scanning
+  - nmap
+  - nuclei
+
+validation_methodology: "Asset Discovery & Inventory Coverage"
+methodology_family: "F3"
+primary_kpi: "Asset Discovery Coverage"
+threshold:
+  kpi: "Asset Discovery Coverage"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  Cortex ASM/Xpanse discovers and enumerates every exposed service on the host
+  (80/443/2222/6379/9001/9200) plus the public S3 website, prioritises the
+  weak-TLS / EOL-banner / unauthenticated-Redis exposures, and the NGFW
+  active-scan signal correlates with the discovery findings into a single
+  exposure-management incident.
+moat_tier: "MOAT"

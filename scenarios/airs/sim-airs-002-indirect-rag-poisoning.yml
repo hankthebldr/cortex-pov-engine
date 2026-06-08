@@ -5,8 +5,8 @@ status: active
 
 plane: AIRS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-AIRS-02
 tc_ref: TC-AIRS-02
@@ -37,9 +37,10 @@ required_content:
   - repo: "hankthebldr/cortex-vulnerable-llm"
   - repo: "hankthebldr/cortex-prompt-attacker"
 
+# AIRS target is the in-tree cortex-vulnerable-llm Flask app (no dedicated AWS module);
+# the base jumpbox is the only infra needed. A dedicated infra/modules/aws/airs/ lab is future content.
 infra_modules_needed:
   - base
-  - airs
 
 external_tools:
   - name: Cortex Prompt Attacker
@@ -64,7 +65,7 @@ steps:
     mitre_technique: "T1059.004"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "Pre-flight: RAG endpoint /owasp/llm08/rag responds"
         ttp_ref: "TTP-2026-0013"
         detection_id: "xql-airs-llm08-preflight-rag-endpoint-responds"
@@ -86,7 +87,7 @@ steps:
     mitre_technique: "T1656"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — RAG ingestion classifier flags embedded SYSTEM_OVERRIDE / instruction-shaped block"
         ttp_ref: "TTP-2026-0013"
         detection_id: "xql-airs-llm08-rag-ingestion-classifier-flags-embedded-system-override-block"
@@ -109,12 +110,12 @@ steps:
         ttp_ref: "TTP-2026-0013"
         detection_id: "bioc-airs-llm08-rag-response-contains-akia-canary-from-poisoned-document"
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — indirect-injection scorer fires (instruction in retrieved context, not user input)"
         ttp_ref: "TTP-2026-0013"
         detection_id: "xql-airs-llm08-indirect-injection-scorer-fires-on-retrieved-context"
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — RAG upload + later query correlate into single indirect-injection incident"
         ttp_ref: "TTP-2026-0013"
         detection_id: "xql-airs-llm08-stitch-rag-upload-with-later-retrieval-leak-into-one-incident"

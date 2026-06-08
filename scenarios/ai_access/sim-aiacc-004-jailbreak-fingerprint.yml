@@ -5,8 +5,8 @@ status: active
 
 plane: AI_ACCESS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-AIACC-04
 tc_ref: TC-AIACC-04
@@ -86,7 +86,7 @@ steps:
     mitre_technique: "T1656"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — content classifier flags jailbreak fingerprint (DAN, Ignore previous instructions, role-play frames)"
         ttp_ref: TTP-2026-0010
         detection_id: xql-aiacc-004-jailbreak-fingerprint-dan-ignore-previous-instructions
@@ -124,7 +124,7 @@ steps:
     mitre_technique: "T1656"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — jailbreak detection consistent across multiple providers"
         ttp_ref: TTP-2026-0010
         detection_id: xql-aiacc-004-jailbreak-detection-consistent-across-providers

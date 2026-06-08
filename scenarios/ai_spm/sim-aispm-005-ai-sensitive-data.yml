@@ -5,7 +5,7 @@ status: active
 
 plane: AI_SPM
 detection_types:
-  - Analytics
+  - XQL
 
 uc_ref: UCS-AISPM-01
 tc_ref: TC-AISP-05
@@ -87,7 +87,7 @@ steps:
     mitre_technique: "T1530"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Anchor + canary verification — no Cortex detection at this step."
         ttp_ref: TTP-2026-0058
         detection_id: xql-aispm-005-mttd-anchor-and-canary-verify-bookkeeping
@@ -102,7 +102,7 @@ steps:
     mitre_technique: "T1530"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Cortex DSPM identifies PII/PHI/PCI canaries in the bucket; AI-SPM links the bucket to AI workloads via data-lineage graph."
         ttp_ref: TTP-2026-0058
         detection_id: xql-aispm-005-dspm-aispm-cross-scan-links-bucket-to-ai
@@ -152,7 +152,7 @@ steps:
     mitre_technique: "T1213"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Cortex DSPM flags training-data bucket with ≥ 3 sensitive data classes (PII / PHI / PCI), pattern-matching the planted SSN / CC / MRN canaries."
         ttp_ref: TTP-2026-0058
         detection_id: xql-aispm-005-dspm-three-regulated-data-classes-in-training-bucket
@@ -167,7 +167,7 @@ steps:
           value: 900
           unit: "seconds"
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "AI-SPM data-lineage edge links the training-data S3 bucket to the SageMaker training-job manifest, proving the regulated-data → model traceability chain."
         ttp_ref: TTP-2026-0058
         detection_id: xql-aispm-005-data-lineage-edge-bucket-to-training-job
@@ -179,7 +179,7 @@ steps:
           | comp count() as lineage_edges
           | filter lineage_edges >= 1
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "AI-GOV-001 governance violation raised: regulated data present in AI training set."
         ttp_ref: TTP-2026-0058
         detection_id: xql-aispm-005-governance-violation-regulated-data-in-training-set

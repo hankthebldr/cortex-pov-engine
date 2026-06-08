@@ -6,7 +6,6 @@ status: active
 plane: CDR
 detection_types:
   - BIOC
-  - Analytics
 
 uc_ref: UCS-CDR-01
 tc_ref: TC-CDR-01
@@ -61,7 +60,7 @@ steps:
     mitre_technique: "T1059.004"
     expected_detections:
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Package manager execution inside running container — unusual install pattern indicates post-exploitation activity"
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-package-manager-execution-inside-running-container
@@ -78,7 +77,7 @@ steps:
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-deepce-container-enumeration-script-execution
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Suspicious curl download followed by bash execution in container context (curl-pipe-bash pattern)"
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-curl-pipe-bash-download-execute-in-container
@@ -95,7 +94,7 @@ steps:
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-container-capability-mask-read-from-proc1-status
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Suspicious device enumeration and capability inspection sequence in container"
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-container-device-enumeration-with-capability-inspection
@@ -112,7 +111,7 @@ steps:
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-service-account-token-access-from-container
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Broad filesystem credential search pattern (find / -name token) in container context"
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-broad-filesystem-credential-search-in-container
@@ -129,7 +128,7 @@ steps:
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-linpeas-privilege-escalation-tool-in-container
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Multiple system enumeration commands executed in sequence — automated discovery behavior"
         ttp_ref: TTP-2026-0022
         detection_id: bioc-cdr-001-automated-discovery-command-burst-in-container

@@ -5,7 +5,7 @@ status: active
 
 plane: AI_ACCESS
 detection_types:
-  - Analytics
+  - XQL
 
 uc_ref: UCS-AIACC-05
 tc_ref: TC-AIACC-05
@@ -67,7 +67,7 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — first egress to api.openai.com, user marked active in provider matrix"
         ttp_ref: TTP-2026-0011
         detection_id: xql-aiacc-005-first-egress-to-openai-user-active-in-provider-matrix
@@ -97,7 +97,7 @@ steps:
     mitre_technique: "T1090"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — same user observed at second provider (Gemini) within rotation window"
         ttp_ref: TTP-2026-0011
         detection_id: xql-aiacc-005-same-user-second-provider-gemini-within-rotation-window
@@ -127,17 +127,17 @@ steps:
     mitre_technique: "T1090"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — three providers within 5 min from same user — provider-hopping policy evasion alert"
         ttp_ref: TTP-2026-0011
         detection_id: xql-aiacc-005-three-providers-within-five-minutes-provider-hopping
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — single user identity correlates the three provider sessions into one incident"
         ttp_ref: TTP-2026-0011
         detection_id: xql-aiacc-005-xsiam-stitch-single-user-three-provider-sessions
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — generative-AI App-ID across three FQDNs sharing X-Simulation-Run-ID prefix"
         ttp_ref: TTP-2026-0011
         detection_id: xql-aiacc-005-ngfw-generative-ai-app-id-across-three-fqdns-shared-run-id

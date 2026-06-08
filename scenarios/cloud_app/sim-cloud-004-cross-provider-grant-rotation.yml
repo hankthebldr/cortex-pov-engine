@@ -5,7 +5,7 @@ status: active
 
 plane: CLOUD_APP
 detection_types:
-  - Analytics
+  - XQL
 
 uc_ref: UCS-CAPP-04
 tc_ref: TC-CAPP-04
@@ -69,7 +69,7 @@ steps:
     mitre_technique: "T1550.001"
     expected_detections:
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "Cloud App — first risky grant to Okta, identity marked active in IdP matrix"
         ttp_ref: TTP-2026-0030
         detection_id: xql-cloud-004-okta-first-risky-grant-identity-active-in-idp-matrix
@@ -99,7 +99,7 @@ steps:
     mitre_technique: "T1090"
     expected_detections:
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "Cloud App — same identity solicits admin-consent grant at second IdP within rotation window"
         ttp_ref: TTP-2026-0030
         detection_id: xql-cloud-004-microsoft-admin-consent-grant-second-idp-in-rotation-window
@@ -129,17 +129,17 @@ steps:
     mitre_technique: "T1090"
     expected_detections:
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "Cloud App — three IdPs within 5 min from same identity — provider-hopping policy evasion alert"
         ttp_ref: TTP-2026-0030
         detection_id: xql-cloud-004-three-idps-same-identity-provider-hopping-policy-evasion
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — single identity correlates the three IdP sessions into one incident via X-Simulation-Run-ID prefix"
         ttp_ref: TTP-2026-0030
         detection_id: xql-cloud-004-xsiam-cross-provider-rotation-single-incident-stitch
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — three /authorize App-ID hits across three FQDNs sharing run marker"
         ttp_ref: TTP-2026-0030
         detection_id: xql-cloud-004-ngfw-three-authorize-hits-across-three-fqdns-shared-run-marker

@@ -5,8 +5,8 @@ status: active
 
 plane: CLOUD_APP
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-CAPP-03
 tc_ref: TC-CAPP-03
@@ -84,12 +84,12 @@ steps:
     mitre_technique: "T1528"
     expected_detections:
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "Cloud App — full mail.google.com scope grant attempt detected"
         ttp_ref: TTP-2026-0029
         detection_id: xql-cloud-003-google-full-mailbox-scope-grant-attempt
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — outbound /o/oauth2/v2/auth App-ID match to accounts.google.com"
         ttp_ref: TTP-2026-0029
         detection_id: xql-cloud-003-ngfw-google-oauth-authorize-mailbox-scope-egress
@@ -118,12 +118,12 @@ steps:
     mitre_technique: "T1114.002"
     expected_detections:
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "Cloud App — Mail.ReadWrite + offline_access grant to Microsoft within 5 min of Google attempt"
         ttp_ref: TTP-2026-0029
         detection_id: xql-cloud-003-microsoft-mail-readwrite-offline-access-token-replay-grant
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — same identity targeting two mail providers within rotation window"
         ttp_ref: TTP-2026-0029
         detection_id: xql-cloud-003-cross-provider-mailbox-collection-same-identity-stitch

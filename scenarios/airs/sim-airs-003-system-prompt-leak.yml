@@ -5,8 +5,8 @@ status: active
 
 plane: AIRS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-AIRS-03
 tc_ref: TC-AIRS-03
@@ -34,9 +34,10 @@ required_content:
   - repo: "hankthebldr/cortex-vulnerable-llm"
   - repo: "hankthebldr/cortex-prompt-attacker"
 
+# AIRS target is the in-tree cortex-vulnerable-llm Flask app (no dedicated AWS module);
+# the base jumpbox is the only infra needed. A dedicated infra/modules/aws/airs/ lab is future content.
 infra_modules_needed:
   - base
-  - airs
 
 external_tools:
   - name: Cortex Prompt Attacker
@@ -61,7 +62,7 @@ steps:
     mitre_technique: "T1082"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "Pre-flight: target accepts /owasp/llm07/chat with seeded system prompt"
         ttp_ref: "TTP-2026-0014"
         detection_id: "xql-airs-llm07-preflight-chat-endpoint-accepts-seeded-system-prompt"
@@ -89,7 +90,7 @@ steps:
         ttp_ref: "TTP-2026-0014"
         detection_id: "bioc-airs-llm07-system-prompt-embedded-akia-canary-key-leaks-into-response"
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — prompt-stealer family classifier fires on 'repeat the words above' patterns"
         ttp_ref: "TTP-2026-0014"
         detection_id: "xql-airs-llm07-prompt-stealer-family-classifier-repeat-words-above"
@@ -103,7 +104,7 @@ steps:
     mitre_technique: "T1082"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "Aggregation by OWASP code shows ≥1 LLM07 vulnerable outcome"
         ttp_ref: "TTP-2026-0014"
         detection_id: "xql-airs-llm07-aggregation-by-owasp-code-shows-vulnerable-outcome"

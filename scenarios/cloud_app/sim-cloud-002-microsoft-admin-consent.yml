@@ -5,8 +5,8 @@ status: active
 
 plane: CLOUD_APP
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-CAPP-02
 tc_ref: TC-CAPP-02
@@ -84,7 +84,7 @@ steps:
     mitre_technique: "T1078.004"
     expected_detections:
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "Cloud App — Directory.ReadWrite.All scope request from non-admin user"
         ttp_ref: TTP-2026-0028
         detection_id: xql-cloud-002-microsoft-directory-readwrite-all-admin-consent-scope-request
@@ -94,7 +94,7 @@ steps:
         ttp_ref: TTP-2026-0028
         detection_id: bioc-cloud-002-microsoft-application-readwrite-all-in-same-grant-body
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — outbound v2.0/authorize App-ID match to login.microsoftonline.com"
         ttp_ref: TTP-2026-0028
         detection_id: xql-cloud-002-ngfw-microsoft-v2-authorize-admin-consent-egress
@@ -124,7 +124,7 @@ steps:
     mitre_technique: "T1098"
     expected_detections:
       - plane: CLOUD_APP
-        type: Analytics
+        type: XQL
         description: "Cloud App — repeat admin-consent attempt confirms persistence intent"
         ttp_ref: TTP-2026-0028
         detection_id: xql-cloud-002-microsoft-repeat-admin-consent-persistence-attempt

@@ -5,8 +5,8 @@ status: active
 
 plane: NDR
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-NDR-04
 tc_ref: TC-NDR-04
@@ -84,7 +84,7 @@ steps:
     mitre_technique: "T1046"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "Dry-run report shows planned host count and ports"
         ttp_ref: TTP-2026-0053
         detection_id: xql-dry-run-report-shows-planned-host-count-and-ports
@@ -116,7 +116,7 @@ steps:
     mitre_technique: "T1018"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — host sweeping pattern (1 src → many dst on TCP/445)"
         ttp_ref: TTP-2026-0053
         detection_id: xql-ngfw-eal-host-sweeping-pattern-1-src-to-many-dst-on-tcp-445
@@ -126,7 +126,7 @@ steps:
         ttp_ref: TTP-2026-0053
         detection_id: bioc-ngfw-eal-anomalous-smb-traffic-outside-admin-baseline
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM correlation — sweep src host stitched with workstation context"
         ttp_ref: TTP-2026-0053
         detection_id: xql-xsiam-correlation-sweep-src-host-stitched-with-workstation-context

@@ -5,7 +5,7 @@ status: active
 
 plane: AI_SPM
 detection_types:
-  - Analytics
+  - XQL
 
 uc_ref: UCS-AISPM-01
 tc_ref: TC-AISP-03
@@ -89,7 +89,7 @@ steps:
     mitre_technique: "T1195.002"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Operator manifest capture — no Cortex detection at this step."
         ttp_ref: TTP-2026-0056
         detection_id: xql-aispm-003-supply-chain-manifest-capture-bookkeeping
@@ -104,7 +104,7 @@ steps:
     mitre_technique: "T1195.002"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Cortex AI-SPM supply-chain scan discovers third-party ML dependencies referenced by Lambda + SageMaker workloads."
         ttp_ref: TTP-2026-0056
         detection_id: xql-aispm-003-supply-chain-scan-discovers-ml-dependencies
@@ -143,7 +143,7 @@ steps:
     mitre_technique: "T1574"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Cortex AI-SPM /api/v1/findings returns ≥ 2 CVE-tagged ML-dependency findings (transformers + tensorflow), each annotated with EU AI Act risk classification."
         ttp_ref: TTP-2026-0056
         detection_id: xql-aispm-003-cve-tagged-ml-dependency-findings
@@ -159,7 +159,7 @@ steps:
           value: 100
           unit: "%"
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Dependency graph traces SageMaker → Lambda → OpenAI proxy, surfacing the third-party AI integration chain."
         ttp_ref: TTP-2026-0056
         detection_id: xql-aispm-003-dependency-graph-chain-sagemaker-lambda-provider

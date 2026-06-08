@@ -5,7 +5,7 @@ status: active
 
 plane: AI_SPM
 detection_types:
-  - Analytics
+  - XQL
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
 # Maps directly to Cortex Use Case Index Master v2.0:
@@ -98,7 +98,7 @@ steps:
     mitre_technique: "T1526"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Ground-truth manifest captured — no Cortex detection expected at this step (operator-internal bookkeeping)."
         ttp_ref: TTP-2026-0054
         detection_id: xql-aispm-001-ground-truth-manifest-capture-bookkeeping
@@ -115,7 +115,7 @@ steps:
     mitre_technique: "T1526"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Cortex Cloud AI-SPM scanner discovers planted AI assets across the AWS account during this scan cycle."
         ttp_ref: TTP-2026-0054
         detection_id: xql-aispm-001-ai-asset-scan-cycle-discovery
@@ -136,7 +136,7 @@ steps:
     mitre_technique: "T1526"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Cortex Cloud /api/v1/inventory returns ≥ 6 AI-tagged assets (7 if shadow GPU enabled) — SageMaker endpoint, SageMaker model, Lambda OpenAI proxy, training-data bucket, pickled model object, overprivileged role; optional shadow GPU."
         ttp_ref: TTP-2026-0054
         detection_id: xql-aispm-001-inventory-api-ai-tagged-assets-count
@@ -181,7 +181,7 @@ steps:
     mitre_technique: "T1526"
     expected_detections:
       - plane: AI_SPM
-        type: Analytics
+        type: XQL
         description: "Final reconciliation step — KPI computation completes and the Run's primary_kpi value is populated for the POV report. Pass = Asset Discovery Coverage ≥ 100 %."
         ttp_ref: TTP-2026-0054
         detection_id: xql-aispm-001-asset-discovery-coverage-reconciliation

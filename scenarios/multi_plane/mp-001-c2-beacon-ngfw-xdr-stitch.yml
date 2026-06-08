@@ -5,9 +5,10 @@ status: active
 
 plane: ANALYTICS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
   - IOC
+  - Correlation
 
 uc_ref: UCS-NDR-01
 tc_ref: TC-NDR-01
@@ -112,7 +113,7 @@ steps:
     mitre_technique: "T1071.001"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW — repetitive HTTP beacon to testmynids.org (known IOC list)"
         ttp_ref: TTP-2026-0047
         detection_id: xql-mp-001-ngfw-repetitive-http-beacon-to-testmynids
@@ -133,10 +134,10 @@ steps:
           | filter actor_effective_user_name = "www-data"
           | comp count() as proc_events by action_local_ip
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM correlation — NGFW outbound session + XDR process event sharing src_host + session_time stitched into single incident"
         ttp_ref: TTP-2026-0047
-        detection_id: xql-mp-001-stitch-ngfw-session-and-xdr-process-by-src-host
+        detection_id: CR-MP-0001
         verification_xql: |
           // F2 stitching verifier — distinct planes under one incident_id
           dataset = xdr_data
@@ -162,20 +163,20 @@ steps:
     mitre_technique: "T1572"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW — DNS anomaly: high TXT query volume with high-entropy labels"
         ttp_ref: TTP-2026-0047
         detection_id: xql-mp-001-ngfw-dns-txt-high-entropy-burst
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "XDR — repetitive dig invocation from service account"
         ttp_ref: TTP-2026-0047
         detection_id: xql-mp-001-repetitive-dig-txt-from-service-account
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM stitching — DNS exfil pattern correlated with process lineage into unified exfiltration incident"
         ttp_ref: TTP-2026-0047
-        detection_id: xql-mp-001-stitch-dns-exfil-with-process-lineage
+        detection_id: CR-MP-0002
 
   - id: step-04
     name: "Ingress tool transfer (download simulated second-stage)"
@@ -188,7 +189,7 @@ steps:
     mitre_technique: "T1105"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW — download from IOC-listed domain matching threat intel feed"
         ttp_ref: TTP-2026-0047
         detection_id: xql-mp-001-ngfw-download-from-ioc-listed-domain

@@ -5,7 +5,7 @@ status: active
 
 plane: AIRS
 detection_types:
-  - Analytics
+  - XQL
 
 uc_ref: UCS-AIRS-05
 tc_ref: TC-AIRS-05
@@ -33,9 +33,10 @@ required_content:
   - repo: "hankthebldr/cortex-vulnerable-llm"
   - repo: "hankthebldr/cortex-prompt-attacker"
 
+# AIRS target is the in-tree cortex-vulnerable-llm Flask app (no dedicated AWS module);
+# the base jumpbox is the only infra needed. A dedicated infra/modules/aws/airs/ lab is future content.
 infra_modules_needed:
   - base
-  - airs
 
 external_tools:
   - name: Cortex Prompt Attacker
@@ -59,7 +60,7 @@ steps:
     mitre_technique: "T1499"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "Pre-flight: target /owasp/llm10/chat accepts unbounded max_tokens"
         ttp_ref: "TTP-2026-0016"
         detection_id: "xql-airs-llm10-preflight-endpoint-accepts-unbounded-max-tokens"
@@ -78,17 +79,17 @@ steps:
     mitre_technique: "T1499"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — token-usage rolling sum exceeds per-user budget (DoS-class detector)"
         ttp_ref: "TTP-2026-0016"
         detection_id: "xql-airs-llm10-token-usage-rolling-sum-exceeds-per-user-budget"
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — p95 latency on /owasp/llm10/chat exceeds threshold under load"
         ttp_ref: "TTP-2026-0016"
         detection_id: "xql-airs-llm10-p95-latency-on-chat-endpoint-exceeds-threshold-under-load"
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — sustained POST burst to AIRS endpoint flagged as anomalous app traffic"
         ttp_ref: "TTP-2026-0016"
         detection_id: "xql-airs-llm10-ngfw-sustained-post-burst-flagged-anomalous-app-traffic"
@@ -105,7 +106,7 @@ steps:
     mitre_technique: "T1499"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — circuit-breaker / cost-cap policy engaged, request rejected with 429 / blocked"
         ttp_ref: "TTP-2026-0016"
         detection_id: "xql-airs-llm10-circuit-breaker-rejects-oversized-request-with-429"

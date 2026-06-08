@@ -5,8 +5,8 @@ status: active
 
 plane: AI_ACCESS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
   - IOC
 
 uc_ref: UCS-AIACC-02
@@ -91,12 +91,12 @@ steps:
         ttp_ref: TTP-2026-0008
         detection_id: ioc-cloud-account-id-akia-0-9a-z-16
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — POST to api.anthropic.com from non-sanctioned user context"
         ttp_ref: TTP-2026-0008
         detection_id: xql-aiacc-002-post-to-anthropic-from-non-sanctioned-user-context
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — generative-ai App-ID match on outbound HTTPS to anthropic.com"
         ttp_ref: TTP-2026-0008
         detection_id: xql-aiacc-002-ngfw-generative-ai-app-id-outbound-https-to-anthropic
@@ -126,7 +126,7 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — block-action policy fires after first DLP hit, subsequent sessions denied"
         ttp_ref: TTP-2026-0008
         detection_id: xql-aiacc-002-repeated-secret-egress-to-anthropic-block-policy-trigger

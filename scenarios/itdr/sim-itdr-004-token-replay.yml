@@ -5,8 +5,8 @@ status: active
 
 plane: ITDR
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-ITDR-04
 tc_ref: TC-ITDR-04
@@ -89,7 +89,7 @@ steps:
     mitre_technique: "T1539"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — same session_token_id observed from two geos and two user-agents within 5 min"
         ttp_ref: TTP-2026-0040
         detection_id: xql-itdr-004-session-token-reused-across-geo-and-user-agent
@@ -128,12 +128,12 @@ steps:
     mitre_technique: "T1550.004"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — three independent token-replay alerts within 5 min stitch into one incident"
         ttp_ref: TTP-2026-0040
         detection_id: xql-itdr-004-three-token-replay-alerts-stitch-into-one-incident
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — token-replay incidents grouped under same identity"
         ttp_ref: TTP-2026-0040
         detection_id: xql-itdr-004-xsiam-token-replay-incidents-grouped-by-identity

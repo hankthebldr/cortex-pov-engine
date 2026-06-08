@@ -5,8 +5,8 @@ status: active
 
 plane: ITDR
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-ITDR-05
 tc_ref: TC-ITDR-05
@@ -88,7 +88,7 @@ steps:
     mitre_technique: "T1110.003"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — 10 consecutive failed sign-ins from same IP detected as brute-force"
         ttp_ref: TTP-2026-0041
         detection_id: xql-itdr-005-ten-consecutive-failed-sign-ins-brute-force
@@ -127,12 +127,12 @@ steps:
     mitre_technique: "T1110.003"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — second lockout within 1h on same identity escalates incident severity"
         ttp_ref: TTP-2026-0041
         detection_id: xql-itdr-005-second-lockout-within-one-hour-escalates-severity
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — repeat-lockout pattern grouped under single password-spray incident"
         ttp_ref: TTP-2026-0041
         detection_id: xql-itdr-005-xsiam-repeat-lockout-grouped-password-spray

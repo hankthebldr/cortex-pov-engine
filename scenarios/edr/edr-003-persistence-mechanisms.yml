@@ -6,7 +6,7 @@ status: active
 plane: EDR
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
 
 uc_ref: UCS-EDR-03
 tc_ref: TC-EDR-03
@@ -64,7 +64,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-cron-job-creation-with-suspicious-command-path"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Crontab modification from non-interactive session — automated persistence installation pattern"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-crontab-modification-non-interactive"
@@ -98,7 +98,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-systemd-unit-with-suspicious-execstart"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Service unit file written with restart=always and hidden binary path — malware persistence pattern"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-service-unit-restart-always-hidden-path"
@@ -120,7 +120,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-local-account-created-with-sudo-group"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "User account creation from non-login session — automated account provisioning pattern"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-user-account-creation-non-login-session"
@@ -143,7 +143,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-ssh-key-generation-then-authorized-keys-write"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "ssh-keygen invocation from non-interactive session — automated SSH persistence setup"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-ssh-keygen-non-interactive-persistence"
@@ -165,7 +165,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-shell-profile-modified-with-background-execution"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Shell initialization file modification pattern — persistence via user profile"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-shell-init-file-modification"
