@@ -32,7 +32,7 @@ from eal_simulator.plugins.idp_signin_emulator import (
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 class _RecordingClient:

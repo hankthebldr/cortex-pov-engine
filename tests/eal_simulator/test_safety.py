@@ -3,7 +3,84 @@ from __future__ import annotations
 
 import pytest
 
-from eal_simulator.safety import SafetyError, SafetyPolicy
+from eal_simulator.safety import (
+    SafetyError,
+    SafetyPolicy,
+    classify_c2_plugins,
+    is_c2_plugin,
+)
+
+
+# --- EAL-G01: C2-shaped plugin classification + c2_authorized gate ---
+
+
+def test_is_c2_plugin_by_name():
+    assert is_c2_plugin("c2_http_beacon", None) is True
+    assert is_c2_plugin("idp_signin_emulator", None) is False
+
+
+def test_is_c2_plugin_by_mitre_technique():
+    # T1071.001 (Web Protocols) belongs to the C2 tactic even if the plugin
+    # name is not on the explicit allowlist — base T1071 must match the sub.
+    assert is_c2_plugin("some_future_beacon", ["T1071.001"]) is True
+    assert is_c2_plugin("dns_tunnel_exfil", ["T1572"]) is True
+    # A non-C2 technique alone does not trip the gate.
+    assert is_c2_plugin("idp_signin_emulator", ["T1110.003"]) is False
+
+
+def test_classify_c2_plugins_dedup_and_order():
+    got = classify_c2_plugins([
+        ("c2_http_beacon", ["T1071"]),
+        ("idp_signin_emulator", ["T1110"]),
+        ("c2_http_beacon", ["T1071"]),  # duplicate
+        ("beaconish", ["T1572"]),
+    ])
+    assert got == ["c2_http_beacon", "beaconish"]
+
+
+def test_assert_c2_authorized_refuses_without_consent():
+    policy = SafetyPolicy(
+        simulation_authorized=True,
+        authorized_by="op",
+        target_allowlist=["a.example"],
+        dry_run=False,
+        c2_authorized=False,
+    )
+    with pytest.raises(SafetyError, match="c2_authorized"):
+        policy.assert_c2_authorized(["c2_http_beacon"])
+
+
+def test_assert_c2_authorized_allows_with_consent():
+    policy = SafetyPolicy(
+        simulation_authorized=True,
+        authorized_by="op",
+        target_allowlist=["a.example"],
+        dry_run=False,
+        c2_authorized=True,
+    )
+    policy.assert_c2_authorized(["c2_http_beacon"])  # no raise
+
+
+def test_assert_c2_authorized_skips_in_dry_run():
+    policy = SafetyPolicy(
+        simulation_authorized=False,
+        authorized_by="",
+        target_allowlist=[],
+        dry_run=True,
+        c2_authorized=False,
+    )
+    policy.assert_c2_authorized(["c2_http_beacon"])  # dry-run emits nothing
+
+
+def test_assert_c2_authorized_noop_without_c2_plugins():
+    policy = SafetyPolicy(
+        simulation_authorized=True,
+        authorized_by="op",
+        target_allowlist=["a.example"],
+        dry_run=False,
+        c2_authorized=False,
+    )
+    policy.assert_c2_authorized([])  # no C2 plugins → no consent needed
 
 
 def test_dry_run_skips_all_checks():

@@ -24,7 +24,7 @@ from eal_simulator.plugins.ssh_egress import (
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 class _SshSinkhole:

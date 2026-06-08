@@ -64,12 +64,18 @@ class BulkHttpsExfilParams(BaseModel):
 
 
 def _random_chunks(total: int, chunk: int):
-    """Yield random byte buffers totalling exactly *total* bytes."""
-    rng = random.SystemRandom()
+    """Yield random byte buffers totalling exactly *total* bytes.
+
+    Uses ``random.randbytes`` (CPython ≥3.9) for bulk buffers instead of a
+    per-byte ``getrandbits(8)`` loop — the latter is pathologically slow at
+    multi-GiB scale (EAL-G10). The content only needs to be high-entropy so
+    the wire looks like real exfil; it is never cryptographic material.
+    """
+    rng = random.Random()
     sent = 0
     while sent < total:
         size = min(chunk, total - sent)
-        yield bytes(rng.getrandbits(8) for _ in range(size))
+        yield rng.randbytes(size)
         sent += size
 
 
@@ -128,12 +134,18 @@ class BulkHttpsExfil(BaseSimulation):
         async with httpx.AsyncClient(
             timeout=params.request_timeout,
             follow_redirects=False,
-            verify=False,
+            verify=ctx.verify_tls,  # default False (NGFW MitM); opt-in per campaign
         ) as client:
             for i in range(params.request_count):
                 size = per_request if i < params.request_count - 1 else (
                     params.total_bytes - total_sent
                 )
+
+                # Charge the campaign-level cumulative budget BEFORE streaming
+                # this request so a chained campaign can't quietly exceed the
+                # aggregate byte/request ceiling (EAL-G06).
+                ctx.charge_request()
+                ctx.charge_bytes(size)
 
                 async def _stream():  # noqa: D401 — local generator.
                     for chunk in _random_chunks(size, params.chunk_bytes):

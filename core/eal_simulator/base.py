@@ -20,9 +20,12 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .safety import SafetyPolicy
 
 
 logger = logging.getLogger("cortexsim.eal.base")
@@ -46,6 +49,17 @@ class SimulationContext:
         params        The validated Pydantic params model for this step.
         deadline_at   Optional ISO-8601 timestamp after which the plugin should
                       stop and return early (cooperative cancellation).
+        verify_tls    Whether httpx-using plugins should verify the server TLS
+                      certificate. Defaults to ``False`` because POVs commonly
+                      MitM outbound traffic through the customer NGFW with a
+                      self-signed cert; operators opt back in per campaign.
+        _policy       The campaign ``SafetyPolicy``. Populated by the executor
+                      so ``authorise`` (and the per-target budget hook) are
+                      statically visible rather than runtime ``setattr``'d.
+        authorise     Per-target gate every plugin MUST call before emitting
+                      traffic. Bound to ``SafetyPolicy.authorise`` by the
+                      executor; a no-op default keeps the context usable in
+                      isolation (e.g. unit tests that build it by hand).
     """
 
     campaign_id: str
@@ -57,6 +71,12 @@ class SimulationContext:
     emit_event: Callable[[dict[str, Any]], Awaitable[None]]
     params: BaseModel
     deadline_at: Optional[datetime] = None
+    verify_tls: bool = False
+    _policy: Optional["SafetyPolicy"] = None
+    _budget: Optional[Any] = dataclasses.field(default=None, repr=False)
+    authorise: Callable[..., None] = dataclasses.field(
+        default=lambda *a, **k: None, repr=False
+    )
 
     @property
     def telemetry_headers(self) -> dict[str, str]:
@@ -66,6 +86,27 @@ class SimulationContext:
             "X-Simulation-Campaign-ID": self.campaign_id,
             "X-Simulation-Source": "cortexsim-eal-simulator/1.0",
         }
+
+    def charge_bytes(self, n: int) -> None:
+        """Charge ``n`` bytes against the campaign-level cumulative budget.
+
+        Raises ``BudgetError`` (a ``SafetyError``) if the campaign ceiling is
+        crossed. A no-op when no budget is attached (e.g. a context built by
+        hand in a unit test). Plugins should call this on the bytes they are
+        about to put on the wire BEFORE the send so a ceiling stops further
+        emission rather than merely recording an overflow after the fact.
+        """
+        if self._budget is not None:
+            self._budget.charge_bytes(n)
+
+    def charge_request(self, n: int = 1) -> None:
+        """Charge ``n`` requests/events against the campaign-level budget.
+
+        Raises ``BudgetError`` if the cumulative request ceiling is crossed;
+        a no-op when no budget is attached.
+        """
+        if self._budget is not None:
+            self._budget.charge_request(n)
 
 
 @dataclasses.dataclass

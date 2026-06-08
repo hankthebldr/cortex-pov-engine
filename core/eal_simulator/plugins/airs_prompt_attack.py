@@ -16,6 +16,7 @@ the other HTTP-emitting plugins.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import os
@@ -33,6 +34,17 @@ from ..base import BaseSimulation, SimulationContext, SimulationResult
 
 
 logger = logging.getLogger("cortexsim.eal.plugins.airs_prompt_attack")
+
+
+@dataclasses.dataclass
+class _Counters:
+    """Run-scoped tallies returned from ``_consume_stdout`` (no ctx mutation)."""
+
+    events_emitted: int = 0
+    attempts_run: int = 0
+    vuln_count: int = 0
+    clean_count: int = 0
+    error_count: int = 0
 
 
 # Optional import — only needed at runtime when the attacker is installed.
@@ -187,19 +199,11 @@ class AirsPromptAttack(BaseSimulation):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        events_emitted = 0
-        attempts_run = 0
-        vuln_count = 0
-        clean_count = 0
-        error_count = 0
 
+        counters = _Counters()
         try:
             await asyncio.wait_for(
-                self._consume_stdout(
-                    proc,
-                    ctx,
-                    stats=lambda kind: None,  # set below
-                ),
+                self._consume_stdout(proc, ctx, counters),
                 timeout=params.timeout_seconds,
             )
         except asyncio.TimeoutError:
@@ -211,22 +215,19 @@ class AirsPromptAttack(BaseSimulation):
                 status="error",
                 started_at=started_at,
                 completed_at=self.utcnow(),
-                events_emitted=0,
+                events_emitted=counters.events_emitted,
                 error=f"timeout after {params.timeout_seconds}s",
             )
 
-        # Re-read stdout into events from the (now-buffered) reader the
-        # generator drained. We collected counts inside _consume_stdout via
-        # the closure below.
         rc = await proc.wait()
         stderr_blob = (await proc.stderr.read()).decode("utf-8", errors="replace") if proc.stderr else ""
 
-        # Counts were attached to the context object below.
-        events_emitted = getattr(ctx, "_airs_events_emitted", 0)
-        attempts_run = getattr(ctx, "_airs_attempts_run", 0)
-        vuln_count = getattr(ctx, "_airs_vuln_count", 0)
-        clean_count = getattr(ctx, "_airs_clean_count", 0)
-        error_count = getattr(ctx, "_airs_error_count", 0)
+        # Counters are returned from _consume_stdout (no ctx mutation, EAL-G08).
+        events_emitted = counters.events_emitted
+        attempts_run = counters.attempts_run
+        vuln_count = counters.vuln_count
+        clean_count = counters.clean_count
+        error_count = counters.error_count
 
         # Parse the runner summary out of stderr (last JSON line).
         summary_obj = None
@@ -268,16 +269,13 @@ class AirsPromptAttack(BaseSimulation):
         self,
         proc: asyncio.subprocess.Process,
         ctx: SimulationContext,
-        *,
-        stats,
+        counters: "_Counters",
     ) -> None:
-        # Initialise per-context counters used by the caller.
-        setattr(ctx, "_airs_events_emitted", 0)
-        setattr(ctx, "_airs_attempts_run", 0)
-        setattr(ctx, "_airs_vuln_count", 0)
-        setattr(ctx, "_airs_clean_count", 0)
-        setattr(ctx, "_airs_error_count", 0)
+        """Drain the attacker's JSONL stdout, emit ECS events, tally counters.
 
+        Counters are accumulated on the passed-in ``_Counters`` instance and
+        consumed by ``run`` — no ``ctx`` mutation (EAL-G08).
+        """
         if proc.stdout is None:  # pragma: no cover - defensive
             return
 
@@ -314,17 +312,17 @@ class AirsPromptAttack(BaseSimulation):
                     if _CPA_EVENTS_AVAILABLE else
                     _fallback_event("airs_probe_attempt", payload, ctx)
                 )
-                ctx._airs_attempts_run += 1  # type: ignore[attr-defined]
+                counters.attempts_run += 1
                 outcome = payload.get("outcome")
                 if outcome == "vuln":
-                    ctx._airs_vuln_count += 1  # type: ignore[attr-defined]
+                    counters.vuln_count += 1
                 elif outcome == "clean":
-                    ctx._airs_clean_count += 1  # type: ignore[attr-defined]
+                    counters.clean_count += 1
                 else:
-                    ctx._airs_error_count += 1  # type: ignore[attr-defined]
+                    counters.error_count += 1
 
             await ctx.emit_event(event)
-            ctx._airs_events_emitted += 1  # type: ignore[attr-defined]
+            counters.events_emitted += 1
 
 
 def _fallback_event(action: str, payload: dict, ctx: SimulationContext) -> dict:

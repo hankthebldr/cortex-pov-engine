@@ -1,7 +1,6 @@
 """Shared fixtures for EAL simulator tests."""
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -113,10 +112,11 @@ def sample_campaign() -> Campaign:
     })
 
 
-@pytest.fixture
-def event_loop():
-    """Provide a dedicated loop so async tests can run without pytest-asyncio
-    auto-mode interactions with the rest of the suite."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+# NOTE: there is deliberately no ``event_loop`` fixture override here. The old
+# override (``loop = asyncio.new_event_loop(); yield loop; loop.close()``) is
+# deprecated in pytest-asyncio 0.24 and was the root cause of the full-suite
+# breakage: it closed the loop after the EAL tests, leaving later tests that
+# used ``asyncio.get_event_loop().run_until_complete`` to raise
+# ``RuntimeError: There is no current event loop``. All seeding/dry-run helpers
+# now use ``asyncio.run`` (one fresh loop per call, torn down on exit), so the
+# suite is order-independent.

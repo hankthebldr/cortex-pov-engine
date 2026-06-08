@@ -87,6 +87,14 @@ class Campaign(BaseModel):
         default=False,
         description="Must be true for live (non-dry-run) execution.",
     )
+    c2_authorized: bool = Field(
+        default=False,
+        description="Must be true for live execution of a campaign that "
+                    "includes a C2-shaped plugin (e.g. c2_http_beacon). Mirrors "
+                    "the scenario / tool-adapter launch gate's "
+                    "consent.c2_authorized for safety_class:c2-framework "
+                    "adapters so both paths share one consent vocabulary.",
+    )
     target_allowlist: list[str] = Field(default_factory=list)
 
     dry_run: bool = Field(
@@ -134,6 +142,22 @@ class Campaign(BaseModel):
             if not self.target_allowlist:
                 raise ValueError(
                     "dry_run=false requires a non-empty target_allowlist"
+                )
+            # C2 consent gate (name-based; mirrors the scenario adapter gate).
+            # The fuller MITRE-aware classification runs at launch with the
+            # plugin registry — here we only have step plugin NAMES, which is
+            # enough to catch the explicitly-named C2 plugins. Importing the
+            # classifier lazily keeps campaign.py free of an import-time
+            # dependency on the safety module.
+            from .safety import classify_c2_plugins  # noqa: PLC0415
+
+            c2 = classify_c2_plugins((s.plugin, None) for s in self.steps)
+            if c2 and not self.c2_authorized:
+                raise ValueError(
+                    "dry_run=false with C2-shaped plugin(s) "
+                    f"{sorted(set(c2))} requires c2_authorized=true "
+                    "(mirrors the scenario adapter consent.c2_authorized gate "
+                    "for safety_class:c2-framework)"
                 )
         return self
 

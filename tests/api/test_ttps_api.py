@@ -271,7 +271,7 @@ def seeded_ttp_runs(session_factory):
 
             await db.commit()
 
-    asyncio.get_event_loop().run_until_complete(_seed())
+    asyncio.run(_seed())
 
 
 def test_runs_by_ttp_returns_only_matching_runs(client, seeded_ttp_runs):

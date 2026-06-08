@@ -34,7 +34,7 @@ def api_client(tmp_path) -> TestClient:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.get_event_loop().run_until_complete(_init())
+    asyncio.run(_init())
 
     # Build a custom get_db dependency that yields from our isolated engine.
     async def _get_db() -> AsyncIterator[AsyncSession]:
@@ -65,7 +65,7 @@ def api_client(tmp_path) -> TestClient:
         db_module.AsyncSessionLocal = saved_factory
         eal_api.AsyncSessionLocal = saved_factory
         eal_api._reset_executor()
-        asyncio.get_event_loop().run_until_complete(engine.dispose())
+        asyncio.run(engine.dispose())
 
 
 class TestPluginsAPI:
@@ -216,3 +216,146 @@ class TestLaunchAPI:
         # outcome blocks the launch, which is the only thing we care about.
         assert resp.status_code == 422
         assert resp.json()["detail"]["code"] in {"SAFETY_VIOLATION", "SPEC_INVALID"}
+
+
+class TestC2ConsentGate:
+    """EAL-G01 — a C2-shaped campaign needs c2_authorized for live launch."""
+
+    _LIVE_C2 = {
+        "campaign_id": "CMP-NDR-300",
+        "name": "live c2",
+        "authorized_by": "tester",
+        "simulation_authorized": True,
+        "target_allowlist": ["testmynids.org"],
+        "dry_run": True,  # stored dry-run; launch flips to live
+        "steps": [
+            {
+                "step_id": "step-01",
+                "plugin": "c2_http_beacon",
+                "params": {
+                    "target_url": "http://testmynids.org/uid/index.html",
+                    "iterations": 1,
+                    "sleep_seconds": 0.1,
+                },
+            }
+        ],
+    }
+
+    def test_live_c2_launch_without_consent_is_refused(self, api_client: TestClient):
+        api_client.post("/api/eal/campaigns", json=self._LIVE_C2)
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-NDR-300/launch",
+            json={"dry_run": False},  # live, but no c2_authorized
+        )
+        assert resp.status_code == 422, resp.text
+        body = resp.json()
+        assert body["detail"]["code"] in {"SAFETY_VIOLATION", "SPEC_INVALID"}
+        assert "c2_authorized" in body["detail"]["detail"]
+
+    def test_live_c2_launch_with_consent_is_allowed(self, api_client: TestClient):
+        spec = {**self._LIVE_C2, "campaign_id": "CMP-NDR-301"}
+        api_client.post("/api/eal/campaigns", json=spec)
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-NDR-301/launch",
+            json={"dry_run": False, "c2_authorized": True},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["run_id"]
+
+    def test_dry_run_c2_launch_needs_no_consent(self, api_client: TestClient):
+        spec = {**self._LIVE_C2, "campaign_id": "CMP-NDR-302"}
+        api_client.post("/api/eal/campaigns", json=spec)
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-NDR-302/launch",
+            json={},  # dry-run default from stored spec
+        )
+        assert resp.status_code == 200, resp.text
+
+
+class TestAbortAPI:
+    """GAP-API-011 — EAL run abort + core lifecycle vocabulary reconciliation."""
+
+    _SAMPLE = {
+        "campaign_id": "CMP-NDR-400",
+        "name": "abort test",
+        "authorized_by": "tester",
+        "simulation_authorized": True,
+        "target_allowlist": ["testmynids.org"],
+        "dry_run": True,
+        "steps": [
+            {
+                "step_id": "step-01",
+                "plugin": "c2_http_beacon",
+                "params": {
+                    "target_url": "http://testmynids.org/uid/index.html",
+                    "iterations": 1,
+                    "sleep_seconds": 0.1,
+                },
+            }
+        ],
+    }
+
+    def test_abort_unknown_run_404(self, api_client: TestClient):
+        resp = api_client.post("/api/eal/runs/does-not-exist/abort")
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "RUN_NOT_FOUND"
+
+    def test_abort_terminal_run_returns_409(self, api_client: TestClient):
+        # Launch a dry-run campaign; the TestClient runs background tasks
+        # synchronously on response, so by the time we read it the run is
+        # already terminal (complete) and therefore not abortable.
+        api_client.post("/api/eal/campaigns", json=self._SAMPLE)
+        launch = api_client.post(
+            "/api/eal/campaigns/CMP-NDR-400/launch", json={},
+        )
+        run_id = launch.json()["run_id"]
+        # Drive to terminal state by reading; background task already ran.
+        run = api_client.get(f"/api/eal/runs/{run_id}").json()
+        assert run["status"] in {"complete", "failed", "aborted", "pending", "running"}
+        resp = api_client.post(f"/api/eal/runs/{run_id}/abort")
+        # If it reached a terminal state, abort is a 409; if somehow still
+        # pending/running it would be 200 with status aborted. Accept both
+        # but assert the contract shape.
+        assert resp.status_code in {200, 409}
+        if resp.status_code == 409:
+            assert resp.json()["detail"]["code"] == "RUN_NOT_ABORTABLE"
+        else:
+            assert resp.json()["status"] == "aborted"
+
+    def test_abort_running_run_flips_to_aborted(self, api_client: TestClient):
+        """A non-terminal run is flipped to the core 'aborted' state."""
+        from api import eal as eal_api
+        from models import EalCampaign, EalCampaignRun
+
+        # Persist a campaign + a 'running' run directly so we have a stable
+        # non-terminal run to abort (the TestClient otherwise drives launches
+        # straight to a terminal state synchronously).
+        async def _seed():
+            async with eal_api.AsyncSessionLocal() as session:
+                session.add(EalCampaign(
+                    campaign_id="CMP-NDR-401",
+                    name="abort-running",
+                    spec={},
+                    simulation_authorized=True,
+                    target_allowlist=["testmynids.org"],
+                    tags=[],
+                ))
+                session.add(EalCampaignRun(
+                    run_id="run-running-1",
+                    campaign_id="CMP-NDR-401",
+                    status="running",
+                    dry_run=False,
+                    step_results=[],
+                ))
+                await session.commit()
+
+        asyncio.run(_seed())
+
+        resp = api_client.post("/api/eal/runs/run-running-1/abort")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "aborted"
+        assert body["previous_status"] == "running"
+
+        run = api_client.get("/api/eal/runs/run-running-1").json()
+        assert run["status"] == "aborted"

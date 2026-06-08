@@ -52,6 +52,12 @@ from ..base import BaseSimulation, SimulationContext, SimulationResult
 logger = logging.getLogger("cortexsim.eal.plugins.oauth_grant_emulator")
 
 
+# The redirect_uri must carry this marker (case-insensitive) so a typo can
+# never point the OAuth grant at a real customer callback. The default
+# redirect_uri (cortexsim-canary.invalid) satisfies it.
+_CANARY_MARKER = "cortexsim"
+
+
 # --------------------------------------------------------------------------
 # Provider definitions
 # --------------------------------------------------------------------------
@@ -158,7 +164,9 @@ class OAuthGrantEmulatorParams(BaseModel):
     request_timeout: float = Field(default=15.0, ge=1.0, le=300.0)
     redirect_uri: str = Field(
         default="https://cortexsim-canary.invalid/oauth/callback",
-        description="Bogus redirect URI included in the request.",
+        description="Bogus redirect URI included in the request. Must carry the "
+                    "'cortexsim' canary marker so a misconfiguration cannot "
+                    "point the grant at a real customer callback.",
     )
     okta_tenant: Optional[str] = Field(
         default=None,
@@ -193,13 +201,20 @@ class OAuthGrantEmulatorParams(BaseModel):
     @field_validator("redirect_uri")
     @classmethod
     def _redirect_safe(cls, v: str) -> str:
-        # Redirect URI must be http(s) and contain the canary marker so
-        # accidental misconfigurations don't point at real customer URLs.
+        # Redirect URI must be http(s) and carry the canary marker so an
+        # accidental misconfiguration cannot point the grant at a real
+        # customer callback (EAL-G03 — the docstring promised this check).
         parsed = urlparse(v)
         if parsed.scheme not in ("http", "https"):
             raise ValueError("redirect_uri must use http or https")
         if not parsed.hostname:
             raise ValueError("redirect_uri must include a hostname")
+        if _CANARY_MARKER not in v.lower():
+            raise ValueError(
+                f"redirect_uri must contain the canary marker "
+                f"'{_CANARY_MARKER}' (e.g. https://cortexsim-canary.invalid/cb) "
+                "so it can never resolve to a real customer callback"
+            )
         return v
 
 
@@ -277,9 +292,15 @@ class OAuthGrantEmulator(BaseSimulation):
         bytes_sent = 0
         responses_seen: dict[int, int] = {}
 
+        # Stash verify_tls where _build_client reads it without changing its
+        # (monkeypatched-in-tests) signature.
+        self._verify_tls = ctx.verify_tls
         client = self._build_client(params)
         try:
             for i in range(params.iterations):
+                # Charge the campaign-level cumulative budget per request
+                # (EAL-G06); body bytes are charged inside _send_one.
+                ctx.charge_request()
                 outcome, status_code, request_bytes = await self._send_one(
                     client, provider, params, ctx, iteration=i + 1,
                 )
@@ -318,7 +339,9 @@ class OAuthGrantEmulator(BaseSimulation):
             headers["user-agent"] = params.user_agent
         return httpx.AsyncClient(
             timeout=params.request_timeout,
-            verify=False,
+            # default False (NGFW MitM friendly); opt back in per campaign via
+            # the verify_tls knob, read off the plugin instance (set in run()).
+            verify=getattr(self, "_verify_tls", False),
             follow_redirects=False,
             headers=headers,
         )
@@ -348,6 +371,7 @@ class OAuthGrantEmulator(BaseSimulation):
         }
         url = f"{provider.authorize_url(tenant=params.okta_tenant)}?{urlencode(query)}"
         request_bytes = len(url.encode("utf-8"))
+        ctx.charge_bytes(request_bytes)
 
         headers = {
             **{k.lower(): v for k, v in ctx.telemetry_headers.items()},
