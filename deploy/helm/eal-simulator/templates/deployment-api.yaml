@@ -30,6 +30,14 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "eal-simulator.fullname" . }}-config
+          env:
+            # Master key kept in a Secret, never the ConfigMap. The app's
+            # validate_master_key() guard refuses to boot prod without it.
+            - name: CORTEXSIM_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "eal-simulator.masterSecretName" . }}
+                  key: {{ .Values.masterSecret.key }}
           ports:
             - name: http
               containerPort: {{ .Values.api.env.CORTEXSIM_PORT | int }}

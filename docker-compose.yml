@@ -16,8 +16,14 @@ services:
       - simcore_db:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - CORTEXSIM_ENV=${CORTEXSIM_ENV:-production}
-      - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:-changeme}
+      # Default to development so a bare `docker compose up` does not trip the
+      # production master-key guard (core/config.py). Set CORTEXSIM_ENV=production
+      # in .env / your shell for real deployments — prod stays explicit opt-in.
+      - CORTEXSIM_ENV=${CORTEXSIM_ENV:-development}
+      # No insecure default: fail fast with a pointer instead of silently
+      # booting with "changeme". `scripts/dev-up.sh` generates this for you;
+      # otherwise see .env.example for one-liners to generate a secret.
+      - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:?set CORTEXSIM_SECRET in .env (run scripts/dev-up.sh, or see .env.example)}
     restart: unless-stopped
 
 volumes:

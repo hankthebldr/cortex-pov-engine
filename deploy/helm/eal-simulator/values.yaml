@@ -13,6 +13,31 @@ image:
   pullSecrets: []
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Master key — CORTEXSIM_SECRET. This key encrypts every credential CortexSim
+# stores, so core/config.py validate_master_key() REFUSES to boot in
+# production with a weak/default/short (< 32-byte) value. Because api.env sets
+# CORTEXSIM_ENV=production, you MUST supply a real key here or the API pod will
+# crash-loop on boot. Never hardcode it in this file.
+#
+# Two ways to supply it (pick one):
+#   1. Reference an existing Secret you created out-of-band (recommended for
+#      production — keeps the key out of `helm get values` / source control):
+#        kubectl -n <ns> create secret generic cortexsim-master \
+#          --from-literal=CORTEXSIM_SECRET=$(openssl rand -hex 32)
+#      then set: masterSecret.existingSecret=cortexsim-master
+#   2. Let the chart create the Secret from an inline value you pass at install
+#      time (handy for labs; still stored as a k8s Secret, never a ConfigMap):
+#        helm install ... --set masterSecret.value=$(openssl rand -hex 32)
+masterSecret:
+  # Name of a pre-existing Secret holding the key. Takes precedence over .value.
+  existingSecret: ""
+  # Key within the Secret that holds the value.
+  key: CORTEXSIM_SECRET
+  # Inline value — only used when existingSecret is empty. Leave blank by
+  # default so a bare `helm install` fails loudly (no silent 'changeme').
+  value: ""
+
+# ─────────────────────────────────────────────────────────────────────────────
 # API gateway — control plane the operator interacts with.
 # Binds to the Tailscale interface only (see service.bindAddress).
 # ─────────────────────────────────────────────────────────────────────────────

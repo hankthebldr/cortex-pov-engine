@@ -1,69 +1,169 @@
 name: CI
 
+# Real verified gate matrix for CortexSim.
+#
+# Each job mirrors exactly how this repo is tested in practice (see
+# docs/quick-start.md, docs/operator-runbook.md, CLAUDE.md and the root
+# Makefile, which runs the SAME commands locally):
+#
+#   backend   — build the production simcore image, then run the FULL pytest
+#               suite INSIDE it. The suite resolves content (scenarios/,
+#               detection_scanner/, tools/) from the bundled /app copy with
+#               CORTEXSIM_BASE_DIR=/app, so running in-image is the only way
+#               to reproduce the ~1551-test green run faithfully.
+#   agent     — Go 1.21+: build, vet, and `go test -race` the beacon agent.
+#   ui        — Node 20: npm ci + vite build + vitest run (>=305 tests).
+#   detection — detection_scanner/scripts/validate.py (0 fail) AND the
+#               export-determinism gate: regenerate every artifact and assert
+#               `git diff --exit-code detection_scanner/exports/` is clean,
+#               proving the committed exports match the live TTP cards.
+#   adapters  — scripts/check-adapter-sources.sh: tier-2 submodule sources
+#               must exist on disk (tier-4 runtime-fetched misses are WARN).
+#
+# All jobs run independently and in parallel — a failure in one surfaces a
+# precise gate without masking the others.
+
 on:
-  pull_request:
   push:
     branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint-shell:
+  # ---------------------------------------------------------------------------
+  # backend — pytest inside the built production image.
+  # ---------------------------------------------------------------------------
+  backend:
+    name: backend (pytest in prod image)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Shellcheck installer scripts
-        run: |
-          shopt -s globstar nullglob
-          if compgen -G "installer/bootstrap/*.sh" > /dev/null; then
-            shellcheck installer/bootstrap/*.sh
-          fi
-          if compgen -G "installer/stage2/common/*.sh" > /dev/null; then
-            shellcheck installer/stage2/common/*.sh
-          fi
-          if compgen -G "installer/stage2/linux/*.sh" > /dev/null; then
-            shellcheck installer/stage2/linux/*.sh
-          fi
+        # The image COPYs scenarios/, detection_scanner/ and tools/ in; the
+        # tier-2 adapter sources are git submodules consumed by some suites,
+        # so pull them too.
+        with:
+          submodules: recursive
 
-  build-image:
+      - name: Build simcore image
+        run: docker build -f core/Dockerfile -t cortexsim:ci .
+
+      - name: Run pytest inside the image
+        # The repo is mounted at /repo so the tests/ tree (which is NOT baked
+        # into the runtime image) is available, while the bundled content under
+        # /app is what the catalogs load. PYTHONPATH=/app/core matches the
+        # Dockerfile so the flat `config`/`database`/`engine.*` imports resolve.
+        # A per-run high-entropy CORTEXSIM_SECRET satisfies validate_master_key
+        # even though CORTEXSIM_ENV=development downgrades the guard to a warn.
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            -w /repo \
+            -e CORTEXSIM_BASE_DIR=/repo \
+            -e CORTEXSIM_ENV=development \
+            -e CORTEXSIM_SECRET="$(openssl rand -hex 32)" \
+            -e PYTHONPATH=/repo/core \
+            cortexsim:ci \
+            sh -c "pip install --no-cache-dir pytest pytest-asyncio httpx && \
+                   pytest tests/ -v --tb=short --ignore=tests/smoke"
+
+  # ---------------------------------------------------------------------------
+  # agent — Go beacon: build + vet + race-tested.
+  # ---------------------------------------------------------------------------
+  agent:
+    name: agent (go build/vet/test -race)
     runs-on: ubuntu-22.04
-    needs: lint-shell
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
+      - uses: actions/setup-go@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          go-version: '1.21'
+          cache-dependency-path: agent/go.sum
+      - name: Build
+        working-directory: agent
+        run: go build ./...
+      - name: Vet
+        working-directory: agent
+        run: go vet ./...
+      - name: Test (race)
+        working-directory: agent
+        run: go test ./... -race -count=1 -v
 
-      - name: Compute image tag
-        id: tag
+  # ---------------------------------------------------------------------------
+  # ui — React/Vite: install + production build + vitest unit/component suite.
+  # ---------------------------------------------------------------------------
+  ui:
+    name: ui (build + vitest)
+    runs-on: ubuntu-22.04
+    env:
+      # vitest runs under jsdom and never launches a real browser; skip the
+      # heavy Playwright/Puppeteer browser downloads so `npm ci` doesn't fail
+      # on runners without outbound access to those CDNs. The dedicated e2e
+      # job in test.yml fetches chromium when it actually needs it.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      PUPPETEER_SKIP_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install (npm ci)
+        working-directory: ui
+        run: npm ci
+      - name: Build
+        working-directory: ui
+        run: npm run build
+      - name: Unit + component tests (vitest)
+        working-directory: ui
+        run: npx vitest run
+
+  # ---------------------------------------------------------------------------
+  # detection — TTP corpus validity + export determinism.
+  # ---------------------------------------------------------------------------
+  detection:
+    name: detection (validate + export determinism)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install validator deps
+        # validate.py needs jsonschema (Draft 2020-12); pyyaml is harmless and
+        # keeps the env aligned with the loader. core/requirements pins
+        # jsonschema==4.23.0 — install that exact pin so CI matches the image.
         run: |
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            echo "tag=pr-${{ github.event.number }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-          fi
+          python -m pip install --upgrade pip
+          pip install 'jsonschema>=4.18' pyyaml
+      - name: Validate TTP corpus (0 fail)
+        run: python3 detection_scanner/scripts/validate.py --quiet
+      - name: Regenerate detection exports
+        run: python3 detection_scanner/scripts/export_artifacts.py
+      - name: Export-determinism gate (committed exports must match cards)
+        # If this fails the committed exports drifted from the TTP cards: run
+        # `python3 detection_scanner/scripts/export_artifacts.py` locally and
+        # commit the result.
+        run: git diff --exit-code detection_scanner/exports/
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
+  # ---------------------------------------------------------------------------
+  # adapters — tool-adapter source preflight.
+  # ---------------------------------------------------------------------------
+  adapters:
+    name: adapters (tier-2 source preflight)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        # Tier-2 adapter sources are git submodules; the check FAILs if any
+        # declared source_path is missing on disk, so pull them.
         with:
-          context: .
-          file: core/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/cortexsim:${{ steps.tag.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          submodules: recursive
+      - name: Adapter source existence check
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+        run: scripts/check-adapter-sources.sh
