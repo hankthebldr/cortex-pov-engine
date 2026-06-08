@@ -32,7 +32,7 @@
     "pov_engine": {
       "engine_version_min": "0.1.0",
       "auto_load": true,
-      "simulation_class": "endpoint",
+      "simulation_class": "cloud",
       "destructive": false,
       "requires_network_egress": true,
       "requires_internet": true,

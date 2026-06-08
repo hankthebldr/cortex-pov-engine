@@ -1,0 +1,28 @@
+title: "Prisma Browser \u2014 Sideloaded Risky Extension Install (T1176) \u2014 Prisma Browser \u2014 sideloaded extension blocked by managed-extension policy"
+id: ttp-2026-0019-bioc-01
+status: experimental
+description: |
+  Prisma Browser — sideloaded extension blocked by managed-extension policy. An unsigned/sideloaded extension install attempt is denied by managed-browser policy and logged with outcome=blocked.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = prisma_browser_events
+    | filter action = "extension-install"
+    | filter install_source in ("sideload", "crx", "developer-mode")
+    | filter outcome = "blocked"
+    | filter extension_id != null
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1176/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1176
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

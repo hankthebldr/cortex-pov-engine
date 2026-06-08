@@ -1,0 +1,30 @@
+title: "TIM IOC Feed Match \u2014 TAXII-Fed C2 Indicator + Outbound NDR Session Stitch (T1071.001 / T1568) \u2014 TIM \u2014 Outbound Session to TAXII-Fed IOC Domain Carrying Simulation Header"
+id: ttp-2026-0067-bioc-01
+status: experimental
+description: |
+  NGFW EAL — outbound HTTP to a planted TIM IOC subdomain (.internal C2 zone) carrying the X-Simulation-Run-ID operator header. Behavioral leg that ties the simulated beacon to a feed-listed destination so the DC can isolate POV sessions.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("web-browsing", "http")
+    | filter dst_host contains_any ("c2-beacon.", "exfil-drop.", "payload-delivery.", "dga-1a2b3c.", "cryptominer-pool.")
+    | filter dst_host contains ".internal"
+    | filter http_req_headers contains "X-Simulation-Run-ID"
+    | filter action = "allow"
+    | fields _time, src_ip, dst_ip, dst_host, app, uri, http_user_agent, http_req_headers
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

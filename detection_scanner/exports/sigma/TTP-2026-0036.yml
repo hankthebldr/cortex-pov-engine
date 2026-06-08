@@ -1,0 +1,89 @@
+title: "Linux Lateral Movement \u2014 SSH Abuse, Tunneling and Internal Recon (T1021.004) \u2014 EDR-005 Port Scan Via Bash devtcp"
+id: ttp-2026-0036-bioc-01
+status: experimental
+description: |
+  Port scanning via bash /dev/tcp — network service discovery from web service account. A bash loop probes multiple ports through /dev/tcp.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("bash", "sh")
+    | filter action_process_image_command_line contains "/dev/tcp/"
+    | filter actor_effective_username in ("www-data", "nobody", "node", "postgres", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Lateral Movement \u2014 SSH Abuse, Tunneling and Internal Recon (T1021.004) \u2014 EDR-005 Batch Mode SSH From Service Account"
+id: ttp-2026-0036-bioc-02
+status: experimental
+description: |
+  SSH connection attempt from service account — lateral movement via remote service. ssh runs with BatchMode=yes and StrictHostKeyChecking=no under a service identity.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "ssh"
+    | filter action_process_image_command_line contains_any ("BatchMode=yes", "StrictHostKeyChecking=no")
+    | filter actor_effective_username in ("www-data", "nobody", "node", "postgres", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Lateral Movement \u2014 SSH Abuse, Tunneling and Internal Recon (T1021.004) \u2014 EDR-005 SSH Tunnel Creation With Forward Flags"
+id: ttp-2026-0036-bioc-03
+status: experimental
+description: |
+  SSH tunnel creation (-L/-D flags) — protocol tunneling for covert channel establishment. ssh is invoked with -L local forward, -D SOCKS, or -R remote forward.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "ssh"
+    | filter action_process_image_command_line contains_any (" -L ", " -D ", " -R ", " -w ")
+    | filter action_process_image_command_line contains " -N"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1572/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1572
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -11,7 +11,8 @@ upstream:
   attribution: "digininja"
 
 cortex_signal:
-  planes: []
+  planes:
+    - EDR  # exploitation of the vulnerable web app lands on the host process tree (T1190)
   expected_techniques:
     - T1190
 

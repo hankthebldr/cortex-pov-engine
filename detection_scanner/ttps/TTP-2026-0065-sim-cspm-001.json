@@ -1,0 +1,399 @@
+{
+  "id": "TTP-2026-0065",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-08T00:00:00+00:00",
+    "updated_at": "2026-06-08T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cspm",
+      "vector-cloud-misconfiguration",
+      "industry-all",
+      "severity-high",
+      "posture",
+      "cspm",
+      "aws"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1800,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Cloud Posture Misconfiguration Sweep — Cortex Cloud CSPM (T1530 / T1078.004 / T1098)",
+    "summary": "Cortex Cloud CSPM scans an AWS account seeded by the cspm IaC module and surfaces nine planted misconfigurations: public S3, unversioned bucket, no-KMS bucket, SSH-open SG, DB-ports-open SG, IAM AdministratorAccess role, IAM iam:* user, unencrypted EBS, weak CloudTrail. Validates each surfaces in cortex_cloud_posture within one scan cycle, tagged CortexSimCSPMFinding.",
+    "description": "Cloud Security Posture Management is the static, configuration-state half of cloud defense: rather than detonating an attack, it enumerates the cloud control plane and flags resources whose configuration violates policy or compliance baselines (CIS AWS Foundations, AWS Foundational Security Best Practices, PCI-DSS). This scenario plants a curated set of nine real misconfigurations via the cspm Terraform module — each one a finding observed constantly in the wild — then validates that Cortex Cloud CSPM discovers and classifies all of them in a single scan cycle. The findings span the three highest-leverage misconfiguration classes: data exposure (public-read S3, versioning/encryption gaps that map to T1530 Data from Cloud Storage), network exposure (security groups opening SSH and database ports to 0.0.0.0/0, the precondition for T1078.004 Valid-Accounts compromise of internet-reachable services), and identity over-permission (an IAM role with AdministratorAccess and an IAM user with an inline iam:* wildcard policy, the latent T1098 Account-Manipulation / privilege-escalation surface). Detection is posture-oriented: validation XQL runs against the cortex_cloud_posture inventory dataset and the cloud_audit_logs control-plane dataset mirrored into XSIAM, asserting each planted CortexSimCSPMFinding tag appears with its finding class and severity. Two BIOCs cover the runtime-exploitable edge of the static posture — an inbound connection landing on the world-open SSH/DB security groups, and use of the over-privileged IAM principal — so the same fixture proves both CSPM (config state) and CDR/ITDR (active exploitation) coverage. A correlation rule fuses the per-class posture signals into one cloud-posture coverage incident a DC can show in the executive readout.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Opportunistic cloud credential abusers (TeamTNT, Scarlet Eel, automated scanners)"
+      }
+    ],
+    "campaigns": [
+      "Generic cloud-misconfiguration exploitation"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0003",
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Persistence",
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1098",
+        "name": "Account Manipulation",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1580",
+        "name": "Cloud Infrastructure Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Cloud Service: Cloud Service Enumeration",
+      "Cloud Storage: Cloud Storage Enumeration",
+      "User Account: User Account Metadata",
+      "Firewall: Firewall Rule Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CSPM-001 — Prowler/ScoutSuite posture scan + Cortex Cloud CSPM finding reconciliation",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud CSPM enabled and connected (read-only) to the target AWS account.",
+        "check_command": "curl -fsSL -H \"Authorization: Bearer $CORTEX_CLOUD_API_TOKEN\" \"$CORTEX_CLOUD_API_BASE/posture/findings?tag=CortexSimCSPMFinding\""
+      },
+      {
+        "description": "cspm IaC module applied so the nine misconfiguration fixtures are planted in the account.",
+        "check_command": "aws resourcegroupstaggingapi get-resources --tag-filters Key=CortexSimCSPMFinding --profile cortexsim-lab"
+      },
+      {
+        "description": "An AWS profile named cortexsim-lab with read-only/audit (SecurityAudit) permissions is configured for Prowler/ScoutSuite to scan against.",
+        "check_command": "aws sts get-caller-identity --profile cortexsim-lab"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture validation — no detonation. Run a read-only CSPM scan and reconcile\n# the planted CortexSimCSPMFinding tags against Cortex Cloud's posture findings.\nset -euo pipefail\nprowler aws --profile \"${AWS_PROFILE:-cortexsim-lab}\" --output-formats json-ocsf --output-directory /tmp/prowler-cortexsim || true\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" -H \"Accept: application/json\" \\\n  \"${CORTEX_CLOUD_API_BASE}/posture/findings?tag=CortexSimCSPMFinding\" | jq '.findings | length'",
+      "input_variables": [
+        {
+          "name": "AWS_PROFILE",
+          "type": "string",
+          "default": "cortexsim-lab",
+          "description": "Named AWS CLI profile with read-only audit permissions for Prowler/ScoutSuite."
+        }
+      ],
+      "timeout_seconds": 1800
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Read-only posture enumeration of S3, IAM, EC2/SG, EBS, and CloudTrail (Get*/List*/Describe*) from the scanner principal.",
+        "expected_value": "event_name matches \"^(List|Get|Describe)\" and user_identity.arn contains \"cortexsim-lab\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Each planted misconfiguration surfaces as a CSPM finding tagged CortexSimCSPMFinding.",
+        "expected_value": "finding_tag = \"CortexSimCSPMFinding\" and finding_count >= 9"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/prowler-cortexsim; rm -f /tmp/cspm-planted.json /tmp/cspm-discovered.json; echo '[CortexSim] SIM-CSPM-001 cleanup complete — planted AWS resources owned by terraform destroy.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Inbound Connection Accepted on World-Open SSH/DB Security Group",
+        "description": "An inbound network connection from a public source IP is accepted against a host whose security group exposes SSH (22) or a database port (3306/5432/6379) to 0.0.0.0/0. The world-open SG is the static CSPM finding; this BIOC fires when that exposure is actually reached, bridging CSPM into CDR/NDR runtime detection.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source = \"vpc-flow\"\n| filter flow_direction = \"ingress\" and flow_action = \"ACCEPT\"\n| filter dst_port in (22, 3306, 5432, 6379)\n| filter not incidr(src_ip, \"10.0.0.0/8\") and not incidr(src_ip, \"172.16.0.0/12\") and not incidr(src_ip, \"192.168.0.0/16\")\n| join type=inner (\n    dataset = cortex_cloud_posture\n    | filter resource_type = \"aws_security_group\"\n    | filter tags contains \"CortexSimCSPMFinding\"\n    | filter finding_class in (\"ssh-open-to-world\", \"database-port-open-to-world\")\n  ) as sg on dst_security_group_id = sg.resource_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ]
+      },
+      {
+        "name": "Over-Privileged CSPM IAM Principal Used for Control-Plane Action",
+        "description": "The IAM principal that CSPM flagged as over-privileged (AdministratorAccess role or iam:* wildcard user) performs a sensitive control-plane action (IAM mutation, key creation, policy attach). Confirms the latent privilege-escalation finding is exercisable, stitching CSPM posture to ITDR runtime identity abuse.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source = \"iam.amazonaws.com\"\n| filter event_name in (\"CreateAccessKey\", \"AttachRolePolicy\", \"AttachUserPolicy\", \"PutUserPolicy\", \"CreateUser\", \"UpdateAssumeRolePolicy\")\n| join type=inner (\n    dataset = cortex_cloud_posture\n    | filter resource_type in (\"aws_iam_role\", \"aws_iam_user\")\n    | filter tags contains \"CortexSimCSPMFinding\"\n    | filter finding_class in (\"role-with-admin-access\", \"user-with-wildcard-iam\")\n  ) as flagged on user_identity.arn = flagged.resource_arn",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1098",
+          "T1078.004"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CSPM-001 Ground Truth Planted-Finding Manifest Capture",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and event_name in (\"GetResources\", \"DescribeSecurityGroups\", \"ListBuckets\", \"ListRoles\", \"ListUsers\", \"DescribeVolumes\", \"DescribeTrails\")\n| filter resource_tags contains \"CortexSimCSPMFinding\"\n| comp count() as observed by resource_type, resource_tags\n| fields resource_type, resource_tags, observed",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-001 S3 Data-Exposure Findings Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and resource_type = \"aws_s3_bucket\"\n| filter tags contains \"CortexSimCSPMFinding\"\n| filter finding_class in (\"public-read-bucket\", \"versioning-disabled\", \"no-customer-managed-kms\")\n| comp count_distinct(resource_id) as buckets_flagged by finding_class\n| filter buckets_flagged >= 1\n| fields finding_class, buckets_flagged",
+        "expected_rows_min": 3,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-001 Network-Exposure Security-Group Findings Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and resource_type = \"aws_security_group\"\n| filter tags contains \"CortexSimCSPMFinding\"\n| filter finding_class in (\"ssh-open-to-world\", \"database-port-open-to-world\")\n| comp count_distinct(resource_id) as sgs_flagged by finding_class\n| filter sgs_flagged >= 1\n| fields finding_class, sgs_flagged",
+        "expected_rows_min": 2,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-001 IAM Over-Permission Findings Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and resource_type in (\"aws_iam_role\", \"aws_iam_user\")\n| filter tags contains \"CortexSimCSPMFinding\"\n| filter finding_class in (\"role-with-admin-access\", \"user-with-wildcard-iam\")\n| comp count_distinct(resource_id) as principals_flagged by finding_class\n| filter principals_flagged >= 1\n| fields finding_class, principals_flagged",
+        "expected_rows_min": 2,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-001 EBS Encryption and CloudTrail Logging Gaps Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and resource_type in (\"aws_ebs_volume\", \"aws_cloudtrail\")\n| filter tags contains \"CortexSimCSPMFinding\"\n| filter finding_class in (\"ebs-unencrypted\", \"cloudtrail-weak-config\")\n| comp count_distinct(resource_id) as resources_flagged by finding_class\n| filter resources_flagged >= 1\n| fields finding_class, resources_flagged",
+        "expected_rows_min": 2,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-001 Total Planted-Finding Coverage Reconciliation",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\"\n| filter tags contains \"CortexSimCSPMFinding\"\n| filter finding_class in (\"public-read-bucket\", \"versioning-disabled\", \"no-customer-managed-kms\", \"ssh-open-to-world\", \"database-port-open-to-world\", \"role-with-admin-access\", \"user-with-wildcard-iam\", \"ebs-unencrypted\", \"cloudtrail-weak-config\")\n| comp count_distinct(finding_class) as distinct_findings\n| filter distinct_findings >= 9\n| fields distinct_findings",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Cloud Posture Coverage — Full Planted-Misconfiguration Discovery",
+        "rule_id": "CR-CSPM-0001",
+        "logic": "XQL(CSPM-001 S3 Data-Exposure Findings Surfaced) AND XQL(CSPM-001 Network-Exposure Security-Group Findings Surfaced) AND XQL(CSPM-001 IAM Over-Permission Findings Surfaced) AND XQL(CSPM-001 EBS Encryption and CloudTrail Logging Gaps Surfaced) AND XQL(CSPM-001 Total Planted-Finding Coverage Reconciliation)"
+      },
+      {
+        "name": "Cloud Posture-to-Runtime — Flagged Exposure Actively Reached or Abused",
+        "rule_id": "CR-CSPM-0002",
+        "logic": "BIOC(Inbound Connection Accepted on World-Open SSH/DB Security Group) OR BIOC(Over-Privileged CSPM IAM Principal Used for Control-Plane Action) — promotes a static CSPM finding to an active incident when the flagged misconfiguration is exercised within the POV window."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud CSPM — misconfiguration discovery and compliance scoring (CIS AWS Foundations / AWS FSBP)",
+      "Cortex Cloud Posture — planted-finding coverage reconciliation",
+      "Cortex XSIAM Analytics — anomalous public-source ingress to newly-exposed cloud service"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CSPM-S3-PUBLIC-READ",
+          "CSPM-S3-VERSIONING-DISABLED",
+          "CSPM-S3-NO-KMS",
+          "CSPM-SG-SSH-OPEN-WORLD",
+          "CSPM-SG-DB-OPEN-WORLD",
+          "CSPM-IAM-ADMIN-ROLE",
+          "CSPM-IAM-WILDCARD-USER",
+          "CSPM-EBS-UNENCRYPTED",
+          "CSPM-CLOUDTRAIL-WEAK"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter tags contains \"CortexSimCSPMFinding\" | comp count_distinct(resource_id) by finding_class | fields finding_class, resource_id"
+      },
+      {
+        "module": "prisma-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "PC-AWS-S3-PUBLIC",
+          "PC-AWS-SG-WORLD-OPEN",
+          "PC-AWS-IAM-ADMIN"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Prisma Cloud Compliance dashboard — CIS AWS Foundations failed checks filtered to CortexSim-tagged resources."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CSPM-0001",
+          "XSIAM-CR-CSPM-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CSPM-0001 fuses the five per-class posture validation queries into a single cloud-posture coverage event; CR-CSPM-0002 promotes a flagged exposure to an incident when reached/abused at runtime."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CSPM-001",
+        "name": "Cloud Security Posture Management — Misconfiguration Detection & Compliance",
+        "description": "Cortex Cloud CSPM discovers and classifies every planted AWS misconfiguration in a single scan cycle and reconciles the finding set against the planted manifest for full coverage; runtime exploitation of a flagged exposure escalates to an incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CSPM-001A",
+            "objective": "Every planted misconfiguration surfaces as a Cortex Cloud CSPM finding within one scan cycle and reconciles to 9/9 coverage.",
+            "preconditions": [
+              "Cortex Cloud CSPM connected (read-only) to the AWS account.",
+              "cspm IaC fixture applied (nine CortexSimCSPMFinding-tagged resources)."
+            ],
+            "steps": [
+              "Run SIM-CSPM-001 steps 1-5.",
+              "Observe the CSPM findings list in Cortex Cloud filtered to CortexSimCSPMFinding."
+            ],
+            "success_criteria": [
+              "S3 data-exposure query returns >= 3 finding classes.",
+              "Network-exposure SG query returns >= 2 finding classes.",
+              "IAM over-permission query returns >= 2 finding classes.",
+              "EBS/CloudTrail query returns >= 2 finding classes.",
+              "Total coverage reconciliation returns distinct_findings >= 9.",
+              "Correlation CR-CSPM-0001 raises a cloud-posture coverage event."
+            ],
+            "expected_score_weight": 0.7
+          },
+          {
+            "test_case_id": "TC-CSPM-001B",
+            "objective": "A flagged static exposure exercised at runtime promotes to an active incident (CSPM-to-runtime stitch).",
+            "preconditions": [
+              "At least one world-open SG or the over-privileged IAM principal is reachable/usable in the lab."
+            ],
+            "steps": [
+              "Reach the SSH/DB security group from a public source, or use the AdministratorAccess role / iam:* user for a control-plane action.",
+              "Observe the runtime BIOC fire and CR-CSPM-0002 escalate."
+            ],
+            "success_criteria": [
+              "BIOC `Inbound Connection Accepted on World-Open SSH/DB Security Group` OR BIOC `Over-Privileged CSPM IAM Principal Used for Control-Plane Action` fires.",
+              "Correlation CR-CSPM-0002 raises a posture-to-runtime incident referencing the flagged resource."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce S3 Block Public Access at the account level; require SSE-KMS and versioning via SCP / org policy.",
+      "Prohibit 0.0.0.0/0 ingress on SSH and database ports through preventive guardrails (SCP / Prisma Cloud policy).",
+      "Forbid attaching AdministratorAccess and inline iam:* wildcard policies; require least-privilege roles reviewed by IAM Access Analyzer.",
+      "Mandate EBS encryption-by-default and a multi-region CloudTrail with log-file validation enabled."
+    ],
+    "detection_engineering": [
+      "Alert on any new resource carrying a CSPM finding class without an exception ticket.",
+      "Reconcile discovered findings against the approved baseline on every scan cycle.",
+      "Stitch static posture findings to runtime telemetry (VPC Flow + CloudTrail) so an exercised exposure escalates."
+    ],
+    "response_playbook": "XSOAR-PB-CSPMFindingTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 Cloud Threat Report — Misconfigurations Remain the Top Cloud Risk",
+      "url": "https://unit42.paloaltonetworks.com/cloud-threat-report-misconfigurations/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1530 — Data from Cloud Storage",
+      "url": "https://attack.mitre.org/techniques/T1530/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1098 — Account Manipulation",
+      "url": "https://attack.mitre.org/techniques/T1098/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "Initial CSPM posture-detection card for SIM-CSPM-001. Authored real cloud-posture XQL against cortex_cloud_posture / cloud_audit_logs validating the nine cspm-module planted misconfigurations (S3 public/unversioned/no-KMS, SG SSH/DB world-open, IAM admin role + iam:* user, unencrypted EBS, weak CloudTrail), two CSPM-to-runtime BIOCs, correlations CR-CSPM-0001/0002, and full PANW/UC-TC mapping. Promoted to active."
+    }
+  ]
+}

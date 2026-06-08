@@ -1,7 +1,7 @@
 ---
 name: telemetry-replay
 description: Content-only module — pre-recorded EVTX/PCAP/JSON attack datasets plus replay tooling. No cloud resources, installs on the jumpbox for parser/correlation validation without executing live attacks.
-providers: [aws, gcp, azure]
+providers: [aws]
 required_params: []
 optional_params: []
 dependencies: [base]
@@ -40,6 +40,7 @@ For these objectives, replaying pre-recorded datasets is faster, safer, and more
 - **mh-100k-dataset** (`Malware-Hunter/MH-100K-dataset`) — 101,975 Android malware + benign samples
 - **dikedataset** (`iosifache/DikeDataset`) — formatted malicious + benign PE files
 - **markov-malware-images** (`julismail/Markov`) — grayscale image representations for visual ML
+- **nlp-pdf-malware** (`bliutech/nlp-pdf-malware-detection`) — NLP feature set for malicious-PDF detection
 
 ### EDR coverage comparison
 
@@ -48,9 +49,10 @@ For these objectives, replaying pre-recorded datasets is faster, safer, and more
 ### Replay tooling
 
 - **chainsaw** (`WithSecureLabs/chainsaw`) — rapid EVTX triage with Sigma rules applied in-place
-- **hayabusa** (indirect via `hayabusa-sample-evtx`) — timeline generator
 - **sigma-rules-crawler** (`SimoneCagol/sigma-rules-crawler`) — outputs Elastic NDJSON for rapid SIEM ingestion
-- **tcpreplay examples** (`appneta/tcpreplay`) — PCAP replay onto test networks
+- **tcpreplay** (`appneta/tcpreplay`) — PCAP replay onto test networks
+
+> The `hayabusa-sample-evtx` dataset (Yamato-Security) is installed under the attack-mapped EVTX datasets above; the Hayabusa timeline generator itself is not staged by this module's `content.yml`.
 
 ## Usage from the jumpbox
 

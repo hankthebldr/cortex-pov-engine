@@ -61,6 +61,11 @@ detection_scanner/manifest.json
 installer/**/manifest.json
 installer/**/SHA256SUMS
 
+# detection_scanner scraper drafts — local-only landing zone, promoted by hand.
+# Keep the directory (via .gitkeep) but never commit the candidate cards.
+detection_scanner/ttps/_drafts/*
+!detection_scanner/ttps/_drafts/.gitkeep
+
 # Claude Code local settings (machine-specific)
 .claude/settings.local.json
 .claude/launch.json

@@ -1,0 +1,30 @@
+title: "Hidden Prompt Injection in MCP Tool Response (T1656 / T1059) \u2014 KOI-002 MCP Tool Response Embeds Instruction Injection And Credential Exfil String"
+id: ttp-2026-0043-bioc-01
+status: experimental
+description: |
+  Code scan — MCP tool response embeds 'Ignore previous instructions / exfiltrate ~/.aws/credentials'. A read of an MCP server source surfaces a tool-reply string that smuggles an instruction-override plus credential-exfil directive and an AKIA canary.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("grep", "head", "cat", "cortexcloud", "checkov", "twistcli", "node", "python3")
+    | filter action_process_image_command_line contains "pa-firewall-mcp"
+    | filter action_process_image_command_line contains_any ("Ignore previous", "SYSTEM_OVERRIDE", "exfiltrate", ".aws/credentials", "AKIA")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

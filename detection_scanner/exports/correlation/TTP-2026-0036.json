@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1021.004",
+    "T1046",
+    "T1572",
+    "T1018",
+    "T1016"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(EDR-005 Port Scan Via Bash devtcp) OR BIOC(EDR-005 Batch Mode SSH From Service Account) OR BIOC(EDR-005 SSH Tunnel Creation With Forward Flags)",
+      "name": "Linux Lateral Movement Chain \u2014 Recon, Scan, SSH, Tunnel",
+      "rule_id": "CR-EDR-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0036"
+}

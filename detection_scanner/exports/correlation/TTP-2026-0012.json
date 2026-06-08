@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1656",
+    "T1059"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(AIRS LLM01 System Prompt Or Hidden Context Echoed In Model Response) OR XQL(AIRS LLM01 Direct Prompt Injection Classifier Ignore Previous Instructions) OR XQL(AIRS LLM01 Base64 Mutated Injection Evades Naive Filter Caught By Classifier)",
+      "name": "AIRS LLM01 Direct Injection Request Plus Response Leak Same Session",
+      "rule_id": "CR-AIRS-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0012"
+}

@@ -1,0 +1,26 @@
+id: cortexsim-ttp-2026-0036-response
+version: 1
+name: "CortexSim — Linux Lateral Movement — SSH Abuse, Tunneling and Internal Recon (T1021.004)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0036.
+  Triggered by Cortex correlation rules: CR-EDR-0005.
+  Reference playbook in panw_mapping: XSOAR-PB-LateralMovementContainment-v1
+triggers:
+  - correlation_rule_id: CR-EDR-0005
+  - playbook_rule_id: XSOAR-PB-LateralMovementContainment-v1
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0036
+  cortexsim_version: 1.0

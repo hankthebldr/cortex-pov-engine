@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1611",
+    "T1610",
+    "T1083",
+    "T1003.008",
+    "T1053.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(CDR-003 Container Capability Read With Block Device Access) OR BIOC(CDR-003 Host Filesystem Access Via Proc1 Root From Container) OR BIOC(CDR-003 nsenter Into PID1 Mount Namespace Container Escape) OR BIOC(CDR-003 Anomalous Namespace Switch From Container Process) OR BIOC(CDR-003 Host Passwd Read From Container Via Namespace Escape) OR BIOC(CDR-003 Host Cron Persistence Written From Escaped Container)",
+      "name": "Container Escape To Host Kill Chain \u2014 Same Container",
+      "rule_id": "CR-CDR-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0024"
+}

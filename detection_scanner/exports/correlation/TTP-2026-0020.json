@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1567",
+    "T1005"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(Prisma Browser \u2014 cross-origin paste from sanctioned CRM into personal webmail (DLP rule))",
+      "name": "Browser Cross-Origin Clipboard DLP \u2014 CRM to Webmail",
+      "rule_id": "CR-BROWSER-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0020"
+}

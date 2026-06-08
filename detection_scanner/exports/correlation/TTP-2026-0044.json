@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1195.002",
+    "T1059.006",
+    "T1552.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook) OR BIOC(KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint)",
+      "name": "Agentic Supply Chain \u2014 Backdoored PyPI Package Post-Install Hook",
+      "rule_id": "CR-KOI-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0044"
+}

@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1114.002",
+    "T1528",
+    "T1550.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(CLOUD-003 Google Full Mailbox Scope Grant Attempt) OR XQL(CLOUD-003 Microsoft Mail ReadWrite Offline Access Token-Replay Grant) OR XQL(CLOUD-003 Cross-Provider Mailbox Collection Same Identity Stitch)",
+      "name": "Cross-Provider OAuth Mailbox Takeover Token Replay \u2014 Same Identity",
+      "rule_id": "CR-CLOUDAPP-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0029"
+}

@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1059",
+    "T1656"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(AIRS LLM06 Exec Shell Tool Invoked From Non Developer Context Prompt) OR BIOC(AIRS LLM06 Send Email Tool Argument Contains External Exfil Recipient) OR XQL(AIRS LLM06 Tool Call Argument Carries Shell Metacharacters Unsafe Input)",
+      "name": "AIRS LLM06 Unsafe Tool Call Exec Shell Or External Email Exfil",
+      "rule_id": "CR-AIRS-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0015"
+}

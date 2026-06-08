@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1656",
+    "T1195",
+    "T1552.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(KOI-005 Claude Skill Body Contains Instruction Injection And Exfil Directives)",
+      "name": "Agentic Supply Chain \u2014 Malicious Claude Skill Hidden Injection",
+      "rule_id": "CR-KOI-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0046"
+}

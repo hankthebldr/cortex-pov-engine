@@ -1,0 +1,59 @@
+title: "AI Access \u2014 Jailbreak Prompt Fingerprint \u2014 AIACC-004 Pre-flight Jailbreak Payload Contains DAN Markers"
+id: ttp-2026-0010-bioc-01
+status: experimental
+description: |
+  Pre-flight: jailbreak payload contains 'DAN' and 'Ignore all previous instructions' markers. Confirms the jailbreak payload renders the DAN frame on the worker before any egress; matches the python self-check process invocation.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("python", "python3")
+    | filter action_process_image_command_line contains "_render_payload"
+    | filter action_process_image_command_line contains "Ignore all previous"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "AI Access \u2014 Jailbreak Prompt Fingerprint \u2014 AIACC-004 Outbound Prompt Requests DLP Circumvention Policy Violation"
+id: ttp-2026-0010-bioc-02
+status: experimental
+description: |
+  AI Access — outbound prompt requests circumvention of corporate DLP — policy violation. The prompt body sent to a public LLM explicitly asks how to bypass the company's DLP / guardrails, which is a direct AI-usage policy violation regardless of provider response.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_host in ("api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com")
+    | filter http_method = "POST"
+    | filter request_body ~= "(?i)bypass\s+(?:my|our|the|company'?s)?\s*(?:corporate\s+)?DLP|circumvent\s+(?:DLP|content\s+polic|guardrail)"
+    | fields _time, source_user, src_ip, dst_host, uri_path, bytes_sent
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+    - attack.t1567
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

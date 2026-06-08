@@ -49,6 +49,14 @@ _VALID_PLANES: set[str] = {
     "EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS",
     "AI_ACCESS", "AIRS", "BROWSER", "KOI",
 }
+# Identity-harness vocabulary — mirrors the ``identity_required`` enum
+# documented in ``tools/packs/_schema.yml`` (the harness wraps every TTP
+# step as one of these service accounts to build realistic process causality
+# in XSIAM). Scenario step ``identity`` values must come from the same set.
+_VALID_IDENTITIES: set[str] = {
+    "container-runtime", "root", "www-data", "nobody", "node",
+    "postgres", "svc-backup", "administrator",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +113,15 @@ class InvokeSchema(BaseModel):
         allowed = {"linux", "windows", "macos", "k8s", "any"}
         if v not in allowed:
             raise ValueError(f"target_platform must be one of {allowed}")
+        return v
+
+    @field_validator("identity_required")
+    @classmethod
+    def _identity_known(cls, v: str) -> str:
+        if v not in _VALID_IDENTITIES:
+            raise ValueError(
+                f"identity_required must be one of {sorted(_VALID_IDENTITIES)}, got {v!r}"
+            )
         return v
 
 
@@ -248,3 +265,143 @@ def _parse_and_validate(filepath: str) -> tuple[Optional[ToolAdapterSchema], Opt
 def default_packs_dir(base_dir: str) -> str:
     """Convention: ``<base>/tools/packs``."""
     return os.path.join(base_dir, "tools", "packs")
+
+
+# ---------------------------------------------------------------------------
+# Cross-reference validation (warn-only, never fail — same policy as the
+# dangling ttp_refs check documented in tools/packs/_schema.yml).
+# ---------------------------------------------------------------------------
+
+
+def validate_equivalents(adapters: list[ToolAdapterSchema]) -> list[str]:
+    """Warn for any ``equivalents[]`` id that does not resolve to a loaded pack.
+
+    Equivalents are intra-corpus cross-references (the "naive / intermediate /
+    advanced / apt" rotation set for one TTP). A dead link is a silent picker
+    dead-end, so we surface it at load time the same way scenario_loader
+    surfaces dangling refs — logged as a warning, never a hard rejection.
+
+    Returns the list of warning strings (also logged) so callers/tests can
+    assert on them.
+    """
+    known: set[str] = {a.adapter_id for a in adapters}
+    warnings: list[str] = []
+    for adapter in adapters:
+        for eq in adapter.equivalents:
+            if eq not in known:
+                msg = (
+                    f"adapter {adapter.adapter_id}: equivalents[] id {eq!r} "
+                    f"does not resolve to a known pack (dead cross-reference)"
+                )
+                warnings.append(msg)
+                logger.warning(msg)
+    return warnings
+
+
+def validate_tier2_sources(
+    adapters: list[ToolAdapterSchema],
+    base_dir: Optional[str] = None,
+) -> list[str]:
+    """Warn for any tier-2 (submodule) pack whose ``install.source_path`` is
+    missing on disk.
+
+    Tier-2 adapters are git submodules provisioned by ``install.sh`` Step 3
+    (``git submodule update --init --recursive``). In a fresh checkout — or any
+    dev environment where the submodules have not been initialized — the
+    declared ``sources/<tool>`` directory will be absent, which means the
+    referencing scenarios cannot detonate (e.g. atomic-red-team backs 8 EDR/MP
+    scenarios). We surface this at load time the same way
+    :func:`validate_equivalents` surfaces dead cross-references — logged as a
+    warning, **never** a hard rejection — so the server still boots without
+    submodules in dev. The hard PASS/FAIL gate for CI/preflight lives in
+    ``scripts/check-adapter-sources.sh``.
+
+    Returns the list of warning strings (also logged) so callers/tests can
+    assert on them.
+    """
+    if base_dir is None:
+        base_dir = os.environ.get("CORTEXSIM_BASE_DIR", os.getcwd())
+
+    warnings: list[str] = []
+    for adapter in adapters:
+        if adapter.tier != 2:
+            continue
+        source_path = adapter.install.source_path
+        if not source_path:
+            # Schema already enforces tier-2 has a source_path, but guard anyway.
+            continue
+        resolved = source_path if os.path.isabs(source_path) else os.path.join(base_dir, source_path)
+        if not os.path.isdir(resolved):
+            msg = (
+                f"adapter {adapter.adapter_id}: tier-2 source_path {source_path!r} "
+                f"is missing on disk (resolved {resolved!r}) — run "
+                f"'git submodule update --init --recursive' (install.sh Step 3); "
+                f"referencing scenarios cannot detonate until it is present"
+            )
+            warnings.append(msg)
+            logger.warning(msg)
+    return warnings
+
+
+class _LoadedAdapters:
+    """Thin read-only view returned by :func:`load_adapters`.
+
+    Intentionally lighter than :class:`tools.adapter_catalog.AdapterCatalog`
+    (which is the runtime singleton). This exists so callers — and the
+    standalone validation entry point — can load + cross-ref-check packs
+    without importing the catalog singleton (avoids a circular import, since
+    the catalog imports this module)."""
+
+    def __init__(self, adapters: list[ToolAdapterSchema], rejected: int) -> None:
+        self._adapters = adapters
+        self.rejected = rejected
+
+    def all(self) -> list[ToolAdapterSchema]:
+        return list(self._adapters)
+
+    def __iter__(self):
+        return iter(self._adapters)
+
+    def __len__(self) -> int:
+        return len(self._adapters)
+
+
+def load_adapters(packs_dir: Optional[str] = None) -> _LoadedAdapters:
+    """Parse + validate every pack under ``packs_dir`` and run cross-ref checks.
+
+    Standalone helper (not the runtime singleton path — that is
+    ``adapter_catalog.catalog.load``). Mirrors the catalog's per-file
+    validation, then runs :func:`validate_equivalents` so dead equivalent
+    links surface as warnings. ``packs_dir`` defaults to
+    ``<CORTEXSIM_BASE_DIR or cwd>/tools/packs``.
+    """
+    if packs_dir is None:
+        base = os.environ.get("CORTEXSIM_BASE_DIR", os.getcwd())
+        packs_dir = default_packs_dir(base)
+
+    adapters: list[ToolAdapterSchema] = []
+    rejected = 0
+    seen: set[str] = set()
+    for filepath in _find_pack_files(packs_dir):
+        adapter, error = _parse_and_validate(filepath)
+        if error:
+            logger.error("REJECTED adapter %s: %s", filepath, error)
+            rejected += 1
+            continue
+        assert adapter is not None
+        if adapter.adapter_id in seen:
+            logger.error(
+                "REJECTED adapter %s: duplicate adapter_id %s",
+                filepath, adapter.adapter_id,
+            )
+            rejected += 1
+            continue
+        seen.add(adapter.adapter_id)
+        adapters.append(adapter)
+
+    validate_equivalents(adapters)
+    # base_dir for on-disk source_path resolution is the parent of packs_dir's
+    # `tools/packs` convention (i.e. <base>/tools/packs → <base>).
+    source_base = os.path.dirname(os.path.dirname(os.path.abspath(packs_dir)))
+    validate_tier2_sources(adapters, base_dir=source_base)
+    return _LoadedAdapters(adapters, rejected)

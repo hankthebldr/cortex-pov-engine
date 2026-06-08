@@ -1,0 +1,30 @@
+title: "Malicious Claude Skill With Hidden Instructions In skill.md (T1656 / T1195) \u2014 KOI-005 Claude Skill Body Contains Instruction Injection And Exfil Directives"
+id: ttp-2026-0046-bioc-01
+status: experimental
+description: |
+  Code scan — skill.md contains 'Ignore previous instructions' / exfil instructions in body. A read of a Claude skill.md surfaces an instruction-override plus credential-exfil and --no-verify directive in the skill body.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("grep", "head", "cat", "cortexcloud", "checkov", "node", "python3")
+    | filter action_process_image_command_line contains "skill.md"
+    | filter action_process_image_command_line contains_any ("ignore previous", "exfiltrate", ".ssh", "--no-verify", "aws_access_key")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

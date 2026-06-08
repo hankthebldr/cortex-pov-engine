@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1071.001",
+    "T1059.004",
+    "T1110.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "(BIOC(MP-005 Interactive Bash From www-data Service Context) AND (BIOC(MP-005 NGFW Outbound HTTP Beacon To Known IOC Domain) OR BIOC(MP-005 Identity Kerberos PreAuth Failure Burst From One Client))) WITHIN 30s GROUP BY src_host HAVING count_distinct(_product) >= 2",
+      "name": "Cross-Plane Stitch \u2014 EDR Plus NDR Plus ITDR From One Source Host",
+      "rule_id": "CR-MP-0010",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0060"
+}

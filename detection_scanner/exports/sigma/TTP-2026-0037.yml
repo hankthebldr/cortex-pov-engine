@@ -1,0 +1,27 @@
+title: "ITDR \u2014 Impossible Travel (Okta + Entra sign-ins from US-West and APAC-East) \u2014 ITDR-001 Pre-Flight idp_signin_emulator Metadata Visible"
+id: ttp-2026-0037-bioc-01
+status: experimental
+description: |
+  Pre-flight: idp_signin_emulator metadata visible to operator. Confirms the EAL plugin is registered and exposes IdP sign-in targets before any events are emitted, so a null result means a harness fault rather than a detection miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = okta_sso
+    | filter eventType in ("system.api_token.create", "application.lifecycle.activate") or _raw_log contains "idp_signin_emulator"
+    | comp count() as preflight_events by actor_effective_username
+    | filter preflight_events >= 0
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

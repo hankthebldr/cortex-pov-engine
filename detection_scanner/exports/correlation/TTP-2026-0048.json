@@ -1,0 +1,32 @@
+{
+  "mitre_techniques": [
+    "T1048.003",
+    "T1074.001",
+    "T1572",
+    "T1005"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "(BIOC(MP-003 Tar Gzip Compression Of Tmp Staging By Service Account) AND BIOC(MP-003 Dig TXT Tight Loop From Service Account) AND XQL(MP-003 NGFW DNS TXT Tunneling Burst High Entropy Labels)) -> join on hostname within 60s",
+      "name": "Staged DNS Exfil Cross-Plane Stitch \u2014 XDR Staging + NGFW DNS Anomaly",
+      "rule_id": "CR-MP-0004",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "(BIOC(MP-003 Passwd Read Then Write To Tmp Staging Dir) AND XQL(MP-003 NGFW DNS Query Rate Spike From Single Source)) -> join on hostname within 120s",
+      "name": "DNS Rate Spike Plus Sensitive Read Stitch",
+      "rule_id": "CR-MP-0005",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "(BIOC(MP-003 Curl Form Upload Of Staged Data By Service Account) AND XQL(MP-003 NGFW HTTP Post File Upload To IOC Domain) AND IOC(domain: testmynids.org)) -> join on src_host within 60s",
+      "name": "Redundant HTTPS Exfil IOC Stitch \u2014 Curl Upload + NGFW POST + IOC",
+      "rule_id": "CR-MP-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0048"
+}

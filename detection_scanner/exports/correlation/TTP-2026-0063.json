@@ -1,0 +1,25 @@
+{
+  "mitre_techniques": [
+    "T1558.003",
+    "T1550.002",
+    "T1021.002",
+    "T1003.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-002 LDAP SPN Sweep From Non-Typical Host) OR BIOC(MP-002 Service Account Used Interactively) OR BIOC(MP-002 Service Account Remote SMB Authentication On Workstation)",
+      "name": "Kerberoast PtH Lateral Movement Same Identity Stitch",
+      "rule_id": "CR-MP-0011",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "BIOC(MP-002 LDAP SPN Sweep From Non-Typical Host) AND (BIOC(MP-002 Service Account Used Interactively) OR BIOC(MP-002 Service Account Remote SMB Authentication On Workstation))",
+      "name": "Kerberoast To Lateral Auth MTTD Timeline Window",
+      "rule_id": "CR-MP-0012",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0063"
+}

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "registry_version": "1.1.0",
+  "registry_version": "1.2.0",
   "description": "Indexed threat-intel and execution-framework sources for the cortex-pov-engine TTP corpus. Consumed by the cortex-scraper to crawl, parse, and emit candidate TTP drafts. Tier 1 = primary/canonical; Tier 2 = vendor intel; Tier 3 = government; Tier 4 = IR/community; Tier 5 = execution frameworks (payload sources, not intel).",
-  "updated_at": "2026-05-13",
+  "updated_at": "2026-06-07",
   "sources": [
     {
       "id": "SRC-UNIT42",
@@ -89,6 +89,29 @@
       "last_canvassed": null
     },
     {
+      "id": "SRC-OWASP-LLM",
+      "name": "OWASP Top 10 for LLM Applications & Generative AI",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "standards-body",
+      "homepage": "https://genai.owasp.org/",
+      "blog_index": "https://genai.owasp.org/llm-top-10/",
+      "data_endpoints": [
+        {
+          "type": "html",
+          "url": "https://genai.owasp.org/llm-top-10/"
+        }
+      ],
+      "purpose": "Canonical taxonomy (LLM01-LLM10) for generative-AI application risks. Anchors AIRS / AI Runtime Security TTP cards (prompt injection, system-prompt leakage, excessive agency, unbounded consumption, vector & embedding weaknesses) to a vendor-neutral standard alongside MITRE ATT&CK / ATLAS.",
+      "update_cadence": "annual",
+      "discovery_queries": [
+        "OWASP Top 10 for LLM Applications {category}",
+        "OWASP GenAI LLM01 prompt injection",
+        "OWASP LLM Top 10 v2025"
+      ],
+      "last_canvassed": null
+    },
+    {
       "id": "SRC-MANDIANT",
       "name": "Mandiant \u2014 Google Threat Intelligence",
       "tier": 2,
@@ -142,6 +165,29 @@
         "Microsoft Threat Intelligence {weather-actor}",
         "MSTIC Storm-{number}",
         "Microsoft Defender Threat Intelligence {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MICROSOFT",
+      "name": "Microsoft Security Blog & Vendor Guidance",
+      "tier": 2,
+      "weight": 0.85,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.microsoft.com/en-us/security/blog/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://www.microsoft.com/en-us/security/blog/feed/"
+        }
+      ],
+      "purpose": "Microsoft's general security blog and identity-protection guidance (Entra ID / Azure AD password-spray, MFA fatigue, token replay). Broader-scope vendor source than the dedicated SRC-MSTIC threat-intelligence feed; anchors ITDR identity-attack TTP cards.",
+      "notes": "Use SRC-MSTIC for named-actor threat intelligence; use SRC-MICROSOFT for product-and-defense guidance and campaign write-ups on the main security blog.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Microsoft Security blog {topic}",
+        "Microsoft Entra ID password spray protection",
+        "Microsoft identity threat {year}"
       ],
       "last_canvassed": null
     },

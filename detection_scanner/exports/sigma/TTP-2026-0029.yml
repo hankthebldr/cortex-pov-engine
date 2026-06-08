@@ -1,0 +1,27 @@
+title: "Cloud App \u2014 Google Full-Mailbox + Offline Token Replay Risk (T1114.002) \u2014 CLOUD-003 Pre-Flight oauth_grant_emulator Plugin Registered"
+id: ttp-2026-0029-bioc-01
+status: experimental
+description: |
+  Pre-flight: oauth_grant_emulator metadata visible to operator. Confirms the EAL plugin is registered and its eal_targets enumerate the Cloud App OAuth-grant detections before any grant is emitted.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = saas_audit_logs
+    | filter event_type = "eal_plugin_describe" or action contains "oauth_grant_emulator"
+    | filter app_name = "oauth_grant_emulator"
+    | fields _time, user, app_name, action
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1114/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1114.002
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

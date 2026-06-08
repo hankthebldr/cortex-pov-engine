@@ -1,0 +1,31 @@
+title: "SSH Outbound App-ID + Atypical Client Banner \u2014 C2 / Tunnel Setup (T1572 / T1021.004) \u2014 NGFW EAL repeated short-lived outbound SSH handshakes from single source"
+id: ttp-2026-0062-bioc-01
+status: experimental
+description: |
+  NGFW EAL — repeated short-lived outbound SSH handshakes from single source
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "ssh" or dst_port = 22
+    | filter dst_ip != null and not incidr(dst_ip, "10.0.0.0/8")
+    | filter action_session_duration <= 5
+    | comp count() as handshake_count, count_distinct(dst_ip) as dst_hosts by src_ip, dst_port
+    | filter handshake_count >= 4
+    | fields src_ip, dst_port, handshake_count, dst_hosts
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1572/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1572
+    - attack.t1021.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

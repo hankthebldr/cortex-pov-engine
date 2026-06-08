@@ -359,10 +359,17 @@ init_submodules() {
         return
     fi
 
+    # This fetches every submodule registered in .gitmodules, including the
+    # tier-2 tool-adapter source trees. NOTE: sources/atomic-red-team is the
+    # source tree for TOOL-ATOMIC-RED-TEAM, the single most-referenced adapter
+    # in the catalog (8 scenarios: edr/edr-001..005 + multi_plane/mp-005). Those
+    # scenarios cannot detonate without this init. Run
+    # scripts/check-adapter-sources.sh afterwards to confirm every tier-2
+    # adapter source_path is present on disk.
     git submodule update --init --recursive \
         || die "git submodule update failed. Check network access and SSH/token permissions."
 
-    log_ok "All submodules initialized."
+    log_ok "All submodules initialized (incl. tier-2 adapter sources, e.g. atomic-red-team)."
 }
 
 # ==============================================================================

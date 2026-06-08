@@ -61,6 +61,13 @@ The schema is MITRE-grounded but the value-add for the POV engine lives in four 
 - **panw_mapping.products[]** — one entry per PANW module that participates (`cortex-xdr`, `cortex-xsiam`, `cortex-xsoar`, `cortex-cloud`, `cortex-cdr`, `cortex-asm`, `prisma-cloud`, `prisma-access`, `advanced-wildfire`, `advanced-threat-prevention`, `ngfw-pa-series`, `iot-security`, `ai-access-security`, `ai-runtime-security`), each with `coverage_tier` (prevention/detection/investigation/response/exposure-mgmt), `rule_ids`, `license_required`, and an `evidence_query` the SE can paste into the product UI on demo day.
 - **panw_mapping.use_cases[].test_cases[]** — the POV scorecard. Each `test_case` has a per-test `success_criteria[]` (verifiable pass/fail statements) and `expected_score_weight` that the engine sums into the POV outcome.
 
+> **`rule_ids` are illustrative, not deployable.** The `XSIAM-AN-*`, `XDR-BIOC-*`,
+> `XSOAR-PB-*` identifiers in `panw_mapping.products[].rule_ids` are placeholders
+> for a customer's own rule namespace — they are not shippable rule IDs. The
+> **deployable** content is the BIOC / XQL / correlation logic in the
+> `detections{}` block, rendered into customer-consumable artifacts under
+> [`exports/`](exports/) by `scripts/export_artifacts.py`.
+
 ## Status lifecycle
 
 `draft → active → deprecated → withdrawn`. The pov-engine only loads `active`. `deprecated` entries remain queryable for historical POVs; `withdrawn` are kept for audit only.
@@ -76,7 +83,7 @@ The schema is MITRE-grounded but the value-add for the POV engine lives in four 
    python -m jsonschema -i ttps/TTP-YYYY-NNNN-*.json schema/ttp-entry.schema.json
    ```
 4. Ensure `references[]` has exactly one entry with `primary: true`, pointing back to the source.
-5. Commit. PR review checks: schema validation, ID uniqueness, MITRE technique resolves, all referenced PANW rule IDs exist (or are explicitly marked `TBD` in `rule_ids`).
+5. Run `scripts/validate.py` (must exit 0) and `scripts/export_artifacts.py --clean`, then commit the card **and** the regenerated `exports/`. PR review checks: schema validation, ID uniqueness, MITRE technique resolves, and `source_refs`/`publisher_id` resolve to `sources/source-registry.json`. (`rule_ids` are illustrative placeholders — they are not validated for existence.)
 
 ## Adding a TTP — via cortex-scraper
 
@@ -119,9 +126,22 @@ Six entries — the three POV pillars plus a chained BlackSuit Blitz kill chain 
 
 Next backlog from `sources/unit42-index.json` P0 set: Phantom Taurus IIS web shell, TeamPCP supply-chain compromise, Payroll Pirates BEC, Boggy Serpens AI-assisted spear-phishing.
 
+## Engine load contract
+
+The `cortex-pov-engine` enumerates the corpus by **globbing `ttps/*.json`
+directly** (non-recursive, skipping `_drafts/`) — there is no manifest file and
+no manifest-diff CI gate. See `core/engine/ttp_catalog.py:load()`. Each card is
+parsed in place; `metadata.pov_engine.auto_load`, `status`, `destructive`, and
+`safety_class` are read per card. `scripts/build-manifest.py` still exists for
+ad-hoc human reporting, but its `manifest.json` output is **gitignored** and is
+not consumed by the engine or by CI.
+
+CI runs two gates: `scripts/validate.py` (must exit 0) and a sync check on the
+generated `exports/` tree (`git diff --exit-code detection_scanner/exports/`
+after `scripts/export_artifacts.py --clean`).
+
 ## Open contracts (still to lock with cortex-pov-engine)
 
-- Exact loader path: does the engine watch `ttps/*.json` or pull from a manifest?
 - BIOC syntax dialect: this corpus assumes XQL-flavored `preset = xdr_data | ...`; confirm against current XSIAM 2.x BIOC grammar.
 - Test-case scoring: schema allows `expected_score_weight ∈ [0,1]`; engine should normalize per use case (sum to 1 within a UC).
 - Cleanup orchestration: schema declares cleanup payloads; engine should enforce them when `safety_class != safe-by-design`.

@@ -1,0 +1,91 @@
+title: "Kerberoast \u2192 Pass-the-Hash \u2192 DCSync Multi-Plane Stitch (T1558.003 / T1550.002 / T1003.006) \u2014 MP-002 LDAP SPN Sweep From Non-Typical Host"
+id: ttp-2026-0063-bioc-01
+status: experimental
+description: |
+  ITDR - LDAP search filter (servicePrincipalName=*) from non-typical host. An LDAP query enumerating servicePrincipalName attributes (Kerberoasting recon) originates from a host that is not a domain controller and not an established admin workstation.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = okta_sso
+    | filter event_type = ENUM.ACTIVE_DIRECTORY
+    | filter operation_name in ("LDAP_SEARCH", "DirectorySearch")
+    | filter lower(search_filter) contains "serviceprincipalname"
+    | filter src_host not in ("DC01", "DC02")
+    | filter actor_effective_username not in ("Administrator", "svc-bloodhound")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kerberoast \u2192 Pass-the-Hash \u2192 DCSync Multi-Plane Stitch (T1558.003 / T1550.002 / T1003.006) \u2014 MP-002 Service Account Used Interactively"
+id: ttp-2026-0063-bioc-02
+status: experimental
+description: |
+  ITDR - service account used interactively (normally machine-only context). The sql-svc service account, which only ever authenticates as a machine/service principal, is observed in an interactive or network logon — a hallmark of a cracked-then-replayed Kerberoast credential.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = okta_sso
+    | filter event_type = ENUM.AUTHENTICATION
+    | filter lower(account_name) in ("sql-svc", "cortexsim\\sql-svc")
+    | filter logon_type in (2, 3, 9, 10)
+    | filter account_is_service_account = true
+    | fields _time, account_name, logon_type, src_host, dst_host
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.002
+    - attack.t1021.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kerberoast \u2192 Pass-the-Hash \u2192 DCSync Multi-Plane Stitch (T1558.003 / T1550.002 / T1003.006) \u2014 MP-002 Service Account Remote SMB Authentication On Workstation"
+id: ttp-2026-0063-bioc-03
+status: experimental
+description: |
+  XDR (workstation) - sql-svc account authenticated remotely via SMB from non-typical host. The workstation's Cortex XDR agent observes a network logon (type 3) for the sql-svc service account sourced from the attack endpoint — Pass-the-Hash lateral movement.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.AUTHENTICATION
+    | filter auth_logon_type = 3
+    | filter lower(auth_username) contains "sql-svc"
+    | filter auth_remote_ip != null and auth_remote_ip not in ("10.0.10.10")
+    | fields _time, agent_hostname, auth_username, auth_remote_ip, auth_logon_type
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.002
+    - attack.t1021.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical

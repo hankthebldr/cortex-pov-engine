@@ -1,0 +1,32 @@
+{
+  "mitre_techniques": [
+    "T1071.001",
+    "T1059.004",
+    "T1572",
+    "T1105"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "(XQL(MP-001 NGFW Repetitive HTTP Beacon To testmynids) AND (BIOC(MP-001 Curl Beacon With Suspicious User-Agent From www-data) OR BIOC(MP-001 Interactive Shell Spawned From www-data Service Context))) -> join on src_host within 60s",
+      "name": "C2 Beacon Cross-Plane Stitch \u2014 NGFW Session + XDR Process",
+      "rule_id": "CR-MP-0001",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "(XQL(MP-001 NGFW DNS TXT High Entropy Burst) AND XQL(MP-001 Repetitive Dig TXT From Service Account)) -> join on src_host within 60s",
+      "name": "DNS Tunnel Exfil Cross-Plane Stitch \u2014 NGFW DNS Anomaly + XDR Dig Loop",
+      "rule_id": "CR-MP-0002",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "(XQL(MP-001 NGFW Download From IOC Listed Domain) AND BIOC(MP-001 Curl Wrote Second-Stage File To Tmp From Service Account) AND IOC(domain: testmynids.org)) -> join on src_host within 60s",
+      "name": "Ingress Transfer IOC Stitch \u2014 NGFW Download + XDR Tmp Write + TIM IOC",
+      "rule_id": "CR-MP-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0047"
+}

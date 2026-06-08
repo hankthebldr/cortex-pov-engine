@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1595",
+    "T1046",
+    "T1190"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ASM Exposed-Service Discovery Findings By Port) AND (BIOC(ASM EAL \u2014 Active-Scan Port Fan-Out Against Exposed Host) OR XQL(ASM EAL \u2014 Active-Scan Port Fan-Out (1 src to many ports on exposed host))) \u2014 raises a single exposure-management incident tying the discovered exposed services to the active scan that surfaced them.",
+      "name": "Exposure Management \u2014 Internet-Exposed Surface Discovered + Actively Scanned",
+      "rule_id": "CR-ASM-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0070"
+}

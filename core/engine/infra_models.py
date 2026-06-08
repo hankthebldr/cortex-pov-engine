@@ -17,6 +17,13 @@ from pydantic import BaseModel, Field, field_validator
 
 
 ALLOWED_PROVIDERS = ("aws", "gcp", "azure")
+
+# Providers that actually ship Terraform modules on disk. gcp/azure are
+# accepted by the Pydantic Literal (Phase C/D scope) but have ZERO modules,
+# so requests against them must fail fast at the request boundary with a
+# clear error rather than failing deep inside generation (GAP-IAC-004).
+PROVIDERS_WITH_MODULES = ("aws",)
+
 ALLOWED_MODULES = (
     "base",
     "edr",
@@ -26,6 +33,7 @@ ALLOWED_MODULES = (
     "tim",
     "asm",
     "cspm",
+    "ai-spm",
     "content-library",
     "telemetry-replay",
 )
@@ -78,6 +86,19 @@ class InfraGenerateRequest(BaseModel):
             "{adapter:TOOL-RUBEUS} always ships with the itdr IaC module."
         ),
     )
+
+    @field_validator("provider")
+    @classmethod
+    def _validate_provider_has_modules(cls, v: str) -> str:
+        # gcp/azure are valid Literal values (reserved for Phase C/D) but ship
+        # zero modules today. Reject at the request boundary so the operator
+        # gets a clear, structured error instead of a deep GenerationError.
+        if v not in PROVIDERS_WITH_MODULES:
+            raise ValueError(
+                f"provider '{v}' has no IaC modules yet (Phase C/D); "
+                f"available providers: {', '.join(PROVIDERS_WITH_MODULES)}"
+            )
+        return v
 
     @field_validator("modules")
     @classmethod

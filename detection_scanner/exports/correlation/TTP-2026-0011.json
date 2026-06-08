@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1090",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AIACC-005 Same User Second Provider Gemini Within Rotation Window) OR XQL(AIACC-005 Three Providers Within Five Minutes Provider Hopping) OR XQL(AIACC-005 XSIAM Stitch Single User Three Provider Sessions) OR XQL(AIACC-005 NGFW Generative AI App-ID Across Three FQDNs Shared Run ID)",
+      "name": "Cross-Provider Rotation Policy Evasion Single User",
+      "rule_id": "CR-AIACC-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0011"
+}

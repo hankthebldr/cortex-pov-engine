@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1110.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ITDR-003 Credential Stuffing Many Users One Source IP) OR XQL(ITDR-003 Credential Stuffing Severity Escalates 50 Event Burst)",
+      "name": "Credential Stuffing Identity Attack \u2014 Single Origin Spray",
+      "rule_id": "CR-ITDR-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0039"
+}

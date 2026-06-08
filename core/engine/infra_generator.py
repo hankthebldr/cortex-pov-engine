@@ -25,6 +25,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from engine.infra_catalog import InfraCatalog
 from engine.infra_models import (
+    PROVIDERS_WITH_MODULES,
     InfraBundleSummary,
     InfraGenerateRequest,
     InfraGenerateResponse,
@@ -83,6 +84,17 @@ class InfraGenerator:
     # ------------------------------------------------------------------
 
     def generate(self, request: InfraGenerateRequest) -> InfraGenerateResponse:
+        # 0. Fail fast for providers with no modules on disk (gcp/azure are
+        #    reserved Phase C/D Literal values). Pydantic already rejects these
+        #    at the API boundary; this is the defense-in-depth check for direct
+        #    generator calls so we never crawl deep into generation (GAP-IAC-004).
+        if request.provider not in PROVIDERS_WITH_MODULES:
+            raise GenerationError(
+                f"provider '{request.provider}' has no IaC modules yet "
+                f"(Phase C/D); available providers: "
+                f"{', '.join(PROVIDERS_WITH_MODULES)}"
+            )
+
         # 1. Resolve adapter_refs[] → IaC modules + remember provenance so
         #    we can surface what the auto-pull did (and write ADAPTERS.md).
         adapter_bindings, auto_modules = self._resolve_adapter_modules(request.adapter_refs)

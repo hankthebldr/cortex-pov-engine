@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1070.002",
+    "T1070.003",
+    "T1070.006",
+    "T1036.005",
+    "T1562.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(EDR-004 Bash History Clearing And HISTFILE Manipulation) OR BIOC(EDR-004 System Log Access Or Truncation) OR BIOC(EDR-004 File Timestomp Via Touch) OR BIOC(EDR-004 Binary Masquerade As Kernel Thread) OR BIOC(EDR-004 Security Product Enumeration)",
+      "name": "Linux Anti-Forensics And Defense Evasion Chain",
+      "rule_id": "CR-EDR-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0035"
+}

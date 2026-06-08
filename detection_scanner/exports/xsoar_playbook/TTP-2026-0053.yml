@@ -1,0 +1,26 @@
+id: cortexsim-ttp-2026-0053-response
+version: 1
+name: "CortexSim — SMB/RPC Lateral Sweep — Internal Host Discovery (T1046 / T1018 / T1021.002)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0053.
+  Triggered by Cortex correlation rules: CR-NDR-0004.
+  Reference playbook in panw_mapping: XSOAR-PB-LateralReconResponse-v1
+triggers:
+  - correlation_rule_id: CR-NDR-0004
+  - playbook_rule_id: XSOAR-PB-LateralReconResponse-v1
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0053
+  cortexsim_version: 1.0

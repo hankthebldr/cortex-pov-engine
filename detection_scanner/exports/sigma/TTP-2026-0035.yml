@@ -1,0 +1,142 @@
+title: "Linux Defense Evasion \u2014 Log Tampering, Timestomping, Masquerading (T1070.002) \u2014 EDR-004 Bash History Clearing And HISTFILE Manipulation"
+id: ttp-2026-0035-bioc-01
+status: experimental
+description: |
+  Bash history clearing — HISTFILE manipulation and history -c execution detected. A shell unsets/redirects HISTFILE or truncates .bash_history.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line contains_any ("history -c", "HISTFILE=/dev/null", "unset HISTFILE", "> ~/.bash_history", "rm -f ~/.bash_history", "HISTSIZE=0")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Defense Evasion \u2014 Log Tampering, Timestomping, Masquerading (T1070.002) \u2014 EDR-004 System Log Access Or Truncation"
+id: ttp-2026-0035-bioc-02
+status: experimental
+description: |
+  System log file access and truncation attempt — log tampering to hide intrusion evidence. A non-syslog process reads, copies or truncates auth.log/syslog.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter action_file_path contains_any ("/var/log/auth.log", "/var/log/syslog", "/var/log/secure", "/var/log/messages", "/var/log/wtmp", "/var/log/btmp")
+    | filter actor_process_image_name not in ("rsyslogd", "syslog-ng", "systemd-journald", "logrotate", "auditd")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Defense Evasion \u2014 Log Tampering, Timestomping, Masquerading (T1070.002) \u2014 EDR-004 File Timestomp Via Touch"
+id: ttp-2026-0035-bioc-03
+status: experimental
+description: |
+  File timestamp modification via touch -t — timestomping to evade forensic analysis. touch is invoked with -t (explicit time) or -r (reference file).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "touch"
+    | filter action_process_image_command_line contains_any (" -t ", " -r ", " -d ", "--date", "--reference")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Defense Evasion \u2014 Log Tampering, Timestomping, Masquerading (T1070.002) \u2014 EDR-004 Binary Masquerade As Kernel Thread"
+id: ttp-2026-0035-bioc-04
+status: experimental
+description: |
+  Binary copied and renamed to match kernel thread name — process masquerading as kworker. A shell/binary is copied to a [kworker..]/systemd-* style name.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("cp", "mv", "install", "ln")
+    | filter action_process_image_command_line contains_any ("[kworker", "[kthreadd]", "systemd-journald", "[migration", "[ksoftirqd")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Defense Evasion \u2014 Log Tampering, Timestomping, Masquerading (T1070.002) \u2014 EDR-004 Security Product Enumeration"
+id: ttp-2026-0035-bioc-05
+status: experimental
+description: |
+  Security product enumeration — process search for EDR/AV agent names indicates evasion preparation. The process table is grepped for common EDR/AV vendor strings.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("grep", "egrep", "pgrep", "ps")
+    | filter action_process_image_command_line contains_any ("falcon", "crowdstrike", "crowd", "cortex", "traps", "sentinel", "cylance", "carbon", "defender", "clamav")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

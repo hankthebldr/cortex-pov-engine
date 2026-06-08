@@ -1,0 +1,61 @@
+title: "Malicious VS Code Extension Reads Credentials On Activation (T1176 / T1195) \u2014 KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate"
+id: ttp-2026-0045-bioc-01
+status: experimental
+description: |
+  Code scan — extension reads ${HOME}/.aws/credentials and ${HOME}/.ssh/ via fs.readFile in activate(). A VS Code / node child process reads credential and SSH key files during extension activation.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
+    | filter action_file_path contains_any (".aws/credentials", ".ssh/id_rsa")
+    | filter actor_process_image_name in ("code", "node", "Code", "code-server") or causality_actor_process_image_name in ("code", "node", "Code")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1176/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1176
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Malicious VS Code Extension Reads Credentials On Activation (T1176 / T1195) \u2014 KOI-004 VSCode Extension Activate Beacons Outbound To Non Microsoft Domain"
+id: ttp-2026-0045-bioc-02
+status: experimental
+description: |
+  Code scan — extension activate() opens outbound HTTPS to non-Microsoft domain. The VS Code extension host process opens an outbound connection to a non-Microsoft / non-canonical domain right after activation.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter actor_process_image_name in ("code", "node", "Code", "code-server") or causality_actor_process_image_name in ("code", "node", "Code")
+    | filter dst_action_external_hostname not contains "microsoft.com"
+    | filter dst_action_external_hostname not contains "visualstudio.com"
+    | filter dst_action_external_hostname not contains "vscode.dev"
+    | filter action_external_port in (80, 443)
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1176/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1176
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

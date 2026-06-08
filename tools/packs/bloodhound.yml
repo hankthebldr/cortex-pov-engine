@@ -55,7 +55,7 @@ ttp_refs:
   - TTP-2026-0004  # DCSync — BloodHound paths surface DCSync candidates
 
 equivalents:
-  - TOOL-SHARPHOUND
+  - TOOL-IMPACKET  # SharpHound collector role overlaps with impacket AD enumeration
   - TOOL-BLOODYAD
 
 author: Henry Reed
