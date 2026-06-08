@@ -14,6 +14,11 @@
 
 ## First campaign — dry run
 
+> All 13 shipped plugins (params, MITRE mapping, EAL targets, safety notes) are
+> documented in the canonical catalog
+> [`docs/reference/eal-plugin-catalog.md`](../reference/eal-plugin-catalog.md).
+> `list-plugins` below prints the live registry; the catalog explains each one.
+
 ```bash
 # 1. List available plugins
 python -m scripts.eal_simulator.cli list-plugins

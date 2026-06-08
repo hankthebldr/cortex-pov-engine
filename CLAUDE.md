@@ -4,11 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-CortexSim — an enterprise detection simulation engine for Palo Alto Networks Domain Consultants. It generates controlled, high-fidelity signals into customer Cortex environments (XSIAM/XDR) to validate detection logic (BIOC, Analytics, IOC, stitching/grouping). Think "MITRE Caldera's opinionated nephew" — not a red team C2, but a detection quality assurance engine.
+CortexSim — an enterprise detection simulation engine for Palo Alto Networks Domain Consultants. It generates controlled, high-fidelity signals into customer Cortex environments (XSIAM/XDR) to validate detection logic across the full `detection_type` vocabulary — **`BIOC | XQL | Analytics | Correlation | IOC`** — plus stitching/grouping. Think "MITRE Caldera's opinionated nephew" — not a red team C2, but a detection quality assurance engine.
 
 **No Cortex API connection.** SimCore is standalone — it generates signals INTO the environment via agent-based execution; it does not read alerts OUT of Cortex.
 
 ## Build & Run Commands
+
+### Quick start (local dev)
+```bash
+cp .env.example .env        # set CORTEXSIM_MASTER_KEY etc.
+./scripts/dev-up.sh         # one-shot: builds the image + brings up SimCore via docker compose
+```
+`scripts/dev-up.sh` is the canonical easy-deploy entry point; `.env.example`
+documents every required/optional env var (including the master-key guard the
+compose stack enforces).
 
 ### Full Bootstrap (Linux jumpbox)
 ```bash
@@ -60,6 +69,8 @@ cd sources/<tool> && cargo build --release
 - **Pull** — agent polls SimCore, receives task, executes with identity harness, reports back
 - **Push** — SimCore generates self-contained bash bundle or K8s YAML; DC downloads and executes offline
 
+**Execution lifecycle (pull mode is end-to-end working).** Launch → orchestrator seeds Results + enqueues a step task → the Go beacon polls `/api/agents/{id}/tasks`, iterates `steps[]` resolving identity agent-side, and POSTs per-step `/output` → `/complete`. Operators can **abort** a live run (`POST /api/runs/{id}/abort` → `aborted` state; the agent polls `GET /api/runs/{id}/control` every 2s and kills the in-flight process group). Live progress streams over **SSE** (`GET /api/runs/{id}/events` scoped + `GET /api/events` global). Agent liveness is **online/stale/offline**, derived from `last_seen` age with a background heartbeat sweep that emits `agent.status` SSE frames. (Still in-memory: the task queue is not yet durable across a SimCore restart — GAP-API-005.) Full surface: `docs/reference/api-and-agent-surface.md`.
+
 **Identity harness** — every TTP step runs via a service account (`www-data`, `postgres`, `node`, `nobody`, etc.) to create realistic process causality chains in XSIAM. The harness wraps commands with `runuser -l`, `sudo -u`, or `su -s /bin/bash`.
 
 ### Core Module Structure
@@ -99,18 +110,23 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 | Plane | Cortex Engine | Status |
 |-------|--------------|--------|
 | CDR | Cortex Cloud / Prisma Cloud Compute | 5 scenarios + IaC module (EKS) |
-| EDR | Cortex XDR Agent | 5 scenarios + IaC module (diverse Linux targets) |
-| NDR | Network Security / Firewall Analytics | 7 scenarios (C2 HTTP beacon · DNS tunnel · Stratum cryptojacking · SMB lateral sweep · bulk HTTPS exfil · FTP cleartext+STOR · SSH outbound+KEXINIT) + IaC module (3 stitching patterns) + per-protocol EAL plugins (`c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`, `bulk_https_exfil`, `ftp_egress`, `ssh_egress`) |
+| EDR | Cortex XDR Agent | 7 scenarios (credential dumping · reverse shell · persistence · defense evasion · lateral movement · LSASS memory dump (`SIM-EDR-006`) · ESXi inhibit-recovery (`SIM-EDR-007`)) + IaC module (diverse Linux targets) |
+| NDR | Network Security / Firewall Analytics | 7 scenarios + 7 TTP cards (C2 HTTP beacon · DNS tunnel · Stratum cryptojacking · SMB lateral sweep · bulk HTTPS exfil (`TTP-2026-0068`) · FTP cleartext+STOR · SSH outbound+KEXINIT) + IaC module (3 stitching patterns) + per-protocol EAL plugins (`c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`, `bulk_https_exfil`, `ftp_egress`, `ssh_egress`) |
 | ITDR | Cortex ITDR | 5 scenarios (active) — synthetic IdP audit-log emission via the `idp_signin_emulator` EAL plugin (Phase 9) — impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout — plus IaC module (AD lab with seeded roastable accounts) |
-| CSPM | Cortex Cloud Posture Management | IaC module (intentional misconfigs) |
-| ASM | Cortex Attack Surface Management | IaC module (multi-service exposed host) |
-| TIM | Cortex Threat Intel Management | IaC module (TAXII + fake C2) |
+| CSPM | Cortex Cloud Posture Management | 1 scenario + TTP card (`cspm-001` posture misconfiguration sweep against the module's planted findings) + IaC module (intentional misconfigs) |
+| ASM | Cortex Attack Surface Management | 1 scenario + TTP card (`asm-001` exposed-surface discovery) + IaC module (multi-service exposed host) |
+| TIM | Cortex Threat Intel Management | 1 scenario + TTP card (`tim-001` TAXII IOC-feed match) + IaC module (TAXII + fake C2) |
 | Cloud App | Cortex Cloud App Security | 5 scenarios (active) — outbound OAuth 2.0 authorize requests against Okta / Microsoft / Google with planted risky scopes via the `oauth_grant_emulator` EAL plugin (Phase 9) |
-| Analytics | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
+| Analytics | XSIAM Correlation Engine | 5 multi-plane stitching scenarios (`scenarios/multi_plane/mp-001..005-*.yml`) |
 | AI_ACCESS | Cortex AI Access Security | 5 scenarios (active) — outbound to OpenAI/Gemini/Anthropic via the `llm_provider_egress` EAL plugin (Phase 4) with planted DLP markers |
 | AIRS | Cortex AI Runtime Security | 5 scenarios (active) — OWASP LLM01-10 against `cortex-vulnerable-llm` driven by `cortex-prompt-attacker` + `airs_prompt_attack` EAL plugin |
 | BROWSER | Prisma Browser | 5 scenarios (active) — Playwright-driven via `cortex-browser-attacker` + `browser_attack_runner` EAL plugin (Phase 6) |
 | KOI | Agentic endpoint / supply-chain | 5 scenarios (active) — MCP / skills / extensions / PyPI via `cortex-malicious-agentic-pack` artifact pack + `agentic_egress` EAL plugin (Phase 5) |
+| AI_SPM | Cortex AI Security Posture Management | 6 scenarios (active, `sim-aispm-001..006`) — AI asset discovery, model security assessment, AI supply-chain, static risk analysis, sensitive-data, security dashboard — backed by 6 TTP cards (`TTP-2026-0054..0059`) + dedicated `infra/modules/aws/ai-spm` IaC module (14 resources, 8 planted findings) |
+
+> **EAL plane scope.** The EAL Traffic Simulator (`core/eal_simulator/`) intentionally has **no plugins for EDR, CDR, CSPM, ASM, TIM, or Analytics**. Those planes are served by the identity harness (EDR/CDR), `signalbench` telemetry generation, and the IaC-planted findings (CSPM/ASM/TIM); Analytics is a cross-plane correlation layer over the others. The absence of EAL plugins for these planes is architectural, not missing content — the 13 EAL plugins cover NDR, ITDR, Cloud App, AI Access, AIRS, Browser, and KOI (the network/identity/SaaS/AI/browser signal shapes the harness cannot produce). See `docs/reference/eal-plugin-catalog.md`.
+
+> **Canonical scenario count.** The counted ground truth (verified 2026-06-08) is **63 loadable scenarios**, all `status: active`, loaded by the schema validator at boot with **0 rejected · 0 dangling `ttp_ref` · 0 dangling `adapter_ref`** — including the 6 AI_SPM scenarios, the 3 new CSPM/ASM/TIM scenarios, EDR-006/007, and all 7 NDR scenarios. The detection corpus is **67 TTP cards** (`detection_scanner/ttps/*.json`, 519 detection cards in total). `find scenarios -name '*.yml'` returns **90** files; the 27 that are NOT loadable scenarios are supporting YAML the loader skips: `_schema.yml` (1) + AIRS probe packs `scenarios/airs/probes/llm01..llm10/` (19) + browser campaigns `scenarios/browser/campaigns/` (5) + the SIM-MP-004 package `scenarios/multi_plane/packages/` (2). Do not conflate the raw `.yml` file count with the scenario count. Authoritative inventory: `docs/reference/scenario-catalog.md`; counted ground truth in `docs/reference/README.md`.
 
 ## Submodules (`sources/`)
 
@@ -158,6 +174,19 @@ In-tree (not submodules):
 Declarative `ToolAdapter` model — one YAML per security tool under `tools/packs/<tool>.yml` — telling the engine where a tool lives, how to install/invoke it, its dual-use safety class, and which Cortex plane its signal lands on. Scenarios reference adapters by id (`external_tools[].adapter_ref: TOOL-NMAP`) instead of hand-rolling CLI. Loaded + validated at boot (`core/tools/adapter_loader.py` → `adapter_catalog.py`), consumed by scenario_loader, orchestrator, infra_generator, and `GET /api/tools/adapters`. 5-tier model (1 in-tree · 2 submodule · 3 IaC-provisioned · 4 runtime-fetched · 5 external-only). **69 packs** ship across all 5 tiers (Phase A/B/C complete; 27 scenarios wired). Push bundles self-install tier-4 tools and refuse to auto-stage c2 frameworks; gated adapters require launch consent (`consent.simulation_authorized` / `c2_authorized`). `tools/` must be in the image (Dockerfile `COPY tools/`) or the catalog loads empty.
 
 **Full doc + current state (shipped vs pending): [`docs/tool-adapters.md`](docs/tool-adapters.md).** Design spec: `docs/superpowers/specs/2026-05-19-tool-adapter-framework-design.md`. Pack authoring: `tools/packs/README.md`.
+
+## CI & Quality Gates
+
+`.github/workflows/ci.yml` runs a **5-job matrix** on push / PR / manual dispatch:
+
+- **backend** — Python test suite (`pytest`, runs inside the prod image; 1596 pass / 80 skip as of the 2026-06-08 verification).
+- **agent** — Go beacon `build` + `vet` + `test -race -count=1`.
+- **ui** — vitest + `vite build`.
+- **detection** — detection-corpus validator (140 pass / 0 fail) + deterministic export regeneration check (`sha256sum -c`, SKELETON=0).
+- **adapters** — `scripts/check-adapter-sources.sh`: tier-2 adapter source trees (git submodules) **must exist on disk** (FAIL if missing — GAP-ADAPT-01 guard); tier-4 runtime-fetched misses are WARN only.
+
+`make -n ci` enumerates the local equivalents. Run `scripts/check-adapter-sources.sh`
+standalone to preflight adapter source availability before pushing.
 
 ## Cortex Branding
 
@@ -212,11 +241,12 @@ Python tests live under `tests/`. Run: `.venv/bin/pytest tests/ -v`. The suite c
 - **Phase A** (done): AWS + `base`, `edr`, `cdr`, `content-library`
 - **Phase B-1** (done): AWS + `itdr`, `ndr`
 - **Phase B-2** (done): AWS + `cspm`, `asm`, `tim`, `telemetry-replay`
+- **Phase B-3** (done): AWS + `ai-spm` (AI Security Posture Management — 14 resources, 8 planted findings; backs the AI_SPM plane)
 - **Phase C** (pending): GCP provider port of all above
 - **Phase D** (pending): Azure provider port of all above
 - **Phase E** (design only): `onprem` provider type (Ansible + Docker Compose)
 
-AWS is feature-complete with **10 modules** covering every active detection plane. Full design: `docs/superpowers/specs/2026-04-20-iac-topology-generator-design.md`.
+AWS is feature-complete with **11 modules** covering every active detection plane (`base`, `edr`, `cdr`, `content-library`, `itdr`, `ndr`, `cspm`, `asm`, `tim`, `telemetry-replay`, `ai-spm`). Full design: `docs/superpowers/specs/2026-04-20-iac-topology-generator-design.md`.
 
 ### CSPM, ASM, TIM, telemetry-replay modules (AWS)
 
@@ -227,6 +257,10 @@ AWS is feature-complete with **10 modules** covering every active detection plan
 **`tim`** — TAXII 2.1 server (mocktaxii) + fake C2 HTTP endpoint + Route53 private zone with 5 IOC-style subdomain records (`c2-beacon`, `exfil-drop`, `payload-delivery`, `dga-1a2b3c`, `cryptominer-pool`) that resolve to the fake C2. Produces both the IOC feed *and* the matching outbound traffic for testing stitched IOC+NDR+EDR detection.
 
 **`telemetry-replay`** — Content-only module (no Terraform resources). Clones curated EVTX/PCAP/JSON attack datasets (EVTX-ATTACK-SAMPLES, mordor, cyber_simulation, ML datasets, EDR-Telemetry coverage comparisons) plus replay tooling (chainsaw, tcpreplay, sigma-rules-crawler). For POVs focused on parser/correlation validation without live attack execution.
+
+### AI_SPM module (AWS)
+
+**`ai-spm`** — AI Security Posture Management lab for Cortex AI-SPM validation. 14 Terraform resources plant 8 posture findings (exposed AI assets, weak model-endpoint config, AI supply-chain risk, sensitive-data exposure, etc.) that the 6 AI_SPM scenarios (`sim-aispm-001..006`) and their TTP cards (`TTP-2026-0054..0059`) exercise. Backs the 13th active detection plane (AI_SPM). See `infra/modules/aws/ai-spm/README.md` and `scenarios/ai_spm/`.
 
 ### ITDR and NDR modules (AWS)
 
@@ -239,11 +273,13 @@ AWS is feature-complete with **10 modules** covering every active detection plan
 
 ### Multi-plane stitching scenarios
 
-`scenarios/multi_plane/SIM-MP-*.yml` — scenarios with `plane: ANALYTICS` that exercise XSIAM's correlation engine across firewall + endpoint + identity planes:
+`scenarios/multi_plane/mp-*.yml` (5 scenarios) — scenarios with `plane: ANALYTICS` that exercise XSIAM's correlation engine across firewall + endpoint + identity + cloud planes (the on-disk filenames are `mp-NNN-*.yml`; the scenario IDs are `SIM-MP-NNN`):
 
-- **SIM-MP-001** — C2 beacon callback stitching NGFW session logs with XDR process lineage
-- **SIM-MP-002** — Kerberoast → Pass-the-Hash → DCSync chain correlating ITDR + EDR + NDR signal
-- **SIM-MP-003** — Staged exfiltration via DNS tunnel, XDR stage detection + NGFW DNS anomaly stitched
+- **SIM-MP-001** (`mp-001-c2-beacon-ngfw-xdr-stitch.yml`) — C2 beacon callback stitching NGFW session logs with XDR process lineage
+- **SIM-MP-002** (`mp-002-kerberoast-lateral-smb.yml`) — Kerberoast → Pass-the-Hash → DCSync chain correlating ITDR + EDR + NDR signal
+- **SIM-MP-003** (`mp-003-data-staged-exfil-dns-tunnel.yml`) — Staged exfiltration via DNS tunnel, XDR stage detection + NGFW DNS anomaly stitched
+- **SIM-MP-004** (`mp-004-apt29-cloud-cred-theft.yml`) — APT29-style cloud credential theft; the only multi-plane scenario shipping a self-contained runnable package under `scenarios/multi_plane/packages/SIM-MP-004/`
+- **SIM-MP-005** (`mp-005-cross-plane-correlation.yml`) — cross-plane correlation incident stitching endpoint + network + identity signal
 
 ### On-prem provider (Phase E, design only)
 
