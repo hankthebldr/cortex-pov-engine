@@ -1,6 +1,7 @@
 import React from 'react'
 import PinButton from './PinButton.jsx'
 import { formatAgo } from './useScenarioRunHistory.js'
+import { runStatusToken, runStatusGlyph } from './runStatus.js'
 
 /**
  * ScenarioInspector — right-side 420px drawer with pinned launch CTA at top,
@@ -9,13 +10,21 @@ import { formatAgo } from './useScenarioRunHistory.js'
  * Launch state is owned by the parent (OperationsView) so the same hook
  * instance powers both the drawer button AND the global ⌘L shortcut.
  *
+ * Launch convergence (redesign v2): the canonical launch surface is the
+ * dedicated ③ Launch step. The drawer's primary CTA "Continue to Launch ▸"
+ * arms the scenario and hands off there (target picker + identity + consent +
+ * fire). The inline launch-config below is a power-user QUICK-LAUNCH path that
+ * the ⌘L shortcut drives — kept but visually demoted so the two paths don't
+ * read as redundant.
+ *
  * Props:
- *   scenario      — scenario detail object
- *   open          — boolean
- *   launch        — useLaunchScenario() return value (controlled from parent)
- *   pinned        — boolean — whether this scenario is currently pinned
- *   onTogglePin   — () => void
- *   onClose       — () => void
+ *   scenario          — scenario detail object
+ *   open              — boolean
+ *   launch            — useLaunchScenario() return value (controlled from parent)
+ *   pinned            — boolean — whether this scenario is currently pinned
+ *   onTogglePin       — () => void
+ *   onClose           — () => void
+ *   onContinueToLaunch— () => void  hand off to the canonical ③ Launch step
  */
 export default function ScenarioInspector({
   scenario,
@@ -26,6 +35,7 @@ export default function ScenarioInspector({
   onClose = () => {},
   runHistory = [],
   onOpenRunEvidence = () => {},
+  onContinueToLaunch = null,
 }) {
   if (!scenario || !launch) return <aside className="inspector" />
 
@@ -41,31 +51,39 @@ export default function ScenarioInspector({
         <div className="insp-launch__title">{scenario.name}</div>
 
         <div className="insp-launch__actions">
-          <button
-            type="button"
-            className="btn btn--primary"
-            disabled={launch.launchDisabled}
-            onClick={launch.launch}
-            title="Launch this scenario in the selected mode"
-          >
-            <span>{launch.launching ? 'Launching…' : 'Launch'}</span>
-            <span
-              className="kbd"
-              style={{
-                background: 'rgba(5,10,20,0.25)',
-                borderColor: 'rgba(5,10,20,0.25)',
-                color: 'var(--c-void)',
-              }}
-            >⌘L</span>
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={launch.downloadPushBundle}
-            disabled={launch.downloading || !launch.supportsPush}
-          >
-            {launch.downloading ? 'Preparing…' : 'Push bundle'}
-          </button>
+          {onContinueToLaunch ? (
+            // Canonical path — hand off to the dedicated ③ Launch step where
+            // the target picker + identity + consent gate live.
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={onContinueToLaunch}
+              title="Arm this scenario and continue to the Launch step"
+            >
+              <span>Continue to Launch</span>
+              <span aria-hidden="true" style={{ marginLeft: 4 }}>▸</span>
+            </button>
+          ) : (
+            // Fallback (no handoff wired, e.g. isolated render): inline launch
+            // so the drawer is still functional on its own.
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={launch.launchDisabled}
+              onClick={launch.launch}
+              title="Launch this scenario in the selected mode"
+            >
+              <span>{launch.launching ? 'Launching…' : 'Launch'}</span>
+              <span
+                className="kbd"
+                style={{
+                  background: 'rgba(5,10,20,0.25)',
+                  borderColor: 'rgba(5,10,20,0.25)',
+                  color: 'var(--c-void)',
+                }}
+              >⌘L</span>
+            </button>
+          )}
           <PinButton
             pinned={pinned}
             onToggle={onTogglePin}
@@ -93,8 +111,20 @@ export default function ScenarioInspector({
       </div>
 
       {/* ── Mode + identity + agent (compact) ───────────────────────────── */}
+      {/* Quick-launch power path. The full guided flow (target picker +
+          consent) lives in the ③ Launch step; this stays for ⌘L muscle
+          memory and one-keystroke re-runs. */}
       <div className="insp-section insp-section--launch-config">
-        <div className="insp-section__title">Launch config</div>
+        <div className="insp-section__title">
+          Quick launch
+          <span className="mono" style={{
+            marginLeft: 6,
+            fontSize: 9,
+            color: 'var(--c-text-muted)',
+            letterSpacing: '0.04em',
+            textTransform: 'none',
+          }}>⌘L · advanced</span>
+        </div>
         <div className="insp-config">
           {/* Mode */}
           <div className="insp-config__row">
@@ -183,6 +213,32 @@ export default function ScenarioInspector({
               </div>
             </div>
           )}
+
+          {/* Quick-launch actions. Quick-launch is the secondary one-keystroke
+              path when the canonical ③ Launch handoff is wired (the top CTA
+              becomes "Continue to Launch"); the push-bundle download is always
+              available here. */}
+          <div className="insp-config__row insp-config__row--actions">
+            {onContinueToLaunch && (
+              <button
+                type="button"
+                className="btn btn--xs"
+                disabled={launch.launchDisabled}
+                onClick={launch.launch}
+                title="Quick-launch in the selected mode (skips the guided Launch step)"
+              >
+                {launch.launching ? 'Launching…' : 'Quick launch'}
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn--xs"
+              onClick={launch.downloadPushBundle}
+              disabled={launch.downloading || !launch.supportsPush}
+            >
+              {launch.downloading ? 'Preparing…' : 'Push bundle'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -336,14 +392,14 @@ function RunHistorySection({ runs = [], onOpenRunEvidence = () => {} }) {
 
 function RunHistoryRow({ run, onOpen = () => {} }) {
   const id     = run.id || run.run_id
-  const status = (run.status || 'unknown').toLowerCase()
   const ts     = Date.parse(run.started_at || run.created_at || '') || 0
   const ago    = formatAgo(ts) || '—'
-  const statusGlyph = status === 'completed' ? '✓'
-    : status === 'failed'    ? '✗'
-    : status === 'running'   ? '◐'
-    : '○'
-  const statusClass = 'insp-history__row--' + status
+  // Backend terminal token is 'complete'; runStatusToken folds it (and the
+  // legacy 'completed') onto the canonical 'completed' CSS state, and surfaces
+  // 'aborted' as its own terminal state (Phase 2).
+  const token  = runStatusToken(run.status)
+  const statusGlyph = runStatusGlyph(run.status)
+  const statusClass = 'insp-history__row--' + token
   return (
     <li className={'insp-history__row ' + statusClass}>
       <button
@@ -355,7 +411,7 @@ function RunHistoryRow({ run, onOpen = () => {} }) {
         <span className="insp-history__glyph" aria-hidden="true">{statusGlyph}</span>
         <span className="insp-history__id mono">{String(id).slice(0, 10)}</span>
         <span className="insp-history__when mono">{ago}</span>
-        <span className="insp-history__status mono">{status}</span>
+        <span className="insp-history__status mono">{token}</span>
         <span className="insp-history__arrow mono" aria-hidden="true">→</span>
       </button>
     </li>

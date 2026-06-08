@@ -194,6 +194,52 @@
   border-color: transparent;
 }
 
+/* ── Detection-type chips (GAP-2: XQL + Correlation now first-class) ──────
+   Vocabulary: BIOC | XQL | Analytics | Correlation | IOC. Correlation is the
+   key XSIAM differentiator — given the distinct violet accent so it pops
+   visually in coverage views, the scorecard, and the UC/TC chain. */
+.theme-console .det-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--r-chip);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  font-weight: 600;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  background: var(--c-surface-raised);
+  color: var(--c-text-secondary);
+  border: 1px solid var(--c-hairline);
+  white-space: nowrap;
+}
+.theme-console .det-chip--bioc {
+  background: var(--c-action-soft);
+  color: var(--c-action-bright);
+  border-color: transparent;
+}
+.theme-console .det-chip--xql {
+  background: var(--c-signal-soft);
+  color: var(--c-signal);
+  border-color: transparent;
+}
+.theme-console .det-chip--analytics {
+  background: rgba(143, 163, 190, 0.14);
+  color: var(--c-text-secondary);
+  border-color: transparent;
+}
+.theme-console .det-chip--correlation {
+  background: rgba(142, 124, 255, 0.16);
+  color: var(--c-accent-violet);
+  border-color: rgba(142, 124, 255, 0.4);
+}
+.theme-console .det-chip--ioc {
+  background: var(--c-pending-soft);
+  color: var(--c-pending);
+  border-color: transparent;
+}
+
 .theme-console .kbd {
   display: inline-flex;
   align-items: center;
@@ -1039,6 +1085,12 @@
   gap: 12px;
   align-items: center;
 }
+/* Quick-launch action row spans the full width (no label column). */
+.theme-console .insp-config__row--actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
 .theme-console .insp-config__label {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1508,6 +1560,10 @@
   color: var(--c-text-secondary);
   text-transform: uppercase;
   letter-spacing: var(--tracking-mono);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .theme-console .scorecard__alert { color: var(--c-text); line-height: 1.4; }
 .theme-console .scorecard__mttd {
@@ -2744,6 +2800,9 @@
   letter-spacing: var(--tracking-mono);
   text-transform: uppercase;
   color: var(--c-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .theme-console .detection-drawer__section {
@@ -4745,7 +4804,9 @@
 
 .theme-console .insp-history__row--completed { border-left: 2px solid var(--c-status-detected, #4FD1A1); }
 .theme-console .insp-history__row--failed    { border-left: 2px solid var(--c-status-missed,   #FF6B6B); }
+.theme-console .insp-history__row--aborted   { border-left: 2px solid var(--c-pending, #E0A800); }
 .theme-console .insp-history__row--running   { border-left: 2px solid var(--c-cortex-teal); }
+.theme-console .insp-history__row--pending   { border-left: 2px solid var(--c-text-disabled); }
 .theme-console .insp-history__row--unknown   { border-left: 2px solid var(--c-text-disabled); }
 
 .theme-console .insp-history__glyph {
@@ -4756,6 +4817,7 @@
 
 .theme-console .insp-history__row--completed .insp-history__glyph { color: var(--c-status-detected, #4FD1A1); }
 .theme-console .insp-history__row--failed    .insp-history__glyph { color: var(--c-status-missed,   #FF6B6B); }
+.theme-console .insp-history__row--aborted   .insp-history__glyph { color: var(--c-pending, #E0A800); }
 .theme-console .insp-history__row--running   .insp-history__glyph { color: var(--c-cortex-teal); }
 
 .theme-console .insp-history__id {

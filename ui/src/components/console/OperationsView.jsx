@@ -48,6 +48,7 @@ export default function OperationsView({
   onSurfaceMessage = () => {},
   onOpenRunEvidence = () => {},
   onArmScenario = () => {},
+  onContinueToLaunch = null,
 }) {
   const [scenarios, setScenarios]       = useState([])
   const [loading, setLoading]           = useState(true)
@@ -219,7 +220,7 @@ export default function OperationsView({
     <div className="operations grid-bg">
       <div className="view-head">
         <div>
-          <h1>Operations</h1>
+          <h1>Library</h1>
           <div className="view-head__meta">
             Plane: <strong>{headMeta.planeLabel}</strong>
             {' · '}<span className="mono">
@@ -312,6 +313,15 @@ export default function OperationsView({
           ? (runsByScenario.get(selectedId) || [])
           : []}
         onOpenRunEvidence={onOpenRunEvidence}
+        onContinueToLaunch={onContinueToLaunch
+          ? () => {
+              // Scenario is already armed on select; close the drawer and hand
+              // off to the canonical ③ Launch step.
+              if (selectedId) onArmScenario(selectedId)
+              setDrawerOpen(false)
+              onContinueToLaunch()
+            }
+          : null}
       />
 
       <FilterPalette

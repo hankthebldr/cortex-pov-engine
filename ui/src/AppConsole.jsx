@@ -9,6 +9,7 @@ import TargetsView from './components/console/TargetsView.jsx'
 import LaunchView from './components/console/LaunchView.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
+import { isRunTerminal } from './components/console/runStatus.js'
 import { getHealth, getRuns, getScenarios, getScenario, downloadReportBundle } from './api/client.js'
 
 /**
@@ -181,10 +182,10 @@ export default function AppConsole() {
   }, [runs])
 
   // ── Derive last completed run (fallback for InflightView) ───────────────
+  // Backend emits terminal status 'complete' (not 'completed'); isRunTerminal
+  // also matches 'failed'/'aborted' so a finished run always surfaces here.
   const lastRun = useMemo(() => {
-    const finished = runs.find(
-      (r) => r && (r.status === 'completed' || r.status === 'failed' || r.status === 'aborted')
-    )
+    const finished = runs.find((r) => r && isRunTerminal(r.status))
     if (!finished) return null
     return {
       runId: finished.id || finished.run_id,
@@ -284,17 +285,35 @@ export default function AppConsole() {
     const actions = [
       {
         section: 'Actions',
+        id: 'tab-targets',
+        title: 'Go to Targets',
+        meta: 'pick agent \u00b7 push bundle \u00b7 IaC lab',
+        icon: '\u26a1',
+        shortcut: ['G', 'T'],
+        onSelect: () => setActiveTab('targets'),
+      },
+      {
+        section: 'Actions',
         id: 'tab-operations',
-        title: 'Go to Operations',
-        meta: 'browse and launch scenarios',
+        title: 'Go to Library',
+        meta: 'browse and arm scenarios',
         icon: '\u26a1',
         shortcut: ['G', 'O'],
         onSelect: () => setActiveTab('operations'),
       },
       {
         section: 'Actions',
+        id: 'tab-launch',
+        title: 'Go to Launch',
+        meta: 'arm a target + fire the run',
+        icon: '\u26a1',
+        shortcut: ['G', 'A'],
+        onSelect: () => setActiveTab('launch'),
+      },
+      {
+        section: 'Actions',
         id: 'tab-inflight',
-        title: 'Go to In-Flight',
+        title: 'Go to Live',
         meta: 'attack narrative timeline',
         icon: '\u26a1',
         shortcut: ['G', 'I'],
@@ -312,7 +331,7 @@ export default function AppConsole() {
       {
         section: 'Actions',
         id: 'tab-lab',
-        title: 'Go to Lab',
+        title: 'Go to Environments',
         meta: 'IaC bundle generator',
         icon: '\u26a1',
         shortcut: ['G', 'L'],
@@ -463,6 +482,7 @@ export default function AppConsole() {
         isPinned={isPinned}
         togglePin={togglePin}
         onArmScenario={(sid) => setArmedScenarioId(sid)}
+        onContinueToLaunch={() => setActiveTab('launch')}
         onRunComplete={handleRunComplete}
         onOpenRunEvidence={(run) => {
           // Pin the run + switch to Evidence so the DC lands on

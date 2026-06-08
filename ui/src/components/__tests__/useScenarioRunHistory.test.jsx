@@ -27,7 +27,7 @@ describe('useScenarioRunHistory', () => {
   it('rolls runs up by scenario_id', async () => {
     installRoutes({
       'GET /api/runs': [
-        { id: 'r-1', scenario_id: 'SIM-EDR-001', status: 'completed', started_at: '2026-05-01T10:00:00Z' },
+        { id: 'r-1', scenario_id: 'SIM-EDR-001', status: 'complete', started_at: '2026-05-01T10:00:00Z' },
         { id: 'r-2', scenario_id: 'SIM-EDR-001', status: 'failed',    started_at: '2026-05-03T10:00:00Z' },
         { id: 'r-3', scenario_id: 'SIM-CDR-002', status: 'running',   started_at: '2026-05-05T10:00:00Z' },
       ],
@@ -63,7 +63,7 @@ describe('useScenarioRunHistory', () => {
   it('handles {runs: [...]} wrapper shape', async () => {
     installRoutes({
       'GET /api/runs': [
-        { id: 'r-9', scenario_id: 'SIM-NDR-003', status: 'completed', started_at: '2026-05-02T00:00:00Z' },
+        { id: 'r-9', scenario_id: 'SIM-NDR-003', status: 'complete', started_at: '2026-05-02T00:00:00Z' },
       ],
     })
     render(<Probe />)
@@ -75,8 +75,8 @@ describe('useScenarioRunHistory', () => {
   it('skips runs missing scenario_id', async () => {
     installRoutes({
       'GET /api/runs': [
-        { id: 'r-1', status: 'completed', started_at: '2026-05-01T10:00:00Z' }, // no scenario_id
-        { id: 'r-2', scenario_id: 'SIM-EDR-001', status: 'completed', started_at: '2026-05-01T10:00:00Z' },
+        { id: 'r-1', status: 'complete', started_at: '2026-05-01T10:00:00Z' }, // no scenario_id
+        { id: 'r-2', scenario_id: 'SIM-EDR-001', status: 'complete', started_at: '2026-05-01T10:00:00Z' },
       ],
     })
     render(<Probe />)

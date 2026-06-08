@@ -63,7 +63,7 @@ describe('ScenarioInspector — Run history section', () => {
   it('renders up to 5 most-recent runs', () => {
     const runs = Array.from({ length: 7 }, (_, i) => ({
       id: `r-${i}`,
-      status: 'completed',
+      status: 'complete',
       started_at: new Date(Date.now() - i * 60_000).toISOString(),
     }))
     const { container } = render(
@@ -81,7 +81,7 @@ describe('ScenarioInspector — Run history section', () => {
 
   it('applies status modifier classes per run', () => {
     const runs = [
-      { id: 'r-ok',   status: 'completed', started_at: new Date().toISOString() },
+      { id: 'r-ok',   status: 'complete', started_at: new Date().toISOString() },
       { id: 'r-bad',  status: 'failed',    started_at: new Date().toISOString() },
       { id: 'r-busy', status: 'running',   started_at: new Date().toISOString() },
     ]
@@ -101,7 +101,7 @@ describe('ScenarioInspector — Run history section', () => {
   it('truncates run id to 10 chars in the row', () => {
     const runs = [{
       id: 'run-abcdefghijklmnop',
-      status: 'completed',
+      status: 'complete',
       started_at: new Date().toISOString(),
     }]
     const { container } = render(
@@ -119,7 +119,7 @@ describe('ScenarioInspector — Run history section', () => {
   it('renders relative time for recent runs', () => {
     const runs = [{
       id: 'r-recent',
-      status: 'completed',
+      status: 'complete',
       started_at: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
     }]
     render(
@@ -137,7 +137,7 @@ describe('ScenarioInspector — Run history section', () => {
     const onOpen = vi.fn()
     const runs = [{
       id: 'r-click-me',
-      status: 'completed',
+      status: 'complete',
       scenario_id: 'SIM-EDR-001',
       started_at: new Date(Date.now() - 60_000).toISOString(),
     }]

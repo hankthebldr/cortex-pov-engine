@@ -45,26 +45,37 @@ const SHORTCUTS = [
   },
 ]
 
+// Guided POV-workflow steps (redesign v2): ① Targets · ② Library · ③ Launch ·
+// ④ Live · ⑤ Evidence, then More ▾ (Environments / Coverage). Names mirror the
+// stepper so this cheatsheet matches what the operator sees.
 const TABS_CHEATSHEET = [
   {
-    name: 'Operations',
-    body: 'Browse and launch scenarios. Filter by plane (rail) or by tactic / technique / actor / difficulty (⌘F). Click a card → inspector drawer with launch CTA pinned at top. Pin scenarios you use repeatedly — they appear in the rail and at the top of the palette.',
+    name: '① Targets',
+    body: 'Pick where the attack runs: a registered pull agent (live beacon), a self-contained push bundle (offline), or a provisioned IaC lab. The chosen target auto-sets pull/push mode for ③ Launch — you never reason about transports.',
   },
   {
-    name: 'In-Flight',
+    name: '② Library',
+    body: 'Browse and arm scenarios. Filter by plane (rail) or by tactic / technique / actor / difficulty (⌘F). Click a card → inspector drawer with a launch CTA pinned at top (or hand off to the dedicated ③ Launch step). Pin scenarios you use repeatedly — they appear in the rail and at the top of the palette.',
+  },
+  {
+    name: '③ Launch',
+    body: 'The canonical launch surface. Combines the armed scenario (from Library) with the chosen target (from Targets), prompts for execution identity + any dual-use / C2 consent, then fires the run. The Library drawer hands off here for the full flow.',
+  },
+  {
+    name: '④ Live',
     body: 'Live attack-narrative timeline for the running scenario. Each step pulses amber while pending, fills teal when detected. XSIAM stitch arcs draw between correlated events — that\'s the POV money shot. Hit Screenshot for a PNG you can drop straight into a slide deck.',
   },
   {
-    name: 'Evidence',
-    body: 'Validate detections + export the POV report. KPI row shows coverage %, median MTTD, stitch count, pending. Scorecard rows have inline ✓ ✗ ○ buttons for per-detection validation. "Export POV report" produces a Cortex-branded markdown you can hand to the customer.',
+    name: '⑤ Evidence',
+    body: 'Validate detections + export the POV report. KPI row shows coverage %, median MTTD, stitch count, pending. Scorecard rows have inline ✓ ✗ ○ buttons for per-detection validation and a detection-type chip (BIOC / XQL / Correlation / IOC). "Export POV report" produces a Cortex-branded markdown you can hand to the customer.',
   },
   {
-    name: 'Lab',
+    name: 'Environments (More ▾)',
     body: 'Generate IaC bundles for the target environment. Pick provider + modules, fill required params, Generate Bundle → download tar.gz with Terraform. Modules auto-select their dependencies (e.g. picking cdr also picks base + tim).',
   },
   {
-    name: 'ATT&CK Coverage',
-    body: 'MITRE matrix showing what techniques the scenario library covers. Click a technique cell → detail panel → "Filter Operations →" jumps to the Operations tab pre-filtered to scenarios exercising that technique.',
+    name: 'ATT&CK Coverage (More ▾)',
+    body: 'MITRE matrix showing what techniques the scenario library covers. Click a technique cell → detail panel → "Filter Library →" jumps to the Library step pre-filtered to scenarios exercising that technique.',
   },
 ]
 

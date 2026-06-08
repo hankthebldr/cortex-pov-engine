@@ -210,7 +210,8 @@ describe('console-view smoke renders', () => {
     })
     render(<OperationsView />)
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /operations/i })).toBeInTheDocument()
+      // Redesign v2: the Operations view heading is now "Library".
+      expect(screen.getByRole('heading', { name: /library/i })).toBeInTheDocument()
     })
   })
 

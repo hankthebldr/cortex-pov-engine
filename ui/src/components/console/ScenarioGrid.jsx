@@ -1,6 +1,7 @@
 import React from 'react'
 import PinButton from './PinButton.jsx'
 import { formatAgo } from './useScenarioRunHistory.js'
+import { isRunComplete } from './runStatus.js'
 
 const PLANE_CHIP_CLASS = {
   EDR:        'chip--plane-edr',
@@ -103,8 +104,11 @@ function ScenarioCard({ scenario, isSelected, isPinned, onSelect, onTogglePin, h
  */
 function ScenarioHistoryBadge({ history }) {
   const status = history.lastStatus || 'unknown'
-  const statusClass = status === 'completed' ? 'is-ok'
+  // Backend terminal token is 'complete'; isRunComplete also accepts the legacy
+  // 'completed' alias so the badge dot stays green for finished runs.
+  const statusClass = isRunComplete(status) ? 'is-ok'
     : status === 'failed'  ? 'is-fail'
+    : status === 'aborted' ? 'is-fail'
     : status === 'running' ? 'is-run'
     : 'is-idle'
   return (
