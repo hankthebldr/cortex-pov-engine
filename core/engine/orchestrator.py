@@ -34,6 +34,10 @@ class Task:
     scenario_id: str
     steps: list[dict[str, Any]]
     identity_context: Optional[str]
+    # scenario.execution_identity["default"] — the agent uses this as the
+    # last-resort username when a step carries no identity and the launch
+    # supplied no identity_context (see the Phase 2 identity-resolution rule).
+    identity_default: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict[str, Any]:
@@ -43,6 +47,7 @@ class Task:
             "scenario_id": self.scenario_id,
             "steps": self.steps,
             "identity_context": self.identity_context,
+            "identity_default": self.identity_default,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -79,6 +84,10 @@ class Orchestrator:
     def __init__(self) -> None:
         # agent_id -> list of pending Task objects
         self._queue: dict[str, list[Task]] = {}
+        # run_ids the operator aborted — drives the agent's /control stop
+        # signal and prevents a queued-but-undelivered task from executing.
+        # Unbounded in principle but runs are few/short; pruned on /complete.
+        self._aborted: set[str] = set()
 
     # ------------------------------------------------------------------
     # launch
@@ -189,12 +198,14 @@ class Orchestrator:
                 error="target_agent_id is required for pull mode",
             )
 
+        execution_identity = getattr(scenario, "execution_identity", None) or {}
         task = Task(
             task_id=str(uuid.uuid4()),
             run_id=run_id,
             scenario_id=scenario.scenario_id,
             steps=_resolve_adapter_placeholders(scenario.steps or []),
             identity_context=identity,
+            identity_default=execution_identity.get("default"),
         )
         self._enqueue(target_agent_id, task)
 
@@ -206,6 +217,7 @@ class Orchestrator:
         if run:
             run.status = "running"
             await db.commit()
+            await _publish_run_status(run_id, "running")
 
         logger.info(
             "Task enqueued task_id=%s agent=%s run_id=%s",
@@ -312,15 +324,49 @@ class Orchestrator:
         self._queue[agent_id].append(task)
 
     def dequeue(self, agent_id: str) -> Optional[Task]:
-        """Pop the next task for an agent, or return None."""
+        """Pop the next deliverable task for an agent, or return None.
+
+        Skips (and discards) any queued task whose run was aborted — defence
+        in depth in case an abort raced an in-flight enqueue.
+        """
         queue = self._queue.get(agent_id, [])
-        if not queue:
-            return None
-        return queue.pop(0)
+        while queue:
+            task = queue.pop(0)
+            if task.run_id in self._aborted:
+                logger.info(
+                    "dequeue skipping aborted task task_id=%s run_id=%s",
+                    task.task_id, task.run_id,
+                )
+                continue
+            return task
+        return None
 
     def peek_queue(self, agent_id: str) -> list[Task]:
         """Return all pending tasks for an agent without removing them."""
         return list(self._queue.get(agent_id, []))
+
+    # ------------------------------------------------------------------
+    # Abort support
+    # ------------------------------------------------------------------
+
+    def abort(self, run_id: str) -> None:
+        """Mark a run aborted: record the id (so the agent's /control poll
+        returns ``abort=true``) and drop any queued-but-undelivered task for
+        the run from every agent queue.
+        """
+        self._aborted.add(run_id)
+        for agent_id, tasks in list(self._queue.items()):
+            self._queue[agent_id] = [t for t in tasks if t.run_id != run_id]
+        logger.info("run aborted run_id=%s", run_id)
+
+    def is_aborted(self, run_id: str) -> bool:
+        """True if ``run_id`` was aborted via :meth:`abort` this process."""
+        return run_id in self._aborted
+
+    def clear_aborted(self, run_id: str) -> None:
+        """Drop a run from the aborted set once it reaches a terminal state,
+        so the in-memory set doesn't grow without bound. Idempotent."""
+        self._aborted.discard(run_id)
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +466,26 @@ def _render_adapter(adapter: Optional[Any], original_placeholder: str) -> str:
             adapter.adapter_id, exc,
         )
         return original_placeholder
+
+
+async def _publish_run_status(
+    run_id: str, status: str, step_id: Optional[str] = None
+) -> None:
+    """Publish a ``run.status`` event onto the live event bus.
+
+    Swallows any bus error so a publishing hiccup can never abort the run
+    transition that triggered it.
+    """
+    try:
+        from events import event_bus  # noqa: PLC0415
+
+        await event_bus.publish(
+            run_id,
+            {"type": "run.status", "run_id": run_id,
+             "data": {"status": status, "step_id": step_id}},
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("event_bus publish failed run_id=%s status=%s", run_id, status)
 
 
 # Module-level singleton — imported by API layer

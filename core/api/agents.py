@@ -152,13 +152,44 @@ async def agent_installer(
     )
 
 
+# Heartbeat staleness thresholds (seconds against utcnow - last_seen).
+_ONLINE_WINDOW_S = 30
+_STALE_WINDOW_S = 300  # 5 minutes
+
+
+def _derive_status(last_seen: Optional[datetime], now: datetime) -> tuple[str, float]:
+    """Derive an agent's liveness status from its last_seen age.
+
+    Returns ``(status, age_seconds)`` where status ∈ online | stale | offline.
+    Status is computed at read time — last_seen is the source of truth, the
+    stored ``Agent.status`` column is only a cache for the SSE sweep.
+    """
+    if last_seen is None:
+        return "offline", 1e9
+    age = (now - last_seen).total_seconds()
+    if age < _ONLINE_WINDOW_S:
+        return "online", age
+    if age < _STALE_WINDOW_S:
+        return "stale", age
+    return "offline", age
+
+
 @router.get("")
 async def list_agents(db: AsyncSession = Depends(get_db)):
-    """Return all registered agents."""
+    """Return all registered agents with liveness status derived from
+    ``last_seen`` (online < 30s, stale < 5m, offline ≥ 5m)."""
     result = await db.execute(select(Agent).order_by(Agent.last_seen.desc()))
     agents = result.scalars().all()
-    logger.info("list_agents count=%d", len(agents))
-    return {"agents": [a.to_dict() for a in agents], "total": len(agents)}
+    now = datetime.utcnow()
+    out: list[dict] = []
+    for a in agents:
+        d = a.to_dict()
+        status, age = _derive_status(a.last_seen, now)
+        d["status"] = status
+        d["last_seen_age_seconds"] = round(age, 1)
+        out.append(d)
+    logger.info("list_agents count=%d", len(out))
+    return {"agents": out, "total": len(out)}
 
 
 @router.post("/register")
@@ -256,3 +287,69 @@ async def poll_tasks(
 
     logger.info("poll_tasks agent=%s dispatching task_id=%s run_id=%s", agent_id, task.task_id, task.run_id)
     return {"task": task.to_dict()}
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — background heartbeat sweep (SSE emitter)
+# ---------------------------------------------------------------------------
+#
+# list_agents already derives online/stale/offline at read time, so the sweep
+# is belt-and-suspenders: its only job is to write status transitions to the
+# DB cache and emit `agent.status` events on the GLOBAL bus so the UI sees an
+# agent go offline without re-listing. Started from main.py's lifespan.
+
+
+async def sweep_agents_once() -> int:
+    """Single pass of the staleness sweep. Recomputes each agent's derived
+    status; on a transition, persists it and publishes an ``agent.status``
+    event. Returns the number of agents whose status changed.
+
+    Opens its own DB session (it runs outside any request scope).
+    """
+    from database import AsyncSessionLocal  # noqa: PLC0415
+    from events import event_bus  # noqa: PLC0415
+
+    changed = 0
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Agent))
+        agents = result.scalars().all()
+        now = datetime.utcnow()
+        for a in agents:
+            new_status, _ = _derive_status(a.last_seen, now)
+            if new_status != a.status:
+                a.status = new_status
+                changed += 1
+                try:
+                    await event_bus.publish(
+                        None,
+                        {"type": "agent.status", "run_id": None,
+                         "data": {"agent_id": a.agent_id, "status": new_status}},
+                    )
+                except Exception:  # pragma: no cover - defensive
+                    logger.exception("event_bus publish failed agent=%s", a.agent_id)
+        if changed:
+            await db.commit()
+    return changed
+
+
+async def heartbeat_sweep_loop(interval_seconds: int = 30) -> None:
+    """Run :func:`sweep_agents_once` forever on a fixed cadence.
+
+    Cancelled on app shutdown. Transient errors are logged and do not kill
+    the loop. This is the SSE emitter for agent liveness transitions.
+    """
+    import asyncio  # noqa: PLC0415
+
+    logger.info("heartbeat sweep loop started interval=%ds", interval_seconds)
+    try:
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                changed = await sweep_agents_once()
+                if changed:
+                    logger.info("heartbeat sweep: %d agent status transition(s)", changed)
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("heartbeat sweep pass failed — continuing")
+    except asyncio.CancelledError:  # pragma: no cover - shutdown path
+        logger.info("heartbeat sweep loop cancelled")
+        raise

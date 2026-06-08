@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from events import event_bus
 from models import Result
 
 logger = logging.getLogger("cortexsim.api.results")
@@ -150,6 +151,25 @@ async def validate_result(
         result.notes = body.notes
 
     await db.commit()
+
+    # Publish a live detection event so the run's SSE stream shows the
+    # confirmation in real time. Never let a bus error fail the validate.
+    try:
+        await event_bus.publish(
+            result.run_id,
+            {
+                "type": "result.observed",
+                "run_id": result.run_id,
+                "data": {
+                    "result_id": result.id,
+                    "observed": result.observed,
+                    "plane": result.plane,
+                    "mttd_seconds": result.mttd_seconds,
+                },
+            },
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("event_bus publish failed result_id=%d", result_id)
 
     logger.info(
         "validate result_id=%d observed=%s mttd=%s",

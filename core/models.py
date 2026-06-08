@@ -42,6 +42,11 @@ class Scenario(Base):
     mitre_technique: Mapped[str] = mapped_column(String, nullable=False)
     mitre_technique_name: Mapped[str] = mapped_column(String, nullable=False)
 
+    # GAP-5 — secondary MITRE techniques exercised beyond the primary one.
+    # Stored as a list of {technique, name} dicts (name may be "") so the
+    # coverage heatmap (/api/mitre/coverage) can fuse them in. Default [].
+    additional_techniques: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+
     threat_report: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     threat_report_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
@@ -78,6 +83,7 @@ class Scenario(Base):
             "mitre_tactic_name": self.mitre_tactic_name,
             "mitre_technique": self.mitre_technique,
             "mitre_technique_name": self.mitre_technique_name,
+            "additional_techniques": self.additional_techniques,
             "threat_report": self.threat_report,
             "threat_report_url": self.threat_report_url,
             "execution_identity": self.execution_identity,
@@ -101,7 +107,7 @@ class Run(Base):
     mode: Mapped[str] = mapped_column(String, nullable=False)           # pull | push
     target: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     identity_context: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")  # pending | running | complete | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")  # pending | running | complete | failed | aborted
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     output: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -226,7 +232,7 @@ class Agent(Base):
     capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     registered_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="online")  # online | offline
+    status: Mapped[str] = mapped_column(String, nullable=False, default="online")  # online | stale | offline (derived from last_seen at read time)
 
     def to_dict(self) -> dict[str, Any]:
         return {

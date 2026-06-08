@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from engine import report_generator
 from engine.orchestrator import orchestrator
+from events import event_bus
 from models import Result, Run, Scenario
 from tools.adapter_catalog import catalog as adapter_catalog
 
@@ -102,11 +103,28 @@ class LaunchRequest(BaseModel):
 
 class OutputRequest(BaseModel):
     output: str
+    # Optional step id (e.g. "step-02") so per-step output can be grouped in
+    # the live SSE stream. Backward compatible — older agents omit it.
+    step_id: Optional[str] = None
 
 
 class CompleteRequest(BaseModel):
     exit_code: int
     summary: str
+
+
+# Terminal Run states — reaching any of these stops the agent and makes
+# /abort an idempotent no-op.
+_TERMINAL_STATES = {"complete", "failed", "aborted"}
+
+
+async def _safe_publish(run_id: Optional[str], event: dict) -> None:
+    """Publish to the event bus without ever letting a bus error propagate
+    into the mutation path that triggered it."""
+    try:
+        await event_bus.publish(run_id, event)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("event_bus publish failed run_id=%s", run_id)
 
 
 # ---------------------------------------------------------------------------
@@ -520,7 +538,13 @@ async def append_output(
     run.output = existing + body.output
     await db.commit()
 
-    logger.info("output appended run_id=%s bytes=%d", run_id, len(body.output))
+    await _safe_publish(
+        run_id,
+        {"type": "run.output", "run_id": run_id,
+         "data": {"step_id": body.step_id, "chunk": body.output}},
+    )
+
+    logger.info("output appended run_id=%s bytes=%d step=%s", run_id, len(body.output), body.step_id)
     return {"status": "ok", "run_id": run_id}
 
 
@@ -539,6 +563,15 @@ async def complete_run(
             detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
         )
 
+    # An operator abort wins over a late completion callback: if the run was
+    # already aborted, keep it aborted (the agent reports exit 130 on abort).
+    if run.status == "aborted":
+        logger.info("run_complete ignored — run already aborted run_id=%s", run_id)
+        # Run is already terminal — drop it from the orchestrator's aborted set
+        # so the in-memory set stays bounded even on the abort→late-complete path.
+        orchestrator.clear_aborted(run_id)
+        return {"status": run.status, "run_id": run_id}
+
     run.status = "complete" if body.exit_code == 0 else "failed"
     run.completed_at = datetime.utcnow()
 
@@ -548,6 +581,15 @@ async def complete_run(
 
     await db.commit()
 
+    # Run reached a terminal state — drop it from the orchestrator's aborted
+    # set so the in-memory set stays bounded.
+    orchestrator.clear_aborted(run_id)
+
+    await _safe_publish(
+        run_id,
+        {"type": "run.status", "run_id": run_id, "data": {"status": run.status, "step_id": None}},
+    )
+
     logger.info(
         "run_complete run_id=%s exit_code=%d status=%s",
         run_id,
@@ -555,3 +597,68 @@ async def complete_run(
         run.status,
     )
     return {"status": run.status, "run_id": run_id}
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — operator abort + agent control channel
+# ---------------------------------------------------------------------------
+
+
+@router.post("/runs/{run_id}/abort")
+async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Operator-initiated abort.
+
+    Transitions a ``pending``/``running`` run to ``aborted`` and signals the
+    in-flight agent (via the orchestrator's aborted set, polled at
+    ``/control``). Idempotent: a run already in a terminal state returns 200
+    with its existing status and ``was_terminal: true`` — never an error.
+    """
+    result = await db.execute(select(Run).where(Run.run_id == run_id))
+    run: Optional[Run] = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
+        )
+
+    if run.status in _TERMINAL_STATES:
+        logger.info("abort_run idempotent no-op run_id=%s status=%s", run_id, run.status)
+        return {"status": run.status, "run_id": run_id, "was_terminal": True}
+
+    run.status = "aborted"
+    run.completed_at = datetime.utcnow()
+    run.output = (run.output or "") + "\n--- RUN ABORTED BY OPERATOR ---\n"
+    await db.commit()
+
+    # Drop any queued task + record the id so the agent's /control poll stops it.
+    orchestrator.abort(run_id)
+
+    await _safe_publish(
+        run_id,
+        {"type": "run.status", "run_id": run_id, "data": {"status": "aborted", "step_id": None}},
+    )
+
+    logger.info("abort_run run_id=%s -> aborted", run_id)
+    return {"status": "aborted", "run_id": run_id, "was_terminal": False}
+
+
+@router.get("/runs/{run_id}/control")
+async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Lightweight stop-signal poll for the in-flight agent.
+
+    Returns ``abort=true`` when the run was aborted (orchestrator set) OR has
+    reached any terminal status in the DB (covers a SimCore restart that lost
+    the in-memory aborted set). A vanished run (DB reset) also returns
+    ``abort=true`` so the agent halts rather than spins.
+    """
+    abort = orchestrator.is_aborted(run_id)
+
+    result = await db.execute(select(Run).where(Run.run_id == run_id))
+    run: Optional[Run] = result.scalar_one_or_none()
+    if run is None:
+        return {"abort": True, "run_id": run_id, "status": "unknown"}
+
+    if run.status in _TERMINAL_STATES:
+        abort = True
+
+    return {"abort": abort, "run_id": run_id, "status": run.status}

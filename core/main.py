@@ -131,10 +131,23 @@ async def lifespan(app: FastAPI):
     instantiator._base_dir = settings.CORTEXSIM_BASE_DIR
     logger.info("Tool instantiator initialized base_dir=%s", settings.CORTEXSIM_BASE_DIR)
 
+    # 4. Background heartbeat sweep — emits agent.status SSE events when an
+    #    agent crosses online → stale → offline. list_agents derives status at
+    #    read time regardless; this loop exists only to push live transitions.
+    import asyncio  # noqa: PLC0415
+    from api.agents import heartbeat_sweep_loop  # noqa: PLC0415
+    sweep_task = asyncio.create_task(heartbeat_sweep_loop(30))
+    logger.info("Heartbeat sweep task started")
+
     logger.info("CortexSim ready — listening on port %d", settings.CORTEXSIM_PORT)
     yield
 
     logger.info("CortexSim shutting down")
+    sweep_task.cancel()
+    try:
+        await sweep_task
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+        pass
 
 
 @asynccontextmanager
@@ -229,6 +242,7 @@ from api.infra import router as infra_router            # noqa: E402
 from api.eal import router as eal_router                # noqa: E402
 from api.credentials import router as credentials_router  # noqa: E402
 from api.ttps import router as ttps_router              # noqa: E402
+from api.events import router as events_router          # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -240,6 +254,7 @@ app.include_router(infra_router, prefix="/api")
 app.include_router(eal_router, prefix="/api")
 app.include_router(credentials_router, prefix="/api")
 app.include_router(ttps_router, prefix="/api")
+app.include_router(events_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------
