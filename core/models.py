@@ -286,6 +286,56 @@ class Agent(Base):
         }
 
 
+class EnrollmentToken(Base):
+    """A one-time-ish enrollment credential for agent self-onboarding.
+
+    Replaces the "build the Go binary yourself and invent an --id" flow: a DC
+    mints a token in the console, then runs ONE line on the jumpbox
+    (``curl <server>/api/agents/install?token=... | bash``). The installer
+    redeems the token via ``POST /api/agents/enroll``; SimCore assigns the
+    agent_id (so identities are server-controlled and traceable), registers the
+    agent, and decrements the token's remaining uses.
+
+    Tokens are bounded by ``expires_at`` and ``max_uses`` and can be revoked.
+    The token value is high-entropy and only its tail is ever shown after
+    creation (the full value is returned exactly once, at mint time).
+    """
+
+    __tablename__ = "enrollment_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    max_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    def is_valid(self, now: datetime) -> bool:
+        """True if the token can still be redeemed at ``now``."""
+        if self.revoked:
+            return False
+        if self.expires_at is not None and now >= self.expires_at:
+            return False
+        return self.used_count < self.max_uses
+
+    def to_dict(self, *, reveal: bool = False) -> dict[str, Any]:
+        # Never echo the full token after mint — only a tail for identification.
+        token_display = self.token if reveal else f"...{self.token[-6:]}"
+        return {
+            "id": self.id,
+            "token": token_display,
+            "label": self.label,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "max_uses": self.max_uses,
+            "used_count": self.used_count,
+            "remaining_uses": max(0, self.max_uses - self.used_count),
+            "revoked": self.revoked,
+        }
+
+
 # ---------------------------------------------------------------------------
 # EAL Traffic Simulator persistence (campaign history + run audit trail)
 # ---------------------------------------------------------------------------

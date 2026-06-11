@@ -10,18 +10,20 @@ Endpoints:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+import re
+import secrets
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from engine.orchestrator import orchestrator
-from models import Agent
+from models import Agent, EnrollmentToken
 
 logger = logging.getLogger("cortexsim.api.agents")
 
@@ -38,6 +40,21 @@ class RegisterRequest(BaseModel):
     hostname: str
     os: str
     capabilities: list[str] = []
+
+
+class MintTokenRequest(BaseModel):
+    label: Optional[str] = Field(default=None, max_length=80)
+    ttl_seconds: int = Field(default=3600, ge=60, le=2_592_000)  # 1 min … 30 days
+    max_uses: int = Field(default=1, ge=1, le=1000)
+
+
+class EnrollRequest(BaseModel):
+    token: str
+    hostname: str
+    os: str
+    capabilities: list[str] = []
+    # Optional client-suggested name; sanitised + suffixed for uniqueness.
+    desired_name: Optional[str] = Field(default=None, max_length=60)
 
 
 # ---------------------------------------------------------------------------
@@ -57,16 +74,33 @@ def _resolve_server(request: Request, override: Optional[str]) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _linux_installer(server: str, agent_id: str, interval: int) -> str:
+def _linux_installer(server: str, agent_id: str, interval: int, token: Optional[str]) -> str:
+    # When a token is present, the script ENROLLS to obtain a server-assigned
+    # id (the recommended flow); otherwise it falls back to the explicit id.
+    enroll_block = f"""
+if [ -n "${{CORTEXSIM_TOKEN:-{token or ''}}}" ]; then
+  TOKEN="${{CORTEXSIM_TOKEN:-{token or ''}}}"
+  echo "[cortexsim] enrolling with token ...${{TOKEN: -6}}"
+  HOSTN="$(hostname 2>/dev/null || echo unknown)"
+  RESP="$(curl -fsSL -X POST "$SERVER/api/agents/enroll" \\
+    -H 'Content-Type: application/json' \\
+    -d "{{\\"token\\":\\"$TOKEN\\",\\"hostname\\":\\"$HOSTN\\",\\"os\\":\\"linux\\"}}")" \\
+    || {{ echo '[cortexsim] ERROR: enrollment failed (token invalid/expired?)' >&2; exit 1; }}
+  AGENT_ID="$(printf '%s' "$RESP" | sed -n 's/.*\\"agent_id\\":[[:space:]]*\\"\\([^\\"]*\\)\\".*/\\1/p')"
+  [ -n "$AGENT_ID" ] || {{ echo '[cortexsim] ERROR: no agent_id in enroll response' >&2; exit 1; }}
+  echo "[cortexsim] enrolled as: $AGENT_ID"
+fi"""
     return f"""#!/usr/bin/env bash
 # ─── CortexSim agent installer (Linux) ──────────────────────────────────────
-# Builds the stdlib-only Go beacon and registers it against SimCore.
-# Override any value via env: CORTEXSIM_SERVER / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL.
+# One-line onboarding. With a token, SimCore assigns the agent id (recommended);
+# without one, the explicit/default id is used (legacy).
+# Env overrides: CORTEXSIM_SERVER / CORTEXSIM_TOKEN / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL.
 set -euo pipefail
 SERVER="${{CORTEXSIM_SERVER:-{server}}}"
 AGENT_ID="${{CORTEXSIM_AGENT_ID:-{agent_id}}}"
 INTERVAL="${{CORTEXSIM_INTERVAL:-{interval}}}"
 echo "[cortexsim] target server : $SERVER"
+{enroll_block}
 echo "[cortexsim] agent id      : $AGENT_ID"
 
 if ! command -v go >/dev/null 2>&1; then
@@ -89,15 +123,26 @@ exec "$BIN" --server "$SERVER" --id "$AGENT_ID" --interval "$INTERVAL"
 """
 
 
-def _windows_installer(server: str, agent_id: str, interval: int) -> str:
+def _windows_installer(server: str, agent_id: str, interval: int, token: Optional[str]) -> str:
+    enroll_block = f"""
+$Token = if ($env:CORTEXSIM_TOKEN) {{ $env:CORTEXSIM_TOKEN }} else {{ '{token or ''}' }}
+if ($Token) {{
+  Write-Host "[cortexsim] enrolling with token ...$($Token.Substring([Math]::Max(0,$Token.Length-6)))"
+  $payload = @{{ token = $Token; hostname = $env:COMPUTERNAME; os = 'windows' }} | ConvertTo-Json
+  $resp = Invoke-RestMethod -Method Post -Uri "$Server/api/agents/enroll" -ContentType 'application/json' -Body $payload
+  $AgentId = $resp.agent_id
+  if (-not $AgentId) {{ Write-Error '[cortexsim] enrollment returned no agent_id'; exit 1 }}
+  Write-Host "[cortexsim] enrolled as: $AgentId"
+}}"""
     return f"""# ─── CortexSim agent installer (Windows / PowerShell) ───────────────────────
-# Builds the stdlib-only Go beacon and registers it against SimCore.
-# Override via env: CORTEXSIM_SERVER / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL.
+# One-line onboarding. With a token, SimCore assigns the agent id (recommended).
+# Env overrides: CORTEXSIM_SERVER / CORTEXSIM_TOKEN / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL.
 $ErrorActionPreference = 'Stop'
 $Server   = if ($env:CORTEXSIM_SERVER)   {{ $env:CORTEXSIM_SERVER }}   else {{ '{server}' }}
 $AgentId  = if ($env:CORTEXSIM_AGENT_ID) {{ $env:CORTEXSIM_AGENT_ID }} else {{ '{agent_id}' }}
 $Interval = if ($env:CORTEXSIM_INTERVAL) {{ $env:CORTEXSIM_INTERVAL }} else {{ '{interval}' }}
 Write-Host "[cortexsim] target server : $Server"
+{enroll_block}
 Write-Host "[cortexsim] agent id      : $AgentId"
 
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {{
@@ -122,15 +167,18 @@ async def agent_installer(
     id: str = "jumpbox-01",
     server: Optional[str] = None,
     interval: int = 10,
+    token: Optional[str] = None,
 ):
     """Generate a ready-to-run agent installer for the chosen OS.
 
-    Linux  → bash  (`curl -fsSL <server>/api/agents/install?os=linux&id=<id> | bash`)
+    Linux  → bash  (`curl -fsSL '<server>/api/agents/install?token=<tok>' | bash`)
     Windows→ PowerShell (.ps1)
 
-    The script builds the stdlib-only Go beacon (Go 1.21+ on the target) and
-    launches it pointed at this SimCore. No binary hosting — the agent is built
-    on the target, matching the documented Go-toolchain requirement.
+    Recommended flow: mint a token (`POST /api/agents/enroll/tokens`) and pass
+    `?token=`. The script then ENROLLS to obtain a server-assigned agent id —
+    the DC never invents one. Without a token it falls back to the explicit
+    `?id=` (legacy self-asserted path). Either way the script builds the
+    stdlib-only Go beacon (Go 1.21+ on the target) and launches it.
     """
     os_norm = (os or "linux").strip().lower()
     if os_norm not in {"linux", "windows"}:
@@ -141,10 +189,10 @@ async def agent_installer(
         )
     resolved = _resolve_server(request, server)
     if os_norm == "windows":
-        body = _windows_installer(resolved, id, interval)
+        body = _windows_installer(resolved, id, interval, token)
         media, fname = "text/plain; charset=utf-8", "install-cortexsim-agent.ps1"
     else:
-        body = _linux_installer(resolved, id, interval)
+        body = _linux_installer(resolved, id, interval, token)
         media, fname = "text/x-shellscript; charset=utf-8", "install-cortexsim-agent.sh"
     return PlainTextResponse(
         body, media_type=media,
@@ -232,6 +280,113 @@ async def register_agent(
         "status": "registered",
         "agent_id": body.agent_id,
         "message": "Agent registered successfully",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Enrollment-token flow — server-assigned identities, one-line onboarding
+# ---------------------------------------------------------------------------
+
+
+def _slugify_name(raw: Optional[str], hostname: str) -> str:
+    """Build a safe agent-name stem from a desired name or the hostname."""
+    base = (raw or hostname or "agent").strip().lower()
+    base = re.sub(r"[^a-z0-9-]+", "-", base).strip("-") or "agent"
+    return base[:40]
+
+
+@router.post("/enroll/tokens")
+async def mint_enrollment_token(
+    body: MintTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mint an enrollment token. The full token value is returned EXACTLY once
+    here; afterwards only its tail is shown. Hand this to a jumpbox via the
+    one-line installer (``/api/agents/install?token=...``)."""
+    now = datetime.utcnow()
+    token_value = "cxs_" + secrets.token_urlsafe(32)
+    row = EnrollmentToken(
+        token=token_value,
+        label=body.label,
+        created_at=now,
+        expires_at=now + timedelta(seconds=body.ttl_seconds),
+        max_uses=body.max_uses,
+        used_count=0,
+        revoked=False,
+    )
+    db.add(row)
+    await db.commit()
+    logger.info("mint_enrollment_token label=%s max_uses=%d ttl=%ds",
+                body.label, body.max_uses, body.ttl_seconds)
+    out = row.to_dict(reveal=True)  # reveal once, at mint
+    return out
+
+
+@router.get("/enroll/tokens")
+async def list_enrollment_tokens(db: AsyncSession = Depends(get_db)):
+    """List enrollment tokens (tails only) with validity derived at read time."""
+    rows = (await db.execute(
+        select(EnrollmentToken).order_by(EnrollmentToken.created_at.desc())
+    )).scalars().all()
+    now = datetime.utcnow()
+    return {"tokens": [{**t.to_dict(), "valid": t.is_valid(now)} for t in rows]}
+
+
+@router.delete("/enroll/tokens/{token_id}", status_code=200)
+async def revoke_enrollment_token(token_id: int, db: AsyncSession = Depends(get_db)):
+    """Revoke an enrollment token so it can no longer be redeemed."""
+    row = (await db.execute(
+        select(EnrollmentToken).where(EnrollmentToken.id == token_id)
+    )).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "Enrollment token not found", "code": "TOKEN_NOT_FOUND",
+            "detail": f"id={token_id}"})
+    row.revoked = True
+    await db.commit()
+    return {"status": "revoked", "id": token_id}
+
+
+@router.post("/enroll")
+async def enroll_agent(body: EnrollRequest, db: AsyncSession = Depends(get_db)):
+    """Redeem an enrollment token and register a NEW agent with a
+    server-assigned id.
+
+    This is the front door for the rethought deployment UX: the operator never
+    invents an agent id (the source of duplicate/typo'd ids in the old
+    self-asserted ``/register`` flow) and the token bounds who may onboard.
+    Returns the assigned ``agent_id`` and the ``server`` URL to beacon.
+    """
+    now = datetime.utcnow()
+    token_row = (await db.execute(
+        select(EnrollmentToken).where(EnrollmentToken.token == body.token)
+    )).scalar_one_or_none()
+    if token_row is None or not token_row.is_valid(now):
+        # Single opaque error — don't distinguish "wrong" from "expired/used".
+        raise HTTPException(status_code=403, detail={
+            "error": "Invalid or expired enrollment token", "code": "ENROLL_DENIED",
+            "detail": "mint a fresh token via POST /api/agents/enroll/tokens"})
+
+    # Assign a unique agent id from the name stem + a short random suffix.
+    stem = _slugify_name(body.desired_name, body.hostname)
+    agent_id = f"{stem}-{secrets.token_hex(3)}"
+    # Vanishingly unlikely collision guard.
+    while (await db.execute(select(Agent).where(Agent.agent_id == agent_id))).scalar_one_or_none():
+        agent_id = f"{stem}-{secrets.token_hex(3)}"
+
+    db.add(Agent(
+        agent_id=agent_id, hostname=body.hostname, os=body.os,
+        capabilities=body.capabilities or ["shell", "identity-harness"],
+        registered_at=now, last_seen=now, status="online",
+    ))
+    token_row.used_count += 1
+    await db.commit()
+    logger.info("enroll_agent assigned agent_id=%s (token tail=...%s, use %d/%d)",
+                agent_id, body.token[-6:], token_row.used_count, token_row.max_uses)
+    return {
+        "status": "enrolled",
+        "agent_id": agent_id,
+        "remaining_uses": max(0, token_row.max_uses - token_row.used_count),
     }
 
 
