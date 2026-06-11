@@ -1,0 +1,26 @@
+id: cortexsim-ttp-2026-0075-response
+version: 1
+name: "CortexSim — Active Directory Offline-Roasting Credential Harvest — AS-REP Roast + Kerberoast (T1558.004 / T1558.003)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0075.
+  Triggered by Cortex correlation rules: CR-ITDR-0006.
+  Reference playbook in panw_mapping: XSOAR-PB-RoastingResponse-v1
+triggers:
+  - correlation_rule_id: CR-ITDR-0006
+  - playbook_rule_id: XSOAR-PB-RoastingResponse-v1
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0075
+  cortexsim_version: 1.0

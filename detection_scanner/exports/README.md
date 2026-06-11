@@ -77,4 +77,5 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0072` | Passive OSINT Victim-Info Gathering — Subdomain / Cert / Email Harvesting (T1592 / T1589 / T1590) | [sigma](sigma/TTP-2026-0072.yml), [xql](xql/TTP-2026-0072.xql), [correlation](correlation/TTP-2026-0072.json), [xsoar_playbook](xsoar_playbook/TTP-2026-0072.yml) |
 | `TTP-2026-0073` | Linux Host File Mass-Encryption for Impact — SAFE-MODE (T1486 / T1490) | [sigma](sigma/TTP-2026-0073.yml), [xql](xql/TTP-2026-0073.xql), [correlation](correlation/TTP-2026-0073.json), [xsoar_playbook](xsoar_playbook/TTP-2026-0073.yml) |
 | `TTP-2026-0074` | Node systemd Service + Cron Reload Persistence (T1543.002 / T1053.003) | [sigma](sigma/TTP-2026-0074.yml), [xql](xql/TTP-2026-0074.xql), [correlation](correlation/TTP-2026-0074.json), [xsoar_playbook](xsoar_playbook/TTP-2026-0074.yml) |
+| `TTP-2026-0075` | Active Directory Offline-Roasting Credential Harvest — AS-REP Roast + Kerberoast (T1558.004 / T1558.003) | [sigma](sigma/TTP-2026-0075.yml), [xql](xql/TTP-2026-0075.xql), [correlation](correlation/TTP-2026-0075.json), [xsoar_playbook](xsoar_playbook/TTP-2026-0075.yml) |
 
