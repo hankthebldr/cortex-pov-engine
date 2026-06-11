@@ -153,15 +153,34 @@ async def lifespan(app: FastAPI):
     sweep_task = asyncio.create_task(heartbeat_sweep_loop(30))
     logger.info("Heartbeat sweep task started")
 
+    # 5. Auto-reconcile loop (opt-in) — periodically validate recent runs'
+    #    detections against configured connectors. OFF by default; it makes
+    #    outbound calls to the customer tenant, so it must be opted into.
+    reconcile_task = None
+    if settings.CORTEXSIM_AUTO_RECONCILE:
+        from connectors.service import auto_reconcile_loop  # noqa: PLC0415
+        reconcile_task = asyncio.create_task(auto_reconcile_loop(
+            settings.CORTEXSIM_AUTO_RECONCILE_INTERVAL,
+            settings.CORTEXSIM_AUTO_RECONCILE_LOOKBACK,
+            settings.CORTEXSIM_AUTO_RECONCILE_WINDOW,
+        ))
+        logger.info("Auto-reconcile loop started (interval=%ds)",
+                    settings.CORTEXSIM_AUTO_RECONCILE_INTERVAL)
+
     logger.info("CortexSim ready — listening on port %d", settings.CORTEXSIM_PORT)
     yield
 
     logger.info("CortexSim shutting down")
     sweep_task.cancel()
-    try:
-        await sweep_task
-    except (asyncio.CancelledError, Exception):  # noqa: BLE001
-        pass
+    if reconcile_task is not None:
+        reconcile_task.cancel()
+    for task in (sweep_task, reconcile_task):
+        if task is None:
+            continue
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
 
 
 @asynccontextmanager

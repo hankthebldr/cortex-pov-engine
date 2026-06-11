@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     CORTEXSIM_SCENARIOS_DIR: str = "scenarios"
     CORTEXSIM_STATIC_DIR: str = "core/static"
 
+    # Auto-reconcile loop (measurement loop). OFF by default — it makes outbound
+    # calls to a configured Cortex tenant, so it must be opted into explicitly.
+    # When on, a background task periodically reconciles recently-finished runs
+    # that still have unobserved detections against every configured connector
+    # integration, setting observed_at/MTTD without a manual trigger.
+    CORTEXSIM_AUTO_RECONCILE: bool = False
+    CORTEXSIM_AUTO_RECONCILE_INTERVAL: int = 300          # seconds between sweeps
+    CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
+    CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
