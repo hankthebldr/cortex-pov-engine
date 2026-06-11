@@ -5,7 +5,7 @@
 # severity: high
 # ITDR - LDAP search filter (servicePrincipalName=*) from non-typical host. An LDAP query enumerating servicePrincipalName attributes (Kerberoasting recon) originates from a host that is not a domain controller and not an established admin workstation.
 
-dataset = okta_sso
+dataset = xdr_data
 | filter event_type = ENUM.ACTIVE_DIRECTORY
 | filter operation_name in ("LDAP_SEARCH", "DirectorySearch")
 | filter lower(search_filter) contains "serviceprincipalname"
@@ -36,9 +36,9 @@ preset = xdr_data
 
 ## VALIDATION — MP-002 Kerberos TGS-REQ Flood From Single Source
 # purpose: validation
-# dataset: okta_sso
+# dataset: xdr_data
 
-dataset = okta_sso
+dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.ACTIVE_DIRECTORY
 | filter event_id = 4769
@@ -94,9 +94,9 @@ dataset = okta_sso
 
 ## VALIDATION — MP-002 XSIAM MTTD Clock Kerberoast Recon To Lateral Auth
 # purpose: validation
-# dataset: okta_sso
+# dataset: xdr_data
 
-dataset = okta_sso
+dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 7200)
 | filter (event_id = 4769 and lower(account_name) contains "sql-svc") or (event_type = ENUM.AUTHENTICATION and logon_type = 3 and lower(account_name) contains "sql-svc")
 | comp min(_time) as first_roast, max(_time) as lateral_auth by account_name

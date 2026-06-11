@@ -52,9 +52,9 @@
     }
   },
   "identity": {
-    "name": "Kerberoast \u2192 Pass-the-Hash \u2192 DCSync Multi-Plane Stitch (T1558.003 / T1550.002 / T1003.006)",
-    "summary": "An attacker enumerates Active Directory service accounts by LDAP servicePrincipalName filter, floods the KDC with TGS-REQ to roast crackable service tickets, cracks sql-svc offline, replays the credential over SMB to a workstation (Pass-the-Hash), then escalates to a DCSync replication pull from the DC. Cortex ITDR fires identity BIOCs (LDAP SPN sweep, service-account interactive logon), Cortex\u2026",
-    "description": "This is the flagship multi-plane identity attack chain. It begins with reconnaissance: impacket-GetUserSPNs issues an LDAP query filtered on servicePrincipalName=* from a non-typical host, which Cortex ITDR recognizes as a Kerberoasting precursor. The same tool requests TGS service tickets for every roastable SPN, producing a burst of Kerberos 4769 TGS-REQ events from a single source against multiple service principals \u2014 an analytics-grade anomaly on the ITDR plane and a corresponding spike of port-88 Kerberos traffic on the NGFW. The sql-svc ticket is cracked offline (simulated). The cracked credential is then replayed against a domain workstation over SMB (Pass-the-Hash): Cortex XDR for the workstation flags a service account authenticating remotely from a non-typical host, ITDR flags the same service account used in an interactive/network logon context it never normally uses, and the NGFW records a port-445 SMB session from the attack endpoint into the workstation subnet. Finally the attacker pulls directory replication via DRSUAPI GetNCChanges (DCSync) \u2014 covered by the canonical DCSync card (TTP-2026-0004) for the ITDR legs, while this card supplies the NGFW DCE/RPC (port 135 + ephemeral) network leg. Two XSIAM correlation rules tie it together: CR-MP-0011 stitches the same identity+hash observed across DC auth logs, the NGFW SMB session, and the XDR remote logon into one lateral-movement incident; CR-MP-0012 measures the MTTD clock between the Kerberoast recon stage and the later lateral-auth stage, proving XSIAM's cross-plane timeline reconstruction.",
+    "name": "Kerberoast → Pass-the-Hash → DCSync Multi-Plane Stitch (T1558.003 / T1550.002 / T1003.006)",
+    "summary": "An attacker enumerates Active Directory service accounts by LDAP servicePrincipalName filter, floods the KDC with TGS-REQ to roast crackable service tickets, cracks sql-svc offline, replays the credential over SMB to a workstation (Pass-the-Hash), then escalates to a DCSync replication pull from the DC. Cortex ITDR fires identity BIOCs (LDAP SPN sweep, service-account interactive logon), Cortex…",
+    "description": "This is the flagship multi-plane identity attack chain. It begins with reconnaissance: impacket-GetUserSPNs issues an LDAP query filtered on servicePrincipalName=* from a non-typical host, which Cortex ITDR recognizes as a Kerberoasting precursor. The same tool requests TGS service tickets for every roastable SPN, producing a burst of Kerberos 4769 TGS-REQ events from a single source against multiple service principals — an analytics-grade anomaly on the ITDR plane and a corresponding spike of port-88 Kerberos traffic on the NGFW. The sql-svc ticket is cracked offline (simulated). The cracked credential is then replayed against a domain workstation over SMB (Pass-the-Hash): Cortex XDR for the workstation flags a service account authenticating remotely from a non-typical host, ITDR flags the same service account used in an interactive/network logon context it never normally uses, and the NGFW records a port-445 SMB session from the attack endpoint into the workstation subnet. Finally the attacker pulls directory replication via DRSUAPI GetNCChanges (DCSync) — covered by the canonical DCSync card (TTP-2026-0004) for the ITDR legs, while this card supplies the NGFW DCE/RPC (port 135 + ephemeral) network leg. Two XSIAM correlation rules tie it together: CR-MP-0011 stitches the same identity+hash observed across DC auth logs, the NGFW SMB session, and the XDR remote logon into one lateral-movement incident; CR-MP-0012 measures the MTTD clock between the Kerberoast recon stage and the later lateral-auth stage, proving XSIAM's cross-plane timeline reconstruction.",
     "severity": "critical",
     "confidence": "high"
   },
@@ -180,7 +180,7 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "echo '[CortexSim] SIM-MP-002 cleanup complete \u2014 removing simulated crack artifact'; rm -f /tmp/cortexsim_mp002_cracked.txt"
+      "code": "echo '[CortexSim] SIM-MP-002 cleanup complete — removing simulated crack artifact'; rm -f /tmp/cortexsim_mp002_cracked.txt"
     }
   },
   "detections": {
@@ -189,7 +189,7 @@
       {
         "name": "MP-002 LDAP SPN Sweep From Non-Typical Host",
         "description": "ITDR - LDAP search filter (servicePrincipalName=*) from non-typical host. An LDAP query enumerating servicePrincipalName attributes (Kerberoasting recon) originates from a host that is not a domain controller and not an established admin workstation.",
-        "logic": "dataset = okta_sso\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter operation_name in (\"LDAP_SEARCH\", \"DirectorySearch\")\n| filter lower(search_filter) contains \"serviceprincipalname\"\n| filter src_host not in (\"DC01\", \"DC02\")\n| filter actor_effective_username not in (\"Administrator\", \"svc-bloodhound\")",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter operation_name in (\"LDAP_SEARCH\", \"DirectorySearch\")\n| filter lower(search_filter) contains \"serviceprincipalname\"\n| filter src_host not in (\"DC01\", \"DC02\")\n| filter actor_effective_username not in (\"Administrator\", \"svc-bloodhound\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1558.003"
@@ -197,7 +197,7 @@
       },
       {
         "name": "MP-002 Service Account Used Interactively",
-        "description": "ITDR - service account used interactively (normally machine-only context). The sql-svc service account, which only ever authenticates as a machine/service principal, is observed in an interactive or network logon \u2014 a hallmark of a cracked-then-replayed Kerberoast credential.",
+        "description": "ITDR - service account used interactively (normally machine-only context). The sql-svc service account, which only ever authenticates as a machine/service principal, is observed in an interactive or network logon — a hallmark of a cracked-then-replayed Kerberoast credential.",
         "logic": "dataset = okta_sso\n| filter event_type = ENUM.AUTHENTICATION\n| filter lower(account_name) in (\"sql-svc\", \"cortexsim\\\\sql-svc\")\n| filter logon_type in (2, 3, 9, 10)\n| filter account_is_service_account = true\n| fields _time, account_name, logon_type, src_host, dst_host",
         "severity": "high",
         "mitre_technique_ids": [
@@ -207,7 +207,7 @@
       },
       {
         "name": "MP-002 Service Account Remote SMB Authentication On Workstation",
-        "description": "XDR (workstation) - sql-svc account authenticated remotely via SMB from non-typical host. The workstation's Cortex XDR agent observes a network logon (type 3) for the sql-svc service account sourced from the attack endpoint \u2014 Pass-the-Hash lateral movement.",
+        "description": "XDR (workstation) - sql-svc account authenticated remotely via SMB from non-typical host. The workstation's Cortex XDR agent observes a network logon (type 3) for the sql-svc service account sourced from the attack endpoint — Pass-the-Hash lateral movement.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.AUTHENTICATION\n| filter auth_logon_type = 3\n| filter lower(auth_username) contains \"sql-svc\"\n| filter auth_remote_ip != null and auth_remote_ip not in (\"10.0.10.10\")\n| fields _time, agent_hostname, auth_username, auth_remote_ip, auth_logon_type",
         "severity": "critical",
         "mitre_technique_ids": [
@@ -220,9 +220,9 @@
       {
         "purpose": "validation",
         "name": "MP-002 Kerberos TGS-REQ Flood From Single Source",
-        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter event_id = 4769\n| comp count_distinct(service_name) as spn_count by src_host, actor_effective_username\n| filter spn_count >= 3\n| fields src_host, actor_effective_username, spn_count",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter event_id = 4769\n| comp count_distinct(service_name) as spn_count by src_host, actor_effective_username\n| filter spn_count >= 3\n| fields src_host, actor_effective_username, spn_count",
         "expected_rows_min": 1,
-        "dataset": "okta_sso"
+        "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
@@ -255,9 +255,9 @@
       {
         "purpose": "validation",
         "name": "MP-002 XSIAM MTTD Clock Kerberoast Recon To Lateral Auth",
-        "query": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 7200)\n| filter (event_id = 4769 and lower(account_name) contains \"sql-svc\") or (event_type = ENUM.AUTHENTICATION and logon_type = 3 and lower(account_name) contains \"sql-svc\")\n| comp min(_time) as first_roast, max(_time) as lateral_auth by account_name\n| alter mttd_seconds = timestamp_diff(lateral_auth, first_roast, \"SECOND\")\n| fields account_name, first_roast, lateral_auth, mttd_seconds",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 7200)\n| filter (event_id = 4769 and lower(account_name) contains \"sql-svc\") or (event_type = ENUM.AUTHENTICATION and logon_type = 3 and lower(account_name) contains \"sql-svc\")\n| comp min(_time) as first_roast, max(_time) as lateral_auth by account_name\n| alter mttd_seconds = timestamp_diff(lateral_auth, first_roast, \"SECOND\")\n| fields account_name, first_roast, lateral_auth, mttd_seconds",
         "expected_rows_min": 1,
-        "dataset": "okta_sso"
+        "dataset": "xdr_data"
       }
     ],
     "correlation_rules": [
@@ -273,9 +273,9 @@
       }
     ],
     "analytics_modules": [
-      "Cortex ITDR \u2014 Kerberoasting recon (LDAP SPN sweep + TGS-REQ burst)",
-      "Cortex XDR Analytics \u2014 Service account remote authentication anomaly",
-      "Cortex XSIAM \u2014 Cross-plane identity stitching and MTTD timeline reconstruction"
+      "Cortex ITDR — Kerberoasting recon (LDAP SPN sweep + TGS-REQ burst)",
+      "Cortex XDR Analytics — Service account remote authentication anomaly",
+      "Cortex XSIAM — Cross-plane identity stitching and MTTD timeline reconstruction"
     ]
   },
   "panw_mapping": {
@@ -324,14 +324,14 @@
           "XSIAM-CR-MP-0012"
         ],
         "license_required": "advanced",
-        "evidence_query": "Correlation CR-MP-0011 stitches the same identity across DC/XDR/NGFW into one lateral-movement incident; CR-MP-0012 measures the Kerberoast\u2192lateral-auth MTTD timeline."
+        "evidence_query": "Correlation CR-MP-0011 stitches the same identity across DC/XDR/NGFW into one lateral-movement incident; CR-MP-0012 measures the Kerberoast→lateral-auth MTTD timeline."
       }
     ],
     "use_cases": [
       {
         "use_case_id": "UC-CRED-063",
-        "name": "Cross-Plane Identity Attack Chain \u2014 Kerberoast to DCSync",
-        "description": "Detect and stitch the full Kerberoasting \u2192 Pass-the-Hash \u2192 DCSync kill chain across the Cortex ITDR, XDR, NDR and XSIAM correlation planes into a single high-severity incident with an end-to-end MTTD timeline.",
+        "name": "Cross-Plane Identity Attack Chain — Kerberoast to DCSync",
+        "description": "Detect and stitch the full Kerberoasting → Pass-the-Hash → DCSync kill chain across the Cortex ITDR, XDR, NDR and XSIAM correlation planes into a single high-severity incident with an end-to-end MTTD timeline.",
         "test_cases": [
           {
             "test_case_id": "TC-CRED-063A",
@@ -391,19 +391,19 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1558.003 \u2014 Kerberoasting",
+      "title": "MITRE ATT&CK T1558.003 — Kerberoasting",
       "url": "https://attack.mitre.org/techniques/T1558/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1550.002 \u2014 Pass the Hash",
+      "title": "MITRE ATT&CK T1550.002 — Pass the Hash",
       "url": "https://attack.mitre.org/techniques/T1550/002/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1003.006 \u2014 DCSync",
+      "title": "MITRE ATT&CK T1003.006 — DCSync",
       "url": "https://attack.mitre.org/techniques/T1003/006/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

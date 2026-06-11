@@ -5,7 +5,7 @@ description: |
   ITDR - LDAP search filter (servicePrincipalName=*) from non-typical host. An LDAP query enumerating servicePrincipalName attributes (Kerberoasting recon) originates from a host that is not a domain controller and not an established admin workstation.
   Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
   ----
-    dataset = okta_sso
+    dataset = xdr_data
     | filter event_type = ENUM.ACTIVE_DIRECTORY
     | filter operation_name in ("LDAP_SEARCH", "DirectorySearch")
     | filter lower(search_filter) contains "serviceprincipalname"

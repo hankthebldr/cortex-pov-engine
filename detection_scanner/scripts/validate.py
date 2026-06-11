@@ -99,6 +99,69 @@ PLACEHOLDER_TOKENS = (
 # references none of these is almost certainly not a runnable detection.
 DATASET_ANCHORS = ("dataset =", "dataset=", "preset =", "preset=")
 
+# ── XQL dialect knowledge (GAP-12 grammar lint) ──────────────────────────────
+# Known XQL stage verbs (the token that opens a `| <verb> ...` stage). Derived
+# from the corpus + Cortex XQL Stage reference. Anything outside this set in a
+# detection body is flagged as a WARNING (the dialect is broad and evolving, so
+# an unknown verb is suspicious but not a hard gate failure).
+XQL_STAGE_VERBS = frozenset({
+    "filter", "fields", "comp", "sort", "alter", "bin", "join", "union",
+    "dedup", "limit", "where", "enrich", "view", "sample", "iploc",
+    "arrayexpand", "windowcomp", "call", "target", "timeframe",
+})
+
+# Real Cortex/XSIAM dataset + preset identifiers used across the corpus. A body
+# whose `dataset =`/`preset =` source is NOT in this registry is flagged WARN
+# (likely a typo or an invented dataset). Keep in sync with the corpus; add new
+# datasets here when a card legitimately introduces one.
+KNOWN_DATASETS = frozenset({
+    "xdr_data", "panw_ngfw_traffic_raw", "panw_ngfw_threat_raw", "pan_ngfw_traffic",
+    "pan_dns", "network_story", "okta_sso", "saas_okta_raw", "saas_audit_logs",
+    "cloud_audit_logs", "cloud_audit", "google_workspace_audit", "msft_o365",
+    "msft_azure_ad_signin", "msft_o365_audit", "msft_windows_security", "ad_audit", "esxi_syslog",
+    "cortex_cloud_posture", "prisma_browser_events", "asm_findings", "ai_spm_findings",
+    "cortexsim_airs_raw", "koi_code_scan_events", "threat_intel", "risky_drive",
+    "full_mailbox", "admin_consent", "benign",
+})
+
+# Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain
+# on-prem Active Directory / Windows Security event data. A body that selects
+# one of these but filters on AD/Windows-event content is an incoherent
+# dataset↔content pairing (the TTP-2026-0063 class bug): Kerberos 4768/4769,
+# servicePrincipalName, DCSync/DRSUAPI, ENUM.ACTIVE_DIRECTORY live in
+# xdr_data / msft_windows_security / ad_audit, not in an SSO dataset.
+SAAS_SSO_DATASETS = frozenset({"okta_sso", "saas_okta_raw"})
+AD_WINDOWS_EVENT_TOKENS = (
+    "ENUM.ACTIVE_DIRECTORY", "serviceprincipalname", "drsuapi", "dcsync",
+    "krbtgt", "kerberos", "event_id = 4768", "event_id = 4769", "event_id = 4662",
+    "event_id=4768", "event_id=4769", "event_id=4662",
+)
+
+_DATASET_SOURCE_RE = __import__("re").compile(
+    r"(?:dataset|preset)\s*=\s*([a-z0-9_]+)", __import__("re").IGNORECASE
+)
+
+
+def _split_xql_stages(body):
+    """Split an XQL body into `|`-delimited stages, ignoring pipe characters
+    that appear INSIDE double-quoted string literals (regex alternations like
+    ``(?:def|class)`` and command examples like ``/proc/pid/maps|mem`` are data,
+    not stage boundaries). Returns the list of stage strings."""
+    stages = []
+    buf = []
+    in_string = False
+    for ch in body:
+        if ch == '"':
+            in_string = not in_string
+            buf.append(ch)
+        elif ch == "|" and not in_string:
+            stages.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    stages.append("".join(buf))
+    return stages
+
 
 def lint_detection_body(report, rel, where, body, *, require_dataset):
     """GAP-12 — lightweight XQL/BIOC grammar sanity lint.
@@ -156,6 +219,59 @@ def lint_detection_body(report, rel, where, body, *, require_dataset):
     #    BIOC(...)/XQL(...) names, not a dataset).
     if require_dataset and not any(a in body for a in DATASET_ANCHORS):
         report.err(rel, f"{where}: no dataset/preset reference in detection body")
+
+    # 5. Dataset registry + stage-verb grammar + dataset↔content coherence.
+    if require_dataset:
+        _lint_xql_grammar(report, rel, where, body)
+
+
+def _lint_xql_grammar(report, rel, where, body):
+    """GAP-12 — deeper XQL grammar checks for BIOC/XQL bodies.
+
+      * dataset/preset source is a known Cortex dataset (WARN if not)
+      * each `| <verb>` stage opens with a known XQL stage verb (WARN if not)
+      * dataset↔content coherence: a SaaS-SSO dataset paired with on-prem AD /
+        Windows-event content is a hard ERROR (the TTP-2026-0063 class bug)
+
+    Coherence is an ERROR because it is high-confidence and ships a detection
+    that will silently return zero rows on a real tenant; the verb/dataset
+    registry checks are WARN because the dialect is broad and evolving.
+    """
+    # (a) dataset source recognised?
+    src_match = _DATASET_SOURCE_RE.search(body)
+    dataset = src_match.group(1).lower() if src_match else None
+    if dataset and dataset not in KNOWN_DATASETS:
+        report.warn(rel, f"{where}: unrecognised dataset/preset {dataset!r} "
+                         f"(typo or new source — add to KNOWN_DATASETS if real)")
+
+    # (b) dataset↔content coherence (hard error).
+    if dataset in SAAS_SSO_DATASETS:
+        low = body.lower()
+        hit = next((t for t in AD_WINDOWS_EVENT_TOKENS if t.lower() in low), None)
+        if hit:
+            report.err(
+                rel,
+                f"{where}: incoherent dataset↔content — source {dataset!r} is a "
+                f"SaaS/IdP sign-in dataset but the body references AD/Windows-event "
+                f"content ({hit!r}). AD/Kerberos events live in xdr_data / "
+                f"msft_windows_security / ad_audit, not an SSO dataset.",
+            )
+
+    # (c) stage-verb grammar. Skip the first (source) segment; check the rest.
+    #     Pipes inside string literals are NOT stage boundaries (handled by the
+    #     string-aware splitter).
+    segments = _split_xql_stages(body.strip())
+    for seg in segments[1:]:
+        seg = seg.strip()
+        if not seg:
+            continue
+        verb = seg.split(None, 1)[0].lower()
+        # A stage may open with a `dataset=`/`preset=` (a union sub-source) — skip.
+        if verb in ("dataset", "preset") or "=" in verb:
+            continue
+        if verb not in XQL_STAGE_VERBS:
+            report.warn(rel, f"{where}: unknown XQL stage verb {verb!r} "
+                             f"(stage: '| {seg[:40]}...')")
 
 
 def main():
