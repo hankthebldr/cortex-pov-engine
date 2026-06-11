@@ -177,6 +177,21 @@ class ToolAdapterSchema(BaseModel):
             raise ValueError(f"safety_class must be one of {_VALID_SAFETY_CLASSES}, got {v!r}")
         return v
 
+    @property
+    def reference_only(self) -> bool:
+        """True when this adapter is NOT a scenario-wiring candidate by design —
+        so an absence of any ``adapter_ref`` to it is intentional, not a gap
+        (GAP-ADAPT-02 honest accounting).
+
+        Two objective signals make a pack reference-only:
+          * **tier 5** — external-only reference material the engine never
+            executes (the DC brings their own commercial tool).
+          * **c2-framework** — never auto-staged from a push bundle by policy;
+            it is launch-gated reference content, wired only by explicit,
+            consent-gated bespoke scenarios, not catalogued coverage.
+        """
+        return self.tier == 5 or self.safety_class == "c2-framework"
+
     @model_validator(mode="after")
     def _tier_install_consistency(self) -> "ToolAdapterSchema":
         """Tier-specific install/invoke requirements."""
