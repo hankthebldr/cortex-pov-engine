@@ -49,6 +49,79 @@ logger = logging.getLogger("cortexsim.api.mitre")
 router = APIRouter(prefix="/mitre", tags=["mitre"])
 
 
+@router.get("/atlas/coverage")
+async def get_atlas_coverage(db: AsyncSession = Depends(get_db)):
+    """MITRE ATLAS coverage for the AI planes (GAP-9).
+
+    The AI planes (AIRS / AI Access / AI-SPM) carry threats ATT&CK has no native
+    home for — prompt injection, jailbreak, model data leakage, cost harvesting.
+    Those are mapped on the TTP cards as ``mitre_attack.atlas_techniques[]``.
+    ATT&CK coverage (``/api/mitre/coverage``) is blind to them, so this endpoint
+    aggregates the ATLAS surface separately: per ATLAS technique, which cards and
+    scenarios reach it and on which planes.
+
+    Additive, never replaces ATT&CK — a card may (and the AI cards do) carry
+    both an ATT&CK technique AND an ATLAS technique for the same step.
+    """
+    scenarios = list((await db.execute(select(Scenario))).scalars().all())
+
+    # ttp_ref -> set of (scenario_id, plane) that reach the card.
+    ref_to_scenarios: dict[str, set] = {}
+    for s in scenarios:
+        for ref in _scenario_ttp_refs(s):
+            ref_to_scenarios.setdefault(ref, set()).add((s.scenario_id, s.plane))
+
+    atlas: dict[str, dict] = {}
+    for ref, scen_pairs in ref_to_scenarios.items():
+        for at in catalog.card_atlas_techniques(ref):
+            aid = at["atlas_id"]
+            entry = atlas.setdefault(aid, {
+                "atlas_id": aid,
+                "name": at["name"],
+                "atlas_tactic": at["atlas_tactic"],
+                "scenarios": set(),
+                "planes": set(),
+                "card_refs": set(),
+            })
+            if not entry["name"] and at["name"]:
+                entry["name"] = at["name"]
+            entry["card_refs"].add(ref)
+            for scen_id, plane in scen_pairs:
+                entry["scenarios"].add(scen_id)
+                entry["planes"].add(plane)
+
+    techniques = [
+        {
+            "atlas_id": e["atlas_id"],
+            "name": e["name"],
+            "atlas_tactic": e["atlas_tactic"],
+            "scenarios": sorted(e["scenarios"]),
+            "planes": sorted(e["planes"]),
+            "card_refs": sorted(e["card_refs"]),
+        }
+        for e in sorted(atlas.values(), key=lambda x: x["atlas_id"])
+    ]
+
+    by_tactic: dict[str, dict] = {}
+    for t in techniques:
+        key = t["atlas_tactic"] or "(unspecified)"
+        by_tactic.setdefault(key, {"atlas_tactic": key, "techniques": []})
+        by_tactic[key]["techniques"].append(t)
+
+    planes_covered = sorted({p for t in techniques for p in t["planes"]})
+    logger.info("atlas_coverage atlas_techniques=%d planes=%s",
+                len(techniques), planes_covered)
+    return {
+        "atlas_techniques": techniques,
+        "by_tactic": sorted(by_tactic.values(), key=lambda x: x["atlas_tactic"]),
+        "summary": {
+            "total_atlas_techniques": len(techniques),
+            "planes_covered": planes_covered,
+            "cards_with_atlas": len({r for t in techniques for r in t["card_refs"]}),
+        },
+    }
+
+
 def _scenario_ttp_refs(scenario: Scenario) -> set[str]:
     """Every distinct ``ttp_ref`` a scenario references through its steps'
     ``expected_detections[]``. This is the join key into the TTP card corpus."""

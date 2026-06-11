@@ -229,6 +229,33 @@ class TtpCatalog:
             })
         return out
 
+    def card_atlas_techniques(self, ttp_ref: str) -> list[dict[str, str]]:
+        """Return the MITRE ATLAS techniques a card maps to (GAP-9).
+
+        Reads ``mitre_attack.atlas_techniques[]`` — the AI-native threat
+        mappings (prompt injection, jailbreak, model data leakage, cost
+        harvesting) used ALONGSIDE ATT&CK for the AI planes where ATT&CK has no
+        home. Each item is normalized to ``{atlas_id, name, atlas_tactic}``.
+        Returns ``[]`` for an unknown card or a card with no ATLAS mappings.
+        """
+        raw = self._raw_by_ttp.get(ttp_ref)
+        if not raw:
+            return []
+        mitre = raw.get("mitre_attack") or {}
+        out: list[dict[str, str]] = []
+        for t in mitre.get("atlas_techniques") or []:
+            if not isinstance(t, dict):
+                continue
+            aid = t.get("atlas_id")
+            if not isinstance(aid, str) or not aid:
+                continue
+            out.append({
+                "atlas_id": aid,
+                "name": t.get("name") or "",
+                "atlas_tactic": t.get("atlas_tactic") or "",
+            })
+        return out
+
     def card_detection_kind_counts(self, ttp_ref: str) -> dict[str, int]:
         """Per-card tally of deployable detection objects by kind.
 
