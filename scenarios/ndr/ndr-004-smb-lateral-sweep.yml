@@ -40,6 +40,26 @@ infra_modules_needed:
   - ndr
   - itdr
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Network Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The per-protocol egress signal injected by this scenario produces the
+  expected NGFW App-ID / XSIAM detection within the MTTD budget. Verifier
+  counts matching sessions in dataset=pan_ngfw_traffic and measures
+  emit→alert latency.
+moat_tier: "LEAD"
+
 external_tools:
   - name: Nmap
     source: "https://github.com/nmap/nmap"
@@ -86,7 +106,7 @@ steps:
       - plane: NDR
         type: XQL
         description: "Dry-run report shows planned host count and ports"
-        ttp_ref: TTP-2026-0053
+        ttp_ref: "TTP-2026-0053"
         detection_id: xql-dry-run-report-shows-planned-host-count-and-ports
 
   - id: step-02
@@ -118,17 +138,17 @@ steps:
       - plane: NDR
         type: XQL
         description: "NGFW EAL — host sweeping pattern (1 src → many dst on TCP/445)"
-        ttp_ref: TTP-2026-0053
+        ttp_ref: "TTP-2026-0053"
         detection_id: xql-ngfw-eal-host-sweeping-pattern-1-src-to-many-dst-on-tcp-445
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — anomalous SMB traffic outside admin baseline"
-        ttp_ref: TTP-2026-0053
+        ttp_ref: "TTP-2026-0053"
         detection_id: bioc-ngfw-eal-anomalous-smb-traffic-outside-admin-baseline
       - plane: ANALYTICS
         type: XQL
         description: "XSIAM correlation — sweep src host stitched with workstation context"
-        ttp_ref: TTP-2026-0053
+        ttp_ref: "TTP-2026-0053"
         detection_id: xql-xsiam-correlation-sweep-src-host-stitched-with-workstation-context
 
 cleanup:

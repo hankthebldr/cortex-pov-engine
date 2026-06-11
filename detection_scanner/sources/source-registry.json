@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "registry_version": "1.2.0",
+  "registry_version": "1.3.0",
   "description": "Indexed threat-intel and execution-framework sources for the cortex-pov-engine TTP corpus. Consumed by the cortex-scraper to crawl, parse, and emit candidate TTP drafts. Tier 1 = primary/canonical; Tier 2 = vendor intel; Tier 3 = government; Tier 4 = IR/community; Tier 5 = execution frameworks (payload sources, not intel).",
   "updated_at": "2026-06-07",
   "sources": [
@@ -108,6 +108,28 @@
         "OWASP Top 10 for LLM Applications {category}",
         "OWASP GenAI LLM01 prompt injection",
         "OWASP LLM Top 10 v2025"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MITRE-ATLAS",
+      "name": "MITRE ATLAS — Adversarial Threat Landscape for AI Systems",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "standards-body",
+      "homepage": "https://atlas.mitre.org/",
+      "data_endpoints": [
+        {
+          "type": "yaml",
+          "url": "https://raw.githubusercontent.com/mitre-atlas/atlas-data/main/dist/ATLAS.yaml"
+        }
+      ],
+      "purpose": "Canonical IDs for AI/ML adversary tactics and techniques (AML.TXXXX). Used ALONGSIDE MITRE ATT&CK for the AI planes (AIRS / AI Access / AI-SPM), where ATT&CK has no native home for prompt injection, LLM jailbreak, model data leakage, or cost harvesting. Anchors the atlas_techniques[] field on AI-plane TTP cards so AI coverage is no longer forced onto ATT&CK catch-alls like T1567 (GAP-9).",
+      "update_cadence": "quarterly",
+      "discovery_queries": [
+        "MITRE ATLAS technique {atlas_id}",
+        "MITRE ATLAS LLM prompt injection AML.T0051",
+        "MITRE ATLAS case study {year}"
       ],
       "last_canvassed": null
     },

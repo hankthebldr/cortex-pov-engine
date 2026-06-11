@@ -8,7 +8,7 @@ detection_types:
   - XQL
 
 uc_ref: UCS-AISPM-01
-tc_ref: TC-AISP-04
+tc_ref: TC-AISPM-04
 uc_name: "AI Security Posture Management"
 tc_name: "AI Static Risk Analysis"
 
@@ -90,7 +90,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "Anchor + fixture verification — no Cortex detection at this step."
-        ttp_ref: TTP-2026-0057
+        ttp_ref: "TTP-2026-0057"
         detection_id: xql-aispm-004-mttd-anchor-and-fixture-verify-bookkeeping
 
   - id: step-02
@@ -105,7 +105,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "Cortex AI-SPM static analyzer scans Lambda code, S3-resident model artifacts, and SageMaker training scripts."
-        ttp_ref: TTP-2026-0057
+        ttp_ref: "TTP-2026-0057"
         detection_id: xql-aispm-004-static-analyzer-scans-ai-pipeline-artifacts
 
   - id: step-03
@@ -138,7 +138,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "MLSEC-STATIC-001 — hardcoded credentials in ML pipeline detected against the planted `sk-DEMO-CORTEXSIM-AISP-04-PLANTED` canary in both Lambda source and env vars."
-        ttp_ref: TTP-2026-0057
+        ttp_ref: "TTP-2026-0057"
         detection_id: xql-aispm-004-hardcoded-credentials-in-ml-pipeline-finding
         verification_xql: |
           dataset = cortex_cloud_findings
@@ -154,7 +154,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "MLSEC-STATIC-002 — insecure model serialization (pickle) detected against `models/legacy_model.pkl` in the training-data bucket."
-        ttp_ref: TTP-2026-0057
+        ttp_ref: "TTP-2026-0057"
         detection_id: xql-aispm-004-insecure-model-serialization-pickle-finding
         verification_xql: |
           dataset = cortex_cloud_findings
@@ -165,7 +165,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "MLSEC-STATIC-003 — unvalidated model inputs detected against the Lambda handler which accepts arbitrary `prompt` without schema validation."
-        ttp_ref: TTP-2026-0057
+        ttp_ref: "TTP-2026-0057"
         detection_id: xql-aispm-004-unvalidated-model-inputs-finding
         verification_xql: |
           dataset = cortex_cloud_findings

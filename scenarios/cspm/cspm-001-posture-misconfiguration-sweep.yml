@@ -123,7 +123,7 @@ steps:
       - plane: CSPM
         type: XQL
         description: "Ground-truth manifest captured — control-plane enumeration of the CortexSim-tagged resources; no Cortex finding expected at this step (operator-internal bookkeeping)."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: xql-cspm-001-ground-truth-planted-finding-manifest-capture
 
   - id: step-02
@@ -146,17 +146,17 @@ steps:
       - plane: CSPM
         type: XQL
         description: "Cortex Cloud CSPM surfaces the three S3 data-exposure findings (public-read, versioning-disabled, no-customer-managed-kms) tagged CortexSimCSPMFinding."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: xql-cspm-001-s3-data-exposure-findings-surfaced
       - plane: CSPM
         type: XQL
         description: "Cortex Cloud CSPM surfaces the two network-exposure security-group findings (ssh-open-to-world, database-port-open-to-world)."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: xql-cspm-001-network-exposure-security-group-findings-surfaced
       - plane: CDR
         type: BIOC
         description: "If a public source reaches the world-open SSH/DB security group during the POV window, the static finding promotes to a runtime CDR/NDR detection."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: bioc-inbound-connection-accepted-on-world-open-ssh-db-security-group
 
   - id: step-03
@@ -175,17 +175,17 @@ steps:
       - plane: CSPM
         type: XQL
         description: "Cortex Cloud CSPM surfaces the two IAM over-permission findings (role-with-admin-access, user-with-wildcard-iam)."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: xql-cspm-001-iam-over-permission-findings-surfaced
       - plane: CSPM
         type: XQL
         description: "Cortex Cloud CSPM surfaces the EBS encryption gap (ebs-unencrypted) and the weak-CloudTrail logging gap (cloudtrail-weak-config)."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: xql-cspm-001-ebs-encryption-and-cloudtrail-logging-gaps-surfaced
       - plane: ITDR
         type: BIOC
         description: "If the over-privileged IAM principal (admin role / iam:* user) performs a control-plane action during the POV window, the static finding promotes to a runtime identity-abuse detection."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: bioc-over-privileged-cspm-iam-principal-used-for-control-plane-action
 
   - id: step-04
@@ -218,12 +218,12 @@ steps:
       - plane: CSPM
         type: XQL
         description: "Total coverage reconciliation — distinct_findings ≥ 9 across all nine planted CortexSimCSPMFinding classes; populates the Run's posture-coverage KPI for the POV report."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: xql-cspm-001-total-planted-finding-coverage-reconciliation
       - plane: CSPM
         type: Correlation
         description: "Correlation CR-CSPM-0001 fuses the five per-class posture validation queries into a single cloud-posture coverage event for the executive readout."
-        ttp_ref: TTP-2026-0065
+        ttp_ref: "TTP-2026-0065"
         detection_id: CR-CSPM-0001
 
 # ── Cleanup ─────────────────────────────────────────────────────────────────

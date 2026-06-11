@@ -1,7 +1,7 @@
 {
   "id": "TTP-2026-0007",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:11+00:00",
@@ -23,11 +23,13 @@
       "industry-all",
       "severity-high",
       "source-code-dlp",
-      "openai"
+      "openai",
+      "mitre-atlas"
     ],
     "source_refs": [
       "SRC-MITRE-ATTACK",
-      "SRC-UNIT42"
+      "SRC-UNIT42",
+      "SRC-MITRE-ATLAS"
     ],
     "pov_engine": {
       "engine_version_min": "0.1.0",
@@ -47,7 +49,7 @@
     }
   },
   "identity": {
-    "name": "AI Access \u2014 Source Code Paste to Public ChatGPT",
+    "name": "AI Access — Source Code Paste to Public ChatGPT",
     "summary": "A developer pastes proprietary source code into the public OpenAI ChatGPT API. The llm_provider_egress plugin POSTs a marked source snippet (CORTEXSIM-CANARY) to api.openai.com/v1/chat/completions; Cortex AI Access Security and the NGFW generative-AI App-ID flag the egress and the DLP source-code classifier matches the prompt body.",
     "description": "Shadow-AI source-code disclosure is the most common GenAI data-loss pattern in the enterprise: an engineer pastes a confidential file into ChatGPT to refactor or debug it, exfiltrating intellectual property over an encrypted channel that bypasses traditional egress controls. This scenario emits authentic-shape HTTPS POSTs to api.openai.com/v1/chat/completions carrying a planted proprietary Python snippet tagged with the CORTEXSIM-CANARY marker. Detection is layered: (1) the NGFW classifies the destination as a generative-AI application via App-ID on the outbound TLS session; (2) Cortex AI Access Security DLP inspects the decrypted prompt body and matches source-code structure markers; (3) an analytics rule profiles repeated source-paste bursts from a single user. A correlation rule fuses the App-ID match, the DLP content hit and the burst pattern into a single Shadow-AI data-exfiltration incident. Every request carries an X-Simulation-Run-ID header so the SOC can filter the simulated traffic.",
     "severity": "high",
@@ -91,6 +93,18 @@
       "Network Traffic: Network Connection Creation",
       "Network Traffic: Network Traffic Content",
       "Application Log: Application Log Content"
+    ],
+    "atlas_techniques": [
+      {
+        "atlas_id": "AML.T0057",
+        "name": "LLM Data Leakage",
+        "atlas_tactic": "Exfiltration"
+      },
+      {
+        "atlas_id": "AML.T0024.000",
+        "name": "Exfiltration via ML Inference API: Infer Training Data Membership",
+        "atlas_tactic": "Exfiltration"
+      }
     ]
   },
   "execution": {
@@ -109,7 +123,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# step-1: Pre-flight: confirm llm_provider_egress plugin is registered\npython3 -m scripts.eal_simulator.cli describe llm_provider_egress \\\n  | jq -e '.eal_targets | length > 0'\n# step-2: Single source-code POST to api.openai.com via EAL plugin\ncat > /tmp/aiacc-001.yml <<'YML'\ncampaign_id: CMP-AIACC-001\nname: \"AI Access \u2014 source paste to OpenAI\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\ntags: [ai-access, openai, source-paste]\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-001.yml --live\n# step-3: Repeated POSTs (x3) to confirm stable per-session detection\ncat > /tmp/aiacc-001-burst.yml <<'YML'\ncampaign_id: CMP-AIACC-001\nname: \"AI Access \u2014 source paste burst\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 3\n      sleep_seconds: 5\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-001-burst.yml --live",
+      "code": "# step-1: Pre-flight: confirm llm_provider_egress plugin is registered\npython3 -m scripts.eal_simulator.cli describe llm_provider_egress \\\n  | jq -e '.eal_targets | length > 0'\n# step-2: Single source-code POST to api.openai.com via EAL plugin\ncat > /tmp/aiacc-001.yml <<'YML'\ncampaign_id: CMP-AIACC-001\nname: \"AI Access — source paste to OpenAI\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\ntags: [ai-access, openai, source-paste]\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-001.yml --live\n# step-3: Repeated POSTs (x3) to confirm stable per-session detection\ncat > /tmp/aiacc-001-burst.yml <<'YML'\ncampaign_id: CMP-AIACC-001\nname: \"AI Access — source paste burst\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 3\n      sleep_seconds: 5\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-001-burst.yml --live",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -186,8 +200,8 @@
       }
     ],
     "analytics_modules": [
-      "Cortex AI Access Security \u2014 Generative-AI App-ID classification",
-      "Cortex AI Access Security \u2014 Source-code DLP content inspection"
+      "Cortex AI Access Security — Generative-AI App-ID classification",
+      "Cortex AI Access Security — Source-code DLP content inspection"
     ]
   },
   "panw_mapping": {
@@ -281,7 +295,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1567 \u2014 Exfiltration Over Web Service",
+      "title": "MITRE ATT&CK T1567 — Exfiltration Over Web Service",
       "url": "https://attack.mitre.org/techniques/T1567/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -299,6 +313,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real AI Access Security / NGFW egress XQL against panw_ngfw_traffic_raw, added correlation CR-AIACC-0001, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
     }
   ]
 }

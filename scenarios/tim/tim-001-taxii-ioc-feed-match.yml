@@ -61,7 +61,7 @@ steps:
       - plane: TIM
         type: XQL
         description: "Pre-flight: mocktaxii TAXII feed indicators ingested into the XSIAM threat_intel dataset"
-        ttp_ref: TTP-2026-0067
+        ttp_ref: "TTP-2026-0067"
         detection_id: xql-tim-pre-flight-taxii-feed-indicators-ingested-into-threat-intel
 
   - id: step-02
@@ -92,7 +92,7 @@ steps:
       - plane: TIM
         type: XQL
         description: "Dry-run: no IOC feed match fires (safety policy active, no live traffic)"
-        ttp_ref: TTP-2026-0067
+        ttp_ref: "TTP-2026-0067"
         detection_id: xql-tim-any-host-resolving-a-dga-style-feed-listed-subdomain-t1568
 
   - id: step-03
@@ -126,32 +126,32 @@ steps:
       - plane: TIM
         type: IOC
         description: "TIM IOC match — outbound destination matches the planted c2-beacon indicator from the mocktaxii TAXII feed"
-        ttp_ref: TTP-2026-0067
+        ttp_ref: "TTP-2026-0067"
         detection_id: ioc-domain-c2-beacon-cortexsim-tim-internal
       - plane: TIM
         type: XQL
         description: "TIM IOC match — outbound session to a TAXII-fed C2 domain (join threat_intel feed to NGFW session)"
-        ttp_ref: TTP-2026-0067
+        ttp_ref: "TTP-2026-0067"
         detection_id: xql-tim-ioc-match-outbound-session-to-taxii-fed-c2-domain
       - plane: NDR
         type: XQL
         description: "NDR leg — periodic HTTP beacon to the feed-listed IOC domain (beacon_count >= 8)"
-        ttp_ref: TTP-2026-0067
+        ttp_ref: "TTP-2026-0067"
         detection_id: xql-tim-periodic-beacon-to-feed-listed-ioc-domain-ndr-leg
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — outbound HTTP to a planted IOC subdomain carrying X-Simulation-Run-ID operator header"
-        ttp_ref: TTP-2026-0067
+        ttp_ref: "TTP-2026-0067"
         detection_id: bioc-tim-outbound-session-to-taxii-fed-ioc-domain-carrying-simulation-header
       - plane: ANALYTICS
         type: Correlation
         description: "Stitch — IOC feed match joined to the outbound NDR session on src_host within 60s into one C2 incident"
-        ttp_ref: TTP-2026-0067
+        ttp_ref: "TTP-2026-0067"
         detection_id: CR-TIM-0001
       - plane: ANALYTICS
         type: XQL
         description: "Stitch validation — IOC feed match joined to NDR session on source host"
-        ttp_ref: TTP-2026-0067
+        ttp_ref: "TTP-2026-0067"
         detection_id: xql-tim-stitch-ioc-feed-match-joined-to-ndr-session-on-source-host
 
 cleanup:

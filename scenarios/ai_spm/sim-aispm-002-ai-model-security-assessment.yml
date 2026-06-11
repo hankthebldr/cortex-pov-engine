@@ -8,7 +8,7 @@ detection_types:
   - XQL
 
 uc_ref: UCS-AISPM-01
-tc_ref: TC-AISP-02
+tc_ref: TC-AISPM-02
 uc_name: "AI Security Posture Management"
 tc_name: "AI Model Security Assessment"
 
@@ -81,7 +81,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "Anchor step — captures t0 for MTTD computation. No Cortex detection expected here."
-        ttp_ref: TTP-2026-0055
+        ttp_ref: "TTP-2026-0055"
         detection_id: xql-aispm-002-mttd-anchor-bookkeeping
 
   - id: step-02
@@ -98,7 +98,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "Cortex Cloud AI-SPM assessment cycle completes against the planted SageMaker endpoint + overprivileged role."
-        ttp_ref: TTP-2026-0055
+        ttp_ref: "TTP-2026-0055"
         detection_id: xql-aispm-002-model-security-assessment-cycle-complete
 
   - id: step-03
@@ -127,7 +127,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "Cortex AI-SPM /api/v1/findings returns ≥ 3 model-security findings on the SageMaker fixture: overprivileged ML execution role, endpoint config without encryption, and unvalidated model input surface."
-        ttp_ref: TTP-2026-0055
+        ttp_ref: "TTP-2026-0055"
         detection_id: xql-aispm-002-three-model-security-findings-on-sagemaker-fixture
         verification_xql: |
           dataset = cortex_cloud_findings

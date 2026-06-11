@@ -53,6 +53,38 @@ infra_modules_needed:
   - cdr
   - tim
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Backfilled per the S-07 rollout convention (docs/uc_tc_mapping/
+# scenario-methodology-defaults.md). ANALYTICS-plane multi-plane stitching
+# scenarios are family F2 (Causality Stitching Validation), MOAT tier.
+validation_methodology: "Hybrid Endpoint-to-Cloud Causality Correlation"
+methodology_family: "F2"
+primary_kpi: "Causality Chain Completeness"
+threshold:
+  kpi: "Causality Chain Completeness"
+  op: "≥"
+  value: 2
+  unit: "planes"
+success_criteria: |
+  The endpoint credential-dump (EDR) and the subsequent cloud-API discovery,
+  collection, and S3 exfil (CLOUD_APP / cloud audit) attributed to the same
+  AWS principal stitch into a single XSIAM incident_id spanning the hybrid
+  endpoint→cloud kill chain. Verifier asserts ≥ 2 distinct planes
+  (EDR + CLOUD_APP) under one incident_id keyed on the cloud principal,
+  with the causality chain linking the on-host key discovery to the cloud
+  exfil event.
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+# Hybrid endpoint→cloud chain — the join key is the AWS principal that the
+# discovered access key resolves to (the pivot from EDR process telemetry to
+# cloud audit logs is identity-centric, not host-centric).
+correlation_window_seconds: 60
+required_planes_in_incident:
+  - EDR
+  - CLOUD_APP
+stitching_key: user_principal
+
 external_tools:
   - name: Pacu
     source: "https://github.com/RhinoSecurityLabs/pacu"
@@ -92,12 +124,12 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR — recursive credential-pattern grep from non-interactive service account"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: bioc-mp-004-recursive-aws-key-pattern-grep-from-service-account
       - plane: EDR
         type: XQL
         description: "XDR — www-data traversing /home and /root (unusual access pattern)"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: xql-mp-004-service-account-traversing-home-and-root-dirs
 
   - id: step-02
@@ -114,17 +146,17 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR — aws cli invoked by www-data with inline access-key env vars"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: bioc-mp-004-aws-cli-invoked-by-www-data-with-inline-access-key-env
       - plane: CLOUD_APP
         type: XQL
         description: "CDR — CloudTrail sts:GetCallerIdentity from unenrolled source IP"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: xql-mp-004-cloudtrail-getcalleridentity-from-unenrolled-source-ip
       - plane: ANALYTICS
         type: XQL
         description: "XSIAM stitching — endpoint process event + cloud audit event sharing principal within 60s window → single incident"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: xql-mp-004-stitch-endpoint-process-with-cloud-audit-by-principal
 
   - id: step-03
@@ -141,12 +173,12 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "CDR — multi-service describe/list burst (EC2+IAM+S3) from single principal in <30s"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: bioc-mp-004-cloud-multi-service-describe-list-burst-from-single-principal
       - plane: CLOUD_APP
         type: XQL
         description: "CDR — UEBA deviation: principal performing first-time broad discovery pattern"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: xql-mp-004-ueba-first-time-broad-cloud-discovery-pattern
 
   - id: step-04
@@ -163,12 +195,12 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "CDR — GetBucketAcl + ListObjects on sensitivity-tagged bucket by unauthorized principal"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: bioc-mp-004-getbucketacl-and-listobjects-on-sensitive-tagged-bucket
       - plane: ANALYTICS
         type: IOC
         description: "XSIAM — IOC match on bucket name from watchlist cross-referenced with discovery burst from step-03"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: ioc-user-agent-cortexsim-attacker-drop
 
   - id: step-05
@@ -185,17 +217,17 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "CDR — S3 CopyObject to non-owned destination account/bucket"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: bioc-mp-004-s3-copyobject-to-non-owned-destination-bucket
       - plane: CLOUD_APP
         type: XQL
         description: "CDR — data egress volume anomaly from sensitivity-tagged source"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: xql-mp-004-cloud-data-egress-volume-anomaly-from-tagged-source
       - plane: ANALYTICS
         type: XQL
         description: "XSIAM — final stitched incident: cred-dump (EDR) → cloud pivot (CDR) → enumeration → collection → exfil, all under one story"
-        ttp_ref: TTP-2026-0049
+        ttp_ref: "TTP-2026-0049"
         detection_id: xql-mp-004-stitch-full-kill-chain-cred-dump-to-cloud-exfil
 
 cleanup:

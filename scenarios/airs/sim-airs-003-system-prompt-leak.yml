@@ -39,6 +39,42 @@ required_content:
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "LLM Runtime Prompt-Attack Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The OWASP-LLM prompt attacks driven against the target produce the
+  expected Cortex AI Runtime Security detection. Detection Accuracy is the
+  share of probe attempts that raise the expected runtime alert (target ≥
+  90%). AIRS runtime protection is a Cortex differentiator over EDR-only
+  competitors.
+moat_tier: "MOAT"
+
+# ── Dual path: adapter vs. EAL plugin (PLANE-AIRS-PLUGIN-UNUSED) ─────────────
+# This scenario drives the OWASP-LLM probes through the
+# `TOOL-CORTEX-PROMPT-ATTACKER` adapter below — which shells out to the
+# `cortex-prompt-attacker` CLI (Probe → Mutator → Target → Scorer pipeline,
+# garak-shape JSONL output) against the in-tree cortex-vulnerable-llm target.
+#
+# The `airs_prompt_attack` EAL plugin (core/eal_simulator/plugins/) is the
+# PROGRAMMATIC EQUIVALENT of this same adapter path: it wraps the identical
+# cortex-prompt-attacker pipeline behind the EAL campaign interface (same
+# shell-out-to-CLI pattern as the other plugins, same JSONL attempt shape).
+# Use the adapter path here for the declarative scenario; use the
+# `airs_prompt_attack` plugin when an EAL campaign needs to invoke the same
+# attack programmatically. They are two front-ends over one engine — not two
+# different detections — so probe packs under scenarios/airs/probes/ feed both.
+
 external_tools:
   - name: Cortex Prompt Attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"

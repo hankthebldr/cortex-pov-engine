@@ -38,6 +38,25 @@ pull_supported: true
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "OAuth-Grant Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The outbound OAuth-authorize requests with planted risky scopes produce
+  the expected Cortex Cloud App Security detection. Detection Accuracy is
+  the share of injected grants that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -56,7 +75,7 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "Pre-flight: provider list includes microsoft"
-        ttp_ref: TTP-2026-0028
+        ttp_ref: "TTP-2026-0028"
         detection_id: bioc-cloud-002-pre-flight-microsoft-provider-supported
 
   - id: step-02
@@ -86,17 +105,17 @@ steps:
       - plane: CLOUD_APP
         type: XQL
         description: "Cloud App — Directory.ReadWrite.All scope request from non-admin user"
-        ttp_ref: TTP-2026-0028
+        ttp_ref: "TTP-2026-0028"
         detection_id: xql-cloud-002-microsoft-directory-readwrite-all-admin-consent-scope-request
       - plane: CLOUD_APP
         type: BIOC
         description: "Cloud App — Application.ReadWrite.All in same grant body"
-        ttp_ref: TTP-2026-0028
+        ttp_ref: "TTP-2026-0028"
         detection_id: bioc-cloud-002-microsoft-application-readwrite-all-in-same-grant-body
       - plane: NDR
         type: XQL
         description: "NGFW EAL — outbound v2.0/authorize App-ID match to login.microsoftonline.com"
-        ttp_ref: TTP-2026-0028
+        ttp_ref: "TTP-2026-0028"
         detection_id: xql-cloud-002-ngfw-microsoft-v2-authorize-admin-consent-egress
 
   - id: step-03
@@ -126,7 +145,7 @@ steps:
       - plane: CLOUD_APP
         type: XQL
         description: "Cloud App — repeat admin-consent attempt confirms persistence intent"
-        ttp_ref: TTP-2026-0028
+        ttp_ref: "TTP-2026-0028"
         detection_id: xql-cloud-002-microsoft-repeat-admin-consent-persistence-attempt
 
 cleanup:

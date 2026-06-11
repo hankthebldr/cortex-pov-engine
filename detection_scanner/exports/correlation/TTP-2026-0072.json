@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1592",
+    "T1589",
+    "T1590.002",
+    "T1596.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ASM-003 Xpanse Subdomain / Certificate / Identity Discovery Delta) AND (BIOC(ASM EAL \u2014 Outbound Subdomain-Enumeration DNS Burst) OR BIOC(ASM EAL \u2014 Outbound OSINT Aggregator Egress With Tooling User-Agent)) \u2014 raises a single exposure-management reconnaissance incident when the OSINT harvesting egress co-occurs with Cortex ASM/Xpanse independently enumerating the same external footprint.",
+      "name": "Exposure Management \u2014 Organisation Under Open-Source Reconnaissance",
+      "rule_id": "CR-ASM-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0072"
+}

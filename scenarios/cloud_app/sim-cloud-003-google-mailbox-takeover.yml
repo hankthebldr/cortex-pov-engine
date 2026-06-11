@@ -38,6 +38,25 @@ pull_supported: true
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "OAuth-Grant Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The outbound OAuth-authorize requests with planted risky scopes produce
+  the expected Cortex Cloud App Security detection. Detection Accuracy is
+  the share of injected grants that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -56,7 +75,7 @@ steps:
       - plane: CLOUD_APP
         type: BIOC
         description: "Pre-flight: oauth_grant_emulator metadata visible to operator"
-        ttp_ref: TTP-2026-0029
+        ttp_ref: "TTP-2026-0029"
         detection_id: bioc-cloud-003-pre-flight-oauth-grant-emulator-plugin-registered
 
   - id: step-02
@@ -86,12 +105,12 @@ steps:
       - plane: CLOUD_APP
         type: XQL
         description: "Cloud App — full mail.google.com scope grant attempt detected"
-        ttp_ref: TTP-2026-0029
+        ttp_ref: "TTP-2026-0029"
         detection_id: xql-cloud-003-google-full-mailbox-scope-grant-attempt
       - plane: NDR
         type: XQL
         description: "NGFW EAL — outbound /o/oauth2/v2/auth App-ID match to accounts.google.com"
-        ttp_ref: TTP-2026-0029
+        ttp_ref: "TTP-2026-0029"
         detection_id: xql-cloud-003-ngfw-google-oauth-authorize-mailbox-scope-egress
 
   - id: step-03
@@ -120,12 +139,12 @@ steps:
       - plane: CLOUD_APP
         type: XQL
         description: "Cloud App — Mail.ReadWrite + offline_access grant to Microsoft within 5 min of Google attempt"
-        ttp_ref: TTP-2026-0029
+        ttp_ref: "TTP-2026-0029"
         detection_id: xql-cloud-003-microsoft-mail-readwrite-offline-access-token-replay-grant
       - plane: ANALYTICS
         type: XQL
         description: "XSIAM stitching — same identity targeting two mail providers within rotation window"
-        ttp_ref: TTP-2026-0029
+        ttp_ref: "TTP-2026-0029"
         detection_id: xql-cloud-003-cross-provider-mailbox-collection-same-identity-stitch
 
 cleanup:

@@ -1,0 +1,365 @@
+{
+  "id": "TTP-2026-0074",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-08T00:00:00+00:00",
+    "updated_at": "2026-06-08T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-persistence",
+      "actor-teamtnt",
+      "industry-all",
+      "severity-high",
+      "container",
+      "linux",
+      "persistence"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "container",
+      "destructive": true,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "kubernetes"
+      ],
+      "estimated_runtime_seconds": 150,
+      "cleanup_required": true,
+      "safety_class": "destructive-with-cleanup"
+    }
+  },
+  "identity": {
+    "name": "Node systemd Service + Cron Reload Persistence (T1543.002 / T1053.003)",
+    "summary": "After node compromise an operator builds a self-reloading foothold: a systemd unit (Restart=always, /tmp ExecStart), daemon-reload + enable --now, plus a */10 root cron watchdog that re-enables the unit if removed. Cortex fires the unit-write, daemon-reload-then-enable, and cron-watchdog BIOCs into one persistence incident — a focused systemd variant distinct from TTP-2026-0034.",
+    "description": "systemd service persistence (T1543.002) is the most durable foothold on a modern Linux node: unlike a one-off cron entry, a service unit survives reboots, restarts on failure, and — when paired with a cron-driven watchdog (T1053.003) — re-installs itself after eviction, defeating a single cleanup. This card gives the CDR plane a focused, systemd-centric detection variant of persistence (deliberately narrower and deeper than TTP-2026-0034 / SIM-EDR-003, which sprays five different mechanisms): it concentrates on the operationally-important systemd + cron-reload watchdog combination that node-resident cryptojacking and access-broker tooling actually use. The chain: (1) write a `.service` unit into /etc/systemd/system with `Restart=always` and an `ExecStart` pointing at a hidden /tmp binary; (2) run `systemctl daemon-reload` immediately followed by `systemctl enable --now` on the new unit — the daemon-reload-then-enable sequence that is the highest-signal systemd-persistence behaviour; (3) install a root crontab `*/10` job that re-writes and re-enables the unit if it disappears (the self-healing watchdog). SAFE-MODE: the ExecStart and crontab reference an inert `/tmp/.cortexsim_node_beacon` marker (no payload runs), and cleanup disables+removes the unit, strips the crontab line, and reloads the daemon. The detection model maps each behaviour to a dedicated Cortex BIOC: a systemd-unit-file-write BIOC, a `daemon-reload`→`enable` process-sequence BIOC (the differentiator vs a benign unit edit), and a cron-watchdog BIOC keyed on the systemctl-in-crontab pattern. Validation XQL confirms each in xdr_data, IOC signatures pin the unit name and beacon path, and a correlation rule fuses the unit write, the enable sequence, and the cron watchdog from one node into a single persistence incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "TeamTNT",
+        "aliases": [
+          "Watchdog operators"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Node-resident cryptojacking persistence"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1543",
+        "name": "Create or Modify System Process: Systemd Service",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ],
+        "subtechnique_id": "T1543.002"
+      },
+      {
+        "technique_id": "T1053",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ],
+        "subtechnique_id": "T1053.003"
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "File: File Creation",
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Service: Service Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1543.002 — systemd unit write + daemon-reload/enable + cron-reload watchdog (SAFE-MODE inert beacon)",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud runtime defender or Cortex XDR Linux agent installed and reporting on the node.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i defender"
+      },
+      {
+        "description": "Root on the node (systemd unit install + daemon-reload require it). Lab only."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE node persistence — ExecStart/crontab reference an inert marker, no payload runs.\n# step-1: write a systemd service unit with Restart=always + /tmp ExecStart (T1543.002)\ncat > /etc/systemd/system/cortexsim-node.service <<'EOF'\n[Unit]\nDescription=cortexsim node beacon (SAFE-MODE)\n[Service]\nExecStart=/tmp/.cortexsim_node_beacon\nRestart=always\nRestartSec=10\n[Install]\nWantedBy=multi-user.target\nEOF\n# step-2: daemon-reload THEN enable --now (the high-signal systemd-persistence sequence)\nsystemctl daemon-reload\nsystemctl enable --now cortexsim-node.service 2>/dev/null || true\n# step-3: cron watchdog that re-installs+re-enables the unit if removed (T1053.003)\n(crontab -l 2>/dev/null; echo '*/10 * * * * systemctl is-enabled cortexsim-node.service || systemctl enable --now cortexsim-node.service') | crontab -",
+      "input_variables": [],
+      "timeout_seconds": 150
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "systemd unit file written into /etc/systemd/system with Restart=always and a /tmp ExecStart.",
+        "expected_value": "action_file_path = \"/etc/systemd/system/cortexsim-node.service\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "systemctl daemon-reload immediately followed by systemctl enable on the new unit.",
+        "expected_value": "actor_process_image_name = \"systemctl\" and command_line contains_any (\"daemon-reload\", \"enable\")"
+      },
+      {
+        "artifact_type": "scheduled-task",
+        "description": "Root crontab entry that re-enables the unit (self-healing watchdog).",
+        "expected_value": "command_line contains \"crontab\" and command_line contains \"systemctl\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "systemctl disable --now cortexsim-node.service 2>/dev/null || true\nrm -f /etc/systemd/system/cortexsim-node.service\nsystemctl daemon-reload 2>/dev/null || true\ncrontab -l 2>/dev/null | grep -v cortexsim-node.service | crontab - 2>/dev/null || true\necho '[CortexSim] SIM-CDR-006 cleanup complete — unit disabled+removed, cron watchdog stripped, daemon reloaded'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "filepath",
+        "value": "/etc/systemd/system/cortexsim-node.service",
+        "context": "systemd service unit installed for node persistence with Restart=always and a /tmp ExecStart.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "filename",
+        "value": ".cortexsim_node_beacon",
+        "context": "Hidden /tmp ExecStart target referenced by the persistence unit and the cron watchdog.",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "CDR-006 Systemd Unit Written With Restart Always And Tmp ExecStart",
+        "description": "A .service unit is written into a systemd unit directory with an ExecStart in /tmp or /dev/shm — the systemd-persistence file-write fingerprint (T1543.002). Narrower and deeper than the EDR-003 generic systemd BIOC.",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains \".service\"\n| filter action_file_path contains_any (\"/etc/systemd/system\", \"/usr/lib/systemd/system\", \"/run/systemd/system\", \"/.config/systemd\")\n| fields _time, agent_hostname, container_id, actor_process_image_name, action_file_path",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1543.002"
+        ]
+      },
+      {
+        "name": "CDR-006 Systemd Daemon-Reload Then Enable New Unit Sequence",
+        "description": "systemctl daemon-reload immediately followed by systemctl enable/start of a freshly-written unit — the high-signal systemd-persistence process sequence that distinguishes malicious unit install from a benign package edit (T1543.002).",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"systemctl\"\n| filter action_process_image_command_line contains_any (\"daemon-reload\", \"enable\", \"--now\", \"start\")\n| comp count() as systemctl_calls, values(action_process_image_command_line) as cmds by agent_hostname, causality_actor_process_instance_id\n| filter systemctl_calls >= 2\n| fields agent_hostname, causality_actor_process_instance_id, systemctl_calls, cmds",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1543.002"
+        ]
+      },
+      {
+        "name": "CDR-006 Cron Watchdog Re-Enabling Systemd Unit",
+        "description": "A crontab entry that invokes systemctl to re-enable a service unit — the self-healing cron watchdog that re-installs systemd persistence after eviction (T1053.003).",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = \"crontab\" and action_process_image_command_line contains \"systemctl\") or (event_type = ENUM.FILE and action_file_path contains_any (\"/var/spool/cron\", \"/etc/cron\"))\n| filter action_process_image_command_line contains_any (\"systemctl\", \"enable\", \"is-enabled\", \".service\") or action_file_path contains \"cron\"\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line, action_file_path",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1053.003"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CDR-006 Validate Systemd Persistence Unit Write",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and action_file_path contains \".service\"\n| filter action_file_path contains_any (\"/etc/systemd/system\", \"/usr/lib/systemd/system\", \"/run/systemd/system\")\n| fields _time, agent_hostname, container_id, actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-006 Validate daemon-reload Then enable Sequence",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"systemctl\" and action_process_image_command_line contains_any (\"daemon-reload\", \"enable\", \"--now\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-006 Validate Cron Watchdog Re-Enabling Unit",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"crontab\" and action_process_image_command_line contains \"systemctl\"\n| fields _time, agent_hostname, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "CDR-006 Hunt Restart-Always Units With Untrusted ExecStart Across Nodes",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 86400)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and action_file_path contains \"/etc/systemd/system\" and action_file_path contains \".service\"\n| comp count() as unit_writes, count_distinct(agent_hostname) as nodes by actor_process_image_name, action_file_path\n| sort desc unit_writes\n| fields actor_process_image_name, action_file_path, unit_writes, nodes",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Persistence — Node systemd Unit + Self-Healing Cron Watchdog (Same Node)",
+        "rule_id": "CR-CDR-0006",
+        "logic": "BIOC(CDR-006 Systemd Unit Written With Restart Always And Tmp ExecStart) AND (BIOC(CDR-006 Systemd Daemon-Reload Then Enable New Unit Sequence) OR BIOC(CDR-006 Cron Watchdog Re-Enabling Systemd Unit)) — fuses the unit write, the enable sequence, and the cron watchdog from one node into a single persistence incident."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XDR for Linux — New persistent systemd service with Restart=always behavioral detector",
+        "validated": true,
+        "note": "Backed by BIOC 'CDR-006 Systemd Unit Written With Restart Always And Tmp ExecStart' + 'CDR-006 Systemd Daemon-Reload Then Enable New Unit Sequence' + their validation XQL on this card."
+      },
+      {
+        "module": "Cortex Cloud Runtime Defense — Node-level persistence (systemd + cron self-heal) detection",
+        "validated": false
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "runtime-defense",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-NODE-SYSTEMD-PERSIST-001",
+          "CDR-CRON-WATCHDOG-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter action_file_path = \"/etc/systemd/system/cortexsim-node.service\" | fields _time, agent_hostname, action_file_path"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-CDR-0074-SYSTEMD",
+          "XDR-BIOC-CDR-0074-CRONWATCHDOG"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter actor_process_image_name = \"systemctl\" and action_process_image_command_line contains \"enable\" | fields _time, agent_hostname, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CDR-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CDR-0006 fuses the systemd unit write, the daemon-reload/enable sequence, and the cron watchdog from one node into one persistence incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-LinuxPersistenceEviction-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: disable+remove the unit, reload the daemon, strip the cron watchdog, and confirm the unit does not re-appear."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-SUPPLY-074",
+        "name": "Persistence Mechanism Detection — Node systemd + Cron Watchdog",
+        "description": "Detect and evict a self-healing node persistence foothold (systemd service unit + cron-reload watchdog) — a focused systemd-centric variant distinct from the broad multi-mechanism EDR card.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-SUPPLY-074A",
+            "objective": "The unit write, the daemon-reload/enable sequence, and the cron watchdog each fire their Cortex BIOC.",
+            "preconditions": [
+              "Cortex Cloud runtime defender or Cortex XDR Linux agent >= 8.4.0 reporting on the node.",
+              "BIOCs from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-CDR-006 steps 1-3 on the node.",
+              "Observe the per-stage BIOC alerts in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `CDR-006 Systemd Unit Written With Restart Always And Tmp ExecStart` fires on the unit write.",
+              "BIOC `CDR-006 Systemd Daemon-Reload Then Enable New Unit Sequence` fires within 60s.",
+              "All three XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-SUPPLY-074B",
+            "objective": "The persistence behaviours stitch into one incident.",
+            "success_criteria": [
+              "Correlation `CR-CDR-0006` groups the behaviours on one node into a single persistence incident.",
+              "The XSOAR eviction playbook is offered, including stripping the cron watchdog."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict systemd unit directories to root and audit unit-file writes with auditd/fapolicyd.",
+      "Disallow crontab on application/runtime nodes and alert on systemctl invoked from cron.",
+      "Enforce a runtime binary allowlist so a /tmp ExecStart target can never execute."
+    ],
+    "detection_engineering": [
+      "Alert on .service writes into systemd unit dirs with Restart=always and an ExecStart outside trusted paths.",
+      "Alert on the daemon-reload→enable process sequence for a freshly-written unit (the malicious-install fingerprint).",
+      "Alert on crontab entries that invoke systemctl enable/is-enabled (the self-healing watchdog), and correlate all three into one incident."
+    ],
+    "response_playbook": "XSOAR-PB-LinuxPersistenceEviction-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - TeamTNT Targets Exposed Docker APIs (node persistence)",
+      "url": "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1543.002 — Systemd Service",
+      "url": "https://attack.mitre.org/techniques/T1543/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1053.003 — Cron",
+      "url": "https://attack.mitre.org/techniques/T1053/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "GAP-8: detection-variant DEPTH on Persistence T1543.002 + T1053.003 — focused systemd-service + cron-reload-watchdog node-persistence variant distinct from the broad multi-mechanism card TTP-2026-0034. Real systemd-unit-write / daemon-reload-enable-sequence / cron-watchdog BIOCs+XQL, correlation CR-CDR-0006, IOC signatures, GAP-11 validated/unvalidated analytics split. Wired to SIM-CDR-006."
+    }
+  ]
+}

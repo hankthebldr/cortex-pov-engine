@@ -34,6 +34,26 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Container Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The container/k8s TTP signals injected by this scenario produce the
+  expected Cortex Cloud / XDR detections within the MTTD budget. Each
+  expected_detections row is validated against the container runtime and
+  cloud audit telemetry.
+moat_tier: "LEAD"
+
 external_tools:
   - name: wildfire-testfile
     source: "https://www.wicar.org/test-malware.html"
@@ -69,12 +89,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "WildFire test file download in container — known-bad file signature matched by WildFire cloud intelligence"
-        ttp_ref: TTP-2026-0026
+        ttp_ref: "TTP-2026-0026"
         detection_id: bioc-cdr-005-wildfire-known-bad-elf-download-in-container
       - plane: CDR
         type: BIOC
         description: "Executable file downloaded to /tmp and made executable — download-then-execute pattern in container"
-        ttp_ref: TTP-2026-0026
+        ttp_ref: "TTP-2026-0026"
         detection_id: bioc-cdr-005-executable-downloaded-to-tmp-and-made-executable-in-container
 
   - id: step-02
@@ -91,12 +111,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "WildFire test file execution — malicious ELF execution in container triggers CDR BIOC rule"
-        ttp_ref: TTP-2026-0026
+        ttp_ref: "TTP-2026-0026"
         detection_id: bioc-cdr-005-wildfire-elf-execution-in-container
       - plane: CDR
         type: BIOC
         description: "Downloaded binary executed from /tmp by www-data context — high-risk execution chain in container"
-        ttp_ref: TTP-2026-0026
+        ttp_ref: "TTP-2026-0026"
         detection_id: bioc-cdr-005-downloaded-binary-executed-by-service-account-in-container
 
   - id: step-03
@@ -118,12 +138,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Regular periodic outbound HTTP connections from container — C2 beacon interval pattern (3 attempts to 192.0.2.1)"
-        ttp_ref: TTP-2026-0026
+        ttp_ref: "TTP-2026-0026"
         detection_id: bioc-cdr-005-periodic-outbound-http-beacon-from-container
       - plane: CDR
         type: BIOC
         description: "C2 communication pattern following malware execution — post-execution network activity in container"
-        ttp_ref: TTP-2026-0026
+        ttp_ref: "TTP-2026-0026"
         detection_id: bioc-cdr-005-post-execution-c2-network-activity-in-container
 
   - id: step-04
@@ -153,12 +173,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Mass file modification pattern in container — ransomware-style encryption simulation matches T1486 behavioral rule"
-        ttp_ref: TTP-2026-0026
+        ttp_ref: "TTP-2026-0026"
         detection_id: bioc-cdr-005-mass-file-modification-ransomware-pattern-in-container
       - plane: CDR
         type: BIOC
         description: "Bulk file rename with .enc extension following malware execution — post-execution encryption behavior in container"
-        ttp_ref: TTP-2026-0026
+        ttp_ref: "TTP-2026-0026"
         detection_id: bioc-cdr-005-bulk-enc-extension-rename-after-execution-in-container
 
 cleanup:

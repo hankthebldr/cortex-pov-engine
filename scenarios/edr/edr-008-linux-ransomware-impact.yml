@@ -1,0 +1,170 @@
+scenario_id: SIM-EDR-008
+name: "Linux Host File Mass-Encryption for Impact — SAFE-MODE"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It reproduces the telemetry
+# shape of a Linux-host ransomware encryptor so Cortex XDR for Linux can be
+# shown to detect it WITHOUT real encryption. The anchor card TTP-2026-0073 is
+# SAFE-MODE: it seeds an isolated /tmp/cortexsim_victim directory, appends a
+# .cortexlock extension while overwriting content with an inert marker, drops a
+# ransom note, and deletes ONLY CortexSim-created snapshot/backup artefacts.
+# Cleanup fully restores the victim directory. LAB ONLY.
+
+plane: EDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UCS-EDR-08
+tc_ref: TC-EDR-08
+uc_name: "Ransomware Impact Detection (Linux Host)"
+tc_name: "Host File Mass-Encryption + Recovery Inhibition"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1486"
+mitre_technique_name: "Data Encrypted for Impact"
+additional_techniques:
+  - technique: "T1490"
+    name: "Inhibit System Recovery"
+  - technique: "T1083"
+    name: "File and Directory Discovery"
+
+threat_report: "Unit42 - Akira Ransomware Linux/ESXi Encryptor Analysis"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Seed victim directory + enumerate target files (T1083)"
+    command: |
+      VDIR=/tmp/cortexsim_victim; mkdir -p $VDIR
+      for i in $(seq 1 40); do echo "original content $i" > $VDIR/document_$i.dat; done
+      find $VDIR -type f | head -1000 > /tmp/cortexsim_targetlist.txt
+      echo "[*] seeded $(wc -l < /tmp/cortexsim_targetlist.txt) victim files"
+    identity: container-runtime
+    mitre_technique: "T1083"
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Hunt — encryptor process lineage across hosts (pre-flight bookkeeping)"
+        ttp_ref: TTP-2026-0073
+        detection_id: xql-edr-008-hunt-encryptor-process-lineage-across-hosts
+
+  - id: step-02
+    name: "Mass file rewrite + ransomware extension + SAFE-MODE marker + ransom note (T1486)"
+    command: |
+      # Rewrite every victim file with the .cortexlock extension and an inert
+      # SAFE-MODE marker (NO real encryption), then drop a ransom note. This is
+      # the rapid mass-rewrite-with-uniform-extension encryptor fingerprint.
+      while read -r f; do
+        printf 'CORTEXSIM-SAFE-MODE-NOT-ENCRYPTED' > "${f}.cortexlock" && rm -f "$f"
+      done < /tmp/cortexsim_targetlist.txt
+      printf 'Your files are locked (CORTEXSIM SAFE-MODE — nothing was actually encrypted).' \
+        > /tmp/cortexsim_victim/READ_ME_CORTEXSIM.txt
+    identity: container-runtime
+    mitre_technique: "T1486"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Rapid mass file rewrite with a uniform new ransomware extension by one process"
+        ttp_ref: TTP-2026-0073
+        detection_id: bioc-edr-008-rapid-mass-file-rewrite-with-uniform-new-extension
+      - plane: EDR
+        type: BIOC
+        description: "Ransom note written across directories by the encryptor process"
+        ttp_ref: TTP-2026-0073
+        detection_id: bioc-edr-008-ransom-note-written-across-multiple-directories
+      - plane: EDR
+        type: XQL
+        description: "Confirm mass file rewrite with a ransomware extension"
+        ttp_ref: TTP-2026-0073
+        detection_id: xql-edr-008-validate-mass-file-rewrite-with-ransomware-extension
+      - plane: EDR
+        type: XQL
+        description: "Confirm ransom-note creation"
+        ttp_ref: TTP-2026-0073
+        detection_id: xql-edr-008-validate-ransom-note-creation
+      - plane: EDR
+        type: IOC
+        description: "Ransomware extension on mass-rewritten files (*.cortexlock)"
+        ttp_ref: TTP-2026-0073
+        detection_id: ioc-filename-cortexlock
+      - plane: EDR
+        type: IOC
+        description: "Ransom-note filename dropped across directories (READ_ME_CORTEXSIM.txt)"
+        ttp_ref: TTP-2026-0073
+        detection_id: ioc-filename-read-me-cortexsim-txt
+
+  - id: step-03
+    name: "Inhibit recovery — delete CortexSim snapshot/backup artefacts (T1490)"
+    command: |
+      # Delete ONLY CortexSim-created snapshot/backup artefacts to emit the
+      # recovery-inhibition telemetry shape without touching real backups.
+      rm -f /tmp/cortexsim_snapshot_*.img /tmp/cortexsim_backup_*.tar 2>/dev/null
+      echo '[*] recovery-inhibition step issued (CortexSim artefacts only)'
+    identity: container-runtime
+    mitre_technique: "T1490"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Local recovery inhibition — snapshot/backup deletion co-occurring with mass rewrite"
+        ttp_ref: TTP-2026-0073
+        detection_id: bioc-edr-008-local-recovery-inhibition-snapshot-or-backup-deletion
+      - plane: EDR
+        type: XQL
+        description: "Confirm local recovery inhibition (snapshot/backup deletion)"
+        ttp_ref: TTP-2026-0073
+        detection_id: xql-edr-008-validate-local-recovery-inhibition
+      - plane: EDR
+        type: Correlation
+        description: "Ransomware — Linux host mass-encryption + recovery inhibition stitched into one Impact incident"
+        ttp_ref: TTP-2026-0073
+        detection_id: CR-EDR-0008
+
+cleanup:
+  commands:
+    - "for f in /tmp/cortexsim_victim/*.cortexlock; do orig=\"${f%.cortexlock}\"; [ -e \"$f\" ] && echo 'restored content' > \"$orig\" && rm -f \"$f\"; done 2>/dev/null || true"
+    - "rm -f /tmp/cortexsim_victim/READ_ME_CORTEXSIM.txt /tmp/cortexsim_targetlist.txt"
+    - "rm -rf /tmp/cortexsim_victim"
+    - "echo '[CortexSim] SIM-EDR-008 cleanup complete — SAFE-MODE markers removed, victim dir restored'"
+
+author: "Henry Reed"
+created: "2026-06-08"
+last_updated: "2026-06-08"
+tags:
+  - impact
+  - ransomware
+  - linux
+  - data-encrypted-for-impact
+  - inhibit-recovery
+  - safe-mode
+
+validation_methodology: "Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 60
+  unit: "s"
+success_criteria: |
+  Cortex XDR for Linux fires the rapid mass-rewrite, ransom-note, and
+  recovery-inhibition BIOCs within 60s, and the correlation engine stitches the
+  three stages from one host into a single critical Impact incident — a
+  host-level T1486 detection variant distinct from the ESXi-hypervisor scenario
+  (SIM-EDR-007).
+moat_tier: "LEAD"

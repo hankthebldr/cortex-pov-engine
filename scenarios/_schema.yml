@@ -98,8 +98,11 @@ additional_techniques:
 # ── Threat Intelligence ──────────────────────────────────────────────────────
 
 threat_report: "Unit42 - Large-Scale Monero Cryptomining Operation"
-# (required) Title of the threat report or intelligence source this scenario
+# (optional) Title of the threat report or intelligence source this scenario
 # is modeled on. Used for traceability and docs/threat_report_index.md linkage.
+# NOTE: the loader (core/engine/scenario_loader.py) models this as
+# Optional[str]=None — it is NOT enforced as required. Every shipped scenario
+# sets it by convention, but a scenario without it loads fine.
 
 threat_report_url: "https://unit42.paloaltonetworks.com/example-report/"
 # (optional) Direct URL to the referenced threat report.
@@ -237,10 +240,15 @@ author: "Henry Reed"
 # (required) Author name. Used in generated bash bundle headers and audit logs.
 
 created: "2026-04-12"
-# (required) ISO 8601 date of initial creation. Never update this field.
+# (optional) ISO 8601 date of initial creation. Never update this field once set.
+# NOTE: the loader models this as Optional[str]=None (provenance only — it is
+# parsed and validated but NOT persisted to the Scenario ORM). Shipped
+# scenarios set it by convention.
 
 last_updated: "2026-04-12"
-# (required) ISO 8601 date of last modification. Update on every change.
+# (optional) ISO 8601 date of last modification. Update on every change.
+# NOTE: same contract as `created` — optional in the loader, provenance only,
+# not persisted to the ORM.
 
 tags:
   - container-security

@@ -38,6 +38,26 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The endpoint TTP signals injected by this scenario produce the expected
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+  creation is within the MTTD budget. Each step's expected_detections row is
+  validated against dataset=xdr_data.
+moat_tier: "LEAD"
+
 external_tools:
   - name: Atomic Red Team
     source: "https://github.com/redcanaryco/atomic-red-team"

@@ -8,7 +8,7 @@ detection_types:
   - XQL
 
 uc_ref: UCS-AISPM-01
-tc_ref: TC-AISP-05
+tc_ref: TC-AISPM-05
 uc_name: "AI Security Posture Management"
 tc_name: "AI Sensitive Data Classification"
 
@@ -89,7 +89,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "Anchor + canary verification — no Cortex detection at this step."
-        ttp_ref: TTP-2026-0058
+        ttp_ref: "TTP-2026-0058"
         detection_id: xql-aispm-005-mttd-anchor-and-canary-verify-bookkeeping
 
   - id: step-02
@@ -104,7 +104,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "Cortex DSPM identifies PII/PHI/PCI canaries in the bucket; AI-SPM links the bucket to AI workloads via data-lineage graph."
-        ttp_ref: TTP-2026-0058
+        ttp_ref: "TTP-2026-0058"
         detection_id: xql-aispm-005-dspm-aispm-cross-scan-links-bucket-to-ai
 
   - id: step-03
@@ -154,7 +154,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "Cortex DSPM flags training-data bucket with ≥ 3 sensitive data classes (PII / PHI / PCI), pattern-matching the planted SSN / CC / MRN canaries."
-        ttp_ref: TTP-2026-0058
+        ttp_ref: "TTP-2026-0058"
         detection_id: xql-aispm-005-dspm-three-regulated-data-classes-in-training-bucket
         verification_xql: |
           dataset = cortex_cloud_dspm_findings
@@ -169,7 +169,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "AI-SPM data-lineage edge links the training-data S3 bucket to the SageMaker training-job manifest, proving the regulated-data → model traceability chain."
-        ttp_ref: TTP-2026-0058
+        ttp_ref: "TTP-2026-0058"
         detection_id: xql-aispm-005-data-lineage-edge-bucket-to-training-job
         verification_xql: |
           dataset = cortex_cloud_inventory
@@ -181,7 +181,7 @@ steps:
       - plane: AI_SPM
         type: XQL
         description: "AI-GOV-001 governance violation raised: regulated data present in AI training set."
-        ttp_ref: TTP-2026-0058
+        ttp_ref: "TTP-2026-0058"
         detection_id: xql-aispm-005-governance-violation-regulated-data-in-training-set
         verification_xql: |
           dataset = cortex_cloud_findings

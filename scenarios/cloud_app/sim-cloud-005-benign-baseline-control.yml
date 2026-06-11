@@ -32,6 +32,26 @@ pull_supported: true
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Benign-Baseline False-Positive Suppression"
+methodology_family: "F1"
+primary_kpi: "False Positive Rate"
+threshold:
+  kpi: "False Positive Rate"
+  op: "="
+  value: 0
+  unit: "%"
+success_criteria: |
+  This is the benign OAuth baseline control — it must NOT alert. The planted
+  low-risk scope grant is well within policy. Success means zero false-
+  positive detections fire (False Positive Rate = 0%), proving the detection
+  logic suppresses legitimate OAuth activity.
+moat_tier: "LEAD"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -66,7 +86,7 @@ steps:
       - plane: CLOUD_APP
         type: XQL
         description: "Cloud App — benign OIDC grant to Okta logged informationally (NO risky-scope alert expected)"
-        ttp_ref: TTP-2026-0031
+        ttp_ref: "TTP-2026-0031"
         detection_id: xql-cloud-005-benign-okta-oidc-grant-informational-not-risky
 
   - id: step-02
@@ -95,7 +115,7 @@ steps:
       - plane: CLOUD_APP
         type: XQL
         description: "Cloud App — benign User.Read grant to Microsoft logged informationally (NO risky-scope alert expected)"
-        ttp_ref: TTP-2026-0031
+        ttp_ref: "TTP-2026-0031"
         detection_id: xql-cloud-005-benign-microsoft-user-read-grant-informational-not-risky
 
   - id: step-03
@@ -124,12 +144,12 @@ steps:
       - plane: CLOUD_APP
         type: XQL
         description: "Cloud App — benign OIDC grant to Google logged informationally (NO risky-scope alert expected)"
-        ttp_ref: TTP-2026-0031
+        ttp_ref: "TTP-2026-0031"
         detection_id: xql-cloud-005-benign-google-oidc-grant-informational-not-risky
       - plane: NDR
         type: XQL
         description: "NGFW EAL — three /authorize App-ID hits classified informational, NOT promoted to incident"
-        ttp_ref: TTP-2026-0031
+        ttp_ref: "TTP-2026-0031"
         detection_id: xql-cloud-005-ngfw-benign-authorize-hits-informational-not-promoted
 
 cleanup:

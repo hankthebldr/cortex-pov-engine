@@ -169,7 +169,9 @@ def test_reference_aispm_scenario_parses_cleanly() -> None:
     assert schema.methodology_family == "F3"
     assert schema.primary_kpi == "Asset Discovery Coverage"
     assert schema.threshold is not None and schema.threshold.value == 100
-    assert schema.tc_ref == "TC-AISP-01"
+    # S-15 — AI_SPM tc_ref family normalized from TC-AISP-* to TC-AISPM-* so it
+    # matches the uc_ref family (UCS-AISPM-01). See the gap-analysis S-15 fix.
+    assert schema.tc_ref == "TC-AISPM-01"
     # Sanity: at least one step has an expected_detection with verification_xql.
     has_xql = any(
         det.verification_xql

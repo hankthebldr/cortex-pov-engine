@@ -48,6 +48,36 @@ infra_modules_needed:
   - edr
   - ndr
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Backfilled per the S-07 rollout convention (docs/uc_tc_mapping/
+# scenario-methodology-defaults.md). ANALYTICS-plane multi-plane stitching
+# scenarios are family F2 (Causality Stitching Validation), MOAT tier.
+validation_methodology: "Cross-Plane Causality Correlation"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  The Kerberoast recon (ITDR), Pass-the-Hash lateral SMB auth (EDR + NDR), and
+  DCSync replication (ITDR) signals attributed to the same compromised service
+  account stitch into a single XSIAM incident_id whose causality chain spans
+  ITDR + EDR + NDR within the correlation window. Verifier asserts ≥ 3 distinct
+  planes under one incident_id keyed on the user_principal.
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+# Identity-centric chain — the join key is the compromised service-account
+# principal that threads recon → lateral auth → DCSync, not a single host.
+correlation_window_seconds: 60
+required_planes_in_incident:
+  - ITDR
+  - EDR
+  - NDR
+stitching_key: user_principal
+
 external_tools:
   - name: impacket
     source: "https://github.com/fortra/impacket"

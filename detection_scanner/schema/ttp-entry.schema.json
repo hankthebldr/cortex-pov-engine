@@ -310,6 +310,27 @@
           "type": "array",
           "description": "MITRE ATT&CK data sources observed (e.g., 'Process: Process Creation', 'Logon Session: Logon Session Creation').",
           "items": { "type": "string" }
+        },
+        "atlas_techniques": {
+          "type": "array",
+          "description": "OPTIONAL — MITRE ATLAS (Adversarial Threat Landscape for AI Systems) technique mappings, used ALONGSIDE the ATT&CK `techniques[]` for AI-plane cards (AIRS / AI Access / AI-SPM) where ATT&CK has no native home for the threat (prompt injection, jailbreak, model data leakage, cost harvesting). Additive only — never replaces ATT&CK coverage (GAP-9). Each item maps an ATLAS id (AML.TXXXX[.YYY]) to its name.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["atlas_id", "name"],
+            "properties": {
+              "atlas_id": {
+                "type": "string",
+                "pattern": "^AML\\.T[0-9]{4}(\\.[0-9]{3})?$",
+                "description": "MITRE ATLAS technique id, e.g. AML.T0051 (LLM Prompt Injection) or AML.T0051.000 (Direct)."
+              },
+              "name": { "type": "string" },
+              "atlas_tactic": {
+                "type": "string",
+                "description": "ATLAS tactic name, e.g. 'Initial Access', 'ML Attack Staging', 'Exfiltration', 'Impact'."
+              }
+            }
+          }
         }
       }
     },
@@ -570,8 +591,29 @@
         },
         "analytics_modules": {
           "type": "array",
-          "description": "Out-of-the-box Cortex Analytics modules expected to fire (ML-based detections).",
-          "items": { "type": "string" }
+          "description": "Out-of-the-box Cortex Analytics modules expected to fire (ML-based detections). GAP-11: these are NAMED references, not testable BIOC/XQL logic — they map to a Cortex analytics module but cannot be validated post-run the way a query can. The optional object form carries `validated` so the coverage rollup can separate validated detection (BIOC/XQL/correlation) from merely-mapped analytics modules. A bare string is treated as `validated: false` by the rollup (back-compat).",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Module name. Treated as validated:false (mapped-but-not-logic) by the coverage rollup."
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["module"],
+                "properties": {
+                  "module": { "type": "string", "description": "Cortex analytics module name." },
+                  "validated": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "True ONLY if a deployable BIOC/XQL/correlation on this same card exercises this module (i.e. the mapping is backed by testable logic). Default false — a named analytics module is a mapped reference, not a validated detection (GAP-11)."
+                  },
+                  "note": { "type": "string", "description": "Optional rationale for the validated flag." }
+                }
+              }
+            ]
+          }
         }
       }
     },

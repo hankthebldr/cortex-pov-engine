@@ -38,6 +38,27 @@ required_content:
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Agentic / Supply-Chain Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The agentic / supply-chain artifact (MCP server, skill, extension, PyPI
+  package) produces the expected Cortex detection on scan + egress.
+  Detection Accuracy is the share of injected agentic signals that raise the
+  expected alert (target ≥ 90%). Agentic endpoint coverage has no point-
+  product equivalent.
+moat_tier: "MOAT"
+
 external_tools:
   - name: Cortex Malicious Agentic Pack
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -67,12 +88,12 @@ steps:
       - plane: KOI
         type: BIOC
         description: "Code scan — skill.md contains 'Ignore previous instructions' / exfil instructions in body"
-        ttp_ref: TTP-2026-0046
+        ttp_ref: "TTP-2026-0046"
         detection_id: bioc-koi-005-claude-skill-body-contains-instruction-injection-and-exfil-directives
       - plane: KOI
         type: XQL
         description: "Code scan — skill bundle metadata claims 'verified publisher' without matching signature"
-        ttp_ref: TTP-2026-0046
+        ttp_ref: "TTP-2026-0046"
         detection_id: xql-koi-005-claude-skill-claims-verified-publisher-with-mismatched-signature
 
   - id: step-02
@@ -103,12 +124,12 @@ steps:
       - plane: NDR
         type: XQL
         description: "NGFW EAL — Claude client User-Agent fetches .skill from non-anthropic CDN"
-        ttp_ref: TTP-2026-0046
+        ttp_ref: "TTP-2026-0046"
         detection_id: xql-koi-005-claude-client-fetches-skill-bundle-from-non-anthropic-cdn
       - plane: KOI
         type: XQL
         description: "URL filter — destination not in Anthropic-published skill registry allowlist"
-        ttp_ref: TTP-2026-0046
+        ttp_ref: "TTP-2026-0046"
         detection_id: xql-koi-005-skill-fetch-destination-not-in-anthropic-registry-allowlist
 
   - id: step-03
@@ -123,12 +144,12 @@ steps:
       - plane: AIRS
         type: XQL
         description: "AIRS — indirect-injection scorer fires when skill.md is concatenated into prompt"
-        ttp_ref: TTP-2026-0046
+        ttp_ref: "TTP-2026-0046"
         detection_id: xql-koi-005-airs-indirect-injection-scorer-on-skill-body-in-prompt
       - plane: ANALYTICS
         type: XQL
         description: "XSIAM stitching — KOI artifact + AIRS detection chain into single agentic incident"
-        ttp_ref: TTP-2026-0046
+        ttp_ref: "TTP-2026-0046"
         detection_id: xql-koi-005-xsiam-stitch-skill-injection-artifact-with-airs-detection
 
 cleanup:

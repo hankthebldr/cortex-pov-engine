@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1486",
+    "T1490",
+    "T1083"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(EDR-008 Rapid Mass File Rewrite With Uniform New Extension) AND (BIOC(EDR-008 Ransom Note Written Across Multiple Directories) OR BIOC(EDR-008 Local Recovery Inhibition \u2014 Snapshot Or Backup Deletion)) \u2014 fuses the encryption, ransom-note, and recovery-inhibition stages from one host into a single critical Impact incident.",
+      "name": "Ransomware \u2014 Linux Host Mass-Encryption + Recovery Inhibition (Same Host)",
+      "rule_id": "CR-EDR-0008",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0073"
+}

@@ -1,0 +1,26 @@
+id: cortexsim-ttp-2026-0072-response
+version: 1
+name: "CortexSim — Passive OSINT Victim-Info Gathering — Subdomain / Cert / Email Harvesting (T1592 / T1589 / T1590)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0072.
+  Triggered by Cortex correlation rules: CR-ASM-0003.
+  Reference playbook in panw_mapping: XSOAR-PB-ExposureRemediation-v1
+triggers:
+  - correlation_rule_id: CR-ASM-0003
+  - playbook_rule_id: XSOAR-PB-ExposureRemediation-v1
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0072
+  cortexsim_version: 1.0

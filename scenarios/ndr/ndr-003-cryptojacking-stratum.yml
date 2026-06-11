@@ -35,6 +35,26 @@ infra_modules_needed:
   - base
   - ndr
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Network Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The per-protocol egress signal injected by this scenario produces the
+  expected NGFW App-ID / XSIAM detection within the MTTD budget. Verifier
+  counts matching sessions in dataset=pan_ngfw_traffic and measures
+  emit→alert latency.
+moat_tier: "LEAD"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -54,7 +74,7 @@ steps:
       - plane: NDR
         type: XQL
         description: "Pre-flight: sinkhole port 3333 reachable"
-        ttp_ref: TTP-2026-0052
+        ttp_ref: "TTP-2026-0052"
         detection_id: xql-pre-flight-sinkhole-port-3333-reachable
 
   - id: step-02
@@ -86,17 +106,17 @@ steps:
       - plane: NDR
         type: XQL
         description: "NGFW App-ID — Stratum/cryptocurrency-mining identified on outbound TCP"
-        ttp_ref: TTP-2026-0052
+        ttp_ref: "TTP-2026-0052"
         detection_id: xql-ngfw-app-id-stratum-cryptocurrency-mining-identified-on-outbound-tcp
       - plane: NDR
         type: IOC
         description: "NGFW EAL — JSON-RPC mining.subscribe payload observed in session"
-        ttp_ref: TTP-2026-0052
+        ttp_ref: "TTP-2026-0052"
         detection_id: ioc-user-agent-stratum-json-rpc-mining-subscribe
       - plane: NDR
         type: BIOC
         description: "NGFW EAL — repeated short-lived TCP sessions to mining pool port"
-        ttp_ref: TTP-2026-0052
+        ttp_ref: "TTP-2026-0052"
         detection_id: bioc-ngfw-eal-repeated-short-lived-tcp-sessions-to-mining-pool-port
 
 cleanup:

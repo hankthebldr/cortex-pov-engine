@@ -37,6 +37,45 @@ pull_supported: true
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "LLM-Egress DLP Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The outbound LLM-provider egress with planted DLP markers produces the
+  expected Cortex AI Access Security detection. Detection Accuracy is the
+  share of injected egress events that raise the expected DLP alert (target
+  ≥ 90%).
+moat_tier: "LEAD"
+
+# ── Lab-contained / mock provider target (PLANE-AIACCESS-ISOLATED) ───────────
+# By default this scenario egresses to the real public AI provider
+# (api.openai.com / api.anthropic.com / generativelanguage.googleapis.com) so
+# the customer NGFW + Cortex AI Access Security see authentic generative-AI
+# App-ID traffic. For air-gapped / lab POVs where outbound to a real provider
+# is undesirable, run a contained mock target instead — mirroring the in-tree
+# `cortex-vulnerable-llm` pattern (sources/cortex-vulnerable-llm/, served on
+# :8089 with no real LLM calls and no API keys):
+#
+#   cortex-vulnerable-llm serve --port 8089 --vuln all
+#
+# Then point the EAL campaign at the contained host by overriding the campaign
+# `target_allowlist` (and, once the llm_provider_egress plugin grows a
+# `mock_target`/`base_url` param — tracked for the EAL lane —, set it to
+# http://127.0.0.1:8089). The DLP canary markers (CORTEXSIM-CANARY, AKIA…CANARY)
+# travel in the request body either way, so the AI_ACCESS / NGFW detections
+# fire identically against the mock target. This keeps the scenario runnable
+# with a lab-contained fallback rather than only hitting real providers.
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -58,7 +97,7 @@ steps:
       - plane: AI_ACCESS
         type: BIOC
         description: "Pre-flight: secret payload contains AKIA-prefixed canary"
-        ttp_ref: TTP-2026-0008
+        ttp_ref: "TTP-2026-0008"
         detection_id: bioc-aiacc-002-pre-flight-secret-payload-contains-akia-canary
 
   - id: step-02
@@ -88,17 +127,17 @@ steps:
       - plane: AI_ACCESS
         type: IOC
         description: "AI Access — DLP regex match: AKIA-prefixed AWS access key in outbound LLM prompt"
-        ttp_ref: TTP-2026-0008
+        ttp_ref: "TTP-2026-0008"
         detection_id: ioc-cloud-account-id-akia-0-9a-z-16
       - plane: AI_ACCESS
         type: XQL
         description: "AI Access — POST to api.anthropic.com from non-sanctioned user context"
-        ttp_ref: TTP-2026-0008
+        ttp_ref: "TTP-2026-0008"
         detection_id: xql-aiacc-002-post-to-anthropic-from-non-sanctioned-user-context
       - plane: NDR
         type: XQL
         description: "NGFW EAL — generative-ai App-ID match on outbound HTTPS to anthropic.com"
-        ttp_ref: TTP-2026-0008
+        ttp_ref: "TTP-2026-0008"
         detection_id: xql-aiacc-002-ngfw-generative-ai-app-id-outbound-https-to-anthropic
 
   - id: step-03
@@ -128,7 +167,7 @@ steps:
       - plane: AI_ACCESS
         type: XQL
         description: "AI Access — block-action policy fires after first DLP hit, subsequent sessions denied"
-        ttp_ref: TTP-2026-0008
+        ttp_ref: "TTP-2026-0008"
         detection_id: xql-aiacc-002-repeated-secret-egress-to-anthropic-block-policy-trigger
 
 cleanup:

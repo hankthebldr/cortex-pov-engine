@@ -18,6 +18,8 @@ Checks performed:
  10. MITRE ATT&CK technique IDs follow Txxxx[.xxx] format.
  11. Use case ids match UC-<DOMAIN>-NNN pattern; test case ids match TC-<DOMAIN>-NNN[A-Z].
  12. Within a use case, sum of expected_score_weight is <= 1.0 (allows for unweighted tests).
+ 13. XQL/BIOC grammar sanity lint (GAP-12): balanced quotes/parens, a dataset/preset
+     reference present on every BIOC/XQL body, and no leftover placeholder/skeleton tokens.
 
 Usage:
   python3 scripts/validate.py                 # full check, repo root
@@ -76,6 +78,84 @@ def load_json(path, report):
     except json.JSONDecodeError as e:
         report.err(str(path), f"invalid JSON: {e}")
         return None
+
+
+# Placeholder tokens that must never appear in a deployable detection body.
+# These are the markers the draft generator (scripts/generate_card.py) emits;
+# a promoted card must have replaced all of them with real logic.
+PLACEHOLDER_TOKENS = (
+    "AUTO-GENERATED SKELETON",
+    "TODO",
+    "FIXME",
+    "XXX",
+    "REPLACE_WITH",
+    "REPLACE WITH",
+    "<placeholder>",
+    "PLACEHOLDER_PREDICATE",
+    "predicate matching the bioc name",
+)
+
+# Tokens that anchor a body to a real Cortex data source. A BIOC/XQL body that
+# references none of these is almost certainly not a runnable detection.
+DATASET_ANCHORS = ("dataset =", "dataset=", "preset =", "preset=")
+
+
+def lint_detection_body(report, rel, where, body, *, require_dataset):
+    """GAP-12 — lightweight XQL/BIOC grammar sanity lint.
+
+    Catches the cheap, high-signal mistakes that the JSON Schema cannot:
+      * unbalanced double-quotes (odd count)
+      * unbalanced parentheses
+      * leftover placeholder/skeleton tokens from the draft generator
+      * (when ``require_dataset``) a missing ``dataset =`` / ``preset =`` anchor
+
+    This is a *grammar sanity* check, not a full XQL parser — it deliberately
+    errs toward few false positives. Anything it flags is a hard validator
+    error (the corpus must stay lint-clean).
+    """
+    if not isinstance(body, str) or not body.strip():
+        report.err(rel, f"{where}: empty/non-string detection body")
+        return
+
+    # 1. Balanced double-quotes.
+    if body.count('"') % 2 != 0:
+        report.err(rel, f"{where}: unbalanced double-quotes in detection body")
+
+    # 2. Balanced parentheses (running depth must never go negative and must
+    #    end at zero). Parens *inside* double-quoted string literals are part of
+    #    the matched data (e.g. command-line tokens like ".connect(" or
+    #    "connect(") and must NOT count toward structure — only quotes already
+    #    confirmed balanced in check 1. We track whether we are inside a string
+    #    and skip those characters.
+    depth = 0
+    ok_parens = True
+    in_string = False
+    for ch in body:
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                ok_parens = False
+                break
+    if not ok_parens or depth != 0:
+        report.err(rel, f"{where}: unbalanced parentheses in detection body")
+
+    # 3. No placeholder/skeleton tokens.
+    upper = body.upper()
+    for tok in PLACEHOLDER_TOKENS:
+        if tok.upper() in upper:
+            report.err(rel, f"{where}: placeholder token {tok!r} in detection body")
+
+    # 4. Dataset/preset anchor (BIOC + XQL only; correlation bodies reference
+    #    BIOC(...)/XQL(...) names, not a dataset).
+    if require_dataset and not any(a in body for a in DATASET_ANCHORS):
+        report.err(rel, f"{where}: no dataset/preset reference in detection body")
 
 
 def main():
@@ -225,6 +305,21 @@ def main():
         target = d.get("execution", {}).get("target_platform")
         if target and target != "cross-platform" and target not in plats:
             report.warn(rel, f"execution.target_platform={target!r} not in metadata.pov_engine.platforms {sorted(plats)}")
+
+        # 4j. GAP-12 — XQL/BIOC grammar sanity lint on every deployable body.
+        detections = d.get("detections", {})
+        for i, b in enumerate(detections.get("biocs", [])):
+            lint_detection_body(report, rel, f"detections.biocs[{i}].logic",
+                                b.get("logic"), require_dataset=True)
+        for i, q in enumerate(detections.get("xql_queries", [])):
+            lint_detection_body(report, rel, f"detections.xql_queries[{i}].query",
+                                q.get("query"), require_dataset=True)
+        for i, c in enumerate(detections.get("correlation_rules", [])):
+            # Correlation logic is optional in the schema; only lint when present.
+            logic = c.get("logic")
+            if logic:
+                lint_detection_body(report, rel, f"detections.correlation_rules[{i}].logic",
+                                    logic, require_dataset=False)
 
         report.ok(f"ttp {ttp_id}")
 

@@ -154,6 +154,13 @@ class ScenarioSchema(BaseModel):
     cleanup: Optional[CleanupSchema] = None
     tags: list[str] = []
     author: Optional[str] = None
+    # GAP-3 / S-08 / S-10 — schema-vs-loader reconcile. The doc-schema once
+    # marked `created`/`last_updated` "required", but the loader never modelled
+    # them, so Pydantic silently dropped them. Model them here as optional ISO
+    # date strings so the loader's real contract matches the documented one.
+    # They are provenance only (not persisted to the ORM by _schema_to_orm_kwargs).
+    created: Optional[str] = None
+    last_updated: Optional[str] = None
 
     # Infra generator hints (optional, backward compatible)
     required_content: list[dict] = Field(default_factory=list,
