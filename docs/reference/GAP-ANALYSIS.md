@@ -141,17 +141,44 @@ newer plugins backfilled) · `GAP-ADAPT-03` (the 4 dead `equivalents[]` refs fix
   already carry first-class `type: Correlation` steps; the ASM `user-agent`
   `ioc_type` validates against the corpus schema (no change needed).
 
+### CLOSED in the 2026-06-11 Fable continuation
+
+- **`GAP-12`** **CLOSED** — `validate.py` now grammar-lints every BIOC/XQL body:
+  dataset↔content coherence is a HARD error (caught + fixed the real
+  `okta_sso`-for-AD bug in TTP-2026-0063), plus dataset-registry + stage-verb
+  WARN checks with a string-aware tokenizer (0 false positives).
+- **`GAP-9`** **CLOSED** — `GET /api/mitre/atlas/coverage` aggregates the ATLAS
+  surface for the AI planes (the 10 AI cards' `mitre_attack.atlas_techniques[]`,
+  18 mappings) separately from ATT&CK; `catalog.card_atlas_techniques()`.
+- **Tier-C increment 2 (H1.1)** **CLOSED** — `deploy/tier-c/tier_c_assert.py`
+  (audit-mode-aware observed-signal assertion engine + reference specs for
+  SIM-EDR-001/CDR-001/MP-004) + `tests/e2e_isolated/test_tier_c_isolated_exec.py`
+  (pure assertion tests + docker-gated e2e driver).
+- **`GAP-API-011`** **CLOSED** — EAL campaign runs already carry
+  `POST /api/eal/runs/{id}/abort` + the unified `pending|running|complete|
+  failed|aborted` status enum (shared with core Runs).
+- **Measurement loop** (the headline efficacy gap) **CLOSED** — `core/connectors/`
+  pulls observed alerts (XSIAM connector + manual batch ingest) and
+  auto-validates `Result` rows on technique/detection/name+window → real MTTD;
+  `POST /api/runs/{id}/observations|reconcile`, an opt-in background
+  auto-reconcile loop, all on the existing encrypted integration vault.
+- **Agent onboarding** — enrollment-token flow (`EnrollmentToken` +
+  `/api/agents/enroll*`); SimCore assigns the agent id, one-line installer.
+- **`GAP-ADAPT-02` accounting** — `GET /api/tools/adapters/coverage` classifies
+  the catalog as wired (17) / reference-only-by-design (14, tier-5 + c2) /
+  genuine candidates (38), replacing the misleading raw "orphan" count.
+
 ### REMAINS open / deferred
 
-- **Tier-C increment 2 (H1.1)** — reference-scenario expected-signal assertions
-  + the docker-gated `test_tier_c_isolated_exec.py` driver (the increment-1
-  README's "what ships next").
-- **Full `GAP-ADAPT-02` long tail** — the remaining reference-only / orphan
-  offensive packs beyond the high-value AD set now wired.
-- **`GAP-9`** — MITRE ATLAS ids alongside ATT&CK for the AI planes (AIRS /
-  AI_ACCESS), so T1567/T1656/T1059 stop being over-loaded catch-alls.
-- **`GAP-12`** — BIOC/XQL grammar lint against current XSIAM 2.x dialect in
-  `validate.py`.
+- **`GAP-ADAPT-02` candidate wiring** — 38 tier 1-4 non-c2 adapters are genuine
+  (low-priority) wiring candidates; surfaced now by `/api/tools/adapters/
+  coverage` but most are on-demand utilities that don't each warrant a bespoke
+  scenario. Wire opportunistically as scenarios need them.
+- **Tier-C CI wiring** — the path-filtered hard gate for the docker-gated
+  isolated-exec e2e (per the methodology doc's "CI integration" section).
+- **Live read-only Cortex API poll cadence tuning** — the auto-reconcile loop
+  exists and is opt-in; production cadence/back-pressure against a real tenant
+  is untuned.
 
 > The theme tables below are the **original 2026-06-07 audit** and are retained for
 > traceability. Where a row is listed as CLOSED above, the table entry is historical.
