@@ -367,6 +367,8 @@ from api.eal import router as eal_router                # noqa: E402
 from api.credentials import router as credentials_router  # noqa: E402
 from api.ttps import router as ttps_router              # noqa: E402
 from api.events import router as events_router          # noqa: E402
+from api.connectors import router as connectors_router  # noqa: E402
+from api.connectors import runs_reconcile_router        # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -382,6 +384,9 @@ app.include_router(eal_router, prefix="/api")
 app.include_router(credentials_router, prefix="/api")
 app.include_router(ttps_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
+# Connector framework — optional read-back / measurement loop (GAP: efficacy).
+app.include_router(connectors_router, prefix="/api")
+app.include_router(runs_reconcile_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------
