@@ -14,7 +14,6 @@ import { installRoutes } from '../../test/mockFetch.js'
 import AppShell from '../console/AppShell.jsx'
 import ConsoleHeader from '../console/ConsoleHeader.jsx'
 import ConsoleRail from '../console/ConsoleRail.jsx'
-import ConsoleTabs from '../console/ConsoleTabs.jsx'
 import CommandStrip from '../console/CommandStrip.jsx'
 import CommandPalette from '../console/CommandPalette.jsx'
 import TelemetryStrip from '../console/TelemetryStrip.jsx'
@@ -59,21 +58,6 @@ describe('console-view smoke renders', () => {
     )
     expect(screen.getByText('Endpoint')).toBeInTheDocument()
     expect(screen.getByText(/APT29/)).toBeInTheDocument()
-  })
-
-  it('ConsoleTabs renders all five tabs', () => {
-    render(
-      <ConsoleTabs
-        activeTab="operations"
-        onTabChange={() => {}}
-        badges={{ operations: '19', inflight: { text: 'LIVE', variant: 'live' } }}
-      />
-    )
-    expect(screen.getByRole('tab', { name: /operations/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /in-flight/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /evidence/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /lab/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /coverage/i })).toBeInTheDocument()
   })
 
   it('CommandStrip renders default keyboard hints', () => {

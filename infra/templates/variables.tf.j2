@@ -34,6 +34,12 @@ variable "edr_target_count" {
   default     = {{ edr_target_count }}
 }
 
+variable "ttl_hours" {
+  description = "Torque environment time-to-live hint, in hours. Surfaced as a CortexSimTTLHours tag so an external reaper can expire the environment."
+  type        = number
+  default     = {{ ttl_hours }}
+}
+
 variable "tags" {
   description = "Additional tags applied to all resources"
   type        = map(string)

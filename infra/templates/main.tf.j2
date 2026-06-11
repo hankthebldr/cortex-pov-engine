@@ -18,8 +18,9 @@ provider "aws" {
   region = var.region
   default_tags {
     tags = {
-      CortexSimBundle = "{{ bundle_id }}"
-      Project         = var.project_name
+      CortexSimBundle   = "{{ bundle_id }}"
+      Project           = var.project_name
+      CortexSimTTLHours = tostring(var.ttl_hours)
     }
   }
 }

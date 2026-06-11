@@ -9,6 +9,7 @@ Endpoints:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Optional
@@ -72,10 +73,16 @@ def list_modules(provider: str = Query("aws")) -> dict:
 
 
 @router.post("/generate", response_model=InfraGenerateResponse)
-def generate_bundle(body: InfraGenerateRequest) -> InfraGenerateResponse:
+async def generate_bundle(body: InfraGenerateRequest) -> InfraGenerateResponse:
+    """Generate a Terraform bundle.
+
+    GAP-API-010 — bundle generation does blocking filesystem work
+    (``shutil.copytree`` + ``tar``). It is offloaded to a worker thread via
+    ``asyncio.to_thread`` so the event loop is never blocked while a (possibly
+    large) module tree is copied and archived."""
     gen = _get_generator()
     try:
-        return gen.generate(body)
+        return await asyncio.to_thread(gen.generate, body)
     except GenerationError as e:
         logger.warning("generation failed: %s", e)
         raise HTTPException(

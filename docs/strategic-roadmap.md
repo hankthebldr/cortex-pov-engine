@@ -162,8 +162,18 @@ product coverage matrix.
 under the right identities* — they validate "we ran some payload." Tier C
 is the test that catches identity-harness regressions silently
 degrading multi-identity scenarios. Ship in 2 commits:
-- Container image + auditd + sinkhole infrastructure (3 weeks)
-- Tier C reference scenarios (SIM-EDR-001, SIM-CDR-001, SIM-MP-004) (2 weeks)
+- **✅ increment 1 shipped** — Container image + auditd + sinkhole
+  infrastructure. Lives under `deploy/tier-c/`: an Ubuntu 22.04 runner
+  pre-loaded with the identity-harness service accounts + auditd, a
+  DNS/HTTP sinkhole, an `internal: true` (no-egress) compose profile, an
+  operator script (`run-tier-c.sh`) that runs a push bundle and collects
+  `observed-signals.json` + the raw audit log, and docker-free asset
+  guards (`tests/e2e_isolated/test_tier_c_assets.py`). The harness is
+  real: no egress, ephemeral, audited. See the "Tier-C — isolated
+  execution (increment 1)" section of the methodology doc.
+- ⏳ increment 2 — Tier C reference scenarios (SIM-EDR-001, SIM-CDR-001,
+  SIM-MP-004) + per-scenario assertions diffing observed signals against
+  `expected_detections` (2 weeks).
 
 ### H1.2  Backend run-abort + run-events SSE
 **Anchor:** UI surfaces already wired; the toast says "Abort endpoint
