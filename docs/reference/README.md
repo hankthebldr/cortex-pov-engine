@@ -31,12 +31,13 @@
   (58 loaded by the schema validator) · 63 active TTP cards · 13 EAL plugins ·
   69 tool-adapter packs · 11 AWS IaC modules · 48 HTTP routes · 14 detection planes
   (13 documented + the then-undocumented AI_SPM).
-- **Counted ground truth (post-revamp, verified 2026-06-08):** **63 loadable
-  scenarios** (all `status: active`, 0 rejected / 0 dangling refs) · **67 TTP cards**
-  (519 detection cards) · 13 EAL plugins · **69 tool-adapter packs**
-  (tier1=3 · tier2=1 · tier3=20 · tier4=34 · tier5=11) · 11 AWS IaC modules ·
-  **65 HTTP routes across 11 routers** (64 `@router` + `/api/health`) · 14 detection
-  planes. CSPM/ASM/TIM each now ship 1 scenario + 1 card; EDR=7, NDR=7 (+7 cards).
+- **Counted ground truth (Fable pass, verified 2026-06-10):** **68 loadable
+  scenarios** (all `status: active`, 0 rejected / 0 dangling refs; **430/430
+  detection_id slugs resolve** — GAP-4 closed) · **72 TTP cards**
+  (566 detection cards) · 13 EAL plugins · **70 tool-adapter packs** ·
+  11 AWS IaC modules · 14 detection planes. ASM=3 scenarios (exposed-surface +
+  vuln-scan recon + OSINT); EDR=8 (+Linux ransomware); CDR=6 (+systemd/cron
+  persistence); ITDR=6 (+AD roasting, adapter-gated); NDR=7.
   See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "RESOLUTION STATUS (2026-06-08)" for what
   closed across the seven-theme revamp.
 

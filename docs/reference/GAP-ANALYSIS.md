@@ -113,20 +113,45 @@ newer plugins backfilled) · `GAP-ADAPT-03` (the 4 dead `equivalents[]` refs fix
 + loader validation) · `GAP-ADAPT-04` (Gophish/DVWA semantic mismatches corrected) ·
 `GAP-ADAPT-07` (`identity_required` enum-validated at load).
 
+### CLOSED in the 2026-06-10 Fable pass
+
+- **`GAP-API-005`** — queue durability **CLOSED**. The orchestrator queue is now a
+  write-through cache over a `queued_tasks` DB table; `orchestrator.rehydrate()`
+  runs on the FastAPI lifespan, restoring undelivered tasks into the in-memory
+  queue and failing any orphaned `pending`/`running` run whose task was lost on
+  restart. (`core/models.py::QueuedTask`, `core/engine/orchestrator.py`,
+  `core/main.py` lifespan; `tests/engine/test_orchestrator_queue.py`.)
+- **`GAP-4`** — per-detection traceability **CLOSED**. A full resolution sweep
+  shows **430 of 430** scenario `detection_id` slugs now resolve to a card
+  detection object (the former last-holdout SIM-NDR-005 pre-flight step now
+  resolves). 0 unresolved.
+- **`GAP-API-004` / `GAP-PUSH-001`** (partial) — push-mode runs now advance to a
+  terminal `staged` state on bundle generation instead of orphaning at `pending`;
+  push and pull resolve step identity from one shared `spec/identity_harness.json`.
+- **`GAP-AGENT-003`** — the beacon distinguishes an unknown-agent 404 from idle
+  and re-registers transparently.
+- **Tier-C isolated execution (H1.1)** — **increment 1 shipped** (`deploy/tier-c/`:
+  audited runner image + network sinkhole + operator script + asset tests).
+- **`GAP-ADAPT-02`** (high-value increment) — the AD lab is now launchable
+  end-to-end: SIM-ITDR-006 detonates AS-REP Roast + Kerberoast against the
+  itdr-module-seeded accounts through the consent-gated TOOL-IMPACKET/TOOL-RUBEUS
+  adapters; mp-002's impacket step is now adapter-wired. Backing card
+  TTP-2026-0075.
+- **Low-severity review nits** — dead `ConsoleTabs.jsx` removed; `mp-001`/`mp-003`
+  already carry first-class `type: Correlation` steps; the ASM `user-agent`
+  `ioc_type` validates against the corpus schema (no change needed).
+
 ### REMAINS open / deferred
 
-- **`GAP-API-005`** — queue durability. The orchestrator task queue is still
-  in-memory; a SimCore restart still drops undelivered tasks. (abort/control/SSE
-  now make this *recoverable*, but the queue itself is not yet persisted.)
-- **`GAP-4`** — per-detection `detection_id` slug traceability. Largely mitigated:
-  **341 of 342** expected-detection slugs now resolve to a card detection object
-  (the last unresolved one is the SIM-NDR-005 pre-flight step, `S-05a`).
-- **Tier-C isolated execution (H1.1)** — sandboxed/isolated execution backend not
-  yet built.
-- **Full `GAP-ADAPT-02`** — the remaining offensive-adapter → scenario wiring
-  (the long tail of reference-only / orphan packs beyond the high-value set).
-- **Low-severity review nits** — ASM scenario `ioc_type`, dead `ConsoleTabs.jsx`,
-  and promoting the correlation step in `mp-001`/`mp-003` to a first-class step.
+- **Tier-C increment 2 (H1.1)** — reference-scenario expected-signal assertions
+  + the docker-gated `test_tier_c_isolated_exec.py` driver (the increment-1
+  README's "what ships next").
+- **Full `GAP-ADAPT-02` long tail** — the remaining reference-only / orphan
+  offensive packs beyond the high-value AD set now wired.
+- **`GAP-9`** — MITRE ATLAS ids alongside ATT&CK for the AI planes (AIRS /
+  AI_ACCESS), so T1567/T1656/T1059 stop being over-loaded catch-alls.
+- **`GAP-12`** — BIOC/XQL grammar lint against current XSIAM 2.x dialect in
+  `validate.py`.
 
 > The theme tables below are the **original 2026-06-07 audit** and are retained for
 > traceability. Where a row is listed as CLOSED above, the table entry is historical.
