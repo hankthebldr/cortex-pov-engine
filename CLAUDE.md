@@ -69,7 +69,7 @@ cd sources/<tool> && cargo build --release
 - **Pull** — agent polls SimCore, receives task, executes with identity harness, reports back
 - **Push** — SimCore generates self-contained bash bundle or K8s YAML; DC downloads and executes offline
 
-**Execution lifecycle (pull mode is end-to-end working).** Launch → orchestrator seeds Results + enqueues a step task → the Go beacon polls `/api/agents/{id}/tasks`, iterates `steps[]` resolving identity agent-side, and POSTs per-step `/output` → `/complete`. Operators can **abort** a live run (`POST /api/runs/{id}/abort` → `aborted` state; the agent polls `GET /api/runs/{id}/control` every 2s and kills the in-flight process group). Live progress streams over **SSE** (`GET /api/runs/{id}/events` scoped + `GET /api/events` global). Agent liveness is **online/stale/offline**, derived from `last_seen` age with a background heartbeat sweep that emits `agent.status` SSE frames. (Still in-memory: the task queue is not yet durable across a SimCore restart — GAP-API-005.) Full surface: `docs/reference/api-and-agent-surface.md`.
+**Execution lifecycle (pull mode is end-to-end working).** Launch → orchestrator seeds Results + enqueues a step task → the Go beacon polls `/api/agents/{id}/tasks`, iterates `steps[]` resolving identity agent-side, and POSTs per-step `/output` → `/complete`. Operators can **abort** a live run (`POST /api/runs/{id}/abort` → `aborted` state; the agent polls `GET /api/runs/{id}/control` every 2s and kills the in-flight process group). Live progress streams over **SSE** (`GET /api/runs/{id}/events` scoped + `GET /api/events` global). Agent liveness is **online/stale/offline**, derived from `last_seen` age with a background heartbeat sweep that emits `agent.status` SSE frames. The task queue is now **durable** (GAP-API-005 closed): it is a write-through cache over the `queued_tasks` DB table and is rehydrated on startup (`orchestrator.rehydrate()`), so a SimCore restart restores undelivered tasks and fails any orphaned `running` run whose task was lost. Push-mode runs reach a terminal `staged` state on bundle generation. Full surface: `docs/reference/api-and-agent-surface.md`.
 
 **Identity harness** — every TTP step runs via a service account (`www-data`, `postgres`, `node`, `nobody`, etc.) to create realistic process causality chains in XSIAM. The harness wraps commands with `runuser -l`, `sudo -u`, or `su -s /bin/bash`.
 
@@ -82,7 +82,7 @@ cd sources/<tool> && cargo build --release
 - `core/api/` — FastAPI routers: scenarios, runs (with report export), results (with validation), tools, agents, mitre (coverage heatmap data)
 - `core/engine/` — scenario_loader (YAML→DB with Pydantic validation), orchestrator (auto-seeds Result rows from expected_detections), push_generator, uctc_mapper
 - `core/tools/` — `registry.py` (static TOOL_REGISTRY dict) + `instantiator.py` (subprocess lifecycle manager)
-- `core/planes/` — per-plane modules: edr, cdr, ndr, itdr, cloud_app, analytics
+- `core/planes/` — declarative `PlaneDescriptor` registry, one frozen-dataclass module per active plane (edr, cdr, ndr, itdr, cloud_app, analytics, ai_access, airs, ai_spm, asm, browser, cspm, koi, tim); `base.py` defines the descriptor model and `__init__.py` the registry
 
 ### Key Data Flows
 
@@ -109,12 +109,12 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 
 | Plane | Cortex Engine | Status |
 |-------|--------------|--------|
-| CDR | Cortex Cloud / Prisma Cloud Compute | 5 scenarios + IaC module (EKS) |
-| EDR | Cortex XDR Agent | 7 scenarios (credential dumping · reverse shell · persistence · defense evasion · lateral movement · LSASS memory dump (`SIM-EDR-006`) · ESXi inhibit-recovery (`SIM-EDR-007`)) + IaC module (diverse Linux targets) |
+| CDR | Cortex Cloud / Prisma Cloud Compute | 6 scenarios (container enum · cryptominer · container escape · k8s lateral · wildfire trigger · systemd/cron persistence (`SIM-CDR-006`)) + IaC module (EKS) |
+| EDR | Cortex XDR Agent | 8 scenarios (credential dumping · reverse shell · persistence · defense evasion · lateral movement · LSASS memory dump (`SIM-EDR-006`) · ESXi inhibit-recovery (`SIM-EDR-007`) · Linux ransomware impact (`SIM-EDR-008`)) + IaC module (diverse Linux targets) |
 | NDR | Network Security / Firewall Analytics | 7 scenarios + 7 TTP cards (C2 HTTP beacon · DNS tunnel · Stratum cryptojacking · SMB lateral sweep · bulk HTTPS exfil (`TTP-2026-0068`) · FTP cleartext+STOR · SSH outbound+KEXINIT) + IaC module (3 stitching patterns) + per-protocol EAL plugins (`c2_http_beacon`, `dns_tunnel_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`, `bulk_https_exfil`, `ftp_egress`, `ssh_egress`) |
-| ITDR | Cortex ITDR | 5 scenarios (active) — synthetic IdP audit-log emission via the `idp_signin_emulator` EAL plugin (Phase 9) — impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout — plus IaC module (AD lab with seeded roastable accounts) |
+| ITDR | Cortex ITDR | 6 scenarios (active) — 5 synthetic IdP audit-log emissions via the `idp_signin_emulator` EAL plugin (impossible travel, MFA fatigue, credential stuffing, token replay, brute-force lockout) **plus `SIM-ITDR-006` AD offline-roasting harvest** (AS-REP Roast + Kerberoast via the consent-gated `TOOL-IMPACKET`/`TOOL-RUBEUS` adapters against the IaC AD lab) — IaC module (AD lab with seeded roastable accounts) |
 | CSPM | Cortex Cloud Posture Management | 1 scenario + TTP card (`cspm-001` posture misconfiguration sweep against the module's planted findings) + IaC module (intentional misconfigs) |
-| ASM | Cortex Attack Surface Management | 1 scenario + TTP card (`asm-001` exposed-surface discovery) + IaC module (multi-service exposed host) |
+| ASM | Cortex Attack Surface Management | 3 scenarios + TTP cards (`asm-001` exposed-surface discovery · `asm-002` vuln-scan recon · `asm-003` OSINT victim-info — first Reconnaissance (TA0043) coverage) + IaC module (multi-service exposed host) |
 | TIM | Cortex Threat Intel Management | 1 scenario + TTP card (`tim-001` TAXII IOC-feed match) + IaC module (TAXII + fake C2) |
 | Cloud App | Cortex Cloud App Security | 5 scenarios (active) — outbound OAuth 2.0 authorize requests against Okta / Microsoft / Google with planted risky scopes via the `oauth_grant_emulator` EAL plugin (Phase 9) |
 | Analytics | XSIAM Correlation Engine | 5 multi-plane stitching scenarios (`scenarios/multi_plane/mp-001..005-*.yml`) |
