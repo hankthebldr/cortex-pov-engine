@@ -430,6 +430,46 @@ catalog (currently 15 active + drafts).
 If we exceed: parallelize (5 containers × 3 scenarios each), or shard by
 plane (one container per plane, all that plane's scenarios in series).
 
+## Tier-C — isolated execution (increment 1: infra — **shipped**)
+
+> Status as of this section: **increment 1 (infrastructure) shipped** under
+> `deploy/tier-c/`. Increment 2 (reference scenarios + execution assertions)
+> is the next PR. Roadmap H1.1 splits Tier-C into exactly these two commits.
+
+The roadmap (H1.1) splits Tier-C into two commits. **Increment 1 — the
+container image + auditd + sinkhole infrastructure — has shipped.** It lives
+under `deploy/tier-c/` rather than `tests/e2e_isolated/target/` (the path
+sketched earlier in this doc), so the isolation stack is operable as a
+standalone deploy artifact a DC can run by hand, not only as a CI fixture.
+
+What landed:
+
+| Asset | Path | Role |
+|-------|------|------|
+| Runner image | `deploy/tier-c/Dockerfile` | Ubuntu 22.04 + the identity-harness service accounts (`www-data postgres mysql node python3 nobody svc-backup`, mirroring `push_generator.run_as`) + auditd. Executes a mounted push bundle, dumps audit output. |
+| Audit ruleset | `deploy/tier-c/audit.rules` | `execve` (process tree) · `setuid`/`setresuid`/… (identity transitions) · `connect` (egress intent) · credential-file watches (`/etc/shadow`, `~/.aws/credentials`, `~/.ssh`, `/home`). Stable `-k` keys: `cortexsim_exec/setid/net/creds`. |
+| Sinkhole | `deploy/tier-c/sinkhole/` | dnsmasq wildcard (`address=/#/`, `no-resolv`) → every name resolves to the sidecar; stdlib HTTP/HTTPS catch-all logs every request to `http.jsonl` and returns 200. |
+| Compose profile | `deploy/tier-c/docker-compose.tier-c.yml` | runner + sinkhole on a bridge with `internal: true` (**no gateway, no egress**), no published host ports, least-privilege cap sets, results bind-mount. |
+| Operator script | `deploy/tier-c/run-tier-c.sh` | takes `--bundle <file>` or `--scenario <id>` (fetches from a running SimCore), spins the stack, collects `observed-signals.json` + `audit.log` + `bundle-stdout.log` + `sinkhole/http.jsonl`, tears down. |
+| Asset tests | `tests/e2e_isolated/test_tier_c_assets.py` | docker-free guards: assets exist, compose is valid YAML with an internal network + no host-port exposure, audit.rules captures the key syscalls, scripts pass `bash -n`. |
+
+**Isolation guarantees (verified by `test_tier_c_assets.py` + `docker compose
+config`):** no external egress (`internal: true` bridge, DNS sinkholed), no
+published host ports, ephemeral (`down -v` on exit), audited (auditd ground
+truth), least-privilege caps. The runner degrades gracefully to
+stdout+sinkhole evidence when the kernel audit subsystem is unavailable
+(nested/rootless CI).
+
+**How the output maps to `expected_detections`:** the `setuid` records +
+`harness_identities_from_stdout` prove the declared step `identity`; the
+`creds` watches prove credential-access detections; `connect` records +
+`sinkhole/http.jsonl` prove C2/exfil detections; `exec` executables prove a
+binary fired. A step that the YAML says runs as `www-data` but that audit
+shows running as root is exactly the silent harness regression Tier-C catches.
+Formalising these as per-scenario assertions is **increment 2**.
+
+Full operator guide: `deploy/tier-c/README.md`.
+
 ## Roadmap to implement
 
 | Phase | Scope | CI impact |
@@ -437,13 +477,13 @@ plane (one container per plane, all that plane's scenarios in series).
 | **0** (now) | This design doc reviewed + approved | none |
 | **1** | Tier A — shellcheck + bash -n on all ttps/*.sh | +5s, hard gate |
 | **2** | Tier B — push bundle integrity tests (no execution) | +10s, hard gate |
-| **3** | Container image + auditd + sinkhole infrastructure (no tests yet) | none, image cached |
+| **3 ✅** | Container image + auditd + sinkhole infrastructure (no exec tests yet) — **shipped** under `deploy/tier-c/`; asset guards in `tests/e2e_isolated/test_tier_c_assets.py` | none, image cached |
 | **4** | Tier C — 3 reference scenarios end-to-end (SIM-EDR-001, SIM-CDR-001, SIM-MP-004) | +90s, hard gate, path-filtered |
 | **5** | Tier C — backfill every active scenario | +60s incremental, hard gate |
 | **6** | Playwright spec migration to console UI + remove `?theme=legacy` + remove e2e `continue-on-error` | Playwright back to hard gate |
 
 Each phase is its own PR. Phase 1 is small and could land tomorrow; phase 4
-is the meaty one.
+is the meaty one. **Phase 3 has landed** (Tier-C increment 1).
 
 ## Open questions for the DC team
 

@@ -1,0 +1,114 @@
+# ===========================================================================
+# CortexSim Tier-C  —  isolated execution stack
+# ---------------------------------------------------------------------------
+# e2e execution methodology, Tier C, increment 1 (infra).
+#
+# Brings up:
+#   - sinkhole  : DNS + HTTP/HTTPS catch-all (all names -> sinkhole, no egress)
+#   - runner    : the audited, identity-harnessed push-bundle executor
+#
+# on an INTERNAL bridge network with NO route to the host or the internet.
+# The runner mounts a push bundle read-only and writes audit + observed-signal
+# output to ./results (bind-mounted). The runner uses the sinkhole as its DNS
+# resolver, so every lookup resolves to the sinkhole and every connect lands
+# inside the isolated network.
+#
+# Drive it via deploy/tier-c/run-tier-c.sh (handles build, bundle staging,
+# teardown). Direct usage:
+#
+#   CORTEXSIM_BUNDLE_PATH=/abs/path/to/bundle.sh \
+#     docker compose -f deploy/tier-c/docker-compose.tier-c.yml \
+#     --profile tier-c up --build --abort-on-container-exit \
+#     --exit-code-from runner
+# ===========================================================================
+
+networks:
+  # internal: true is the isolation guarantee — Docker creates NO gateway to
+  # the host or the outside world on this bridge. Containers can talk to each
+  # other; nothing can egress. A fixed subnet lets us pin the sinkhole to a
+  # known IP so the runner can use it as its DNS resolver.
+  tier-c-isolated:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.211.0.0/24
+
+services:
+  sinkhole:
+    build:
+      context: ./sinkhole
+      dockerfile: Dockerfile
+    image: cortexsim-tier-c-sinkhole:latest
+    container_name: cortexsim-tier-c-sinkhole
+    profiles: ["tier-c"]
+    # NO `ports:` mapping — the sinkhole is reachable ONLY from inside the
+    # isolated network, never from the host. That is deliberate: exposing it
+    # would defeat the no-egress guarantee.
+    cap_drop:
+      - ALL
+    cap_add:
+      # dnsmasq binds :53; CAP_NET_BIND_SERVICE lets the catch-all bind :80/:443.
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      tier-c-isolated:
+        # Fixed IP + alias so the runner can point resolv.conf at it.
+        ipv4_address: 10.211.0.2
+        aliases:
+          - sinkhole
+    environment:
+      - CORTEXSIM_RESULTS_DIR=/results
+    volumes:
+      - ./results:/results
+    restart: "no"
+
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cortexsim-tier-c-runner:latest
+    container_name: cortexsim-tier-c-runner
+    profiles: ["tier-c"]
+    depends_on:
+      - sinkhole
+    # auditd needs exactly these two caps and nothing else; we drop the rest.
+    cap_drop:
+      - ALL
+    cap_add:
+      - AUDIT_CONTROL
+      - AUDIT_WRITE
+      # runuser/su switching identities needs SETUID/SETGID + SETPCAP/CHOWN
+      # for the harness; DAC_OVERRIDE/DAC_READ_SEARCH for credential-file reads.
+      - SETUID
+      - SETGID
+      - SETPCAP
+      - CHOWN
+      - DAC_OVERRIDE
+      - DAC_READ_SEARCH
+      - FOWNER
+    security_opt:
+      # The runner DOES legitimately escalate via setuid (runuser); it cannot
+      # use no-new-privileges. It is still confined: no egress, ephemeral,
+      # minimal cap set. Keep the default seccomp profile.
+      - seccomp=unconfined
+    # Point the runner's DNS at the sinkhole so every lookup resolves locally.
+    # (Docker injects 127.0.0.11 by default; we override to the sidecar.)
+    dns:
+      - 10.211.0.2
+    dns_search: []
+    networks:
+      tier-c-isolated:
+        aliases:
+          - runner
+    environment:
+      - CORTEXSIM_BUNDLE_DIR=/bundle
+      - CORTEXSIM_RESULTS_DIR=/results
+      - CORTEXSIM_BUNDLE_FILE=${CORTEXSIM_BUNDLE_FILE:-}
+    volumes:
+      # Push bundle, read-only. CORTEXSIM_BUNDLE_PATH points at a host dir (or
+      # a single .sh); run-tier-c.sh stages a single bundle into ./bundle.
+      - ${CORTEXSIM_BUNDLE_PATH:-./bundle}:/bundle:ro
+      - ./results:/results
+    restart: "no"
