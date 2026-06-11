@@ -91,9 +91,11 @@ func ExecuteCtx(ctx context.Context, identity ExecutionIdentity) (ExecResult, er
 }
 
 // serviceAccounts is the allowlist of known service accounts that should be
-// impersonated via runuser. It MUST stay in sync, verbatim, with the bash
-// identity-harness allowlist in core/engine/push_generator.py (run_as), so pull
-// and push modes resolve a scenario's identity string identically.
+// impersonated via runuser. It MUST stay in sync with the canonical
+// identity-harness spec at spec/identity_harness.json — the SINGLE source of
+// truth shared with the push-mode bash generator (core/engine/push_generator.py
+// via core/engine/identity_spec.py). harness_spec_test.go asserts this map
+// matches the spec so push and pull resolve a scenario's identity identically.
 var serviceAccounts = map[string]bool{
 	"www-data":   true,
 	"postgres":   true,

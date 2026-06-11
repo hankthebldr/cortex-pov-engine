@@ -1,0 +1,25 @@
+{
+  "_comment": "Canonical CortexSim identity-harness spec — the SINGLE source of truth shared by the push-mode bash generator (core/engine/push_generator.py via core/engine/identity_spec.py) and the pull-mode Go beacon (agent/identity, validated against this file by harness_spec_test.go). A scenario step's `identity` is a USERNAME string; both execution paths resolve it to the same {mode, wrapper} so a scenario behaves identically on push and pull. GAP-PUSH-001.",
+  "version": 1,
+  "direct_identities": ["root", "container-runtime", "direct"],
+  "service_accounts": [
+    "www-data",
+    "postgres",
+    "mysql",
+    "node",
+    "python3",
+    "nobody",
+    "svc-backup"
+  ],
+  "modes": {
+    "direct": "run the command as-is (no impersonation wrapper)",
+    "runuser": "runuser -l <username> -c '<command>' (preferred — cleanest causality)",
+    "sudo_u": "sudo -u <username> <args...>",
+    "su": "su -s /bin/bash <username> -c '<command>'"
+  },
+  "resolution": {
+    "empty_or_direct_identity": "direct",
+    "known_service_account": "runuser",
+    "unknown_username": "runuser (best-effort; emit a WARN)"
+  }
+}
