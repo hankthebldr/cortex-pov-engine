@@ -183,15 +183,39 @@ The Tier-C mapping (formalised as assertions in **increment 2**):
 If the audit log shows `grep` ran as **root** when the YAML said `www-data`,
 the harness silently regressed — exactly the failure Tier-C is built to catch.
 
-## What ships next (increment 2)
+## Increment 2 — shipped
 
-- Tier-C reference scenarios — `SIM-EDR-001`, `SIM-CDR-001`, `SIM-MP-004` —
-  each with explicit expected-signal assertions.
-- A `tests/e2e_isolated/test_tier_c_isolated_exec.py` that drives this stack
-  (docker-gated, skips gracefully without docker) and asserts the observed
-  signals match each reference scenario's `expected_detections`.
-- Optional CI wiring (path-filtered, hard gate) per the methodology doc's
-  "CI integration" section.
+The expected-signal assertion layer is now in place:
 
-The current increment-1 assets are covered by
-`tests/e2e_isolated/test_tier_c_assets.py` (no docker required to pass).
+- **`tier_c_assert.py`** (stdlib only, ships in the runner image) turns an
+  `observed-signals.json` summary into a verdict against a per-scenario
+  **expectation** — the formal version of the mapping table above. It declares
+  what each scenario must produce (identities forked, credential files read,
+  network egress, binaries fired) and checks the observed ground truth against
+  it. It is **audit-mode aware**: in `degraded` mode the count-based checks
+  (creds/net/exec) become `skip` rather than `fail`, while the stdout-derived
+  identity check still runs.
+- **Reference expectations** for `SIM-EDR-001`, `SIM-CDR-001`, `SIM-MP-004` are
+  hand-authored in `REFERENCE_EXPECTATIONS`; any other scenario gets a baseline
+  auto-derived from its steps (`derive_expectation`).
+- **`tests/e2e_isolated/test_tier_c_isolated_exec.py`** drives the assertion
+  engine with synthetic passing / failing / degraded fixtures (always run, no
+  docker) AND a docker-gated end-to-end test that runs `run-tier-c.sh` against a
+  real bundle and applies the same verdict. The e2e test is opt-in: it needs
+  docker plus either `CORTEXSIM_TIERC_BUNDLE=<bundle.sh>` or
+  `CORTEXSIM_SMOKE_URL=<live SimCore>` (it never fabricates signals — it skips).
+
+To apply the verdict to a run you collected:
+
+```python
+import json
+from deploy.tier_c.tier_c_assert import evaluate_scenario  # or import by path
+observed = json.load(open("results/<run-id>/observed-signals.json"))
+scenario = yaml.safe_load(open("scenarios/edr/edr-001-credential-dumping.yml"))
+report = evaluate_scenario(scenario, observed)
+print(report.to_dict())   # {"passed": true/false, "checks": [...]}
+```
+
+Increment-1 assets remain covered by `tests/e2e_isolated/test_tier_c_assets.py`
+(no docker required). Still open: optional path-filtered CI wiring per the
+methodology doc's "CI integration" section.
