@@ -107,7 +107,11 @@ class Run(Base):
     mode: Mapped[str] = mapped_column(String, nullable=False)           # pull | push
     target: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     identity_context: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")  # pending | running | complete | failed | aborted
+    # pending | running | complete | failed | aborted | staged
+    #   staged — terminal state for a push-mode run: the self-contained bundle
+    #   was generated and SimCore has no further role (the bundle never phones
+    #   home). See orchestrator._handle_push (GAP-API-004 / GAP-PUSH-001).
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     output: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -219,6 +223,41 @@ class ToolInstance(Base):
             "port": self.port,
             "last_health_check": self.last_health_check.isoformat() if self.last_health_check else None,
             "installed_at": self.installed_at.isoformat() if self.installed_at else None,
+        }
+
+
+class QueuedTask(Base):
+    """Durable pull-mode task queue (GAP-API-005).
+
+    The orchestrator keeps an in-memory queue for the hot path, but a SimCore
+    restart would otherwise drop every undelivered task while the durable Run
+    row stays ``running`` forever. Each enqueued Task is mirrored here so the
+    queue can be rehydrated on boot; rows are deleted on dequeue/abort/complete.
+
+    The full Task payload (steps + identity context) is stored as JSON so the
+    orchestrator can reconstruct an identical ``Task`` dataclass on rehydrate
+    without re-reading the scenario.
+    """
+
+    __tablename__ = "queued_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    agent_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    scenario_id: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "task_id": self.task_id,
+            "run_id": self.run_id,
+            "agent_id": self.agent_id,
+            "scenario_id": self.scenario_id,
+            "payload": self.payload,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 

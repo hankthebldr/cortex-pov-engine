@@ -3,6 +3,7 @@ package beacon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -55,7 +56,11 @@ func newRecordingServer(t *testing.T, taskOnce *Task) *recordingServer {
 				_ = json.NewEncoder(w).Encode(map[string]any{"task": taskOnce})
 				return
 			}
-			w.WriteHeader(404)
+			// Real API contract: a REGISTERED agent with no work gets
+			// 200 {"task": null}; a 404 is reserved for an UNKNOWN agent
+			// (GAP-AGENT-003). The recording server models the registered-idle
+			// case here.
+			_ = json.NewEncoder(w).Encode(map[string]any{"task": nil})
 		case strings.HasSuffix(r.URL.Path, "/control") && r.Method == http.MethodGet:
 			runID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/runs/"), "/control")
 			abort := rs.abortFlag.Load()
@@ -127,7 +132,8 @@ func TestRegister_PostsExpectedBody(t *testing.T) {
 // PollTasks
 // -----------------------------------------------------------------------------
 
-func TestPollTasks_404MeansNoTask(t *testing.T) {
+func TestPollTasks_IdleMeansNoTask(t *testing.T) {
+	// A registered-but-idle agent gets 200 {"task": null} → (nil, nil).
 	rs := newRecordingServer(t, nil)
 	defer rs.Close()
 
@@ -137,7 +143,26 @@ func TestPollTasks_404MeansNoTask(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if task != nil {
+		t.Errorf("expected nil task when idle, got %+v", task)
+	}
+}
+
+func TestPollTasks_404MeansUnknownAgent(t *testing.T) {
+	// GAP-AGENT-003 — a 404 is now distinct from "no task": it signals the
+	// agent is unknown to SimCore and must re-register.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte(`{"error":"Agent not found","code":"AGENT_NOT_FOUND"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "ghost", 0)
+	task, err := c.PollTasks()
+	if task != nil {
 		t.Errorf("expected nil task on 404, got %+v", task)
+	}
+	if !errors.Is(err, ErrUnknownAgent) {
+		t.Fatalf("expected ErrUnknownAgent, got %v", err)
 	}
 }
 
@@ -224,6 +249,59 @@ func TestPollTasks_NullTaskIsIdle(t *testing.T) {
 	}
 	if got != nil {
 		t.Errorf("expected nil task for null envelope, got %+v", got)
+	}
+}
+
+// TestRunLoop_ReRegistersOnUnknownAgent verifies the GAP-AGENT-003 recovery
+// path: when the server first reports the agent unknown (404) the run loop
+// re-registers, and once registered an idle poll (200 {"task":null}) is a
+// clean no-op. We drive the loop directly and cancel after the recovery.
+func TestRunLoop_ReRegistersOnUnknownAgent(t *testing.T) {
+	var mu sync.Mutex
+	registered := false
+	var registerCalls, pollCalls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/agents/register" && r.Method == http.MethodPost:
+			mu.Lock()
+			registered = true
+			registerCalls++
+			mu.Unlock()
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte(`{"status":"registered"}`))
+		case strings.HasSuffix(r.URL.Path, "/tasks") && r.Method == http.MethodGet:
+			mu.Lock()
+			pollCalls++
+			isReg := registered
+			mu.Unlock()
+			if !isReg {
+				// Unknown agent until it re-registers.
+				w.WriteHeader(404)
+				_, _ = w.Write([]byte(`{"code":"AGENT_NOT_FOUND"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"task": nil})
+		default:
+			w.WriteHeader(200)
+		}
+	}))
+	defer srv.Close()
+
+	// Fast tick so the loop polls a few times quickly.
+	c := New(srv.URL, "ghost", 10*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	c.Run(ctx)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if registerCalls == 0 {
+		t.Fatalf("expected the run loop to re-register after a 404, got %d register calls", registerCalls)
+	}
+	if pollCalls < 2 {
+		t.Fatalf("expected multiple polls (recovery), got %d", pollCalls)
 	}
 }
 

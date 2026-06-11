@@ -280,7 +280,9 @@ async def poll_tasks(
     agent.status = "online"
     await db.commit()
 
-    task = orchestrator.dequeue(agent_id)
+    # DB-aware dequeue so the durable queued_tasks row is removed on delivery
+    # (GAP-API-005). A restart will not re-deliver an already-dispatched task.
+    task = await orchestrator.dequeue_for_agent(agent_id, db)
     if task is None:
         logger.debug("poll_tasks agent=%s no tasks", agent_id)
         return {"task": None}

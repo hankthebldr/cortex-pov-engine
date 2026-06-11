@@ -8,15 +8,24 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/hankthebldr/cortexsim/agent/identity"
 )
+
+// ErrUnknownAgent is returned by PollTasks when SimCore responds 404 — i.e. the
+// agent is not (or no longer) registered. This is distinct from a normal idle
+// "no task" response so the run loop can re-Register() and recover, instead of
+// polling forever doing nothing (GAP-AGENT-003).
+var ErrUnknownAgent = errors.New("agent not registered with SimCore")
 
 // -------------------------------------------------------------------------
 // Domain types — the canonical pull-mode wire contract (commit b7eebc5+).
@@ -85,6 +94,13 @@ type BeaconClient struct {
 	AgentID   string
 	Interval  time.Duration
 	http      *http.Client
+
+	// Registration metadata, captured on the first Register() call so the run
+	// loop can re-register on an unknown-agent 404 without main.go re-supplying
+	// it (GAP-AGENT-003).
+	regHostname     string
+	regOS           string
+	regCapabilities []string
 }
 
 // New constructs a BeaconClient with a sensible default HTTP timeout.
@@ -106,6 +122,12 @@ func New(serverURL, agentID string, interval time.Duration) *BeaconClient {
 // Register sends agent metadata to SimCore so it appears in the agent roster.
 // Corresponds to: POST /api/agents/register
 func (c *BeaconClient) Register(hostname, goos string, capabilities []string) error {
+	// Remember the metadata so the run loop can transparently re-register on an
+	// unknown-agent 404 (GAP-AGENT-003).
+	c.regHostname = hostname
+	c.regOS = goos
+	c.regCapabilities = capabilities
+
 	body := map[string]interface{}{
 		"agent_id":     c.AgentID,
 		"hostname":     hostname,
@@ -119,9 +141,39 @@ func (c *BeaconClient) Register(hostname, goos string, capabilities []string) er
 	return nil
 }
 
+// reRegister re-sends this agent's registration using the metadata captured on
+// the first Register() call. Used by the run loop to recover from an
+// unknown-agent 404. If Register was never called (metadata empty), it falls
+// back to the local hostname/GOOS so a never-registered agent still recovers.
+func (c *BeaconClient) reRegister() error {
+	hostname := c.regHostname
+	if hostname == "" {
+		if h, err := os.Hostname(); err == nil {
+			hostname = h
+		} else {
+			hostname = c.AgentID
+		}
+	}
+	goos := c.regOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	caps := c.regCapabilities
+	if caps == nil {
+		caps = []string{"shell", "identity-harness"}
+	}
+	return c.Register(hostname, goos, caps)
+}
+
 // PollTasks asks SimCore whether there is a pending task for this agent.
-// Returns (nil, nil) when there is no task (either HTTP 404 or
-// {"task": null} body — both are normal idle responses).
+//
+// Return contract (GAP-AGENT-003):
+//   - (nil, nil)              → registered, but no task queued ({"task": null})
+//   - (task, nil)            → a task to execute
+//   - (nil, ErrUnknownAgent) → SimCore 404: this agent is not registered;
+//     the caller should Register() and retry. This is NO LONGER conflated with
+//     the idle "no task" case.
+//
 // Corresponds to: GET /api/agents/{id}/tasks
 func (c *BeaconClient) PollTasks() (*Task, error) {
 	url := fmt.Sprintf("%s/api/agents/%s/tasks", c.ServerURL, c.AgentID)
@@ -133,8 +185,10 @@ func (c *BeaconClient) PollTasks() (*Task, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		// 404 → no task queued; this is normal.
-		return nil, nil
+		// 404 → this agent is unknown to SimCore (never registered, or the
+		// registry was reset). Surface it distinctly so the run loop can
+		// re-register rather than silently idling forever.
+		return nil, ErrUnknownAgent
 	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -239,6 +293,18 @@ func (c *BeaconClient) Run(ctx context.Context) {
 		case <-ticker.C:
 			task, err := c.PollTasks()
 			if err != nil {
+				// An unknown-agent 404 means SimCore lost (or never had) our
+				// registration — re-register and retry on the next tick rather
+				// than idling forever (GAP-AGENT-003).
+				if errors.Is(err, ErrUnknownAgent) {
+					log.Printf("[beacon] SimCore reports agent %q unknown — re-registering", c.AgentID)
+					if rerr := c.reRegister(); rerr != nil {
+						log.Printf("[beacon] re-register failed (will retry next tick): %v", rerr)
+					} else {
+						log.Printf("[beacon] re-registration OK")
+					}
+					continue
+				}
 				log.Printf("[beacon] poll error: %v", err)
 				continue
 			}

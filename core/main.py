@@ -131,6 +131,20 @@ async def lifespan(app: FastAPI):
     instantiator._base_dir = settings.CORTEXSIM_BASE_DIR
     logger.info("Tool instantiator initialized base_dir=%s", settings.CORTEXSIM_BASE_DIR)
 
+    # 3b. Rehydrate the durable pull-mode task queue (GAP-API-005). Restores
+    #     undelivered tasks into the in-memory queue and fails any orphaned
+    #     'running' run whose task did not survive the restart.
+    from engine.orchestrator import orchestrator  # noqa: PLC0415
+    try:
+        async with _db_context() as db:
+            stats = await orchestrator.rehydrate(db)
+        logger.info(
+            "Task queue rehydrated: %d restored, %d orphan(s) failed",
+            stats["rehydrated"], stats["failed_orphans"],
+        )
+    except Exception:
+        logger.exception("orchestrator rehydrate failed — continuing with empty queue")
+
     # 4. Background heartbeat sweep — emits agent.status SSE events when an
     #    agent crosses online → stale → offline. list_agents derives status at
     #    read time regardless; this loop exists only to push live transitions.
@@ -222,10 +236,119 @@ async def crypto_error_handler(request: Request, exc: CryptoError) -> JSONRespon
 # Health endpoint
 # ---------------------------------------------------------------------------
 
+_APP_VERSION = "1.0.0"
+
+
+def _commit_sha() -> str:
+    """Best-effort build/commit identifier.
+
+    Tries (in order): ``CORTEXSIM_COMMIT_SHA`` / ``GIT_COMMIT`` env vars, a
+    stamped file at ``{BASE_DIR}/COMMIT_SHA``, then ``git rev-parse`` if a
+    checkout is present. Returns ``"unknown"`` when none resolve — never raises
+    (a health probe must not fail because the build wasn't stamped)."""
+    for var in ("CORTEXSIM_COMMIT_SHA", "GIT_COMMIT", "SOURCE_COMMIT"):
+        val = os.environ.get(var)
+        if val:
+            return val.strip()[:40]
+    stamp = os.path.join(settings.CORTEXSIM_BASE_DIR, "COMMIT_SHA")
+    try:
+        if os.path.isfile(stamp):
+            with open(stamp, encoding="utf-8") as fh:
+                line = fh.readline().strip()
+                if line:
+                    return line[:40]
+    except OSError:  # pragma: no cover - defensive
+        pass
+    try:
+        import subprocess  # noqa: PLC0415
+
+        out = subprocess.run(
+            ["git", "-C", settings.CORTEXSIM_BASE_DIR, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=2, check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return "unknown"
+
+
+async def _component_health() -> dict:
+    """Per-component readiness — DB reachability + catalog/EAL load counts.
+
+    Each probe is independently guarded so one failing component degrades the
+    overall status to ``degraded`` rather than throwing. The DB probe runs a
+    trivial ``SELECT 1``; catalog probes read the already-loaded in-process
+    singletons (no disk I/O)."""
+    components: dict[str, dict] = {}
+
+    # Database — round-trip a trivial query.
+    try:
+        from sqlalchemy import text  # noqa: PLC0415
+        from database import AsyncSessionLocal  # noqa: PLC0415
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        components["db"] = {"status": "ok"}
+    except Exception as exc:  # noqa: BLE001
+        components["db"] = {"status": "error", "detail": str(exc)}
+
+    # Scenario catalog — count rows in the durable store.
+    try:
+        from sqlalchemy import func, select as _select  # noqa: PLC0415
+        from database import AsyncSessionLocal  # noqa: PLC0415
+        from models import Scenario  # noqa: PLC0415
+
+        async with AsyncSessionLocal() as session:
+            count = await session.scalar(_select(func.count()).select_from(Scenario))
+        components["scenario_catalog"] = {"status": "ok", "count": int(count or 0)}
+    except Exception as exc:  # noqa: BLE001
+        components["scenario_catalog"] = {"status": "error", "detail": str(exc)}
+
+    # TTP detection-card catalog (count of distinct TTP entries).
+    try:
+        from engine.ttp_catalog import catalog as ttp_catalog  # noqa: PLC0415
+
+        components["ttp_catalog"] = {"status": "ok", "count": len(ttp_catalog.all_entries())}
+    except Exception as exc:  # noqa: BLE001
+        components["ttp_catalog"] = {"status": "error", "detail": str(exc)}
+
+    # Tool adapter catalog.
+    try:
+        from tools.adapter_catalog import catalog as adapter_catalog  # noqa: PLC0415
+
+        components["adapter_catalog"] = {"status": "ok", "count": adapter_catalog.count()}
+    except Exception as exc:  # noqa: BLE001
+        components["adapter_catalog"] = {"status": "error", "detail": str(exc)}
+
+    # EAL simulator plugin registry.
+    try:
+        from eal_simulator import get_default_registry  # noqa: PLC0415
+
+        components["eal"] = {"status": "ok", "plugins": len(get_default_registry().manifest())}
+    except Exception as exc:  # noqa: BLE001
+        components["eal"] = {"status": "error", "detail": str(exc)}
+
+    return components
+
+
 @app.get("/api/health", tags=["health"])
 async def health_check():
-    """Simple liveness probe."""
-    return {"status": "ok", "version": "1.0.0"}
+    """Liveness + readiness probe (GAP-API-007).
+
+    Reports the app version, a best-effort commit SHA, and per-component
+    health (db, scenario catalog, ttp catalog, adapter catalog, eal). Overall
+    ``status`` is ``ok`` only when every component is ``ok``; otherwise
+    ``degraded`` (the endpoint itself still returns 200 so a probe can read the
+    detail)."""
+    components = await _component_health()
+    overall = "ok" if all(c.get("status") == "ok" for c in components.values()) else "degraded"
+    return {
+        "status": overall,
+        "version": _APP_VERSION,
+        "commit": _commit_sha(),
+        "components": components,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +357,7 @@ async def health_check():
 
 from api.scenarios import router as scenarios_router  # noqa: E402
 from api.runs import router as runs_router              # noqa: E402
+from api.runs import compat_router as runs_compat_router  # noqa: E402
 from api.results import router as results_router        # noqa: E402
 from api.tools import router as tools_router            # noqa: E402
 from api.agents import router as agents_router          # noqa: E402
@@ -246,6 +370,9 @@ from api.events import router as events_router          # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
+# GAP-API-008 — backward-compat alias for the historical singular launch path
+# POST /api/run. New clients should use POST /api/runs.
+app.include_router(runs_compat_router, prefix="/api")
 app.include_router(results_router, prefix="/api")
 app.include_router(tools_router, prefix="/api")
 app.include_router(agents_router, prefix="/api")

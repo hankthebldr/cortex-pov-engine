@@ -74,11 +74,13 @@ class LaunchResult:
 
 class Orchestrator:
     """
-    In-memory task queue + DB run record manager.
+    Durable task queue + DB run record manager.
 
-    The task queue is ephemeral (lost on restart).  The Run table in SQLite
-    is the durable source of truth; agents re-register on startup and will
-    receive pending tasks if the queue is repopulated.
+    The in-memory queue (``_queue``) is the hot path, but it is now a
+    write-through cache over the ``queued_tasks`` DB table (GAP-API-005): every
+    enqueue is mirrored to the DB, every dequeue/abort deletes the row, and the
+    queue is rehydrated from the DB on startup (:meth:`rehydrate`). A SimCore
+    restart therefore no longer strands a ``running`` Run with a vanished task.
     """
 
     def __init__(self) -> None:
@@ -169,7 +171,7 @@ class Orchestrator:
         if mode == "pull":
             return await self._handle_pull(run_id, scenario, target_agent_id, identity, db)
         elif mode == "push":
-            return self._handle_push(run_id, scenario)
+            return await self._handle_push(run_id, scenario, db)
         else:
             return LaunchResult(
                 success=False,
@@ -208,6 +210,8 @@ class Orchestrator:
             identity_default=execution_identity.get("default"),
         )
         self._enqueue(target_agent_id, task)
+        # Mirror the task to the durable queue so a restart can rehydrate it.
+        await self._persist_task(db, target_agent_id, task)
 
         # Update run status to running
         run_result = await db.execute(
@@ -236,16 +240,38 @@ class Orchestrator:
     # push path
     # ------------------------------------------------------------------
 
-    def _handle_push(self, run_id: str, scenario: Any) -> LaunchResult:
+    async def _handle_push(
+        self, run_id: str, scenario: Any, db: AsyncSession
+    ) -> LaunchResult:
         # Generate a download URL — the actual content is produced on demand
         # by the /api/scenarios/{id}/download endpoint.
+        #
+        # GAP-API-004 / GAP-PUSH-001 — a push bundle never phones home, so the
+        # run previously orphaned at 'pending' forever. We advance it to the
+        # terminal 'staged' state on bundle generation: the work product (the
+        # self-contained bundle) is ready and SimCore has no further role. A DC
+        # who later runs the bundle reads detections directly in XSIAM.
+        from models import Run  # noqa: PLC0415
+
         download_base = f"/api/scenarios/{scenario.scenario_id}/download"
-        logger.info("Push bundle ready run_id=%s scenario=%s", run_id, scenario.scenario_id)
+        run_result = await db.execute(select(Run).where(Run.run_id == run_id))
+        run: Optional[Run] = run_result.scalar_one_or_none()
+        if run:
+            run.status = "staged"
+            run.completed_at = datetime.utcnow()
+            run.output = (run.output or "") + (
+                "\n--- PUSH BUNDLE STAGED ---\n"
+                f"Bundle downloadable at {download_base}. Execute on an "
+                "authorized target; review detections in the Cortex console.\n"
+            )
+            await db.commit()
+            await _publish_run_status(run_id, "staged")
+        logger.info("Push bundle staged run_id=%s scenario=%s", run_id, scenario.scenario_id)
         return LaunchResult(
             success=True,
             run_id=run_id,
             mode="push",
-            message="Push bundle ready for download",
+            message="Push bundle staged for download",
             download_url=download_base,
         )
 
@@ -324,10 +350,14 @@ class Orchestrator:
         self._queue[agent_id].append(task)
 
     def dequeue(self, agent_id: str) -> Optional[Task]:
-        """Pop the next deliverable task for an agent, or return None.
+        """Pop the next deliverable task for an agent from the in-memory queue.
 
         Skips (and discards) any queued task whose run was aborted — defence
         in depth in case an abort raced an in-flight enqueue.
+
+        NOTE: this only touches the in-memory cache. Prefer
+        :meth:`dequeue_for_agent` (DB-aware) on the request path so the durable
+        ``queued_tasks`` row is removed too.
         """
         queue = self._queue.get(agent_id, [])
         while queue:
@@ -341,6 +371,17 @@ class Orchestrator:
             return task
         return None
 
+    async def dequeue_for_agent(
+        self, agent_id: str, db: AsyncSession
+    ) -> Optional[Task]:
+        """DB-aware dequeue: pop the next deliverable task AND delete its
+        durable ``queued_tasks`` row so it is not re-delivered after a restart.
+        """
+        task = self.dequeue(agent_id)
+        if task is not None:
+            await self._delete_persisted_task(db, task.task_id)
+        return task
+
     def peek_queue(self, agent_id: str) -> list[Task]:
         """Return all pending tasks for an agent without removing them."""
         return list(self._queue.get(agent_id, []))
@@ -352,12 +393,25 @@ class Orchestrator:
     def abort(self, run_id: str) -> None:
         """Mark a run aborted: record the id (so the agent's /control poll
         returns ``abort=true``) and drop any queued-but-undelivered task for
-        the run from every agent queue.
+        the run from every agent queue (in-memory only).
+
+        Prefer :meth:`abort_persisted` on the request path so the durable
+        ``queued_tasks`` rows are also removed.
         """
         self._aborted.add(run_id)
         for agent_id, tasks in list(self._queue.items()):
             self._queue[agent_id] = [t for t in tasks if t.run_id != run_id]
         logger.info("run aborted run_id=%s", run_id)
+
+    async def abort_persisted(self, run_id: str, db: AsyncSession) -> None:
+        """DB-aware abort: drop in-memory tasks for the run AND delete its
+        durable ``queued_tasks`` rows so a restart never re-delivers them."""
+        self.abort(run_id)
+        from models import QueuedTask  # noqa: PLC0415
+        from sqlalchemy import delete  # noqa: PLC0415
+
+        await db.execute(delete(QueuedTask).where(QueuedTask.run_id == run_id))
+        await db.commit()
 
     def is_aborted(self, run_id: str) -> bool:
         """True if ``run_id`` was aborted via :meth:`abort` this process."""
@@ -368,6 +422,91 @@ class Orchestrator:
         so the in-memory set doesn't grow without bound. Idempotent."""
         self._aborted.discard(run_id)
 
+    # ------------------------------------------------------------------
+    # Durable-queue persistence (GAP-API-005)
+    # ------------------------------------------------------------------
+
+    async def _persist_task(
+        self, db: AsyncSession, agent_id: str, task: Task
+    ) -> None:
+        """Mirror an enqueued Task to the ``queued_tasks`` table."""
+        from models import QueuedTask  # noqa: PLC0415
+
+        db.add(QueuedTask(
+            task_id=task.task_id,
+            run_id=task.run_id,
+            agent_id=agent_id,
+            scenario_id=task.scenario_id,
+            payload=task.to_dict(),
+            created_at=task.created_at,
+        ))
+        await db.commit()
+
+    async def _delete_persisted_task(self, db: AsyncSession, task_id: str) -> None:
+        """Remove a delivered/aborted task's durable row."""
+        from models import QueuedTask  # noqa: PLC0415
+        from sqlalchemy import delete  # noqa: PLC0415
+
+        await db.execute(delete(QueuedTask).where(QueuedTask.task_id == task_id))
+        await db.commit()
+
+    async def rehydrate(self, db: AsyncSession) -> dict[str, int]:
+        """Rebuild the in-memory queue from the durable ``queued_tasks`` table
+        and reconcile orphaned ``running`` runs. Called once from the FastAPI
+        lifespan on startup.
+
+        Reconciliation rules:
+          * Every persisted task is re-loaded into the in-memory queue so a
+            waiting agent receives it after the restart.
+          * Any Run still in ``pending``/``running`` whose task did NOT survive
+            in the durable queue is marked ``failed`` (its work was lost) so it
+            does not hang forever. A note is appended to the run output.
+
+        Returns counts ``{rehydrated, failed_orphans}`` for logging.
+        """
+        from models import QueuedTask, Run  # noqa: PLC0415
+
+        # 1. Re-load every durable task into the in-memory queue.
+        result = await db.execute(select(QueuedTask).order_by(QueuedTask.created_at))
+        rows = result.scalars().all()
+        live_run_ids: set[str] = set()
+        rehydrated = 0
+        for row in rows:
+            task = _task_from_payload(row.payload)
+            if task is None:
+                continue
+            self._enqueue(row.agent_id, task)
+            live_run_ids.add(task.run_id)
+            rehydrated += 1
+
+        # 2. Mark orphaned non-terminal runs as failed (their task is gone).
+        run_result = await db.execute(
+            select(Run).where(Run.status.in_(("pending", "running")))
+        )
+        failed_orphans = 0
+        now = datetime.utcnow()
+        for run in run_result.scalars().all():
+            if run.run_id in live_run_ids:
+                continue
+            # Push-mode runs are not queue-backed; a push run advanced to a
+            # terminal staged state below would not be 'pending' here, so any
+            # pending/running pull run with no surviving task is a true orphan.
+            run.status = "failed"
+            run.completed_at = now
+            run.output = (run.output or "") + (
+                "\n--- RUN FAILED ON RESTART — queued task was lost "
+                "(SimCore restarted before the agent picked it up) ---\n"
+            )
+            failed_orphans += 1
+        if failed_orphans:
+            await db.commit()
+
+        logger.info(
+            "orchestrator rehydrate: %d task(s) restored, %d orphaned run(s) failed",
+            rehydrated, failed_orphans,
+        )
+        return {"rehydrated": rehydrated, "failed_orphans": failed_orphans}
+
 
 # ---------------------------------------------------------------------------
 # Tool-adapter helpers (Phase A)
@@ -375,6 +514,28 @@ class Orchestrator:
 
 
 _ADAPTER_PLACEHOLDER_RE = __import__("re").compile(r"\{adapter:(TOOL-[A-Z0-9-]+)\}")
+
+
+def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
+    """Reconstruct a :class:`Task` from a persisted ``queued_tasks.payload``
+    dict (the round-trip of ``Task.to_dict()``). Returns ``None`` on a
+    malformed payload so a single corrupt row can't abort rehydrate."""
+    if not isinstance(payload, dict):
+        return None
+    try:
+        created = payload.get("created_at")
+        return Task(
+            task_id=payload["task_id"],
+            run_id=payload["run_id"],
+            scenario_id=payload["scenario_id"],
+            steps=payload.get("steps") or [],
+            identity_context=payload.get("identity_context"),
+            identity_default=payload.get("identity_default"),
+            created_at=datetime.fromisoformat(created) if created else datetime.utcnow(),
+        )
+    except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive
+        logger.warning("skipping malformed queued_tasks payload during rehydrate")
+        return None
 
 
 def _check_adapter_consent(scenario: Any, consent: dict[str, bool]) -> Optional[str]:

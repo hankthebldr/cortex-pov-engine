@@ -21,8 +21,9 @@ core/static/index.html
 data/
 *.db
 
-# Logs
+# Logs (including rotated logs: cortexsim.log.1, .2, ...)
 logs/*.log
+logs/*.log.*
 
 # IDE
 .idea/
