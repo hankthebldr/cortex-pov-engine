@@ -88,7 +88,7 @@ CI gates (`scripts/dev-up.sh`, `.env.example`, `.github/workflows/ci.yml`
 
 **Theme 5 — IaC / providers:**
 `GAP-IAC-001` (`ai-spm` now reachable — `ALLOWED_MODULES` + Jinja blocks) ·
-`GAP-IAC-002` (`airs` module authored + allow-listed) · `GAP-IAC-003`
+`GAP-IAC-002` (resolved by repointing the 5 AIRS scenarios to `infra_modules_needed: [base]` — the `airs` module was **never authored** and is intentionally absent; AIRS drives the in-tree vulnerable-LLM + prompt-attacker via the EAL/adapter path, so there is no dead reference) · `GAP-IAC-003`
 (content-library/telemetry-replay frontmatter trimmed to `[aws]`) · `GAP-IAC-004`
 (provider-has-modules validated at the request boundary) · `GAP-IAC-005`
 (ai-spm doc-only findings reconciled to resources) · `GAP-IAC-007`
@@ -168,12 +168,45 @@ newer plugins backfilled) · `GAP-ADAPT-03` (the 4 dead `equivalents[]` refs fix
   the catalog as wired (17) / reference-only-by-design (14, tier-5 + c2) /
   genuine candidates (38), replacing the misleading raw "orphan" count.
 
+### CLOSED in the 2026-06-15 pass
+
+- **`GAP-ADAPT-01`** **FULLY CLOSED** — root cause was deeper than "submodule not
+  initialised": `.gitmodules` listed 10 submodules but the tree carried **zero
+  gitlinks**, so `git submodule update --init --recursive` was a silent no-op. All
+  10 are now re-registered as real gitlinks (`atomic-red-team` + the other 9; stale
+  `xsiam-prisma-cdr-lab` branch pin `1.1`→`1.0`). `install.sh` hard-gates on
+  `check-adapter-sources.sh`; `dev-up.sh` warns. Check now PASS=6 / WARN=29 / FAIL=0.
+- **`GAP-ADAPT-02` wiring** — distinct adapters referenced by scenarios lifted
+  **17 → 34**. Three bundles wire 17 high-value orphans: SIM-CDR-007 (Trivy,
+  Kube-bench, Kubescape, Gitleaks, Cloudsplaining), SIM-ASM-004 (WhatWeb, Gobuster,
+  Feroxbuster, Nikto, SQLmap, Commix, CMSeek), SIM-ITDR-007 (Pypykatz, BloodyAD,
+  KrbRelayUp, PrintSpoofer, Tokenvator).
+- **`GAP-1`** **CLOSED (resource-dev half)** — first Resource Development (TA0042)
+  content: TTP-2026-0079 + SIM-TIM-002 (adversary infrastructure staging —
+  T1583.001/T1608.001/T1585 via TIM threat-intel feeds). Reconnaissance (TA0043)
+  was already covered by ASM-001..004.
+- **`GAP-10`** **CLOSED** — IOC coverage added to all six previously-zero-IOC planes
+  (AIRS, Browser, Cloud_App, AI_SPM, ITDR, CSPM); 23 cards enriched with
+  lab-grounded indicators. Zero planes now lack IOC coverage.
+- **Orphan cards bound** — TTP-2026-0001/0003/0005 (helpdesk-MFA, AWS IAM abuse,
+  rclone exfil), previously reference-only, now drive SIM-ITDR-008 / SIM-CDR-008 /
+  SIM-EDR-009.
+- Corpus after this pass: **75 loadable scenarios / 0 rejected**, **76 TTP cards**,
+  validator **158 pass / 0 warn / 0 fail**, **494/494 detection_ids resolve**.
+
 ### REMAINS open / deferred
 
-- **`GAP-ADAPT-02` candidate wiring** — 38 tier 1-4 non-c2 adapters are genuine
-  (low-priority) wiring candidates; surfaced now by `/api/tools/adapters/
-  coverage` but most are on-demand utilities that don't each warrant a bespoke
-  scenario. Wire opportunistically as scenarios need them.
+- **`GAP-ADAPT-02` residual wiring** — ~21 tier 1-4 non-c2 adapters remain genuine
+  (low-priority) wiring candidates after the 2026-06-15 bundles took the count from
+  17 to 34 wired; surfaced by `/api/tools/adapters/coverage`. Most are on-demand
+  utilities that don't each warrant a bespoke scenario — wire opportunistically.
+- **De-hand-rolling** — CDR/NDR scenarios still inline raw shell where an equivalent
+  adapter exists (CDR ~96% / NDR ~89% hand-rolled); no CI lint yet flags
+  `external_tools` without `adapter_ref`.
+- **`airs` IaC module** — intentionally NOT built; the 5 AIRS scenarios provision
+  only `base` and drive the in-tree `cortex-vulnerable-llm` + `cortex-prompt-attacker`
+  via the EAL/adapter path, so there is no dead `airs` reference (see GAP-IAC-002
+  correction above).
 - **Tier-C CI wiring** — the path-filtered hard gate for the docker-gated
   isolated-exec e2e (per the methodology doc's "CI integration" section).
 - **Live read-only Cortex API poll cadence tuning** — the auto-reconcile loop

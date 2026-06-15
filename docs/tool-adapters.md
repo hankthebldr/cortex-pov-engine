@@ -1,8 +1,11 @@
 # Tool Adapter Framework
 
-> **Status (2026-06-02):** Framework + **69 adapters across all 5 tiers**
-> (Phase A/B/C complete). **27 scenarios** reference adapters; push bundles
-> self-install tier-4 tools; the launch consent gate is wired end-to-end. The
+> **Status (2026-06-15):** Framework + **69 adapters across all 5 tiers**
+> (Phase A/B/C complete). **35 scenarios reference adapters / 34 distinct adapters
+> wired** (up from 17 — the CDR cluster-posture, ASM web-app-enumeration, and ITDR
+> AD-privesc bundles wired 17 high-value orphans); all 10 source submodules are
+> provisioned (`check-adapter-sources.sh` green). Push bundles self-install tier-4
+> tools; the launch consent gate is wired end-to-end. The
 > remaining design-spec work is operational (per-adapter CI version canary) and
 > ongoing scenario-to-adapter wiring — see
 > [§7 What's shipped vs. pending](#7-whats-shipped-vs-pending).

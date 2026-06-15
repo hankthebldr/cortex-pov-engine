@@ -17,18 +17,24 @@
   `{"probes", "packages", "campaigns"}`). These hold supporting artifacts (probe packs,
   browser campaign declarations, packaged scenario bundles) consumed by EAL plugins /
   tools, **not** scenarios. They are catalogued separately in §13.
-- **File count reconciliation:** `find scenarios -name '*.yml'` returns **77** files
-  (76 + `_schema.yml`). Of those, **58 are loadable scenarios**; the remaining 18 are
-  `_schema.yml` (1) + probes (10) + campaigns (5) + packages (2:
-  `xsoar_playbook.yml`, `docker-compose.yml`). **The task brief's "76 scenarios" conflates
-  scenario files with supporting YAML — the true active scenario count is 58.** See
-  [GAP S-13].
+> **As-of 2026-06-15:** the counted ground truth is **75 loadable scenarios / 76 TTP
+> cards** (see CLAUDE.md "Canonical scenario count" and `README.md`). The headline
+> totals below are current; the per-plane sections (§3+) still describe the
+> pre-2026-06-15 baseline — the 7 newest scenarios (SIM-CDR-007/008, SIM-ASM-004,
+> SIM-ITDR-007/008, SIM-EDR-009, SIM-TIM-002) are documented in CLAUDE.md and
+> GAP-ANALYSIS.md pending a full per-plane regeneration of this inventory.
+
+- **File count reconciliation:** `find scenarios -name '*.yml'` returns **106** files.
+  Of those, **75 are loadable scenarios**; the remaining 31 are supporting YAML the
+  loader skips: `_schema.yml` (1) + AIRS probes (19) + browser campaigns (5) +
+  multi-plane packages (6). **Do not conflate the raw `.yml` file count with the
+  scenario count — the true active scenario count is 75.**
 
 ### Totals at a glance
 
 | Metric | Value |
 |---|---|
-| Loadable scenarios | **58** |
+| Loadable scenarios | **75** |
 | Detection planes represented | 11 (EDR, CDR, NDR, ITDR, CLOUD_APP, ANALYTICS, AI_ACCESS, AIRS, AI_SPM, BROWSER, KOI) |
 | Total execution steps (all scenarios) | 195 |
 | Total `expected_detections` rows | 342 |

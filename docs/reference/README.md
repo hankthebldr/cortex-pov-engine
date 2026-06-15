@@ -31,15 +31,18 @@
   (58 loaded by the schema validator) · 63 active TTP cards · 13 EAL plugins ·
   69 tool-adapter packs · 11 AWS IaC modules · 48 HTTP routes · 14 detection planes
   (13 documented + the then-undocumented AI_SPM).
-- **Counted ground truth (Fable pass, verified 2026-06-10):** **68 loadable
-  scenarios** (all `status: active`, 0 rejected / 0 dangling refs; **430/430
-  detection_id slugs resolve** — GAP-4 closed) · **72 TTP cards**
-  (566 detection cards) · 13 EAL plugins · **70 tool-adapter packs** ·
-  11 AWS IaC modules · 14 detection planes. ASM=3 scenarios (exposed-surface +
-  vuln-scan recon + OSINT); EDR=8 (+Linux ransomware); CDR=6 (+systemd/cron
-  persistence); ITDR=6 (+AD roasting, adapter-gated); NDR=7.
-  See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "RESOLUTION STATUS (2026-06-08)" for what
-  closed across the seven-theme revamp.
+- **Counted ground truth (verified 2026-06-15):** **75 loadable scenarios**
+  (all `status: active`, 0 rejected / 0 dangling refs; **494/494 detection_id slugs
+  resolve** — GAP-4 closed) · **76 TTP cards** (676 deployable detection objects +
+  analytics-module refs) · 13 EAL plugins · **69 tool-adapter packs**
+  (**34 distinct adapters wired across 35 scenarios**, up from 17) · 11 AWS IaC
+  modules · 14 detection planes · **all 10 source submodules provisioned**. Per-plane:
+  ASM=4 (+web-app enumeration); EDR=9 (+rclone exfil); CDR=8 (+cluster posture sweep,
+  +IAM-key abuse); ITDR=8 (+AD privesc, +helpdesk-MFA); TIM=2 (+adversary infra
+  staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
+  (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
+  pass."
+- *Prior (Fable pass, 2026-06-10): 68 scenarios · 72 cards · 70-pack claim · 17 wired.*
 
 ## The eight domain references
 
@@ -47,10 +50,11 @@
 Exhaustive inventory of all 69 `tools/packs/*.yml` adapter packs across the 5-tier
 model (in-tree / submodule / IaC-provisioned / runtime-fetched / external-only),
 their safety classes (33 safe · 32 dual-use · 4 c2-framework), and their wiring to
-scenarios. Headline findings: tier-2 adapter source trees (incl. the most-referenced
-`TOOL-ATOMIC-RED-TEAM`) are missing on disk, 81% of adapters are orphans referenced
-by zero scenarios, and the canonical `docs/tool-adapters.md` / `tools/packs/README.md`
-counts have drifted badly (still claim "18 packs" / "Phase A — only nmap exists").
+scenarios. State (2026-06-15): all 10 source submodules (incl. `TOOL-ATOMIC-RED-TEAM`)
+are provisioned and `check-adapter-sources.sh` is green; **34 of 69 adapters are now
+wired** (was 17 — the 81%-orphan finding is superseded), with ~21 low-priority tier 1-4
+candidates left to wire opportunistically and the c2/tier-5 packs reference-only by
+design.
 
 ### [`scenario-catalog.md`](scenario-catalog.md) — Scenarios
 Canonical row-per-scenario archive of every YAML in `scenarios/` (58 loadable
