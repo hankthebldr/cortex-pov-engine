@@ -1,0 +1,184 @@
+scenario_id: SIM-CDR-008
+name: "AWS IAM Access Key Abuse — Discovery Burst + S3 Object Exfiltration"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA) for the canonical leaked-key →
+# enumerate → exfil cloud chain. Using a sandboxed lab IAM access key, it runs a
+# rapid AWS Discovery burst (GetCallerIdentity / ListUsers / ListRoles /
+# ListBuckets / DescribeInstances) from an attacker-style host, then a bulk S3
+# GetObject pull off a marker bucket — the CloudTrail shape Cortex Cloud / CDR
+# detects as a non-human identity behaving like a human plus anomalous bulk
+# object reads. Read-only: GetObject does not modify the bucket. Each step has a
+# demo-mode fallback so the bundle runs safely where the lab account is absent.
+# LAB ONLY — run against the sandboxed lab IAM user the cspm/cdr IaC modules seed.
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CDR-08
+tc_ref: TC-CDR-08
+uc_name: "Leaked Cloud Credentials → Data Exfiltration Defense"
+tc_name: "IAM Access Key Discovery Burst + S3 Bulk-Read Exfiltration"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1580"
+mitre_technique_name: "Cloud Infrastructure Discovery"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1530"
+    name: "Data from Cloud Storage"
+  - technique: "T1567.002"
+    name: "Exfiltration Over Web Service: Exfiltration to Cloud Storage"
+
+threat_report: "Unit42 - IAM Your Defense Against Cloud Threats"
+threat_report_url: "https://unit42.paloaltonetworks.com/iam-cloud-threat-research/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - cdr
+  - cspm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Cloud-plane
+# detection-accuracy family — validates that the leaked-key discovery+exfil
+# CloudTrail shape raises its expected Cortex Cloud / CDR detection.
+validation_methodology: "Cloud Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  The CloudTrail events injected by this scenario produce the expected Cortex
+  Cloud / CDR detections within the MTTD budget: an IAM discovery burst from a
+  new source IP, a bulk S3 GetObject read with no prior pattern, and the two
+  stitched into one IAM-key-compromise-with-exfiltration incident
+  (CR-CLOUD-0001). Each expected_detections row is validated against the cloud
+  audit telemetry.
+moat_tier: "MOAT"
+
+external_tools:
+  - name: aws-cli
+    source: "https://aws.amazon.com/cli/"
+    type: binary
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Discovery burst — enumerate the account with the leaked lab IAM key (GetCallerIdentity → ListUsers → ListRoles → ListBuckets → DescribeInstances)"
+    command: |
+      echo '[CDR-008] AWS IAM discovery burst from attacker host (T1580 / T1078.004)';
+      LAB_REGION="${LAB_REGION:-us-east-1}";
+      AWS_PROFILE_ARG="${AWS_PROFILE:+--profile $AWS_PROFILE}";
+      if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity $AWS_PROFILE_ARG >/dev/null 2>&1; then
+        aws sts get-caller-identity $AWS_PROFILE_ARG 2>&1 | tee /tmp/cortexsim_cdr008_disc.txt;
+        aws iam list-users $AWS_PROFILE_ARG 2>&1 | head -20 | tee -a /tmp/cortexsim_cdr008_disc.txt;
+        aws iam list-roles $AWS_PROFILE_ARG 2>&1 | head -20 | tee -a /tmp/cortexsim_cdr008_disc.txt;
+        aws s3api list-buckets $AWS_PROFILE_ARG 2>&1 | head -20 | tee -a /tmp/cortexsim_cdr008_disc.txt;
+        aws ec2 describe-instances --region "$LAB_REGION" $AWS_PROFILE_ARG 2>&1 | head -20 | tee -a /tmp/cortexsim_cdr008_disc.txt;
+      else
+        echo '[*] demo-mode: aws cli not configured for the lab account — CDR should still flag a 4+-distinct-call discovery burst from a new source IP/user-agent';
+      fi
+      echo '[*] Cortex Cloud / CDR should flag ≥4 distinct Discovery API calls within 60s from a sourceIP/user-agent new for this IAM identity'
+    identity: container-runtime
+    mitre_technique: "T1580"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Cortex Cloud — ≥4 distinct AWS Discovery API calls within 60s from a sourceIPAddress/userAgent not previously observed for this IAM user"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: bioc-iam-user-discovery-burst-from-new-source-ip
+      - plane: CDR
+        type: BIOC
+        description: "Cortex Cloud — IAM access-key auth observed from an ASN never seen for this identity in 90 days (long-lived key used outside known ASN)"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: bioc-long-lived-iam-user-key-used-from-outside-known-asn
+      - plane: CDR
+        type: XQL
+        description: "Cortex Cloud — validation: the GetCallerIdentity/ListUsers/ListRoles/ListBuckets discovery burst fired in the last window (≥4 rows)"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: xql-confirm-discovery-burst-within-last-30-min
+
+  - id: step-02
+    name: "Enumerate then bulk-pull S3 objects off the marker bucket (ListObjects + recursive GetObject)"
+    command: |
+      echo '[CDR-008] S3 object enumeration + bulk GetObject exfil pattern (T1530 / T1567.002)';
+      LAB_BUCKET="${LAB_BUCKET:-cortexsim-cspm-public-bucket}";
+      POV_RUN_ID="${POV_RUN_ID:-$(date +%s)}";
+      AWS_PROFILE_ARG="${AWS_PROFILE:+--profile $AWS_PROFILE}";
+      if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity $AWS_PROFILE_ARG >/dev/null 2>&1; then
+        aws s3 ls "s3://$LAB_BUCKET" --recursive $AWS_PROFILE_ARG 2>&1 | head -50 | tee /tmp/cortexsim_cdr008_ls.txt;
+        mkdir -p "/tmp/cortexsim-cdr008-exfil-$POV_RUN_ID";
+        aws s3 cp "s3://$LAB_BUCKET" "/tmp/cortexsim-cdr008-exfil-$POV_RUN_ID/" --recursive --quiet $AWS_PROFILE_ARG 2>&1 | tail -5;
+        echo "[*] pulled $(find "/tmp/cortexsim-cdr008-exfil-$POV_RUN_ID" -type f 2>/dev/null | wc -l) objects";
+      else
+        echo '[*] demo-mode: aws cli not configured for the lab account — CDR should still flag a ≥50-GetObject bulk read by an IAM user with no prior read pattern';
+      fi
+      echo '[*] CDR should flag a bulk S3 GetObject read (≥50 calls / 5m) by an IAM user with no prior read pattern on this bucket'
+    identity: container-runtime
+    mitre_technique: "T1530"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Cortex Cloud — an IAM user (not a service role) issues ≥50 GetObject calls against a single bucket within 5 min vs a <5/day baseline (bulk exfil read)"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: bioc-s3-bulk-object-download-by-iam-user-with-no-prior-read-pattern
+      - plane: CDR
+        type: XQL
+        description: "Cortex Cloud — validation: an S3 GetObject burst on the target bucket fired in the last window"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: xql-confirm-s3-getobject-burst-on-target-bucket
+
+  - id: step-03
+    name: "Validate discovery + exfil stitched into one IAM-key-compromise incident"
+    command: |
+      echo '[CDR-008] Chain validation — IAM discovery burst + large S3 read on the same identity within 1h';
+      echo '[*] XSIAM correlation CR-CLOUD-0001 should fuse the discovery burst and the bulk S3 read into a single IAM-key-compromise-with-exfiltration incident';
+      echo '[*] Hunt XQL confirms one IAM ARN with both a discovery burst and a >50-object S3 read inside the same hour'
+    identity: container-runtime
+    mitre_technique: "T1567.002"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Cortex Cloud — hunt: an IAM ARN with both a discovery burst (ListUsers/ListBuckets) and a large S3 read (>50 GetObject) within 1h"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: xql-find-iam-users-with-both-discovery-burst-and-large-s3-read-within-1h
+      - plane: CDR
+        type: Correlation
+        description: "XSIAM — IAM discovery burst + S3 bulk object download by the same identity within 60m stitched into one IAM-key-compromise-with-exfiltration incident"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: CR-CLOUD-0001
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-cdr008-exfil-* /tmp/cortexsim_cdr008_disc.txt /tmp/cortexsim_cdr008_ls.txt"
+    - "echo '[CortexSim] SIM-CDR-008 cleanup complete — rotate the lab IAM access key between runs; GetObject is read-only so no bucket objects changed'"
+
+author: "Henry Reed"
+created: "2026-06-15"
+last_updated: "2026-06-15"
+tags:
+  - cdr
+  - cloud
+  - aws
+  - iam-key-abuse
+  - s3-exfiltration
+  - cloud-discovery
