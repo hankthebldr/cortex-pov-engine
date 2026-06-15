@@ -1,0 +1,413 @@
+{
+  "id": "TTP-2026-0076",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-15T00:00:00+00:00",
+    "updated_at": "2026-06-15T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-container-discovery",
+      "industry-all",
+      "severity-high",
+      "kubernetes",
+      "posture",
+      "supply-chain",
+      "aws",
+      "eks"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-CISA"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "kubernetes",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "kubernetes",
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1200,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Container & Kubernetes Supply-Chain Posture Sweep — Cortex Cloud CDR (T1613 / T1526 / T1552.001 / T1046)",
+    "summary": "A defensive posture sweep of the cdr-module EKS cluster with Trivy, kube-bench, Kubescape, gitleaks, and Cloudsplaining. The scan activity (privileged container exec, k8s API enumeration, bulk IAM GetAccountAuthorizationDetails, secret-pattern file reads) is the same telemetry shape an attacker's discovery/cred-access produces, and is what Cortex Cloud CDR + XSIAM must detect.",
+    "description": "Container and Kubernetes posture assurance is the static, configuration-and-supply-chain half of cloud-native defense: rather than detonating an attack, it enumerates the cluster's images, manifests, control-plane config, secrets, and IAM and flags everything that violates a hardening baseline (CIS Kubernetes Benchmark, NSA/CISA Kubernetes Hardening Guidance, supply-chain CVE policy, IAM least-privilege). This scenario runs that sweep against the cdr Terraform module's EKS cluster with five safe, defensive tools — Trivy (image + IaC + secret scan), kube-bench (CIS Kubernetes Benchmark), Kubescape (NSA/CISA hardening posture), gitleaks (secret scan), and Cloudsplaining (AWS IAM least-privilege assessment) — then validates two things at once. First, every finding the sweep produces (HIGH/CRITICAL image and IaC CVEs, CIS benchmark FAILs, NSA/CISA control gaps, hardcoded secrets, IAM privilege-escalation paths) must surface in the cortex_cloud_posture inventory so the DC can show full posture coverage. Second — and this is the moat — the scan ACTIVITY itself produces the exact runtime telemetry shape an attacker's Discovery (T1613 Container and Resource Discovery, T1526 Cloud Service Discovery, T1046 Network Service Discovery) and Credential Access (T1552.001 Credentials In Files) would generate: a kubectl exec into a running pod that reads /proc/1/status capabilities and the service-account token; a bulk iam:GetAccountAuthorizationDetails that downloads every IAM principal and policy; and a burst of file reads matching secret patterns (*.pem/*.key/token/credentials) across the node filesystem. Two BIOCs cover the runtime-detectable edge — privileged container exec into an EKS workload, and the bulk IAM authorization-details enumeration — proving the same fixture exercises both CDR posture (config state) and XSIAM runtime detection (discovery/cred-access behaviour). A correlation rule fuses the per-tool posture findings and the runtime discovery BIOCs into a single cluster-posture-and-compromise-shape coverage incident the DC presents in the executive readout.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "TeamTNT, SCARLETEEL, and opportunistic cloud/container credential abusers"
+      }
+    ],
+    "campaigns": [
+      "Cloud-native cluster compromise and supply-chain abuse"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "containers",
+    "techniques": [
+      {
+        "technique_id": "T1613",
+        "name": "Container and Resource Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1526",
+        "name": "Cloud Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.001",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Container: Container Enumeration",
+      "Process: Process Creation",
+      "Cloud Service: Cloud Service Enumeration",
+      "File: File Access",
+      "User Account: User Account Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "kubernetes",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-007 — Trivy/kube-bench/Kubescape/gitleaks/Cloudsplaining sweep + Cortex Cloud CDR posture reconciliation",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud CDR enabled and connected (read-only) to the EKS cluster and the AWS account.",
+        "check_command": "curl -fsSL -H \"Authorization: Bearer $CORTEX_CLOUD_API_TOKEN\" \"$CORTEX_CLOUD_API_BASE/posture/findings?source=kubernetes\""
+      },
+      {
+        "description": "cdr IaC module applied so the EKS cluster with worker nodes exists and is reachable via kubeconfig.",
+        "check_command": "kubectl get nodes -o name"
+      },
+      {
+        "description": "Trivy, kube-bench, Kubescape, gitleaks, and Cloudsplaining installed on the jumpbox (the adapters self-install at tier 4).",
+        "check_command": "command -v trivy kube-bench kubescape gitleaks cloudsplaining"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture sweep — no detonation. Run the five defensive scanners against the\n# EKS cluster + AWS IAM and reconcile findings against Cortex Cloud CDR posture.\nset -euo pipefail\ntrivy image --scanners vuln,secret --severity HIGH,CRITICAL --format json --output /tmp/trivy-image.json \"${WORKLOAD_IMAGE:-public.ecr.aws/eks-distro/kubernetes/pause:3.9}\" || true\nkube-bench run --targets node,policies --benchmark eks-1.2.0 --json --outputfile /tmp/kube-bench.json || true\nkubescape scan framework nsa,cis-eks-t1.2.0 --format json --output /tmp/kubescape.json || true\ngitleaks detect --source . --report-format json --report-path /tmp/gitleaks.json --no-banner || true\naws iam get-account-authorization-details --output json > /tmp/iam-authz.json && cloudsplaining scan --input-file /tmp/iam-authz.json --output /tmp/cloudsplaining || true",
+      "input_variables": [
+        {
+          "name": "WORKLOAD_IMAGE",
+          "type": "string",
+          "default": "public.ecr.aws/eks-distro/kubernetes/pause:3.9",
+          "description": "Container image to scan for vulnerable layers and embedded secrets."
+        },
+        {
+          "name": "TARGET_NS",
+          "type": "string",
+          "default": "default",
+          "description": "Kubernetes namespace whose running workload is exec'd into for in-cluster enumeration."
+        }
+      ],
+      "timeout_seconds": 1200
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "kubectl exec into a running pod followed by /proc/1/status capability read and service-account token access.",
+        "expected_value": "process_name = \"kubectl\" and command_line contains \"exec\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Bulk iam:GetAccountAuthorizationDetails download of every IAM principal and policy from the node role.",
+        "expected_value": "event_name = \"GetAccountAuthorizationDetails\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Burst of file reads matching secret patterns (*.pem/*.key/token/credentials) across the node filesystem.",
+        "expected_value": "action_file_path matches \".*(\\\\.pem|\\\\.key|token|credentials)$\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/trivy-image.json /tmp/trivy-iac.json /tmp/kube-bench.json /tmp/kubescape.json /tmp/gitleaks.json /tmp/iam-authz.json; rm -rf /tmp/cloudsplaining; echo '[CortexSim] SIM-CDR-007 cleanup complete — EKS cluster owned by terraform destroy.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "CDR-007 Privileged Container Exec into EKS Workload",
+        "description": "A kubectl exec lands a shell inside a running pod which then reads /proc/1/status capability masks and the mounted Kubernetes service-account token. This is the privileged-container-exec + in-cluster discovery shape produced by both the posture sweep and an attacker pivoting into a cluster workload (T1613 Container and Resource Discovery).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"kubectl\", \"crictl\", \"runc\", \"containerd-shim\")\n| filter action_process_image_command_line contains \"exec\" or action_process_image_command_line contains \"/proc/1/status\" or action_process_image_command_line contains \"serviceaccount/token\"\n| fields agent_hostname, actor_process_image_name, action_process_image_command_line, action_process_image_name\n| comp count() as exec_events by agent_hostname, actor_process_image_name\n| filter exec_events >= 1",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1613",
+          "T1552.001"
+        ]
+      },
+      {
+        "name": "CDR-007 IAM GetAccountAuthorizationDetails Bulk Enumeration",
+        "description": "The EKS node/cluster principal calls iam:GetAccountAuthorizationDetails (optionally paired with ListRoles/ListPolicies) to download every IAM principal and policy in one pass — the bulk Cloud Service Discovery shape Cloudsplaining and an attacker both produce (T1526 Cloud Service Discovery).",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source = \"iam.amazonaws.com\"\n| filter event_name in (\"GetAccountAuthorizationDetails\", \"ListRoles\", \"ListPolicies\", \"ListUsers\", \"ListPolicyVersions\")\n| comp count() as iam_enum_calls by user_identity_arn, source_ip\n| filter iam_enum_calls >= 3\n| sort desc iam_enum_calls\n| fields user_identity_arn, source_ip, iam_enum_calls",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1526"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CDR-007 Trivy Image and IaC Critical Findings Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1200)\n| filter cloud_provider = \"AWS\" and finding_source = \"trivy\"\n| filter resource_type in (\"container_image\", \"iac_misconfig\", \"image_secret\")\n| filter severity in (\"HIGH\", \"CRITICAL\")\n| comp count_distinct(finding_id) as findings by resource_type, severity\n| filter findings >= 1\n| fields resource_type, severity, findings",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-007 kube-bench CIS Benchmark Failures Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1200)\n| filter finding_source = \"kube-bench\" and benchmark = \"cis-eks\"\n| filter result_status = \"FAIL\"\n| comp count_distinct(control_id) as failed_controls by control_section\n| filter failed_controls >= 1\n| sort desc failed_controls\n| fields control_section, failed_controls",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-007 Kubescape NSA CISA Hardening Gaps Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1200)\n| filter finding_source = \"kubescape\" and framework in (\"NSA\", \"cis-eks\")\n| filter control_status = \"failed\"\n| comp count_distinct(control_id) as failed_controls by framework\n| filter failed_controls >= 1\n| fields framework, failed_controls",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-007 Bulk Secret Pattern File Reads During Sweep",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN\n| filter action_file_path ~= \".*(\\\\.pem|\\\\.key|/token|kubeconfig|credentials)$\"\n| filter actor_process_image_name in (\"find\", \"gitleaks\", \"cat\", \"sh\", \"bash\")\n| comp count() as secret_file_reads by agent_hostname, actor_process_image_name\n| filter secret_file_reads >= 5\n| sort desc secret_file_reads\n| fields agent_hostname, actor_process_image_name, secret_file_reads",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-007 Cloudsplaining IAM Privilege Escalation Paths Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 1200)\n| filter cloud_provider = \"AWS\" and finding_source = \"cloudsplaining\"\n| filter resource_type in (\"aws_iam_role\", \"aws_iam_user\", \"aws_iam_policy\")\n| filter finding_class in (\"privilege-escalation\", \"data-exfiltration\", \"resource-exposure\", \"credentials-exposure\")\n| comp count_distinct(resource_id) as flagged_principals by finding_class\n| filter flagged_principals >= 1\n| fields finding_class, flagged_principals",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-007 Cluster API Enumeration Activity Captured",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1200)\n| filter cloud_provider = \"AWS\" and event_source = \"eks.amazonaws.com\"\n| filter event_name in (\"DescribeCluster\", \"ListClusters\", \"AccessKubernetesApi\")\n| comp count() as api_calls by user_identity_arn, event_name\n| filter api_calls >= 1\n| fields user_identity_arn, event_name, api_calls",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Container & Kubernetes Posture Coverage — Full Supply-Chain & Hardening Sweep",
+        "rule_id": "CR-CDR-0007",
+        "logic": "XQL(CDR-007 Trivy Image and IaC Critical Findings Surfaced) AND XQL(CDR-007 kube-bench CIS Benchmark Failures Surfaced) AND XQL(CDR-007 Kubescape NSA CISA Hardening Gaps Surfaced) AND XQL(CDR-007 Bulk Secret Pattern File Reads During Sweep) AND XQL(CDR-007 Cloudsplaining IAM Privilege Escalation Paths Surfaced)"
+      },
+      {
+        "name": "Cluster Posture-to-Runtime — Discovery Activity Detected During Sweep",
+        "rule_id": "CR-CDR-0008",
+        "logic": "BIOC(CDR-007 Privileged Container Exec into EKS Workload) OR BIOC(CDR-007 IAM GetAccountAuthorizationDetails Bulk Enumeration) — promotes the posture sweep to a runtime-discovery incident when the scan activity matches the same shape an attacker's container/cloud discovery would produce."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud CDR — container image and IaC supply-chain finding discovery",
+      "Cortex Cloud CDR — Kubernetes posture and CIS/NSA hardening compliance scoring",
+      "Cortex XSIAM Analytics — anomalous in-cluster exec and bulk IAM enumeration from a node principal"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-TRIVY-IMAGE-CRITICAL",
+          "CDR-TRIVY-IAC-MISCONFIG",
+          "CDR-KUBEBENCH-CIS-FAIL",
+          "CDR-KUBESCAPE-NSA-FAIL",
+          "CDR-GITLEAKS-SECRET",
+          "CDR-CLOUDSPLAINING-PRIVESC"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter finding_source in (\"trivy\", \"kube-bench\", \"kubescape\", \"gitleaks\", \"cloudsplaining\") | comp count_distinct(finding_id) by finding_source | fields finding_source, finding_id"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CDR-0007",
+          "XSIAM-CR-CDR-0008"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CDR-0007 fuses the five per-tool posture validation queries into one cluster-posture coverage event; CR-CDR-0008 promotes the sweep to a runtime-discovery incident when privileged container exec or bulk IAM enumeration is observed."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-CONTAINER-EXEC-DISCOVERY",
+          "XDR-SECRET-FILE-READ-BURST"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter actor_process_image_name in (\"kubectl\", \"find\", \"gitleaks\") | filter action_process_image_command_line contains \"exec\" or action_file_path ~= \".*(\\\\.pem|\\\\.key|token|credentials)$\""
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-007",
+        "name": "Container & Kubernetes Posture and Supply-Chain Assurance",
+        "description": "Cortex Cloud CDR + XSIAM surface every supply-chain and cluster-hardening finding produced by a posture sweep, and detect the runtime discovery/credential-access shape the scan activity generates — proving coverage of both the static posture state and the compromise shape of a cluster attack.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-007A",
+            "objective": "Every sweep finding (Trivy image+IaC, kube-bench CIS, Kubescape NSA/CISA, gitleaks secrets, Cloudsplaining IAM) surfaces in cortex_cloud_posture for full coverage.",
+            "preconditions": [
+              "Cortex Cloud CDR connected (read-only) to the EKS cluster and AWS account.",
+              "cdr IaC fixture applied (EKS cluster with worker nodes)."
+            ],
+            "steps": [
+              "Run SIM-CDR-007 steps 1-6.",
+              "Observe the CDR posture findings list grouped by finding_source."
+            ],
+            "success_criteria": [
+              "Trivy image/IaC HIGH/CRITICAL query returns >= 1 finding.",
+              "kube-bench CIS FAIL query returns >= 1 failed control.",
+              "Kubescape NSA/CISA query returns >= 1 failed control.",
+              "Cloudsplaining IAM query returns >= 1 flagged principal.",
+              "Correlation CR-CDR-0007 raises a cluster-posture coverage event."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-CLOUD-007B",
+            "objective": "The scan activity is detected as runtime discovery/credential-access (posture-to-runtime stitch).",
+            "preconditions": [
+              "Cortex XDR agent / XSIAM ingestion active on the jumpbox and node so exec + IAM + file-read telemetry is captured."
+            ],
+            "steps": [
+              "During the sweep, exec into a running pod and run a bulk iam:GetAccountAuthorizationDetails.",
+              "Observe the runtime BIOCs fire and CR-CDR-0008 escalate."
+            ],
+            "success_criteria": [
+              "BIOC `CDR-007 Privileged Container Exec into EKS Workload` fires.",
+              "BIOC `CDR-007 IAM GetAccountAuthorizationDetails Bulk Enumeration` fires.",
+              "Bulk secret-pattern file-read query returns >= 1 host.",
+              "Correlation CR-CDR-0008 raises a posture-to-runtime discovery incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Gate image promotion on a Trivy/registry policy that blocks HIGH/CRITICAL CVEs and embedded secrets from reaching the cluster.",
+      "Enforce CIS Kubernetes Benchmark and NSA/CISA Hardening Guidance via admission control (OPA/Gatekeeper or Kyverno) and remediate kube-bench/Kubescape FAILs.",
+      "Scope EKS node and cluster IAM roles to least privilege reviewed by Cloudsplaining + IAM Access Analyzer; forbid wildcard and privilege-escalation action sets.",
+      "Disable anonymous and overly-broad RBAC; restrict kubectl exec via RBAC and audit-log every exec into a running pod."
+    ],
+    "detection_engineering": [
+      "Alert on any new container image, manifest, or IAM principal carrying a posture finding without an approved exception.",
+      "Detect kubectl exec into running pods that read /proc/1/status or the service-account token.",
+      "Alert on bulk iam:GetAccountAuthorizationDetails / ListRoles enumeration from a node or workload principal.",
+      "Stitch static posture findings to runtime telemetry so a flagged exposure exercised in-cluster escalates to an incident."
+    ],
+    "response_playbook": "XSOAR-PB-ClusterPostureSweepTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 Cloud Threat Report — The State of Cloud-Native Security",
+      "url": "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1613 — Container and Resource Discovery",
+      "url": "https://attack.mitre.org/techniques/T1613/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1526 — Cloud Service Discovery",
+      "url": "https://attack.mitre.org/techniques/T1526/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1552.001 — Unsecured Credentials: Credentials In Files",
+      "url": "https://attack.mitre.org/techniques/T1552/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "CISA & NSA — Kubernetes Hardening Guidance",
+      "url": "https://www.cisa.gov/news-events/alerts/2022/03/15/updated-kubernetes-hardening-guide",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "Initial CDR container/Kubernetes posture-sweep card for SIM-CDR-007. Authored real posture XQL against cortex_cloud_posture / cloud_audit_logs / xdr_data validating Trivy image+IaC, kube-bench CIS, Kubescape NSA/CISA, gitleaks secret, and Cloudsplaining IAM findings; two runtime-discovery BIOCs (privileged container exec, bulk IAM GetAccountAuthorizationDetails), correlations CR-CDR-0007/0008, and full PANW/UC-TC mapping. Promoted to active."
+    }
+  ]
+}
