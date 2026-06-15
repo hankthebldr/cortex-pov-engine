@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0012",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -146,7 +146,22 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "cortex-prompt-attacker/1.0",
+        "context": "User-Agent of the cortex-prompt-attacker tool (driven by the airs_prompt_attack EAL plugin) that POSTs the LLM01 injection probes to the /owasp/llm01/chat endpoint on port 8089. Synthetic lab telemetry — the attacker tool that carries the 'ignore previous instructions' / DAN payloads.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "cdn.cortexsim-canary.invalid",
+        "context": "Attacker-controlled exfil/staging host the cortex-vulnerable-llm is coerced to reference when an injection succeeds (the LLM03 typosquat plugin manifest points install/post-install hooks here). Synthetic, non-resolvable .invalid canary domain seeded by the AIRS lab.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
     "biocs": [
       {
         "name": "AIRS LLM01 System Prompt Or Hidden Context Echoed In Model Response",
@@ -317,6 +332,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — cortex-prompt-attacker tool user-agent and the cdn.cortexsim-canary.invalid attacker staging/exfil domain the vulnerable LLM is coerced to reference. Grounded in the synthetic values the AIRS lab (cortex-vulnerable-llm + airs_prompt_attack plugin) emits. All other content intact."
     }
   ]
 }

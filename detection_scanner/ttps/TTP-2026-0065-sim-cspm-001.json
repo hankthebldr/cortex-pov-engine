@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0065",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-06-08T00:00:00+00:00",
-    "updated_at": "2026-06-08T00:00:00+00:00",
+    "updated_at": "2026-06-15T00:00:00+00:00",
     "authors": [
       {
         "name": "Henry Reed",
@@ -172,7 +172,21 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "192.0.2.202",
+        "context": "Opportunistic public-internet scanner / attacker source IP (documentation-range stand-in for the real internet source) reaching the cspm module's world-open security groups — the non-RFC1918 ingress on dst_port 22/3306/5432/6379 the 'Inbound Connection Accepted on World-Open SSH/DB Security Group' BIOC fires on. Represents the constant background scanning that finds an exposed SG within minutes.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "cloud-account-id",
+        "value": "123456789012",
+        "context": "External / rogue AWS account ID (documentation-range stand-in) that could assume the cspm module's AdministratorAccess role or wield the iam:* wildcard user — the over-privileged IAM principal CSPM flags as a finding. Pairs with the 'Over-Privileged CSPM IAM Principal Used for Control-Plane Action' BIOC where a flagged principal is exercised cross-account.",
+        "reputation_required": "any"
+      }
+    ],
     "biocs": [
       {
         "name": "Inbound Connection Accepted on World-Open SSH/DB Security Group",
@@ -394,6 +408,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "Initial CSPM posture-detection card for SIM-CSPM-001. Authored real cloud-posture XQL against cortex_cloud_posture / cloud_audit_logs validating the nine cspm-module planted misconfigurations (S3 public/unversioned/no-KMS, SG SSH/DB world-open, IAM admin role + iam:* user, unencrypted EBS, weak CloudTrail), two CSPM-to-runtime BIOCs, correlations CR-CSPM-0001/0002, and full PANW/UC-TC mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10 IOC coverage: added 2 IOCs tied to the cspm-module exposure findings — a public-internet scanner/attacker source IP (192.0.2.202) reaching the world-open SSH/DB security groups (the ingress the world-open-SG BIOC fires on), and a rogue/external cloud-account-id (123456789012) representing a cross-account principal abusing the flagged AdministratorAccess role / iam:* user. No change to existing BIOC/XQL/correlation logic."
     }
   ]
 }

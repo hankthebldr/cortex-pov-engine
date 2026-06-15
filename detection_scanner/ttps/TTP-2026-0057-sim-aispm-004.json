@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0057",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-28T00:00:00+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -146,7 +146,27 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "caea40e897a85f5915a666dda3c4a6f8ae6683f41e9a0082022b0576a10001c7",
+        "context": "SHA-256 of the insecurely-serialized pickle model object the static analyzer flags at models/legacy_model.pkl in the ai-spm training-data bucket (aws_s3_object.pickled_model content) — the MLSEC-STATIC-002 insecure_model_serialization finding artifact.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://api.openai.com/v1/chat/completions",
+        "context": "Hardcoded third-party LLM endpoint in the ai-spm Lambda OpenAI-proxy source (OPENAI_URL) the static analyzer surfaces alongside the planted credential canary in the same handler.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "legacy_model.pkl",
+        "context": "Filename of the planted pickled model artifact (key models/legacy_model.pkl) the MLSEC-STATIC-002 insecure-model-serialization rule keys on — the .pkl extension + AI-workload bucket tag is the static detection surface.",
+        "reputation_required": "any"
+      }
+    ],
     "biocs": [],
     "xql_queries": [
       {
@@ -290,6 +310,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Authored real AI-SPM static-analysis XQL against cortex_cloud_posture / ai_spm_findings, added correlation CR-AISPM-0004, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10 IOC coverage: added 3 IOCs grounded in the ai-spm static-analysis fixture — the SHA-256 of the planted pickle model object (MLSEC-STATIC-002 artifact), the hardcoded OpenAI proxy URL the analyzer flags alongside the credential canary, and the legacy_model.pkl filename the insecure-serialization rule keys on. No change to existing XQL/correlation logic."
     }
   ]
 }

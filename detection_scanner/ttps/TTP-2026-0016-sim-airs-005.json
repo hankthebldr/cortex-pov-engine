@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0016",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -149,7 +149,22 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "cortex-prompt-attacker/1.0",
+        "context": "User-Agent of the cortex-prompt-attacker tool issuing the 50-iteration high-token POST burst (dos_unbounded_tokens probe) against /owasp/llm10/chat on port 8089. Synthetic lab telemetry — the source of the denial-of-wallet / token-exhaustion load.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "cdn.cortexsim-canary.invalid",
+        "context": "Attacker-controlled canary host seeded across the AIRS lab as the staging/exfil destination; appears in the AIRS plane's synthetic telemetry alongside the unbounded-consumption burst. Synthetic, non-resolvable .invalid domain.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
     "biocs": [],
     "xql_queries": [
       {
@@ -319,6 +334,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — cortex-prompt-attacker tool user-agent (source of the token-exhaustion POST burst) and the cdn.cortexsim-canary.invalid AIRS canary domain. Grounded in the synthetic values SIM-AIRS-005 emits. All other content intact."
     }
   ]
 }

@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0054",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-27T00:00:00+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -129,7 +129,26 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "url",
+        "value": "https://api.openai.com/v1/chat/completions",
+        "context": "Third-party AI integration endpoint hardcoded in the ai-spm module's Lambda OpenAI-proxy fixture (aws_lambda_function.openai_proxy, OPENAI_URL). Asset discovery surfaces this as the external model-provider egress the shadow Lambda reaches — the 'AI service you didn't know was wired up' finding.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "cloud-account-id",
+        "value": "382416733822",
+        "context": "AWS account ID owning the SageMaker built-in ECR image (382416733822.dkr.ecr.<region>.amazonaws.com/linear-learner:1) the planted poisoning-candidate model pulls from (ai-spm aws_sagemaker_model.poisoning_candidate). Surfaces in the AI inventory as an out-of-org model-supplier account backing a managed model.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "models/legacy_model.pkl",
+        "context": "S3 key of the insecurely-serialized pickle model artifact planted in the training-data bucket (ai-spm aws_s3_object.pickled_model, tag insecure-model-serialization-pickle). Discovered as an unmanaged serialized-model artifact in the AI inventory.",
+        "reputation_required": "any"
+      }
+    ],
     "biocs": [],
     "xql_queries": [
       {
@@ -266,6 +285,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Authored real AI-SPM posture-discovery XQL against cortex_cloud_posture / ai_spm_findings / cloud_audit_logs, added correlation CR-AISPM-0001, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10 IOC coverage: added 3 IOCs grounded in the ai-spm IaC fixture — the hardcoded OpenAI proxy egress URL (Lambda OPENAI_URL), the external model-supplier ECR account-id 382416733822 backing the SageMaker poisoning-candidate model, and the models/legacy_model.pkl unmanaged serialized-model artifact key. No change to existing XQL/correlation logic."
     }
   ]
 }

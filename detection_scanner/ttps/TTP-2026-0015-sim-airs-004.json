@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0015",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -149,7 +149,29 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "email-sender",
+        "value": "attacker@evil.invalid",
+        "context": "External exfil recipient the LLM06 send_email tool-abuse probe (tool_abuse_send_email.yml) coerces the agentic LLM into mailing the synthetic data to. Synthetic, non-resolvable .invalid recipient — the data-exfiltration variant of excessive agency.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "user-agent",
+        "value": "cortex-prompt-attacker/1.0",
+        "context": "User-Agent of the cortex-prompt-attacker tool driving the LLM06 tool-abuse probes (exec_shell 'rm -rf /tmp/notes', external send_email) against /owasp/llm06/agent on port 8089. Synthetic lab telemetry.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "cdn.cortexsim-canary.invalid",
+        "context": "Attacker-controlled canary staging/exfil host the agentic LLM can be coerced into reaching via the exec_shell (curl/wget) tool path. Synthetic, non-resolvable .invalid domain seeded across the AIRS plane.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
     "biocs": [
       {
         "name": "AIRS LLM06 Exec Shell Tool Invoked From Non Developer Context Prompt",
@@ -323,6 +345,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — the attacker@evil.invalid external send_email exfil recipient, the cortex-prompt-attacker tool user-agent, and the cdn.cortexsim-canary.invalid exec_shell egress domain. Grounded in the synthetic values SIM-AIRS-004 (LLM06 tool-abuse probes) emits. All other content intact."
     }
   ]
 }

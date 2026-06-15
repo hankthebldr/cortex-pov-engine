@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0028",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -147,7 +147,29 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "cortexsim-canary.invalid",
+        "context": "Bogus redirect_uri host the oauth_grant_emulator plants in the Microsoft admin-consent authorize request (default https://cortexsim-canary.invalid/oauth/callback). The .invalid redirect domain is the rogue-app fingerprint in the msft_o365_audit / NGFW URL logs. Synthetic, non-resolvable canary domain.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://cortexsim-canary.invalid/oauth/callback",
+        "context": "Full bogus OAuth callback URL carried as redirect_uri in the admin-consent (Directory.ReadWrite.All / Application.ReadWrite.All) Microsoft grant. Synthetic lab value emitted by oauth_grant_emulator (provider=microsoft, scope_preset=admin_consent).",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "198.51.100.23",
+        "context": "Synthetic attacker/source IPv4 (RFC 5737 documentation range) representing the jumpbox the oauth_grant_emulator egresses from when soliciting admin-consent-required Graph scopes. Lab-only source address for the repeat-attempt persistence-intent correlation.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
     "biocs": [
       {
         "name": "CLOUD-002 Pre-Flight Microsoft Provider Supported",
@@ -303,6 +325,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real Microsoft admin-consent OAuth CASB/NGFW XQL+BIOC, added correlation CR-CLOUDAPP-0002, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — the cortexsim-canary.invalid bogus redirect domain (+ /oauth/callback URL) and a synthetic RFC-5737 attacker source IPv4. Grounded in the synthetic values oauth_grant_emulator emits for SIM-CLOUD-002. All other content intact."
     }
   ]
 }

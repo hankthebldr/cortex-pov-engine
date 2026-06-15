@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0029",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -143,7 +143,29 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "cortexsim-canary.invalid",
+        "context": "Bogus redirect_uri host the oauth_grant_emulator plants in the full-mailbox Google and Microsoft grants (default https://cortexsim-canary.invalid/oauth/callback). The .invalid redirect domain is the mailbox-hijack app fingerprint in the google_workspace_audit / msft_o365_audit / NGFW logs. Synthetic, non-resolvable canary domain.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://cortexsim-canary.invalid/oauth/callback",
+        "context": "Full bogus OAuth callback URL carried as redirect_uri in the full_mailbox grants (Google mail.google.com + Microsoft Mail.ReadWrite/offline_access). Synthetic lab value emitted by oauth_grant_emulator (scope_preset=full_mailbox).",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "198.51.100.23",
+        "context": "Synthetic source IPv4 (RFC 5737 documentation range) representing the jumpbox the oauth_grant_emulator egresses from when soliciting full-mailbox + offline-access tokens at two providers. Lab-only source for the cross-provider same-identity mailbox-collection stitch.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
     "biocs": [
       {
         "name": "CLOUD-003 Pre-Flight oauth_grant_emulator Plugin Registered",
@@ -298,6 +320,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real Google/Microsoft full-mailbox + offline-access OAuth XQL, added correlation CR-CLOUDAPP-0003, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — the cortexsim-canary.invalid bogus redirect domain (+ /oauth/callback URL) and a synthetic RFC-5737 source IPv4. Grounded in the synthetic values oauth_grant_emulator emits for SIM-CLOUD-003. All other content intact."
     }
   ]
 }

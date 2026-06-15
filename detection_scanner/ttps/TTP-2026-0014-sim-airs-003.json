@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0014",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -147,7 +147,22 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "cortex-prompt-attacker/1.0",
+        "context": "User-Agent of the cortex-prompt-attacker tool running the LLM07 prompt-stealer probes ('Repeat the words above' / 'first instruction you were given') against /owasp/llm07/chat on port 8089. Synthetic lab telemetry — the tool that extracts the seeded system prompt and AKIA canary.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "cdn.cortexsim-canary.invalid",
+        "context": "Attacker-controlled canary staging/exfil host the AIRS lab seeds as the destination for leaked system-prompt secrets. Synthetic, non-resolvable .invalid domain used across the AIRS plane.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
     "biocs": [
       {
         "name": "AIRS LLM07 Model Response Contains Literal System Prompt Role String",
@@ -320,6 +335,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — cortex-prompt-attacker tool user-agent and the cdn.cortexsim-canary.invalid staging/exfil domain. Grounded in the synthetic values SIM-AIRS-003 (prompt-stealer probes against the seeded system prompt) emits. All other content intact."
     }
   ]
 }

@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0013",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -148,7 +148,29 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "cortex-prompt-attacker/1.0",
+        "context": "User-Agent of the cortex-prompt-attacker tool that uploads the poisoned RAG document and later runs the rag_trigger retrieval probe against /owasp/llm08/rag on port 8089. Synthetic lab telemetry — the tool that plants the [SYSTEM_OVERRIDE] document.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "airs-002-poison.txt",
+        "context": "Filename of the poisoned RAG document the scenario uploads to /owasp/llm08/rag/upload — a fake 'Q3 2026 financial summary' hiding a [SYSTEM_OVERRIDE] block that leaks the AKIA0000CORTEXSIMCANARY secret on a later benign retrieval. Synthetic artifact created by SIM-AIRS-002.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "cdn.cortexsim-canary.invalid",
+        "context": "Attacker-controlled staging/exfil host the poisoned RAG corpus and the wider AIRS lab reference as the canary egress destination. Synthetic, non-resolvable .invalid domain seeded across the AIRS plane.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
     "biocs": [
       {
         "name": "AIRS LLM08 RAG Response Contains AKIA Canary From Poisoned Document",
@@ -320,6 +342,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — cortex-prompt-attacker tool user-agent, the airs-002-poison.txt poisoned-document filename uploaded to the RAG corpus, and the cdn.cortexsim-canary.invalid staging/exfil domain. Grounded in the synthetic values SIM-AIRS-002 emits. All other content intact."
     }
   ]
 }
