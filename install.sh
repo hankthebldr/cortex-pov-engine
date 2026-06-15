@@ -362,14 +362,25 @@ init_submodules() {
     # This fetches every submodule registered in .gitmodules, including the
     # tier-2 tool-adapter source trees. NOTE: sources/atomic-red-team is the
     # source tree for TOOL-ATOMIC-RED-TEAM, the single most-referenced adapter
-    # in the catalog (8 scenarios: edr/edr-001..005 + multi_plane/mp-005). Those
-    # scenarios cannot detonate without this init. Run
-    # scripts/check-adapter-sources.sh afterwards to confirm every tier-2
-    # adapter source_path is present on disk.
+    # in the catalog (7 scenarios: edr/edr-001..006 + multi_plane/mp-005). Those
+    # scenarios cannot detonate without this init.
     git submodule update --init --recursive \
         || die "git submodule update failed. Check network access and SSH/token permissions."
 
     log_ok "All submodules initialized (incl. tier-2 adapter sources, e.g. atomic-red-team)."
+
+    # Hard gate (GAP-ADAPT-01). `git submodule update` is a silent no-op when a
+    # submodule is listed in .gitmodules but has no gitlink in the tree — it
+    # provisions nothing and returns 0. That failure mode left every tier-2
+    # adapter source absent while the install "succeeded". Verify on disk and
+    # fail loud here rather than at scenario-detonation time on the target.
+    if [[ -x scripts/check-adapter-sources.sh ]]; then
+        log_step "Verifying tier-2 adapter source trees"
+        scripts/check-adapter-sources.sh \
+            || die "Tier-2 adapter source(s) missing after submodule init (see above). \
+A submodule may be declared in .gitmodules without a committed gitlink — \
+re-register it with 'git submodule add --force <url> <path>'."
+    fi
 }
 
 # ==============================================================================

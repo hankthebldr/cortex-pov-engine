@@ -68,6 +68,22 @@ PORT="$(sed -n 's/^CORTEXSIM_PORT=\([0-9][0-9]*\).*/\1/p' "${ENV_FILE}" | head -
 PORT="${PORT:-8888}"
 
 # ---------------------------------------------------------------------------
+# 1b. Adapter-source preflight (non-fatal).
+#     SimCore boots and serves the UI without the tier-2 adapter source trees
+#     (e.g. sources/atomic-red-team) — those are executed by the agent on the
+#     target, not by SimCore. So a miss here is a heads-up, not a blocker: it
+#     tells you the atomic-backed EDR/MP scenarios won't detonate until you run
+#     `git submodule update --init --recursive` (or, if a gitlink is missing,
+#     `git submodule add --force <url> <path>`). install.sh enforces this hard.
+# ---------------------------------------------------------------------------
+if [[ -x "${REPO_ROOT}/scripts/check-adapter-sources.sh" ]]; then
+  if ! "${REPO_ROOT}/scripts/check-adapter-sources.sh" >/dev/null 2>&1; then
+    log "Heads-up: a tier-2 adapter source tree is missing — atomic-backed"
+    log "scenarios won't detonate. Details: scripts/check-adapter-sources.sh"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 2. Bring the stack up.
 # ---------------------------------------------------------------------------
 if docker compose version >/dev/null 2>&1; then
