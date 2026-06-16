@@ -167,6 +167,35 @@ unverified** — do not put them in a POV deck without primary re-verification:
 5. **AIRS 2.0 capability surface** — verify module breakdown + OWASP LLM Top-10
    coverage before scoping new AIRS scenarios.
 
+### Round-2 research status (2026-06-16) — RATE-LIMITED / INCONCLUSIVE
+
+The second deep-research pass (`wf_483218a4-9d7`) **was throttled**: the verification
+fan-out hit sustained API rate-limits, so every claim landed at 0-0 (abstain) or 1-0
+(single vote) and was dropped by the 2/3-consensus rule. **This is "could not verify,"
+not "found false."** The raw claims gathered are plausible, on-target leads — but they
+are **UNVERIFIED; re-verify against primary sources before any POV use**, and re-run the
+pass when limits clear. Captured leads:
+
+- **(Q1) Identity-federation abuse** — `T1556.007` Modify Authentication Process: Hybrid
+  Identity (IaaS/IdP/Office/SaaS/Windows); `T1606.002` Forge Web Credentials: SAML Tokens
+  (Credential Access, forge tokens with a stolen signing cert or rogue AD FS trust). Both
+  map to ITDR/CDR/CSPM. Datasets (claimed): `msft_azure_ad_raw`/`msft_azure_ad_audit_raw`
+  (Azure Logs pack), `amazon_aws_raw` (AWS CloudTrail pack, maps `user_identity_arn` →
+  `xdm.source.user.identifier`). Caveat: those Marketplace packs reportedly ship
+  **normalization rules only, no detection content** — so federation-abuse BIOC/XQL must
+  be authored on top.
+- **(Q1) Container supply chain** — `T1195.002` (Linux/Win/macOS only — **does NOT list
+  Containers/IaaS**, so it doesn't map natively to CDR; supplement with) `T1612` Build
+  Image on Host (Docker API build to bypass registry-pull monitoring).
+- **(Q2) OT/IoT** — claimed first-party PANW IoT Security / OT Security with XSIAM
+  ingestion (device inventory + protocol metadata). Unverified; viability for a Cortex
+  BAS plane still open.
+- **(Q3) Email** — a claimed **first-party "Cortex Advanced Email Security"** (LLM-based,
+  correlates email/identity/endpoint) surfaced repeatedly. **If real, this changes Plan
+  04** (which currently assumes third-party Proofpoint/M365 ingestion only). HIGH-PRIORITY
+  to verify against PANW primary before building the Email plane.
+- **(Q4/Q5) AgentiX + AIRS 2.0** — no surviving signal this round; still open.
+
 ---
 
 ## Sources (surviving, by quality)
