@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1071",
+    "T1560",
+    "T1496",
+    "T1574"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(CDR-014 In-Cluster TTP Chain Behavioral Causality) AND ABIOC(CDR-014 Anomalous Multi-Stage Container Discovery and Exfil) \u2014 fuses the two auto-tuned behavioral deviations into one in-cluster behavioral-anomaly incident with the single-shell multi-stage causality chain.",
+      "name": "Multi-Stage In-Cluster TTP Chain \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-CDR-0014",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0087"
+}

@@ -1,0 +1,63 @@
+title: "Kubernetes-Goat Container Escape Chain \u2014 Cortex Cloud CDR (T1611 / T1610) \u2014 CDR-011 Container Escape via DIND nsenter or Host Namespace"
+id: ttp-2026-0083-bioc-01
+status: experimental
+description: |
+  A containerized process invokes nsenter against PID 1 namespaces or runs the Docker client with the host root bind-mounted (docker run -v /:/host), the canonical DIND/privileged-container escape primitives Kubernetes-Goat exposes (T1611 Escape to Host).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_container_info != null
+    | filter action_process_image_name in ("nsenter", "docker", "runc")
+    | filter action_process_image_command_line contains "-t 1" or action_process_image_command_line contains "/:/host" or action_process_image_command_line contains "--privileged"
+    | comp count() as escape_attempts by agent_hostname, action_process_image_name
+    | filter escape_attempts >= 1
+    | fields agent_hostname, action_process_image_name, escape_attempts
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kubernetes-Goat Container Escape Chain \u2014 Cortex Cloud CDR (T1611 / T1610) \u2014 CDR-011 Host Path Mount Access from Container"
+id: ttp-2026-0083-bioc-02
+status: experimental
+description: |
+  A process inside a container reads or writes a mounted host-path directory (/host/etc, /host/root, /host/proc), the host-filesystem-breakout primitive used after a privileged or hostPath-mounted goat pod is reached (T1611 Escape to Host).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter actor_container_info != null
+    | filter action_file_path contains "/host/etc" or action_file_path contains "/host/root" or action_file_path contains "/host/proc"
+    | comp count() as host_path_touches by agent_hostname, actor_process_image_name
+    | filter host_path_touches >= 1
+    | sort desc host_path_touches
+    | fields agent_hostname, actor_process_image_name, host_path_touches
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

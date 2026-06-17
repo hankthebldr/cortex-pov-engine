@@ -1,0 +1,29 @@
+title: "MCP Runtime Tool-Response Poisoning (T1656 / T1059) \u2014 KOI-006 MCP tools call result content embeds instruction injection at runtime"
+id: ttp-2026-0095-bioc-01
+status: experimental
+description: |
+  Runtime content inspection — a materialised MCP tools/call RESULT body carries an instruction-override plus credential-exfil directive at invocation time. Distinct from SIM-KOI-002 (which scans the server source): here the poisoned text lives in the tool RESULT the agent consumed, not the server.py source.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = koi_code_scan_events
+    | filter file_name contains "runtime-poisoned-response.json" or file_path contains "pa-firewall-mcp"
+    | filter scan_finding_text contains_any ("SYSTEM_OVERRIDE", "Ignore previous", "exfiltrate", ".aws/credentials", "AKIA0000CORTEXSIMCANARY")
+    | filter mcp_message_kind = "tools/call.result" or scan_finding_text contains "tools/call"
+    | fields _time, agent_hostname, file_path, mcp_message_kind, scan_finding_text
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

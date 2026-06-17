@@ -1,0 +1,27 @@
+title: "EMAIL \u2014 Thread-Hijack Reply-Chain Phishing (Proofpoint TAP + Microsoft 365) \u2014 EMAIL-004 Pre-Flight email_emitter Metadata Visible"
+id: ttp-2026-0093-bioc-01
+status: experimental
+description: |
+  Pre-flight: email_emitter metadata visible to operator. Confirms the EAL plugin is registered and exposes EMAIL targets before any events are emitted, so a null result means a harness fault rather than a detection miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = proofpoint_tap_raw
+    | filter messageType in ("messagesBlocked", "messagesDelivered", "clicksPermitted") or _raw_log contains "email_emitter"
+    | comp count() as preflight_events by recipient
+    | filter preflight_events >= 0
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1566/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1566.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

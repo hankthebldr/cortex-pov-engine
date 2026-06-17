@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1566.002",
+    "T1598"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(EMAIL-001 Phishing Credential-Link Blocked + Permitted Click) OR XQL(EMAIL-001 Phishing Link Microsoft 365 EmailEvents Shape) FOLLOWED_BY xdr_data endpoint process for the same recipient within 1h",
+      "name": "Phishing Credential-Link Account Compromise \u2014 Email to Endpoint Stitch",
+      "rule_id": "CR-EMAIL-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0090"
+}

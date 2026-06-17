@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1566.002",
+    "T1534"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(EMAIL-004 Thread-Hijack Reply-Chain Phishing Delivered) FOLLOWED_BY XQL(EMAIL-004 Thread-Hijack Permitted Click Follow-On) THEN xdr_data endpoint process for the same recipient within 1h",
+      "name": "Thread-Hijack Reply-Chain Phishing \u2014 Email to Endpoint Stitch",
+      "rule_id": "CR-EMAIL-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0093"
+}

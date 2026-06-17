@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1068",
+    "T1134",
+    "T1003.001",
+    "T1098",
+    "T1550",
+    "T1078"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(ITDR-007 LSASS Process Handle Open By Non-System Process) OR BIOC(ITDR-007 Abnormal DACL Write To AdminSDHolder Or Privileged Group) OR BIOC(ITDR-007 Kerberos Relay To LDAP From Local Host (KrbRelayUp)) OR BIOC(ITDR-007 SeImpersonate Named-Pipe Privilege Escalation To SYSTEM) OR BIOC(ITDR-007 Access Token Theft And Impersonation Via Token Duplication) \u2014 groups credential access, ACL abuse, Kerberos relay, SeImpersonate escalation, and token theft from one host into a single Privilege Escalation incident.",
+      "name": "AD Local-to-SYSTEM Privilege Escalation & Token Manipulation Chain From One Host",
+      "rule_id": "CR-ITDR-0007",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0078"
+}

@@ -42,6 +42,17 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-06-17 — detection-substrate expansion):**
+  **88 loadable scenarios** across **15 detection planes** (all `status: active`,
+  0 rejected / 0 dangling refs; **550/550 detection_id slugs resolve**) · **89 TTP
+  cards** (753 resolvable catalog detection objects) · **14 EAL plugins** (added
+  `email_emitter`) · 69 tool-adapter packs · 11 AWS IaC modules. New since 2026-06-15:
+  the `detection_type` vocabulary gained **ABIOC** (6 types) and the **XDM modeling-rule
+  substrate** (`detections.modeling_rules[]`, surfaced/exported but not a detection_type);
+  CDR 8→15 (first ABIOC `SIM-CDR-009` + lab port `SIM-CDR-010..014` + XDM proof
+  `SIM-CDR-015`), ANALYTICS/multi-plane 5→6 (`SIM-MP-006`), KOI 5→6 (`SIM-KOI-006`),
+  and a new **EMAIL** plane (4 scenarios, Proofpoint TAP / M365 ingestion + stitch).
+- *Prior (verified 2026-06-15): 75 scenarios · 76 cards · 494/494 slugs · 13 EAL plugins · 14 planes.*
 - *Prior (Fable pass, 2026-06-10): 68 scenarios · 72 cards · 70-pack claim · 17 wired.*
 
 ## The eight domain references

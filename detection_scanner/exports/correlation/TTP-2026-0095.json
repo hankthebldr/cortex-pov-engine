@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1656",
+    "T1059",
+    "T1552.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(KOI-006 MCP tools call result content embeds instruction injection at runtime) AND XQL(KOI-006 agent process consumed poisoned tool result)",
+      "name": "Agentic Runtime \u2014 MCP Tool-Result Injection Plus Follow-on Credential Access",
+      "rule_id": "CR-KOI-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0095"
+}

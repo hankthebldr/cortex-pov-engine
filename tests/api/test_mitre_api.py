@@ -202,7 +202,7 @@ def test_coverage_surfaces_correlation_detection_kind(client, session_factory):
     body = client.get("/api/mitre/coverage").json()
     by_id = {t["technique_id"]: t for t in body["techniques"]}
     dk = by_id["T1003"]["detection_kinds"]
-    assert set(dk) == {"bioc", "xql", "correlation", "ioc", "analytics"}
+    assert set(dk) == {"bioc", "xql", "correlation", "ioc", "analytics", "abioc", "modeling"}
     # TTP-2026-0032 carries at least one correlation rule.
     assert dk["correlation"] >= 1
     assert body["summary"]["with_correlation"] >= 1

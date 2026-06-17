@@ -123,12 +123,13 @@ Plugins fall into three implementation families:
 | 11 | `airs_prompt_attack` | AIRS | Shells out to `cortex-prompt-attacker`; Probe→Mutator→Target→Scorer pipeline against a vulnerable LLM; JSONL→ECS | `target_url` (the AIRS target) | T1656, T1059, T1499 | `plugins/airs_prompt_attack.py` |
 | 12 | `browser_attack_runner` | BROWSER (Prisma) | Shells out to `cortex-browser-attacker` (Playwright/Chromium/Prisma); YAML-declared browser actions; JSONL→ECS | `allowlist_host` (browser navigates) | T1552, T1189, T1176, T1567, T1113 | `plugins/browser_attack_runner.py` |
 | 13 | `agentic_egress` | KOI (supply-chain) | Tarballs an in-tree malicious-agentic-pack component and POSTs it (pypi_mirror does GET-probe + POST) | staging `target_url` | T1195, T1195.002, T1176, T1059 | `plugins/agentic_egress.py` |
+| 14 | `email_emitter` | EMAIL | Synthetic email-security events (Proofpoint TAP `proofpoint_tap_raw` + Microsoft 365 `msft_o365` shape) POSTed to a collector; 4 patterns (phishing_link, malicious_attachment, bec_impersonation, thread_hijack); ITDR-emulator pattern | operator `collector_url` | T1566.001, T1566.002, T1656, T1534, T1598 | `plugins/email_emitter.py` |
 
-> The summary table lists 13 rows because `ftp_egress` and `ssh_egress` are
-> NDR siblings; all 14 plugin files are catalogued below (the 14th file is the
-> count: c2, dns, stratum, smb, bulk, ftp, ssh, idp, oauth, llm, airs, browser,
-> agentic = **13 plugin classes** total; there is no 14th hidden plugin — the
-> directory's 14 `.py` files are these 13 plus `__init__.py`).
+> The summary table now lists **14 plugin classes**: c2, dns, stratum, smb, bulk,
+> ftp, ssh, idp, oauth, llm, airs, browser, agentic, **email_emitter** (added in
+> the 2026-06-17 EMAIL-plane expansion). `ftp_egress`/`ssh_egress` are NDR siblings
+> of the network emitters; `email_emitter` mirrors the `idp_signin_emulator`
+> collector-POST pattern. The directory's `.py` files are these 14 plus `__init__.py`.
 
 ### 2.2 Per-plugin detail
 

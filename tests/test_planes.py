@@ -40,6 +40,7 @@ EXPECTED_PLANE_IDS = {
     "AI_SPM",
     "BROWSER",
     "KOI",
+    "EMAIL",
 }
 
 _TECHNIQUE_RE = re.compile(r"^T\d{4}(\.\d{3})?$")

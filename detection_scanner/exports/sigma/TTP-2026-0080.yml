@@ -1,0 +1,62 @@
+title: "Sock-Shop Microservices Behavioral Anomaly \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1610 / T1611 / T1046) \u2014 CDR-009 Anomalous East-West Connection Spike from Baselined Microservice"
+id: ttp-2026-0080-abioc-01
+status: experimental
+description: |
+  A Sock-Shop microservice that Cortex has profiled to a stable set of east-west peers suddenly fans out connections to services it has never contacted in the learned baseline window. ABIOC anchors the deviation to the causality chain (privileged exec into the pod -> shell child -> new east-west peers), distinguishing a real behavioral anomaly from normal mesh traffic.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = network_story
+    | filter action_local_ip != null and action_remote_ip != null
+    | filter actor_process_image_name in ("sh", "bash", "nc", "curl")
+    | comp count_distinct(action_remote_ip) as distinct_peers by actor_effective_username, agent_hostname
+    | filter distinct_peers >= 5
+    | sort desc distinct_peers
+    | fields agent_hostname, actor_effective_username, distinct_peers
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Sock-Shop Microservices Behavioral Anomaly \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1610 / T1611 / T1046) \u2014 CDR-009 Anomalous Container Process-Tree Deviation from Learned Baseline"
+id: ttp-2026-0080-abioc-02
+status: experimental
+description: |
+  A container whose learned per-process baseline is a single long-running service binary suddenly hosts a shell process tree spawning network and packaging tooling. ABIOC fires on the single deviation event with the causality chain that ties the anomalous children back to the exec, rather than on a static known-bad process name.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("sh", "bash")
+    | filter action_process_image_name in ("curl", "nc", "nmap", "python3", "apt", "apk", "ps")
+    | comp count() as anomalous_children by agent_hostname, actor_process_image_name
+    | filter anomalous_children >= 1
+    | fields agent_hostname, actor_process_image_name, anomalous_children
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1610/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1610
+    - attack.t1611
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

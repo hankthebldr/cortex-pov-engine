@@ -1,8 +1,13 @@
 # Scenario Catalog — CortexSim Detection Simulation Engine
 
 > A **derived** view of every loadable scenario YAML under `scenarios/`. Source-of-truth
-> is the YAML itself; the data-heavy sections (§2, §3, §5) are **regenerated from disk**
-> (last regenerated 2026-06-15 — 75 scenarios across 14 planes). Stable IDs:
+> is the YAML itself; the data-heavy sections (§2, §3, §5) are **regenerated from disk**.
+> **Current ground truth (2026-06-17): 88 scenarios across 15 planes** (the 2026-06-15
+> baseline of 75 + the 13 detection-substrate-expansion scenarios — SIM-CDR-009..015,
+> SIM-MP-006, SIM-EMAIL-001..004, SIM-KOI-006; new EMAIL plane; ABIOC detection_type +
+> XDM modeling-rule substrate). The §2/§3/§5 per-scenario data tables below were last
+> regenerated 2026-06-15 (75 scenarios) and are pending a full regeneration for the 13
+> new scenarios; the boot-verified counts above are authoritative. Stable IDs:
 > `SIM-{PLANE}-{NNN}`, `TTP-2026-NNNN`, `TOOL-*`, `UCS-*/TC-*`.
 
 ## 0. Scope & method

@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1610",
+    "T1496"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(CDR-013 Busybox Container Fetches and Executes ELF) AND XQL(CDR-013 Malware ELF Retrieval from Public Repository) \u2014 fuses the insecure-deployment ELF retrieval with the egress to the public malware repo into one posture-to-runtime detonation incident, enriched by the DeimosC2/Conti/BPFDoor file-hash IOC matches.",
+      "name": "Insecure Deployment Detonation \u2014 ELF Retrieval Plus IOC Hash Match",
+      "rule_id": "CR-CDR-0013",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0085"
+}

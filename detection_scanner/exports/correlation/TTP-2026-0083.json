@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1611",
+    "T1610"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(CDR-011 Container Escape via DIND nsenter or Host Namespace) AND XQL(CDR-011 Container Escape to Host Process Activity) \u2014 fuses the escape primitive with the resulting host-namespace process activity into one container-escape-chain incident.",
+      "name": "Kubernetes-Goat Escape Chain \u2014 Escape Primitive Then Host Process Activity",
+      "rule_id": "CR-CDR-0011",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0083"
+}
