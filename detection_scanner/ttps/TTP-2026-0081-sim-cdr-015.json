@@ -1,0 +1,259 @@
+{
+  "id": "TTP-2026-0081",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-data-modeling",
+      "industry-all",
+      "severity-medium",
+      "kubernetes",
+      "xdm",
+      "modeling-rules",
+      "normalization-substrate"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "kubernetes",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "kubernetes",
+        "aws"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "XDM Container Telemetry Normalization — Modeling-Rule Substrate Proof (T1610 / T1613)",
+    "summary": "Prove the full raw-source to detection chain for container telemetry: an XDM modeling rule maps the raw actor_container_info JSON blob into addressable XDM fields (pod_namespace, image_name, privileged), and a BIOC then fires on the normalized privileged field. The modeling rule is the normalization substrate beneath the detection — it enables firing, it does not itself fire.",
+    "description": "Cortex detections assume data is already normalized into the Cortex Data Model (XDM), but a real DC onboarding a customer log source must first author the parsing/modeling rules that map raw event JSON into addressable XDM fields. Modeling rules are XQL written under a [MODEL: dataset=...] declaration; normalization is opt-in per source (schema-on-read), so an un-modeled log stays searchable but is NOT analytics-grade — modeling rules are therefore the gating substrate for analytics-grade detection. This entry brings that substrate into the corpus as a first-class, paste-able card kind (detections.modeling_rules[]) and proves the chain end-to-end against container telemetry. The modeling rule is derived from the real xsiam-prisma-cdr-lab container_info.sql: it reads the raw actor_container_info JSON the Linux agent daemonset emits and json_extract_scalar's it into normalized fields — pod_namespace, pod_name, image_name, image_id, container_id, and the security-relevant privileged flag. With those fields modeled, a BIOC fires on privileged container starts (the normalized privileged = true field), and a validation XQL confirms the modeled fields are populated. The card deliberately does NOT add a sixth detection_type: a modeling rule does not fire, it enables firing, so the coverage rollup counts it informationally only. The point of the scenario is to let a DC show the moment a raw, un-analytics-grade log source becomes analytics-grade — the raw blob, the [MODEL: ...] rule, the now-addressable privileged field, and the BIOC that fires on it.",
+    "severity": "medium",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Container-escape and privileged-workload abusers"
+      }
+    ],
+    "campaigns": [
+      "Privileged container abuse in Kubernetes"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "containers",
+    "techniques": [
+      {
+        "technique_id": "T1610",
+        "name": "Deploy Container",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1613",
+        "name": "Container and Resource Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Container: Container Metadata",
+      "Container: Container Enumeration",
+      "Process: Process Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "kubernetes",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-015 — raw container telemetry to XDM-normalized field to BIOC chain proof",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM with the Linux agent daemonset deployed so raw actor_container_info telemetry reaches the tenant.",
+        "check_command": "kubectl -n kube-system get daemonset | grep -i cortex"
+      },
+      {
+        "description": "cdr IaC module applied so the EKS cluster with worker nodes exists and is reachable via kubeconfig.",
+        "check_command": "kubectl get nodes -o name"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No detonation. Start a privileged container so the agent emits raw\n# actor_container_info telemetry the modeling rule normalizes into XDM fields.\nset -euo pipefail\nkubectl run cortexsim-priv-probe --image=public.ecr.aws/docker/library/busybox:1.36 --restart=Never --overrides='{\"spec\":{\"containers\":[{\"name\":\"p\",\"image\":\"public.ecr.aws/docker/library/busybox:1.36\",\"command\":[\"sh\",\"-c\",\"id; sleep 60\"],\"securityContext\":{\"privileged\":true}}]}}' || true\nkubectl wait --for=condition=Ready pod/cortexsim-priv-probe --timeout=120s || true",
+      "input_variables": [
+        {
+          "name": "TARGET_NS",
+          "type": "string",
+          "default": "default",
+          "description": "Namespace the privileged probe pod is started in."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "A privileged container start whose raw actor_container_info JSON carries privileged=true, normalized by the modeling rule into the XDM privileged field.",
+        "expected_value": "container_info.privileged = \"true\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "kubectl delete pod cortexsim-priv-probe --ignore-not-found; echo '[CortexSim] SIM-CDR-015 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "modeling_rules": [
+      {
+        "name": "Container Telemetry XDM Normalization",
+        "dataset": "cortexsim_container_raw",
+        "description": "Maps the raw actor_container_info JSON blob the Linux agent emits into addressable XDM container fields. Derived from the xsiam-prisma-cdr-lab container_info.sql. This is the normalization substrate beneath the privileged-container BIOC — it enables firing, it does not itself fire.",
+        "logic": "[MODEL: dataset = cortexsim_container_raw]\n| fields actor_container_info as container_info\n| filter container_info != null\n| alter pod_namespace = json_extract_scalar(container_info, \"$.pod_namespace\")\n| alter pod_name = json_extract_scalar(container_info, \"$.pod_name\")\n| alter image_name = json_extract_scalar(container_info, \"$.image_name\")\n| alter image_id = json_extract_scalar(container_info, \"$.image_id\")\n| alter container_id = json_extract_scalar(container_info, \"$.id\")\n| alter privileged = json_extract_scalar(container_info, \"$.privileged\")",
+        "vendor": "PANW",
+        "product": "Cortex XSIAM",
+        "content_id": "MODEL-CDR-CONTAINER-XDM",
+        "xdm_fields": [
+          "xdm.target.container.pod_namespace",
+          "xdm.target.container.pod_name",
+          "xdm.target.container.image_name",
+          "xdm.target.container.id",
+          "xdm.target.container.privileged"
+        ]
+      }
+    ],
+    "biocs": [
+      {
+        "name": "CDR-XDM Privileged Container Start on Modeled Field",
+        "description": "Fires on a container start where the modeled privileged field (normalized from the raw actor_container_info blob by the modeling rule) is true. This BIOC only works BECAUSE the modeling rule made privileged addressable — proving the raw-source to modeled-field to detection chain.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| alter privileged = json_extract_scalar(actor_container_info, \"$.privileged\")\n| filter privileged = \"true\"\n| fields agent_hostname, actor_process_image_name, privileged\n| comp count() as privileged_starts by agent_hostname\n| filter privileged_starts >= 1",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1610",
+          "T1613"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CDR-XDM Modeled Container Fields Populated",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 600)\n| filter actor_container_info != null\n| alter pod_namespace = json_extract_scalar(actor_container_info, \"$.pod_namespace\")\n| alter privileged = json_extract_scalar(actor_container_info, \"$.privileged\")\n| filter pod_namespace != null\n| comp count() as modeled_events by pod_namespace, privileged\n| filter modeled_events >= 1\n| fields pod_namespace, privileged, modeled_events",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "data-modeling",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "MODEL-CDR-CONTAINER-XDM",
+          "XSIAM-BIOC-CDR-XDM-PRIVILEGED"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "The modeling rule normalizes raw actor_container_info into XDM fields; the BIOC fires on the modeled privileged field, proving the raw-source to detection chain."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-010",
+        "name": "XDM Normalization Substrate Proof for Container Telemetry",
+        "description": "A DC proves the full raw-source to detection chain: an XDM modeling rule maps raw container JSON into addressable fields, and a BIOC fires on the normalized privileged field.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-010A",
+            "objective": "The modeling rule normalizes raw container telemetry and the privileged-container BIOC fires on the modeled field.",
+            "preconditions": [
+              "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",
+              "A privileged container started so raw actor_container_info telemetry is emitted."
+            ],
+            "steps": [
+              "Apply the modeling rule that normalizes actor_container_info into XDM fields.",
+              "Start a privileged container probe.",
+              "Observe the modeled fields populate and the privileged-container BIOC fire."
+            ],
+            "success_criteria": [
+              "Validation XQL `CDR-XDM Modeled Container Fields Populated` returns >= 1 event with privileged populated.",
+              "BIOC `CDR-XDM Privileged Container Start on Modeled Field` fires on the modeled privileged field."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Forbid privileged containers via admission control (OPA/Gatekeeper or Kyverno) and Pod Security Standards.",
+      "Author and maintain XDM modeling rules for every onboarded container log source so all container telemetry is analytics-grade.",
+      "Run service workloads as non-root with no privilege escalation."
+    ],
+    "detection_engineering": [
+      "Model raw container telemetry into XDM fields before authoring container detections — un-modeled logs are searchable but not analytics-grade.",
+      "Alert on container starts whose modeled privileged field is true outside an approved exception list.",
+      "Validate that newly onboarded log sources populate their expected XDM fields before relying on downstream detections."
+    ],
+    "response_playbook": "XSOAR-PB-PrivilegedContainerTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM — XDM data modeling rules (parsing and modeling)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Documentation/Data-modeling-rules",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1610 — Deploy Container",
+      "url": "https://attack.mitre.org/techniques/T1610/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1613 — Container and Resource Discovery",
+      "url": "https://attack.mitre.org/techniques/T1613/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}
