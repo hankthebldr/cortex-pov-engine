@@ -1,0 +1,159 @@
+scenario_id: SIM-EMAIL-001
+name: "EMAIL — Phishing Credential-Harvest Link (Proofpoint TAP + Microsoft 365)"
+version: "1.0"
+status: active
+
+plane: EMAIL
+detection_types:
+  - BIOC
+  - XQL
+
+uc_ref: UC-EMAIL-001
+tc_ref: TC-EMAIL-001A
+uc_name: "Phishing Credential-Link Detection"
+tc_name: "Blocked Phishing Message + Permitted Click For One Recipient Raises Credential-Phishing Alert"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1566.002"
+mitre_technique_name: "Phishing: Spearphishing Link"
+additional_techniques:
+  - technique: "T1598"
+    name: "Phishing for Information"
+
+threat_report: "Cortex XSIAM — Proofpoint TAP Ingestion & Modeling (proofpoint_tap_raw)"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+validation_methodology: "Email Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Proofpoint TAP / Microsoft 365 email-security signals emitted by
+  this scenario produce the expected Cortex XSIAM credential-phishing detection.
+  Detection Accuracy is the share of injected email events that raise the
+  expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm email_emitter plugin is registered"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe email_emitter \
+        | jq -e '.eal_targets | length > 0'
+    identity: container-runtime
+    mitre_technique: "T1566.002"
+    expected_detections:
+      - plane: EMAIL
+        type: BIOC
+        description: "Pre-flight: email_emitter metadata visible to operator"
+        ttp_ref: "TTP-2026-0090"
+        detection_id: bioc-email-001-pre-flight-email-emitter-metadata-visible
+
+  - id: step-02
+    name: "Emit a phishing credential-link message (Proofpoint TAP shape)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/email-001.yml <<YML
+      campaign_id: CMP-EMAIL-001
+      name: "EMAIL — Proofpoint TAP phishing link"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [email, proofpoint, phishing-link]
+      steps:
+        - step_id: step-01
+          plugin: email_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: proofpoint
+            event_pattern: phishing_link
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/email-001.yml --live
+    identity: container-runtime
+    mitre_technique: "T1566.002"
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "EMAIL — credential-phishing link blocked + permitted click for one recipient"
+        ttp_ref: "TTP-2026-0090"
+        detection_id: xql-email-001-phishing-credential-link-blocked-permitted-click
+      - plane: NDR
+        type: XQL
+        description: "NGFW EAL — outbound POST burst to email log-collector App-ID match"
+        ttp_ref: "TTP-2026-0090"
+        detection_id: xql-email-001-ngfw-outbound-post-burst-to-email-collector
+
+  - id: step-03
+    name: "Repeat the pattern with Microsoft 365 event shape — confirm parser works for both"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/email-001-m365.yml <<YML
+      campaign_id: CMP-EMAIL-001
+      name: "EMAIL — Microsoft 365 phishing link"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: email_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: microsoft365
+            event_pattern: phishing_link
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/email-001-m365.yml --live
+    identity: container-runtime
+    mitre_technique: "T1566.002"
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "EMAIL — phishing-link alert fires identically for Microsoft 365 EmailEvents shape"
+        ttp_ref: "TTP-2026-0090"
+        detection_id: xql-email-001-phishing-link-microsoft-365-emailevents-shape
+
+cleanup:
+  commands:
+    - "rm -f /tmp/email-001.yml /tmp/email-001-m365.yml"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - email
+  - proofpoint
+  - microsoft365
+  - phishing-link
+  - eal-plugin

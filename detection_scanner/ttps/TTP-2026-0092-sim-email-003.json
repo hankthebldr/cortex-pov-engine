@@ -1,0 +1,282 @@
+{
+  "id": "TTP-2026-0092",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-email",
+      "vector-bec",
+      "executive-impersonation",
+      "proofpoint-tap",
+      "microsoft-365",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-PROOFPOINT-TAP-DOCS",
+      "SRC-MICROSOFT-365-DOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "email",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "EMAIL — BEC / Executive Impersonation (Proofpoint TAP + Microsoft 365)",
+    "summary": "The email_emitter emits Proofpoint TAP messagesDelivered events for a business-email-compromise lure with an executive display-name spoof (classification=impostor) for one recipient, then proves the same impersonation logic fires over the Microsoft 365 EmailEvents shape. Cortex XSIAM raises a BEC/impersonation alert and stitches it to the recipient's identity follow-on.",
+    "description": "Business email compromise via executive impersonation (T1656) uses a look-alike external sender and a spoofed display name to coerce a recipient into a fraudulent action (wire transfer, gift cards, credential or data hand-off), and can pivot into internal spearphishing (T1534) once a mailbox is trusted. This card drives CortexSim's email_emitter to POST Proofpoint TAP messagesDelivered events (classification=impostor, display_name_spoof set) for ada.lovelace into the email log collector, then repeats the pattern in Microsoft 365 / Defender for Office 365 EmailEvents shape. Detection is email-log analytics in Cortex XSIAM: an XQL rule over the proofpoint_tap_raw dataset flags impostor-classified messages where an external sender carries an executive display name, with a parallel query over the recipient's endpoint/identity follow-on. A correlation rule fuses the impersonation signal with any subsequent anomalous recipient activity into one BEC incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "financial-services",
+      "professional-services"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1656",
+        "name": "Impersonation",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1534",
+        "name": "Internal Spearphishing",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ],
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "CortexSim email_emitter EAL plugin — event_pattern=bec_impersonation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "CortexSim email_emitter EAL plugin registered and an authorized email log collector endpoint reachable.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe email_emitter | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Cortex XSIAM ingesting the Proofpoint TAP (proofpoint_tap_raw) and Microsoft 365 (msft_o365) email datasets."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Emit a BEC executive-impersonation message (Proofpoint TAP then Microsoft 365 shape).\npython3 -m scripts.eal_simulator.cli run /tmp/email-003.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/email-003-m365.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "Delivered messages from an external sender carrying an executive display-name spoof classified as impostor.",
+        "expected_value": "classification = \"impostor\" and display_name_spoof = \"Chief Executive Officer\" for one recipient"
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "Recipient identity follow-on activity correlated to the impersonation lure.",
+        "expected_value": "recipient identity event within the BEC correlation window"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/email-003.yml /tmp/email-003-m365.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "ceo-office-external.invalid",
+        "context": "Look-alike external sender domain of the BEC impersonation lure (email_emitter bec_impersonation indicators). Appears in the Proofpoint TAP senderDomain / M365 SenderMailFromDomain field.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "email-sender",
+        "value": "ceo.office@ceo-office-external.invalid",
+        "context": "Spoofed executive sender address of the BEC lure (email_emitter bec_impersonation indicators). Carries the Chief Executive Officer display-name spoof; pivot for the BEC incident.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "EMAIL-003 Pre-Flight email_emitter Metadata Visible",
+        "description": "Pre-flight: email_emitter metadata visible to operator. Confirms the EAL plugin is registered and exposes EMAIL targets before any events are emitted, so a null result means a harness fault rather than a detection miss.",
+        "logic": "dataset = proofpoint_tap_raw\n| filter messageType in (\"messagesBlocked\", \"messagesDelivered\", \"clicksPermitted\") or _raw_log contains \"email_emitter\"\n| comp count() as preflight_events by recipient\n| filter preflight_events >= 0",
+        "severity": "informational",
+        "mitre_technique_ids": [
+          "T1656"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EMAIL-003 BEC Executive Impersonation Display-Name Spoof",
+        "query": "// [MODEL: dataset=proofpoint_tap_raw, content_id=\"ProofpointTAP\"]\ndataset = proofpoint_tap_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter classification = \"impostor\" and messageType = \"messagesDelivered\"\n| comp count() as bec_events, values(sender) as senders, values(display_name_spoof) as spoofed_names by recipient\n| filter bec_events >= 1\n| fields recipient, senders, spoofed_names, bec_events",
+        "expected_rows_min": 1,
+        "dataset": "proofpoint_tap_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EMAIL-003 BEC Recipient Endpoint Follow-On Stitch",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.PROCESS\n| comp count() as endpoint_events, values(action_process_image_name) as procs by actor_effective_username\n| filter endpoint_events >= 1\n| fields actor_effective_username, endpoint_events, procs",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "BEC Executive Impersonation — Email to Identity Stitch",
+        "rule_id": "CR-EMAIL-0003",
+        "logic": "XQL(EMAIL-003 BEC Executive Impersonation Display-Name Spoof) FOLLOWED_BY msft_o365 mailbox-rule change OR xdr_data endpoint activity for the same recipient within 4h"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Email Analytics — Impostor display-name spoof from external sender",
+      "Cortex XSIAM Correlation — BEC lure to recipient identity follow-on stitch"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "EMAIL-BEC-IMPOSTOR-003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = proofpoint_tap_raw | filter classification = \"impostor\" | comp count() by recipient | filter _count >= 1"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EMAIL-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EMAIL-0003 fuses the BEC impersonation lure with the recipient's identity follow-on into one BEC incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-EMAIL-003",
+        "name": "BEC / Executive Impersonation Detection",
+        "description": "Detect an executive display-name spoof from an external sender across both Proofpoint TAP and Microsoft 365 email log shapes, stitched to the recipient identity follow-on.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-EMAIL-003A",
+            "objective": "An impostor-classified message with an executive display-name spoof raises a BEC alert.",
+            "preconditions": [
+              "Cortex XSIAM ingesting proofpoint_tap_raw and msft_o365 datasets.",
+              "email_emitter authorized against the lab collector."
+            ],
+            "steps": [
+              "Run SIM-EMAIL-003 steps 1-3.",
+              "Observe the BEC/impersonation alert per recipient in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `EMAIL-003 BEC Executive Impersonation Display-Name Spoof` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-EMAIL-003B",
+            "objective": "The BEC lure stitches to the recipient identity follow-on.",
+            "success_criteria": [
+              "Correlation `CR-EMAIL-0003` groups the impersonation lure with the recipient identity follow-on under one incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce DMARC reject and external-sender display-name warning banners.",
+      "Require out-of-band verification for payment / wire-transfer requests.",
+      "Block look-alike and newly-registered sender domains targeting executives."
+    ],
+    "detection_engineering": [
+      "Flag external senders carrying an internal executive display name (display-name spoof).",
+      "Normalize Proofpoint TAP impostor classifications and Microsoft 365 EmailEvents into one schema.",
+      "Stitch the BEC lure to the recipient's identity / mailbox-rule follow-on."
+    ],
+    "response_playbook": "XSOAR-PB-EmailBEC-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM — Proofpoint TAP Ingestion & Modeling (proofpoint_tap_raw)",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks",
+      "publisher_id": "SRC-PROOFPOINT-TAP-DOCS",
+      "primary": true
+    },
+    {
+      "title": "Cortex XSIAM — Microsoft 365 / Defender for Office 365 Connector (msft_o365)",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks",
+      "publisher_id": "SRC-MICROSOFT-365-DOCS"
+    },
+    {
+      "title": "MITRE ATT&CK T1656 — Impersonation",
+      "url": "https://attack.mitre.org/techniques/T1656/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-17",
+      "author": "Henry Reed",
+      "change": "Initial EMAIL-plane card: BEC / executive impersonation (T1656 + T1534) over Proofpoint TAP + Microsoft 365 with CR-EMAIL-0003 email-to-identity stitch."
+    }
+  ]
+}

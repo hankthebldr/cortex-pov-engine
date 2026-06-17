@@ -34,6 +34,7 @@ from planes.airs import AIRS_PLANE
 from planes.ai_spm import AI_SPM_PLANE
 from planes.browser import BROWSER_PLANE
 from planes.koi import KOI_PLANE
+from planes.email import EMAIL_PLANE
 
 #: All active plane descriptors in CLAUDE.md plane-table order.
 ALL_PLANES: tuple[PlaneDescriptor, ...] = (
@@ -51,6 +52,7 @@ ALL_PLANES: tuple[PlaneDescriptor, ...] = (
     AI_SPM_PLANE,
     BROWSER_PLANE,
     KOI_PLANE,
+    EMAIL_PLANE,
 )
 
 #: Registry of every active plane keyed by canonical plane id (e.g. ``"EDR"``).
@@ -89,4 +91,5 @@ __all__ = [
     "AI_SPM_PLANE",
     "BROWSER_PLANE",
     "KOI_PLANE",
+    "EMAIL_PLANE",
 ]
