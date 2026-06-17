@@ -30,24 +30,33 @@ status: "active"
 plane: "CDR"
 # (required) Primary detection plane this scenario targets.
 # One of: EDR | CDR | NDR | ITDR | CLOUD_APP | ANALYTICS
-#       | AI_ACCESS | AIRS | AI_SPM | BROWSER | KOI
+#       | AI_ACCESS | AIRS | AI_SPM | BROWSER | KOI | ASM | CSPM | TIM | EMAIL
 # ANALYTICS is reserved for multi-plane correlation scenarios.
 # AI_ACCESS — Cortex AI Access Security (employee LLM usage / DLP)
 # AIRS      — Cortex AI Runtime Security (deployed LLM app protection)
 # AI_SPM    — Cortex AI Security Posture Management (static AI asset inventory + config)
 # BROWSER   — Prisma Browser (managed browser DLP / extension / phishing)
 # KOI       — Agentic endpoint / supply-chain risk (MCP, skills, extensions)
+# ASM       — Cortex ASM / Xpanse (internet-exposed attack-surface discovery)
+# CSPM      — Cortex Cloud Posture Management (misconfig findings)
+# TIM       — Cortex Threat Intel Management (IOC feed + matching traffic)
+# EMAIL     — Email security: Proofpoint TAP (proofpoint_tap_raw) / Microsoft 365 (msft_o365) log ingestion; phishing / BEC / impersonation + endpoint/identity stitch
 
 detection_types:
   - BIOC
   - Analytics
 # (required) List of Cortex detection engine types expected to fire.
-# Valid values: BIOC | XQL | Analytics | Correlation | IOC
+# Valid values: BIOC | XQL | Analytics | Correlation | IOC | ABIOC
 #   BIOC        — Behavioral Indicator of Compromise rule
 #   XQL         — XSIAM Query Language scheduled/saved query detection
 #   Analytics   — XSIAM analytics / ML behavioral detector
 #   Correlation — XSIAM correlation rule stitching signals across sources
 #   IOC         — atomic indicator (hash / domain / IP) match
+#   ABIOC       — Analytics Behavioral IOC: PANW-authored, auto-tuned
+#                 behavioral-ML detection with an identified causality chain
+#                 (distinct from hand-authored BIOC)
+# NOTE: XDM modeling rules are a normalization SUBSTRATE, not a detection_type —
+# they ride on detection cards as detections.modeling_rules[], never here.
 # At least one value required.
 # The loader emits a (non-fatal) WARNING when this declared set drifts from
 # the union of the steps' expected_detections[].type values (S-09).
@@ -184,7 +193,7 @@ steps:
       - plane: CDR
         # (required) Detection plane expected to produce signal.
         type: Analytics
-        # (required) Detection type. One of: BIOC | XQL | Analytics | Correlation | IOC
+        # (required) Detection type. One of: BIOC | XQL | Analytics | Correlation | IOC | ABIOC
         description: "Package manager execution in container — unusual install pattern"
         # (required) Human-readable description of the expected alert/detection.
         # Used in ResultsViewer to show expected vs observed.
@@ -201,6 +210,8 @@ steps:
         #   - detections.xql_queries[].name        → slug "xql-<slugified-name>"
         #   - detections.correlation_rules[].rule_id (verbatim, e.g. CR-CRED-0001)
         #   - detections.iocs[]                    → slug "ioc-<type>-<value>"
+        #   - detections.abiocs[].name             → slug "abioc-<slugified-name>"
+        #   - detections.modeling_rules[].name     → slug "modeling-<slugified-name>"
         # Resolved by core/engine/ttp_catalog.py.
 
   - id: "step-02"

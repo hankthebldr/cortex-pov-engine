@@ -122,6 +122,13 @@ KNOWN_DATASETS = frozenset({
     "cortex_cloud_posture", "prisma_browser_events", "asm_findings", "ai_spm_findings",
     "cortexsim_airs_raw", "koi_code_scan_events", "threat_intel", "risky_drive",
     "full_mailbox", "admin_consent", "benign",
+    # Plan 02 — XDM modeling-rule raw source (un-normalized container telemetry
+    # the modeling rule maps into XDM fields). Registered so the modeling-rule
+    # source name does not WARN as an invented dataset.
+    "cortexsim_container_raw",
+    # Plan 04 — EMAIL plane ingestion sources (Proofpoint TAP / M365 / Defender
+    # for Office 365 message + threat telemetry).
+    "proofpoint_tap_raw", "msft_o365_email", "msft_defender_o365",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain
@@ -436,6 +443,15 @@ def main():
             if logic:
                 lint_detection_body(report, rel, f"detections.correlation_rules[{i}].logic",
                                     logic, require_dataset=False)
+        # Plan 01 — ABIOC bodies are XQL-shaped against a real dataset, lint like a BIOC.
+        for i, a in enumerate(detections.get("abiocs", [])):
+            lint_detection_body(report, rel, f"detections.abiocs[{i}].logic",
+                                a.get("logic"), require_dataset=True)
+        # Plan 02 — modeling-rule bodies open with `[MODEL: dataset=…]`; the
+        # `dataset=` substring satisfies the anchor + dataset-registry checks.
+        for i, m in enumerate(detections.get("modeling_rules", [])):
+            lint_detection_body(report, rel, f"detections.modeling_rules[{i}].logic",
+                                m.get("logic"), require_dataset=True)
 
         report.ok(f"ttp {ttp_id}")
 

@@ -220,6 +220,9 @@ async def get_mitre_coverage(
                 "detection_kinds": {
                     "bioc": 0, "xql": 0, "correlation": 0,
                     "ioc": 0, "analytics": 0,
+                    # Plan 01 ABIOC (validated behavioral-ML) +
+                    # Plan 02 modeling substrate (informational only).
+                    "abioc": 0, "modeling": 0,
                 },
             }
         else:
@@ -363,6 +366,11 @@ async def get_mitre_coverage(
     # Additive — how much of the surface is card-corpus-backed vs scenario-only.
     in_card_corpus = sum(1 for t in output if t["in_card_corpus"])
     with_correlation = sum(1 for t in output if t["detection_kinds"]["correlation"] > 0)
+    # ABIOC counts as validated behavioral-ML depth (Plan 01); modeling is the
+    # XDM normalization substrate present beneath a technique (Plan 02,
+    # informational — NOT validated detection).
+    with_abioc = sum(1 for t in output if t["detection_kinds"]["abioc"] > 0)
+    with_modeling = sum(1 for t in output if t["detection_kinds"]["modeling"] > 0)
 
     logger.info(
         "mitre_coverage techniques=%d detected=%d in_card_corpus=%d include_inactive=%s",
@@ -380,6 +388,8 @@ async def get_mitre_coverage(
             # Additive — does not break the existing UI which reads the 4 keys above.
             "in_card_corpus": in_card_corpus,
             "with_correlation": with_correlation,
+            "with_abioc": with_abioc,
+            "with_modeling": with_modeling,
             "include_inactive": include_inactive,
         },
     }

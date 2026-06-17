@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "registry_version": "1.3.0",
+  "registry_version": "1.4.0",
   "description": "Indexed threat-intel and execution-framework sources for the cortex-pov-engine TTP corpus. Consumed by the cortex-scraper to crawl, parse, and emit candidate TTP drafts. Tier 1 = primary/canonical; Tier 2 = vendor intel; Tier 3 = government; Tier 4 = IR/community; Tier 5 = execution frameworks (payload sources, not intel).",
-  "updated_at": "2026-06-07",
+  "updated_at": "2026-06-17",
   "sources": [
     {
       "id": "SRC-UNIT42",
@@ -716,6 +716,54 @@
       "discovery_queries": [
         "rclone documentation flags",
         "rclone copy --transfers --multi-thread-streams"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-PANW-TECHDOCS",
+      "name": "Palo Alto Networks TechDocs — Cortex XSIAM / Cortex Cloud Product Documentation",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "vendor-docs",
+      "homepage": "https://docs-cortex.paloaltonetworks.com/",
+      "purpose": "Authoritative Cortex product documentation. Grounds first-party detection-content concepts the corpus models — Analytics BIOC (ABIOC), XDM data-model parsing/modeling rules, correlation rules, and Cortex Cloud CDR posture — referenced when a card or scenario depends on a documented Cortex detection primitive rather than external threat research.",
+      "update_cadence": "continuous",
+      "discovery_queries": [
+        "Cortex XSIAM Analytics BIOC ABIOC behavioral detection",
+        "Cortex XDM data modeling rules dataset MODEL",
+        "Cortex Cloud CDR Kubernetes posture detection"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-PROOFPOINT-TAP-DOCS",
+      "name": "Palo Alto Networks — Proofpoint TAP Ingestion (proofpoint_tap_raw) Docs + Palo-Cortex/soc-proofpoint-tap",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "vendor-docs",
+      "homepage": "https://docs-cortex.paloaltonetworks.com/",
+      "purpose": "Authoritative Cortex XSIAM / NG-SIEM ingestion + parsing/modeling-rule documentation for the Proofpoint TAP SIEM-API feed (proofpoint_tap_raw, modeling content_id ProofpointTAP) plus the Palo-Cortex/soc-proofpoint-tap GitHub content pack. Grounds the field names and dataset shape the EMAIL-plane phishing/BEC cards model.",
+      "update_cadence": "continuous",
+      "discovery_queries": [
+        "Cortex XSIAM Proofpoint TAP ingestion proofpoint_tap_raw modeling rule",
+        "Palo-Cortex soc-proofpoint-tap content pack GitHub",
+        "Proofpoint TAP SIEM API messagesBlocked clicksPermitted schema"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MICROSOFT-365-DOCS",
+      "name": "Microsoft 365 / Defender for Office 365 — Cortex Connector & Email Telemetry Docs",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "vendor-docs",
+      "homepage": "https://docs-cortex.paloaltonetworks.com/",
+      "purpose": "Cortex XSIAM Microsoft 365 / Defender for Office 365 connector documentation grounding the msft_o365 dataset shape (EmailEvents / message-trace / threat telemetry) the EMAIL-plane cards model for malicious-link, attachment, BEC, and thread-hijack detection.",
+      "update_cadence": "continuous",
+      "discovery_queries": [
+        "Cortex XSIAM Microsoft 365 connector msft_o365 EmailEvents",
+        "Microsoft Defender for Office 365 EmailEvents ThreatTypes schema",
+        "Microsoft 365 message trace ingestion Cortex"
       ],
       "last_canvassed": null
     }

@@ -614,6 +614,67 @@
               }
             ]
           }
+        },
+        "abiocs": {
+          "type": "array",
+          "description": "Analytics Behavioral IOCs (Plan 01) — PANW-authored, auto-tuned behavioral-ML detections with an identified causality chain. Logic-bearing (XQL-shaped) and validated like a BIOC; distinct from hand-authored biocs and from the named, un-validated analytics_modules channel. The coverage rollup counts these as validated detection depth.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "description", "logic"],
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "logic": {
+                "type": "string",
+                "description": "ABIOC detection body. XQL-shaped against a real dataset (e.g. xdr_data, network_story), exactly like a BIOC. Multi-line allowed."
+              },
+              "severity": { "type": "string", "enum": ["informational", "low", "medium", "high", "critical"] },
+              "mitre_technique_ids": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }
+              },
+              "behavioral_profile": {
+                "type": "string",
+                "enum": ["statistical", "machine-learning"],
+                "description": "The ABIOC's detector class — statistical baseline deviation vs. trained ML model."
+              },
+              "causality_anchor": {
+                "type": "string",
+                "description": "The user / endpoint / network profile chain the ABIOC anchors to (the documented ABIOC distinction from a bare BIOC)."
+              },
+              "suppression_window_seconds": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "modeling_rules": {
+          "type": "array",
+          "description": "XDM parsing/modeling rules (Plan 02) — the normalization SUBSTRATE beneath detections. Each maps a raw log source into XDM (Cortex Data Model) fields via a `[MODEL: dataset=…]` XQL declaration so a POV can prove the raw-source → modeled-field → detection chain. A modeling rule does NOT fire; it ENABLES firing. The coverage rollup counts these informationally only — they must never inflate validated-detection depth.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "dataset", "logic"],
+            "properties": {
+              "name": { "type": "string" },
+              "dataset": {
+                "type": "string",
+                "description": "The raw source dataset the modeling rule normalizes (e.g. cortexsim_container_raw)."
+              },
+              "logic": {
+                "type": "string",
+                "description": "Modeling-rule body — XQL under a `[MODEL: dataset=…]` declaration mapping raw event JSON to XDM fields. Multi-line allowed."
+              },
+              "description": { "type": "string" },
+              "vendor": { "type": "string" },
+              "product": { "type": "string" },
+              "content_id": { "type": "string" },
+              "xdm_fields": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "The XDM fields this rule populates (e.g. xdm.target.process.name)."
+              }
+            }
+          }
         }
       }
     },

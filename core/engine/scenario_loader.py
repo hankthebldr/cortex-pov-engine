@@ -22,14 +22,21 @@ logger = logging.getLogger("cortexsim.loader")
 
 
 # Canonical Cortex detection-engine vocabulary. XQL + Correlation are
-# first-class alongside the original BIOC | Analytics | IOC set (GAP-2):
+# first-class alongside the original BIOC | Analytics | IOC set (GAP-2);
+# ABIOC joins as the 6th type (Plan 01):
 #   BIOC        — Behavioral Indicator of Compromise rule
 #   XQL         — XSIAM Query Language scheduled/saved query detection
 #   Analytics   — XSIAM analytics / ML behavioral detector
 #   Correlation — XSIAM correlation rule stitching signals across sources
 #   IOC         — atomic indicator (hash / domain / IP) match
+#   ABIOC       — Analytics Behavioral IOC: PANW-authored, auto-tuned
+#                 behavioral-ML detection with an identified causality chain
+#                 (distinct from hand-authored BIOC)
+# NOTE: XDM modeling rules (Plan 02) are a normalization *substrate*, NOT a
+# detection_type — they are carried on cards as detections.modeling_rules[],
+# never as an expected_detections[].type value. This frozenset stays at six.
 DETECTION_TYPES: frozenset[str] = frozenset(
-    {"BIOC", "XQL", "Analytics", "Correlation", "IOC"}
+    {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC"}
 )
 
 
@@ -229,6 +236,8 @@ class ScenarioSchema(BaseModel):
             "ASM",         # Cortex ASM / Xpanse — internet-exposed attack-surface discovery
             "CSPM",        # Cortex Cloud Posture Management — misconfig findings
             "TIM",         # Cortex Threat Intel Management — IOC feed + matching traffic
+            # Email line of defense — Proofpoint TAP / M365 ingestion + phishing/BEC correlation
+            "EMAIL",
         }
         if v not in allowed:
             raise ValueError(f"plane must be one of {allowed}, got '{v}'")

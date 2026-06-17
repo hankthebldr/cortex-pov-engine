@@ -45,7 +45,7 @@ class DetectionCard:
 
     ttp_ref: str                 # e.g. "TTP-2026-0002"
     detection_id: str            # e.g. "BIOC-LSASS-001"
-    kind: str                    # bioc | xql | correlation | ioc | analytics
+    kind: str                    # bioc | xql | correlation | ioc | analytics | abioc | modeling
     name: str
     description: str
     severity: Optional[str]
@@ -259,16 +259,24 @@ class TtpCatalog:
     def card_detection_kind_counts(self, ttp_ref: str) -> dict[str, int]:
         """Per-card tally of deployable detection objects by kind.
 
-        Returns a dict keyed by ``bioc | xql | correlation | ioc | analytics``
+        Returns a dict keyed by
+        ``bioc | xql | correlation | ioc | analytics | abioc | modeling``
         with the count of each family on the card. Reads the raw
         ``detections`` block so the coverage heatmap can surface *which*
         Cortex detection kinds back a technique (notably ``correlation`` —
         XSIAM's headline differentiator — and named ``analytics`` modules,
-        which GAP-11 flags as mapped-but-not-logic). Returns all-zero for an
-        unknown card.
+        which GAP-11 flags as mapped-but-not-logic). ``abioc`` (Plan 01) is a
+        validated, logic-bearing behavioral-ML kind counted like bioc/xql;
+        ``modeling`` (Plan 02) is the XDM normalization *substrate* counted
+        informationally only — it enables firing, it does not itself fire, so
+        callers must NOT fold it into validated-detection depth. Returns
+        all-zero for an unknown card.
         """
         raw = self._raw_by_ttp.get(ttp_ref)
-        counts = {"bioc": 0, "xql": 0, "correlation": 0, "ioc": 0, "analytics": 0}
+        counts = {
+            "bioc": 0, "xql": 0, "correlation": 0, "ioc": 0, "analytics": 0,
+            "abioc": 0, "modeling": 0,
+        }
         if not raw:
             return counts
         det = raw.get("detections") or {}
@@ -277,6 +285,8 @@ class TtpCatalog:
         counts["correlation"] = len(det.get("correlation_rules") or [])
         counts["ioc"] = len(det.get("iocs") or [])
         counts["analytics"] = len(det.get("analytics_modules") or [])
+        counts["abioc"] = len(det.get("abiocs") or [])
+        counts["modeling"] = len(det.get("modeling_rules") or [])
         return counts
 
     def count(self) -> int:
@@ -308,6 +318,8 @@ def _parse_entry(raw: dict[str, Any]) -> Optional[TtpEntry]:
     cards.extend(_parse_xql_list(ttp_ref, detections_raw.get("xql_queries") or []))
     cards.extend(_parse_correlation_list(ttp_ref, detections_raw.get("correlation_rules") or []))
     cards.extend(_parse_ioc_list(ttp_ref, detections_raw.get("iocs") or []))
+    cards.extend(_parse_abioc_list(ttp_ref, detections_raw.get("abiocs") or []))
+    cards.extend(_parse_modeling_list(ttp_ref, detections_raw.get("modeling_rules") or []))
 
     panw_mapping = raw.get("panw_mapping") or {}
     products: list[str] = []
@@ -430,6 +442,55 @@ def _parse_ioc_list(ttp_ref: str, iocs: list[Any]) -> list[DetectionCard]:
             severity=None,
             logic=value,
             mitre_techniques=[],
+        ))
+    return out
+
+
+def _parse_abioc_list(ttp_ref: str, abiocs: list[Any]) -> list[DetectionCard]:
+    """Plan 01 — Analytics Behavioral IOC. PANW-authored, auto-tuned,
+    causality-anchored behavioral-ML detection. Logic-bearing and validated
+    like a BIOC (slug prefix ``abioc-``), distinct from hand-authored biocs
+    and from the un-validated named ``analytics_modules`` channel."""
+    out: list[DetectionCard] = []
+    for idx, a in enumerate(abiocs):
+        if not isinstance(a, dict):
+            continue
+        name = a.get("name") or f"abioc-{idx+1}"
+        det_id = a.get("detection_id") or _slug(name, "abioc")
+        out.append(DetectionCard(
+            ttp_ref=ttp_ref,
+            detection_id=det_id,
+            kind="abioc",
+            name=name,
+            description=a.get("description") or "",
+            severity=a.get("severity"),
+            logic=a.get("logic"),
+            mitre_techniques=list(a.get("mitre_technique_ids") or []),
+        ))
+    return out
+
+
+def _parse_modeling_list(ttp_ref: str, rules: list[Any]) -> list[DetectionCard]:
+    """Plan 02 — XDM modeling rule. The normalization *substrate* beneath
+    detections (``[MODEL: dataset=…]`` XQL mapping raw event JSON → XDM
+    fields). It enables firing, it does not itself fire — slug prefix
+    ``modeling-``; counted informationally in the rollup, NOT as validated
+    detection depth."""
+    out: list[DetectionCard] = []
+    for idx, m in enumerate(rules):
+        if not isinstance(m, dict):
+            continue
+        name = m.get("name") or f"modeling-{idx+1}"
+        det_id = m.get("detection_id") or _slug(name, "modeling")
+        out.append(DetectionCard(
+            ttp_ref=ttp_ref,
+            detection_id=det_id,
+            kind="modeling",
+            name=name,
+            description=m.get("description") or "",
+            severity=None,
+            logic=m.get("logic"),
+            mitre_techniques=list(m.get("mitre_technique_ids") or []),
         ))
     return out
 
