@@ -1,0 +1,31 @@
+title: "Internet-Exposed Attack-Surface Discovery & Enumeration (T1595 / T1046 / T1190) \u2014 ASM EAL \u2014 Active-Scan Port Fan-Out Against Exposed Host"
+id: ttp-2026-0070-bioc-01
+status: experimental
+description: |
+  A single source IP opens connections to an unusually large number of distinct destination ports on the exposed surface host within a short window — the nmap/nuclei active-scanning egress shape (T1595/T1046).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_port in (80, 443, 2222, 6379, 9001, 9200) or app in ("web-browsing", "ssl", "redis", "elasticsearch")
+    | filter src_ip != null and dst_ip != null
+    | bin _time span=5m
+    | comp count_distinct(dst_port) as scanned_ports, count() as session_count by src_ip, dst_ip, _time
+    | filter scanned_ports >= 5
+    | fields _time, src_ip, dst_ip, scanned_ports, session_count
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1595/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1595
+    - attack.t1046
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

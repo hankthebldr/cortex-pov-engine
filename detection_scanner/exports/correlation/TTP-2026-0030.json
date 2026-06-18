@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1090",
+    "T1550.001",
+    "T1528"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(CLOUD-004 Three IdPs Same Identity Provider-Hopping Policy Evasion) OR XQL(CLOUD-004 XSIAM Cross-Provider Rotation Single Incident Stitch) OR XQL(CLOUD-004 NGFW Three Authorize Hits Across Three FQDNs Shared Run Marker)",
+      "name": "Cross-Provider OAuth Grant Rotation Policy Evasion \u2014 Single Identity",
+      "rule_id": "CR-CLOUDAPP-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0030"
+}

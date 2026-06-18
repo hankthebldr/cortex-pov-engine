@@ -323,7 +323,7 @@ def api_client(tmp_path: Path, monkeypatch):
     from database import Base  # noqa: PLC0415
     import models  # noqa: F401, PLC0415
 
-    asyncio.get_event_loop().run_until_complete(
+    asyncio.run(
         _create_all(engine, Base)
     )
 

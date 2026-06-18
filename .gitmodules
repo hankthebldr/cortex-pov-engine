@@ -29,7 +29,7 @@
 [submodule "sources/xsiam-prisma-cdr-lab"]
 	path = sources/xsiam-prisma-cdr-lab
 	url = https://github.com/hankthebldr/xsiam-prisma-cdr-lab.git
-	branch = 1.1
+	branch = 1.0
 
 [submodule "sources/MITRE-Turla-Carbon"]
 	path = sources/MITRE-Turla-Carbon

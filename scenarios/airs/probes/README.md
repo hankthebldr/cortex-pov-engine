@@ -17,10 +17,21 @@ CLI's `--mutators` flag.
 |----------|-------|-------------------------------|
 | `llm01/` | LLM01 | Direct prompt injection (override / DAN / delimiter smuggle) |
 | `llm02/` | LLM02 | Sensitive info disclosure (PII record extraction) |
+| `llm03/` | LLM03 | Supply chain (typosquat / unsigned plugin manifest) |
+| `llm04/` | LLM04 | Data & model poisoning (feedback-sink poison + recall) |
+| `llm05/` | LLM05 | Improper output handling (unescaped HTML/JS render sink) |
 | `llm06/` | LLM06 | Excessive agency (tool-call abuse) |
 | `llm07/` | LLM07 | System prompt leakage (prompt-stealer family) |
 | `llm08/` | LLM08 | Vector / embedding weakness (RAG poison trigger) |
+| `llm09/` | LLM09 | Misinformation / overreliance (fabricated fact canary) |
 | `llm10/` | LLM10 | Unbounded consumption (DoS) |
+
+Probe targets align with the `cortex-vulnerable-llm` blueprints
+(`/owasp/llmNN/...`) and key off their deterministic canary signals
+(`vulnerable` flag, `rule_name`, `leak_markers`). LLM04's
+`poisoned_topic_recall` depends on `feedback_poison_inject` running first
+(the feedback sink plants the poison the recall query then surfaces),
+mirroring LLM08's poison-then-trigger model.
 
 ## Adding a probe
 

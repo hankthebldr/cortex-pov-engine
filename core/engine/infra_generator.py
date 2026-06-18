@@ -25,6 +25,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from engine.infra_catalog import InfraCatalog
 from engine.infra_models import (
+    PROVIDERS_WITH_MODULES,
     InfraBundleSummary,
     InfraGenerateRequest,
     InfraGenerateResponse,
@@ -49,6 +50,27 @@ _COPY_IGNORE_NAMES = {
     "terraform.tfstate.backup",
     ".DS_Store",
     "__pycache__",
+}
+
+# Maps a module-frontmatter param name (the names declared in each module's
+# README.md `required_params`/`optional_params`) to a getter that pulls the
+# concrete value out of the request's InfraGenerateParams. This is what lets us
+# (a) VALIDATE that a module's required_params can actually be satisfied by the
+# request and (b) PLUMB module-specific knobs into the per-module template
+# context (GAP-IAC-006). Param names absent from this table are module-internal
+# Terraform variables with their own defaults — they are not request-driven, so
+# a module may declare an optional_param we have no request field for and that
+# is fine (it is simply not validated/plumbed here).
+_PARAM_RESOLVERS = {
+    "project_name": lambda p: p.project_name,
+    "dc_ssh_cidr": lambda p: p.dc_ssh_cidr,
+    "jumpbox_size": lambda p: p.jumpbox_size,
+    "tags": lambda p: p.tags,
+    # CDR worker-node count is surfaced as k8s_node_count on the request.
+    "node_count": lambda p: p.k8s_node_count,
+    # EDR target host count is surfaced as edr_target_count on the request.
+    "target_count": lambda p: p.edr_target_count,
+    "ttl_hours": lambda p: p.ttl_hours,
 }
 
 
@@ -83,6 +105,17 @@ class InfraGenerator:
     # ------------------------------------------------------------------
 
     def generate(self, request: InfraGenerateRequest) -> InfraGenerateResponse:
+        # 0. Fail fast for providers with no modules on disk (gcp/azure are
+        #    reserved Phase C/D Literal values). Pydantic already rejects these
+        #    at the API boundary; this is the defense-in-depth check for direct
+        #    generator calls so we never crawl deep into generation (GAP-IAC-004).
+        if request.provider not in PROVIDERS_WITH_MODULES:
+            raise GenerationError(
+                f"provider '{request.provider}' has no IaC modules yet "
+                f"(Phase C/D); available providers: "
+                f"{', '.join(PROVIDERS_WITH_MODULES)}"
+            )
+
         # 1. Resolve adapter_refs[] → IaC modules + remember provenance so
         #    we can surface what the auto-pull did (and write ADAPTERS.md).
         adapter_bindings, auto_modules = self._resolve_adapter_modules(request.adapter_refs)
@@ -96,6 +129,11 @@ class InfraGenerator:
         for m in modules:
             if self._catalog.module_path(request.provider, m) is None:
                 raise GenerationError(f"module '{m}' not available for provider '{request.provider}'")
+
+        # 3b. Validate each module's declared required_params can be satisfied
+        #     by the request, and resolve the request-driven knobs per module
+        #     so they can be plumbed into the template context (GAP-IAC-006).
+        module_params = self._resolve_module_params(request, modules)
 
         # 4. Allocate bundle directory
         bundle_id = str(uuid.uuid4())
@@ -111,7 +149,7 @@ class InfraGenerator:
                 shutil.copytree(src, modules_dst / m, ignore=_copy_ignore)
 
             # 6. Render templates
-            ctx = self._template_context(bundle_id, request, modules)
+            ctx = self._template_context(bundle_id, request, modules, module_params)
             file_names: list[str] = []
             for template_name in REQUIRED_TEMPLATES:
                 rendered = self._env.get_template(template_name).render(**ctx)
@@ -243,11 +281,78 @@ class InfraGenerator:
             lines.append("")
         return "\n".join(lines)
 
+    def _resolve_module_params(
+        self,
+        request: InfraGenerateRequest,
+        modules: list[str],
+    ) -> dict[str, dict]:
+        """Validate + resolve each module's frontmatter params (GAP-IAC-006).
+
+        For every selected module we read its README frontmatter
+        (``required_params`` / ``optional_params``) and:
+
+          * VALIDATE that every ``required_param`` we know how to source from
+            the request actually has a concrete value — a missing required
+            param is a clear, structured ``GenerationError`` rather than a
+            silent omission or a deep Jinja ``StrictUndefined`` blow-up.
+          * RESOLVE every request-driven param (required + optional) into a
+            ``{module: {param: value}}`` map that is plumbed into the template
+            context so module blocks can reference module-specific knobs.
+
+        Param names not present in ``_PARAM_RESOLVERS`` are module-internal
+        Terraform variables that carry their own defaults; they are neither
+        validated nor plumbed (the module's own ``variables.tf`` owns them).
+        """
+        p = request.params
+        resolved: dict[str, dict] = {}
+        missing: list[str] = []
+
+        for module in modules:
+            meta = self._catalog.get_module(request.provider, module)
+            if meta is None:
+                # Already validated to exist on disk in step 3; a module with
+                # no parseable frontmatter simply contributes no params.
+                resolved[module] = {}
+                continue
+
+            module_values: dict = {}
+            for name in meta.required_params:
+                resolver = _PARAM_RESOLVERS.get(name)
+                if resolver is None:
+                    # Required by the module but not a request-level knob — the
+                    # module's own variables.tf default must satisfy it. Not
+                    # our contract to validate here.
+                    continue
+                value = resolver(p)
+                if value is None or (isinstance(value, str) and value == ""):
+                    missing.append(f"{module}.{name}")
+                    continue
+                module_values[name] = value
+
+            for name in meta.optional_params:
+                resolver = _PARAM_RESOLVERS.get(name)
+                if resolver is None:
+                    continue
+                value = resolver(p)
+                if value is not None and not (isinstance(value, str) and value == ""):
+                    module_values[name] = value
+
+            resolved[module] = module_values
+
+        if missing:
+            raise GenerationError(
+                "required module param(s) missing from request: "
+                + ", ".join(sorted(missing))
+            )
+
+        return resolved
+
     def _template_context(
         self,
         bundle_id: str,
         request: InfraGenerateRequest,
         modules: list[str],
+        module_params: dict[str, dict],
     ) -> dict:
         p = request.params
         return {
@@ -263,6 +368,10 @@ class InfraGenerator:
             "edr_target_count": p.edr_target_count,
             "ttl_hours": p.ttl_hours,
             "tags": p.tags,
+            # Per-module resolved frontmatter params (GAP-IAC-006). Keyed by
+            # module name; each value is a {param_name: value} dict. Templates
+            # may reference e.g. module_params["cdr"]["node_count"].
+            "module_params": module_params,
         }
 
     def _read_bundle_summary(self, bundle_dir: Path) -> Optional[InfraBundleSummary]:

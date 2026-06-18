@@ -1,0 +1,32 @@
+title: "XDM Container Telemetry Normalization \u2014 Modeling-Rule Substrate Proof (T1610 / T1613) \u2014 CDR-XDM Privileged Container Start on Modeled Field"
+id: ttp-2026-0081-bioc-01
+status: experimental
+description: |
+  Fires on a container start where the modeled privileged field (normalized from the raw actor_container_info blob by the modeling rule) is true. This BIOC only works BECAUSE the modeling rule made privileged addressable — proving the raw-source to modeled-field to detection chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_container_info != null
+    | alter privileged = json_extract_scalar(actor_container_info, "$.privileged")
+    | filter privileged = "true"
+    | fields agent_hostname, actor_process_image_name, privileged
+    | comp count() as privileged_starts by agent_hostname
+    | filter privileged_starts >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1610/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1610
+    - attack.t1613
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

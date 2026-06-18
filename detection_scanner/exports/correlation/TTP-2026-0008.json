@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1552.001",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(AIACC-002 Pre-flight Secret Payload Contains AKIA Canary) OR XQL(AIACC-002 POST to Anthropic From Non-Sanctioned User Context) OR XQL(AIACC-002 NGFW Generative AI App-ID Outbound HTTPS to Anthropic) OR XQL(AIACC-002 Repeated Secret Egress to Anthropic Block Policy Trigger)",
+      "name": "AWS Credential Disclosure to Anthropic LLM",
+      "rule_id": "CR-AIACC-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0008"
+}

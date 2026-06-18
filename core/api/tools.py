@@ -194,6 +194,63 @@ async def list_adapters(
     return {"adapters": payload, "total": len(payload)}
 
 
+@router.get("/adapters/coverage")
+async def adapter_wiring_coverage(db: AsyncSession = Depends(get_db)):
+    """Honest GAP-ADAPT-02 accounting — classify every adapter's wiring status.
+
+    The raw "orphan" count (adapters no scenario references) is misleading
+    because many packs are reference-only BY DESIGN (tier-5 external tools the
+    DC brings themselves; c2-frameworks never auto-staged). This endpoint splits
+    the catalog three ways so the real, addressable gap is visible:
+
+      * **wired** — referenced by ≥1 scenario via ``external_tools[].adapter_ref``
+      * **reference_only** — intentionally unwired (tier 5 or c2-framework)
+      * **candidate** — a genuine, addressable wiring gap (tier 1-4, non-c2,
+        referenced by no scenario)
+    """
+    from models import Scenario  # noqa: PLC0415
+
+    scenarios = list((await db.execute(select(Scenario))).scalars().all())
+    wired_ids: set[str] = set()
+    for s in scenarios:
+        for tool in (s.external_tools or []):
+            if isinstance(tool, dict) and tool.get("adapter_ref"):
+                wired_ids.add(tool["adapter_ref"])
+
+    wired, reference_only, candidates = [], [], []
+    for a in adapter_catalog.all():
+        if a.adapter_id in wired_ids:
+            wired.append(a.adapter_id)
+        elif a.reference_only:
+            reference_only.append(a.adapter_id)
+        else:
+            candidates.append({
+                "adapter_id": a.adapter_id, "tier": a.tier,
+                "category": a.category, "safety_class": a.safety_class,
+                "planes": list(a.cortex_signal.planes),
+            })
+
+    total = adapter_catalog.count()
+    logger.info("adapter_wiring_coverage wired=%d reference_only=%d candidates=%d",
+                len(wired), len(reference_only), len(candidates))
+    return {
+        "total": total,
+        "wired": sorted(wired),
+        "reference_only": sorted(reference_only),
+        "candidates": sorted(candidates, key=lambda d: d["adapter_id"]),
+        "summary": {
+            "wired": len(wired),
+            "reference_only": len(reference_only),
+            "candidates": len(candidates),
+            # The honest gap denominator: candidates / (candidates + wired).
+            "wireable_total": len(wired) + len(candidates),
+            "wired_pct_of_wireable": round(
+                len(wired) / (len(wired) + len(candidates)) * 100, 1
+            ) if (len(wired) + len(candidates)) else 0.0,
+        },
+    }
+
+
 @router.get("/adapters/{adapter_id}")
 async def get_adapter(adapter_id: str):
     """Return the full pack for a single adapter, including invoke shape,

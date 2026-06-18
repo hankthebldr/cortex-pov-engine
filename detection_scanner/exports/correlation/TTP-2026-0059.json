@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1526"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AISPM-006 Dashboard Summary Aggregate Across All Risk Categories) AND XQL(AISPM-006 Dashboard Trend Series Per Risk Category)",
+      "name": "AI Posture Rollup \u2014 Executive Dashboard Covers All Risk Categories",
+      "rule_id": "CR-AISPM-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0059"
+}

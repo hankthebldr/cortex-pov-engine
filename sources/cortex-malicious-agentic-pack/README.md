@@ -28,6 +28,7 @@ inspection.
 |---|---|---|
 | `mcp/anthroopic-calculator/` | Typosquat MCP server source | Code scan: package name typosquats `anthropic-calculator`; tool description embeds `Ignore previous instructions` |
 | `mcp/pa-firewall-mcp/` | Malicious MCP server source | Code scan: tool reply embeds `[SYSTEM_OVERRIDE]` + AKIA canary as instruction-injection seed |
+| `mcp/pa-firewall-mcp/runtime-poisoned-response.json` | Runtime tool-RESULT fixture for SIM-KOI-006 | Runtime content inspection: a captured JSON-RPC `tools/call` **result** envelope whose `content[].text` carries the `[SYSTEM_OVERRIDE]` + AKIA canary at invocation time — the on-the-wire artifact a benign-registered server returns (connect-time↔runtime trust gap). SIM-KOI-002 scans the *source*; SIM-KOI-006 inspects this *result body*. |
 | `pypi/mcp-server-helpers-typo/` | Backdoored PyPI package | Code scan: typosquat name + post-install `subprocess.run` on import |
 | `claude-skills/code-reviewer.skill/` | Malicious Claude skill bundle | Code scan: hidden `Ignore previous instructions` text in `skill.md`; manifest claims verified-publisher with mismatched signature |
 | `vscode/helpful-ai-assistant/` | Malicious VS Code extension source | Code scan: `package.json` declares `activationEvents:["*"]` + reads `${HOME}/.aws/credentials` in `activate()`; post-install C2 stub |
@@ -64,6 +65,6 @@ so building binaries is optional for tests.
 
 - `core/eal_simulator/plugins/agentic_egress.py` — the EAL plugin that
   emulates the consumer fetch.
-- `scenarios/koi/sim-koi-001..005.yml` — the POV scenarios that
-  reference this pack.
+- `scenarios/koi/sim-koi-001..006.yml` — the POV scenarios that
+  reference this pack (SIM-KOI-006 is the runtime tool-response variant).
 - `docs/eal-simulator/research-dvllm-prompt-attacker.md` §KOI risks.

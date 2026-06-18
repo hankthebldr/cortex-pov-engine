@@ -1,0 +1,122 @@
+title: "Staged Data Exfiltration via DNS Tunnel \u2014 XDR Staging + NGFW Stitch (T1048.003) \u2014 MP-003 Passwd Read Then Write To Tmp Staging Dir"
+id: ttp-2026-0048-bioc-01
+status: experimental
+description: |
+  XDR - /etc/passwd read followed by write to /tmp staging directory. The collection leg: a sensitive system file is read and concatenated into a staging file under /tmp.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
+    | filter action_file_path in ("/etc/passwd", "/etc/shadow")
+    | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+    | filter actor_process_image_name in ("cat", "head", "cp", "dd", "bash", "sh")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1005/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Staged Data Exfiltration via DNS Tunnel \u2014 XDR Staging + NGFW Stitch (T1048.003) \u2014 MP-003 Tar Gzip Compression Of Tmp Staging By Service Account"
+id: ttp-2026-0048-bioc-02
+status: experimental
+description: |
+  XDR - data staging: tar compression of recently-written files in /tmp by service account. Classic exfil-prep: a service identity archives the staging directory.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("tar", "gzip", "zip", "7z")
+    | filter action_process_image_command_line contains "/tmp/"
+    | filter action_process_image_command_line contains_any ("-czf", "-cf", "-z", ".tar.gz")
+    | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1074/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1074.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Staged Data Exfiltration via DNS Tunnel \u2014 XDR Staging + NGFW Stitch (T1048.003) \u2014 MP-003 Dig TXT Tight Loop From Service Account"
+id: ttp-2026-0048-bioc-03
+status: experimental
+description: |
+  XDR - dig invocation in tight loop from service account (shell one-liner DNS exfil). The endpoint process leg of the DNS tunnel that the NGFW DNS anomaly lacks.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("dig", "nslookup", "host")
+    | filter action_process_image_command_line contains "TXT"
+    | filter action_process_image_command_line contains_any (".exfil.", "@1.1.1.1", "@8.8.8.8")
+    | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Staged Data Exfiltration via DNS Tunnel \u2014 XDR Staging + NGFW Stitch (T1048.003) \u2014 MP-003 Curl Form Upload Of Staged Data By Service Account"
+id: ttp-2026-0048-bioc-04
+status: experimental
+description: |
+  XDR - curl -F file upload of recently-staged data by service account. The redundant HTTPS-POST exfil channel: curl uploads the staged tarball as multipart form data.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("curl", "wget")
+    | filter action_process_image_command_line contains_any ("-F ", "--form", "-X POST", "--data-binary")
+    | filter action_process_image_command_line contains "@/tmp/"
+    | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

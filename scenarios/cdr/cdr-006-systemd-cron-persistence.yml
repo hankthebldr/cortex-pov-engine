@@ -1,0 +1,167 @@
+scenario_id: SIM-CDR-006
+name: "Node systemd Service + Cron Reload Persistence — SAFE-MODE"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It establishes a self-reloading
+# systemd-service foothold on a Linux node so Cortex Cloud / XDR for Linux can be
+# shown to detect it. The anchor card TTP-2026-0074 is SAFE-MODE: the unit's
+# ExecStart and the cron watchdog reference an inert /tmp/.cortexsim_node_beacon
+# marker (no payload runs), and cleanup disables+removes the unit, strips the
+# cron line, and reloads the daemon. LAB ONLY — requires root on the node.
+# Focused systemd-centric variant distinct from the broad multi-mechanism
+# SIM-EDR-003 (TTP-2026-0034).
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UCS-CDR-06
+tc_ref: TC-CDR-06
+uc_name: "Persistence Mechanism Detection (Node systemd)"
+tc_name: "systemd Service Unit + Self-Healing Cron Watchdog"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1543.002"
+mitre_technique_name: "Create or Modify System Process: Systemd Service"
+additional_techniques:
+  - technique: "T1053.003"
+    name: "Scheduled Task/Job: Cron"
+
+threat_report: "Unit42 - TeamTNT Targets Exposed Docker APIs (node persistence)"
+threat_report_url: "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Write a systemd service unit with Restart=always + /tmp ExecStart (T1543.002)"
+    command: |
+      # SAFE-MODE: ExecStart references an inert marker, no payload runs.
+      cat > /etc/systemd/system/cortexsim-node.service <<'EOF'
+      [Unit]
+      Description=cortexsim node beacon (SAFE-MODE)
+      [Service]
+      ExecStart=/tmp/.cortexsim_node_beacon
+      Restart=always
+      RestartSec=10
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      echo "[*] systemd unit written: /etc/systemd/system/cortexsim-node.service"
+    identity: root
+    mitre_technique: "T1543.002"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "systemd unit written with Restart=always and a /tmp ExecStart"
+        ttp_ref: TTP-2026-0074
+        detection_id: bioc-cdr-006-systemd-unit-written-with-restart-always-and-tmp-execstart
+      - plane: EDR
+        type: XQL
+        description: "Confirm systemd persistence unit write"
+        ttp_ref: TTP-2026-0074
+        detection_id: xql-cdr-006-validate-systemd-persistence-unit-write
+      - plane: CDR
+        type: IOC
+        description: "Persistence unit path (/etc/systemd/system/cortexsim-node.service)"
+        ttp_ref: TTP-2026-0074
+        detection_id: ioc-filepath-etc-systemd-system-cortexsim-node-service
+      - plane: CDR
+        type: IOC
+        description: "Hidden /tmp ExecStart target referenced by the unit (.cortexsim_node_beacon)"
+        ttp_ref: TTP-2026-0074
+        detection_id: ioc-filename-cortexsim-node-beacon
+
+  - id: step-02
+    name: "daemon-reload then enable --now the new unit (T1543.002)"
+    command: |
+      # The high-signal systemd-persistence sequence that distinguishes a
+      # malicious unit install from a benign package edit.
+      systemctl daemon-reload
+      systemctl enable --now cortexsim-node.service 2>/dev/null || true
+    identity: root
+    mitre_technique: "T1543.002"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "systemctl daemon-reload immediately followed by enable of the new unit"
+        ttp_ref: TTP-2026-0074
+        detection_id: bioc-cdr-006-systemd-daemon-reload-then-enable-new-unit-sequence
+      - plane: EDR
+        type: XQL
+        description: "Confirm daemon-reload then enable sequence"
+        ttp_ref: TTP-2026-0074
+        detection_id: xql-cdr-006-validate-daemon-reload-then-enable-sequence
+
+  - id: step-03
+    name: "Install a cron watchdog that re-enables the unit if removed (T1053.003)"
+    command: |
+      # Self-healing cron watchdog that re-installs/re-enables the unit after
+      # eviction — defeats a single cleanup.
+      (crontab -l 2>/dev/null; echo '*/10 * * * * systemctl is-enabled cortexsim-node.service || systemctl enable --now cortexsim-node.service') | crontab -
+    identity: root
+    mitre_technique: "T1053.003"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Cron watchdog invoking systemctl to re-enable the service unit"
+        ttp_ref: TTP-2026-0074
+        detection_id: bioc-cdr-006-cron-watchdog-re-enabling-systemd-unit
+      - plane: EDR
+        type: XQL
+        description: "Confirm cron watchdog re-enabling the unit"
+        ttp_ref: TTP-2026-0074
+        detection_id: xql-cdr-006-validate-cron-watchdog-re-enabling-unit
+      - plane: EDR
+        type: Correlation
+        description: "Persistence — node systemd unit + self-healing cron watchdog stitched into one incident"
+        ttp_ref: TTP-2026-0074
+        detection_id: CR-CDR-0006
+
+cleanup:
+  commands:
+    - "systemctl disable --now cortexsim-node.service 2>/dev/null || true"
+    - "rm -f /etc/systemd/system/cortexsim-node.service"
+    - "systemctl daemon-reload 2>/dev/null || true"
+    - "crontab -l 2>/dev/null | grep -v cortexsim-node.service | crontab - 2>/dev/null || true"
+    - "echo '[CortexSim] SIM-CDR-006 cleanup complete — unit disabled+removed, cron watchdog stripped, daemon reloaded'"
+
+author: "Henry Reed"
+created: "2026-06-08"
+last_updated: "2026-06-08"
+tags:
+  - persistence
+  - systemd
+  - cron
+  - node
+  - self-healing
+  - safe-mode
+
+validation_methodology: "Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 60
+  unit: "s"
+success_criteria: |
+  Cortex Cloud / XDR for Linux fires the systemd-unit-write BIOC, the
+  daemon-reload-then-enable-sequence BIOC, and the cron-watchdog BIOC within
+  60s, and the correlation engine stitches the unit write, the enable sequence,
+  and the cron watchdog from one node into a single persistence incident — a
+  focused systemd variant distinct from the multi-mechanism SIM-EDR-003.
+moat_tier: "LEAD"

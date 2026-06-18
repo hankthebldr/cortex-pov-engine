@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1071",
+    "T1048.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "IOC(ftp-cleartext-credentials-user-pass) OR BIOC(NGFW EAL outbound FTP STOR file transfer with data payload) OR XQL(NGFW App-ID FTP outbound session from non-admin endpoint)",
+      "name": "FTP Cleartext Egress \u2014 Credential Exposure Plus STOR Upload",
+      "rule_id": "CR-NDR-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0061"
+}

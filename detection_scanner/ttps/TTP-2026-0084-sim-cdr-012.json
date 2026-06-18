@@ -1,0 +1,330 @@
+{
+  "id": "TTP-2026-0084",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-container-malware",
+      "industry-all",
+      "severity-high",
+      "kubernetes",
+      "wildfire",
+      "posture",
+      "misconfiguration",
+      "aws",
+      "eks"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS",
+      "SRC-CISA"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "kubernetes",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "kubernetes",
+        "aws",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "WildFire Test-Sample Retrieval in Container + Pod Misconfiguration — Cortex Cloud CDR (T1610 / T1204)",
+    "summary": "A workload pulls the official Palo Alto Networks WildFire benign test samples (PE/APK/macOS/ELF) into a container, exercising the WildFire verdict path, alongside intentionally insecure pod manifests (privileged, root, hostPath). The XQL/BIOC surface the WildFire-sample retrieval/execution and the posture misconfiguration in one fixture.",
+    "description": "This scenario ports the xsiam-prisma-cdr-lab malicious-container-2.0 fixture (wildfire-samples.sh + K8-container-misconfig.yaml) into a Cortex Cloud CDR detection card, pairing the WildFire verdict path with posture misconfiguration in a single workload. WildFire test samples are official, deliberately-benign files Palo Alto Networks publishes at wildfire.paloaltonetworks.com/publicapi/test/{pe,apk,macos,elf} so customers can validate that the WildFire verdict and the downstream Cortex detection pipeline are wired end-to-end without handling real malware. The scenario retrieves all four sample types into a container (mirroring the lab's /var/tmp/.hidden_wildfire_samples staging directory and chmod +x), which exercises the WildFire submission/verdict path and produces the in-container download + execute-attempt telemetry an operator wants to see surface. In parallel, the scenario applies the lab's nine insecure-pod scenarios (running as root, no resource limits, privileged, hostPath mount, hostPID/hostNetwork, missing securityContext) so the same fixture demonstrates Cortex Cloud posture coverage of the misconfiguration state. The detection content covers both halves: an XQL surfaces the WildFire test-sample retrieval and execution inside a container (T1204 User Execution), and a BIOC fires on a privileged or hostPath pod misconfiguration observed at runtime (T1610 Deploy Container); a second BIOC fires when a container executes a freshly-downloaded sample from its staging directory. A correlation rule fuses the misconfiguration and the sample-execution into one posture-plus-runtime container-malware incident, and the reusable container-workload projection attributes each event to its pod, image, and container_id. This proves Cortex covers the WildFire verdict path and the posture misconfiguration that enables it, in one fixture and without handling real malware.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Container malware operators and opportunistic intruders abusing insecure pods"
+      }
+    ],
+    "campaigns": [
+      "Malicious payload staging in misconfigured containers"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "containers",
+    "techniques": [
+      {
+        "technique_id": "T1610",
+        "name": "Deploy Container",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1204",
+        "name": "User Execution",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ],
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Container: Container Enumeration",
+      "Process: Process Creation",
+      "File: File Creation",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "kubernetes",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-012 — WildFire test-sample retrieval + pod misconfiguration for Cortex Cloud CDR validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM / Cortex Cloud CDR connected to the EKS cluster with the Linux agent daemonset and WildFire analysis enabled so download/verdict telemetry reaches xdr_data / cortex_cloud_posture.",
+        "check_command": "kubectl -n kube-system get daemonset | grep -i cortex"
+      },
+      {
+        "description": "cdr IaC module applied so the EKS cluster with worker nodes exists and the insecure-pod manifests can be applied.",
+        "check_command": "kubectl get nodes -o name"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Official benign WildFire test samples (no real malware) + apply the lab's\n# insecure-pod misconfig manifest. Mirrors malicious-container-2.0.\nset -euo pipefail\nDIR=\"/var/tmp/.hidden_wildfire_samples\"; mkdir -p \"$DIR\"\nfor kind in pe apk macos elf; do curl -fsSL \"https://wildfire.paloaltonetworks.com/publicapi/test/${kind}\" -o \"$DIR/test_${kind}\" || true; chmod +x \"$DIR/test_${kind}\" 2>/dev/null || true; done\necho \"[*] WildFire benign test samples staged in $DIR — execution stubbed [truncated]\"\nkubectl apply -f \"${MISCONFIG_MANIFEST:-K8-container-misconfig.yaml}\" || true\necho \"[*] Insecure-pod misconfiguration manifest applied for posture validation\"",
+      "input_variables": [
+        {
+          "name": "MISCONFIG_MANIFEST",
+          "type": "string",
+          "default": "K8-container-misconfig.yaml",
+          "description": "Path to the lab's nine insecure-pod misconfiguration manifest."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Container egress to wildfire.paloaltonetworks.com/publicapi/test/* retrieving the benign verdict-path test samples.",
+        "expected_value": "dst_host = \"wildfire.paloaltonetworks.com\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Benign WildFire test samples written to the hidden staging directory and marked executable.",
+        "expected_value": "action_file_path contains \"/var/tmp/.hidden_wildfire_samples/\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /var/tmp/.hidden_wildfire_samples; kubectl delete -f \"${MISCONFIG_MANIFEST:-K8-container-misconfig.yaml}\" --ignore-not-found; kubectl delete namespace insecure-container-scenarios --ignore-not-found; echo '[CortexSim] SIM-CDR-012 cleanup complete — EKS cluster owned by terraform destroy.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "wildfire.paloaltonetworks.com",
+        "context": "Official Palo Alto Networks WildFire test-sample endpoint. Benign by design; tracked here as the verdict-path egress destination, not as a malicious indicator.",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "CDR-012 Privileged or HostPath Pod Misconfiguration",
+        "description": "A pod runs with a privileged securityContext, runs as root (runAsUser 0), or mounts a hostPath volume — the runtime-observable insecure-pod misconfiguration the lab's K8-container-misconfig manifest plants (T1610 Deploy Container). This is the posture state that enables container escape and malware staging.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| alter privileged = json_extract_scalar(actor_container_info, \"$.privileged\")\n| filter privileged = \"true\" or actor_effective_username = \"root\"\n| comp count() as privileged_proc_events by agent_hostname, actor_effective_username\n| filter privileged_proc_events >= 1\n| fields agent_hostname, actor_effective_username, privileged_proc_events",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1610"
+        ]
+      },
+      {
+        "name": "CDR-012 Container Executes Downloaded Sample",
+        "description": "A container chmod-s and executes a file it just downloaded into a hidden staging directory (the WildFire sample path /var/tmp/.hidden_wildfire_samples), the download-then-execute shape of container malware delivery (T1204 User Execution). CortexSim stages only benign WildFire test files, but the telemetry shape is identical to a real drop.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter action_process_image_command_line contains \"/var/tmp/.hidden_wildfire_samples\" or actor_process_image_command_line contains \"chmod +x\"\n| comp count() as exec_events by agent_hostname, actor_process_image_name\n| filter exec_events >= 1\n| fields agent_hostname, actor_process_image_name, exec_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1204"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "CDR-012 Container Workload Projection",
+        "query": "dataset = xdr_data\n| fields actor_container_info as container_info\n| filter container_info != null\n| alter pod_namespace = json_extract_scalar(container_info, \"$.pod_namespace\")\n| alter pod_name = json_extract_scalar(container_info, \"$.pod_name\")\n| alter image_name = json_extract_scalar(container_info, \"$.image_name\")\n| alter image_id = json_extract_scalar(container_info, \"$.image_id\")\n| alter container_id = json_extract_scalar(container_info, \"$.id\")\n| alter privileged = json_extract_scalar(container_info, \"$.privileged\")\n| filter actor_process_image_name in (\"curl\", \"wget\", \"sh\", \"bash\")",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-012 WildFire Test Sample Retrieval in Container",
+        "query": "dataset = network_story\n| filter _time > to_timestamp(current_time() - 600)\n| filter dst_host = \"wildfire.paloaltonetworks.com\" or action_external_hostname = \"wildfire.paloaltonetworks.com\"\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| comp count() as wildfire_pulls by agent_hostname, actor_process_image_name\n| filter wildfire_pulls >= 1\n| sort desc wildfire_pulls\n| fields agent_hostname, actor_process_image_name, wildfire_pulls",
+        "expected_rows_min": 1,
+        "dataset": "network_story"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-012 Insecure Pod Misconfiguration Surfaced",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 600)\n| filter resource_type in (\"k8s_pod\", \"k8s_deployment\")\n| filter finding_class in (\"privileged-container\", \"run-as-root\", \"hostpath-mount\", \"missing-resource-limits\", \"missing-securitycontext\")\n| comp count_distinct(resource_id) as misconfigured_pods by finding_class\n| filter misconfigured_pods >= 1\n| fields finding_class, misconfigured_pods",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Container Malware Delivery — Misconfiguration Plus WildFire Sample Execution",
+        "rule_id": "CR-CDR-0012",
+        "logic": "BIOC(CDR-012 Privileged or HostPath Pod Misconfiguration) AND BIOC(CDR-012 Container Executes Downloaded Sample) — fuses the posture misconfiguration with the in-container download-and-execute into one posture-plus-runtime container-malware incident."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud CDR — Kubernetes pod misconfiguration and posture scoring",
+      "Cortex XSIAM Analytics — WildFire verdict path and in-container sample execution"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-POD-PRIVILEGED",
+          "CDR-POD-HOSTPATH",
+          "CDR-POD-RUN-AS-ROOT"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter resource_type in (\"k8s_pod\", \"k8s_deployment\") | comp count_distinct(resource_id) by finding_class | fields finding_class, resource_id"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CDR-0012",
+          "XSIAM-WILDFIRE-CONTAINER-SAMPLE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CDR-0012 fuses the misconfiguration BIOC and the sample-execution BIOC into one container-malware incident; the WildFire verdict path validates the submission pipeline."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-012",
+        "name": "WildFire Verdict Path and Pod-Misconfiguration Coverage",
+        "description": "Cortex Cloud CDR + XSIAM exercise the WildFire verdict path with benign test samples inside a container and surface the insecure-pod misconfiguration that enables malware staging — in one fixture, without handling real malware.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-012A",
+            "objective": "The WildFire test-sample retrieval and execution inside a container is detected.",
+            "preconditions": [
+              "cdr EKS fixture applied with the Cortex Linux agent daemonset and WildFire enabled."
+            ],
+            "steps": [
+              "Retrieve the four WildFire test samples into a container staging directory.",
+              "Observe the WildFire retrieval XQL and the sample-execution BIOC fire."
+            ],
+            "success_criteria": [
+              "XQL `CDR-012 WildFire Test Sample Retrieval in Container` returns >= 1 host.",
+              "BIOC `CDR-012 Container Executes Downloaded Sample` fires."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-CLOUD-012B",
+            "objective": "The insecure-pod misconfiguration is surfaced and stitched to the execution.",
+            "preconditions": [
+              "Cortex Cloud CDR posture scanning the cluster after the misconfig manifest is applied."
+            ],
+            "steps": [
+              "Apply the insecure-pod misconfiguration manifest.",
+              "Observe the misconfiguration BIOC/XQL fire and CR-CDR-0012 escalate."
+            ],
+            "success_criteria": [
+              "BIOC `CDR-012 Privileged or HostPath Pod Misconfiguration` fires.",
+              "XQL `CDR-012 Insecure Pod Misconfiguration Surfaced` returns >= 1 finding class.",
+              "Correlation CR-CDR-0012 raises one container-malware incident."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce a Pod Security Standard (restricted) via admission control so privileged, run-as-root, and hostPath pods cannot be scheduled.",
+      "Gate WildFire-flagged or unknown-verdict files at the egress proxy and block container egress to untrusted download sources.",
+      "Run workloads with a read-only root filesystem so downloaded files cannot be chmod-ed and executed."
+    ],
+    "detection_engineering": [
+      "Alert on a container retrieving and executing a file from a hidden staging directory.",
+      "Detect privileged / run-as-root / hostPath pods at runtime and reconcile them to posture findings.",
+      "Stitch a misconfiguration to an in-container download-and-execute into one incident."
+    ],
+    "response_playbook": "XSOAR-PB-ContainerMalwareDeliveryTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Palo Alto Networks — WildFire Test Sample Files for Verdict Validation",
+      "url": "https://docs.paloaltonetworks.com/wildfire/administration/submit-files-for-wildfire-analysis/test-a-sample-malware-file",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1610 — Deploy Container",
+      "url": "https://attack.mitre.org/techniques/T1610/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1204 — User Execution",
+      "url": "https://attack.mitre.org/techniques/T1204/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "CISA & NSA — Kubernetes Hardening Guidance",
+      "url": "https://www.cisa.gov/news-events/alerts/2022/03/15/updated-kubernetes-hardening-guide",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-17",
+      "author": "Henry Reed",
+      "change": "Initial CDR WildFire-in-container + misconfiguration card for SIM-CDR-012, porting the xsiam-prisma-cdr-lab malicious-container-2.0 fixture (wildfire-samples.sh + K8-container-misconfig.yaml). Used only the official benign WildFire test samples (execution stubbed). Authored a WildFire-retrieval XQL, a posture-misconfiguration XQL, two BIOCs (misconfig, sample-execution), the reusable container-workload projection hunt query, the WildFire domain IOC, and correlation CR-CDR-0012. Promoted to active."
+    }
+  ]
+}

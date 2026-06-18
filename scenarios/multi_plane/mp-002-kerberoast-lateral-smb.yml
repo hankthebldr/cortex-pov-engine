@@ -6,7 +6,8 @@ status: active
 plane: ANALYTICS
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
+  - Correlation
 
 uc_ref: UCS-MP-02
 tc_ref: TC-MP-02
@@ -47,11 +48,42 @@ infra_modules_needed:
   - edr
   - ndr
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Backfilled per the S-07 rollout convention (docs/uc_tc_mapping/
+# scenario-methodology-defaults.md). ANALYTICS-plane multi-plane stitching
+# scenarios are family F2 (Causality Stitching Validation), MOAT tier.
+validation_methodology: "Cross-Plane Causality Correlation"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  The Kerberoast recon (ITDR), Pass-the-Hash lateral SMB auth (EDR + NDR), and
+  DCSync replication (ITDR) signals attributed to the same compromised service
+  account stitch into a single XSIAM incident_id whose causality chain spans
+  ITDR + EDR + NDR within the correlation window. Verifier asserts ≥ 3 distinct
+  planes under one incident_id keyed on the user_principal.
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+# Identity-centric chain — the join key is the compromised service-account
+# principal that threads recon → lateral auth → DCSync, not a single host.
+correlation_window_seconds: 60
+required_planes_in_incident:
+  - ITDR
+  - EDR
+  - NDR
+stitching_key: user_principal
+
 external_tools:
   - name: impacket
     source: "https://github.com/fortra/impacket"
     type: script
     install_inline: false
+    adapter_ref: TOOL-IMPACKET
   - name: Rubeus
     source: "https://github.com/GhostPack/Rubeus"
     type: binary
@@ -88,12 +120,12 @@ steps:
         ttp_ref: "TTP-2026-0063"
         detection_id: "bioc-mp-002-ldap-spn-sweep-from-non-typical-host"
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR - Kerberos TGS-REQ flood from single source targeting multiple SPNs"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-kerberos-tgs-req-flood-from-single-source"
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - Kerberos (port 88) traffic spike from attacker host"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-ngfw-kerberos-port-88-traffic-spike-from-attacker-host"
@@ -109,7 +141,7 @@ steps:
     mitre_technique: "T1110.002"
     expected_detections:
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM - MTTD clock: time-gap between Kerberoast (step-01) and lateral auth (step-03) = stitched attack timeline"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-xsiam-mttd-clock-kerberoast-recon-to-lateral-auth"
@@ -132,7 +164,7 @@ steps:
         ttp_ref: "TTP-2026-0063"
         detection_id: "bioc-mp-002-service-account-remote-smb-authentication-on-workstation"
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - SMB (port 445) session from attack endpoint to workstation subnet"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-ngfw-smb-port-445-session-attacker-to-workstation"
@@ -142,7 +174,7 @@ steps:
         ttp_ref: "TTP-2026-0063"
         detection_id: "bioc-mp-002-service-account-used-interactively"
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching - same user+hash observed on DC auth logs + NGFW SMB session + XDR remote login = single lateral movement incident"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-xsiam-stitch-same-identity-across-dc-workstation-and-ngfw"
@@ -169,12 +201,12 @@ steps:
         ttp_ref: "TTP-2026-0004"
         detection_id: "bioc-windows-event-4662-replicating-directory-changes-by-non-dc-principal"
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW - DCE/RPC (port 135 + ephemeral) traffic to DC from attack endpoint"
         ttp_ref: "TTP-2026-0063"
         detection_id: "xql-mp-002-ngfw-dce-rpc-port-135-ephemeral-traffic-to-dc"
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM - full attack chain incident: recon -> Kerberoast -> PtH lateral -> DCSync, unified timeline"
         ttp_ref: "TTP-2026-0004"
         detection_id: "CR-CRED-0003"

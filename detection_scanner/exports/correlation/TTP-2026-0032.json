@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1003.008",
+    "T1552.001",
+    "T1087.001",
+    "T1003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(EDR-001 Shadow File Read by Non-Root Service Account) OR BIOC(EDR-001 Broad Credential File Sweep Across Home Directories) OR BIOC(EDR-001 Process Memory Scrape via proc environ) OR BIOC(EDR-001 Mimipenguin Credential Dumper Execution)",
+      "name": "Linux Credential Harvesting Chain \u2014 passwd/shadow + key sweep + Mimipenguin",
+      "rule_id": "CR-EDR-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0032"
+}

@@ -1,0 +1,93 @@
+title: "Active Directory Offline-Roasting Credential Harvest \u2014 AS-REP Roast + Kerberoast (T1558.004 / T1558.003) \u2014 ITDR-006 AS-REQ For Pre-Auth-Disabled Account (AS-REP Roast)"
+id: ttp-2026-0075-bioc-01
+status: experimental
+description: |
+  ITDR - a Kerberos AS-REQ / 4768 is observed for a domain account whose userAccountControl has DoesNotRequirePreAuth set. Requesting an AS-REP for such an account returns a crackable hash with no prior authentication — the AS-REP Roasting fingerprint (T1558.004).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.ACTIVE_DIRECTORY
+    | filter event_id = 4768
+    | filter pre_authentication_type = 0
+    | filter src_host not in ("DC01", "DC02")
+    | fields _time, account_name, src_host, pre_authentication_type
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Active Directory Offline-Roasting Credential Harvest \u2014 AS-REP Roast + Kerberoast (T1558.004 / T1558.003) \u2014 ITDR-006 LDAP SPN Sweep From Non-Typical Host"
+id: ttp-2026-0075-bioc-02
+status: experimental
+description: |
+  ITDR - LDAP search filter (servicePrincipalName=*) from a host that is not a domain controller and not an established admin workstation — the enumeration that precedes Kerberoasting (T1558.003).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.ACTIVE_DIRECTORY
+    | filter operation_name in ("LDAP_SEARCH", "DirectorySearch")
+    | filter lower(search_filter) contains "serviceprincipalname"
+    | filter src_host not in ("DC01", "DC02")
+    | filter actor_effective_username not in ("Administrator", "svc-bloodhound")
+    | fields _time, src_host, actor_effective_username, search_filter
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558.003
+    - attack.t1087.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Active Directory Offline-Roasting Credential Harvest \u2014 AS-REP Roast + Kerberoast (T1558.004 / T1558.003) \u2014 ITDR-006 Kerberos TGS-REQ RC4 Burst For Multiple SPNs"
+id: ttp-2026-0075-bioc-03
+status: experimental
+description: |
+  ITDR - a single source requests RC4-encrypted (etype 0x17) TGS service tickets (4769) for three or more distinct service principals in a short window — the Kerberoasting ticket-harvest fingerprint (T1558.003). RC4 is requested because its TGS is the easiest to crack offline.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.ACTIVE_DIRECTORY
+    | filter event_id = 4769
+    | filter ticket_encryption_type = "0x17"
+    | bin _time span=5m
+    | comp count_distinct(service_name) as spn_count by src_host, actor_effective_username, _time
+    | filter spn_count >= 3
+    | fields _time, src_host, actor_effective_username, spn_count
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,63 @@
+title: "Container-Native Ransomware via Host Filesystem Escape \u2014 Cortex Cloud CDR (T1486 / T1611) \u2014 CDR-010 Container chroot to Host Filesystem Mount"
+id: ttp-2026-0082-bioc-01
+status: experimental
+description: |
+  A process inside a container invokes chroot against a host-root mount path immediately after reading /proc/self/mountinfo. This is the container-to-host escape primitive used by the ransomware-in-container payload (T1611 Escape to Host) before it detonates an encryptor on the node.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_container_info != null
+    | filter action_process_image_name = "chroot" or action_process_image_command_line contains "chroot"
+    | filter action_process_image_command_line contains "/host" or action_process_image_command_line contains "mountinfo"
+    | comp count() as escape_events by agent_hostname, actor_process_image_name
+    | filter escape_events >= 1
+    | fields agent_hostname, actor_process_image_name, escape_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Container-Native Ransomware via Host Filesystem Escape \u2014 Cortex Cloud CDR (T1486 / T1611) \u2014 CDR-010 Host Filesystem Escape via Mountinfo Read"
+id: ttp-2026-0082-bioc-02
+status: experimental
+description: |
+  A containerized process reads /proc/self/mountinfo to enumerate the host-root mount, the reconnaissance step that anchors the chroot escape causality chain. Pairing the mountinfo read with a subsequent privileged action inside the same container distinguishes a real escape attempt from benign mount introspection.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN
+    | filter actor_container_info != null
+    | filter action_file_path in ("/proc/self/mountinfo", "/proc/1/mountinfo")
+    | filter actor_process_image_name in ("sh", "bash", "grep", "awk")
+    | comp count() as mountinfo_reads by agent_hostname, actor_process_image_name
+    | filter mountinfo_reads >= 1
+    | fields agent_hostname, actor_process_image_name, mountinfo_reads
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

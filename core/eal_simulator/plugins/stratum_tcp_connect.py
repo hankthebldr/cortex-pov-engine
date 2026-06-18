@@ -37,7 +37,10 @@ logger = logging.getLogger("cortexsim.eal.plugins.stratum_tcp_connect")
 
 
 _DEFAULT_AGENT = "XMRig/6.20.0 (Linux x86_64) libuv/1.42.0 cortexsim-eal-simulator/1.0"
-_COMMON_STRATUM_PORTS = {3333, 4444, 5555, 7777, 14433, 14444, 14433}
+# Common Monero / XMRig mining-pool ports. 14433 + 14444 are the SSL/TLS
+# pool ports; the earlier literal duplicated 14433 (a set no-op) instead of
+# also listing 14444 — fixed to the intended distinct port set.
+_COMMON_STRATUM_PORTS = {3333, 4444, 5555, 7777, 14433, 14444}
 
 
 class StratumTcpConnectParams(BaseModel):
@@ -91,8 +94,10 @@ class StratumTcpConnect(BaseSimulation):
         params: StratumTcpConnectParams = ctx.params  # type: ignore[assignment]
         started_at = self.utcnow()
 
-        # Authorise the target host AND require explicit port allowance.
-        getattr(ctx, "authorise")(params.target_host)
+        # Authorise the target host AND the port: a port-pinned allowlist
+        # entry (e.g. ``pool.lab.invalid:3333``) only admits that port, while a
+        # host-level entry still permits any port (backwards compatible).
+        ctx.authorise(params.target_host, port=params.target_port)
 
         if ctx.dry_run:
             await ctx.emit_event(ecs_event(
@@ -139,6 +144,8 @@ class StratumTcpConnect(BaseSimulation):
                 )
                 bytes_sent += sent
                 events_emitted += 1
+                ctx.charge_request()
+                ctx.charge_bytes(sent)
                 outcome = "success"
                 detail_extra = {"bytes_sent_this_session": sent}
             except OSError as exc:

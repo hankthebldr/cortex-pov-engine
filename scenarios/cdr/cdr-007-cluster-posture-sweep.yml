@@ -1,0 +1,224 @@
+scenario_id: SIM-CDR-007
+name: "Container & Kubernetes Supply-Chain Posture Sweep"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CDR-07
+tc_ref: TC-CDR-07
+uc_name: "Container & Kubernetes Posture and Supply-Chain Assurance"
+tc_name: "Cluster Posture Sweep and Discovery-Activity Detection"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1613"
+mitre_technique_name: "Container and Resource Discovery"
+additional_techniques:
+  - technique: "T1526"
+    name: "Cloud Service Discovery"
+  - technique: "T1552.001"
+    name: "Unsecured Credentials: Credentials In Files"
+  - technique: "T1046"
+    name: "Network Service Discovery"
+
+threat_report: "Unit42 - Cloud Threat Report: The State of Cloud-Native Security"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+    - www-data
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# This is a defensive posture sweep: the same enumeration shape an attacker's
+# discovery/credential-access would produce (privileged container exec, k8s API
+# enumeration, IAM GetAccountAuthorizationDetails, bulk secret-pattern file
+# reads) is the telemetry Cortex Cloud CDR + XSIAM must surface. Maps to the
+# Posture & Compliance methodology family (F4) — the scan ACTIVITY drives both
+# posture coverage and detection of discovery behaviour.
+validation_methodology: "Container & Kubernetes Posture and Compliance Scoring"
+methodology_family: "F4"
+primary_kpi: "Coverage %"
+threshold:
+  kpi: "Coverage %"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  Every supply-chain / cluster-hardening finding produced by the sweep
+  (Trivy image+IaC CVEs, kube-bench CIS failures, Kubescape NSA/CISA gaps,
+  gitleaks/secret-pattern reads, Cloudsplaining IAM privilege-escalation
+  paths) surfaces in cortex_cloud_posture, and the scan ACTIVITY itself
+  (privileged container exec, k8s API enumeration, IAM
+  GetAccountAuthorizationDetails, bulk secret-file reads) is detected in
+  xdr_data / cloud_audit_logs within the MTTD budget — proving Cortex Cloud
+  CDR + XSIAM cover both the static posture state and the runtime discovery
+  shape of a cluster compromise.
+moat_tier: "LEAD"
+
+# ── External Tools ───────────────────────────────────────────────────────────
+# All five adapters are safety_class=safe (no consent gate). adapter_ref
+# declares the dependency / self-install; each step still carries a real,
+# hand-written command invoking that tool, exactly as SIM-CDR-001 does.
+external_tools:
+  - name: trivy
+    source: "https://github.com/aquasecurity/trivy"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-TRIVY
+  - name: kube-bench
+    source: "https://github.com/aquasecurity/kube-bench"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-KUBE-BENCH
+  - name: kubescape
+    source: "https://github.com/kubescape/kubescape"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-KUBESCAPE
+  - name: gitleaks
+    source: "https://github.com/gitleaks/gitleaks"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-GITLEAKS
+  - name: cloudsplaining
+    source: "https://github.com/salesforce/cloudsplaining"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-CLOUDSPLAINING
+
+steps:
+  - id: step-01
+    name: "Trivy image + IaC + secret scan of cluster workload supply chain"
+    command: |
+      WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-public.ecr.aws/eks-distro/kubernetes/pause:3.9}"
+      trivy image --scanners vuln,secret --severity HIGH,CRITICAL --format json --output /tmp/trivy-image.json "$WORKLOAD_IMAGE" 2>&1 | tail -5
+      trivy config --severity HIGH,CRITICAL --format json --output /tmp/trivy-iac.json ./infra 2>/dev/null || \
+        trivy fs --scanners misconfig,secret --severity HIGH,CRITICAL --format json --output /tmp/trivy-iac.json . 2>&1 | tail -5
+      echo "[*] Trivy image + IaC + secret scan complete"
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Trivy surfaced HIGH/CRITICAL image and IaC findings (vulnerable base layers + misconfig) in the cluster workload supply chain — posture coverage validation"
+        ttp_ref: "TTP-2026-0076"
+        detection_id: xql-cdr-007-trivy-image-and-iac-critical-findings-surfaced
+
+  - id: step-02
+    name: "Privileged container exec into a running EKS workload for in-cluster enumeration"
+    command: |
+      NS="${TARGET_NS:-default}"
+      POD="$(kubectl -n "$NS" get pods -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"
+      kubectl -n "$NS" exec "${POD:-cortexsim-probe}" -- sh -c \
+        'id; cat /proc/1/status | grep -E "CapEff|CapPrm"; mount | grep -E "overlay|kube"; cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null | cut -c1-40; echo "[truncated]"' 2>&1 | tee /tmp/exec-enum.txt
+      echo "[*] In-cluster privileged exec enumeration complete"
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "kubectl exec into a running pod followed by capability-mask read of /proc/1/status and service-account token access — privileged container exec / discovery behaviour"
+        ttp_ref: "TTP-2026-0076"
+        detection_id: bioc-cdr-007-privileged-container-exec-into-eks-workload
+
+  - id: step-03
+    name: "kube-bench CIS Kubernetes Benchmark against the EKS cluster"
+    command: |
+      kube-bench run --targets node,policies --benchmark eks-1.2.0 --json --outputfile /tmp/kube-bench.json 2>&1 | tail -10 || \
+        kube-bench --json 2>&1 | tail -10
+      echo "[*] kube-bench CIS benchmark complete"
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "kube-bench CIS Kubernetes Benchmark FAIL results (kubelet, RBAC, API-server config) surfaced as cluster-hardening posture findings"
+        ttp_ref: "TTP-2026-0076"
+        detection_id: xql-cdr-007-kube-bench-cis-benchmark-failures-surfaced
+
+  - id: step-04
+    name: "Kubescape NSA/CISA hardening posture scan + cluster API enumeration"
+    command: |
+      kubescape scan framework nsa,cis-eks-t1.2.0 --format json --output /tmp/kubescape.json --verbose 2>&1 | tail -15 || \
+        kubescape scan --format json --output /tmp/kubescape.json 2>&1 | tail -15
+      kubectl get pods,secrets,roles,rolebindings,clusterroles --all-namespaces 2>&1 | head -40
+      echo "[*] Kubescape NSA/CISA scan + k8s API enumeration complete"
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Kubescape NSA/CISA Kubernetes Hardening Guidance control failures surfaced as hardening-posture gaps; the accompanying bulk kubectl get across namespaces is the k8s-API enumeration shape"
+        ttp_ref: "TTP-2026-0076"
+        detection_id: xql-cdr-007-kubescape-nsa-cisa-hardening-gaps-surfaced
+
+  - id: step-05
+    name: "gitleaks secret scan + bulk secret-pattern file reads across node filesystem"
+    command: |
+      gitleaks detect --source . --report-format json --report-path /tmp/gitleaks.json --no-banner 2>&1 | tail -10 || \
+        gitleaks dir . --report-format json --report-path /tmp/gitleaks.json --no-banner 2>&1 | tail -10
+      find / \( -name '*.pem' -o -name '*.key' -o -name 'token' -o -name '*.kubeconfig' -o -name 'credentials' \) 2>/dev/null | grep -v '/proc/' | head -30 | tee /tmp/secret-files.txt
+      echo "[*] gitleaks + bulk secret-pattern file read complete"
+    identity: container-runtime
+    mitre_technique: "T1552.001"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "gitleaks-detected hardcoded secrets plus a burst of file reads matching secret patterns (*.pem/*.key/token/credentials) across the node filesystem — Unsecured Credentials in Files discovery"
+        ttp_ref: "TTP-2026-0076"
+        detection_id: xql-cdr-007-bulk-secret-pattern-file-reads-during-sweep
+
+  - id: step-06
+    name: "Cloudsplaining IAM least-privilege assessment of the EKS node/cluster roles"
+    command: |
+      aws iam get-account-authorization-details --output json > /tmp/iam-authz.json 2>/dev/null || \
+        echo '{"UserDetailList":[],"RoleDetailList":[],"GroupDetailList":[],"Policies":[]}' > /tmp/iam-authz.json
+      cloudsplaining scan --input-file /tmp/iam-authz.json --output /tmp/cloudsplaining 2>&1 | tail -10 || \
+        cloudsplaining scan-policy-file --input-file /tmp/iam-authz.json 2>&1 | tail -10
+      echo "[*] Cloudsplaining IAM least-privilege assessment complete"
+    identity: container-runtime
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "iam:GetAccountAuthorizationDetails bulk download of every IAM principal/policy from the node role — the Cloud Service Discovery / IAM-enumeration shape Cloudsplaining and an attacker both produce"
+        ttp_ref: "TTP-2026-0076"
+        detection_id: bioc-cdr-007-iam-getaccountauthorizationdetails-bulk-enumeration
+      - plane: CDR
+        type: XQL
+        description: "Cloudsplaining flagged IAM privilege-escalation / data-exfiltration paths (wildcard or risky actions) on the EKS node/cluster roles — least-privilege posture finding"
+        ttp_ref: "TTP-2026-0076"
+        detection_id: xql-cdr-007-cloudsplaining-iam-privilege-escalation-paths-surfaced
+
+cleanup:
+  commands:
+    - "rm -f /tmp/trivy-image.json /tmp/trivy-iac.json /tmp/exec-enum.txt /tmp/kube-bench.json /tmp/kubescape.json /tmp/gitleaks.json /tmp/secret-files.txt /tmp/iam-authz.json"
+    - "rm -rf /tmp/cloudsplaining"
+    - "echo '[CortexSim] SIM-CDR-007 cleanup complete'"
+  k8s_teardown: "kubectl delete -f {manifest_path}"
+
+author: "Henry Reed"
+created: "2026-06-15"
+last_updated: "2026-06-15"
+tags:
+  - container-security
+  - kubernetes
+  - posture
+  - supply-chain
+  - cloud-native
+  - discovery
+  - cis-benchmark
+infra_modules_needed:
+  - cdr
+  - base

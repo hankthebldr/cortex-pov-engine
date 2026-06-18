@@ -1,0 +1,64 @@
+title: "Bulk HTTPS Exfiltration \u2014 Sustained Outbound Bytes Exceeding Host Baseline (T1041 / T1567) \u2014 NGFW EAL outbound bytes per session greatly exceeds host baseline"
+id: ttp-2026-0068-bioc-01
+status: experimental
+description: |
+  Single internal source sustains a very large total outbound byte count to one external destination within a time bin, far above the host's browsing baseline — the volumetric exfiltration signature.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("ssl", "web-browsing", "web-browsing-ssl")
+    | filter action = "allow"
+    | filter dst_ip != null and not incidr(dst_ip, "10.0.0.0/8") and not incidr(dst_ip, "172.16.0.0/12") and not incidr(dst_ip, "192.168.0.0/16")
+    | bin _time span = 5m
+    | comp sum(action_total_upload) as bytes_out, sum(action_total_download) as bytes_in, count() as sessions by src_ip, dst_ip, dst_host, _time
+    | filter bytes_out > 250000000 and (bytes_out / (bytes_in + 1)) > 10
+    | fields _time, src_ip, dst_ip, dst_host, sessions, bytes_out, bytes_in
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1041/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1041
+    - attack.t1567
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Bulk HTTPS Exfiltration \u2014 Sustained Outbound Bytes Exceeding Host Baseline (T1041 / T1567) \u2014 NGFW EAL long-lived upload-skewed HTTPS session"
+id: ttp-2026-0068-bioc-02
+status: experimental
+description: |
+  Outbound HTTPS session that stays open for minutes with a heavily upload-skewed byte ratio — a single chunked transfer rather than interactive browsing.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("ssl", "web-browsing", "web-browsing-ssl")
+    | filter action = "allow"
+    | filter session_duration > 120
+    | filter action_total_upload > 50000000 and (action_total_upload / (action_total_download + 1)) > 10
+    | comp count() as long_sessions, max(session_duration) as max_duration, sum(action_total_upload) as bytes_out by src_ip, dst_ip, dst_host
+    | filter long_sessions >= 1
+    | fields src_ip, dst_ip, dst_host, long_sessions, max_duration, bytes_out
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1041/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1041
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0030",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -144,7 +144,29 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "cortexsim-canary.invalid",
+        "context": "Bogus redirect_uri host shared across all three sequenced grants (Okta, Microsoft, Google) in the provider-hopping rotation (default https://cortexsim-canary.invalid/oauth/callback). The constant .invalid redirect domain is the cross-provider rogue-app fingerprint. Synthetic, non-resolvable canary domain.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://cortexsim-canary.invalid/oauth/callback",
+        "context": "Full bogus OAuth callback URL carried as redirect_uri in all three rotation grants. Synthetic lab value emitted by the sequenced oauth_grant_emulator runs for SIM-CLOUD-004.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "198.51.100.23",
+        "context": "Synthetic source IPv4 (RFC 5737 documentation range) representing the single jumpbox that hops Okta -> Microsoft -> Google authorize endpoints within the 5-minute rotation window. Lab-only source — the same-source IP is the policy-evasion stitch key alongside the shared run-ID prefix.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
     "biocs": [],
     "xql_queries": [
       {
@@ -294,6 +316,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real cross-provider OAuth rotation XQL + stitching, added correlation CR-CLOUDAPP-0004, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — the cortexsim-canary.invalid bogus redirect domain (+ /oauth/callback URL) constant across the rotation and a synthetic RFC-5737 source IPv4 (the provider-hopping stitch key). Grounded in the synthetic values the SIM-CLOUD-004 sequenced grants emit. All other content intact."
     }
   ]
 }

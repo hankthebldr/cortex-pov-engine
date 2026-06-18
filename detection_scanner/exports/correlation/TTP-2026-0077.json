@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1595.002",
+    "T1595.003",
+    "T1592",
+    "T1190"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ASM-004 Web Technology Fingerprint And CMS Enumeration Findings) AND (XQL(ASM-004 Content-Discovery Path Fan-Out 1 Src To Many URIs) OR XQL(ASM-004 Web Vulnerability-Scan Threat-Signature Burst)) AND (BIOC(ASM-004 SQL-Injection Probe Pattern In Web Request) OR BIOC(ASM-004 OS-Command-Injection Probe Pattern In Web Request) OR XQL(ASM-004 Injection-Probe Threat Signatures Against Banking App)) \u2014 stitches the static ASM web-surface discovery with the live NGFW content-discovery + vulnerability-scan + injection-probe detections into one exposure-management incident.",
+      "name": "Exposure Management \u2014 Exposed Web Surface Discovered + Actively Enumerated + Injection-Probed",
+      "rule_id": "CR-ASM-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0077"
+}

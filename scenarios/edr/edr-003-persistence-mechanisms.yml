@@ -6,7 +6,7 @@ status: active
 plane: EDR
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
 
 uc_ref: UCS-EDR-03
 tc_ref: TC-EDR-03
@@ -38,6 +38,26 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The endpoint TTP signals injected by this scenario produce the expected
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+  creation is within the MTTD budget. Each step's expected_detections row is
+  validated against dataset=xdr_data.
+moat_tier: "LEAD"
+
 external_tools:
   - name: Atomic Red Team
     source: "https://github.com/redcanaryco/atomic-red-team"
@@ -64,7 +84,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-cron-job-creation-with-suspicious-command-path"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Crontab modification from non-interactive session — automated persistence installation pattern"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-crontab-modification-non-interactive"
@@ -98,7 +118,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-systemd-unit-with-suspicious-execstart"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Service unit file written with restart=always and hidden binary path — malware persistence pattern"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-service-unit-restart-always-hidden-path"
@@ -120,7 +140,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-local-account-created-with-sudo-group"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "User account creation from non-login session — automated account provisioning pattern"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-user-account-creation-non-login-session"
@@ -143,7 +163,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-ssh-key-generation-then-authorized-keys-write"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "ssh-keygen invocation from non-interactive session — automated SSH persistence setup"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-ssh-keygen-non-interactive-persistence"
@@ -165,7 +185,7 @@ steps:
         ttp_ref: "TTP-2026-0034"
         detection_id: "bioc-edr-003-shell-profile-modified-with-background-execution"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Shell initialization file modification pattern — persistence via user profile"
         ttp_ref: "TTP-2026-0034"
         detection_id: "xql-edr-003-analytics-shell-init-file-modification"

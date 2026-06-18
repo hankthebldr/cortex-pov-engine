@@ -10,6 +10,7 @@
 package identity
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -39,17 +40,40 @@ type ExecResult struct {
 // Execute runs the command described by identity under the appropriate identity context.
 // It always goes through this harness — even "direct" mode — for consistent logging and
 // result capture (per spec constraint §10 rule 5).
+//
+// Execute is a thin wrapper around ExecuteCtx with a background context, preserved
+// for callers that do not need cancellation.
 func Execute(identity ExecutionIdentity) (ExecResult, error) {
+	return ExecuteCtx(context.Background(), identity)
+}
+
+// ExecuteCtx is the context-aware variant of Execute. It honours ctx for
+// cancellation: when ctx is cancelled the underlying process group is signalled
+// (SIGTERM → SIGKILL) so an operator abort can stop a long-running step. A
+// cancelled run returns an ExecResult with ExitCode 130 and err == context.Canceled,
+// which the caller should treat as a non-fatal "aborted" outcome rather than an
+// execution failure.
+func ExecuteCtx(ctx context.Context, identity ExecutionIdentity) (ExecResult, error) {
 	wrapped, err := buildWrappedCommand(identity)
 	if err != nil {
 		return ExecResult{}, err
 	}
 
 	start := time.Now()
-	stdout, stderr, exitCode, execErr := executor.RunCommand(wrapped)
+	stdout, stderr, exitCode, execErr := executor.RunCommandCtx(ctx, wrapped)
 	duration := time.Since(start)
 
 	if execErr != nil {
+		// context.Canceled is propagated verbatim so the caller can distinguish an
+		// operator abort from a genuine execution error; both carry captured output.
+		if execErr == context.Canceled {
+			return ExecResult{
+				ExitCode: exitCode,
+				Stdout:   stdout,
+				Stderr:   stderr,
+				Duration: duration,
+			}, execErr
+		}
 		return ExecResult{
 			ExitCode: exitCode,
 			Stdout:   stdout,
@@ -64,6 +88,44 @@ func Execute(identity ExecutionIdentity) (ExecResult, error) {
 		Stderr:   stderr,
 		Duration: duration,
 	}, nil
+}
+
+// serviceAccounts is the allowlist of known service accounts that should be
+// impersonated via runuser. It MUST stay in sync with the canonical
+// identity-harness spec at spec/identity_harness.json — the SINGLE source of
+// truth shared with the push-mode bash generator (core/engine/push_generator.py
+// via core/engine/identity_spec.py). harness_spec_test.go asserts this map
+// matches the spec so push and pull resolve a scenario's identity identically.
+var serviceAccounts = map[string]bool{
+	"www-data":   true,
+	"postgres":   true,
+	"mysql":      true,
+	"node":       true,
+	"python3":    true,
+	"nobody":     true,
+	"svc-backup": true,
+}
+
+// ResolveIdentity maps a scenario step's identity USERNAME string to a harness
+// {mode, username} pair. It mirrors the core/engine/push_generator.py run_as()
+// allowlist:
+//
+//	{root, container-runtime, direct, ""}                       → direct  (username ignored)
+//	{www-data, postgres, mysql, node, python3, nobody, svc-backup} → runuser
+//	any other non-empty username                                → runuser (best-effort; unknown=true)
+//
+// Unknown usernames resolve to runuser with unknown=true so the caller can emit a
+// WARN — matching the spirit of the bash harness's "Unknown identity" warning.
+// The Go runuser path degrades to a clean stderr failure if the user is absent.
+func ResolveIdentity(username string) (mode, user string, unknown bool) {
+	switch username {
+	case "", "root", "container-runtime", "direct":
+		return "direct", "", false
+	}
+	if serviceAccounts[username] {
+		return "runuser", username, false
+	}
+	return "runuser", username, true
 }
 
 // buildWrappedCommand constructs the final shell string based on the identity mode.

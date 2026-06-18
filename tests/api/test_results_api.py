@@ -58,7 +58,7 @@ def seeded_run(session_factory):
             res = await db.execute(select(Result).where(Result.run_id == run_id))
             return [r.id for r in res.scalars().all()]
 
-    ids = asyncio.get_event_loop().run_until_complete(_seed())
+    ids = asyncio.run(_seed())
     return run_id, ids
 
 

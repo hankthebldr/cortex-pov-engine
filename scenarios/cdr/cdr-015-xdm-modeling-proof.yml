@@ -1,0 +1,124 @@
+scenario_id: SIM-CDR-015
+name: "XDM Container Telemetry Normalization — Modeling-Rule Substrate Proof"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+
+uc_ref: UCS-CDR-10
+tc_ref: TC-CDR-10
+uc_name: "XDM Normalization Substrate Proof for Container Telemetry"
+tc_name: "Raw Container Telemetry to Modeled Field to BIOC Chain"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1610"
+mitre_technique_name: "Deploy Container"
+additional_techniques:
+  - technique: "T1613"
+    name: "Container and Resource Discovery"
+
+threat_report: "Unit42 - Cloud Threat Report: The State of Cloud-Native Security"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# This scenario proves the XDM normalization SUBSTRATE beneath detections: an
+# XDM modeling rule (detections.modeling_rules[], NOT a detection_type) maps raw
+# actor_container_info JSON into addressable XDM fields, then a BIOC fires on the
+# normalized privileged field. It demonstrates the moment a raw, un-analytics-
+# grade log source becomes analytics-grade. Maps to the Signal Injection &
+# Detection Accuracy family (F1) — the BIOC fires only because the substrate
+# made the field addressable.
+validation_methodology: "XDM Normalization Substrate Proof"
+methodology_family: "F1"
+primary_kpi: "Coverage %"
+threshold:
+  kpi: "Coverage %"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  The XDM modeling rule normalizes the raw actor_container_info JSON blob into
+  addressable XDM fields (pod_namespace, image_name, privileged), the validation
+  XQL confirms the modeled fields are populated, and the privileged-container
+  BIOC fires on the normalized privileged field — proving the full raw-source to
+  XDM-normalized-field to detection chain that an un-modeled (searchable but not
+  analytics-grade) log source could not support.
+moat_tier: "LEAD"
+
+steps:
+  - id: step-01
+    name: "Apply the XDM modeling rule that normalizes raw container telemetry"
+    command: |
+      echo "[*] Paste the [MODEL: dataset=cortexsim_container_raw] modeling rule into XSIAM"
+      echo "[*] It maps raw actor_container_info JSON -> XDM fields (pod_namespace, image_name, privileged)"
+      echo "[*] Un-modeled, this source is searchable but NOT analytics-grade"
+    identity: container-runtime
+    mitre_technique: "T1610"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "The XDM modeling rule (normalization substrate) maps the raw actor_container_info blob into addressable XDM container fields — the gating step that makes the source analytics-grade. Resolves to the card's modeling_rules[] object."
+        ttp_ref: "TTP-2026-0081"
+        detection_id: modeling-container-telemetry-xdm-normalization
+
+  - id: step-02
+    name: "Start a privileged container so raw telemetry is emitted and modeled"
+    command: |
+      kubectl run cortexsim-priv-probe --image=public.ecr.aws/docker/library/busybox:1.36 --restart=Never \
+        --overrides='{"spec":{"containers":[{"name":"p","image":"public.ecr.aws/docker/library/busybox:1.36","command":["sh","-c","id; sleep 60"],"securityContext":{"privileged":true}}]}}' || true
+      kubectl wait --for=condition=Ready pod/cortexsim-priv-probe --timeout=120s || true
+      echo "[*] Privileged container started — raw actor_container_info now flowing"
+    identity: container-runtime
+    mitre_technique: "T1610"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Validation that the modeled container fields (pod_namespace, privileged) are populated from the raw blob — confirms the modeling rule normalized the telemetry"
+        ttp_ref: "TTP-2026-0081"
+        detection_id: xql-cdr-xdm-modeled-container-fields-populated
+
+  - id: step-03
+    name: "BIOC fires on the normalized privileged field"
+    command: |
+      echo "[*] BIOC matches container starts where the MODELED privileged field = true"
+      echo "[*] This detection only works because the modeling rule made privileged addressable"
+    identity: container-runtime
+    mitre_technique: "T1613"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Privileged-container-start BIOC fires on the normalized privileged field — proving the raw-source to modeled-field to detection chain end-to-end"
+        ttp_ref: "TTP-2026-0081"
+        detection_id: bioc-cdr-xdm-privileged-container-start-on-modeled-field
+
+cleanup:
+  commands:
+    - "kubectl delete pod cortexsim-priv-probe --ignore-not-found"
+    - "echo '[CortexSim] SIM-CDR-015 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - container-security
+  - kubernetes
+  - xdm
+  - modeling-rules
+  - normalization-substrate
+  - cloud-native
+infra_modules_needed:
+  - cdr
+  - base

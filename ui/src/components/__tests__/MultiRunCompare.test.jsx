@@ -10,8 +10,8 @@ import { installRoutes } from '../../test/mockFetch.js'
 void React
 
 const fixtureRuns = [
-  { id: 'r-before', scenario_id: 'SIM-MP-004', status: 'completed' },
-  { id: 'r-after',  scenario_id: 'SIM-MP-004', status: 'completed' },
+  { id: 'r-before', scenario_id: 'SIM-MP-004', status: 'complete' },
+  { id: 'r-after',  scenario_id: 'SIM-MP-004', status: 'complete' },
   { id: 'r-third',  scenario_id: 'SIM-EDR-001', status: 'running' },
 ]
 
@@ -108,7 +108,7 @@ describe('<MultiRunCompare />', () => {
 
   it('caps the picked set at 4 runs', async () => {
     const manyRuns = Array.from({ length: 6 }, (_, i) => ({
-      id: `r-${i}`, scenario_id: 'SIM-EDR-001', status: 'completed',
+      id: `r-${i}`, scenario_id: 'SIM-EDR-001', status: 'complete',
     }))
     installRoutes({
       'GET /api/runs': manyRuns,

@@ -1,0 +1,92 @@
+title: "Linux Host File Mass-Encryption for Impact \u2014 SAFE-MODE (T1486 / T1490) \u2014 EDR-008 Rapid Mass File Rewrite With Uniform New Extension"
+id: ttp-2026-0073-bioc-01
+status: experimental
+description: |
+  A single process modifies/creates an abnormally large number of files carrying one new uniform extension in a short window — the host-level file-encryption fingerprint (T1486). Distinct from the ESXi VMDK-adjacent mass-write BIOC on TTP-2026-0006.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE, ENUM.FILE_RENAME)
+    | filter action_file_extension in ("cortexlock", "akira", "locked", "crypt", "encrypted")
+    | bin _time span=1m
+    | comp count() as files_rewritten by actor_process_instance_id, actor_process_image_name, agent_hostname, _time
+    | filter files_rewritten >= 20
+    | fields _time, agent_hostname, actor_process_image_name, files_rewritten
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Linux Host File Mass-Encryption for Impact \u2014 SAFE-MODE (T1486 / T1490) \u2014 EDR-008 Ransom Note Written Across Multiple Directories"
+id: ttp-2026-0073-bioc-02
+status: experimental
+description: |
+  A recurring ransom-note filename is written into multiple directories by one process — the note-drop stage of a ransomware encryptor (T1486).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)
+    | filter action_file_name contains_any ("READ_ME", "RANSOM", "_DECRYPT_", "HOW_TO_RESTORE", "akira_readme")
+    | comp count_distinct(action_file_directory) as note_dirs by actor_process_instance_id, agent_hostname
+    | filter note_dirs >= 1
+    | fields agent_hostname, actor_process_instance_id, note_dirs
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Host File Mass-Encryption for Impact \u2014 SAFE-MODE (T1486 / T1490) \u2014 EDR-008 Local Recovery Inhibition \u2014 Snapshot Or Backup Deletion"
+id: ttp-2026-0073-bioc-03
+status: experimental
+description: |
+  Deletion of local snapshots/backups/shadow copies on a Linux host — recovery inhibition (T1490) co-occurring with mass file rewriting.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("rm", "lvremove", "btrfs", "zfs", "rsnapshot", "shred")
+    | filter action_process_image_command_line contains_any ("snapshot", "backup", ".img", ".tar", "--delete", "destroy")
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1490/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1490
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

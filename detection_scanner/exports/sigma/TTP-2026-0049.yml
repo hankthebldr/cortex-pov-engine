@@ -1,0 +1,146 @@
+title: "APT29 Hybrid Cloud Credential Theft \u2192 Cloud Pivot \u2192 S3 Exfil Stitch (T1552.001) \u2014 MP-004 Recursive AWS Key Pattern Grep From Service Account"
+id: ttp-2026-0049-bioc-01
+status: experimental
+description: |
+  XDR — recursive credential-pattern grep from non-interactive service account. The endpoint credential-access leg: www-data greps the filesystem for AWS key material.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("grep", "egrep", "rg", "find")
+    | filter action_process_image_command_line contains_any ("AKIA", "aws_secret_access_key", ".aws/credentials")
+    | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "APT29 Hybrid Cloud Credential Theft \u2192 Cloud Pivot \u2192 S3 Exfil Stitch (T1552.001) \u2014 MP-004 AWS CLI Invoked By www-data With Inline Access Key Env"
+id: ttp-2026-0049-bioc-02
+status: experimental
+description: |
+  XDR — aws cli invoked by www-data with inline access-key env vars. The hybrid pivot: the endpoint process that turns discovered keys into cloud API calls — the 'who/where' the cloud_audit leg cannot see.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "aws"
+    | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+    | filter action_process_image_command_line contains_any ("sts", "get-caller-identity", "ec2", "s3", "iam")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "APT29 Hybrid Cloud Credential Theft \u2192 Cloud Pivot \u2192 S3 Exfil Stitch (T1552.001) \u2014 MP-004 Cloud Multi Service Describe List Burst From Single Principal"
+id: ttp-2026-0049-bioc-03
+status: experimental
+description: |
+  CDR — multi-service describe/list burst (EC2+IAM+S3) from single principal in <30s. Cloud discovery: one principal touches three services in a tight window.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit
+    | filter cloud_provider = "AWS"
+    | filter event_name in ("DescribeInstances", "ListUsers", "ListBuckets", "ListAccessKeys", "GetAccountSummary")
+    | comp count_distinct(event_source) as service_count, count() as call_count by user_identity_access_key_id, bin(_time, 30s) as window
+    | filter service_count >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1580/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1580
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "APT29 Hybrid Cloud Credential Theft \u2192 Cloud Pivot \u2192 S3 Exfil Stitch (T1552.001) \u2014 MP-004 GetBucketAcl And ListObjects On Sensitive Tagged Bucket"
+id: ttp-2026-0049-bioc-04
+status: experimental
+description: |
+  CDR — GetBucketAcl + ListObjects on sensitivity-tagged bucket by unauthorized principal. Cloud collection: targeted access to the sensitive bucket.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit
+    | filter cloud_provider = "AWS" and event_source = "s3.amazonaws.com"
+    | filter event_name in ("GetBucketAcl", "ListObjects", "ListObjectsV2", "GetObject")
+    | filter request_parameters_bucket_name = "cortexsim-sensitive-demo"
+    | comp count() as access_count by user_identity_access_key_id, request_parameters_bucket_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1530/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1530
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "APT29 Hybrid Cloud Credential Theft \u2192 Cloud Pivot \u2192 S3 Exfil Stitch (T1552.001) \u2014 MP-004 S3 CopyObject To Non Owned Destination Bucket"
+id: ttp-2026-0049-bioc-05
+status: experimental
+description: |
+  CDR — S3 CopyObject to non-owned destination account/bucket. Cloud exfil: data copied from the sensitive source to the attacker-owned bucket.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit
+    | filter cloud_provider = "AWS" and event_source = "s3.amazonaws.com"
+    | filter event_name in ("CopyObject", "PutObject")
+    | filter request_parameters_bucket_name = "cortexsim-attacker-drop"
+    | comp count() as copy_count by user_identity_access_key_id, request_parameters_bucket_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1537/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1537
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical

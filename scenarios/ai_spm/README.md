@@ -29,7 +29,7 @@ This plane covers **static inventory + configuration** of AI/ML assets at rest â
 
 All scenarios in this directory consume one shared fixture: [`infra/modules/aws/ai-spm/`](../../infra/modules/aws/ai-spm/). Apply once, run all six scenarios against the same planted state.
 
-Bundle generator inclusion: every AI-SPM scenario declares `infra_modules_needed: [base, ai-spm]`. The IaC generator (`core/engine/infra_generator.py`) auto-suggests the module when an AI-SPM scenario is selected.
+Bundle generator inclusion: every AI-SPM scenario declares `infra_modules_needed: [base, ai-spm]` as a hint for the operator. The IaC generator does **not** auto-include modules from a scenario selection â€” the DC selects `base` + `ai-spm` explicitly in the IaC bundle UI (or POSTs them in `modules[]` to `/api/infra/generate`). The only auto-inclusion path is `adapter_refs[]`: a tier-3 adapter that declares `install.iac_module` pulls its module in automatically. The `ai-spm` module is now allow-listed (`ALLOWED_MODULES` in `core/engine/infra_models.py`) and wired into `infra/templates/main.tf.j2` + `outputs.tf.j2`, so a `base` + `ai-spm` request generates a valid bundle.
 
 ## Operator prerequisites
 

@@ -1,0 +1,54 @@
+title: "ITDR \u2014 Brute-Force Causing Account Lockout (Microsoft) \u2014 ITDR-005 Pre-Flight idp_signin_emulator Metadata Visible"
+id: ttp-2026-0041-bioc-01
+status: experimental
+description: |
+  Pre-flight: idp_signin_emulator metadata visible to operator. Confirms the EAL plugin is registered and exposes brute_force_lockout targets before the burst is emitted, so a null downstream result is a harness fault rather than a detection miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter auth_outcome in ("FAILURE", "SUCCESS") or _raw_log contains "brute_force_lockout"
+    | comp count() as preflight_events by user_name
+    | filter preflight_events >= 0
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "ITDR \u2014 Brute-Force Causing Account Lockout (Microsoft) \u2014 ITDR-005 Account Lock State Transition Recorded"
+id: ttp-2026-0041-bioc-02
+status: experimental
+description: |
+  ITDR — user.account.lock state-transition event recorded. Captures the Microsoft Entra lockout result type emitted when the consecutive-failure burst crosses the lockout threshold for the target identity.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter result_type = "user.account.lock" or auth_status_detail contains "locked" or _raw_log contains "user.account.lock"
+    | fields _time, user_name, src_ip, src_geo_country, result_type, auth_status_detail
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,63 @@
+title: "Passive OSINT Victim-Info Gathering \u2014 Subdomain / Cert / Email Harvesting (T1592 / T1589 / T1590) \u2014 ASM EAL \u2014 Outbound Subdomain-Enumeration DNS Burst"
+id: ttp-2026-0072-bioc-01
+status: experimental
+description: |
+  A single source resolves an abnormally large number of distinct subdomain labels under one parent domain in a short window — the subdomain brute-force / DNS reconnaissance fingerprint (T1590.002) that precedes targeting.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "dns" or dst_port = 53
+    | filter dns_query != null and src_ip != null
+    | alter parent_domain = arrayindex(regextract(dns_query, "([a-z0-9-]+\.[a-z]{2,})$"), 0)
+    | bin _time span=5m
+    | comp count_distinct(dns_query) as distinct_subdomains by src_ip, parent_domain, _time
+    | filter distinct_subdomains >= 8
+    | fields _time, src_ip, parent_domain, distinct_subdomains
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1590/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1590.002
+    - attack.t1592
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Passive OSINT Victim-Info Gathering \u2014 Subdomain / Cert / Email Harvesting (T1592 / T1589 / T1590) \u2014 ASM EAL \u2014 Outbound OSINT Aggregator Egress With Tooling User-Agent"
+id: ttp-2026-0072-bioc-02
+status: experimental
+description: |
+  Outbound HTTPS to a certificate-transparency / OSINT aggregator (crt.sh and similar) carrying a recognised OSINT-tooling user-agent — passive victim-info gathering against the organisation's external footprint.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("ssl", "web-browsing") and dst_port = 443
+    | filter dst_host contains_any ("crt.sh", "censys.io", "shodan.io", "hunter.io", "securitytrails.com")
+    | filter http_user_agent contains_any ("amass", "theHarvester", "cortexsim-osint", "subfinder")
+    | fields _time, src_ip, dst_host, http_user_agent, uri_path
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1592/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1592
+    - attack.t1596.003
+    - attack.t1589
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

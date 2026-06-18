@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1499",
+    "T1499.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AIRS LLM10 Token Usage Rolling Sum Exceeds Per User Budget) OR XQL(AIRS LLM10 P95 Latency On Chat Endpoint Exceeds Threshold Under Load) OR XQL(AIRS LLM10 NGFW Sustained POST Burst Flagged Anomalous App Traffic)",
+      "name": "AIRS LLM10 Token Budget Breach Plus Latency Anomaly Plus POST Burst",
+      "rule_id": "CR-AIRS-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0016"
+}

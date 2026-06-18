@@ -1,8 +1,10 @@
 package identity
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildWrappedCommand(t *testing.T) {
@@ -87,5 +89,72 @@ func TestShellQuoteEscapesEmbeddedSingleQuotes(t *testing.T) {
 	want := `'o'\''reilly'`
 	if got != want {
 		t.Errorf("shellQuote(%q) = %q, want %q", "o'reilly", got, want)
+	}
+}
+
+func TestResolveIdentity(t *testing.T) {
+	cases := []struct {
+		username    string
+		wantMode    string
+		wantUser    string
+		wantUnknown bool
+	}{
+		{"root", "direct", "", false},
+		{"container-runtime", "direct", "", false},
+		{"direct", "direct", "", false},
+		{"", "direct", "", false},
+		{"www-data", "runuser", "www-data", false},
+		{"postgres", "runuser", "postgres", false},
+		{"mysql", "runuser", "mysql", false},
+		{"node", "runuser", "node", false},
+		{"python3", "runuser", "python3", false},
+		{"nobody", "runuser", "nobody", false},
+		{"svc-backup", "runuser", "svc-backup", false},
+		{"weird-svc", "runuser", "weird-svc", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.username, func(t *testing.T) {
+			mode, user, unknown := ResolveIdentity(tc.username)
+			if mode != tc.wantMode || user != tc.wantUser || unknown != tc.wantUnknown {
+				t.Errorf("ResolveIdentity(%q) = (%q,%q,%v); want (%q,%q,%v)",
+					tc.username, mode, user, unknown, tc.wantMode, tc.wantUser, tc.wantUnknown)
+			}
+		})
+	}
+}
+
+func TestExecuteCtx_DirectHappyPath(t *testing.T) {
+	res, err := ExecuteCtx(context.Background(), ExecutionIdentity{Mode: "direct", Command: "echo hi"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("expected exit 0, got %d", res.ExitCode)
+	}
+	if !strings.Contains(res.Stdout, "hi") {
+		t.Errorf("stdout = %q", res.Stdout)
+	}
+}
+
+func TestExecuteCtx_CancelTerminatesAndReturns130(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	res, err := ExecuteCtx(ctx, ExecutionIdentity{Mode: "direct", Command: "sleep 30"})
+	elapsed := time.Since(start)
+
+	if err != context.Canceled {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+	if res.ExitCode != 130 {
+		t.Errorf("expected exit code 130 on cancel, got %d", res.ExitCode)
+	}
+	// 3s kill grace + slack — must be far under the 30s sleep.
+	if elapsed > 10*time.Second {
+		t.Errorf("cancel took too long: %s", elapsed)
 	}
 }

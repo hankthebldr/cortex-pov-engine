@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1543.002",
+    "T1053.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(CDR-006 Systemd Unit Written With Restart Always And Tmp ExecStart) AND (BIOC(CDR-006 Systemd Daemon-Reload Then Enable New Unit Sequence) OR BIOC(CDR-006 Cron Watchdog Re-Enabling Systemd Unit)) \u2014 fuses the unit write, the enable sequence, and the cron watchdog from one node into a single persistence incident.",
+      "name": "Persistence \u2014 Node systemd Unit + Self-Healing Cron Watchdog (Same Node)",
+      "rule_id": "CR-CDR-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0074"
+}

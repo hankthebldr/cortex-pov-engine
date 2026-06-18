@@ -1,11 +1,15 @@
 id: cortexsim-ttp-2026-0047-response
 version: 1
-name: "CortexSim — C2 Beacon Callback — NGFW + XDR Stitch Validation"
+name: "CortexSim — C2 Beacon Callback — NGFW + XDR Causality Stitch (T1071.001)"
 description: |
   Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0047.
-  Triggered by Cortex correlation rules: (none declared).
+  Triggered by Cortex correlation rules: CR-MP-0001, CR-MP-0002, CR-MP-0003.
+  Reference playbook in panw_mapping: XSOAR-PB-C2BeaconStitchResponse-v1
 triggers:
-  - playbook_rule_id: TBD-ANALYTICS-0047
+  - correlation_rule_id: CR-MP-0001
+  - correlation_rule_id: CR-MP-0002
+  - correlation_rule_id: CR-MP-0003
+  - playbook_rule_id: XSOAR-PB-C2BeaconStitchResponse-v1
 tasks:
   isolate_host:
     integration: CortexXDR

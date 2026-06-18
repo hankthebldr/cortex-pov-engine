@@ -2,7 +2,7 @@ adapter_id: TOOL-YARA
 name: "YARA"
 version: "4.5.0"
 
-tier: 2
+tier: 4
 category: reverse-engineering
 
 upstream:
@@ -19,12 +19,13 @@ cortex_signal:
 safety_class: safe
 
 install:
-  source_path: sources/yara
-  build_cmd: "./bootstrap.sh && ./configure && make"
+  # Tier 4 (runtime-fetched): prefer the distro package; fall back to building
+  # the pinned upstream release from a shallow git-clone if apt has no yara.
+  runtime_install_command: "command -v yara >/dev/null 2>&1 || apt-get install -y yara || (test -d /tmp/yara || git clone --depth 1 --branch v4.5.0 https://github.com/VirusTotal/yara /tmp/yara && cd /tmp/yara && ./bootstrap.sh && ./configure && make && make install)"
   binary: "yara"
 
 invoke:
-  target_platform: any
+  target_platform: linux
   run_template: "{binary} {rules} {target}"
   default_args:
     rules: "rules.yar"
@@ -40,3 +41,4 @@ last_updated: "2026-06-02"
 tags:
   - phase-c
   - reverse-engineering
+  - runtime-fetched

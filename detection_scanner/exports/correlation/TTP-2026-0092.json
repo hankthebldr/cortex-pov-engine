@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1656",
+    "T1534"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(EMAIL-003 BEC Executive Impersonation Display-Name Spoof) FOLLOWED_BY msft_o365 mailbox-rule change OR xdr_data endpoint activity for the same recipient within 4h",
+      "name": "BEC Executive Impersonation \u2014 Email to Identity Stitch",
+      "rule_id": "CR-EMAIL-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0092"
+}

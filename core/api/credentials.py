@@ -24,6 +24,16 @@ from security.crypto import CryptoError
 router = APIRouter(prefix="/credentials", tags=["credentials"])
 
 
+def _not_found(resource: str, name: str) -> dict[str, str]:
+    """Structured 404 envelope (GAP-API-012) — matches every other router's
+    ``{error, code, detail}`` shape instead of a bare string detail."""
+    return {
+        "error": f"{resource.capitalize()} not found",
+        "code": f"{resource.upper()}_NOT_FOUND",
+        "detail": f"{resource}='{name}'",
+    }
+
+
 # ── Pydantic request/response models ───────────────────────────────────────
 
 
@@ -85,7 +95,7 @@ async def get_secret_meta(
     store = CredentialStore(session)
     row = await store._get_secret_row(name)  # noqa: SLF001 — controlled internal access
     if row is None:
-        raise HTTPException(status_code=404, detail=f"secret '{name}' not found")
+        raise HTTPException(status_code=404, detail=_not_found("secret", name))
     return row.to_dict()
 
 
@@ -97,7 +107,7 @@ async def delete_secret(
     store = CredentialStore(session)
     removed = await store.delete(name)
     if not removed:
-        raise HTTPException(status_code=404, detail=f"secret '{name}' not found")
+        raise HTTPException(status_code=404, detail=_not_found("secret", name))
     await session.commit()
 
 
@@ -140,7 +150,7 @@ async def get_integration(
     store = CredentialStore(session)
     row = await store.get_integration(name)
     if row is None:
-        raise HTTPException(status_code=404, detail=f"integration '{name}' not found")
+        raise HTTPException(status_code=404, detail=_not_found("integration", name))
     return row.to_dict()
 
 
@@ -152,7 +162,7 @@ async def delete_integration(
     store = CredentialStore(session)
     removed = await store.delete_integration(name)
     if not removed:
-        raise HTTPException(status_code=404, detail=f"integration '{name}' not found")
+        raise HTTPException(status_code=404, detail=_not_found("integration", name))
     await session.commit()
 
 
@@ -171,7 +181,7 @@ async def mark_integration_verified(
     store = CredentialStore(session)
     row = await store.mark_integration_verified(name, ok=body.ok, error=body.error)
     if row is None:
-        raise HTTPException(status_code=404, detail=f"integration '{name}' not found")
+        raise HTTPException(status_code=404, detail=_not_found("integration", name))
     await session.commit()
     return row.to_dict()
 

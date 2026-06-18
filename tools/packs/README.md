@@ -20,4 +20,4 @@ Each adapter declares the tool's integration tier, install method, invocation te
 
 ## Status
 
-This is Phase A — framework only. The reference adapter `nmap.yml` proves the loader-to-orchestrator path end to end. Phase B (12 reference adapters across all 5 tiers) and Phase C (fan out to ~40 🟢-verdict tools from the brief) follow.
+**Phase A/B/C complete — 69 adapter packs ship across all 5 tiers** (`ls tools/packs/*.yml` minus `_schema.yml`). Phase A landed the framework + the first reference pack (`nmap.yml`) proving the loader-to-orchestrator path end to end; Phase B grew the catalog to 22 reference packs across tiers 1–4; Phase C fanned out to the remaining 🟢/🟡-verdict tools from the design brief plus the tier-5 external/reference packs. 27 scenarios reference adapters via `adapter_ref`. The canonical doc with the full shipped-vs-pending breakdown is [`docs/tool-adapters.md`](../../docs/tool-adapters.md); the verified inventory is in [`docs/reference/adapter-catalog.md`](../../docs/reference/adapter-catalog.md).

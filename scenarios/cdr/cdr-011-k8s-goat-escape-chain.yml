@@ -1,0 +1,135 @@
+scenario_id: SIM-CDR-011
+name: "Kubernetes-Goat Container Escape Chain"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CDR-11
+tc_ref: TC-CDR-11
+uc_name: "Kubernetes Container Escape Chain Detection"
+tc_name: "DIND/nsenter/Host-Path Escape + Host-Process Activity"
+
+mitre_tactic: "TA0004"
+mitre_tactic_name: "Privilege Escalation"
+mitre_technique: "T1611"
+mitre_technique_name: "Escape to Host"
+additional_techniques:
+  - technique: "T1610"
+    name: "Deploy Container"
+
+threat_report: "Unit42 - Cloud Threat Report: The State of Cloud-Native Security"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Ports the Kubernetes-Goat escape paths (DIND/docker.sock, nsenter into host
+# namespaces, host-path mount access, high-capability exploitation) into a
+# full escape-chain, complementing the single-vector SIM-CDR-003. Each
+# primitive is a detectable process/file shape run against benign lab targets;
+# no real exploit binary is detonated. Maps to the Signal Injection &
+# Detection Accuracy family (F1).
+validation_methodology: "Container Escape Chain Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The container-escape primitives (nsenter into PID 1 namespaces or docker run
+  with the host root bind-mounted, plus host-path directory access) are
+  detected as escape-to-host behaviour, and the resulting host-namespace
+  process activity is surfaced and stitched into one container-escape-chain
+  incident within the MTTD budget — proving Cortex Cloud CDR + XSIAM cover the
+  breadth of escape paths a Kubernetes-Goat-style cluster exposes, not just a
+  single vector.
+moat_tier: "LEAD"
+
+steps:
+  - id: step-01
+    name: "DIND / nsenter escape primitive from a privileged container (stubbed)"
+    command: |
+      if [ -S /var/run/docker.sock ]; then echo "[*] docker.sock present — escape via docker run -v /:/host stubbed [truncated]"; fi
+      grep -q 'docker\|kubepods' /proc/1/cgroup 2>/dev/null && \
+        echo "[*] containerized PID 1 — nsenter -t 1 -m -u -n -i sh stubbed [truncated]" || true
+    identity: container-runtime
+    mitre_technique: "T1611"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "A containerized process invokes nsenter against PID 1 namespaces or runs the Docker client with the host root bind-mounted — the canonical DIND/privileged-container escape primitive"
+        ttp_ref: "TTP-2026-0083"
+        detection_id: bioc-cdr-011-container-escape-via-dind-nsenter-or-host-namespace
+
+  - id: step-02
+    name: "Access mounted host-path directories from the container"
+    command: |
+      mount | grep -E '/host' && ls -la /host/etc /host/root 2>/dev/null || echo "[*] no /host mount in this pod — host-path access simulated"
+      echo "[*] host-path mount access attempt complete"
+    identity: container-runtime
+    mitre_technique: "T1611"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "A container process reads or writes a mounted host-path directory (/host/etc, /host/root, /host/proc) — the host-filesystem-breakout primitive after a privileged/hostPath pod is reached"
+        ttp_ref: "TTP-2026-0083"
+        detection_id: bioc-cdr-011-host-path-mount-access-from-container
+
+  - id: step-03
+    name: "Host-namespace process activity following the escape"
+    command: |
+      grep CapEff /proc/1/status 2>/dev/null | grep -q 'ffffffffffffffff' && echo "[*] full effective capabilities detected" || true
+      echo "[*] simulating shell/id/cat execution in the entered host namespace [truncated]"
+    identity: container-runtime
+    mitre_technique: "T1611"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Host-namespace process activity (shell/chroot/id/cat) spawned via nsenter or docker from a container origin — the activity that follows a successful escape"
+        ttp_ref: "TTP-2026-0083"
+        detection_id: xql-cdr-011-container-escape-to-host-process-activity
+
+  - id: step-04
+    name: "Stitch escape primitive + host-process activity into one incident"
+    command: |
+      echo "[*] Cortex correlation CR-CDR-0011 fuses the escape primitive and the resulting host-namespace process activity into one container-escape-chain incident"
+    identity: container-runtime
+    mitre_technique: "T1611"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation CR-CDR-0011 stitches the escape-primitive BIOC and the host-process-activity XQL into a single container-escape-chain incident"
+        ttp_ref: "TTP-2026-0083"
+        detection_id: CR-CDR-0011
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-CDR-011 cleanup complete — no host artifacts modified'"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - container-security
+  - kubernetes
+  - container-escape
+  - kubernetes-goat
+  - privilege-escalation
+  - cloud-native
+infra_modules_needed:
+  - cdr
+  - base

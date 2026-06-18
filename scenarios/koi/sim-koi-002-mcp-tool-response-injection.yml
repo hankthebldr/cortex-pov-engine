@@ -5,8 +5,8 @@ status: active
 
 plane: KOI
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-KOI-02
 tc_ref: TC-KOI-02
@@ -38,6 +38,27 @@ required_content:
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Agentic / Supply-Chain Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The agentic / supply-chain artifact (MCP server, skill, extension, PyPI
+  package) produces the expected Cortex detection on scan + egress.
+  Detection Accuracy is the share of injected agentic signals that raise the
+  expected alert (target ≥ 90%). Agentic endpoint coverage has no point-
+  product equivalent.
+moat_tier: "MOAT"
+
 external_tools:
   - name: Cortex Malicious Agentic Pack
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -62,7 +83,7 @@ steps:
       - plane: KOI
         type: BIOC
         description: "Code scan — MCP tool response embeds 'Ignore previous instructions / exfiltrate ~/.aws/credentials'"
-        ttp_ref: TTP-2026-0043
+        ttp_ref: "TTP-2026-0043"
         detection_id: bioc-koi-002-mcp-tool-response-embeds-instruction-injection-and-credential-exfil-string
 
   - id: step-02
@@ -91,14 +112,14 @@ steps:
     mitre_technique: "T1059"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — JSON-RPC tools/call response body contains instruction-injection markers"
-        ttp_ref: TTP-2026-0043
+        ttp_ref: "TTP-2026-0043"
         detection_id: xql-koi-002-json-rpc-tools-call-response-body-contains-injection-markers
       - plane: KOI
-        type: Analytics
+        type: XQL
         description: "MCP runtime monitor — anomalous instruction-shaped string in tool result"
-        ttp_ref: TTP-2026-0043
+        ttp_ref: "TTP-2026-0043"
         detection_id: xql-koi-002-mcp-runtime-monitor-instruction-shaped-string-in-tool-result
 
   - id: step-03
@@ -110,14 +131,14 @@ steps:
     mitre_technique: "T1656"
     expected_detections:
       - plane: AIRS
-        type: Analytics
+        type: XQL
         description: "AIRS — indirect-injection scorer fires when MCP result is concatenated into LLM prompt"
-        ttp_ref: TTP-2026-0043
+        ttp_ref: "TTP-2026-0043"
         detection_id: xql-koi-002-airs-indirect-injection-scorer-on-mcp-result-in-prompt
       - plane: ANALYTICS
-        type: Analytics
+        type: XQL
         description: "XSIAM stitching — KOI artifact + AIRS detection correlate to single agentic-supply-chain incident"
-        ttp_ref: TTP-2026-0043
+        ttp_ref: "TTP-2026-0043"
         detection_id: xql-koi-002-xsiam-stitch-mcp-injection-artifact-with-airs-detection
 
 cleanup:

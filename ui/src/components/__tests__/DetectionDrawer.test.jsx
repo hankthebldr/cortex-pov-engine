@@ -34,7 +34,10 @@ describe('<DetectionDrawer />', () => {
     render(<DetectionDrawer row={baseRow} open onClose={() => {}} />)
     expect(screen.getByText('T1552.001')).toBeInTheDocument()
     expect(screen.getByText(/Recursive AKIA grep/)).toBeInTheDocument()
-    expect(screen.getByText('EDR · BIOC')).toBeInTheDocument()
+    // Plane and detection type now render as a label + a distinct
+    // DetectionTypeChip (GAP-2) rather than a single "EDR · BIOC" string.
+    expect(screen.getByText('EDR')).toBeInTheDocument()
+    expect(screen.getByText('BIOC')).toBeInTheDocument()
     expect(screen.getByText('38s')).toBeInTheDocument()  // MTTD < 1min
   })
 

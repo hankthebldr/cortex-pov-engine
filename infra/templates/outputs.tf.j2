@@ -94,3 +94,24 @@ output "tim_planted_ioc_domains" {
   value       = module.tim.planted_ioc_domains
 }
 {% endif %}
+{% if "ai-spm" in modules %}
+output "aispm_findings_summary" {
+  description = "Manifest of intentional AI-SPM findings planted (ground truth for Asset Discovery Coverage %)"
+  value       = module.ai-spm.findings_summary
+}
+
+output "aispm_sagemaker_endpoint_name" {
+  description = "Managed SageMaker endpoint Cortex AI-SPM should discover (AISP-01 target)"
+  value       = module.ai-spm.sagemaker_endpoint_name
+}
+
+output "aispm_training_data_bucket" {
+  description = "S3 bucket with PII/PHI/PCI canary fixtures (AISP-05 target)"
+  value       = module.ai-spm.training_data_bucket
+}
+
+output "aispm_shadow_gpu_enabled" {
+  description = "Whether the opt-in shadow GPU instance was provisioned"
+  value       = module.ai-spm.shadow_gpu_enabled
+}
+{% endif %}

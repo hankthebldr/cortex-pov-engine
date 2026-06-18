@@ -83,8 +83,10 @@ def _encode_chunk(blob: bytes, encoding: str) -> str:
 
 
 def _random_payload(size: int) -> bytes:
-    rng = random.SystemRandom()
-    return bytes(rng.getrandbits(8) for _ in range(size))
+    # randbytes (CPython ≥3.9) replaces the per-byte getrandbits(8) loop
+    # (EAL-G10). The payload is synthetic high-entropy filler, never crypto
+    # material, so the non-CSPRNG generator is fine.
+    return random.Random().randbytes(size)
 
 
 class DnsTunnelExfil(BaseSimulation):
@@ -139,6 +141,12 @@ class DnsTunnelExfil(BaseSimulation):
             payload = _random_payload(params.chunk_size_bytes)
             label = _encode_chunk(payload, params.encoding)
             fqdn = f"{label}.exfil-{i:04d}.{params.base_domain}"
+
+            # Charge the campaign-level cumulative budget before the query so a
+            # chained campaign cannot exceed the aggregate ceiling (EAL-G06).
+            # The query bytes count whether or not resolution succeeds.
+            ctx.charge_request()
+            ctx.charge_bytes(len(fqdn))
 
             try:
                 if params.query_type == "A":

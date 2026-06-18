@@ -26,6 +26,18 @@ cortex_signal:
 safety_class: dual-use-lab-only
 
 install:
+  # Tier 2 (git submodule). The source tree is provisioned by install.sh
+  # Step 3 (init_submodules → `git submodule update --init --recursive`),
+  # which checks out the redcanaryco/atomic-red-team submodule registered in
+  # .gitmodules. The repo is pure data (atomics + Invoke-AtomicTest), so no
+  # build step is required.
+  #
+  # GRACEFUL DEGRADATION: 8 scenarios reference this adapter
+  # (edr/edr-001..005 + multi_plane/mp-005). Until install.sh has run the
+  # submodule init, sources/atomic-red-team is an empty directory and those
+  # scenarios cannot detonate. The catalog still loads (warn-only on-disk
+  # check in adapter_loader) and scripts/check-adapter-sources.sh FAILs on
+  # the missing source tree so CI/preflight catches it before a POV run.
   source_path: sources/atomic-red-team
   build_cmd: "true"   # repo is data; no build step
 

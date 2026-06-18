@@ -162,7 +162,7 @@ export default function LabView({ onError = () => {} }) {
       {/* ── Head ───────────────────────────────────────────────────── */}
       <div className="view-head">
         <div>
-          <h1>Lab</h1>
+          <h1>Environments</h1>
           <div className="view-head__meta">
             IaC topology generator
             {' · '}<span className="mono">{modules.length} modules</span>

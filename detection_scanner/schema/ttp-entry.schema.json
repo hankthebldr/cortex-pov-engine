@@ -310,6 +310,27 @@
           "type": "array",
           "description": "MITRE ATT&CK data sources observed (e.g., 'Process: Process Creation', 'Logon Session: Logon Session Creation').",
           "items": { "type": "string" }
+        },
+        "atlas_techniques": {
+          "type": "array",
+          "description": "OPTIONAL — MITRE ATLAS (Adversarial Threat Landscape for AI Systems) technique mappings, used ALONGSIDE the ATT&CK `techniques[]` for AI-plane cards (AIRS / AI Access / AI-SPM) where ATT&CK has no native home for the threat (prompt injection, jailbreak, model data leakage, cost harvesting). Additive only — never replaces ATT&CK coverage (GAP-9). Each item maps an ATLAS id (AML.TXXXX[.YYY]) to its name.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["atlas_id", "name"],
+            "properties": {
+              "atlas_id": {
+                "type": "string",
+                "pattern": "^AML\\.T[0-9]{4}(\\.[0-9]{3})?$",
+                "description": "MITRE ATLAS technique id, e.g. AML.T0051 (LLM Prompt Injection) or AML.T0051.000 (Direct)."
+              },
+              "name": { "type": "string" },
+              "atlas_tactic": {
+                "type": "string",
+                "description": "ATLAS tactic name, e.g. 'Initial Access', 'ML Attack Staging', 'Exfiltration', 'Impact'."
+              }
+            }
+          }
         }
       }
     },
@@ -570,8 +591,90 @@
         },
         "analytics_modules": {
           "type": "array",
-          "description": "Out-of-the-box Cortex Analytics modules expected to fire (ML-based detections).",
-          "items": { "type": "string" }
+          "description": "Out-of-the-box Cortex Analytics modules expected to fire (ML-based detections). GAP-11: these are NAMED references, not testable BIOC/XQL logic — they map to a Cortex analytics module but cannot be validated post-run the way a query can. The optional object form carries `validated` so the coverage rollup can separate validated detection (BIOC/XQL/correlation) from merely-mapped analytics modules. A bare string is treated as `validated: false` by the rollup (back-compat).",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Module name. Treated as validated:false (mapped-but-not-logic) by the coverage rollup."
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["module"],
+                "properties": {
+                  "module": { "type": "string", "description": "Cortex analytics module name." },
+                  "validated": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "True ONLY if a deployable BIOC/XQL/correlation on this same card exercises this module (i.e. the mapping is backed by testable logic). Default false — a named analytics module is a mapped reference, not a validated detection (GAP-11)."
+                  },
+                  "note": { "type": "string", "description": "Optional rationale for the validated flag." }
+                }
+              }
+            ]
+          }
+        },
+        "abiocs": {
+          "type": "array",
+          "description": "Analytics Behavioral IOCs (Plan 01) — PANW-authored, auto-tuned behavioral-ML detections with an identified causality chain. Logic-bearing (XQL-shaped) and validated like a BIOC; distinct from hand-authored biocs and from the named, un-validated analytics_modules channel. The coverage rollup counts these as validated detection depth.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "description", "logic"],
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "logic": {
+                "type": "string",
+                "description": "ABIOC detection body. XQL-shaped against a real dataset (e.g. xdr_data, network_story), exactly like a BIOC. Multi-line allowed."
+              },
+              "severity": { "type": "string", "enum": ["informational", "low", "medium", "high", "critical"] },
+              "mitre_technique_ids": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }
+              },
+              "behavioral_profile": {
+                "type": "string",
+                "enum": ["statistical", "machine-learning"],
+                "description": "The ABIOC's detector class — statistical baseline deviation vs. trained ML model."
+              },
+              "causality_anchor": {
+                "type": "string",
+                "description": "The user / endpoint / network profile chain the ABIOC anchors to (the documented ABIOC distinction from a bare BIOC)."
+              },
+              "suppression_window_seconds": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "modeling_rules": {
+          "type": "array",
+          "description": "XDM parsing/modeling rules (Plan 02) — the normalization SUBSTRATE beneath detections. Each maps a raw log source into XDM (Cortex Data Model) fields via a `[MODEL: dataset=…]` XQL declaration so a POV can prove the raw-source → modeled-field → detection chain. A modeling rule does NOT fire; it ENABLES firing. The coverage rollup counts these informationally only — they must never inflate validated-detection depth.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "dataset", "logic"],
+            "properties": {
+              "name": { "type": "string" },
+              "dataset": {
+                "type": "string",
+                "description": "The raw source dataset the modeling rule normalizes (e.g. cortexsim_container_raw)."
+              },
+              "logic": {
+                "type": "string",
+                "description": "Modeling-rule body — XQL under a `[MODEL: dataset=…]` declaration mapping raw event JSON to XDM fields. Multi-line allowed."
+              },
+              "description": { "type": "string" },
+              "vendor": { "type": "string" },
+              "product": { "type": "string" },
+              "content_id": { "type": "string" },
+              "xdm_fields": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "The XDM fields this rule populates (e.g. xdm.target.process.name)."
+              }
+            }
+          }
         }
       }
     },

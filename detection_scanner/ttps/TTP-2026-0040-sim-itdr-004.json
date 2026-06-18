@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0040",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -142,7 +142,34 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "198.51.100.42",
+        "context": "EU-Central (Frankfurt) source IP from which the idp_signin_emulator replays the stolen session_token_id (_LOCATIONS[\"eu-central\"]) — the attacker-infrastructure leg the emulator stamps with replay_marker, distinct from the US-West issuance geo.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "user-agent",
+        "value": "curl/7.85.0",
+        "context": "User-Agent on the replayed user.session.access_token event from EU-Central. A scripted curl client reusing a token first issued to a Chrome browser session is the AiTM session-hijack discriminator.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "203.0.113.10",
+        "context": "US-West (San Francisco) source IP of the original legitimate token issuance (_LOCATIONS[\"us-west\"]) carrying the Chrome/124 user-agent — the baseline leg the replay is compared against.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "email-sender",
+        "value": "ada.lovelace@cortexsim-canary.invalid",
+        "context": "Target user principal whose post-MFA session token is replayed (SIM-ITDR-004 target_user). Pivot identity for the session-hijack incident.",
+        "reputation_required": "any"
+      }
+    ],
     "biocs": [
       {
         "name": "ITDR-004 Pre-Flight idp_signin_emulator Metadata Visible",
@@ -297,6 +324,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real token-replay XQL/BIOC, three-replay stitch and XSIAM grouping queries, correlation CR-ITDR-0004; enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10 IOC coverage: added 4 IOCs grounded in the idp_signin_emulator token_replay synthetic telemetry — the EU-Central replay source IP (198.51.100.42) and its curl/7.85.0 user-agent (the AiTM replay leg), the US-West issuance IP (203.0.113.10), and the ada.lovelace target-user principal. No change to existing BIOC/XQL/correlation logic."
     }
   ]
 }

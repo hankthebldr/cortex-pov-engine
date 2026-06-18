@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1078.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "NOT (XQL(CLOUD-005 Benign Okta OIDC Grant Informational Not Risky) OR XQL(CLOUD-005 Benign Microsoft User Read Grant Informational Not Risky) OR XQL(CLOUD-005 Benign Google OIDC Grant Informational Not Risky)) matched by any CR-CLOUDAPP-0001..0004 risky-grant correlation",
+      "name": "Benign OAuth Baseline Suppression Invariant \u2014 No Risky Correlation",
+      "rule_id": "CR-CLOUDAPP-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0031"
+}

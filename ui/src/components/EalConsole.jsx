@@ -190,10 +190,11 @@ function EalCampaignsList({ campaigns, loading, onLaunch, onRefresh }) {
           </tr>
         </thead>
         <tbody>
-          {campaigns.map(c => {
+          {campaigns.map((c, i) => {
             const steps = c.spec?.steps?.length ?? '–'
+            const rowKey = c.campaign_id ?? c.id ?? `campaign-${i}`
             return (
-              <tr key={c.campaign_id}>
+              <tr key={rowKey}>
                 <td><code className="mono small">{c.campaign_id}</code></td>
                 <td>{c.name}</td>
                 <td>{steps}</td>

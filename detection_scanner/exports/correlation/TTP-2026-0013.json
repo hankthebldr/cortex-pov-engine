@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1656",
+    "T1059"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(AIRS LLM08 RAG Response Contains AKIA Canary From Poisoned Document) OR XQL(AIRS LLM08 RAG Ingestion Classifier Flags Embedded System Override Block) OR XQL(AIRS LLM08 Indirect Injection Scorer Fires On Retrieved Context)",
+      "name": "AIRS LLM08 RAG Poison Upload Plus Retrieval Triggered Leak",
+      "rule_id": "CR-AIRS-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0013"
+}

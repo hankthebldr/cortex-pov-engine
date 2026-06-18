@@ -1,0 +1,191 @@
+scenario_id: SIM-ITDR-008
+name: "ITDR — Help-Desk MFA Reset via Voice Impersonation (Muddled Libra account takeover)"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA) for the signature Muddled Libra /
+# Scattered Spider initial-access pattern: an attacker vishes the IT help desk,
+# pressures an agent into resetting a victim's MFA, then enrolls their own factor
+# and signs in from a never-before-seen device. This emits the SaaS identity
+# (Okta / Entra) audit-log shape the chain produces — reset_factors →
+# factor.activate → session.start from a new device fingerprint — so Cortex ITDR
+# / XSIAM Identity Threat can be shown to stitch it into one account-takeover
+# incident. SaaS-only: no on-prem AD/Windows telemetry is involved. The synthetic
+# IdP events are emitted by the idp_signin_emulator EAL plugin against the canary
+# collector (no real tenant touched). LAB ONLY.
+
+plane: ITDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-08
+tc_ref: TC-ITDR-08
+uc_name: "Identity-Driven Initial Access Defense"
+tc_name: "Help-Desk-Assisted MFA Reset → Factor Enrollment → New-Device Sign-In Account Takeover"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1078.004"
+mitre_technique_name: "Valid Accounts: Cloud Accounts"
+additional_techniques:
+  - technique: "T1556.006"
+    name: "Modify Authentication Process: Multi-Factor Authentication"
+  - technique: "T1656"
+    name: "Impersonation"
+
+threat_report: "Unit42 - Threat Group Assessment: Muddled Libra"
+threat_report_url: "https://unit42.paloaltonetworks.com/threat-group-assessment-muddled-libra-2024/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Identity-plane
+# detection-accuracy family — this scenario validates that the SaaS identity
+# reset→enroll→sign-in chain raises its expected ITDR detection.
+validation_methodology: "Identity Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Okta/Entra audit-log events emitted by this scenario produce the
+  expected Cortex ITDR detection: an MFA reset followed within minutes by a new
+  factor enrollment AND a successful sign-in from a previously-unseen device
+  fingerprint, stitched into a single help-desk-assisted account-takeover
+  incident (CR-IDENT-0001). Detection Accuracy is the share of injected identity
+  events that raise the expected alert (target ≥ 90%).
+moat_tier: "MOAT"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm idp_signin_emulator plugin is registered"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe idp_signin_emulator \
+        | jq -e '.eal_targets | length > 0'
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "Pre-flight: idp_signin_emulator metadata visible to operator (no event emitted yet)"
+        ttp_ref: "TTP-2026-0001"
+        detection_id: bioc-help-desk-admin-modifies-authentication-for-user-outside-their-span
+
+  - id: step-02
+    name: "Help-desk agent (lab role) resets the victim's MFA factors, then attacker enrolls a new factor and signs in from a new device"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-008-okta.yml <<YML
+      campaign_id: CMP-ITDR-008
+      name: "ITDR — Okta help-desk MFA reset account takeover"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [itdr, okta, helpdesk-mfa-reset, muddled-libra]
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: okta
+            event_pattern: mfa_fatigue
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-008-okta.yml --live
+      echo '[*] ITDR should flag the reset_factors → factor.activate → session.start chain from a new device fingerprint'
+    identity: container-runtime
+    mitre_technique: "T1556.006"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — help-desk-initiated MFA reset followed within 10 min by a new factor enrollment AND a sign-in from a device fingerprint not previously seen for this user"
+        ttp_ref: "TTP-2026-0001"
+        detection_id: bioc-okta-mfa-reset-followed-by-factor-enrollment-from-new-device
+      - plane: ITDR
+        type: XQL
+        description: "ITDR — validation: the reset → enroll → sign-in chain fired in the last window (≥3 Okta events for the victim)"
+        ttp_ref: "TTP-2026-0001"
+        detection_id: xql-confirm-reset-enroll-sign-in-chain-fired-in-last-30-min
+
+  - id: step-03
+    name: "Repeat with Microsoft (Entra ID) event shape and confirm the post-takeover privileged-action escalation hunt"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/idp/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-008-ms.yml <<YML
+      campaign_id: CMP-ITDR-008
+      name: "ITDR — Microsoft help-desk MFA reset account takeover"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: microsoft
+            event_pattern: token_replay
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-008-ms.yml --live
+      echo '[*] Hunt: a help-desk MFA reset followed by a privileged group-membership add within 1h is the Muddled Libra escalation tell'
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "ITDR — escalation hunt: help-desk MFA resets followed by a privileged admin-group membership add within 1h (Muddled Libra escalation tell)"
+        ttp_ref: "TTP-2026-0001"
+        detection_id: xql-help-desk-mfa-resets-followed-by-privileged-action-within-1h-muddled-libra-escalation-hunt
+      - plane: ITDR
+        type: Correlation
+        description: "XSIAM — MFA reset + factor enrollment + new-device sign-in (+ high anomalous-sign-in risk) stitched into a single help-desk-assisted account-takeover incident"
+        ttp_ref: "TTP-2026-0001"
+        detection_id: CR-IDENT-0001
+
+cleanup:
+  commands:
+    - "rm -f /tmp/itdr-008-okta.yml /tmp/itdr-008-ms.yml"
+    - "echo '[CortexSim] SIM-ITDR-008 cleanup complete — revert any lab tenant factor/session change via the card cleanup API calls'"
+
+author: "Henry Reed"
+created: "2026-06-15"
+last_updated: "2026-06-15"
+tags:
+  - itdr
+  - okta
+  - microsoft
+  - helpdesk-mfa-reset
+  - muddled-libra
+  - account-takeover
+  - eal-plugin

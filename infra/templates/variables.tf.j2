@@ -34,6 +34,12 @@ variable "edr_target_count" {
   default     = {{ edr_target_count }}
 }
 
+variable "ttl_hours" {
+  description = "Torque environment time-to-live hint, in hours. Surfaced as a CortexSimTTLHours tag so an external reaper can expire the environment."
+  type        = number
+  default     = {{ ttl_hours }}
+}
+
 variable "tags" {
   description = "Additional tags applied to all resources"
   type        = map(string)
@@ -50,4 +56,10 @@ variable "ndr_stitching_pattern" {
   description = "NDR module NGFW stitching pattern: marketplace_vmseries | external_ngfw_forward | suricata_lab"
   type        = string
   default     = "external_ngfw_forward"
+}
+
+variable "aispm_enable_shadow_gpu" {
+  description = "ai-spm module: provision the opt-in g4dn.xlarge shadow-AI EC2 (~$0.50/hr). Default off; the managed-AI assets alone pass TC-AISP-01."
+  type        = bool
+  default     = false
 }

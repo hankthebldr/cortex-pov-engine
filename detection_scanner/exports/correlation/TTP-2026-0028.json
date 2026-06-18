@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1078.004",
+    "T1098.003",
+    "T1528"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(CLOUD-002 Microsoft Directory ReadWrite All Admin-Consent Scope Request) OR BIOC(CLOUD-002 Microsoft Application ReadWrite All In Same Grant Body) OR XQL(CLOUD-002 Microsoft Repeat Admin-Consent Persistence Attempt)",
+      "name": "Microsoft Admin-Consent OAuth Abuse Cloud Persistence \u2014 Same Identity",
+      "rule_id": "CR-CLOUDAPP-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0028"
+}

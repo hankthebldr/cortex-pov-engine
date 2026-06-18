@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1496"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port) OR XQL(NGFW App-ID \u2014 Stratum/cryptocurrency-mining identified on outbound TCP) OR IOC(stratum-json-rpc-mining-subscribe)",
+      "name": "Cryptojacking \u2014 Stratum Mining Pool Resource Hijacking",
+      "rule_id": "CR-NDR-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0052"
+}

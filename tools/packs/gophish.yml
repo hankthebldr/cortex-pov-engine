@@ -22,7 +22,7 @@ cortex_signal:
 safety_class: dual-use-lab-only
 
 install:
-  iac_module: cspm   # CSPM IaC ships the cloud public-egress shape gophish needs
+  iac_module: asm   # ASM IaC provisions the public-facing exposed host gophish needs to serve campaigns
   content_library_entry:
     name: gophish
     repo: gophish/gophish

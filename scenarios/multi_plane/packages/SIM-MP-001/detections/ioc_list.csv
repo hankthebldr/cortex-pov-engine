@@ -1,0 +1,2 @@
+type,value,context,notes
+domain,testmynids.org,T1105 step-04,XSIAM — IOC match on downloaded URL cross-references TIM feed and endpoint file 

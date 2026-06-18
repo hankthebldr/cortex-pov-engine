@@ -1,16 +1,14 @@
-title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 Pre-flight: mfa_fatigue advertised in plugin metadata"
+title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 ITDR-002 Pre-Flight mfa_fatigue Pattern Advertised"
 id: ttp-2026-0038-bioc-01
 status: experimental
 description: |
-  Pre-flight: mfa_fatigue advertised in plugin metadata
+  Pre-flight: mfa_fatigue advertised in plugin metadata. Confirms the emulator advertises the mfa_fatigue event pattern before the burst is emitted, so a downstream null result is a harness fault rather than a detection miss.
   Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
   ----
-    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
-    // MITRE technique: T1621
-    dataset = msft_windows_security
-    | filter event_id IN (4624, 4625, 4662, 4768, 4769)
-    | filter /* TODO: predicate matching the BIOC name */
-    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+    dataset = okta_sso
+    | filter eventType contains "user.authentication.auth_via_mfa" or _raw_log contains "mfa_fatigue"
+    | comp count() as preflight_events by actor_effective_username
+    | filter preflight_events >= 0
   ----
 references:
   - https://attack.mitre.org/techniques/T1621/
@@ -18,7 +16,7 @@ author: CortexSim detection_scanner
 tags:
     - attack.t1621
 logsource:
-  product: windows
+  product: linux
   category: process_creation
 detection:
   selection:
@@ -26,21 +24,19 @@ detection:
   condition: selection
 falsepositives:
   - Legitimate administrative tooling that mirrors the same telemetry shape.
-level: high
+level: medium
 ---
-title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 ITDR \u2014 MFA-fatigue alert: 7 push denials followed by 1 approval within burst window"
+title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 ITDR-002 MFA Fatigue Marker Boolean Explicit Match"
 id: ttp-2026-0038-bioc-02
 status: experimental
 description: |
-  ITDR — MFA-fatigue alert: 7 push denials followed by 1 approval within burst window
+  ITDR — fatigue_marker boolean fires explicit pattern detection. Keys on the explicit fatigue_marker the emulator stamps on each push-bombing event so the burst is unambiguously attributable to the MFA-fatigue pattern.
   Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
   ----
-    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
-    // MITRE technique: T1621
-    dataset = msft_windows_security
-    | filter event_id IN (4624, 4625, 4662, 4768, 4769)
-    | filter /* TODO: predicate matching the BIOC name */
-    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+    dataset = okta_sso
+    | filter eventType contains "user.authentication.auth_via_mfa"
+    | filter fatigue_marker = true or _raw_log contains "\"fatigue_marker\": true"
+    | fields _time, actor_effective_username, src_ip, mfa_result, auth_outcome
   ----
 references:
   - https://attack.mitre.org/techniques/T1621/
@@ -48,67 +44,7 @@ author: CortexSim detection_scanner
 tags:
     - attack.t1621
 logsource:
-  product: windows
-  category: process_creation
-detection:
-  selection:
-    placeholder: replace_with_target_dialect_translation_of_xql
-  condition: selection
-falsepositives:
-  - Legitimate administrative tooling that mirrors the same telemetry shape.
-level: high
----
-title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 ITDR \u2014 fatigue_marker boolean fires explicit pattern detection"
-id: ttp-2026-0038-bioc-03
-status: experimental
-description: |
-  ITDR — fatigue_marker boolean fires explicit pattern detection
-  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
-  ----
-    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
-    // MITRE technique: T1621
-    dataset = msft_windows_security
-    | filter event_id IN (4624, 4625, 4662, 4768, 4769)
-    | filter /* TODO: predicate matching the BIOC name */
-    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
-  ----
-references:
-  - https://attack.mitre.org/techniques/T1621/
-author: CortexSim detection_scanner
-tags:
-    - attack.t1621
-logsource:
-  product: windows
-  category: process_creation
-detection:
-  selection:
-    placeholder: replace_with_target_dialect_translation_of_xql
-  condition: selection
-falsepositives:
-  - Legitimate administrative tooling that mirrors the same telemetry shape.
-level: high
----
-title: "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta) \u2014 ITDR \u2014 MFA-fatigue alert severity escalates above 16-event threshold"
-id: ttp-2026-0038-bioc-04
-status: experimental
-description: |
-  ITDR — MFA-fatigue alert severity escalates above 16-event threshold
-  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
-  ----
-    // AUTO-GENERATED SKELETON — replace with real XQL before promotion.
-    // MITRE technique: T1621
-    dataset = msft_windows_security
-    | filter event_id IN (4624, 4625, 4662, 4768, 4769)
-    | filter /* TODO: predicate matching the BIOC name */
-    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
-  ----
-references:
-  - https://attack.mitre.org/techniques/T1621/
-author: CortexSim detection_scanner
-tags:
-    - attack.t1621
-logsource:
-  product: windows
+  product: linux
   category: process_creation
 detection:
   selection:

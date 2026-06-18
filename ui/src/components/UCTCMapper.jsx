@@ -4,12 +4,19 @@ import { getScenario } from '../api/client.js'
 // ─── Detection type badge ─────────────────────────────────────────────────────
 
 function DetectionBadge({ type }) {
+  // GAP-2: the detection-type vocabulary now spans BIOC | XQL | Analytics |
+  // Correlation | IOC. Correlation is the headline XSIAM differentiator —
+  // given a distinct violet treatment so it stands out in the UC/TC chain.
   const styles = {
-    BIOC:      { bg: 'rgba(0,51,102,0.1)',     color: 'var(--cortex-navy)' },
-    IOC:       { bg: 'rgba(243,156,18,0.12)',  color: '#c47d00' },
-    Analytics: { bg: 'rgba(0,192,232,0.12)',   color: '#007da3' },
+    BIOC:        { bg: 'rgba(0,51,102,0.1)',     color: 'var(--cortex-navy)' },
+    XQL:         { bg: 'rgba(0,192,232,0.12)',   color: '#007da3' },
+    Analytics:   { bg: 'rgba(107,126,142,0.12)', color: 'var(--cortex-steel)' },
+    Correlation: { bg: 'rgba(142,124,255,0.14)', color: '#5b46d9' },
+    IOC:         { bg: 'rgba(243,156,18,0.12)',  color: '#c47d00' },
   }
-  const s = styles[type] || { bg: 'rgba(107,126,142,0.1)', color: 'var(--cortex-steel)' }
+  // Match case-insensitively so a card emitting 'correlation' still resolves.
+  const key = Object.keys(styles).find((k) => k.toLowerCase() === (type || '').toLowerCase())
+  const s = styles[key] || { bg: 'rgba(107,126,142,0.1)', color: 'var(--cortex-steel)' }
   return (
     <span style={{
       fontSize: '10px',

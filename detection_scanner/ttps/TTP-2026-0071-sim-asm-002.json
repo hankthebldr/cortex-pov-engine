@@ -1,0 +1,392 @@
+{
+  "id": "TTP-2026-0071",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-08T00:00:00+00:00",
+    "updated_at": "2026-06-08T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-asm",
+      "vector-active-scanning",
+      "vector-vulnerability-scanning",
+      "protocol-http",
+      "protocol-tls",
+      "industry-all",
+      "severity-high",
+      "exposure-mgmt",
+      "reconnaissance",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "aws",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Inbound Vulnerability-Scanning Reconnaissance Against Perimeter (T1595.002 / T1595.001)",
+    "summary": "An external source runs template-driven vulnerability scanning (nuclei + a Nikto-style web sweep) against the exposed perimeter host: high-volume URI/path probing for known CVEs, config files, and default credentials. Cortex ASM/Xpanse attributes the scanning source to its discovered exposures and the NGFW detects the scanner egress shape (one source, many URIs, scanner user-agents, 404 burst).",
+    "description": "Active Scanning: Vulnerability Scanning (T1595.002) is the reconnaissance step where an adversary probes an internet-facing target for specific weaknesses — known-CVE fingerprints, exposed admin panels, default credentials, leaked config and backup files — rather than simply enumerating which ports are open. It is the single most common precursor signal a perimeter sees before an exploitation attempt (T1190), and it is exactly the threat MITRE pairs with Block Scanning (T1595.001) for IP-block sweeps. CortexSim reproduces the inbound-scan telemetry shape against the infra/modules/aws/asm exposed host: a single source issues a high-volume burst of HTTP/HTTPS requests across many distinct URI paths (/.git/config, /.env, /admin, /wp-login.php, /server-status, CVE template paths) carrying recognisable scanner user-agents (nuclei, Nikto, masscan-derived) and provoking a characteristic 404/401 response burst. The detection model has three layers. (1) An NGFW/Network-Security BIOC fires when one source drives an abnormal count of distinct URIs against a perimeter asset in a short window — the vulnerability-scanner egress fingerprint. (2) Validation XQL confirms the scanner user-agent strings and the 4xx response burst in panw_ngfw_traffic_raw, and confirms Cortex ASM/Xpanse raised a 'scanned asset' / attack-path observation tying the scanning source to the discovered exposures. (3) IOC signatures pin the scanner user-agents and the sensitive-path probes (/.git/config, /.env) so the SOC can match this against known mass-scanning infrastructure. A correlation rule fuses the ASM exposure context with the live vulnerability-scan signal into one exposure-management reconnaissance incident, giving the DC the 'we saw the recon before the breach' narrative that ASM/Xpanse is built to tell. This card is deliberately distinct from SIM-ASM-001 (TTP-2026-0070), which validates multi-service port/version enumeration; here the headline is application-layer vulnerability probing.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Opportunistic mass-scanning operators (automated CVE scanners, botnet reconnaissance)"
+      }
+    ],
+    "campaigns": [
+      "Generic internet-wide vulnerability scanning"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2018-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1595",
+        "name": "Active Scanning: Vulnerability Scanning",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ],
+        "subtechnique_id": "T1595.002"
+      },
+      {
+        "technique_id": "T1595",
+        "name": "Active Scanning: Scanning IP Blocks",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ],
+        "subtechnique_id": "T1595.001"
+      },
+      {
+        "technique_id": "T1190",
+        "name": "Exploit Public-Facing Application",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Network Traffic: Network Traffic Flow",
+      "Internet Scan: Response Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "T1595.002 — nuclei CVE/exposure templates + Nikto-style web sweep against the infra/modules/aws/asm exposed host",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "infra/modules/aws/asm bundle applied; the exposed multi-service EC2 host has a reachable public IP serving HTTP/HTTPS on :80/:443/:9001.",
+        "check_command": "test -n \"${ASM_TARGET_HOST}\" && echo target-set"
+      },
+      {
+        "description": "NGFW egress traffic from the scanning host is forwarded to XSIAM (panw_ngfw_traffic_raw) and Cortex ASM/Xpanse is scanning the perimeter that includes the exposed host."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: template-driven CVE/exposure/misconfig vulnerability scan (T1595.002)\nnuclei -target http://${ASM_TARGET_HOST} -severity low,medium,high,critical -t cves,exposures,default-logins,exposed-panels -o /tmp/nuclei-asm-002.json -j -rate-limit 200\n# step-2: Nikto-style sensitive-path probe burst (one source -> many URIs)\nfor p in /.git/config /.env /admin /wp-login.php /server-status /phpinfo.php /.aws/credentials /backup.zip /config.php.bak; do\n  curl -s -o /dev/null -w \"%{http_code} ${p}\\n\" -A \"Mozilla/5.0 (Nikto/2.5.0)\" http://${ASM_TARGET_HOST}${p}\ndone",
+      "input_variables": [
+        {
+          "name": "ASM_TARGET_HOST",
+          "type": "string",
+          "description": "Public IP / hostname of the infra/modules/aws/asm exposed EC2 instance."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "A single source issuing a high-volume burst of HTTP requests across many distinct URI paths against the perimeter asset.",
+        "expected_value": "count_distinct(uri_path) per src_ip >= 20 against the exposed host in a 5m window"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Scanner user-agent strings on the inbound web requests.",
+        "expected_value": "http_user_agent contains_any (\"Nikto\", \"nuclei\", \"masscan\")"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Cortex ASM/Xpanse raises a scanned-asset / attack-path observation tying the scanning source to the discovered exposures.",
+        "expected_value": "asm_findings.finding_type in (\"active_scan_observed\", \"vulnerable_service\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/nuclei-asm-002.json"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "Nikto/2.5.0",
+        "context": "Nikto web-vulnerability-scanner user-agent observed on the inbound scan burst — strong vulnerability-scanning reconnaissance signature.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "url",
+        "value": "/.git/config",
+        "context": "Probe for an exposed Git repository config — classic sensitive-path target in automated vulnerability scanning.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "/.env",
+        "context": "Probe for an exposed dotenv secrets file — high-value sensitive-path target enumerated by CVE/exposure scanners.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "ASM EAL — Inbound Vulnerability-Scan URI Fan-Out Against Perimeter Asset",
+        "description": "A single source issues an abnormally high number of distinct URI paths against a perimeter web asset within a short window — the application-layer vulnerability-scanner fingerprint (T1595.002), distinct from a port sweep.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"web-browsing\", \"ssl\", \"http-proxy\") and dst_port in (80, 443, 9001)\n| filter src_ip != null and dst_ip != null and uri_path != null\n| bin _time span=5m\n| comp count_distinct(uri_path) as scanned_uris, count() as requests by src_ip, dst_ip, _time\n| filter scanned_uris >= 20\n| fields _time, src_ip, dst_ip, scanned_uris, requests",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1595.002"
+        ]
+      },
+      {
+        "name": "ASM EAL — Known Vulnerability-Scanner User-Agent On Perimeter Asset",
+        "description": "Inbound web request to a perimeter asset carrying a recognised vulnerability-scanner user-agent (Nikto / nuclei / masscan-derived) — direct evidence of automated vulnerability-scanning reconnaissance.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter dst_port in (80, 443, 9001)\n| filter http_user_agent contains_any (\"Nikto\", \"nuclei\", \"masscan\", \"sqlmap\", \"WPScan\")\n| fields _time, src_ip, dst_ip, http_user_agent, uri_path",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1595.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ASM-002 Vulnerability-Scan URI Fan-Out (1 src -> many URIs on exposed host)",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_ip = \"${ASM_TARGET_HOST}\" and dst_port in (80, 443, 9001)\n| comp count_distinct(uri_path) as scanned_uris, count() as requests by src_ip, dst_ip\n| filter scanned_uris >= 20\n| fields src_ip, dst_ip, scanned_uris, requests",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-002 Scanner User-Agent And 4xx Response Burst",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_ip = \"${ASM_TARGET_HOST}\"\n| filter http_user_agent contains_any (\"Nikto\", \"nuclei\", \"masscan\") or http_rsp_code in (401, 403, 404)\n| comp count() as scan_requests, count_distinct(uri_path) as probed_paths by src_ip, http_user_agent\n| filter scan_requests >= 5\n| fields src_ip, http_user_agent, scan_requests, probed_paths",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-002 Xpanse Active-Scan Observation Tied To Exposed Asset",
+        "query": "dataset = asm_findings\n| filter _time > to_timestamp(current_time() - 86400)\n| filter finding_type in (\"active_scan_observed\", \"vulnerable_service\", \"exposed_panel\")\n| filter tags contains \"CortexSimASMFinding\" or asset_external_ip = \"${ASM_TARGET_HOST}\"\n| comp count() as observations by finding_type, scanning_source_ip\n| fields finding_type, scanning_source_ip, observations",
+        "expected_rows_min": 1,
+        "dataset": "asm_findings"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ASM-002 Sensitive-Path Probe Roll-Up (.git/.env/admin/backup)",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 86400)\n| filter dst_ip = \"${ASM_TARGET_HOST}\"\n| filter uri_path contains_any (\"/.git/\", \"/.env\", \"/admin\", \"/wp-login.php\", \"/server-status\", \"/.aws/credentials\", \".bak\")\n| comp count() as probes by src_ip, uri_path, http_rsp_code\n| sort desc probes\n| fields src_ip, uri_path, http_rsp_code, probes",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Exposure Management — Perimeter Asset Under Active Vulnerability Scanning",
+        "rule_id": "CR-ASM-0002",
+        "logic": "XQL(ASM-002 Xpanse Active-Scan Observation Tied To Exposed Asset) AND (BIOC(ASM EAL — Inbound Vulnerability-Scan URI Fan-Out Against Perimeter Asset) OR BIOC(ASM EAL — Known Vulnerability-Scanner User-Agent On Perimeter Asset)) — raises a single exposure-management reconnaissance incident tying the discovered exposures to the live vulnerability scan probing them."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Network Security Analytics — Inbound Vulnerability-Scan URI Fan-Out",
+        "validated": true,
+        "note": "Backed by BIOC 'ASM EAL — Inbound Vulnerability-Scan URI Fan-Out' + the URI-fan-out validation XQL on this card."
+      },
+      {
+        "module": "Cortex Xpanse / ASM — Active-Scan Attribution and Attack-Path Prioritisation",
+        "validated": false
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-asm",
+        "submodule": "active-scan-attribution",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "ASM-ACTIVE-SCAN-OBSERVED-001",
+          "ASM-VULN-SCAN-ATTRIBUTION-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter finding_type = \"active_scan_observed\" | comp count() by scanning_source_ip"
+      },
+      {
+        "module": "cortex-xpanse",
+        "submodule": "perimeter-monitoring",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XPANSE-SCANNED-ASSET-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter asset_external_ip = \"${ASM_TARGET_HOST}\" | comp count() by finding_type"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-VULN-SCAN-URI-FANOUT",
+          "XSIAM-CR-ASM-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_ip = \"${ASM_TARGET_HOST}\" | comp count_distinct(uri_path) as uris by src_ip | filter uris >= 20"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "vulnerability-protection",
+        "coverage_tier": "prevention",
+        "license_required": "advanced",
+        "evidence_query": "NGFW Vulnerability Protection profile signatures for web-scanner reconnaissance (Nikto/nuclei) on the perimeter asset."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-ExposureRemediation-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: enrich the scanning source IP, confirm whether the probed paths exist, and open an exposure-management ticket prioritising any 200-response sensitive path."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ASM-071",
+        "name": "Perimeter Reconnaissance Detection — Active Vulnerability Scanning",
+        "description": "Validate that Cortex detects inbound application-layer vulnerability scanning against a perimeter asset, attributes the scanning source, and correlates it with the asset's known exposures.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ASM-071A",
+            "objective": "The inbound vulnerability-scan burst fires its NGFW/Network-Security BIOC and is confirmed in telemetry.",
+            "preconditions": [
+              "infra/modules/aws/asm bundle applied with a reachable public IP serving HTTP/HTTPS.",
+              "NGFW egress forwarded to XSIAM (panw_ngfw_traffic_raw)."
+            ],
+            "steps": [
+              "Run SIM-ASM-002 step-02 (nuclei CVE/exposure scan).",
+              "Run SIM-ASM-002 step-03 (Nikto-style sensitive-path probe burst).",
+              "Inspect Network Security Analytics for the URI fan-out and scanner user-agent."
+            ],
+            "success_criteria": [
+              "BIOC `ASM EAL — Inbound Vulnerability-Scan URI Fan-Out Against Perimeter Asset` fires with scanned_uris >= 20.",
+              "XQL `ASM-002 Scanner User-Agent And 4xx Response Burst` returns >= 1 row.",
+              "IOC match on the Nikto user-agent and at least one sensitive-path probe (/.git/config or /.env)."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-ASM-071B",
+            "objective": "The scan is attributed to a source and correlated with the asset's exposures into one incident.",
+            "steps": [
+              "Inspect Cortex ASM/Xpanse for the active-scan observation on the exposed asset.",
+              "Inspect the correlation incident."
+            ],
+            "success_criteria": [
+              "XQL `ASM-002 Xpanse Active-Scan Observation Tied To Exposed Asset` returns >= 1 row.",
+              "Correlation `CR-ASM-0002` raises a single exposure-management reconnaissance incident.",
+              "XQL `ASM-002 Sensitive-Path Probe Roll-Up` returns >= 1 high-value probed path."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Front public web assets with a WAF / Cortex-integrated reverse proxy that drops requests carrying known scanner user-agents and rate-limits per-source URI cardinality.",
+      "Never serve sensitive paths (/.git/, /.env, backups, /server-status) from a public web root; enforce deny rules and remove leaked artefacts.",
+      "Enable NGFW Vulnerability Protection and rate-based DoS profiles on the perimeter so scan bursts are throttled and logged."
+    ],
+    "detection_engineering": [
+      "Baseline per-source distinct-URI cardinality at the NGFW and alert on inbound vulnerability-scan fan-out against perimeter assets.",
+      "Maintain an IOC feed of scanner user-agents and sensitive-path probes and match it on inbound web traffic.",
+      "Stitch Cortex ASM/Xpanse active-scan observations with the live NGFW scan signal so reconnaissance is one incident, not isolated 404s."
+    ],
+    "response_playbook": "XSOAR-PB-ExposureRemediation-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Attack Surface Threat Report (Internet-Exposed Assets)",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1595.002 — Active Scanning: Vulnerability Scanning",
+      "url": "https://attack.mitre.org/techniques/T1595/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1595.001 — Active Scanning: Scanning IP Blocks",
+      "url": "https://attack.mitre.org/techniques/T1595/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "GAP-1: initial Reconnaissance (TA0043) card for the ASM plane (SIM-ASM-002): inbound vulnerability-scanning detection (T1595.002/.001) with real NGFW URI-fan-out + scanner-user-agent BIOCs/XQL, sensitive-path IOC signatures, correlation CR-ASM-0002, and a GAP-11 validated/unvalidated analytics-module split. Distinct from SIM-ASM-001 (port/service enumeration)."
+    }
+  ]
+}

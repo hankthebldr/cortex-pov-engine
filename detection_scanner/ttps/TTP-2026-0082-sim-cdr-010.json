@@ -1,0 +1,331 @@
+{
+  "id": "TTP-2026-0082",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-container-ransomware",
+      "industry-all",
+      "severity-critical",
+      "kubernetes",
+      "container-escape",
+      "ransomware",
+      "impact",
+      "aws",
+      "eks"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-CISA"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "kubernetes",
+      "destructive": true,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "kubernetes",
+        "aws",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "destructive-with-cleanup"
+    }
+  },
+  "identity": {
+    "name": "Container-Native Ransomware via Host Filesystem Escape — Cortex Cloud CDR (T1486 / T1611)",
+    "summary": "A container escapes to the host filesystem by parsing /proc/self/mountinfo and chroot-ing into the host root, then stages a ransomware payload. CortexSim neuters the real Ransomware-PoC clone/encrypt; the BIOC/XQL detect the chroot-escape and in-container mass-encrypt rate that Cortex Cloud CDR + XSIAM must surface.",
+    "description": "This scenario ports the xsiam-prisma-cdr-lab ransomware-in-container fixture into a Cortex Cloud CDR detection card. The original lab payload locates the host root mount by parsing /proc/self/mountinfo, chroot-s into it to break out of the container, installs git on the host, and clones the public Ransomware-PoC repository to detonate file-encryption on the node — a container-native variant of the host ransomware exercised by SIM-EDR-008. Because the raw payload is genuinely destructive (real host escape + a working encryptor clone), CortexSim does NOT execute it verbatim: the scenario steps reproduce the detectable telemetry shape with neutered stand-ins — a /proc/self/mountinfo read and an echo-stubbed chroot attempt, plus a bounded, reversible encrypt loop over files the scenario itself creates in a scratch directory (no host data touched, fully reverted in cleanup). The detection content is authored against that telemetry shape: a BIOC fires when a containerized process reads /proc/self/mountinfo and invokes chroot against a host-root mount (the escape primitive, T1611 Escape to Host); a second BIOC anchors the escape on the mountinfo-parse-then-chroot causality chain; and an XQL surfaces the in-container mass-file-modification rate that distinguishes a ransomware encrypt sweep from normal container I/O (T1486 Data Encrypted for Impact). A correlation rule fuses the escape and the encrypt-rate signal into one container-ransomware incident, and the reusable container-workload projection (actor_container_info JSON extraction) lets the DC attribute every event to its pod, image, and container_id. This proves Cortex covers the full container-native ransomware chain: escape to host, then impact.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Cloud-native ransomware operators and opportunistic container intruders"
+      }
+    ],
+    "campaigns": [
+      "Container escape to host-impact ransomware"
+    ],
+    "malware_families": [
+      {
+        "name": "Ransomware-PoC (lab fixture)"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "containers",
+    "techniques": [
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1611",
+        "name": "Escape to Host",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Container: Container Enumeration",
+      "Process: Process Creation",
+      "File: File Modification",
+      "File: File Access"
+    ]
+  },
+  "execution": {
+    "target_platform": "kubernetes",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-010 — container host-FS escape + neutered ransomware encrypt-rate for Cortex Cloud CDR validation",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM / Cortex Cloud CDR connected to the EKS cluster with the Linux agent daemonset deployed so per-container process + file telemetry reaches xdr_data.",
+        "check_command": "kubectl -n kube-system get daemonset | grep -i cortex"
+      },
+      {
+        "description": "cdr IaC module applied so the EKS cluster with worker nodes exists and a privileged/host-mount workload is available to exec into.",
+        "check_command": "kubectl get nodes -o name"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NEUTERED. The original lab payload (ransomware-in-container/ransomware-poc.sh)\n# performs a real chroot host escape and clones a working encryptor. CortexSim\n# reproduces the DETECTABLE telemetry shape only: read /proc/self/mountinfo,\n# echo-stub the chroot, and run a bounded reversible encrypt loop over files the\n# scenario itself creates in a scratch dir. No host data is touched.\nset -euo pipefail\nHOST_FS=\"$(grep ' / ' /proc/self/mountinfo | awk '{print $4}' | head -1)\"\necho \"[CortexSim] located host-root mount candidate: ${HOST_FS:-none} — chroot escape stubbed for safety [truncated]\"\nWORK=\"$(mktemp -d /tmp/cortexsim-ransim.XXXXXX)\"\nfor i in $(seq 1 25); do echo \"benign-doc-$i\" > \"$WORK/file_$i.txt\"; done\nfor f in \"$WORK\"/file_*.txt; do openssl enc -aes-256-cbc -pbkdf2 -salt -k cortexsim -in \"$f\" -out \"$f.locked\" 2>/dev/null && rm -f \"$f\"; done\necho \"[CortexSim] simulated in-container encrypt sweep over ${WORK} complete — reversible, scratch-only\"",
+      "input_variables": [
+        {
+          "name": "TARGET_NS",
+          "type": "string",
+          "default": "default",
+          "description": "Kubernetes namespace whose privileged/host-mount workload is exec'd into for the escape simulation."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "A containerized process reads /proc/self/mountinfo to locate the host-root mount — the host-FS escape primitive.",
+        "expected_value": "action_file_path = \"/proc/self/mountinfo\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "chroot invoked against a host-root mount path from inside a container.",
+        "expected_value": "actor_process_image_name = \"chroot\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "A burst of file-write/rename events as the encrypt loop produces .locked outputs and removes originals.",
+        "expected_value": "action_file_path contains \".locked\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-ransim.*; echo '[CortexSim] SIM-CDR-010 cleanup complete — scratch encrypt files removed; EKS cluster owned by terraform destroy.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "url",
+        "value": "https://github.com/jimmy-ly00/Ransomware-PoC.git",
+        "context": "Ransomware-PoC repository the original lab payload clones after host escape (T1486). Tracked as an IOC; CortexSim does not clone or execute it.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "CDR-010 Container chroot to Host Filesystem Mount",
+        "description": "A process inside a container invokes chroot against a host-root mount path immediately after reading /proc/self/mountinfo. This is the container-to-host escape primitive used by the ransomware-in-container payload (T1611 Escape to Host) before it detonates an encryptor on the node.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter action_process_image_name = \"chroot\" or action_process_image_command_line contains \"chroot\"\n| filter action_process_image_command_line contains \"/host\" or action_process_image_command_line contains \"mountinfo\"\n| comp count() as escape_events by agent_hostname, actor_process_image_name\n| filter escape_events >= 1\n| fields agent_hostname, actor_process_image_name, escape_events",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1611"
+        ]
+      },
+      {
+        "name": "CDR-010 Host Filesystem Escape via Mountinfo Read",
+        "description": "A containerized process reads /proc/self/mountinfo to enumerate the host-root mount, the reconnaissance step that anchors the chroot escape causality chain. Pairing the mountinfo read with a subsequent privileged action inside the same container distinguishes a real escape attempt from benign mount introspection.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN\n| filter actor_container_info != null\n| filter action_file_path in (\"/proc/self/mountinfo\", \"/proc/1/mountinfo\")\n| filter actor_process_image_name in (\"sh\", \"bash\", \"grep\", \"awk\")\n| comp count() as mountinfo_reads by agent_hostname, actor_process_image_name\n| filter mountinfo_reads >= 1\n| fields agent_hostname, actor_process_image_name, mountinfo_reads",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1611"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "CDR-010 Container Workload Projection",
+        "query": "dataset = xdr_data\n| fields actor_container_info as container_info\n| filter container_info != null\n| alter pod_namespace = json_extract_scalar(container_info, \"$.pod_namespace\")\n| alter pod_name = json_extract_scalar(container_info, \"$.pod_name\")\n| alter image_name = json_extract_scalar(container_info, \"$.image_name\")\n| alter image_id = json_extract_scalar(container_info, \"$.image_id\")\n| alter container_id = json_extract_scalar(container_info, \"$.id\")\n| alter privileged = json_extract_scalar(container_info, \"$.privileged\")\n| filter actor_process_image_name in (\"chroot\", \"openssl\", \"sh\", \"bash\")",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-010 In-Container Mass File Encryption Rate",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 600)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_RENAME, ENUM.FILE_CREATE_NEW)\n| filter actor_container_info != null\n| filter action_file_path contains \".locked\" or actor_process_image_name in (\"openssl\", \"gpg\", \"ccrypt\")\n| comp count() as modified_files by agent_hostname, actor_process_image_name\n| filter modified_files >= 10\n| sort desc modified_files\n| fields agent_hostname, actor_process_image_name, modified_files",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Container-Native Ransomware — Host Escape Then Encrypt Impact",
+        "rule_id": "CR-CDR-0010",
+        "logic": "BIOC(CDR-010 Container chroot to Host Filesystem Mount) AND XQL(CDR-010 In-Container Mass File Encryption Rate) — fuses the container-to-host escape with the in-container mass-encrypt rate into a single container-ransomware incident."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — anomalous mass file modification rate inside a container workload",
+      "Cortex Cloud CDR — container escape and host-mount abuse detection"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-runtime",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-CONTAINER-ESCAPE-CHROOT",
+          "CDR-CONTAINER-RANSOMWARE-IMPACT"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter actor_container_info != null | filter action_process_image_name = \"chroot\" or action_file_path contains \".locked\""
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CDR-0010"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CDR-0010 fuses the chroot host-escape BIOC and the in-container mass-encrypt-rate XQL into one container-ransomware incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-010",
+        "name": "Container-Native Ransomware Detection",
+        "description": "Cortex Cloud CDR + XSIAM detect a container escaping to the host filesystem and detonating an encryption sweep — covering both the escape primitive and the ransomware impact distinct from host-only EDR ransomware.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-010A",
+            "objective": "The container-to-host escape (mountinfo read + chroot) is detected.",
+            "preconditions": [
+              "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",
+              "A privileged/host-mount workload available to exec into."
+            ],
+            "steps": [
+              "Exec into the privileged workload and run the neutered escape simulation.",
+              "Observe the escape BIOCs fire."
+            ],
+            "success_criteria": [
+              "BIOC `CDR-010 Host Filesystem Escape via Mountinfo Read` fires.",
+              "BIOC `CDR-010 Container chroot to Host Filesystem Mount` fires."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-CLOUD-010B",
+            "objective": "The in-container encrypt sweep is detected and stitched to the escape.",
+            "preconditions": [
+              "Cortex agent ingestion active so the bounded encrypt loop's file events reach xdr_data."
+            ],
+            "steps": [
+              "Run the bounded reversible encrypt loop over the scratch directory.",
+              "Observe the mass-encrypt-rate XQL and CR-CDR-0010 escalate."
+            ],
+            "success_criteria": [
+              "XQL `CDR-010 In-Container Mass File Encryption Rate` returns >= 1 host.",
+              "Correlation CR-CDR-0010 raises one container-ransomware incident."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Run container workloads as non-root with a read-only root filesystem, drop ALL capabilities, and forbid hostPath mounts and privileged pods via admission control.",
+      "Deny the SYS_ADMIN / SYS_PTRACE capabilities and block chroot/nsenter inside workload containers with a seccomp/AppArmor profile.",
+      "Maintain immutable, versioned backups of node and persistent-volume data so an encrypt sweep is recoverable."
+    ],
+    "detection_engineering": [
+      "Alert on any container process reading /proc/self/mountinfo followed by chroot against a host-root mount.",
+      "Detect an anomalous mass file-modification / rename rate inside a container (the encrypt-sweep shape).",
+      "Stitch a container escape to a subsequent impact event into a single ransomware incident."
+    ],
+    "response_playbook": "XSOAR-PB-ContainerRansomwareContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Ransomware and Cloud-Native Impact Threat Research",
+      "url": "https://unit42.paloaltonetworks.com/category/ransomware/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1486 — Data Encrypted for Impact",
+      "url": "https://attack.mitre.org/techniques/T1486/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1611 — Escape to Host",
+      "url": "https://attack.mitre.org/techniques/T1611/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "CISA & NSA — Kubernetes Hardening Guidance",
+      "url": "https://www.cisa.gov/news-events/alerts/2022/03/15/updated-kubernetes-hardening-guide",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-17",
+      "author": "Henry Reed",
+      "change": "Initial CDR container-native ransomware card for SIM-CDR-010, porting the xsiam-prisma-cdr-lab ransomware-in-container fixture. Neutered the destructive chroot escape + Ransomware-PoC clone into a detectable mountinfo-read/chroot-stub + bounded reversible encrypt loop. Authored two escape BIOCs, an in-container mass-encrypt-rate XQL, the reusable container-workload projection hunt query, IOC for the PoC repo, and correlation CR-CDR-0010. Promoted to active."
+    }
+  ]
+}

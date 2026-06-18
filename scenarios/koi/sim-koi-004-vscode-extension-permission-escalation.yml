@@ -5,21 +5,29 @@ status: active
 
 plane: KOI
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-KOI-04
 tc_ref: TC-KOI-04
 uc_name: "Developer-Tool Extension Risk"
 tc_name: "VS Code Extension Requests Workspace + Network + Auth Permissions"
 
-mitre_tactic: "TA0003"
-mitre_tactic_name: "Persistence"
-mitre_technique: "T1176"
-mitre_technique_name: "Browser Extensions"
+# S-16 — remapped off T1176 ("Browser Extensions"). A malicious VS Code
+# extension distributed via the marketplace is a software-supply-chain
+# vector (T1195), not a browser extension. Primary technique is now T1195
+# (Initial Access); the credential-stealing payload that executes in
+# activate() is captured by T1059 (Command & Scripting Interpreter) and
+# T1552.001 (Unsecured Credentials: In Files) — both backed by TTP-2026-0045.
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1195"
+mitre_technique_name: "Supply Chain Compromise"
 additional_techniques:
-  - technique: "T1195"
-    name: "Supply Chain Compromise"
+  - technique: "T1059"
+    name: "Command and Scripting Interpreter"
+  - technique: "T1552.001"
+    name: "Unsecured Credentials: Credentials In Files"
 
 threat_report: "Unit42 - VS Code Marketplace Risk 2026"
 threat_report_url: "https://unit42.paloaltonetworks.com/"
@@ -37,6 +45,27 @@ required_content:
 
 infra_modules_needed:
   - base
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Agentic / Supply-Chain Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The agentic / supply-chain artifact (MCP server, skill, extension, PyPI
+  package) produces the expected Cortex detection on scan + egress.
+  Detection Accuracy is the share of injected agentic signals that raise the
+  expected alert (target ≥ 90%). Agentic endpoint coverage has no point-
+  product equivalent.
+moat_tier: "MOAT"
 
 external_tools:
   - name: Cortex Malicious Agentic Pack
@@ -65,14 +94,14 @@ steps:
     mitre_technique: "T1195"
     expected_detections:
       - plane: KOI
-        type: Analytics
+        type: XQL
         description: "Code scan — package.json declares activationEvents on '*' (loads on every workspace)"
-        ttp_ref: TTP-2026-0045
+        ttp_ref: "TTP-2026-0045"
         detection_id: xql-koi-004-vscode-extension-manifest-declares-wildcard-activation-events
       - plane: KOI
         type: BIOC
         description: "Code scan — extension reads ${HOME}/.aws/credentials and ${HOME}/.ssh/ via fs.readFile in activate()"
-        ttp_ref: TTP-2026-0045
+        ttp_ref: "TTP-2026-0045"
         detection_id: bioc-koi-004-vscode-extension-reads-aws-credentials-and-ssh-keys-in-activate
 
   - id: step-02
@@ -98,17 +127,17 @@ steps:
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/koi-004.yml --live
     identity: container-runtime
-    mitre_technique: "T1176"
+    mitre_technique: "T1195"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — VS Code Marketplace fetch from non-canonical CDN"
-        ttp_ref: TTP-2026-0045
+        ttp_ref: "TTP-2026-0045"
         detection_id: xql-koi-004-vscode-marketplace-vsix-fetch-from-non-canonical-cdn
       - plane: KOI
-        type: Analytics
+        type: XQL
         description: "Extension marketplace risk score — publisher unverified + new + overbroad permissions"
-        ttp_ref: TTP-2026-0045
+        ttp_ref: "TTP-2026-0045"
         detection_id: xql-koi-004-extension-marketplace-risk-unverified-publisher-overbroad-permissions
 
   - id: step-03
@@ -119,17 +148,17 @@ steps:
         "$EXT_ROOT"/extension/dist/*.js | head -20 || true
       echo "[CortexSim] post-install activate() emits HTTP beacon to attacker C2"
     identity: container-runtime
-    mitre_technique: "T1176"
+    mitre_technique: "T1059"
     expected_detections:
       - plane: KOI
         type: BIOC
         description: "Code scan — extension activate() opens outbound HTTPS to non-Microsoft domain"
-        ttp_ref: TTP-2026-0045
+        ttp_ref: "TTP-2026-0045"
         detection_id: bioc-koi-004-vscode-extension-activate-beacons-outbound-to-non-microsoft-domain
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — VS Code child process emits beacon traffic post-install"
-        ttp_ref: TTP-2026-0045
+        ttp_ref: "TTP-2026-0045"
         detection_id: xql-koi-004-vscode-child-process-emits-post-install-beacon-traffic
 
 cleanup:
@@ -144,4 +173,4 @@ tags:
   - vscode
   - extension
   - supply-chain
-  - persistence
+  - initial-access

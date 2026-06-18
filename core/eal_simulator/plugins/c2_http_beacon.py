@@ -145,7 +145,9 @@ class C2HttpBeacon(BaseSimulation):
         async with httpx.AsyncClient(
             timeout=params.request_timeout,
             follow_redirects=False,
-            verify=False,  # POVs frequently MitM through customer NGFW with self-signed cert
+            # default False: POVs frequently MitM through customer NGFW with a
+            # self-signed cert. Operators opt back into verification per campaign.
+            verify=ctx.verify_tls,
         ) as client:
             for i in range(params.iterations):
                 ua = rng.choice(params.user_agents) if params.user_agents else "CortexSim/1.0"
@@ -158,13 +160,22 @@ class C2HttpBeacon(BaseSimulation):
 
                 body: Optional[bytes] = None
                 if params.method == "POST" and params.body_size_bytes > 0:
-                    body = bytes(rng.getrandbits(8) for _ in range(params.body_size_bytes))
+                    # randbytes (CPython ≥3.9) replaces the per-byte
+                    # getrandbits(8) loop (EAL-G10) — high-entropy filler, not
+                    # crypto material.
+                    body = rng.randbytes(params.body_size_bytes)
+
+                # Charge the campaign-level cumulative budget before sending so
+                # a chained campaign cannot exceed the aggregate ceiling (EAL-G06).
+                request_bytes = params.body_size_bytes + len(url.encode())
+                ctx.charge_request()
+                ctx.charge_bytes(request_bytes)
 
                 try:
                     resp = await client.request(
                         params.method, url, headers=headers, content=body,
                     )
-                    bytes_sent += params.body_size_bytes + len(url.encode())
+                    bytes_sent += request_bytes
                     await ctx.emit_event(ecs_event(
                         action="c2_beacon_request",
                         outcome="success",

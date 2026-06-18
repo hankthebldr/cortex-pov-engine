@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0018",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -146,7 +146,29 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "phish.cortexsim-test.invalid",
+        "context": "Phishing-tagged origin the managed Prisma Browser is driven to (drive-by-download campaign BC-BROWSER-002) whose page script auto-triggers an executable download with no user gesture. Synthetic, non-resolvable .invalid lab phishing host.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://phish.cortexsim-test.invalid/q3-earnings-update",
+        "context": "Exact drive-by landing-page URL whose JavaScript auto-initiates the binary download submitted to WildFire. Synthetic lab URL emitted by the drive-by-download campaign.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "df0a98c0d79fb3332929b81883a758395f5343e616df4caabc59681ba5955040",
+        "context": "Deterministic SHA-256 of the synthetic application/x-msdownload artifact auto-downloaded from phish.cortexsim-test.invalid/q3-earnings-update and WildFire-submitted by Prisma Browser. Synthetic lab payload hash (sha256 of the canary artifact identifier).",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
     "biocs": [
       {
         "name": "Prisma Browser \u2014 auto-download initiated by JS without user gesture",
@@ -307,6 +329,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real Prisma Browser drive-by-download BIOC/XQL + NGFW + WildFire validation, added correlation CR-BROWSER-0002, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — the phish.cortexsim-test.invalid phishing origin, its drive-by landing URL, and the deterministic SHA-256 of the auto-downloaded msdownload artifact. Grounded in the synthetic values the drive-by-download campaign (BC-BROWSER-002) emits. All other content intact."
     }
   ]
 }

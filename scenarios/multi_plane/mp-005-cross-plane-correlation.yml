@@ -7,16 +7,20 @@ status: active
 plane: ANALYTICS
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
+  - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-# Flagship MOAT scenario for the Cortex stitching narrative. Master sheet:
-# TC-IR-05 "Demonstrate correlation-based detections across endpoint +
-# network + identity telemetry" — MOAT tier across CrowdStrike/MSFT/S1.
-uc_ref: UCS-IR-02
-tc_ref: TC-IR-05
-uc_name: "Incident Response"
-tc_name: "Correlation-Based Detections Across EDR + NDR + ITDR"
+# Flagship MOAT scenario for the Cortex stitching narrative. UC/TC family
+# normalized to the multi-plane (UCS-MP / TC-MP) convention (S-14) so all five
+# ANALYTICS-plane stitching scenarios attribute uniformly. The underlying
+# master-sheet row remains TC-IR-05 ("Demonstrate correlation-based detections
+# across endpoint + network + identity telemetry" — MOAT tier across
+# CrowdStrike/MSFT/S1); that linkage is preserved in the `tc-ir-05` tag below.
+uc_ref: UCS-MP-05
+tc_ref: TC-MP-05
+uc_name: "Cross-Plane Incident Stitching"
+tc_name: "Correlation-Based Detections Across EDR + NDR + ITDR (master-sheet TC-IR-05)"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 mitre_tactic: "TA0008"
@@ -131,9 +135,9 @@ steps:
     mitre_technique: "T1071.001"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW — outbound HTTP to known IOC list (testmynids.org)"
-        ttp_ref: TTP-2026-0060
+        ttp_ref: "TTP-2026-0060"
         detection_id: xql-mp-005-ngfw-outbound-http-to-known-ioc-testmynids
         verification_xql: |
           dataset = pan_ngfw_traffic
@@ -160,7 +164,7 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR BIOC — interactive bash from www-data service context (process lineage anchor)"
-        ttp_ref: TTP-2026-0060
+        ttp_ref: "TTP-2026-0060"
         detection_id: bioc-mp-005-interactive-bash-from-www-data-service-context
         verification_xql: |
           dataset = xdr_data
@@ -193,9 +197,9 @@ steps:
     mitre_technique: "T1110.003"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — Kerberos pre-auth failure burst against 5 service accounts from same client_ip"
-        ttp_ref: TTP-2026-0060
+        ttp_ref: "TTP-2026-0060"
         detection_id: xql-mp-005-itdr-kerberos-preauth-failure-burst-against-service-accounts
         verification_xql: |
           dataset = ad_audit
@@ -226,10 +230,10 @@ steps:
     mitre_technique: "T1078"
     expected_detections:
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM correlation — EDR + NDR + ITDR signals from same src_host stitch into one incident_id with full causality chain"
-        ttp_ref: TTP-2026-0060
-        detection_id: xql-mp-005-cross-plane-stitch-single-incident-spanning-multiple-products
+        ttp_ref: "TTP-2026-0060"
+        detection_id: CR-MP-0010
         verification_xql: |
           // F2 canonical verifier — distinct planes under one incident_id
           dataset = xdr_data

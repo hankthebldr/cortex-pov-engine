@@ -1,0 +1,56 @@
+title: "Cloud App \u2014 Microsoft Admin-Consent-Required Scope Request (T1078.004) \u2014 CLOUD-002 Pre-Flight Microsoft Provider Supported"
+id: ttp-2026-0028-bioc-01
+status: experimental
+description: |
+  Pre-flight: provider list includes microsoft. Confirms the oauth_grant_emulator params schema advertises the microsoft provider before any grant is emitted.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = saas_audit_logs
+    | filter event_type = "eal_plugin_describe" or action contains "oauth_grant_emulator"
+    | filter app_name = "oauth_grant_emulator"
+    | fields _time, user, app_name, action
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Cloud App \u2014 Microsoft Admin-Consent-Required Scope Request (T1078.004) \u2014 CLOUD-002 Microsoft Application ReadWrite All In Same Grant Body"
+id: ttp-2026-0028-bioc-02
+status: experimental
+description: |
+  Cloud App — Application.ReadWrite.All in same grant body. The highest-risk app-management Graph scope appears in the authorize request, enabling rogue service-principal creation for tenant persistence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_o365_audit
+    | filter oauth_scopes contains "Application.ReadWrite.All"
+    | filter consent_type != "admin"
+    | filter client_id != null
+    | fields _time, user, app_name, client_id, oauth_scopes, consent_type, source_ip
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098.003
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical

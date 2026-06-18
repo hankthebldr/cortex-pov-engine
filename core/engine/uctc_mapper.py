@@ -88,6 +88,8 @@ async def get_uctc_chain(
             "tactic_name": scenario.mitre_tactic_name,
             "technique": scenario.mitre_technique,
             "technique_name": scenario.mitre_technique_name,
+            # GAP-5 — secondary techniques, normalized to {technique, name} dicts.
+            "additional_techniques": scenario.additional_techniques or [],
         },
         "steps": [
             {

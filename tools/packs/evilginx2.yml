@@ -56,7 +56,7 @@ ttp_refs:
   - TTP-2026-0001  # Help-desk MFA reset — same Muddled Libra family
 
 equivalents:
-  - TOOL-MODLISHKA
+  - TOOL-GOPHISH  # phishing-campaign equivalent (AiTM-vs-credential-harvest variants)
 
 author: Henry Reed
 created: "2026-05-20"

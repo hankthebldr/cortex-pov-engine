@@ -1,0 +1,2 @@
+type,value,context,notes
+domain,testmynids.org,T1048 step-04,XSIAM - IOC match on destination domain correlates with staged data hash

@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0038",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -133,7 +133,27 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "203.0.113.200",
+        "context": "Africa-South (Cape Town) source IP from which the idp_signin_emulator emits the entire MFA push-bombing burst (_LOCATIONS[\"africa-south\"]) — the denial run and the terminal fatigue_marker approval all originate here. Anomalous geo for the target identity.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "user-agent",
+        "value": "Mozilla/5.0 (X11; Linux x86_64) CortexSim/1.0",
+        "context": "Default outbound User-Agent the idp_signin_emulator stamps on each MFA-fatigue verification event (ua_default).",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "email-sender",
+        "value": "alice.singh@cortexsim-canary.invalid",
+        "context": "Target user principal subjected to the push-bombing burst (SIM-ITDR-002 target_user). Pivot identity for the push-bombing incident.",
+        "reputation_required": "any"
+      }
+    ],
     "biocs": [
       {
         "name": "ITDR-002 Pre-Flight mfa_fatigue Pattern Advertised",
@@ -281,6 +301,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real Okta MFA-fatigue XQL/BIOC, severity-escalation query, correlation CR-ITDR-0002; enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10 IOC coverage: added 3 IOCs grounded in the idp_signin_emulator mfa_fatigue synthetic telemetry — the Africa-South (203.0.113.200) burst source IP, the default CortexSim sign-in User-Agent, and the alice.singh target-user principal. No change to existing BIOC/XQL/correlation logic."
     }
   ]
 }

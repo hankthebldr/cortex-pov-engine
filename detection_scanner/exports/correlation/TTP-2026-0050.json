@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1071.001",
+    "T1568"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(NGFW EAL \u2014 outbound HTTP carrying X-Simulation-Run-ID header (operator filter)) OR (XQL(NGFW EAL \u2014 periodic HTTP beacon (regular interval, anomalous User-Agent)) AND XQL(NGFW EAL \u2014 DGA-style URI parameter on outbound HTTP))",
+      "name": "C2 HTTP Beacon \u2014 Periodic Outbound With Anomalous Client",
+      "rule_id": "CR-NDR-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0050"
+}

@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1486",
+    "T1611"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(CDR-010 Container chroot to Host Filesystem Mount) AND XQL(CDR-010 In-Container Mass File Encryption Rate) \u2014 fuses the container-to-host escape with the in-container mass-encrypt rate into a single container-ransomware incident.",
+      "name": "Container-Native Ransomware \u2014 Host Escape Then Encrypt Impact",
+      "rule_id": "CR-CDR-0010",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0082"
+}

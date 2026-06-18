@@ -1,0 +1,57 @@
+title: "AIRS \u2014 Excessive Agency / Tool-Call Abuse (LLM06) \u2014 AIRS LLM06 Exec Shell Tool Invoked From Non Developer Context Prompt"
+id: ttp-2026-0015-bioc-01
+status: experimental
+description: |
+  AIRS — exec_shell tool invoked from a non-developer-context prompt — policy violation. The agent decides to call the exec_shell tool in response to a user prompt rather than a sanctioned developer context.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_port = 8089 and uri_path contains "/owasp/llm06/agent"
+    | filter response_body contains "exec_shell" or response_body contains "\"tool\":\"exec_shell\"" or response_body contains "tool_call"
+    | filter response_body contains "exec_shell"
+    | fields _time, source_user, src_ip, dst_host, uri_path, request_body, response_body
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "AIRS \u2014 Excessive Agency / Tool-Call Abuse (LLM06) \u2014 AIRS LLM06 Send Email Tool Argument Contains External Exfil Recipient"
+id: ttp-2026-0015-bioc-02
+status: experimental
+description: |
+  AIRS — send_email tool argument contains exfil URL (smtp to external) — flagged. The agent invokes send_email targeting an external recipient, an excessive-agency exfiltration path.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_port = 8089 and uri_path contains "/owasp/llm06/agent"
+    | filter response_body contains "send_email"
+    | filter response_body contains "attacker@evil.invalid" or response_body contains "@evil.invalid" or response_body contains "@external"
+    | fields _time, source_user, src_ip, dst_host, uri_path, response_body
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

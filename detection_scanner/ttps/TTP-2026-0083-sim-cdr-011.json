@@ -1,0 +1,314 @@
+{
+  "id": "TTP-2026-0083",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-container-escape",
+      "industry-all",
+      "severity-high",
+      "kubernetes",
+      "container-escape",
+      "kubernetes-goat",
+      "privilege-escalation",
+      "aws",
+      "eks"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-CISA"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "kubernetes",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "kubernetes",
+        "aws",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 900,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Kubernetes-Goat Container Escape Chain — Cortex Cloud CDR (T1611 / T1610)",
+    "summary": "Drive the Kubernetes-Goat vulnerable cluster's escape paths (DIND/docker.sock abuse, nsenter into the host PID namespace, host-path mount access, and high-capability exploitation) against the cdr EKS lab. The BIOC/XQL detect the escape-to-host primitives and resulting host-process activity Cortex Cloud CDR + XSIAM must surface.",
+    "description": "This scenario ports the xsiam-prisma-cdr-lab panw-goat fixture (Madhu Akula's Kubernetes-Goat) into a Cortex Cloud CDR detection card, complementing SIM-CDR-003's single-vector escape with a full escape-chain. Kubernetes-Goat ships intentionally vulnerable workloads — DIND (docker-in-docker) with an exposed docker.sock, an SSRF proxy, a system-monitor pod that allows container escape, and a poor-registry — and the lab's access script port-forwards each so an operator can exercise them. CortexSim reproduces the four canonical escape primitives the goat cluster enables, drawn from the lab's container-escape.sh: (1) docker.sock abuse — a container with the host Docker socket mounted runs `docker run -v /:/host` to chroot the host root; (2) nsenter into the host PID/mount/net namespaces from a privileged container; (3) direct access to a mounted host filesystem path (/host/etc, /host/root); and (4) exploitation of a container holding full (0xffffffffffffffff) effective capabilities. None of these require detonating a real exploit binary — each is a process/file telemetry shape produced by standard tooling (docker, nsenter, cat) that the scenario runs against benign targets inside the lab. A BIOC fires on the DIND/nsenter/host-namespace escape primitive (T1611 Escape to Host); a second BIOC fires on a container reading or writing a mounted host-path directory; and an XQL surfaces the host-process activity that follows a successful escape (a container-origin process now executing in the host namespace). A correlation rule fuses the escape primitive and the resulting host-process activity into one container-escape-chain incident, and the reusable container-workload projection attributes each event to its pod, image, and container_id. This proves Cortex covers the breadth of escape paths a real intruder pivots through, not just a single vector.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Opportunistic container intruders abusing misconfigured/privileged workloads"
+      }
+    ],
+    "campaigns": [
+      "Container escape to host via misconfigured Kubernetes workloads"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2020-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "containers",
+    "techniques": [
+      {
+        "technique_id": "T1611",
+        "name": "Escape to Host",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1610",
+        "name": "Deploy Container",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Container: Container Enumeration",
+      "Process: Process Creation",
+      "File: File Access",
+      "File: File Modification"
+    ]
+  },
+  "execution": {
+    "target_platform": "kubernetes",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-011 — Kubernetes-Goat escape-chain primitives for Cortex Cloud CDR validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM / Cortex Cloud CDR connected to the EKS cluster with the Linux agent daemonset deployed so per-container process + file telemetry reaches xdr_data.",
+        "check_command": "kubectl -n kube-system get daemonset | grep -i cortex"
+      },
+      {
+        "description": "cdr IaC module applied and a privileged / docker.sock-mounted / host-path workload available to exec into (the goat-equivalent vulnerable pods).",
+        "check_command": "kubectl get pods --all-namespaces -o name | head"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Escape-chain primitives drawn from panw-goat/container-escape.sh. Each is a\n# detectable process/file shape run against benign targets in the lab cluster —\n# no real exploit binary is detonated and host data is only read, not modified.\nset -euo pipefail\n# (1) docker.sock abuse\nif [ -S /var/run/docker.sock ]; then echo \"[*] docker.sock present — escape via docker run -v /:/host stubbed [truncated]\"; fi\n# (2) nsenter into host namespaces from a privileged container\ngrep -q 'docker\\|kubepods' /proc/1/cgroup 2>/dev/null && echo \"[*] containerized PID 1 — nsenter -t 1 -m -u -n -i sh stubbed [truncated]\" || true\n# (3) mounted host-path access\nmount | grep -E '/host' && ls -la /host/etc /host/root 2>/dev/null || echo \"[*] no /host mount in this pod\"\n# (4) high-capability exploitation\ngrep CapEff /proc/1/status | grep -q 'ffffffffffffffff' && echo \"[*] full effective capabilities detected\" || true",
+      "input_variables": [
+        {
+          "name": "TARGET_NS",
+          "type": "string",
+          "default": "default",
+          "description": "Namespace of the vulnerable/privileged goat workload to exec into."
+        }
+      ],
+      "timeout_seconds": 900
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "nsenter invoked against PID 1 namespaces, or docker run mounting the host root, from inside a container.",
+        "expected_value": "actor_process_image_name in (\"nsenter\", \"docker\")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Read or write of a mounted host-path directory (/host/etc, /host/root, /host/proc).",
+        "expected_value": "action_file_path contains \"/host/\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-CDR-011 cleanup complete — no host artifacts modified; EKS cluster owned by terraform destroy.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "CDR-011 Container Escape via DIND nsenter or Host Namespace",
+        "description": "A containerized process invokes nsenter against PID 1 namespaces or runs the Docker client with the host root bind-mounted (docker run -v /:/host), the canonical DIND/privileged-container escape primitives Kubernetes-Goat exposes (T1611 Escape to Host).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter action_process_image_name in (\"nsenter\", \"docker\", \"runc\")\n| filter action_process_image_command_line contains \"-t 1\" or action_process_image_command_line contains \"/:/host\" or action_process_image_command_line contains \"--privileged\"\n| comp count() as escape_attempts by agent_hostname, action_process_image_name\n| filter escape_attempts >= 1\n| fields agent_hostname, action_process_image_name, escape_attempts",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1611"
+        ]
+      },
+      {
+        "name": "CDR-011 Host Path Mount Access from Container",
+        "description": "A process inside a container reads or writes a mounted host-path directory (/host/etc, /host/root, /host/proc), the host-filesystem-breakout primitive used after a privileged or hostPath-mounted goat pod is reached (T1611 Escape to Host).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE\n| filter actor_container_info != null\n| filter action_file_path contains \"/host/etc\" or action_file_path contains \"/host/root\" or action_file_path contains \"/host/proc\"\n| comp count() as host_path_touches by agent_hostname, actor_process_image_name\n| filter host_path_touches >= 1\n| sort desc host_path_touches\n| fields agent_hostname, actor_process_image_name, host_path_touches",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1611"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "CDR-011 Container Workload Projection",
+        "query": "dataset = xdr_data\n| fields actor_container_info as container_info\n| filter container_info != null\n| alter pod_namespace = json_extract_scalar(container_info, \"$.pod_namespace\")\n| alter pod_name = json_extract_scalar(container_info, \"$.pod_name\")\n| alter image_name = json_extract_scalar(container_info, \"$.image_name\")\n| alter image_id = json_extract_scalar(container_info, \"$.image_id\")\n| alter container_id = json_extract_scalar(container_info, \"$.id\")\n| alter privileged = json_extract_scalar(container_info, \"$.privileged\")\n| filter actor_process_image_name in (\"nsenter\", \"docker\", \"runc\", \"sh\", \"bash\")",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-011 Container Escape to Host Process Activity",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"nsenter\", \"docker\", \"runc\")\n| filter action_process_image_name in (\"sh\", \"bash\", \"chroot\", \"id\", \"cat\")\n| comp count() as host_proc_events by agent_hostname, actor_process_image_name\n| filter host_proc_events >= 1\n| sort desc host_proc_events\n| fields agent_hostname, actor_process_image_name, host_proc_events",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Kubernetes-Goat Escape Chain — Escape Primitive Then Host Process Activity",
+        "rule_id": "CR-CDR-0011",
+        "logic": "BIOC(CDR-011 Container Escape via DIND nsenter or Host Namespace) AND XQL(CDR-011 Container Escape to Host Process Activity) — fuses the escape primitive with the resulting host-namespace process activity into one container-escape-chain incident."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud CDR — container escape, host-namespace and docker.sock abuse detection",
+      "Cortex XSIAM Analytics — anomalous host-namespace process spawned from a container origin"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-runtime",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-CONTAINER-NSENTER-ESCAPE",
+          "CDR-CONTAINER-HOSTPATH-ACCESS"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter actor_container_info != null | filter action_process_image_name in (\"nsenter\", \"docker\") or action_file_path contains \"/host/\""
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CDR-0011"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CDR-0011 fuses the escape-primitive BIOC and the host-process-activity XQL into one container-escape-chain incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-011",
+        "name": "Kubernetes Container Escape Chain Detection",
+        "description": "Cortex Cloud CDR + XSIAM detect the breadth of container-escape primitives a Kubernetes-Goat-style cluster exposes — DIND/docker.sock abuse, nsenter into host namespaces, host-path access — and the resulting host-process activity.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-011A",
+            "objective": "The escape primitives (nsenter / docker.sock / host-path) are detected.",
+            "preconditions": [
+              "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",
+              "A privileged / docker.sock-mounted / host-path goat workload available."
+            ],
+            "steps": [
+              "Exec into the vulnerable workload and run the escape-chain primitives.",
+              "Observe the escape BIOCs fire."
+            ],
+            "success_criteria": [
+              "BIOC `CDR-011 Container Escape via DIND nsenter or Host Namespace` fires.",
+              "BIOC `CDR-011 Host Path Mount Access from Container` fires."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-CLOUD-011B",
+            "objective": "The host-namespace process activity after escape is detected and stitched.",
+            "preconditions": [
+              "Cortex agent ingestion active so host-namespace process events reach xdr_data."
+            ],
+            "steps": [
+              "Run a shell in the entered host namespace.",
+              "Observe the host-process-activity XQL and CR-CDR-0011 escalate."
+            ],
+            "success_criteria": [
+              "XQL `CDR-011 Container Escape to Host Process Activity` returns >= 1 host.",
+              "Correlation CR-CDR-0011 raises one container-escape-chain incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Forbid privileged pods, hostPath volumes, hostPID/hostNetwork, and docker.sock mounts via admission control (OPA/Gatekeeper or Kyverno).",
+      "Drop ALL capabilities and apply a restrictive seccomp profile that blocks nsenter / mount / chroot inside workload containers.",
+      "Use a container runtime sandbox (gVisor/Kata) for untrusted workloads to harden the escape boundary."
+    ],
+    "detection_engineering": [
+      "Alert on nsenter against PID 1 namespaces or docker run with the host root bind-mounted from inside a container.",
+      "Detect a container process reading or writing a mounted host-path directory.",
+      "Stitch an escape primitive to the resulting host-namespace process activity into one incident."
+    ],
+    "response_playbook": "XSOAR-PB-ContainerEscapeChainTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 Cloud Threat Report — The State of Cloud-Native Security",
+      "url": "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1611 — Escape to Host",
+      "url": "https://attack.mitre.org/techniques/T1611/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1610 — Deploy Container",
+      "url": "https://attack.mitre.org/techniques/T1610/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "CISA & NSA — Kubernetes Hardening Guidance",
+      "url": "https://www.cisa.gov/news-events/alerts/2022/03/15/updated-kubernetes-hardening-guide",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-17",
+      "author": "Henry Reed",
+      "change": "Initial CDR Kubernetes-Goat escape-chain card for SIM-CDR-011, porting the xsiam-prisma-cdr-lab panw-goat fixture. Reproduced the four escape primitives (docker.sock, nsenter, host-path, high-cap) as detectable process/file shapes against benign lab targets. Authored two escape BIOCs, a host-process-activity XQL, the reusable container-workload projection hunt query, and correlation CR-CDR-0011. Promoted to active."
+    }
+  ]
+}

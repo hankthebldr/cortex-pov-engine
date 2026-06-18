@@ -1,0 +1,151 @@
+scenario_id: SIM-CDR-014
+name: "Malicious In-Cluster Multi-Stage TTP Chain — Cortex ABIOC"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CDR-14
+tc_ref: TC-CDR-14
+uc_name: "Multi-Stage In-Cluster TTP Chain Detection via Cortex ABIOC"
+tc_name: "In-Cluster Chain Behavioral Causality + Collection-then-Exfil Deviation"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1560"
+mitre_technique_name: "Archive Collected Data"
+additional_techniques:
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1071"
+    name: "Application Layer Protocol"
+  - technique: "T1496"
+    name: "Resource Hijacking"
+  - technique: "T1574"
+    name: "Hijack Execution Flow"
+
+threat_report: "Unit42 - Cloud Threat Report: The State of Cloud-Native Security"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Multi-stage in-cluster TTP chain (discovery -> HTTP C2 -> archive -> valid-
+# account -> resource-hijack -> exec-flow hijack) from one workload. Authored
+# as static rules this is nine detections; the ABIOC value is Cortex's
+# auto-tuned behavioral analytics observing the whole sequence as ONE deviating
+# causality story from a baselined container. CortexSim runs the chain with
+# safe stand-ins (benign HTTP, tar of self-created files, echo-stubbed
+# cryptominer/privileged-deploy). Maps to the Behavioral Anomaly family (F1).
+validation_methodology: "Behavioral Anomaly Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  After a baseline-learning window over the container's single-service-process
+  profile, the multi-stage in-cluster chain (discovery -> HTTP C2 -> archive ->
+  hijack, run with safe stand-ins) fires both Cortex ABIOCs — one anchoring the
+  multi-stage causality chain, one on the collection-then-exfil deviation — and
+  the correlation rule stitches them into one in-cluster behavioral-anomaly
+  incident within the MTTD budget, proving Cortex's auto-tuned behavioral
+  analytics catch a multi-stage TTP chain as one causality story no static rule
+  was written for.
+moat_tier: "LEAD"
+
+steps:
+  - id: step-01
+    name: "Let Cortex learn the container's single-service-process baseline"
+    command: |
+      echo "[*] baselining the container's per-process profile (single long-running service process)"
+      sleep "${BASELINE_WINDOW_SECONDS:-600}"
+    identity: container-runtime
+    mitre_technique: "T1078"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "The multi-stage chain surfaces in endpoint telemetry once injected (≥2 distinct stage processes from one container) — validation that the deviation reached xdr_data"
+        ttp_ref: "TTP-2026-0087"
+        detection_id: xql-cdr-014-multi-stage-in-cluster-chain-surfaced
+
+  - id: step-02
+    name: "Run the multi-stage in-cluster chain with safe stand-ins"
+    command: |
+      WORK="$(mktemp -d /tmp/cortexsim-attk.XXXXXX)"
+      uname -a; cat /etc/os-release 2>/dev/null | head -3                       # T1082 discovery
+      curl -sSL -m 5 -I http://testmynids.org/ -o /dev/null || true            # T1071 HTTP C2
+      for i in $(seq 1 5); do echo "collected-$i" > "$WORK/data_$i"; done
+      tar -czf "$WORK/collected.tar.gz" "$WORK"/data_* 2>/dev/null              # T1560 archive
+      id; echo "[*] valid-account/root access stubbed [truncated]"             # T1078
+      echo "[*] cryptominer deploy stubbed — no miner run [truncated]"         # T1496
+      echo 'echo cortexsim-marker' >> "$WORK/profile_stub"                     # T1574 exec-flow hijack stub
+      echo "[*] multi-stage in-cluster chain executed with safe stand-ins in $WORK"
+    identity: container-runtime
+    mitre_technique: "T1560"
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "A baselined container suddenly executes a multi-stage sequence (discovery -> HTTP C2 -> archive -> hijack) from one shell — auto-tuned ABIOC fires on the deviating chain as one causality story, anchored to the single originating shell"
+        ttp_ref: "TTP-2026-0087"
+        detection_id: abioc-cdr-014-in-cluster-ttp-chain-behavioral-causality
+
+  - id: step-03
+    name: "Collection-then-exfil deviation (archive followed by egress)"
+    command: |
+      WORK="$(ls -d /tmp/cortexsim-attk.* 2>/dev/null | head -1 || mktemp -d /tmp/cortexsim-attk.XXXXXX)"
+      curl -sSL -m 5 "http://testmynids.org/uid/index.html?exfil=1" -o /dev/null || true
+      echo "[*] simulated collection-then-exfil deviation from $WORK — archive then egress"
+    identity: container-runtime
+    mitre_technique: "T1496"
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "A baselined container archives collected data then opens outbound connections — auto-tuned ABIOC fires on the collection-then-exfil deviation with the causality chain tying egress back to the archive"
+        ttp_ref: "TTP-2026-0087"
+        detection_id: abioc-cdr-014-anomalous-multi-stage-container-discovery-and-exfil
+
+  - id: step-04
+    name: "Stitch the two ABIOCs into one in-cluster behavioral-anomaly incident"
+    command: |
+      echo "[*] Cortex correlation CR-CDR-0014 fuses the two ABIOC deviations into one in-cluster behavioral-anomaly incident with the single-shell multi-stage causality chain"
+    identity: container-runtime
+    mitre_technique: "T1574"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation CR-CDR-0014 stitches the multi-stage-causality ABIOC and the collection-then-exfil ABIOC into one in-cluster behavioral-anomaly incident"
+        ttp_ref: "TTP-2026-0087"
+        detection_id: CR-CDR-0014
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-attk.*"
+    - "echo '[CortexSim] SIM-CDR-014 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - container-security
+  - kubernetes
+  - abioc
+  - behavioral-analytics
+  - multi-stage
+  - cloud-native
+infra_modules_needed:
+  - cdr
+  - base

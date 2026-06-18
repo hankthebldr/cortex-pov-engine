@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1552",
+    "T1056.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(Prisma Browser \u2014 credential-shape paste into non-sanctioned origin (DLP rule))",
+      "name": "Browser Credential Paste DLP \u2014 Non-Sanctioned Origin",
+      "rule_id": "CR-BROWSER-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0017"
+}

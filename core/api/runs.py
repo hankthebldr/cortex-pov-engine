@@ -2,7 +2,8 @@
 CortexSim API — /api/runs router.
 
 Endpoints:
-  POST /api/run                                 — launch a scenario run
+  POST /api/runs                                — launch a scenario run
+  POST /api/run                                 — launch alias (deprecated; backward compat)
   GET  /api/runs                                — list all runs
   GET  /api/runs/{run_id}                       — run detail + status
   GET  /api/runs/{run_id}/report                — POV report (markdown or JSON)
@@ -28,12 +29,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from engine import report_generator
 from engine.orchestrator import orchestrator
+from events import event_bus
 from models import Result, Run, Scenario
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.runs")
 
-router = APIRouter(tags=["runs"])
+# GAP-API-008 — the runs router now carries the conventional ``/runs`` prefix so
+# every endpoint lives under ``/api/runs/...`` (consistent with every other
+# router). The launch path is ``POST /api/runs``. A backward-compat alias
+# ``POST /api/run`` (singular, the historical path) is preserved on a separate
+# unprefixed router (``compat_router``) mounted under ``/api`` so existing
+# clients/UI builds keep working during the transition.
+router = APIRouter(prefix="/runs", tags=["runs"])
+compat_router = APIRouter(tags=["runs"])
 
 
 def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
@@ -102,6 +111,9 @@ class LaunchRequest(BaseModel):
 
 class OutputRequest(BaseModel):
     output: str
+    # Optional step id (e.g. "step-02") so per-step output can be grouped in
+    # the live SSE stream. Backward compatible — older agents omit it.
+    step_id: Optional[str] = None
 
 
 class CompleteRequest(BaseModel):
@@ -109,17 +121,32 @@ class CompleteRequest(BaseModel):
     summary: str
 
 
+# Terminal Run states — reaching any of these stops the agent and makes
+# /abort an idempotent no-op. ``staged`` is the terminal state for a push-mode
+# run (GAP-API-004): the bundle was generated and SimCore's role is done.
+_TERMINAL_STATES = {"complete", "failed", "aborted", "staged"}
+
+
+async def _safe_publish(run_id: Optional[str], event: dict) -> None:
+    """Publish to the event bus without ever letting a bus error propagate
+    into the mutation path that triggered it."""
+    try:
+        await event_bus.publish(run_id, event)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("event_bus publish failed run_id=%s", run_id)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 
-@router.post("/run")
-async def launch_run(
+async def _launch_run_impl(
     body: LaunchRequest,
-    db: AsyncSession = Depends(get_db),
-):
-    """Launch a scenario run in pull or push mode."""
+    db: AsyncSession,
+) -> dict:
+    """Shared launch implementation behind both ``POST /api/runs`` and the
+    deprecated ``POST /api/run`` alias."""
     if body.mode not in ("pull", "push"):
         raise HTTPException(
             status_code=400,
@@ -160,7 +187,28 @@ async def launch_run(
     return response
 
 
-@router.get("/runs")
+@router.post("")
+async def launch_run(
+    body: LaunchRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Launch a scenario run in pull or push mode. (POST /api/runs)"""
+    return await _launch_run_impl(body, db)
+
+
+@compat_router.post("/run", deprecated=True)
+async def launch_run_compat(
+    body: LaunchRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Deprecated launch alias — use ``POST /api/runs`` instead.
+
+    Kept for backward compatibility with older UI builds / clients that POST
+    to the singular ``/api/run`` path (GAP-API-008)."""
+    return await _launch_run_impl(body, db)
+
+
+@router.get("")
 async def list_runs(db: AsyncSession = Depends(get_db)):
     """List all run records."""
     stmt = select(Run).order_by(Run.started_at.desc())
@@ -170,7 +218,7 @@ async def list_runs(db: AsyncSession = Depends(get_db)):
     return {"runs": [r.to_dict() for r in runs], "total": len(runs)}
 
 
-@router.get("/runs/{run_id}")
+@router.get("/{run_id}")
 async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
     """Return detail and current status for a single run."""
     result = await db.execute(select(Run).where(Run.run_id == run_id))
@@ -184,7 +232,7 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
     return run.to_dict()
 
 
-@router.get("/runs/{run_id}/report")
+@router.get("/{run_id}/report")
 async def get_report(
     run_id: str,
     format: str = Query("markdown", pattern="^(markdown|json)$"),
@@ -421,7 +469,7 @@ async def _load_report_inputs(run_id: str, db: AsyncSession):
     return run, scenario, results
 
 
-@router.get("/runs/{run_id}/report/matrix")
+@router.get("/{run_id}/report/matrix")
 async def get_report_matrix(run_id: str, db: AsyncSession = Depends(get_db)):
     """Detection matrix CSV — one row per expected detection.
 
@@ -447,7 +495,7 @@ async def get_report_matrix(run_id: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.get("/runs/{run_id}/report/navigator")
+@router.get("/{run_id}/report/navigator")
 async def get_report_navigator(run_id: str, db: AsyncSession = Depends(get_db)):
     """ATT&CK Navigator v4.5 layer JSON for this run.
 
@@ -473,7 +521,7 @@ async def get_report_navigator(run_id: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.get("/runs/{run_id}/report/bundle")
+@router.get("/{run_id}/report/bundle")
 async def get_report_bundle(run_id: str, db: AsyncSession = Depends(get_db)):
     """All three POV artifacts in one gzipped tarball.
 
@@ -501,7 +549,7 @@ async def get_report_bundle(run_id: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/runs/{run_id}/output")
+@router.post("/{run_id}/output")
 async def append_output(
     run_id: str,
     body: OutputRequest,
@@ -520,11 +568,17 @@ async def append_output(
     run.output = existing + body.output
     await db.commit()
 
-    logger.info("output appended run_id=%s bytes=%d", run_id, len(body.output))
+    await _safe_publish(
+        run_id,
+        {"type": "run.output", "run_id": run_id,
+         "data": {"step_id": body.step_id, "chunk": body.output}},
+    )
+
+    logger.info("output appended run_id=%s bytes=%d step=%s", run_id, len(body.output), body.step_id)
     return {"status": "ok", "run_id": run_id}
 
 
-@router.post("/runs/{run_id}/complete")
+@router.post("/{run_id}/complete")
 async def complete_run(
     run_id: str,
     body: CompleteRequest,
@@ -539,6 +593,15 @@ async def complete_run(
             detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
         )
 
+    # An operator abort wins over a late completion callback: if the run was
+    # already aborted, keep it aborted (the agent reports exit 130 on abort).
+    if run.status == "aborted":
+        logger.info("run_complete ignored — run already aborted run_id=%s", run_id)
+        # Run is already terminal — drop it from the orchestrator's aborted set
+        # so the in-memory set stays bounded even on the abort→late-complete path.
+        orchestrator.clear_aborted(run_id)
+        return {"status": run.status, "run_id": run_id}
+
     run.status = "complete" if body.exit_code == 0 else "failed"
     run.completed_at = datetime.utcnow()
 
@@ -548,6 +611,15 @@ async def complete_run(
 
     await db.commit()
 
+    # Run reached a terminal state — drop it from the orchestrator's aborted
+    # set so the in-memory set stays bounded.
+    orchestrator.clear_aborted(run_id)
+
+    await _safe_publish(
+        run_id,
+        {"type": "run.status", "run_id": run_id, "data": {"status": run.status, "step_id": None}},
+    )
+
     logger.info(
         "run_complete run_id=%s exit_code=%d status=%s",
         run_id,
@@ -555,3 +627,69 @@ async def complete_run(
         run.status,
     )
     return {"status": run.status, "run_id": run_id}
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — operator abort + agent control channel
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{run_id}/abort")
+async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Operator-initiated abort.
+
+    Transitions a ``pending``/``running`` run to ``aborted`` and signals the
+    in-flight agent (via the orchestrator's aborted set, polled at
+    ``/control``). Idempotent: a run already in a terminal state returns 200
+    with its existing status and ``was_terminal: true`` — never an error.
+    """
+    result = await db.execute(select(Run).where(Run.run_id == run_id))
+    run: Optional[Run] = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
+        )
+
+    if run.status in _TERMINAL_STATES:
+        logger.info("abort_run idempotent no-op run_id=%s status=%s", run_id, run.status)
+        return {"status": run.status, "run_id": run_id, "was_terminal": True}
+
+    run.status = "aborted"
+    run.completed_at = datetime.utcnow()
+    run.output = (run.output or "") + "\n--- RUN ABORTED BY OPERATOR ---\n"
+    await db.commit()
+
+    # Drop any queued task (in-memory + durable) + record the id so the agent's
+    # /control poll stops it.
+    await orchestrator.abort_persisted(run_id, db)
+
+    await _safe_publish(
+        run_id,
+        {"type": "run.status", "run_id": run_id, "data": {"status": "aborted", "step_id": None}},
+    )
+
+    logger.info("abort_run run_id=%s -> aborted", run_id)
+    return {"status": "aborted", "run_id": run_id, "was_terminal": False}
+
+
+@router.get("/{run_id}/control")
+async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Lightweight stop-signal poll for the in-flight agent.
+
+    Returns ``abort=true`` when the run was aborted (orchestrator set) OR has
+    reached any terminal status in the DB (covers a SimCore restart that lost
+    the in-memory aborted set). A vanished run (DB reset) also returns
+    ``abort=true`` so the agent halts rather than spins.
+    """
+    abort = orchestrator.is_aborted(run_id)
+
+    result = await db.execute(select(Run).where(Run.run_id == run_id))
+    run: Optional[Run] = result.scalar_one_or_none()
+    if run is None:
+        return {"abort": True, "run_id": run_id, "status": "unknown"}
+
+    if run.status in _TERMINAL_STATES:
+        abort = True
+
+    return {"abort": abort, "run_id": run_id, "status": run.status}

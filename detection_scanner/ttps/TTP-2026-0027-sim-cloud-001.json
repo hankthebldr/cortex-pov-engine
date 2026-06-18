@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0027",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -131,7 +131,29 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "cortexsim-canary.invalid",
+        "context": "Bogus redirect_uri host the oauth_grant_emulator plants in every Okta authorize request (default https://cortexsim-canary.invalid/oauth/callback). A legitimate OAuth app never redirects to .invalid — the redirect domain is the malicious-app fingerprint in the okta_sso / NGFW URL logs. Synthetic, non-resolvable canary domain enforced by the plugin's redirect-safety guard.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://cortexsim-canary.invalid/oauth/callback",
+        "context": "Full bogus OAuth callback URL carried as redirect_uri in the risky-drive Okta grant. Synthetic lab value emitted verbatim by oauth_grant_emulator (provider=okta, scope_preset=risky_drive).",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "cortexsim-canary.okta.com",
+        "context": "Canary Okta tenant authorize host (cortexsim-canary.okta.com/oauth2/v1/authorize) the risky-drive grant is sent to. Synthetic lab tenant from the SIM-CLOUD-001 campaign target_allowlist — no real token is ever issued.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
     "biocs": [
       {
         "name": "CLOUD-001 Pre-Flight oauth_grant_emulator Plugin Registered",
@@ -277,6 +299,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real Okta OAuth-grant CASB/NGFW XQL, added correlation CR-CLOUDAPP-0001, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — the cortexsim-canary.invalid bogus redirect domain (+ /oauth/callback URL) and the cortexsim-canary.okta.com canary tenant authorize host. Grounded in the synthetic values oauth_grant_emulator emits for SIM-CLOUD-001. Flips the CLOUD_APP plane to non-zero card IOC coverage. All other content intact."
     }
   ]
 }

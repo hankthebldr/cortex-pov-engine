@@ -1,0 +1,58 @@
+title: "Inbound Vulnerability-Scanning Reconnaissance Against Perimeter (T1595.002 / T1595.001) \u2014 ASM EAL \u2014 Inbound Vulnerability-Scan URI Fan-Out Against Perimeter Asset"
+id: ttp-2026-0071-bioc-01
+status: experimental
+description: |
+  A single source issues an abnormally high number of distinct URI paths against a perimeter web asset within a short window — the application-layer vulnerability-scanner fingerprint (T1595.002), distinct from a port sweep.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("web-browsing", "ssl", "http-proxy") and dst_port in (80, 443, 9001)
+    | filter src_ip != null and dst_ip != null and uri_path != null
+    | bin _time span=5m
+    | comp count_distinct(uri_path) as scanned_uris, count() as requests by src_ip, dst_ip, _time
+    | filter scanned_uris >= 20
+    | fields _time, src_ip, dst_ip, scanned_uris, requests
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1595/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1595.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Inbound Vulnerability-Scanning Reconnaissance Against Perimeter (T1595.002 / T1595.001) \u2014 ASM EAL \u2014 Known Vulnerability-Scanner User-Agent On Perimeter Asset"
+id: ttp-2026-0071-bioc-02
+status: experimental
+description: |
+  Inbound web request to a perimeter asset carrying a recognised vulnerability-scanner user-agent (Nikto / nuclei / masscan-derived) — direct evidence of automated vulnerability-scanning reconnaissance.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_port in (80, 443, 9001)
+    | filter http_user_agent contains_any ("Nikto", "nuclei", "masscan", "sqlmap", "WPScan")
+    | fields _time, src_ip, dst_ip, http_user_agent, uri_path
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1595/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1595.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

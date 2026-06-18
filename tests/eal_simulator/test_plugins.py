@@ -2,10 +2,21 @@
 
 We exercise dry_run=True so the tests don't emit real network packets, which
 both keeps CI hermetic and confirms the safety branches work.
+
+The shared parametrized matrix (``test_plugin_dry_run_completes``) covers every
+plugin whose dry-run path resolves purely from params. The two CLI-backed
+plugins (``airs_prompt_attack`` and ``browser_attack_runner``) need a stub
+binary (and, for the browser, a campaign file) on disk, so they get dedicated
+dry-run tests below — keeping the dry-run regression contract for all 13
+built-in plugins in this one file (closes EAL-G04).
 """
 from __future__ import annotations
 
 import asyncio
+import json
+import stat
+import textwrap
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -19,7 +30,7 @@ from eal_simulator import (
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 _PLUGIN_LABEL = {
@@ -28,6 +39,12 @@ _PLUGIN_LABEL = {
     "bulk_https_exfil": "BULK",
     "stratum_tcp_connect": "STRA",
     "smb_rpc_sweep": "SMB",
+    "ftp_egress": "FTP",
+    "ssh_egress": "SSH",
+    "llm_provider_egress": "LLM",
+    "oauth_grant_emulator": "OAUTH",
+    "idp_signin_emulator": "IDP",
+    "agentic_egress": "AGENT",
 }
 
 
@@ -66,6 +83,40 @@ def executor() -> CampaignExecutor:
         "target_cidr": "10.50.10.0/30",
         "ports": [445],
         "max_hosts": 2,
+    }),
+    ("ftp_egress", {
+        "target_host": "ftp-sinkhole.invalid",
+        "iterations": 1,
+        "sleep_seconds": 0.0,
+    }),
+    ("ssh_egress", {
+        "target_host": "ssh-sinkhole.invalid",
+        "iterations": 1,
+        "sleep_seconds": 0.0,
+    }),
+    ("llm_provider_egress", {
+        "provider": "openai",
+        "iterations": 1,
+        "sleep_seconds": 0.0,
+    }),
+    ("oauth_grant_emulator", {
+        "provider": "okta",
+        "iterations": 1,
+        "sleep_seconds": 0.0,
+    }),
+    ("idp_signin_emulator", {
+        "collector_url": "https://idp-collector.invalid/events",
+        "iterations": 1,
+        "sleep_seconds": 0.0,
+    }),
+    ("agentic_egress", {
+        # mcp_server -> mcp/<artifact_name>; this typosquat artifact ships in
+        # the in-tree cortex-malicious-agentic-pack so dry-run can resolve it.
+        "target_url": "https://staging.invalid/upload",
+        "component": "mcp_server",
+        "artifact_name": "anthroopic-calculator",
+        "iterations": 1,
+        "sleep_seconds": 0.0,
     }),
 ])
 def test_plugin_dry_run_completes(executor: CampaignExecutor, plugin: str, params: dict[str, Any]):
@@ -168,3 +219,85 @@ def test_dns_tunnel_dry_run_emits_event(executor: CampaignExecutor):
     sr = state.step_results[0]
     assert sr.events_emitted >= 1
     assert sr.detail["chunks_planned"] == 2
+
+
+# --- CLI-backed plugins -------------------------------------------------------
+# These two plugins shell out to an external binary, so their dry-run path needs
+# a stub binary (and, for the browser, a campaign file) on disk. They cannot ride
+# the simple ``(plugin, params)`` matrix above, but we keep their dry-run
+# regression coverage in this central file so all 13 built-in plugins are
+# exercised here (closes EAL-G04).
+
+def _make_stub_cli(tmp_path: Path, name: str) -> Path:
+    """Write a tiny executable that emits one JSONL run-meta line on stdout."""
+    bin_path = tmp_path / name
+    bin_path.write_text(
+        "#!/usr/bin/env bash\n"
+        "cat <<'EOF'\n"
+        '{"entry_type": "run_meta"}\n'
+        "EOF\n",
+        encoding="utf-8",
+    )
+    bin_path.chmod(bin_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return bin_path
+
+
+def test_airs_prompt_attack_dry_run_completes(executor: CampaignExecutor, tmp_path: Path):
+    # The plugin resolves the binary even in dry-run, so provide a stub.
+    stub = _make_stub_cli(tmp_path, "cortex-prompt-attacker")
+    campaign = Campaign.model_validate({
+        "campaign_id": "CMP-AIRS-001",
+        "name": "dry-run airs",
+        "dry_run": True,
+        "steps": [{
+            "step_id": "step-01",
+            "plugin": "airs_prompt_attack",
+            "params": {
+                "target_url": "http://canary.invalid/owasp/llm01/chat",
+                "probes_dir": str(tmp_path),
+                "binary": str(stub),
+                "iterations": 1,
+            },
+        }],
+    })
+    state = _run(executor.execute(campaign))
+    assert state.status == "complete", state.error
+    sr = state.step_results[0]
+    assert sr.status == "success", sr.error
+    assert sr.detail.get("dry_run") is True
+
+
+def test_browser_attack_runner_dry_run_completes(executor: CampaignExecutor, tmp_path: Path):
+    stub = _make_stub_cli(tmp_path, "cortex-browser-attacker")
+    campaign_file = tmp_path / "campaign.yml"
+    campaign_file.write_text(textwrap.dedent("""
+        campaign_id: BC-BROWSER-100
+        name: smoke
+        browser_channel: stub
+        actions:
+          - action: navigate
+            params:
+              url: https://allowed.invalid/
+    """).strip(), encoding="utf-8")
+    campaign = Campaign.model_validate({
+        "campaign_id": "CMP-BROWSER-001",
+        "name": "dry-run browser",
+        "dry_run": True,
+        "steps": [{
+            "step_id": "step-01",
+            "plugin": "browser_attack_runner",
+            "params": {
+                "campaign_path": str(campaign_file),
+                "allowlist_host": "allowed.invalid",
+                "binary": str(stub),
+                "browser_channel": "stub",
+                "headless": True,
+                "timeout_seconds": 30.0,
+            },
+        }],
+    })
+    state = _run(executor.execute(campaign))
+    assert state.status == "complete", state.error
+    sr = state.step_results[0]
+    assert sr.status == "success", sr.error
+    assert sr.detail.get("dry_run") is True

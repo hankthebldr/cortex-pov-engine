@@ -1,0 +1,141 @@
+scenario_id: SIM-EDR-006
+name: "LSASS Memory Credential Dump — comsvcs.dll LOLBin (Windows)"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It drives the well-known,
+# publicly documented Atomic Red Team T1003.001 tests against a LAB Windows
+# endpoint to confirm Cortex XDR raises the LSASS-access BIOC, the comsvcs.dll
+# MiniDump LOLBin analytic, and the stitched credential-theft correlation.
+# All offensive detail lives in the anchor card TTP-2026-0002 (which is
+# self-contained and ships its own cleanup). This file only orchestrates the
+# detection check and references that card's detections.
+
+plane: EDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UCS-EDR-06
+tc_ref: TC-EDR-06
+uc_name: "Endpoint Credential Theft Detection (LSASS)"
+tc_name: "Windows LSASS Memory Dump via LOLBin"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1003.001"
+mitre_technique_name: "OS Credential Dumping: LSASS Memory"
+additional_techniques:
+  - technique: "T1003"
+    name: "OS Credential Dumping"
+  - technique: "T1218.011"
+    name: "System Binary Proxy Execution: Rundll32"
+
+threat_report: "Unit42 - Ignoble Scorpius (BlackSuit) / Muddled Libra (Scattered Spider)"
+threat_report_url: "https://unit42.paloaltonetworks.com/"
+
+execution_identity:
+  default: administrator
+  options:
+    - administrator
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The endpoint TTP signals injected by this scenario produce the expected
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+  creation is within the MTTD budget. Each step's expected_detections row is
+  validated against dataset=xdr_data.
+moat_tier: "LEAD"
+
+external_tools:
+  - name: Atomic Red Team
+    source: "https://github.com/redcanaryco/atomic-red-team"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-ATOMIC-RED-TEAM
+
+steps:
+  - id: step-01
+    name: "Open a handle to LSASS with sensitive access rights (ProcDump variant)"
+    command: "Invoke-AtomicTest T1003.001 -TestNumbers 1 -GetPrereqs; Invoke-AtomicTest T1003.001 -TestNumbers 1"
+    identity: administrator
+    mitre_technique: "T1003.001"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Non-allowlisted process opens a handle to lsass.exe requesting PROCESS_VM_READ / PROCESS_QUERY_INFORMATION"
+        ttp_ref: "TTP-2026-0002"
+        detection_id: "bioc-lsass-handle-open-with-sensitive-access-rights"
+      - plane: EDR
+        type: XQL
+        description: "Confirm LSASS access originating from a process outside the AV/EDR allowlist"
+        ttp_ref: "TTP-2026-0002"
+        detection_id: "xql-confirm-lsass-access-from-non-allowlisted-process"
+
+  - id: step-02
+    name: "Dump LSASS via comsvcs.dll MiniDump LOLBin (lives-off-the-land)"
+    command: "Invoke-AtomicTest T1003.001 -TestNumbers 3"
+    identity: administrator
+    mitre_technique: "T1218.011"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "rundll32.exe spawned with comsvcs.dll MiniDump arguments — LOLBin credential dump"
+        ttp_ref: "TTP-2026-0002"
+        detection_id: "bioc-comsvcs-dll-minidump-lolbin-execution"
+      - plane: EDR
+        type: XQL
+        description: "Confirm comsvcs.dll MiniDump invocation by rundll32 outside scheduled-task context"
+        ttp_ref: "TTP-2026-0002"
+        detection_id: "xql-confirm-comsvcs-dll-minidump-invocation"
+      - plane: EDR
+        type: IOC
+        description: "LSASS memory dump artifact (lsass-*.dmp) written to disk"
+        ttp_ref: "TTP-2026-0002"
+        detection_id: "ioc-filename-lsass-dmp"
+
+  - id: step-03
+    name: "Confirm stitched credential-theft correlation"
+    command: "Get-ChildItem \"$env:TEMP\\lsass-*.dmp\" -ErrorAction SilentlyContinue | Select-Object FullName, Length; Write-Host '[*] LSASS dump sequence complete — validating XSIAM correlation'"
+    identity: administrator
+    mitre_technique: "T1003.001"
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Credential Theft — LSASS Memory Dump: handle-open + comsvcs MiniDump + dump-file write stitched into one incident"
+        ttp_ref: "TTP-2026-0002"
+        detection_id: "CR-CRED-0001"
+
+cleanup:
+  commands:
+    - "Remove-Item \"$env:TEMP\\lsass-*.dmp\" -Force -ErrorAction SilentlyContinue"
+    - "Write-Host '[CortexSim] SIM-EDR-006 cleanup complete — dump artifacts removed'"
+
+author: "Henry Reed"
+created: "2026-06-08"
+last_updated: "2026-06-08"
+tags:
+  - credential-access
+  - lsass
+  - comsvcs
+  - lolbin
+  - windows
+  - endpoint-security
+  - atomic-red-team

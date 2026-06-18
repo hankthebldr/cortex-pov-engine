@@ -165,6 +165,9 @@ class SmbRpcSweep(BaseSimulation):
                 continue
 
             for port in params.ports:
+                # Charge the campaign-level cumulative request budget per probe
+                # (EAL-G06) before connecting.
+                ctx.charge_request()
                 opened = await asyncio.to_thread(
                     self._tcp_probe, ip_str, port, params.connect_timeout
                 )

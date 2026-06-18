@@ -6,7 +6,7 @@ status: active
 plane: EDR
 detection_types:
   - BIOC
-  - Analytics
+  - XQL
 
 uc_ref: UCS-EDR-02
 tc_ref: TC-EDR-02
@@ -37,6 +37,26 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The endpoint TTP signals injected by this scenario produce the expected
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+  creation is within the MTTD budget. Each step's expected_detections row is
+  validated against dataset=xdr_data.
+moat_tier: "LEAD"
+
 external_tools:
   - name: Atomic Red Team
     source: "https://github.com/redcanaryco/atomic-red-team"
@@ -60,7 +80,7 @@ steps:
         ttp_ref: "TTP-2026-0033"
         detection_id: "bioc-edr-002-bash-devtcp-reverse-shell-redirection"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Interactive bash spawned from service account with network redirect — C2 callback pattern"
         ttp_ref: "TTP-2026-0033"
         detection_id: "xql-edr-002-analytics-interactive-shell-network-redirect"
@@ -80,7 +100,7 @@ steps:
         ttp_ref: "TTP-2026-0033"
         detection_id: "bioc-edr-002-python-socket-subprocess-reverse-shell"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Python process spawned by www-data with socket operations — scripting interpreter abuse"
         ttp_ref: "TTP-2026-0033"
         detection_id: "xql-edr-002-analytics-python-socket-ops-by-service-account"
@@ -102,7 +122,7 @@ steps:
         ttp_ref: "TTP-2026-0033"
         detection_id: "bioc-edr-002-netcat-shell-exec-flag-reverse-shell"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Network utility (nc/ncat) invoked with shell execution flag from web service context"
         ttp_ref: "TTP-2026-0033"
         detection_id: "xql-edr-002-analytics-network-utility-shell-flag"
@@ -137,7 +157,7 @@ steps:
         ttp_ref: "TTP-2026-0033"
         detection_id: "bioc-edr-002-openssl-s-client-encrypted-c2-from-service-account"
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "Sequence of multiple reverse shell methods from same process lineage — automated C2 testing behavior"
         ttp_ref: "TTP-2026-0033"
         detection_id: "xql-edr-002-analytics-multi-method-reverse-shell-sequence"

@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1656",
+    "T1059",
+    "T1552.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(KOI-002 MCP Tool Response Embeds Instruction Injection And Credential Exfil String)",
+      "name": "Agentic Supply Chain \u2014 MCP Tool-Response Indirect Injection",
+      "rule_id": "CR-KOI-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0043"
+}

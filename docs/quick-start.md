@@ -4,6 +4,40 @@ For Palo Alto Networks Domain Consultants who need CortexSim running
 fast on a laptop or a lab jumpbox. After this, see
 `docs/operator-runbook.md` for the operator-side workflow reference.
 
+## Fastest path — one command (Docker)
+
+If you have Docker, this is the whole thing:
+
+```bash
+git clone https://github.com/hankthebldr/cortex-pov-engine
+cd cortex-pov-engine
+
+scripts/dev-up.sh
+```
+
+`scripts/dev-up.sh`:
+
+1. Creates a gitignored `.env` from `.env.example` (if you don't already
+   have one) with a **freshly generated** `CORTEXSIM_SECRET` and
+   `CORTEXSIM_ENV=development` — so you skip the production master-key
+   guard on first run.
+2. Runs `docker compose up -d --build`.
+3. Polls `http://localhost:8888/api/health` until it returns
+   `{"status":"ok"}`, then prints the URL.
+
+It's idempotent and safe to re-run — an existing `.env` is left untouched,
+so your secret survives. Open `http://localhost:8888` when it finishes.
+
+> Prefer to set things up by hand? `cp .env.example .env`, fill in a
+> secret (the file has copy-paste `openssl`/`python3` one-liners), then
+> `docker compose up -d --build`. `docker-compose.yml` defaults
+> `CORTEXSIM_ENV` to `development` and **requires** `CORTEXSIM_SECRET` to
+> be set (no insecure `changeme` fallback) — for production, set
+> `CORTEXSIM_ENV=production` and supply a >= 32-byte high-entropy secret.
+
+The rest of this doc covers the manual / from-source paths and the
+first-run console walkthrough.
+
 ## Prerequisites (one-time)
 
 ```bash
@@ -57,13 +91,22 @@ You should now have:
 
 ## Boot — Docker (1 minute)
 
+Easiest is `scripts/dev-up.sh` (see "Fastest path" at the top). To do it
+by hand:
+
 ```bash
-export CORTEXSIM_SECRET=$(openssl rand -hex 32)
+cp .env.example .env          # then set CORTEXSIM_SECRET (one-liners are in the file)
 docker compose up -d --build
 
 # UI is served by SimCore at http://localhost:8888 once `npm run build`
 # has run and the dist/ contents are copied to core/static/
 ```
+
+`.env` is gitignored. `docker-compose.yml` reads `CORTEXSIM_ENV`
+(defaults to `development`), `CORTEXSIM_SECRET` (required — boot fails
+fast with a pointer if unset), and `CORTEXSIM_PORT` (defaults to 8888).
+For production, set `CORTEXSIM_ENV=production` and a >= 32-byte secret —
+the master-key guard enforces it.
 
 ## First run (4 minutes)
 
@@ -129,7 +172,8 @@ sources/      Submoduled OSS tools (sliver, atomic-red-team, etc.)
 
 | Symptom | Most likely cause |
 |---|---|
-| `MasterKeyError: CORTEXSIM_SECRET misconfigured` | Forgot `export CORTEXSIM_SECRET=$(openssl rand -hex 32)`. |
+| `MasterKeyError: CORTEXSIM_SECRET misconfigured` | Running `CORTEXSIM_ENV=production` with a weak/short secret. Use `scripts/dev-up.sh` (development) or set a >= 32-byte secret. |
+| `error while interpolating ... CORTEXSIM_SECRET` on `docker compose up` | No `.env`/secret set. Run `scripts/dev-up.sh`, or `cp .env.example .env` and set `CORTEXSIM_SECRET`. |
 | `pydantic.ValidationError` on SimCore startup | A scenario YAML failed schema validation — check `scenarios/_schema.yml` against the failing file. |
 | UI loads but `/api/scenarios` returns 404 | UI dev server is up but SimCore isn't — check `lsof -i :8888`. |
 | Agent registered but no scenario steps fire | Identity harness can't find the user account. `id www-data` on the agent host. The IaC `base` module creates these; minimal containers won't have them. |

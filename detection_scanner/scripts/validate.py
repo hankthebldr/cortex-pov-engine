@@ -18,6 +18,8 @@ Checks performed:
  10. MITRE ATT&CK technique IDs follow Txxxx[.xxx] format.
  11. Use case ids match UC-<DOMAIN>-NNN pattern; test case ids match TC-<DOMAIN>-NNN[A-Z].
  12. Within a use case, sum of expected_score_weight is <= 1.0 (allows for unweighted tests).
+ 13. XQL/BIOC grammar sanity lint (GAP-12): balanced quotes/parens, a dataset/preset
+     reference present on every BIOC/XQL body, and no leftover placeholder/skeleton tokens.
 
 Usage:
   python3 scripts/validate.py                 # full check, repo root
@@ -76,6 +78,207 @@ def load_json(path, report):
     except json.JSONDecodeError as e:
         report.err(str(path), f"invalid JSON: {e}")
         return None
+
+
+# Placeholder tokens that must never appear in a deployable detection body.
+# These are the markers the draft generator (scripts/generate_card.py) emits;
+# a promoted card must have replaced all of them with real logic.
+PLACEHOLDER_TOKENS = (
+    "AUTO-GENERATED SKELETON",
+    "TODO",
+    "FIXME",
+    "XXX",
+    "REPLACE_WITH",
+    "REPLACE WITH",
+    "<placeholder>",
+    "PLACEHOLDER_PREDICATE",
+    "predicate matching the bioc name",
+)
+
+# Tokens that anchor a body to a real Cortex data source. A BIOC/XQL body that
+# references none of these is almost certainly not a runnable detection.
+DATASET_ANCHORS = ("dataset =", "dataset=", "preset =", "preset=")
+
+# ── XQL dialect knowledge (GAP-12 grammar lint) ──────────────────────────────
+# Known XQL stage verbs (the token that opens a `| <verb> ...` stage). Derived
+# from the corpus + Cortex XQL Stage reference. Anything outside this set in a
+# detection body is flagged as a WARNING (the dialect is broad and evolving, so
+# an unknown verb is suspicious but not a hard gate failure).
+XQL_STAGE_VERBS = frozenset({
+    "filter", "fields", "comp", "sort", "alter", "bin", "join", "union",
+    "dedup", "limit", "where", "enrich", "view", "sample", "iploc",
+    "arrayexpand", "windowcomp", "call", "target", "timeframe",
+})
+
+# Real Cortex/XSIAM dataset + preset identifiers used across the corpus. A body
+# whose `dataset =`/`preset =` source is NOT in this registry is flagged WARN
+# (likely a typo or an invented dataset). Keep in sync with the corpus; add new
+# datasets here when a card legitimately introduces one.
+KNOWN_DATASETS = frozenset({
+    "xdr_data", "panw_ngfw_traffic_raw", "panw_ngfw_threat_raw", "pan_ngfw_traffic",
+    "pan_dns", "network_story", "okta_sso", "saas_okta_raw", "saas_audit_logs",
+    "cloud_audit_logs", "cloud_audit", "google_workspace_audit", "msft_o365",
+    "msft_azure_ad_signin", "msft_o365_audit", "msft_windows_security", "ad_audit", "esxi_syslog",
+    "cortex_cloud_posture", "prisma_browser_events", "asm_findings", "ai_spm_findings",
+    "cortexsim_airs_raw", "koi_code_scan_events", "threat_intel", "risky_drive",
+    "full_mailbox", "admin_consent", "benign",
+    # Plan 02 — XDM modeling-rule raw source (un-normalized container telemetry
+    # the modeling rule maps into XDM fields). Registered so the modeling-rule
+    # source name does not WARN as an invented dataset.
+    "cortexsim_container_raw",
+    # Plan 04 — EMAIL plane ingestion sources (Proofpoint TAP / M365 / Defender
+    # for Office 365 message + threat telemetry).
+    "proofpoint_tap_raw", "msft_o365_email", "msft_defender_o365",
+})
+
+# Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain
+# on-prem Active Directory / Windows Security event data. A body that selects
+# one of these but filters on AD/Windows-event content is an incoherent
+# dataset↔content pairing (the TTP-2026-0063 class bug): Kerberos 4768/4769,
+# servicePrincipalName, DCSync/DRSUAPI, ENUM.ACTIVE_DIRECTORY live in
+# xdr_data / msft_windows_security / ad_audit, not in an SSO dataset.
+SAAS_SSO_DATASETS = frozenset({"okta_sso", "saas_okta_raw"})
+AD_WINDOWS_EVENT_TOKENS = (
+    "ENUM.ACTIVE_DIRECTORY", "serviceprincipalname", "drsuapi", "dcsync",
+    "krbtgt", "kerberos", "event_id = 4768", "event_id = 4769", "event_id = 4662",
+    "event_id=4768", "event_id=4769", "event_id=4662",
+)
+
+_DATASET_SOURCE_RE = __import__("re").compile(
+    r"(?:dataset|preset)\s*=\s*([a-z0-9_]+)", __import__("re").IGNORECASE
+)
+
+
+def _split_xql_stages(body):
+    """Split an XQL body into `|`-delimited stages, ignoring pipe characters
+    that appear INSIDE double-quoted string literals (regex alternations like
+    ``(?:def|class)`` and command examples like ``/proc/pid/maps|mem`` are data,
+    not stage boundaries). Returns the list of stage strings."""
+    stages = []
+    buf = []
+    in_string = False
+    for ch in body:
+        if ch == '"':
+            in_string = not in_string
+            buf.append(ch)
+        elif ch == "|" and not in_string:
+            stages.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    stages.append("".join(buf))
+    return stages
+
+
+def lint_detection_body(report, rel, where, body, *, require_dataset):
+    """GAP-12 — lightweight XQL/BIOC grammar sanity lint.
+
+    Catches the cheap, high-signal mistakes that the JSON Schema cannot:
+      * unbalanced double-quotes (odd count)
+      * unbalanced parentheses
+      * leftover placeholder/skeleton tokens from the draft generator
+      * (when ``require_dataset``) a missing ``dataset =`` / ``preset =`` anchor
+
+    This is a *grammar sanity* check, not a full XQL parser — it deliberately
+    errs toward few false positives. Anything it flags is a hard validator
+    error (the corpus must stay lint-clean).
+    """
+    if not isinstance(body, str) or not body.strip():
+        report.err(rel, f"{where}: empty/non-string detection body")
+        return
+
+    # 1. Balanced double-quotes.
+    if body.count('"') % 2 != 0:
+        report.err(rel, f"{where}: unbalanced double-quotes in detection body")
+
+    # 2. Balanced parentheses (running depth must never go negative and must
+    #    end at zero). Parens *inside* double-quoted string literals are part of
+    #    the matched data (e.g. command-line tokens like ".connect(" or
+    #    "connect(") and must NOT count toward structure — only quotes already
+    #    confirmed balanced in check 1. We track whether we are inside a string
+    #    and skip those characters.
+    depth = 0
+    ok_parens = True
+    in_string = False
+    for ch in body:
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                ok_parens = False
+                break
+    if not ok_parens or depth != 0:
+        report.err(rel, f"{where}: unbalanced parentheses in detection body")
+
+    # 3. No placeholder/skeleton tokens.
+    upper = body.upper()
+    for tok in PLACEHOLDER_TOKENS:
+        if tok.upper() in upper:
+            report.err(rel, f"{where}: placeholder token {tok!r} in detection body")
+
+    # 4. Dataset/preset anchor (BIOC + XQL only; correlation bodies reference
+    #    BIOC(...)/XQL(...) names, not a dataset).
+    if require_dataset and not any(a in body for a in DATASET_ANCHORS):
+        report.err(rel, f"{where}: no dataset/preset reference in detection body")
+
+    # 5. Dataset registry + stage-verb grammar + dataset↔content coherence.
+    if require_dataset:
+        _lint_xql_grammar(report, rel, where, body)
+
+
+def _lint_xql_grammar(report, rel, where, body):
+    """GAP-12 — deeper XQL grammar checks for BIOC/XQL bodies.
+
+      * dataset/preset source is a known Cortex dataset (WARN if not)
+      * each `| <verb>` stage opens with a known XQL stage verb (WARN if not)
+      * dataset↔content coherence: a SaaS-SSO dataset paired with on-prem AD /
+        Windows-event content is a hard ERROR (the TTP-2026-0063 class bug)
+
+    Coherence is an ERROR because it is high-confidence and ships a detection
+    that will silently return zero rows on a real tenant; the verb/dataset
+    registry checks are WARN because the dialect is broad and evolving.
+    """
+    # (a) dataset source recognised?
+    src_match = _DATASET_SOURCE_RE.search(body)
+    dataset = src_match.group(1).lower() if src_match else None
+    if dataset and dataset not in KNOWN_DATASETS:
+        report.warn(rel, f"{where}: unrecognised dataset/preset {dataset!r} "
+                         f"(typo or new source — add to KNOWN_DATASETS if real)")
+
+    # (b) dataset↔content coherence (hard error).
+    if dataset in SAAS_SSO_DATASETS:
+        low = body.lower()
+        hit = next((t for t in AD_WINDOWS_EVENT_TOKENS if t.lower() in low), None)
+        if hit:
+            report.err(
+                rel,
+                f"{where}: incoherent dataset↔content — source {dataset!r} is a "
+                f"SaaS/IdP sign-in dataset but the body references AD/Windows-event "
+                f"content ({hit!r}). AD/Kerberos events live in xdr_data / "
+                f"msft_windows_security / ad_audit, not an SSO dataset.",
+            )
+
+    # (c) stage-verb grammar. Skip the first (source) segment; check the rest.
+    #     Pipes inside string literals are NOT stage boundaries (handled by the
+    #     string-aware splitter).
+    segments = _split_xql_stages(body.strip())
+    for seg in segments[1:]:
+        seg = seg.strip()
+        if not seg:
+            continue
+        verb = seg.split(None, 1)[0].lower()
+        # A stage may open with a `dataset=`/`preset=` (a union sub-source) — skip.
+        if verb in ("dataset", "preset") or "=" in verb:
+            continue
+        if verb not in XQL_STAGE_VERBS:
+            report.warn(rel, f"{where}: unknown XQL stage verb {verb!r} "
+                             f"(stage: '| {seg[:40]}...')")
 
 
 def main():
@@ -225,6 +428,30 @@ def main():
         target = d.get("execution", {}).get("target_platform")
         if target and target != "cross-platform" and target not in plats:
             report.warn(rel, f"execution.target_platform={target!r} not in metadata.pov_engine.platforms {sorted(plats)}")
+
+        # 4j. GAP-12 — XQL/BIOC grammar sanity lint on every deployable body.
+        detections = d.get("detections", {})
+        for i, b in enumerate(detections.get("biocs", [])):
+            lint_detection_body(report, rel, f"detections.biocs[{i}].logic",
+                                b.get("logic"), require_dataset=True)
+        for i, q in enumerate(detections.get("xql_queries", [])):
+            lint_detection_body(report, rel, f"detections.xql_queries[{i}].query",
+                                q.get("query"), require_dataset=True)
+        for i, c in enumerate(detections.get("correlation_rules", [])):
+            # Correlation logic is optional in the schema; only lint when present.
+            logic = c.get("logic")
+            if logic:
+                lint_detection_body(report, rel, f"detections.correlation_rules[{i}].logic",
+                                    logic, require_dataset=False)
+        # Plan 01 — ABIOC bodies are XQL-shaped against a real dataset, lint like a BIOC.
+        for i, a in enumerate(detections.get("abiocs", [])):
+            lint_detection_body(report, rel, f"detections.abiocs[{i}].logic",
+                                a.get("logic"), require_dataset=True)
+        # Plan 02 — modeling-rule bodies open with `[MODEL: dataset=…]`; the
+        # `dataset=` substring satisfies the anchor + dataset-registry checks.
+        for i, m in enumerate(detections.get("modeling_rules", [])):
+            lint_detection_body(report, rel, f"detections.modeling_rules[{i}].logic",
+                                m.get("logic"), require_dataset=True)
 
         report.ok(f"ttp {ttp_id}")
 

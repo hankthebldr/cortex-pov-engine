@@ -1,0 +1,32 @@
+services:
+  attacker:
+    image: kalilinux/kali-rolling:latest
+    container_name: simmp002-attacker
+    working_dir: /opt/scenario
+    volumes:
+      - ./:/opt/scenario:ro
+      - ./evidence:/opt/scenario/evidence
+    environment:
+      CORTEXSIM_STITCH_WAIT_SECONDS: ${CORTEXSIM_STITCH_WAIT_SECONDS:-90}
+    command: >
+      bash -c "apt-get update -qq &&
+               apt-get install -y -qq curl dnsutils ca-certificates coreutils &&
+               ./run.sh --mode full --delay 60"
+    networks: [scenario_net]
+    restart: "no"
+
+  scenario-ui:
+    image: python:3.11-slim
+    container_name: simmp002-ui
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+    ports:
+      - "8080:8080"
+    command: python3 -m http.server 8080 --directory evidence
+    networks: [scenario_net]
+    depends_on: [attacker]
+
+networks:
+  scenario_net:
+    driver: bridge

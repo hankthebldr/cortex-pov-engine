@@ -8,16 +8,27 @@ services:
     ports:
       - "${CORTEXSIM_PORT:-8888}:8888"
     volumes:
-      # Bind-mount scenarios/sources/scripts at runtime so dev edits are live-reloadable.
-      # The production image also bundles these, so the installer path (no mounts) works too.
+      # Bind-mount content at runtime so dev edits are live-reloadable. The production
+      # image also bundles these, so the installer path (no mounts) works too. NOTE:
+      # detection_scanner + tools are mounted alongside scenarios so new TTP cards and
+      # adapter packs reload on restart — without them the TtpCatalog/adapter catalog
+      # serve the baked (stale) image copy while scenarios update, a confusing split.
       - ./scenarios:/app/scenarios:ro
+      - ./detection_scanner:/app/detection_scanner:ro
+      - ./tools:/app/tools:ro
       - ./sources:/app/sources:ro
       - ./scripts:/app/scripts
       - simcore_db:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - CORTEXSIM_ENV=${CORTEXSIM_ENV:-production}
-      - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:-changeme}
+      # Default to development so a bare `docker compose up` does not trip the
+      # production master-key guard (core/config.py). Set CORTEXSIM_ENV=production
+      # in .env / your shell for real deployments — prod stays explicit opt-in.
+      - CORTEXSIM_ENV=${CORTEXSIM_ENV:-development}
+      # No insecure default: fail fast with a pointer instead of silently
+      # booting with "changeme". `scripts/dev-up.sh` generates this for you;
+      # otherwise see .env.example for one-liners to generate a secret.
+      - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:?set CORTEXSIM_SECRET in .env (run scripts/dev-up.sh, or see .env.example)}
     restart: unless-stopped
 
 volumes:

@@ -1,0 +1,168 @@
+scenario_id: SIM-EMAIL-004
+name: "EMAIL — Thread-Hijack Reply-Chain Phishing (Proofpoint TAP + Microsoft 365)"
+version: "1.0"
+status: active
+
+plane: EMAIL
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-EMAIL-004
+tc_ref: TC-EMAIL-004A
+uc_name: "Thread-Hijack Reply-Chain Phishing Detection"
+tc_name: "Phish Reply-Chain Message Re-Using Existing Subject Raises Thread-Hijack Alert And Stitches To Endpoint"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1566.002"
+mitre_technique_name: "Phishing: Spearphishing Link"
+additional_techniques:
+  - technique: "T1534"
+    name: "Internal Spearphishing"
+
+threat_report: "Cortex XSIAM — Proofpoint TAP Ingestion & Modeling (proofpoint_tap_raw)"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+validation_methodology: "Email-to-Endpoint Stitch & Incident Correlation"
+methodology_family: "F2"
+primary_kpi: "Stitch Completeness"
+threshold:
+  kpi: "Stitch Completeness"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Proofpoint TAP / Microsoft 365 thread-hijack signal raises the
+  expected Cortex XSIAM phishing alert and stitches the delivered hijack, the
+  permitted click, and the recipient endpoint follow-on into one incident.
+  Stitch Completeness is the share of injected hijacks whose delivery, click, and
+  endpoint signals land in one incident (target ≥ 90%).
+moat_tier: "MOAT"
+
+correlation_window_seconds: 60
+required_planes_in_incident:
+  - EMAIL
+  - EDR
+stitching_key: user_principal
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm email_emitter plugin is registered"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe email_emitter \
+        | jq -e '.eal_targets | length > 0'
+    identity: container-runtime
+    mitre_technique: "T1566.002"
+    expected_detections:
+      - plane: EMAIL
+        type: BIOC
+        description: "Pre-flight: email_emitter metadata visible to operator"
+        ttp_ref: "TTP-2026-0093"
+        detection_id: bioc-email-004-pre-flight-email-emitter-metadata-visible
+
+  - id: step-02
+    name: "Emit a thread-hijack reply-chain phishing message (Proofpoint TAP shape)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/email-004.yml <<YML
+      campaign_id: CMP-EMAIL-004
+      name: "EMAIL — Proofpoint TAP thread hijack"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [email, proofpoint, thread-hijack]
+      steps:
+        - step_id: step-01
+          plugin: email_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: proofpoint
+            event_pattern: thread_hijack
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/email-004.yml --live
+    identity: container-runtime
+    mitre_technique: "T1566.002"
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "EMAIL — phish reply-chain message re-using an existing subject delivered to one recipient"
+        ttp_ref: "TTP-2026-0093"
+        detection_id: xql-email-004-thread-hijack-reply-chain-phishing-delivered
+
+  - id: step-03
+    name: "Stitch: the delivered hijack + permitted click correlates to the endpoint follow-on"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/email-004-m365.yml <<YML
+      campaign_id: CMP-EMAIL-004
+      name: "EMAIL — Microsoft 365 thread hijack"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: email_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: microsoft365
+            event_pattern: thread_hijack
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/email-004-m365.yml --live
+    identity: container-runtime
+    mitre_technique: "T1534"
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "EMAIL — permitted click on the hijacked reply-chain URL for the recipient"
+        ttp_ref: "TTP-2026-0093"
+        detection_id: xql-email-004-thread-hijack-permitted-click-follow-on
+      - plane: EMAIL
+        type: Correlation
+        description: "EMAIL — delivered hijack + permitted click + endpoint follow-on stitched into one incident"
+        ttp_ref: "TTP-2026-0093"
+        detection_id: CR-EMAIL-0004
+
+cleanup:
+  commands:
+    - "rm -f /tmp/email-004.yml /tmp/email-004-m365.yml"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - email
+  - proofpoint
+  - microsoft365
+  - thread-hijack
+  - reply-chain
+  - eal-plugin

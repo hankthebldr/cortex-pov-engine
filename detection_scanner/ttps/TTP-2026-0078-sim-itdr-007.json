@@ -1,0 +1,479 @@
+{
+  "id": "TTP-2026-0078",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-15T00:00:00+00:00",
+    "updated_at": "2026-06-15T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-privilege-escalation",
+      "vector-token-manipulation",
+      "actor-all",
+      "industry-all",
+      "severity-high",
+      "identity",
+      "windows",
+      "active-directory",
+      "lsass",
+      "seimpersonate"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-SPECTEROPS",
+      "SRC-MICROSOFT"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Active Directory Privilege Escalation & Token Manipulation Chain — LSASS to SYSTEM (T1068 / T1134 / T1003.001)",
+    "summary": "Against the authorised CortexSim AD lab, a post-compromise operator escalates from foothold to SYSTEM: pypykatz parses LSASS, bloodyAD writes an abnormal DACL on a privileged object, KrbRelayUp does a local Kerberos relay, PrintSpoofer abuses SeImpersonate to spawn SYSTEM, and Tokenvator steals a privileged token. Cortex ITDR/XDR fire on each step.",
+    "description": "This card reproduces the canonical Windows local-to-domain privilege-escalation chain that follows nearly every Active Directory intrusion, executed end-to-end against the deliberately-misconfigured CortexSim AD lab (the `itdr` IaC module: a Server 2022 Domain Controller plus domain-joined workstations seeded with roastable accounts and a DA-equivalent helpdesk-admin). Five dual-use techniques are detonated in sequence. (1) LSASS Memory credential dumping (T1003.001): pypykatz parses a captured LSASS minidump to recover plaintext, NTLM hashes, and Kerberos keys — the upstream tell is a non-system process opening a credential-read handle to lsass.exe. (2) AD DACL abuse / Account Manipulation (T1098): bloodyAD writes an abnormal nTSecurityDescriptor (GenericAll / WriteDACL) onto a privileged group or AdminSDHolder, an ACL-based escalation path that grants the foothold account control over Domain Admins. (3) Kerberos relay local privilege escalation (T1550 / T1068): KrbRelayUp triggers the machine account to authenticate, relays that Kerberos authentication to LDAP, and configures Resource-Based Constrained Delegation against the local computer object to obtain a SYSTEM ticket — a self-relay observable as a Kerberos relay from the local host to LDAP. (4) SeImpersonate abuse (T1134): PrintSpoofer leverages the SeImpersonatePrivilege held by service accounts (IIS, MSSQL) to capture a SYSTEM token over a named pipe and spawn a SYSTEM process — the 'potato' family escalation. (5) Access Token Manipulation / theft (T1134): Tokenvator duplicates and impersonates the access token of a privileged process (e.g. winlogon.exe) so the operator's process runs in that security context. The detection model is identity- and endpoint-behavioural: a BIOC fires on the LSASS credential-access handle from a non-system process; a BIOC fires on the abnormal DACL write to a privileged AD object (4662 directory-service write); a BIOC fires on the local Kerberos relay to LDAP; a BIOC fires on a SeImpersonate service account spawning a SYSTEM child via a named pipe; a BIOC fires on the token-duplication/impersonation from a privileged process. Validation XQL confirms LSASS access, the privileged DACL modification, the SYSTEM child spawned from a service-account parent, and the overall local-to-SYSTEM escalation chain; a correlation rule groups the steps from one host into a single Privilege Escalation incident. The harvested credentials and SYSTEM context become the pivot for the separate lateral-movement and DCSync chains (SIM-MP-002).",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Scattered Spider",
+        "aliases": [
+          "Muddled Libra",
+          "Octo Tempest"
+        ]
+      },
+      {
+        "name": "Wizard Spider",
+        "aliases": [
+          "Conti / Ryuk operators"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Commodity ransomware AD privilege-escalation tradecraft 2020-2025"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2016-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1068",
+        "name": "Exploitation for Privilege Escalation",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1134",
+        "name": "Access Token Manipulation",
+        "tactic_ids": [
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.001",
+        "name": "OS Credential Dumping: LSASS Memory",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1098",
+        "name": "Account Manipulation",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "name": "Use Alternate Authentication Material",
+        "tactic_ids": [
+          "TA0005",
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0003",
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Privilege Escalation"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Process: Process Creation",
+      "Process: OS API Execution",
+      "Logon Session: Logon Session Creation",
+      "Active Directory: Active Directory Object Modification",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "pypykatz / bloodyAD / KrbRelayUp / PrintSpoofer / Tokenvator (SIM-ITDR-007)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex ITDR + XDR connected to the Active Directory domain and the domain-joined workstation (security-event, process, and LDAP/Kerberos telemetry) on the authorised CortexSim AD lab.",
+        "check_command": "nslookup -type=SRV _ldap._tcp.cortexsim.local"
+      },
+      {
+        "description": "Lab matching the `itdr` IaC module: a Server 2022 DC and at least one domain-joined workstation reachable from the jumpbox with a low-privilege foothold account.",
+        "check_command": "impacket-GetADUsers cortexsim.local/helpdesk-admin -dc-ip 10.0.10.10 2>&1 | head -3"
+      },
+      {
+        "description": "Adapter consent (simulation_authorized) granted at launch — the dual-use-lab-only adapters TOOL-PYPYKATZ / TOOL-BLOODYAD / TOOL-KRBRELAYUP / TOOL-PRINTSPOOFER / TOOL-TOKENVATOR are consent-gated by the orchestrator.",
+        "check_command": "echo 'consent.simulation_authorized must be true'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# All activity targets the authorised CortexSim itdr-module AD lab.\n# 1. LSASS credential parse.\npypykatz lsa minidump /tmp/cortexsim_itdr007_lsass.dmp\n# 2. Abnormal DACL write on a privileged object.\nbloodyAD --host 10.0.10.10 -d cortexsim.local -u 'cortexsim\\\\helpdesk-admin' -p \"$WS_PWD\" add genericAll 'CN=Domain Admins,CN=Users,DC=cortexsim,DC=local' 'cortexsim\\\\helpdesk-admin'\n# 3. Kerberos relay local privesc.\nKrbRelayUp.exe relay -d cortexsim.local -cls\n# 4. SeImpersonate -> SYSTEM.\nPrintSpoofer64.exe -i -c whoami\n# 5. Access token theft / impersonation.\nTokenvator.exe Steal_Token 4 winlogon.exe",
+      "input_variables": [
+        {
+          "name": "WS_PWD",
+          "type": "secret",
+          "description": "Password for the low-privilege foothold account on the authorised CortexSim AD lab."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "A non-system process opens a credential-read handle to lsass.exe (LSASS memory dumping).",
+        "expected_value": "target_process_name = \"lsass.exe\" and requested_access contains \"0x1010\""
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "A 4662 directory-service object write modifying nTSecurityDescriptor on a privileged group (DACL abuse).",
+        "expected_value": "event_id = 4662 and properties contains \"WriteDACL\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "A SYSTEM-integrity child process spawned from a SeImpersonate-holding service-account parent via a named pipe.",
+        "expected_value": "actor_effective_username = \"NT AUTHORITY\\\\SYSTEM\" and causality_actor_process_image_name in (\"w3wp.exe\", \"sqlservr.exe\", \"PrintSpoofer64.exe\")"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "A local Kerberos relay from the host to LDAP (KrbRelayUp self-relay).",
+        "expected_value": "dst_port in (88, 389, 636) and src_host = dst_host"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-ITDR-007 cleanup — removing simulated escalation artifacts'; rm -f /tmp/cortexsim_itdr007_creds.txt /tmp/cortexsim_itdr007_dacl.txt /tmp/cortexsim_itdr007_krbrelay.txt /tmp/cortexsim_itdr007_printspoofer.txt /tmp/cortexsim_itdr007_tokenvator.txt /tmp/cortexsim_itdr007_lsass.dmp"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "ITDR-007 LSASS Process Handle Open By Non-System Process",
+        "description": "XDR - a non-system process opens a process handle to lsass.exe with credential-read access rights. Reading LSASS memory is the canonical credential-dumping primitive (T1003.001); pypykatz parses the resulting dump offline.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_HANDLE\n| filter lower(target_process_image_name) = \"lsass.exe\"\n| filter actor_effective_username not in (\"NT AUTHORITY\\\\SYSTEM\", \"NT AUTHORITY\\\\LOCAL SERVICE\")\n| filter requested_access_mask contains \"0x10\"\n| fields _time, src_host, actor_process_image_name, actor_effective_username, requested_access_mask",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1003.001"
+        ]
+      },
+      {
+        "name": "ITDR-007 Abnormal DACL Write To AdminSDHolder Or Privileged Group",
+        "description": "ITDR - an abnormal write to the nTSecurityDescriptor (DACL) of AdminSDHolder or a privileged group (Domain Admins / Enterprise Admins) granting GenericAll or WriteDACL. ACL-based escalation (T1098) lets a foothold account take control of privileged objects; bloodyAD writes the malicious ACE.",
+        "logic": "dataset = ad_audit\n| filter event_id = 4662\n| filter lower(object_properties) contains \"writedacl\" or lower(object_properties) contains \"ntsecuritydescriptor\"\n| filter lower(object_name) contains \"adminsdholder\" or lower(object_name) contains \"domain admins\" or lower(object_name) contains \"enterprise admins\"\n| filter actor_effective_username not in (\"Administrator\", \"svc-adsync\")\n| fields _time, src_host, actor_effective_username, object_name, object_properties",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1098",
+          "T1068"
+        ]
+      },
+      {
+        "name": "ITDR-007 Kerberos Relay To LDAP From Local Host (KrbRelayUp)",
+        "description": "ITDR - a Kerberos authentication is relayed from the local host to LDAP/LDAPS on a domain controller, immediately followed by a write to the local computer object's msDS-AllowedToActOnBehalfOfOtherIdentity (RBCD). This self-relay to obtain a SYSTEM ticket is the KrbRelayUp local-privilege-escalation fingerprint (T1550 / T1068).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter dst_port in (389, 636)\n| filter lower(app_id) contains \"kerberos\" or lower(auth_protocol) contains \"kerberos\"\n| filter src_host = dst_host\n| fields _time, src_host, dst_host, dst_port, actor_process_image_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550",
+          "T1068"
+        ]
+      },
+      {
+        "name": "ITDR-007 SeImpersonate Named-Pipe Privilege Escalation To SYSTEM",
+        "description": "XDR - a service account holding SeImpersonatePrivilege (IIS w3wp.exe, MSSQL sqlservr.exe, or a 'potato' tool) spawns a child process running as NT AUTHORITY\\SYSTEM via named-pipe token impersonation. This is the PrintSpoofer / potato-family local escalation (T1134).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"NT AUTHORITY\\\\SYSTEM\"\n| filter lower(causality_actor_process_image_name) in (\"w3wp.exe\", \"sqlservr.exe\", \"printspoofer64.exe\", \"printspoofer.exe\")\n| fields _time, src_host, causality_actor_process_image_name, action_process_image_name, actor_effective_username",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1134",
+          "T1068"
+        ]
+      },
+      {
+        "name": "ITDR-007 Access Token Theft And Impersonation Via Token Duplication",
+        "description": "XDR - a process duplicates and impersonates the access token of a privileged/SYSTEM process (e.g. winlogon.exe) so it runs in that security context. DuplicateTokenEx + ImpersonateLoggedOnUser against a high-privilege parent is the access-token-theft fingerprint (T1134); Tokenvator automates it.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_TOKEN\n| filter lower(target_process_image_name) in (\"winlogon.exe\", \"lsass.exe\", \"services.exe\")\n| filter actor_effective_username not in (\"NT AUTHORITY\\\\SYSTEM\")\n| fields _time, src_host, actor_process_image_name, actor_effective_username, target_process_image_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1134"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-007 Validate LSASS Credential Access By Non-System Process",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_HANDLE\n| filter lower(target_process_image_name) = \"lsass.exe\"\n| filter actor_effective_username not in (\"NT AUTHORITY\\\\SYSTEM\")\n| comp count() as lsass_handles by src_host, actor_process_image_name, actor_effective_username\n| filter lsass_handles >= 1\n| fields src_host, actor_process_image_name, actor_effective_username, lsass_handles",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-007 Validate Abnormal Privileged DACL Modification",
+        "query": "dataset = ad_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_id = 4662\n| filter lower(object_properties) contains \"writedacl\" or lower(object_properties) contains \"ntsecuritydescriptor\"\n| filter lower(object_name) contains \"adminsdholder\" or lower(object_name) contains \"domain admins\" or lower(object_name) contains \"enterprise admins\"\n| comp count() as dacl_writes by src_host, actor_effective_username, object_name\n| filter dacl_writes >= 1\n| fields src_host, actor_effective_username, object_name, dacl_writes",
+        "expected_rows_min": 1,
+        "dataset": "ad_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-007 Validate SYSTEM Token Spawned From Service Account Process",
+        "query": "dataset = msft_windows_security\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_id = 4688\n| filter lower(new_process_token_user) contains \"system\"\n| filter lower(creator_process_name) in (\"w3wp.exe\", \"sqlservr.exe\", \"printspoofer64.exe\", \"printspoofer.exe\")\n| comp count() as system_spawns by src_host, creator_process_name, new_process_name\n| filter system_spawns >= 1\n| fields src_host, creator_process_name, new_process_name, system_spawns",
+        "expected_rows_min": 1,
+        "dataset": "msft_windows_security"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-007 Validate Local Privilege Escalation Chain To SYSTEM",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"NT AUTHORITY\\\\SYSTEM\"\n| filter lower(causality_actor_process_image_name) not in (\"services.exe\", \"wininit.exe\", \"smss.exe\", \"system\")\n| comp count_distinct(action_process_image_name) as system_children by src_host, causality_actor_process_image_name\n| filter system_children >= 1\n| fields src_host, causality_actor_process_image_name, system_children",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AD Local-to-SYSTEM Privilege Escalation & Token Manipulation Chain From One Host",
+        "rule_id": "CR-ITDR-0007",
+        "logic": "BIOC(ITDR-007 LSASS Process Handle Open By Non-System Process) OR BIOC(ITDR-007 Abnormal DACL Write To AdminSDHolder Or Privileged Group) OR BIOC(ITDR-007 Kerberos Relay To LDAP From Local Host (KrbRelayUp)) OR BIOC(ITDR-007 SeImpersonate Named-Pipe Privilege Escalation To SYSTEM) OR BIOC(ITDR-007 Access Token Theft And Impersonation Via Token Duplication) — groups credential access, ACL abuse, Kerberos relay, SeImpersonate escalation, and token theft from one host into a single Privilege Escalation incident."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XDR — Credential gathering via LSASS access (behavioral threat protection)",
+        "validated": true,
+        "note": "Backed by BIOC 'ITDR-007 LSASS Process Handle Open By Non-System Process' + its validation XQL on this card."
+      },
+      {
+        "module": "Cortex ITDR — Privileged AD object ACL/DACL modification",
+        "validated": true,
+        "note": "Backed by BIOC 'ITDR-007 Abnormal DACL Write To AdminSDHolder Or Privileged Group' + its validation XQL on this card."
+      },
+      {
+        "module": "Cortex XDR — Local privilege escalation to SYSTEM via token impersonation",
+        "validated": true,
+        "note": "Backed by BIOC 'ITDR-007 SeImpersonate Named-Pipe Privilege Escalation To SYSTEM' + its validation XQL on this card."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — Kerberos relay / RBCD abuse anomaly",
+        "validated": false
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent-traps",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "XDR-BTP-LSASS-ACCESS",
+          "XDR-BTP-TOKEN-THEFT"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.PROCESS | filter lower(target_process_image_name) = \"lsass.exe\" | fields _time, src_host, actor_process_image_name, actor_effective_username",
+        "agent_version_min": "8.4"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "identity-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "ITDR-BIOC-0078-DACL-ABUSE",
+          "ITDR-BIOC-0078-KRBRELAY",
+          "ITDR-ANL-0078-SEIMPERSONATE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = ad_audit | filter event_id = 4662 | filter lower(object_properties) contains \"writedacl\" | fields _time, src_host, actor_effective_username, object_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-ITDR-0007"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-ITDR-0007 groups LSASS access, privileged DACL abuse, Kerberos relay, SeImpersonate escalation, and token theft from one host into a single Privilege Escalation incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-PrivEscResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: isolate the host, revoke the foothold account, revert the malicious DACL ACE, rotate the machine account and any exposed service-account credentials, and hunt for RBCD edits."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-IDENT-078",
+        "name": "Active Directory Privilege Escalation & Token Manipulation",
+        "description": "Detect the post-compromise local-to-domain escalation chain — LSASS credential dumping, privileged DACL abuse, Kerberos relay, SeImpersonate escalation, and access-token theft — on a domain workstation and group it into one Privilege Escalation incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-IDENT-078A",
+            "objective": "Each escalation step fires its expected Cortex ITDR/XDR detection during SIM-ITDR-007.",
+            "preconditions": [
+              "Cortex ITDR + XDR connected to the AD domain and the domain-joined workstation.",
+              "BIOCs from this card imported and enabled.",
+              "Adapter consent (simulation_authorized) granted at launch."
+            ],
+            "steps": [
+              "Run SIM-ITDR-007 steps 1-5 against the seeded lab.",
+              "Observe the LSASS-access, DACL-write, Kerberos-relay, SeImpersonate, and token-theft detections in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `ITDR-007 LSASS Process Handle Open By Non-System Process` fires on the credential-dump step.",
+              "BIOC `ITDR-007 Abnormal DACL Write To AdminSDHolder Or Privileged Group` fires on the bloodyAD step.",
+              "BIOC `ITDR-007 SeImpersonate Named-Pipe Privilege Escalation To SYSTEM` fires on the PrintSpoofer step.",
+              "All four XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-IDENT-078B",
+            "objective": "The escalation steps stitch into one Privilege Escalation incident.",
+            "success_criteria": [
+              "Correlation `CR-ITDR-0007` groups the chain from one host into a single incident.",
+              "Incident severity is High."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Credential Guard / LSA protection (RunAsPPL) so LSASS memory cannot be read by user-mode processes.",
+      "Audit and tier privileged AD objects; alert on any nTSecurityDescriptor (DACL) change to AdminSDHolder or privileged groups and review ACL grants with BloodHound.",
+      "Disable RBCD writes by non-admins and patch / monitor for Kerberos relay (KrbRelayUp) — enforce LDAP signing and channel binding.",
+      "Remove SeImpersonatePrivilege from service accounts where unnecessary and isolate IIS/MSSQL service identities."
+    ],
+    "detection_engineering": [
+      "Alert on a non-system process opening a credential-read handle to lsass.exe.",
+      "Alert on 4662 directory-service writes modifying nTSecurityDescriptor on privileged objects.",
+      "Alert on a Kerberos relay from the local host to LDAP and on RBCD edits to a computer object.",
+      "Alert on a SYSTEM child spawned from a SeImpersonate service-account parent, and on access-token duplication/impersonation from a privileged process.",
+      "Correlate the escalation steps from one host into a single Privilege Escalation incident."
+    ],
+    "response_playbook": "XSOAR-PB-PrivEscResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Active Directory Attack Paths",
+      "url": "https://unit42.paloaltonetworks.com/active-directory-attack-paths/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1068 — Exploitation for Privilege Escalation",
+      "url": "https://attack.mitre.org/techniques/T1068/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1134 — Access Token Manipulation",
+      "url": "https://attack.mitre.org/techniques/T1134/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1003.001 — OS Credential Dumping: LSASS Memory",
+      "url": "https://attack.mitre.org/techniques/T1003/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "SpecterOps — Certified Pre-Owned / AD ACL and Kerberos Relay Attack Paths",
+      "url": "https://posts.specterops.io/certified-pre-owned-d95910965cd2",
+      "publisher": "SpecterOps",
+      "publisher_id": "SRC-SPECTEROPS"
+    },
+    {
+      "title": "Microsoft — Protecting Tier 0 the Modern Way (Privileged Access & LSASS Protection)",
+      "url": "https://techcommunity.microsoft.com/t5/security-compliance-and-identity/protecting-tier-0-the-modern-way/ba-p/4106851",
+      "publisher": "Microsoft Threat Intelligence",
+      "publisher_id": "SRC-MICROSOFT"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "Initial AD privilege-escalation & token-manipulation card for SIM-ITDR-007 — LSASS dumping (T1003.001), privileged DACL abuse (T1098), Kerberos relay (T1550/T1068), SeImpersonate escalation (T1134), and access-token theft (T1134) against the itdr-module AD lab. Real BIOCs+XQL on xdr_data / ad_audit / msft_windows_security, correlation CR-ITDR-0007, GAP-11 validated/unvalidated analytics split. Wired to the adapter-gated SIM-ITDR-007 scenario (TOOL-PYPYKATZ / TOOL-BLOODYAD / TOOL-KRBRELAYUP / TOOL-PRINTSPOOFER / TOOL-TOKENVATOR)."
+    }
+  ]
+}

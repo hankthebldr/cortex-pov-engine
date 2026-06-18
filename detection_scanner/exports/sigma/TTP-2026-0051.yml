@@ -1,0 +1,29 @@
+title: "DNS Tunneling Exfiltration \u2014 High-Entropy Label Burst (T1048.003 / T1572) \u2014 NGFW EAL \u2014 long FQDN exceeding host baseline"
+id: ttp-2026-0051-bioc-01
+status: experimental
+description: |
+  NGFW EAL — long FQDN exceeding host baseline
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "dns" or app = "dns-base"
+    | filter dst_host = "testmynids.org" or dns_query_name contains ".testmynids.org"
+    | alter fqdn_len = len(dns_query_name)
+    | filter fqdn_len > 60
+    | fields _time, src_ip, dst_ip, dns_query_name, dns_query_type, fqdn_len
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

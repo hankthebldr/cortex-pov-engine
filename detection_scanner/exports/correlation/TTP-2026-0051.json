@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1048.003",
+    "T1572"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(NGFW EAL \u2014 long FQDN exceeding host baseline) OR (XQL(NGFW EAL \u2014 anomalous DNS query volume from single source) AND XQL(NGFW EAL \u2014 high-entropy DNS labels (base32 character profile))) OR XQL(NGFW EAL \u2014 TXT query burst from single host)",
+      "name": "DNS Tunneling Exfiltration \u2014 Volume Entropy And Length",
+      "rule_id": "CR-NDR-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0051"
+}

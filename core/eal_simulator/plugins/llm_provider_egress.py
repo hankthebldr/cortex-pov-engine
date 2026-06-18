@@ -62,12 +62,27 @@ logger = logging.getLogger("cortexsim.eal.plugins.llm_provider_egress")
 # --------------------------------------------------------------------------
 
 
+# Default per-provider model strings. These age over time, so a campaign may
+# override them via the ``model`` param (EAL-G12); the defaults preserve the
+# previously-hardcoded behaviour. ``model`` is only meaningful for the
+# providers whose body carries it (openai / anthropic); gemini pins the model
+# in its URL path instead.
+_DEFAULT_MODELS: dict[str, str] = {
+    "openai": "gpt-4o",
+    "anthropic": "claude-3-5-sonnet-20241022",
+    "gemini": "gemini-1.5-flash",
+}
+
+
 @dataclasses.dataclass(frozen=True)
 class _Provider:
     name: str
     base_url: str
     path: str
     method: str = "POST"
+
+    def default_model(self) -> str:
+        return _DEFAULT_MODELS.get(self.name, "")
 
     def build_url(self, *, fake_key: str) -> str:
         url = f"{self.base_url}{self.path}"
@@ -90,19 +105,21 @@ class _Provider:
             return {"content-type": "application/json"}
         raise ValueError(f"unknown provider {self.name!r}")  # pragma: no cover
 
-    def build_body(self, *, prompt: str) -> dict[str, Any]:
+    def build_body(self, *, prompt: str, model: Optional[str] = None) -> dict[str, Any]:
+        resolved_model = model or self.default_model()
         if self.name == "openai":
             return {
-                "model": "gpt-4o",
+                "model": resolved_model,
                 "messages": [{"role": "user", "content": prompt}],
             }
         if self.name == "anthropic":
             return {
-                "model": "claude-3-5-sonnet-20241022",
+                "model": resolved_model,
                 "max_tokens": 256,
                 "messages": [{"role": "user", "content": prompt}],
             }
         if self.name == "gemini":
+            # Gemini carries the model in its URL path, not the body.
             return {"contents": [{"parts": [{"text": prompt}]}]}
         raise ValueError(f"unknown provider {self.name!r}")  # pragma: no cover
 
@@ -219,6 +236,13 @@ class LLMProviderEgressParams(BaseModel):
                     "anomalous-data-transfer-size detectors.",
     )
     request_timeout: float = Field(default=15.0, ge=1.0, le=300.0)
+    model: Optional[str] = Field(
+        default=None,
+        description="Override the provider model string in the request body "
+                    "(e.g. 'gpt-4o-mini'). Defaults to the per-provider built-in "
+                    "(openai=gpt-4o, anthropic=claude-3-5-sonnet-20241022). "
+                    "Ignored for gemini, which pins the model in its URL path.",
+    )
     user_agent: Optional[str] = Field(
         default=None,
         description="Override the outbound User-Agent header (defaults to httpx).",
@@ -314,10 +338,17 @@ class LLMProviderEgress(BaseSimulation):
         events_emitted = 0
         bytes_sent = 0
         responses_seen: dict[int, int] = {}
+        # Stash the campaign verify_tls knob where _build_client reads it
+        # without changing its (monkeypatched-in-tests) signature.
+        self._verify_tls = ctx.verify_tls
         client = self._build_client(params)
 
         try:
             for i in range(params.iterations):
+                # Charge the campaign-level cumulative budget per request
+                # (EAL-G06) before emitting; the body bytes are charged inside
+                # _send_one once their size is known.
+                ctx.charge_request()
                 outcome, response_status, request_bytes = await self._send_one(
                     client, provider, params, ctx, iteration=i + 1,
                 )
@@ -357,7 +388,10 @@ class LLMProviderEgress(BaseSimulation):
             headers["user-agent"] = params.user_agent
         return httpx.AsyncClient(
             timeout=params.request_timeout,
-            verify=False,           # POVs commonly MitM through customer NGFW
+            # default False: POVs commonly MitM through customer NGFW. Operators
+            # opt back into verification via the campaign verify_tls knob, read
+            # off the plugin instance (set in run()).
+            verify=getattr(self, "_verify_tls", False),
             follow_redirects=False,
             headers=headers,
         )
@@ -375,9 +409,10 @@ class LLMProviderEgress(BaseSimulation):
         prompt = _render_payload(
             params.payload_type, paste_padding_kb=params.paste_padding_kb,
         )
-        body = provider.build_body(prompt=prompt)
+        body = provider.build_body(prompt=prompt, model=params.model)
         body_bytes = json.dumps(body, separators=(",", ":")).encode("utf-8")
         request_bytes = len(body_bytes)
+        ctx.charge_bytes(request_bytes)
 
         # Each request gets a unique simulation id so a multi-iteration run
         # appears as N distinct sessions in the SOC's filter view.

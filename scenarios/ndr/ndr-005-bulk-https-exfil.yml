@@ -5,8 +5,9 @@ status: active
 
 plane: NDR
 detection_types:
-  - Analytics
+  - XQL
   - BIOC
+  - Correlation
 
 uc_ref: UCS-NDR-05
 tc_ref: TC-NDR-05
@@ -37,6 +38,26 @@ infra_modules_needed:
   - base
   - ndr
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Network Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The per-protocol egress signal injected by this scenario produces the
+  expected NGFW App-ID / XSIAM detection within the MTTD budget. Verifier
+  counts matching sessions in dataset=pan_ngfw_traffic and measures
+  emit→alert latency.
+moat_tier: "LEAD"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -52,8 +73,10 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: NDR
-        type: Analytics
-        description: "Pre-flight: receiver endpoint resolves"
+        type: XQL
+        description: "Pre-flight: receiver endpoint resolves / reachable over HTTPS"
+        ttp_ref: "TTP-2026-0068"
+        detection_id: "xql-pre-flight-bulk-exfil-receiver-reachable-over-https"
 
   - id: step-02
     name: "Stream 1 GiB random payload across 4 chunked POSTs"
@@ -83,20 +106,20 @@ steps:
     mitre_technique: "T1041"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: BIOC
         description: "NGFW EAL — outbound bytes per session greatly exceeds host baseline"
-        ttp_ref: "TTP-2026-0005"
-        detection_id: "bioc-large-sustained-egress-from-file-server-to-non-corporate-cloud-provider"
+        ttp_ref: "TTP-2026-0068"
+        detection_id: "bioc-ngfw-eal-outbound-bytes-per-session-greatly-exceeds-host-baseline"
       - plane: NDR
         type: BIOC
-        description: "NGFW EAL — long-lived HTTPS upload (>5 min duration)"
-        ttp_ref: "TTP-2026-0005"
-        detection_id: "bioc-outbound-to-known-rclone-backend-provider-from-non-sanctioned-host"
+        description: "NGFW EAL — long-lived, upload-skewed HTTPS session (>2 min duration)"
+        ttp_ref: "TTP-2026-0068"
+        detection_id: "bioc-ngfw-eal-long-lived-upload-skewed-https-session"
       - plane: ANALYTICS
-        type: Analytics
-        description: "XSIAM stitching — exfil session correlated with originating process"
-        ttp_ref: "TTP-2026-0005"
-        detection_id: "CR-EXFIL-0001"
+        type: Correlation
+        description: "XSIAM stitching — exfil session-volume anomaly correlated with originating XDR process"
+        ttp_ref: "TTP-2026-0068"
+        detection_id: "CR-NDR-0008"
 
 cleanup:
   commands:
