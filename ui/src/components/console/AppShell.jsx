@@ -42,6 +42,7 @@ const STEPS = [
 const MORE_ITEMS = [
   { id: 'coverage', label: 'ATT&CK Coverage' },
   { id: 'lab',      label: 'Environments'    },
+  { id: 'tenants',  label: 'Tenants'         },
 ]
 
 export default function AppShell({

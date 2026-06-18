@@ -1,6 +1,16 @@
 # Phase 9 — XSIAM Tenant Integration Design
 
 > Author: Henry Reed (with Claude Opus 4.7) · 2026-05-15 · Status: draft, awaiting Gate-9-A approval
+>
+> **⚠️ 2026-06-01 — The detection-validation direction in this doc is PARKED.**
+> The active Phase 9 track is *health & config*, not alert-to-scenario
+> correlation. See
+> [`2026-06-01-xsiam-tenant-health-config-integration-design.md`](./2026-06-01-xsiam-tenant-health-config-integration-design.md).
+> The **substrate** here (tenant registration, `StandardAuth`, the thin
+> `httpx` client, `/test`) carries over; the **correlator / validator / MTTD**
+> roadmap (§4, §9-B…§9-E) is on hold unless explicitly revived. Note also that
+> the bespoke `tenant` table in §5 was superseded by the shipped generalized
+> `Secret` + `IntegrationCredential` model.
 
 ## 1. Problem
 
