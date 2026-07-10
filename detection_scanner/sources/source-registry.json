@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "registry_version": "1.4.0",
   "description": "Indexed threat-intel and execution-framework sources for the cortex-pov-engine TTP corpus. Consumed by the cortex-scraper to crawl, parse, and emit candidate TTP drafts. Tier 1 = primary/canonical; Tier 2 = vendor intel; Tier 3 = government; Tier 4 = IR/community; Tier 5 = execution frameworks (payload sources, not intel).",
-  "updated_at": "2026-06-17",
+  "updated_at": "2026-07-10",
   "sources": [
     {
       "id": "SRC-UNIT42",
-      "name": "Unit 42 \u2014 Palo Alto Networks",
+      "name": "Unit 42 — Palo Alto Networks",
       "tier": 1,
       "weight": 1.0,
       "publisher_class": "vendor-internal",
@@ -56,7 +56,7 @@
         "Unit 42 anatomy of an attack",
         "Unit 42 threat bulletin {month} {year}"
       ],
-      "last_canvassed": null
+      "last_canvassed": "2026-07-10"
     },
     {
       "id": "SRC-MITRE-ATTACK",
@@ -86,7 +86,9 @@
         "MITRE ATT&CK group {group_id}",
         "MITRE ATT&CK software {software_id}"
       ],
-      "last_canvassed": null
+      "last_canvassed": "2026-07-10",
+      "notes": "No new ATT&CK release this cycle.",
+      "last_canvass_note": "No new ATT&CK release this cycle."
     },
     {
       "id": "SRC-OWASP-LLM",
@@ -135,7 +137,7 @@
     },
     {
       "id": "SRC-MANDIANT",
-      "name": "Mandiant \u2014 Google Threat Intelligence",
+      "name": "Mandiant — Google Threat Intelligence",
       "tier": 2,
       "weight": 0.9,
       "publisher_class": "vendor-external",
@@ -415,7 +417,7 @@
     },
     {
       "id": "SRC-CISA",
-      "name": "CISA \u2014 Cybersecurity & Infrastructure Security Agency",
+      "name": "CISA — Cybersecurity & Infrastructure Security Agency",
       "tier": 3,
       "weight": 0.95,
       "publisher_class": "government",
@@ -437,7 +439,7 @@
         "CISA known exploited vulnerabilities {year}",
         "CISA Joint Cybersecurity Advisory {year}"
       ],
-      "last_canvassed": null
+      "last_canvassed": "2026-07-10"
     },
     {
       "id": "SRC-NSA-CYBER",
@@ -450,7 +452,7 @@
       "discovery_queries": [
         "NSA cybersecurity advisory {topic}"
       ],
-      "last_canvassed": null
+      "last_canvassed": "2026-07-10"
     },
     {
       "id": "SRC-NCSC-UK",
@@ -463,7 +465,7 @@
       "discovery_queries": [
         "NCSC UK threat report {year}"
       ],
-      "last_canvassed": null
+      "last_canvassed": "2026-07-10"
     },
     {
       "id": "SRC-ACSC",
@@ -476,7 +478,7 @@
       "discovery_queries": [
         "ACSC advisory {year}"
       ],
-      "last_canvassed": null
+      "last_canvassed": "2026-07-10"
     },
     {
       "id": "SRC-CERT-EU",
@@ -691,7 +693,7 @@
     },
     {
       "id": "SRC-MICROSOFT-LEARN",
-      "name": "Microsoft Learn \u2014 Open Specifications & Protocol Docs",
+      "name": "Microsoft Learn — Open Specifications & Protocol Docs",
       "tier": 2,
       "weight": 0.7,
       "publisher_class": "vendor-docs",
