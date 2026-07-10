@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from engine import efficacy_scorecard
 from engine import report_generator
 from engine.orchestrator import orchestrator
 from events import event_bus
@@ -235,7 +236,7 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/{run_id}/report")
 async def get_report(
     run_id: str,
-    format: str = Query("markdown", pattern="^(markdown|json)$"),
+    format: str = Query("markdown", pattern="^(markdown|json|scorecard|scorecard-html)$"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -260,6 +261,22 @@ async def get_report(
         select(Result).where(Result.run_id == run_id).order_by(Result.step_id, Result.id)
     )
     results = results_result.scalars().all()
+
+    # Executive efficacy scorecard (Detection Proof Layer) — the CISO one-pager
+    # companion to the per-detection report. Short-circuits before the
+    # markdown/json assembly since it reads the same Result rows.
+    if format in ("scorecard", "scorecard-html"):
+        scorecard = efficacy_scorecard.build_efficacy_scorecard(
+            [r.to_dict() for r in results],
+            run_ids=[run_id],
+            title=f"Cortex POV Efficacy Scorecard — {scenario.name if scenario else run.scenario_id}",
+        )
+        if format == "scorecard-html":
+            return Response(
+                content=efficacy_scorecard.render_html(scorecard),
+                media_type="text/html",
+            )
+        return PlainTextResponse(efficacy_scorecard.render_markdown(scorecard))
 
     # Compute stats
     total = len(results)

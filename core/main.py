@@ -410,6 +410,7 @@ from api.ttps import router as ttps_router              # noqa: E402
 from api.events import router as events_router          # noqa: E402
 from api.connectors import router as connectors_router  # noqa: E402
 from api.connectors import runs_reconcile_router        # noqa: E402
+from api.storyline import router as storyline_router    # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -429,6 +430,9 @@ app.include_router(events_router, prefix="/api")
 # Connector framework — optional read-back / measurement loop (GAP: efficacy).
 app.include_router(connectors_router, prefix="/api")
 app.include_router(runs_reconcile_router, prefix="/api")
+# Detection Proof Layer — per-run storyline snapshot (mounts a second router
+# under the /runs prefix, same pattern as runs_reconcile_router above).
+app.include_router(storyline_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------
