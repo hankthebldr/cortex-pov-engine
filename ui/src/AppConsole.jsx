@@ -8,6 +8,7 @@ import LabView from './components/console/LabView.jsx'
 import TenantManager from './components/console/TenantManager.jsx'
 import TargetsView from './components/console/TargetsView.jsx'
 import LaunchView from './components/console/LaunchView.jsx'
+import DetectionStoryline from './components/DetectionStoryline.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
 import { isRunTerminal } from './components/console/runStatus.js'
@@ -525,6 +526,16 @@ export default function AppConsole() {
         activeRun={activeRun}
         lastRun={lastRun}
         pinnedRun={pinnedRun}
+        onError={(msg) => setToast({ message: msg, type: 'error' })}
+      />
+    )
+  } else if (activeTab === 'storyline') {
+    const storyRun = activeRun || lastRun || pinnedRun
+    tabContent = (
+      <DetectionStoryline
+        runId={storyRun?.runId || null}
+        scenarioId={storyRun?.scenarioId || null}
+        onOpenEvidence={() => setActiveTab('evidence')}
         onError={(msg) => setToast({ message: msg, type: 'error' })}
       />
     )

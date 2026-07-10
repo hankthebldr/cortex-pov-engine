@@ -1,0 +1,515 @@
+/* ============================================================
+   DetectionStoryline — presenter-grade vertical kill-chain
+   Cortex design tokens (cortex-theme.css). Plain CSS, no deps.
+   ============================================================ */
+
+.storyline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 20px);
+  padding: var(--space-5, 20px);
+  font-family: var(--font-primary);
+  color: #1A2B3C;
+}
+
+/* Non-content states share a centered, roomy layout for the projector. */
+.storyline--empty,
+.storyline--loading,
+.storyline--error {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3, 12px);
+  min-height: 240px;
+  color: var(--cortex-steel);
+}
+
+.storyline-empty__icon {
+  font-size: 40px;
+  opacity: 0.4;
+}
+
+.storyline--loading {
+  flex-direction: row;
+}
+
+.storyline-error__msg {
+  color: var(--cortex-danger);
+  font-size: 14px;
+}
+
+/* ── Header / KPI strip ─────────────────────────────────────────────────── */
+
+.storyline-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 16px);
+  padding: var(--space-4, 16px) var(--space-5, 20px);
+  background: var(--cortex-navy);
+  color: var(--cortex-white);
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: var(--shadow-md);
+}
+
+.storyline-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  flex-wrap: wrap;
+}
+
+.storyline-header__title h3 {
+  color: var(--cortex-white);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.storyline-header__scenario {
+  font-size: 12px;
+  color: var(--cortex-teal);
+  background: rgba(0, 192, 232, 0.12);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.storyline-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--cortex-teal);
+}
+
+.storyline-live__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cortex-teal);
+  box-shadow: 0 0 0 0 rgba(0, 192, 232, 0.7);
+  animation: storyline-pulse 1.6s infinite;
+}
+
+.storyline-kpis {
+  display: flex;
+  gap: var(--space-6, 24px);
+  flex-wrap: wrap;
+}
+
+.storyline-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.storyline-kpi__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.storyline-kpi__value {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--cortex-white);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.storyline-kpi__value--prov {
+  font-size: 14px;
+  gap: 10px;
+}
+
+.storyline-kpi__sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.storyline-header__updated {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* ── Vertical timeline ──────────────────────────────────────────────────── */
+
+.storyline-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.storyline-step {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: var(--space-4, 16px);
+  position: relative;
+}
+
+/* The connecting rail with the numbered node. */
+.storyline-step__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.storyline-step__rail::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--cortex-border);
+  border-radius: 2px;
+}
+
+.storyline-step:first-child .storyline-step__rail::before { top: 20px; }
+.storyline-step:last-child .storyline-step__rail::before { bottom: calc(100% - 44px); }
+
+.storyline-step__node {
+  position: relative;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  margin-top: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--cortex-steel);
+  background: var(--cortex-white);
+  border: 3px solid var(--cortex-border);
+  transition: all var(--transition-base, 200ms ease);
+}
+
+.storyline-step--pending .storyline-step__node {
+  color: var(--cortex-navy);
+  border-color: var(--cortex-teal);
+  box-shadow: 0 0 0 4px rgba(0, 192, 232, 0.15);
+}
+
+.storyline-step--detected .storyline-step__node {
+  color: var(--cortex-white);
+  background: var(--cortex-success);
+  border-color: var(--cortex-success);
+}
+
+.storyline-step__card {
+  background: var(--cortex-white);
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4, 16px) var(--space-5, 20px);
+  margin-bottom: var(--space-5, 20px);
+}
+
+.storyline-step__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  margin-bottom: var(--space-3, 12px);
+}
+
+.storyline-step__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  flex-wrap: wrap;
+}
+
+.storyline-step__title h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--cortex-navy);
+}
+
+.storyline-tid {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cortex-teal);
+  background: rgba(0, 192, 232, 0.1);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.storyline-stitch {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cortex-navy);
+  background: rgba(0, 51, 102, 0.08);
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.storyline-step__empty {
+  font-size: 12px;
+  color: var(--cortex-steel);
+  font-style: italic;
+}
+
+.storyline-step__detections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+}
+
+/* ── Detection row ──────────────────────────────────────────────────────── */
+
+.storyline-detection {
+  border: 1px solid var(--cortex-border);
+  border-left: 4px solid var(--cortex-steel);
+  border-radius: var(--radius-md, 6px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  background: var(--cortex-light-bg);
+  transition: border-color var(--transition-base, 200ms ease),
+              background var(--transition-base, 200ms ease);
+}
+
+.storyline-detection--detected {
+  border-left-color: var(--cortex-success);
+  background: rgba(0, 184, 148, 0.05);
+}
+
+.storyline-detection--pending {
+  border-left-color: var(--cortex-teal);
+}
+
+.storyline-detection--missed {
+  border-left-color: var(--cortex-danger);
+  background: rgba(231, 76, 60, 0.04);
+}
+
+/* The catch — flash pending→detected. */
+.storyline-detection--flash {
+  animation: storyline-catch 1.6s ease;
+}
+
+.storyline-detection__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  margin-bottom: var(--space-2, 8px);
+  flex-wrap: wrap;
+}
+
+.storyline-detection__tags {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.storyline-detection__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+}
+
+.storyline-plane {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cortex-steel);
+  background: rgba(107, 126, 142, 0.12);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+/* ── Engine badge — the Cortex-native vocabulary wedge ──────────────────── */
+
+.storyline-engine {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 2px 9px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.storyline-engine--bioc        { background: rgba(0, 184, 148, 0.14);  color: #00825b; border-color: rgba(0,184,148,0.35); }
+.storyline-engine--xql         { background: rgba(0, 192, 232, 0.14);  color: #007da3; border-color: rgba(0,192,232,0.35); }
+.storyline-engine--analytics   { background: rgba(107, 126, 142, 0.16); color: var(--cortex-steel); border-color: rgba(107,126,142,0.35); }
+.storyline-engine--correlation { background: rgba(124, 77, 255, 0.14);  color: #5b34c9; border-color: rgba(124,77,255,0.35); }
+.storyline-engine--ioc         { background: rgba(243, 156, 18, 0.16);  color: #c47d00; border-color: rgba(243,156,18,0.35); }
+.storyline-engine--abioc       { background: rgba(0, 51, 102, 0.1);     color: var(--cortex-navy); border-color: rgba(0,51,102,0.3); }
+.storyline-engine--unknown     { background: rgba(107, 126, 142, 0.1);  color: var(--cortex-steel); }
+
+/* ── MTTD badge + status pill ───────────────────────────────────────────── */
+
+.storyline-mttd {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--cortex-teal);
+}
+
+.storyline-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 11px;
+}
+
+.storyline-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.storyline-pill--detected { background: rgba(0, 184, 148, 0.16);  color: #00825b; }
+.storyline-pill--pending  { background: rgba(0, 192, 232, 0.16);  color: #007da3; }
+.storyline-pill--missed   { background: rgba(231, 76, 60, 0.14);  color: #b03030; }
+.storyline-pill--idle     { background: rgba(107, 126, 142, 0.14); color: var(--cortex-steel); }
+
+.storyline-pill--pending .storyline-pill__dot {
+  animation: storyline-blink 1.2s infinite;
+}
+
+/* ── Expected / observed rows ───────────────────────────────────────────── */
+
+.storyline-detection__caption {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--cortex-steel);
+  margin-right: 8px;
+}
+
+.storyline-detection__expected {
+  font-size: 13px;
+  color: #1A2B3C;
+  margin: 0 0 var(--space-2, 8px);
+}
+
+.storyline-detection__observed {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  padding: 6px 10px;
+  background: rgba(0, 184, 148, 0.08);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.storyline-observed__engine {
+  font-weight: 700;
+  color: #00825b;
+}
+
+.storyline-observed__alert {
+  font-size: 12px;
+  color: var(--cortex-navy);
+}
+
+.storyline-observed__clock {
+  font-size: 12px;
+  color: var(--cortex-steel);
+}
+
+.storyline-observed__link {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cortex-teal);
+  margin-left: auto;
+}
+
+.storyline-detection__awaiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--cortex-steel);
+  padding: 6px 10px;
+  background: rgba(0, 192, 232, 0.06);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.storyline-detection__awaiting--missed {
+  color: #b03030;
+  background: rgba(231, 76, 60, 0.06);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.storyline-scan {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 192, 232, 0.3);
+  border-top-color: var(--cortex-teal);
+  animation: spin 700ms linear infinite;
+}
+
+/* ── Evidence affordance ────────────────────────────────────────────────── */
+
+.storyline-detection__evidence {
+  margin-top: var(--space-2, 8px);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cortex-navy);
+  background: var(--cortex-white);
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 12px;
+}
+
+.storyline-detection__evidence:hover:not(:disabled) {
+  border-color: var(--cortex-teal);
+  color: var(--cortex-teal);
+}
+
+/* ── Keyframes ──────────────────────────────────────────────────────────── */
+
+@keyframes storyline-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(0, 192, 232, 0.6); }
+  70%  { box-shadow: 0 0 0 8px rgba(0, 192, 232, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 192, 232, 0); }
+}
+
+@keyframes storyline-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+@keyframes storyline-catch {
+  0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(0, 184, 148, 0.5); }
+  30%  { transform: scale(1.015); box-shadow: 0 0 0 6px rgba(0, 184, 148, 0.25); }
+  100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(0, 184, 148, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .storyline-detection--flash,
+  .storyline-live__dot,
+  .storyline-pill--pending .storyline-pill__dot,
+  .storyline-scan {
+    animation: none;
+  }
+}
