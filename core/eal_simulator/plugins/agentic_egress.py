@@ -324,6 +324,9 @@ class AgenticEgress(BaseSimulation):
 
         events_emitted = 0
         bytes_sent = 0
+        # Stash verify_tls where _build_client reads it without changing its
+        # (monkeypatched-in-tests) signature.
+        self._verify_tls = ctx.verify_tls
         client = self._build_client(params, component)
 
         try:
@@ -367,7 +370,9 @@ class AgenticEgress(BaseSimulation):
     ) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             timeout=params.request_timeout,
-            verify=False,
+            # default False (NGFW MitM friendly); opt back in per campaign via
+            # the verify_tls knob, read off the plugin instance (set in run()).
+            verify=getattr(self, "_verify_tls", False),
             follow_redirects=False,
             headers={"user-agent": _format_user_agent(component.user_agent)},
         )
@@ -386,7 +391,6 @@ class AgenticEgress(BaseSimulation):
         """Send one (or, for pypi_mirror, two) requests. Returns (events, bytes)."""
         events = 0
         sent = 0
-        sep = "&" if "?" in params.target_url else "?"
         artifact_url = (
             f"{params.target_url}"
             f"{'/' if not params.target_url.endswith('/') else ''}"
@@ -402,12 +406,15 @@ class AgenticEgress(BaseSimulation):
         # download` makes against a custom index-url. Other components do
         # a single fetch.
         if component.name == "pypi_mirror":
+            # Query separator only matters for the pypi index probe (EAL-G13).
+            sep = "&" if "?" in params.target_url else "?"
             try:
                 resp = await client.get(
                     f"{params.target_url}{sep}name={params.artifact_name}",
                     headers=headers,
                 )
                 events += 1
+                ctx.charge_request()
                 await ctx.emit_event(ecs_event(
                     action="agentic_egress_index_probe",
                     outcome="success",
@@ -436,6 +443,9 @@ class AgenticEgress(BaseSimulation):
         # The actual artifact fetch. We POST the bytes (a real client
         # GETs them; this plugin always POSTs so the artifact body is
         # what the NGFW DLP / SCA layer inspects).
+        # Charge the campaign-level cumulative budget (EAL-G06) before the POST.
+        ctx.charge_request()
+        ctx.charge_bytes(len(artifact_bytes))
         try:
             resp = await client.request(
                 "POST",

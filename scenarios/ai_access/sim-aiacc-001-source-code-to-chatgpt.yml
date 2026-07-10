@@ -5,8 +5,8 @@ status: active
 
 plane: AI_ACCESS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
 
 uc_ref: UCS-AIACC-01
 tc_ref: TC-AIACC-01
@@ -36,6 +36,45 @@ pull_supported: true
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "LLM-Egress DLP Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The outbound LLM-provider egress with planted DLP markers produces the
+  expected Cortex AI Access Security detection. Detection Accuracy is the
+  share of injected egress events that raise the expected DLP alert (target
+  ≥ 90%).
+moat_tier: "LEAD"
+
+# ── Lab-contained / mock provider target (PLANE-AIACCESS-ISOLATED) ───────────
+# By default this scenario egresses to the real public AI provider
+# (api.openai.com / api.anthropic.com / generativelanguage.googleapis.com) so
+# the customer NGFW + Cortex AI Access Security see authentic generative-AI
+# App-ID traffic. For air-gapped / lab POVs where outbound to a real provider
+# is undesirable, run a contained mock target instead — mirroring the in-tree
+# `cortex-vulnerable-llm` pattern (sources/cortex-vulnerable-llm/, served on
+# :8089 with no real LLM calls and no API keys):
+#
+#   cortex-vulnerable-llm serve --port 8089 --vuln all
+#
+# Then point the EAL campaign at the contained host by overriding the campaign
+# `target_allowlist` (and, once the llm_provider_egress plugin grows a
+# `mock_target`/`base_url` param — tracked for the EAL lane —, set it to
+# http://127.0.0.1:8089). The DLP canary markers (CORTEXSIM-CANARY, AKIA…CANARY)
+# travel in the request body either way, so the AI_ACCESS / NGFW detections
+# fire identically against the mock target. This keeps the scenario runnable
+# with a lab-contained fallback rather than only hitting real providers.
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -54,7 +93,7 @@ steps:
       - plane: AI_ACCESS
         type: BIOC
         description: "Pre-flight: plugin metadata visible to operator"
-        ttp_ref: TTP-2026-0007
+        ttp_ref: "TTP-2026-0007"
         detection_id: bioc-aiacc-001-pre-flight-llm-provider-egress-plugin-registered
 
   - id: step-02
@@ -82,19 +121,19 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — outbound POST to api.openai.com containing source-code shape (CORTEXSIM-CANARY marker)"
-        ttp_ref: TTP-2026-0007
+        ttp_ref: "TTP-2026-0007"
         detection_id: xql-aiacc-001-source-code-shape-post-to-openai-with-canary-marker
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — DLP regex match on source-code structure in prompt body"
-        ttp_ref: TTP-2026-0007
+        ttp_ref: "TTP-2026-0007"
         detection_id: xql-aiacc-001-dlp-source-code-structure-regex-match-in-llm-prompt
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — generative-AI App-ID match on outbound HTTPS to api.openai.com"
-        ttp_ref: TTP-2026-0007
+        ttp_ref: "TTP-2026-0007"
         detection_id: xql-aiacc-001-ngfw-generative-ai-app-id-outbound-https-to-openai
 
   - id: step-03
@@ -122,9 +161,9 @@ steps:
     mitre_technique: "T1567"
     expected_detections:
       - plane: AI_ACCESS
-        type: Analytics
+        type: XQL
         description: "AI Access — repeated POST pattern (3 in <60s) flagged as policy violation"
-        ttp_ref: TTP-2026-0007
+        ttp_ref: "TTP-2026-0007"
         detection_id: xql-aiacc-001-repeated-source-paste-burst-to-openai-single-user
 
 cleanup:

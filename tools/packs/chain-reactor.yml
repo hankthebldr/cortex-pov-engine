@@ -2,7 +2,7 @@ adapter_id: TOOL-CHAIN-REACTOR
 name: "chain-reactor"
 version: "main"
 
-tier: 2
+tier: 4
 category: adversary-simulation
 
 upstream:
@@ -20,12 +20,13 @@ cortex_signal:
 safety_class: dual-use-lab-only
 
 install:
-  source_path: sources/chain-reactor
-  build_cmd: "make"
-  binary: "./chain_reactor"
+  # Tier 4 (runtime-fetched): shallow git-clone + make-build the upstream
+  # release at dispatch into /tmp. Produces the chain_reactor binary in-tree.
+  runtime_install_command: "test -x /tmp/chain-reactor/chain_reactor || (test -d /tmp/chain-reactor || git clone --depth 1 https://github.com/redcanaryco/chain-reactor /tmp/chain-reactor && make -C /tmp/chain-reactor)"
+  binary: "/tmp/chain-reactor/chain_reactor"
 
 invoke:
-  target_platform: any
+  target_platform: linux
   run_template: "{binary} {recipe}"
   default_args:
     recipe: "recipe.json"
@@ -44,3 +45,4 @@ last_updated: "2026-06-02"
 tags:
   - phase-c
   - adversary-simulation
+  - runtime-fetched

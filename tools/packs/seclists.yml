@@ -2,7 +2,7 @@ adapter_id: TOOL-SECLISTS
 name: "SecLists"
 version: "master"
 
-tier: 2
+tier: 4
 category: web-app
 
 upstream:
@@ -19,14 +19,16 @@ cortex_signal:
 safety_class: safe
 
 install:
-  source_path: sources/SecLists
-  build_cmd: "true"
+  # Tier 4 (runtime-fetched): shallow git-clone the data corpus at dispatch
+  # into /tmp. SecLists is wordlist data only — no build step.
+  runtime_install_command: "test -d /tmp/SecLists || git clone --depth 1 https://github.com/danielmiessler/SecLists /tmp/SecLists"
+  binary: "ls"
 
 invoke:
-  target_platform: any
-  run_template: "ls {wordlist_dir}"
+  target_platform: linux
+  run_template: "{binary} {wordlist_dir}"
   default_args:
-    wordlist_dir: "sources/SecLists/Passwords"
+    wordlist_dir: "/tmp/SecLists/Passwords"
   identity_required: root
 
 ttp_refs: []
@@ -38,3 +40,4 @@ last_updated: "2026-06-02"
 tags:
   - phase-c
   - web-app
+  - runtime-fetched

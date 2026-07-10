@@ -30,7 +30,14 @@ from .audit import AuditLogger, ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
 from .campaign import Campaign, CampaignStep
 from .registry import PluginRegistry, get_default_registry
-from .safety import SafetyError, SafetyPolicy
+from .safety import (
+    BudgetError,
+    CampaignBudget,
+    DEFAULT_MAX_TOTAL_BYTES,
+    DEFAULT_MAX_TOTAL_REQUESTS,
+    SafetyError,
+    SafetyPolicy,
+)
 
 
 logger = logging.getLogger("cortexsim.eal.executor")
@@ -118,10 +125,19 @@ class CampaignExecutor:
         registry: Optional[PluginRegistry] = None,
         audit: Optional[AuditLogger] = None,
         plugin_factory: Optional[Callable[[type[BaseSimulation]], BaseSimulation]] = None,
+        *,
+        max_total_bytes: Optional[int] = DEFAULT_MAX_TOTAL_BYTES,
+        max_total_requests: Optional[int] = DEFAULT_MAX_TOTAL_REQUESTS,
     ) -> None:
         self.registry = registry or get_default_registry()
         self.audit = audit or AuditLogger()
         self._plugin_factory = plugin_factory or (lambda cls: cls())
+        # Campaign-level cumulative ceilings (per-plugin params still bound a
+        # single step). A campaign may override these via its (optional)
+        # ``max_total_bytes`` / ``max_total_requests`` fields; the executor
+        # default is the floor used when the campaign does not set them.
+        self._max_total_bytes = max_total_bytes
+        self._max_total_requests = max_total_requests
 
     # ------------------------------------------------------------------
     # Public API
@@ -156,6 +172,18 @@ class CampaignExecutor:
             dry_run=campaign.dry_run,
         )
 
+        # Campaign-level cumulative budget. A campaign may pin its own
+        # ceilings; otherwise fall back to the executor defaults. Read via
+        # getattr so the executor stays decoupled from the Campaign schema.
+        budget = CampaignBudget(
+            max_total_bytes=_first_set(
+                getattr(campaign, "max_total_bytes", None), self._max_total_bytes
+            ),
+            max_total_requests=_first_set(
+                getattr(campaign, "max_total_requests", None), self._max_total_requests
+            ),
+        )
+
         self._emit_event(
             ecs_event(
                 action="campaign_started",
@@ -165,7 +193,11 @@ class CampaignExecutor:
                 message=f"Campaign {campaign.campaign_id} started",
                 campaign_id=campaign.campaign_id,
                 run_id=run_id,
-                extra={"dry_run": campaign.dry_run, "policy": policy.to_dict()},
+                extra={
+                    "dry_run": campaign.dry_run,
+                    "policy": policy.to_dict(),
+                    "budget": budget.to_dict(),
+                },
             )
         )
 
@@ -191,7 +223,7 @@ class CampaignExecutor:
         state.status = "running"
 
         for step in campaign.steps:
-            result = await self._run_step(campaign, run_id, step, policy)
+            result = await self._run_step(campaign, run_id, step, policy, budget)
             state.step_results.append(result)
             if result.status == "error" and step.on_error == "abort":
                 state.status = "aborted"
@@ -240,6 +272,7 @@ class CampaignExecutor:
         run_id: str,
         step: CampaignStep,
         policy: SafetyPolicy,
+        budget: CampaignBudget,
     ) -> SimulationResult:
         started_at = _utcnow()
 
@@ -259,6 +292,11 @@ class CampaignExecutor:
         async def emit(payload: dict[str, Any]) -> None:
             self._emit_event(payload)
 
+        # verify_tls defaults to False (NGFW-MitM friendly); a campaign may
+        # opt back into certificate verification per run. Read via getattr so
+        # the executor stays decoupled from the Campaign schema.
+        verify_tls = bool(getattr(campaign, "verify_tls", False))
+
         ctx = SimulationContext(
             campaign_id=campaign.campaign_id,
             run_id=run_id,
@@ -268,13 +306,11 @@ class CampaignExecutor:
             target_allowlist=list(campaign.target_allowlist),
             emit_event=emit,
             params=params,
+            verify_tls=verify_tls,
+            _policy=policy,
+            _budget=budget,
+            authorise=policy.authorise,
         )
-        # Attach the policy without leaking it into the dataclass surface —
-        # plugins that need it call ctx.params; the policy is consulted via
-        # the helper below. Stashing it as an attribute keeps the dataclass
-        # frozen-friendly while remaining accessible.
-        setattr(ctx, "_policy", policy)
-        setattr(ctx, "authorise", policy.authorise)
 
         self._emit_event(
             ecs_event(
@@ -356,3 +392,11 @@ class CampaignExecutor:
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _first_set(*values: Any) -> Any:
+    """Return the first value that is not None (campaign override → default)."""
+    for v in values:
+        if v is not None:
+            return v
+    return None

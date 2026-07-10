@@ -1,0 +1,25 @@
+{
+  "mitre_techniques": [
+    "T1530",
+    "T1078.004",
+    "T1098",
+    "T1580"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(CSPM-001 S3 Data-Exposure Findings Surfaced) AND XQL(CSPM-001 Network-Exposure Security-Group Findings Surfaced) AND XQL(CSPM-001 IAM Over-Permission Findings Surfaced) AND XQL(CSPM-001 EBS Encryption and CloudTrail Logging Gaps Surfaced) AND XQL(CSPM-001 Total Planted-Finding Coverage Reconciliation)",
+      "name": "Cloud Posture Coverage \u2014 Full Planted-Misconfiguration Discovery",
+      "rule_id": "CR-CSPM-0001",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "BIOC(Inbound Connection Accepted on World-Open SSH/DB Security Group) OR BIOC(Over-Privileged CSPM IAM Principal Used for Control-Plane Action) \u2014 promotes a static CSPM finding to an active incident when the flagged misconfiguration is exercised within the POV window.",
+      "name": "Cloud Posture-to-Runtime \u2014 Flagged Exposure Actively Reached or Abused",
+      "rule_id": "CR-CSPM-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0065"
+}

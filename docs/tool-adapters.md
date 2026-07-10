@@ -1,8 +1,11 @@
 # Tool Adapter Framework
 
-> **Status (2026-06-02):** Framework + **69 adapters across all 5 tiers**
-> (Phase A/B/C complete). **27 scenarios** reference adapters; push bundles
-> self-install tier-4 tools; the launch consent gate is wired end-to-end. The
+> **Status (2026-06-15):** Framework + **69 adapters across all 5 tiers**
+> (Phase A/B/C complete). **35 scenarios reference adapters / 34 distinct adapters
+> wired** (up from 17 — the CDR cluster-posture, ASM web-app-enumeration, and ITDR
+> AD-privesc bundles wired 17 high-value orphans); all 10 source submodules are
+> provisioned (`check-adapter-sources.sh` green). Push bundles self-install tier-4
+> tools; the launch consent gate is wired end-to-end. The
 > remaining design-spec work is operational (per-adapter CI version canary) and
 > ongoing scenario-to-adapter wiring — see
 > [§7 What's shipped vs. pending](#7-whats-shipped-vs-pending).
@@ -30,7 +33,7 @@ stay a separate peer abstraction — adapters are for **binary/script tools**.
 | Concern | Path |
 |---|---|
 | Schema (reference) | `tools/packs/_schema.yml` |
-| Adapter packs (18) | `tools/packs/<tool>.yml` |
+| Adapter packs (69) | `tools/packs/<tool>.yml` |
 | Pydantic loader | `core/tools/adapter_loader.py` |
 | In-memory catalog (singleton) | `core/tools/adapter_catalog.py` |
 | Boot load | `core/main.py` (loads catalog before scenarios) |
@@ -103,6 +106,17 @@ execution path, and consent gate:
 | 4 | runtime-fetched | `install_inline` at first use | subprocess on jumpbox/agent |
 | 5 | external-only (reference) | none | never (`no_invoke: true`) |
 
+> **Tier-5 empty-`planes` convention.** Tier-5 packs are catalog/report
+> reference only — they are never invoked and do not emit a Cortex signal, so
+> they intentionally ship with an **empty `planes: []`** list (e.g. `ghidra`,
+> `radare2`, `capev2`, and the other RE / sandbox / analyst-workbench
+> references). A consequence is that these 11 `no_invoke` packs **do not appear
+> in any per-plane filter** in the UI or `GET /api/tools/adapters?plane=…` — by
+> design, since they have no plane to land on. They are still listed in the full
+> catalog and surface in the POV report's "Tools Used" attribution when
+> referenced. Do not "fix" an empty `planes` list on a tier-5 pack; it is the
+> intended contract for reference-only tooling.
+
 ## 5. Safety classes (consent gates)
 
 | Class | Gate |
@@ -129,8 +143,12 @@ adapter_catalog  (in-memory singleton)
 
 **Shipped & verified**
 - Schema + Pydantic loader + in-memory catalog (Phase A).
-- 18 reference packs across tiers 2–4 (Phase B target was 12).
-- Boot load with dangling-ref warnings; `GET /api/tools/adapters[/{id}]` (live: 18).
+- **69 packs across all 5 tiers (Phase A/B/C complete).** Phase A landed the
+  schema + loader + the first reference pack; Phase B grew the catalog to 22
+  reference packs across tiers 1–4; Phase C fanned out to the remaining 🟢/🟡
+  verdicts from the design spec's 100-tool inventory plus the tier-5
+  analyst-workbench / RE / sandbox references, for a verified total of **69**.
+- Boot load with dangling-ref warnings; `GET /api/tools/adapters[/{id}]` (live: 69).
 - Scenario `adapter_ref` resolution; orchestrator `run_template` inlining.
 - IaC auto-pull (`adapter_refs[]` → `iac_module`).
 - **Safety consent gate wired end-to-end** — orchestrator refuses gated launches

@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1059.004",
+    "T1059.006",
+    "T1071.001",
+    "T1573.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(EDR-002 Bash devtcp Reverse Shell Redirection) OR BIOC(EDR-002 Interactive Bash From Service Account With Network Redirect) OR BIOC(EDR-002 Python Socket Subprocess Reverse Shell) OR BIOC(EDR-002 Netcat Shell Exec Flag Reverse Shell) OR BIOC(EDR-002 Perl Socket Reverse Shell One-Liner) OR BIOC(EDR-002 OpenSSL s_client Encrypted C2 From Service Account)",
+      "name": "Reverse Shell Multi-Method C2 \u2014 Same Lineage",
+      "rule_id": "CR-EDR-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0033"
+}

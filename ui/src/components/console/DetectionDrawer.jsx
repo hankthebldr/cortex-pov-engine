@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
 
 /**
  * DetectionDrawer — operator drill-down for a single scorecard row.
@@ -97,7 +98,12 @@ export default function DetectionDrawer({
           {statusLabel}
         </span>
         <span className="mono detection-drawer__plane">
-          {row.plane}{row.detectionType ? ` · ${row.detectionType}` : ''}
+          <span>{row.plane}</span>
+          {row.detectionType && (
+            detectionTypeToken(row.detectionType)
+              ? <DetectionTypeChip type={row.detectionType} />
+              : <span>{` · ${row.detectionType}`}</span>
+          )}
         </span>
       </div>
 

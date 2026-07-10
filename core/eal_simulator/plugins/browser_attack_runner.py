@@ -19,6 +19,7 @@ Safety: the EAL plugin authorises the configured ``allowlist_host``
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import os
@@ -35,6 +36,17 @@ from ..base import BaseSimulation, SimulationContext, SimulationResult
 
 
 logger = logging.getLogger("cortexsim.eal.plugins.browser_attack_runner")
+
+
+@dataclasses.dataclass
+class _Counters:
+    """Run-scoped tallies returned from ``_consume_stdout`` (no ctx mutation)."""
+
+    events_emitted: int = 0
+    actions_run: int = 0
+    success_count: int = 0
+    blocked_count: int = 0
+    failure_count: int = 0
 
 
 try:  # pragma: no cover - import-time path
@@ -208,16 +220,10 @@ class BrowserAttackRunner(BaseSimulation):
             stderr=asyncio.subprocess.PIPE,
         )
 
-        # Per-context counters mirrored from the airs plugin pattern.
-        setattr(ctx, "_browser_events_emitted", 0)
-        setattr(ctx, "_browser_actions_run", 0)
-        setattr(ctx, "_browser_success_count", 0)
-        setattr(ctx, "_browser_blocked_count", 0)
-        setattr(ctx, "_browser_failure_count", 0)
-
+        counters = _Counters()
         try:
             await asyncio.wait_for(
-                self._consume_stdout(proc, ctx),
+                self._consume_stdout(proc, ctx, counters),
                 timeout=params.timeout_seconds,
             )
         except asyncio.TimeoutError:
@@ -229,7 +235,7 @@ class BrowserAttackRunner(BaseSimulation):
                 status="error",
                 started_at=started_at,
                 completed_at=self.utcnow(),
-                events_emitted=getattr(ctx, "_browser_events_emitted", 0),
+                events_emitted=counters.events_emitted,
                 error=f"timeout after {params.timeout_seconds}s",
             )
 
@@ -253,14 +259,14 @@ class BrowserAttackRunner(BaseSimulation):
             status="success" if rc == 0 else "error",
             started_at=started_at,
             completed_at=self.utcnow(),
-            events_emitted=getattr(ctx, "_browser_events_emitted", 0),
+            events_emitted=counters.events_emitted,
             detail={
                 "binary": binary,
                 "exit_code": rc,
-                "actions_run": getattr(ctx, "_browser_actions_run", 0),
-                "success_count": getattr(ctx, "_browser_success_count", 0),
-                "blocked_count": getattr(ctx, "_browser_blocked_count", 0),
-                "failure_count": getattr(ctx, "_browser_failure_count", 0),
+                "actions_run": counters.actions_run,
+                "success_count": counters.success_count,
+                "blocked_count": counters.blocked_count,
+                "failure_count": counters.failure_count,
                 "summary": summary_obj,
                 "campaign_path": params.campaign_path,
                 "browser_channel": params.browser_channel,
@@ -274,7 +280,13 @@ class BrowserAttackRunner(BaseSimulation):
         self,
         proc: asyncio.subprocess.Process,
         ctx: SimulationContext,
+        counters: "_Counters",
     ) -> None:
+        """Drain the runner's JSONL stdout, emit ECS events, tally counters.
+
+        Counters are accumulated on the passed-in ``_Counters`` instance and
+        consumed by ``run`` — no ``ctx`` mutation (EAL-G08).
+        """
         if proc.stdout is None:  # pragma: no cover - defensive
             return
 
@@ -314,17 +326,17 @@ class BrowserAttackRunner(BaseSimulation):
                         payload, ctx,
                     )
                 )
-                ctx._browser_actions_run += 1  # type: ignore[attr-defined]
+                counters.actions_run += 1
                 outcome = payload.get("outcome")
                 if outcome == "success":
-                    ctx._browser_success_count += 1  # type: ignore[attr-defined]
+                    counters.success_count += 1
                 elif outcome == "blocked":
-                    ctx._browser_blocked_count += 1  # type: ignore[attr-defined]
+                    counters.blocked_count += 1
                 else:
-                    ctx._browser_failure_count += 1  # type: ignore[attr-defined]
+                    counters.failure_count += 1
 
             await ctx.emit_event(event)
-            ctx._browser_events_emitted += 1  # type: ignore[attr-defined]
+            counters.events_emitted += 1
 
 
 def _fallback_event(action: str, payload: dict, ctx: SimulationContext) -> dict:

@@ -38,6 +38,25 @@ required_content:
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Prisma Browser Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The Playwright-driven browser actions produce the expected Prisma Browser
+  DLP / extension / phishing detection. Detection Accuracy is the share of
+  injected browser events that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
 external_tools:
   - name: Cortex Browser Attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -61,7 +80,7 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "Pre-flight: plugin metadata visible to operator"
-        ttp_ref: TTP-2026-0018
+        ttp_ref: "TTP-2026-0018"
         detection_id: xql-pre-flight-plugin-metadata-visible-to-operator
 
   - id: step-02
@@ -93,17 +112,17 @@ steps:
       - plane: BROWSER
         type: BIOC
         description: "Prisma Browser — auto-download initiated by JS without user gesture"
-        ttp_ref: TTP-2026-0018
+        ttp_ref: "TTP-2026-0018"
         detection_id: bioc-prisma-browser-auto-download-initiated-by-js-without-user-gesture
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — downloaded artifact MIME application/x-msdownload from non-SaaS origin"
-        ttp_ref: TTP-2026-0018
+        ttp_ref: "TTP-2026-0018"
         detection_id: xql-prisma-browser-downloaded-artifact-mime-application-x-msdownload-from-non-saas-origin
       - plane: NDR
         type: Analytics
         description: "NGFW EAL — file-type download policy matches downloaded artifact"
-        ttp_ref: TTP-2026-0018
+        ttp_ref: "TTP-2026-0018"
         detection_id: xql-ngfw-eal-file-type-download-policy-matches-downloaded-artifact
 
   - id: step-03
@@ -117,7 +136,7 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "PB → WildFire submission within download-policy MTTD"
-        ttp_ref: TTP-2026-0018
+        ttp_ref: "TTP-2026-0018"
         detection_id: xql-pb-wildfire-submission-within-download-policy-mttd
 
 cleanup:

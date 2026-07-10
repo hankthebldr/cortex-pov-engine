@@ -1,0 +1,362 @@
+{
+  "id": "TTP-2026-0070",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-08T00:00:00+00:00",
+    "updated_at": "2026-06-08",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-asm",
+      "vector-active-scanning",
+      "vector-attack-surface",
+      "protocol-http",
+      "protocol-tls",
+      "industry-all",
+      "severity-high",
+      "exposure-mgmt",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "aws",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Internet-Exposed Attack-Surface Discovery & Enumeration (T1595 / T1046 / T1190)",
+    "summary": "A deliberately exposed public host (nginx dir-listing, weak self-signed RSA-1024 TLS, SSH on 2222 with password auth, unauthenticated Redis on 6379, a vulnerable ES 1.7.0 banner on 9200, gocortexbrokenbank on 9001) plus a public S3 website are scanned with nmap + nuclei. Cortex ASM/Xpanse discovers and enumerates the exposed surface; NGFW logs the active-scanning egress shape.",
+    "description": "Adversaries begin most intrusions with active scanning (T1595) of internet-facing assets to enumerate open ports, service banners, weak TLS, and exploitable public-facing applications (T1190). CortexSim provisions a predictable target set via the infra/modules/aws/asm Terraform module: one Ubuntu 22.04 host in the public subnet exposing nginx directory listing + bait files on :80, weak self-signed RSA-1024 TLS on :443, SSH on the non-standard :2222 with password auth, an unauthenticated/world-bound Redis on :6379, a fake Elasticsearch 1.7.0 banner on :9200, and the intentionally vulnerable gocortexbrokenbank app on :9001 — plus a separate public S3 static-website bucket. The DC runs nmap (port + service/version enumeration, T1046) and nuclei (template-driven exposure/misconfig/CVE scanning, T1595/T1190) against the host. This card validates the exposure-management surface in three layers: (1) a ground-truth manifest XQL that confirms the planted CortexSimASMFinding-tagged resources exist in the cloud inventory; (2) Cortex ASM/Xpanse discovery findings from asm_assets/asm_findings showing each exposed port, the short-RSA self-signed cert, the non-standard SSH port, the known-vulnerable ES 1.7.0 banner, the directory-listing nginx root, and the public S3 website endpoint; and (3) an NGFW traffic BIOC/XQL that detects the active-scanning egress shape (one source fanning out across many ports/templates) so the SOC can correlate the discovery findings with the scan that surfaced them. A correlation rule fuses the ASM exposure findings with the active-scan signal into a single exposure-management incident, and IOC signatures pin the exposed-service fingerprints (ES 1.7.0 banner, RSA-1024 self-signed CN, world-bound Redis port) that ASM attack-path recommendations should prioritise.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2020-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1595",
+        "name": "Active Scanning",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1190",
+        "name": "Exploit Public-Facing Application",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Internet Scan: Response Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "T1595 / T1046 / T1190 — nmap service-version sweep + nuclei exposure templates against the infra/modules/aws/asm exposed host",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "infra/modules/aws/asm bundle applied; the exposed multi-service EC2 host has a reachable public IP and the public S3 website bucket exists.",
+        "check_command": "test -n \"${ASM_TARGET_HOST}\" && echo target-set"
+      },
+      {
+        "description": "Cortex ASM/Xpanse is configured to scan the customer perimeter that includes the exposed host, and NGFW egress traffic from the jumpbox is forwarded to XSIAM (panw_ngfw_traffic_raw)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: nmap full service+version enumeration of the exposed host (T1046)\nnmap -sS -sV -Pn -T4 -p 80,443,2222,6379,9001,9200 -oX /tmp/nmap-cortexsim-asm.xml ${ASM_TARGET_HOST}\n# step-2: nuclei template-driven exposure/misconfig/CVE scan (T1595/T1190)\nnuclei -target http://${ASM_TARGET_HOST} -severity medium,high,critical -t exposures,misconfigurations,cves -o /tmp/nuclei-cortexsim.json -j -rate-limit 150\n# step-3: probe the unauthenticated services that ASM should flag\nredis-cli -h ${ASM_TARGET_HOST} -p 6379 INFO server 2>/dev/null | head -5 || true\ncurl -sk https://${ASM_TARGET_HOST}:9200/ | head -1 || true",
+      "input_variables": [
+        {
+          "name": "ASM_TARGET_HOST",
+          "type": "string",
+          "description": "Public IP / hostname of the infra/modules/aws/asm exposed EC2 instance."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "A single source enumerating many distinct ports on the exposed host in a short window (active-scan fan-out).",
+        "expected_value": "count_distinct(dst_port) per src_ip >= 5 against the exposed host"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound web-app probing traffic from nuclei against the exposed host on :80/:443/:9001/:9200.",
+        "expected_value": "dst_port in (80, 443, 9001, 9200) and app in (\"web-browsing\", \"ssl\", \"http-proxy\")"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Cortex ASM/Xpanse discovery findings enumerate each exposed service, the weak TLS cert and the public S3 website.",
+        "expected_value": "asm_findings.finding_type in (\"exposed_service\", \"weak_tls\", \"public_cloud_storage\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/nmap-cortexsim-asm.xml /tmp/nuclei-cortexsim.json"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "Elasticsearch 1.7.0",
+        "context": "Known end-of-life / vulnerable Elasticsearch version banner returned by the exposed :9200 service — ASM should CVE-match and prioritise this exposure.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "cortexsim-weak.crt",
+        "context": "Self-signed RSA-1024 TLS certificate served on :443 — short-key/self-signed weak-TLS exposure signature ASM should surface.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "url",
+        "value": "redis://0.0.0.0:6379",
+        "context": "Unauthenticated, world-bound Redis (protected-mode off) — high-severity exposed-data-store signature.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "ASM EAL — Active-Scan Port Fan-Out Against Exposed Host",
+        "description": "A single source IP opens connections to an unusually large number of distinct destination ports on the exposed surface host within a short window — the nmap/nuclei active-scanning egress shape (T1595/T1046).",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter dst_port in (80, 443, 2222, 6379, 9001, 9200) or app in (\"web-browsing\", \"ssl\", \"redis\", \"elasticsearch\")\n| filter src_ip != null and dst_ip != null\n| bin _time span=5m\n| comp count_distinct(dst_port) as scanned_ports, count() as session_count by src_ip, dst_ip, _time\n| filter scanned_ports >= 5\n| fields _time, src_ip, dst_ip, scanned_ports, session_count",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1595",
+          "T1046"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ASM-001 Ground-Truth Manifest Capture Bookkeeping",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\"\n| filter resource_tags contains \"CortexSimASMFinding\"\n| comp count_distinct(resource_id) as planted_resources by resource_type\n| fields resource_type, planted_resources",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM Exposed-Service Discovery Findings By Port",
+        "query": "dataset = asm_findings\n| filter _time > to_timestamp(current_time() - 86400)\n| filter finding_type in (\"exposed_service\", \"open_port\", \"weak_tls\", \"non_standard_port\", \"public_cloud_storage\")\n| filter tags contains \"CortexSimASMFinding\" or asset_external_ip = \"${ASM_TARGET_HOST}\"\n| comp count() as findings by finding_type, service_port, service_name\n| fields finding_type, service_port, service_name, findings",
+        "expected_rows_min": 1,
+        "dataset": "asm_findings"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM EAL — Active-Scan Port Fan-Out (1 src to many ports on exposed host)",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_ip = \"${ASM_TARGET_HOST}\"\n| filter dst_port in (80, 443, 2222, 6379, 9001, 9200)\n| comp count_distinct(dst_port) as scanned_ports, count() as sessions by src_ip, dst_ip\n| filter scanned_ports >= 5\n| fields src_ip, dst_ip, scanned_ports, sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ASM High-Risk Exposure Roll-Up — Weak TLS, EOL Banner, Unauth Data Store",
+        "query": "dataset = asm_findings\n| filter _time > to_timestamp(current_time() - 86400)\n| filter (finding_type = \"weak_tls\" and (tls_key_bits <= 1024 or tls_self_signed = true))\n    or (finding_type = \"vulnerable_service\" and service_version contains \"1.7.0\")\n    or (finding_type = \"exposed_service\" and service_name in (\"redis\", \"elasticsearch\") and service_auth = \"none\")\n| comp count() as high_risk_findings by finding_type, service_name, service_version, risk_score\n| sort desc risk_score\n| fields finding_type, service_name, service_version, risk_score, high_risk_findings",
+        "expected_rows_min": 1,
+        "dataset": "asm_findings"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Exposure Management — Internet-Exposed Surface Discovered + Actively Scanned",
+        "rule_id": "CR-ASM-0001",
+        "logic": "XQL(ASM Exposed-Service Discovery Findings By Port) AND (BIOC(ASM EAL — Active-Scan Port Fan-Out Against Exposed Host) OR XQL(ASM EAL — Active-Scan Port Fan-Out (1 src to many ports on exposed host))) — raises a single exposure-management incident tying the discovered exposed services to the active scan that surfaced them."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Xpanse / ASM — Attack Surface Discovery and Service Enumeration",
+      "Cortex Xpanse / ASM — Attack-Path Risk Prioritisation (weak TLS, EOL banner, unauthenticated data store)",
+      "Cortex XSIAM Network Security Analytics — Outbound Active-Scan Port Fan-Out"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-asm",
+        "submodule": "attack-surface-discovery",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "ASM-EXPOSED-SERVICE-001",
+          "ASM-WEAK-TLS-001",
+          "ASM-PUBLIC-S3-WEBSITE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter finding_type in (\"exposed_service\",\"weak_tls\",\"public_cloud_storage\") | comp count() by finding_type, service_port"
+      },
+      {
+        "module": "cortex-xpanse",
+        "submodule": "service-enumeration",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XPANSE-OPEN-PORT-ENUM-001",
+          "XPANSE-EOL-BANNER-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter asset_external_ip = \"${ASM_TARGET_HOST}\" | comp count() by service_port, service_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-ACTIVE-SCAN",
+          "XSIAM-CR-ASM-0001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_ip = \"${ASM_TARGET_HOST}\" | comp count_distinct(dst_port) as ports by src_ip | filter ports >= 5"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-ExposureRemediation-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: open exposure-management ticket per finding, recommend closing the non-standard SSH port, removing world-bound Redis, replacing the weak self-signed cert, and restricting the public S3 website policy."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ASM-064",
+        "name": "Attack Surface Discovery & Enumeration via Cortex ASM",
+        "description": "Validate that Cortex ASM/Xpanse discovers and enumerates a deliberately exposed public host + public S3 website, prioritises the high-risk exposures, and that NGFW telemetry detects the active scan that surfaced them.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ASM-064A",
+            "objective": "Cortex ASM discovers and enumerates every exposed service on the host plus the public S3 website.",
+            "preconditions": [
+              "infra/modules/aws/asm bundle applied with a reachable public IP.",
+              "Cortex ASM scanning the perimeter that includes the exposed host."
+            ],
+            "steps": [
+              "Run SIM-ASM-001 step-02 (nmap service/version enumeration).",
+              "Inspect Cortex ASM / asm_findings for the exposed-service findings."
+            ],
+            "success_criteria": [
+              "XQL `ASM Exposed-Service Discovery Findings By Port` returns >= 1 row covering the exposed ports.",
+              "Cortex ASM surfaces the non-standard SSH port, the weak TLS cert, and the public S3 website endpoint."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-ASM-064B",
+            "objective": "The active scan that surfaced the exposures is detected and correlated into one exposure-management incident.",
+            "steps": [
+              "Run SIM-ASM-001 step-03 (nuclei exposure/misconfig/CVE scan).",
+              "Inspect Network Security Analytics and the correlation incident."
+            ],
+            "success_criteria": [
+              "XQL `ASM EAL — Active-Scan Port Fan-Out (1 src to many ports on exposed host)` returns >= 1 row with scanned_ports >= 5.",
+              "Correlation `CR-ASM-0001` raises a single exposure-management incident tying discovery findings to the scan.",
+              "XQL `ASM High-Risk Exposure Roll-Up — Weak TLS, EOL Banner, Unauth Data Store` returns >= 1 high-risk row."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Remove internet exposure of management/data services: bind Redis to localhost with auth + protected-mode on, and never expose Elasticsearch directly.",
+      "Run SSH on the standard port behind a bastion, disable password auth in favour of key-based auth, and restrict source CIDRs.",
+      "Replace self-signed / short-RSA certificates with CA-issued >= 2048-bit (preferably ECDSA) certificates and disable legacy TLS versions and directory listing.",
+      "Restrict the public S3 bucket policy and disable static-website hosting unless required; front public web content with a CDN/WAF."
+    ],
+    "detection_engineering": [
+      "Continuously run Cortex ASM/Xpanse perimeter discovery and alert on net-new exposed services, non-standard ports, weak TLS, and end-of-life service banners.",
+      "Baseline per-source destination-port cardinality at the NGFW and alert on active-scan fan-out against perimeter assets.",
+      "Stitch ASM exposure findings with the active-scan NGFW signal so the SOC sees one exposure-management incident, not isolated findings.",
+      "Tag intentional lab targets so ground-truth manifest reconciliation can confirm full discovery coverage."
+    ],
+    "response_playbook": "XSOAR-PB-ExposureRemediation-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Attack Surface Threat Report (Internet-Exposed Assets)",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1595 — Active Scanning",
+      "url": "https://attack.mitre.org/techniques/T1595/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1190 — Exploit Public-Facing Application",
+      "url": "https://attack.mitre.org/techniques/T1190/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "Initial card for the ASM plane (SIM-ASM-001): real ASM/Xpanse discovery + active-scan NGFW XQL/BIOC, exposed-service IOC signatures, correlation CR-ASM-0001, PANW exposure-mgmt mapping for the infra/modules/aws/asm exposed surface."
+    }
+  ]
+}

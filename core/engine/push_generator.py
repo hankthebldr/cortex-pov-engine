@@ -60,13 +60,18 @@ log INFO "CortexSim bundle starting — scenario={scenario_id}"
 log INFO "Log file: ${{LOG_FILE}}"
 """
 
-_IDENTITY_HARNESS = """\
+_IDENTITY_HARNESS_TMPL = """\
 # ---------------------------------------------------------------------------
 # Identity Harness — every TTP step runs through this function for consistent
 # process causality chains and logging, regardless of identity.
+#
+# The `direct` and service-account allowlists below are generated from the
+# canonical spec (spec/identity_harness.json) so push (this bash) and pull (the
+# Go beacon's identity.ResolveIdentity) resolve a scenario's identity string
+# identically. GAP-PUSH-001.
 # ---------------------------------------------------------------------------
 
-run_as() {
+run_as() {{
     local identity="$1"
     local cmd="$2"
     local step_id="$3"
@@ -74,15 +79,15 @@ run_as() {
     log INFO "STEP $step_id identity=$identity cmd=$cmd"
 
     case "$identity" in
-        root|container-runtime|direct)
+        {direct_arms})
             # Direct execution — still logged through harness
             bash -c "$cmd"
             ;;
-        www-data|postgres|mysql|node|python3|nobody|svc-backup)
+        {service_arms})
             # Prefer runuser (cleanest causality), fall back to sudo -u, then su
             if command -v runuser &>/dev/null; then
-                runuser -l "$identity" -c "$cmd" 2>/dev/null || \
-                    sudo -u "$identity" bash -c "$cmd" 2>/dev/null || \
+                runuser -l "$identity" -c "$cmd" 2>/dev/null || \\
+                    sudo -u "$identity" bash -c "$cmd" 2>/dev/null || \\
                     su -s /bin/bash "$identity" -c "$cmd"
             elif command -v sudo &>/dev/null; then
                 sudo -u "$identity" bash -c "$cmd"
@@ -91,9 +96,14 @@ run_as() {
             fi
             ;;
         *)
-            # Unknown identity — attempt direct with a warning
-            log WARN "Unknown identity '$identity' — executing directly"
-            bash -c "$cmd"
+            # Unknown identity — best-effort runuser (mirrors the Go beacon's
+            # unknown-username path), falling back to direct with a warning.
+            log WARN "Unknown identity '$identity' — best-effort runuser then direct"
+            if command -v runuser &>/dev/null; then
+                runuser -l "$identity" -c "$cmd" 2>/dev/null || bash -c "$cmd"
+            else
+                bash -c "$cmd"
+            fi
             ;;
     esac
 
@@ -104,8 +114,21 @@ run_as() {
         log INFO "Step $step_id completed successfully"
     fi
     return $exit_code
-}
+}}
 """
+
+
+def _build_identity_harness() -> str:
+    """Render the bash ``run_as`` harness with the allowlists from the canonical
+    identity spec (single source of truth shared with the Go beacon)."""
+    from engine.identity_spec import direct_identities, service_accounts  # noqa: PLC0415
+
+    direct_arms = "|".join(direct_identities())
+    service_arms = "|".join(service_accounts())
+    return _IDENTITY_HARNESS_TMPL.format(
+        direct_arms=direct_arms,
+        service_arms=service_arms,
+    )
 
 _DEP_CHECK_TMPL = """\
 # ---------------------------------------------------------------------------
@@ -202,7 +225,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
     )
 
     # --- Identity harness ---
-    script += _IDENTITY_HARNESS
+    script += _build_identity_harness()
 
     # --- Dependency checks ---
     script += _DEP_CHECK_TMPL

@@ -74,6 +74,12 @@ def _reset_executor() -> None:
 class LaunchRequest(BaseModel):
     dry_run: Optional[bool] = None
     operator: Optional[str] = None
+    # Launch-time consent for a C2-shaped campaign. Mirrors the scenario /
+    # tool-adapter launch gate's ``consent.c2_authorized`` (see
+    # core/engine/orchestrator.py). When provided it overrides the persisted
+    # campaign spec value so an operator can grant C2 consent at launch without
+    # rewriting the stored campaign.
+    c2_authorized: Optional[bool] = None
 
 
 class LaunchResponse(BaseModel):
@@ -81,6 +87,46 @@ class LaunchResponse(BaseModel):
     campaign_id: str
     status: str
     dry_run: bool
+
+
+class AbortResponse(BaseModel):
+    run_id: str
+    campaign_id: str
+    status: str
+    previous_status: str
+
+
+# Core run lifecycle vocabulary (shared with models.Run / ExecutorState):
+#   pending | running | complete | failed | aborted
+# An EAL run in one of these non-terminal states can still be aborted.
+_ABORTABLE_STATUSES = frozenset({"pending", "running"})
+
+
+# ---------------------------------------------------------------------------
+# C2 classification helper — joins a campaign's steps to plugin registry
+# metadata so the launch gate can MITRE-classify (not just name-match).
+# ---------------------------------------------------------------------------
+
+
+def _campaign_c2_plugins(campaign: Campaign) -> list[str]:
+    """Return the C2-shaped plugin names referenced by ``campaign``.
+
+    Each step plugin name is joined to its registry metadata so the
+    classifier can consider the plugin's declared MITRE techniques in addition
+    to the explicit name allowlist. Unknown plugins fall back to name-only
+    classification.
+    """
+    from eal_simulator.safety import classify_c2_plugins  # noqa: PLC0415
+
+    reg = _get_executor().registry
+    pairs: list[tuple[str, Optional[list[str]]]] = []
+    for step in campaign.steps:
+        techniques: Optional[list[str]] = None
+        if reg.has(step.plugin):
+            meta = reg.get(step.plugin).metadata()
+            techniques = list(meta.get("mitre_techniques") or [])
+        pairs.append((step.plugin, techniques))
+    return classify_c2_plugins(pairs)
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +268,11 @@ async def launch_campaign(
     spec = dict(row.spec or {})
     if body.dry_run is not None:
         spec["dry_run"] = bool(body.dry_run)
+    # Launch-time C2 consent overrides the persisted campaign value so an
+    # operator can grant C2 authorisation at launch (mirrors the scenario
+    # launch path, where consent.c2_authorized is supplied per-launch).
+    if body.c2_authorized is not None:
+        spec["c2_authorized"] = bool(body.c2_authorized)
 
     try:
         campaign = Campaign.model_validate(spec)
@@ -235,16 +286,22 @@ async def launch_campaign(
     executor = _get_executor()
 
     # Pre-flight the safety policy synchronously so launch returns a useful
-    # error instead of silently failing in the background.
+    # error instead of silently failing in the background. The C2 gate is
+    # enforced here with the full registry-backed MITRE classification, mirroring
+    # the scenario adapter gate's consent.c2_authorized requirement for
+    # safety_class:c2-framework adapters.
     try:
         from eal_simulator.safety import SafetyPolicy
 
-        SafetyPolicy(
+        policy = SafetyPolicy(
             simulation_authorized=campaign.simulation_authorized,
             authorized_by=campaign.authorized_by,
             target_allowlist=campaign.target_allowlist,
             dry_run=campaign.dry_run,
-        ).assert_campaign_authorized()
+            c2_authorized=campaign.c2_authorized,
+        )
+        policy.assert_campaign_authorized()
+        policy.assert_c2_authorized(_campaign_c2_plugins(campaign))
     except SafetyError as exc:
         raise HTTPException(
             status_code=422,
@@ -281,6 +338,65 @@ async def launch_campaign(
         campaign_id=campaign.campaign_id,
         status="pending",
         dry_run=campaign.dry_run,
+    )
+
+
+@router.post("/runs/{run_id}/abort", response_model=AbortResponse)
+async def abort_run(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> AbortResponse:
+    """Abort an in-flight EAL campaign run.
+
+    Reconciles the EAL run lifecycle with the core Run vocabulary
+    (``pending | running | complete | failed | aborted``): a run in a
+    non-terminal state (``pending``/``running``) is flipped to ``aborted`` and
+    that state is made *sticky* — the background executor's terminal write is
+    suppressed for an already-aborted run (see ``_update_run``).
+
+    This is a cooperative/best-effort abort: FastAPI ``BackgroundTasks`` cannot
+    be force-cancelled, so an already-emitting plugin may finish its current
+    step. The durable run state, however, is authoritative and terminal once
+    aborted. A fully pre-emptive cancel is deferred — it requires threading a
+    cancellation token through the executor (out of this lane; tracked under
+    GAP-API-011 follow-up).
+    """
+    result = await db.execute(
+        select(EalCampaignRun).where(EalCampaignRun.run_id == run_id)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Run not found", "code": "RUN_NOT_FOUND",
+                    "detail": run_id},
+        )
+
+    previous = row.status
+    if previous not in _ABORTABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Run is not abortable",
+                "code": "RUN_NOT_ABORTABLE",
+                "detail": (
+                    f"run_id={run_id} is in terminal state '{previous}'. Only "
+                    f"runs in {sorted(_ABORTABLE_STATUSES)} can be aborted."
+                ),
+            },
+        )
+
+    row.status = "aborted"
+    row.error = row.error or "aborted by operator"
+    row.completed_at = datetime.utcnow()
+    await db.commit()
+
+    logger.info("eal run aborted run_id=%s previous=%s", run_id, previous)
+    return AbortResponse(
+        run_id=run_id,
+        campaign_id=row.campaign_id,
+        status="aborted",
+        previous_status=previous,
     )
 
 
@@ -324,6 +440,16 @@ async def _update_run(
     run = result.scalar_one_or_none()
     if run is None:
         logger.warning("background update could not find run_id=%s", run_id)
+        return
+    # An operator abort wins: once a run is durably 'aborted', the executor's
+    # terminal write must not resurrect it as complete/failed. Keep the abort
+    # state sticky (the background coroutine cannot be force-cancelled, so it
+    # may still call this after the abort flip).
+    if run.status == "aborted":
+        logger.info(
+            "skipping background update for aborted run_id=%s (would-be status=%s)",
+            run_id, status,
+        )
         return
     run.status = status
     run.error = error

@@ -1,5 +1,18 @@
 # EAL Traffic Simulator — Architecture
 
+> **Shipped plugin set + per-plugin reference:** see the canonical catalog at
+> [`docs/reference/eal-plugin-catalog.md`](../reference/eal-plugin-catalog.md).
+> **13 plugins ship today**, spanning NDR, ITDR, Cloud App, AI Access, AIRS,
+> Browser, and KOI: the 5 original NDR plugins (`c2_http_beacon`,
+> `dns_tunnel_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`,
+> `bulk_https_exfil`) plus 8 newer plugins (`ftp_egress`, `ssh_egress`,
+> `idp_signin_emulator`, `oauth_grant_emulator`, `llm_provider_egress`,
+> `airs_prompt_attack`, `browser_attack_runner`, `agentic_egress`). The EAL path
+> intentionally has **no plugins for EDR, CDR, CSPM, ASM, TIM, or Analytics** —
+> those planes are served by the identity harness, `signalbench`, and
+> IaC-planted findings (Analytics is the cross-plane correlation layer over the
+> rest), so this is an architectural scope decision, not missing content.
+
 ## Purpose
 
 The EAL Traffic Simulator generates the high-fidelity network telemetry

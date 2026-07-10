@@ -5,8 +5,16 @@ status: active
 
 plane: ITDR
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
+# GAP-10 (IOC coverage) — the ITDR plane carries zero IOCs because none of the
+# ITDR cards (TTP-2026-0037..0041) declare a `detections.iocs[]` entry yet.
+# A resolvable IOC detection here requires Lane CARDS to first add an IOC to
+# the linked card (e.g. an IdP attack source IP / ASN, or a known credential-
+# stuffing botnet IP) — only then can a `type: IOC` expected_detection
+# reference a `detection_id` that resolves in the catalog. Adding a dangling
+# IOC ref would violate the "only reference detection_ids that RESOLVE" rule,
+# so this gap is intentionally left tracked-but-open until the card IOC lands.
 
 uc_ref: UCS-ITDR-01
 tc_ref: TC-ITDR-01
@@ -37,6 +45,25 @@ infra_modules_needed:
   - base
   - itdr
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Identity Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic IdP audit-log signals emitted by this scenario produce the
+  expected Cortex ITDR detection. Detection Accuracy is the share of
+  injected identity events that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -55,7 +82,7 @@ steps:
       - plane: ITDR
         type: BIOC
         description: "Pre-flight: idp_signin_emulator metadata visible to operator"
-        ttp_ref: TTP-2026-0037
+        ttp_ref: "TTP-2026-0037"
         detection_id: bioc-itdr-001-pre-flight-idp-signin-emulator-metadata-visible
 
   - id: step-02
@@ -87,14 +114,14 @@ steps:
     mitre_technique: "T1078.004"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — impossible-travel alert: same user signed in from two distant geos within travel-impossibility window"
-        ttp_ref: TTP-2026-0037
+        ttp_ref: "TTP-2026-0037"
         detection_id: xql-itdr-001-impossible-travel-two-distant-geos-within-window
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW EAL — outbound POST burst to identity log-collector App-ID match"
-        ttp_ref: TTP-2026-0037
+        ttp_ref: "TTP-2026-0037"
         detection_id: xql-itdr-001-ngfw-outbound-post-burst-to-identity-collector
 
   - id: step-03
@@ -125,9 +152,9 @@ steps:
     mitre_technique: "T1078.004"
     expected_detections:
       - plane: ITDR
-        type: Analytics
+        type: XQL
         description: "ITDR — impossible-travel alert fires identically for Microsoft signInLogs shape"
-        ttp_ref: TTP-2026-0037
+        ttp_ref: "TTP-2026-0037"
         detection_id: xql-itdr-001-impossible-travel-microsoft-signinlogs-shape
 
 cleanup:

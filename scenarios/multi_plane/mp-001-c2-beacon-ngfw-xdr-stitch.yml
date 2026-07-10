@@ -5,13 +5,18 @@ status: active
 
 plane: ANALYTICS
 detection_types:
-  - Analytics
   - BIOC
+  - XQL
   - IOC
+  - Correlation
 
-uc_ref: UCS-NDR-01
-tc_ref: TC-NDR-01
-uc_name: "Network Detection & Response"
+# UC/TC family normalized to the multi-plane (UCS-MP / TC-MP) convention
+# (S-14). This scenario previously borrowed the NDR family (UCS-NDR-01 /
+# TC-NDR-01), which collided with SIM-NDR-001's own refs. ANALYTICS-plane
+# multi-plane stitching scenarios use UCS-MP-NN / TC-MP-NN uniformly.
+uc_ref: UCS-MP-01
+tc_ref: TC-MP-01
+uc_name: "Cross-Plane Incident Stitching"
 tc_name: "Causality Graph Stitching — Network Events ↔ Endpoint Process Telemetry"
 
 mitre_tactic: "TA0011"
@@ -95,7 +100,7 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR — interactive bash spawned from www-data service context"
-        ttp_ref: TTP-2026-0047
+        ttp_ref: "TTP-2026-0047"
         detection_id: bioc-mp-001-interactive-shell-spawned-from-www-data-service-context
 
   - id: step-02
@@ -112,9 +117,9 @@ steps:
     mitre_technique: "T1071.001"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW — repetitive HTTP beacon to testmynids.org (known IOC list)"
-        ttp_ref: TTP-2026-0047
+        ttp_ref: "TTP-2026-0047"
         detection_id: xql-mp-001-ngfw-repetitive-http-beacon-to-testmynids
         verification_xql: |
           dataset = pan_ngfw_traffic
@@ -124,7 +129,7 @@ steps:
       - plane: EDR
         type: BIOC
         description: "XDR — curl executed from www-data with suspicious user-agent"
-        ttp_ref: TTP-2026-0047
+        ttp_ref: "TTP-2026-0047"
         detection_id: bioc-mp-001-curl-beacon-with-suspicious-user-agent-from-www-data
         verification_xql: |
           dataset = xdr_data
@@ -133,10 +138,10 @@ steps:
           | filter actor_effective_user_name = "www-data"
           | comp count() as proc_events by action_local_ip
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM correlation — NGFW outbound session + XDR process event sharing src_host + session_time stitched into single incident"
-        ttp_ref: TTP-2026-0047
-        detection_id: xql-mp-001-stitch-ngfw-session-and-xdr-process-by-src-host
+        ttp_ref: "TTP-2026-0047"
+        detection_id: CR-MP-0001
         verification_xql: |
           // F2 stitching verifier — distinct planes under one incident_id
           dataset = xdr_data
@@ -162,20 +167,20 @@ steps:
     mitre_technique: "T1572"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW — DNS anomaly: high TXT query volume with high-entropy labels"
-        ttp_ref: TTP-2026-0047
+        ttp_ref: "TTP-2026-0047"
         detection_id: xql-mp-001-ngfw-dns-txt-high-entropy-burst
       - plane: EDR
-        type: Analytics
+        type: XQL
         description: "XDR — repetitive dig invocation from service account"
-        ttp_ref: TTP-2026-0047
+        ttp_ref: "TTP-2026-0047"
         detection_id: xql-mp-001-repetitive-dig-txt-from-service-account
       - plane: ANALYTICS
-        type: Analytics
+        type: Correlation
         description: "XSIAM stitching — DNS exfil pattern correlated with process lineage into unified exfiltration incident"
-        ttp_ref: TTP-2026-0047
-        detection_id: xql-mp-001-stitch-dns-exfil-with-process-lineage
+        ttp_ref: "TTP-2026-0047"
+        detection_id: CR-MP-0002
 
   - id: step-04
     name: "Ingress tool transfer (download simulated second-stage)"
@@ -188,19 +193,19 @@ steps:
     mitre_technique: "T1105"
     expected_detections:
       - plane: NDR
-        type: Analytics
+        type: XQL
         description: "NGFW — download from IOC-listed domain matching threat intel feed"
-        ttp_ref: TTP-2026-0047
+        ttp_ref: "TTP-2026-0047"
         detection_id: xql-mp-001-ngfw-download-from-ioc-listed-domain
       - plane: EDR
         type: BIOC
         description: "XDR — file written to /tmp/ by curl from service account"
-        ttp_ref: TTP-2026-0047
+        ttp_ref: "TTP-2026-0047"
         detection_id: bioc-mp-001-curl-wrote-second-stage-file-to-tmp-from-service-account
       - plane: ANALYTICS
         type: IOC
         description: "XSIAM — IOC match on downloaded URL cross-references TIM feed and endpoint file hash"
-        ttp_ref: TTP-2026-0047
+        ttp_ref: "TTP-2026-0047"
         detection_id: ioc-domain-testmynids-org
 
 cleanup:

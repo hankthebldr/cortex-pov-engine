@@ -7,6 +7,7 @@ plane: BROWSER
 detection_types:
   - Analytics
   - BIOC
+  - IOC
 
 uc_ref: UCS-BROWSER-03
 tc_ref: TC-BROWSER-03
@@ -36,6 +37,25 @@ required_content:
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Prisma Browser Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The Playwright-driven browser actions produce the expected Prisma Browser
+  DLP / extension / phishing detection. Detection Accuracy is the share of
+  injected browser events that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
 external_tools:
   - name: Cortex Browser Attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -60,7 +80,7 @@ steps:
       - plane: KOI
         type: Analytics
         description: "Code scan — extension manifest declares <all_urls> + cookies + webRequest + webRequestBlocking"
-        ttp_ref: TTP-2026-0019
+        ttp_ref: "TTP-2026-0019"
         detection_id: xql-code-scan-extension-manifest-declares-all-urls-cookies-webrequest-webrequestblocking
 
   - id: step-02
@@ -91,18 +111,27 @@ steps:
       - plane: BROWSER
         type: BIOC
         description: "Prisma Browser — sideloaded extension blocked by managed-extension policy"
-        ttp_ref: TTP-2026-0019
+        ttp_ref: "TTP-2026-0019"
         detection_id: bioc-prisma-browser-sideloaded-extension-blocked-by-managed-extension-policy
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — extension permission risk score exceeds threshold"
-        ttp_ref: TTP-2026-0019
+        ttp_ref: "TTP-2026-0019"
         detection_id: xql-prisma-browser-extension-permission-risk-score-exceeds-threshold
       - plane: KOI
         type: Analytics
         description: "KOI — extension manifest signature does not match approved publisher list"
-        ttp_ref: TTP-2026-0019
+        ttp_ref: "TTP-2026-0019"
         detection_id: xql-koi-extension-manifest-signature-does-not-match-approved-publisher-list
+      # GAP-10 — first IOC win for the BROWSER plane. The risky extension's
+      # post-install C2 beacon resolves to the malicious-agentic-pack canary
+      # domain (cortexsim-canary.invalid), which is a real IOC carried by the
+      # sibling VS Code extension card TTP-2026-0045. Atomic indicator match.
+      - plane: KOI
+        type: IOC
+        description: "IOC — extension post-install beacon to cortexsim-canary.invalid (agentic-pack C2 domain on TIM watchlist)"
+        ttp_ref: "TTP-2026-0045"
+        detection_id: ioc-domain-cortexsim-canary-invalid
 
   - id: step-03
     name: "Confirm post-block telemetry"
@@ -114,7 +143,7 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "Browser-attacker JSONL records install_extension outcome=blocked"
-        ttp_ref: TTP-2026-0019
+        ttp_ref: "TTP-2026-0019"
         detection_id: xql-browser-attacker-jsonl-records-install-extension-outcome-blocked
 
 cleanup:

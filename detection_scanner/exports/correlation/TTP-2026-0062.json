@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1572",
+    "T1021.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "IOC(SSH-2.0-Cortex_atypical_lateral_001) OR BIOC(NGFW EAL repeated short-lived outbound SSH handshakes from single source) OR XQL(NGFW App-ID SSH outbound session from non-admin endpoint)",
+      "name": "SSH Outbound Tunnel Setup \u2014 Atypical Banner Plus Handshake Burst",
+      "rule_id": "CR-NDR-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0062"
+}

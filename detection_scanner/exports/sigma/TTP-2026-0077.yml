@@ -1,0 +1,82 @@
+title: "Web-Application Attack-Surface Enumeration & Injection Probing \u2014 Cortex ASM + NGFW (T1595.002 / T1595.003 / T1190) \u2014 ASM-004 Web Content-Discovery Path Brute-Force Burst From Single Source"
+id: ttp-2026-0077-bioc-01
+status: experimental
+description: |
+  A single source IP issues a high-volume burst of distinct URI paths against the exposed nginx web surface within a short window — the signature of directory/content brute-forcing (Gobuster/Feroxbuster). The world-exposed nginx host is the static ASM finding; this BIOC fires when that surface is actively enumerated, bridging ASM discovery into NGFW/NDR runtime detection.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "web-browsing" or dst_port in (80, 443, 9001)
+    | filter flow_direction = "inbound"
+    | comp count_distinct(uri_path) as distinct_paths, count() as total_reqs by src_ip, dst_ip
+    | filter distinct_paths >= 50
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1595/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1595.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Web-Application Attack-Surface Enumeration & Injection Probing \u2014 Cortex ASM + NGFW (T1595.002 / T1595.003 / T1190) \u2014 ASM-004 SQL-Injection Probe Pattern In Web Request"
+id: ttp-2026-0077-bioc-02
+status: experimental
+description: |
+  An inbound web request to the exposed surface (notably the gocortexbrokenbank app on :9001) carries a SQL-injection probe pattern in its URI or payload — the SQLmap detection bridging ASM exposure into runtime exploitation detection.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_threat_raw
+    | filter dst_port in (80, 443, 9001)
+    | filter threat_category = "sql-injection" or uri_path ~= "(?i)(union(\s|\+)+select|or(\s|\+)+1=1|sleep\(|information_schema)"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Web-Application Attack-Surface Enumeration & Injection Probing \u2014 Cortex ASM + NGFW (T1595.002 / T1595.003 / T1190) \u2014 ASM-004 OS-Command-Injection Probe Pattern In Web Request"
+id: ttp-2026-0077-bioc-03
+status: experimental
+description: |
+  An inbound web request to the exposed surface carries an OS-command-injection probe pattern (shell metacharacters / chained commands) in a parameter — the Commix detection completing the injection-probe coverage on the exposed banking app.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_threat_raw
+    | filter dst_port in (80, 443, 9001)
+    | filter threat_category = "code-injection" or uri_path ~= "(?i)(;\s*(cat|id|whoami|uname)|\|\s*(cat|id|whoami)|`.*`|\$\(.*\))"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

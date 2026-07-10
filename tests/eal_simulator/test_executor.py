@@ -15,7 +15,7 @@ from tests.eal_simulator.conftest import DummyPlugin
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def test_dry_run_completes_without_authorisation(make_executor):

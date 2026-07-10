@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1552.001",
+    "T1027",
+    "T1565.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AISPM-004 Hardcoded Credentials In ML Pipeline Finding) OR XQL(AISPM-004 Insecure Model Serialization Pickle Finding) OR XQL(AISPM-004 Unvalidated Model Inputs Finding)",
+      "name": "AI Static Risk \u2014 Hardcoded Creds Plus Insecure Pickle Plus Unvalidated Input",
+      "rule_id": "CR-AISPM-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0057"
+}

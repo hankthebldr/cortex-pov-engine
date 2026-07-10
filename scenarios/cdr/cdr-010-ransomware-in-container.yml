@@ -1,0 +1,145 @@
+scenario_id: SIM-CDR-010
+name: "Container-Native Ransomware via Host Filesystem Escape"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+  - IOC
+  - Correlation
+
+uc_ref: UCS-CDR-10
+tc_ref: TC-CDR-10
+uc_name: "Container-Native Ransomware Detection"
+tc_name: "Host-FS Escape + In-Container Encrypt-Rate Detection"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1486"
+mitre_technique_name: "Data Encrypted for Impact"
+additional_techniques:
+  - technique: "T1611"
+    name: "Escape to Host"
+
+threat_report: "Unit42 - Ransomware and Cloud-Native Impact Threat Research"
+threat_report_url: "https://unit42.paloaltonetworks.com/category/ransomware/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Container-native ransomware distinct from host ransomware (SIM-EDR-008): a
+# container escapes to the host filesystem (mountinfo read -> chroot) then
+# detonates an encrypt sweep. CortexSim neuters the real chroot escape +
+# Ransomware-PoC clone into a detectable mountinfo/chroot-stub + a bounded
+# reversible encrypt loop over scratch-only files. Maps to the Signal Injection
+# & Detection Accuracy family (F1) — the escape + encrypt rate drive detection.
+validation_methodology: "Container Ransomware Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The container-to-host escape (a /proc/self/mountinfo read followed by a
+  chroot against a host-root mount) and the in-container mass-file-encryption
+  rate are both detected in xdr_data, and the correlation rule stitches the
+  escape and the encrypt sweep into one container-ransomware incident within
+  the MTTD budget — proving Cortex Cloud CDR + XSIAM cover the full
+  container-native ransomware chain (escape to host, then impact) distinct
+  from host-only EDR ransomware.
+moat_tier: "LEAD"
+
+steps:
+  - id: step-01
+    name: "Locate host-root mount via /proc/self/mountinfo (escape recon)"
+    command: |
+      grep ' / ' /proc/self/mountinfo | awk '{print $4}' | head -1 | tee /tmp/cortexsim-hostfs.txt
+      echo "[*] host-root mount candidate located — chroot escape stubbed for safety [truncated]"
+    identity: root
+    mitre_technique: "T1611"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "A containerized process reads /proc/self/mountinfo to enumerate the host-root mount — the reconnaissance step that anchors the chroot escape causality chain"
+        ttp_ref: "TTP-2026-0082"
+        detection_id: bioc-cdr-010-host-filesystem-escape-via-mountinfo-read
+
+  - id: step-02
+    name: "chroot into host-root mount (escape primitive, stubbed)"
+    command: |
+      HOST_FS="$(cat /tmp/cortexsim-hostfs.txt 2>/dev/null || echo /host)"
+      echo "[CortexSim] simulating: chroot $HOST_FS /bin/bash — escape stubbed, no host change [truncated]"
+    identity: root
+    mitre_technique: "T1611"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "chroot invoked against a host-root mount path from inside a container — the container-to-host escape primitive of the ransomware-in-container payload"
+        ttp_ref: "TTP-2026-0082"
+        detection_id: bioc-cdr-010-container-chroot-to-host-filesystem-mount
+
+  - id: step-03
+    name: "Bounded reversible in-container encrypt sweep (impact simulation)"
+    command: |
+      WORK="$(mktemp -d /tmp/cortexsim-ransim.XXXXXX)"
+      for i in $(seq 1 25); do echo "benign-doc-$i" > "$WORK/file_$i.txt"; done
+      for f in "$WORK"/file_*.txt; do
+        openssl enc -aes-256-cbc -pbkdf2 -salt -k cortexsim -in "$f" -out "$f.locked" 2>/dev/null && rm -f "$f"
+      done
+      echo "[*] simulated in-container encrypt sweep over $WORK complete — reversible, scratch-only"
+    identity: root
+    mitre_technique: "T1486"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "A burst of in-container file writes/renames producing .locked outputs and removing originals — the ransomware mass-encrypt rate that distinguishes an encrypt sweep from normal container I/O"
+        ttp_ref: "TTP-2026-0082"
+        detection_id: xql-cdr-010-in-container-mass-file-encryption-rate
+      - plane: CDR
+        type: IOC
+        description: "The Ransomware-PoC repository URL the original lab payload clones is tracked as an IOC for feed coverage — CortexSim does not clone or execute it"
+        ttp_ref: "TTP-2026-0082"
+        detection_id: ioc-url-https-github-com-jimmy-ly00-ransomware-poc-git
+
+  - id: step-04
+    name: "Stitch host escape + encrypt sweep into one ransomware incident"
+    command: |
+      echo "[*] Cortex correlation CR-CDR-0010 fuses the container-to-host escape and the in-container mass-encrypt rate into one container-ransomware incident"
+    identity: root
+    mitre_technique: "T1486"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation CR-CDR-0010 stitches the chroot host-escape BIOC and the in-container mass-encrypt-rate XQL into a single container-ransomware incident"
+        ttp_ref: "TTP-2026-0082"
+        detection_id: CR-CDR-0010
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-ransim.* /tmp/cortexsim-hostfs.txt"
+    - "echo '[CortexSim] SIM-CDR-010 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - container-security
+  - kubernetes
+  - ransomware
+  - container-escape
+  - impact
+  - cloud-native
+infra_modules_needed:
+  - cdr
+  - base

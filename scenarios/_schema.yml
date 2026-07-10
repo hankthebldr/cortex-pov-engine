@@ -30,20 +30,36 @@ status: "active"
 plane: "CDR"
 # (required) Primary detection plane this scenario targets.
 # One of: EDR | CDR | NDR | ITDR | CLOUD_APP | ANALYTICS
-#       | AI_ACCESS | AIRS | AI_SPM | BROWSER | KOI
+#       | AI_ACCESS | AIRS | AI_SPM | BROWSER | KOI | ASM | CSPM | TIM | EMAIL
 # ANALYTICS is reserved for multi-plane correlation scenarios.
 # AI_ACCESS — Cortex AI Access Security (employee LLM usage / DLP)
 # AIRS      — Cortex AI Runtime Security (deployed LLM app protection)
 # AI_SPM    — Cortex AI Security Posture Management (static AI asset inventory + config)
 # BROWSER   — Prisma Browser (managed browser DLP / extension / phishing)
 # KOI       — Agentic endpoint / supply-chain risk (MCP, skills, extensions)
+# ASM       — Cortex ASM / Xpanse (internet-exposed attack-surface discovery)
+# CSPM      — Cortex Cloud Posture Management (misconfig findings)
+# TIM       — Cortex Threat Intel Management (IOC feed + matching traffic)
+# EMAIL     — Email security: Proofpoint TAP (proofpoint_tap_raw) / Microsoft 365 (msft_o365) log ingestion; phishing / BEC / impersonation + endpoint/identity stitch
 
 detection_types:
   - BIOC
   - Analytics
 # (required) List of Cortex detection engine types expected to fire.
-# Valid values: BIOC | Analytics | IOC
+# Valid values: BIOC | XQL | Analytics | Correlation | IOC | ABIOC
+#   BIOC        — Behavioral Indicator of Compromise rule
+#   XQL         — XSIAM Query Language scheduled/saved query detection
+#   Analytics   — XSIAM analytics / ML behavioral detector
+#   Correlation — XSIAM correlation rule stitching signals across sources
+#   IOC         — atomic indicator (hash / domain / IP) match
+#   ABIOC       — Analytics Behavioral IOC: PANW-authored, auto-tuned
+#                 behavioral-ML detection with an identified causality chain
+#                 (distinct from hand-authored BIOC)
+# NOTE: XDM modeling rules are a normalization SUBSTRATE, not a detection_type —
+# they ride on detection cards as detections.modeling_rules[], never here.
 # At least one value required.
+# The loader emits a (non-fatal) WARNING when this declared set drifts from
+# the union of the steps' expected_detections[].type values (S-09).
 
 # ── UC/TC Alignment ──────────────────────────────────────────────────────────
 
@@ -78,14 +94,24 @@ mitre_technique_name: "Container and Resource Discovery"
 additional_techniques:
   - technique: "T1082"
     name: "System Information Discovery"
-# (optional) Additional MITRE techniques exercised by this scenario.
-# List of {technique, name} pairs.
+  - "T1021.004"   # bare-string form is also accepted (name left empty)
+# (optional, default: []) Additional MITRE techniques exercised by this
+# scenario beyond the primary mitre_technique. Persisted to the Scenario ORM
+# so the coverage heatmap (/api/mitre/coverage) can fuse them in (GAP-5).
+# Two accepted entry shapes — the loader normalizes BOTH to {technique, name}:
+#   - technique: "T1082"           # {technique, name} mapping (name optional)
+#     name: "System Information Discovery"
+#   - "T1021.004"                  # bare technique-id string → {technique, name: ""}
+# Loaded as a list of {technique: <id>, name: <str>} dicts (name may be "").
 
 # ── Threat Intelligence ──────────────────────────────────────────────────────
 
 threat_report: "Unit42 - Large-Scale Monero Cryptomining Operation"
-# (required) Title of the threat report or intelligence source this scenario
+# (optional) Title of the threat report or intelligence source this scenario
 # is modeled on. Used for traceability and docs/threat_report_index.md linkage.
+# NOTE: the loader (core/engine/scenario_loader.py) models this as
+# Optional[str]=None — it is NOT enforced as required. Every shipped scenario
+# sets it by convention, but a scenario without it loads fine.
 
 threat_report_url: "https://unit42.paloaltonetworks.com/example-report/"
 # (optional) Direct URL to the referenced threat report.
@@ -167,7 +193,7 @@ steps:
       - plane: CDR
         # (required) Detection plane expected to produce signal.
         type: Analytics
-        # (required) Detection type. One of: BIOC | Analytics | IOC
+        # (required) Detection type. One of: BIOC | XQL | Analytics | Correlation | IOC | ABIOC
         description: "Package manager execution in container — unusual install pattern"
         # (required) Human-readable description of the expected alert/detection.
         # Used in ResultsViewer to show expected vs observed.
@@ -184,6 +210,8 @@ steps:
         #   - detections.xql_queries[].name        → slug "xql-<slugified-name>"
         #   - detections.correlation_rules[].rule_id (verbatim, e.g. CR-CRED-0001)
         #   - detections.iocs[]                    → slug "ioc-<type>-<value>"
+        #   - detections.abiocs[].name             → slug "abioc-<slugified-name>"
+        #   - detections.modeling_rules[].name     → slug "modeling-<slugified-name>"
         # Resolved by core/engine/ttp_catalog.py.
 
   - id: "step-02"
@@ -199,8 +227,11 @@ steps:
         type: Analytics
         description: "Suspicious curl-pipe-bash pattern in container context"
 
-# Steps can have 1–10 entries. At least 3 steps required per scenario.
 # Steps execute in list order. Each step is independently logged and reported.
+# There is no hard minimum — some intentionally terse NDR egress scenarios run
+# 2 steps (SIM-NDR-003..007). The loader emits a soft WARNING for scenarios
+# with fewer than 2 steps (S-01) and for any step whose expected_detections is
+# empty (S-02); neither warning rejects the scenario.
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 
@@ -220,10 +251,15 @@ author: "Henry Reed"
 # (required) Author name. Used in generated bash bundle headers and audit logs.
 
 created: "2026-04-12"
-# (required) ISO 8601 date of initial creation. Never update this field.
+# (optional) ISO 8601 date of initial creation. Never update this field once set.
+# NOTE: the loader models this as Optional[str]=None (provenance only — it is
+# parsed and validated but NOT persisted to the Scenario ORM). Shipped
+# scenarios set it by convention.
 
 last_updated: "2026-04-12"
-# (required) ISO 8601 date of last modification. Update on every change.
+# (optional) ISO 8601 date of last modification. Update on every change.
+# NOTE: same contract as `created` — optional in the loader, provenance only,
+# not persisted to the ORM.
 
 tags:
   - container-security

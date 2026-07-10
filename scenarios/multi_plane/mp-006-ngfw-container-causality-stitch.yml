@@ -1,0 +1,178 @@
+scenario_id: SIM-MP-006
+name: "NGFW Container Egress ↔ Endpoint Process Causality Stitch"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - XQL
+  - Correlation
+
+uc_ref: UCS-MP-06
+tc_ref: TC-MP-06
+uc_name: "NGFW-to-Endpoint Container Causality Stitching"
+tc_name: "Causality Graph Stitching — NGFW Session ↔ Container Process (5-tuple + container_id)"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1071.001"
+mitre_technique_name: "Application Layer Protocol: Web Protocols"
+additional_techniques:
+  - technique: "T1568"
+    name: "Dynamic Resolution"
+
+threat_report: "Palo Alto Networks - XSIAM Causality and Cross-Source Stitching"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "3CORESec/testmynids.org"
+
+infra_modules_needed:
+  - base
+  - ndr
+  - cdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Mirrors SIM-MP-001's F2 causality-graph shape but joins the NETWORK plane
+# (NGFW) to the CDR plane (container endpoint): the same outbound session the
+# NGFW logs (App-ID/URL/DGA) is recorded by the Cortex agent as a container
+# process, and XSIAM stitches the two on the shared 5-tuple + container_id
+# within a 10s window. Directly strengthens the ANALYTICS stitching wedge.
+validation_methodology: "Causality Graph Stitching"
+methodology_family: "F2"
+primary_kpi: "Causality Chain Completeness"
+threshold:
+  kpi: "Causality Chain Completeness"
+  op: "≥"
+  value: 2
+  unit: "planes"
+success_criteria: |
+  An NGFW App-ID/URL/DGA session and the endpoint container process that
+  originated it (recorded by the Cortex agent) sharing the same 5-tuple
+  (src_ip, src_port, dst_ip, dst_port, protocol) plus container_id stitch into
+  a single XSIAM incident_id within ±10s. Verifier asserts ≥ 2 distinct planes
+  (CDR endpoint + NDR network) represented under one incident_id joined on the
+  5-tuple.
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+correlation_window_seconds: 10
+required_planes_in_incident:
+  - CDR
+  - NDR
+stitching_key: container_id
+
+external_tools:
+  - name: Sliver
+    source: "https://github.com/BishopFox/sliver"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-SLIVER
+  - name: testmynids
+    source: "https://github.com/3CORESec/testmynids.org"
+    type: script
+    install_inline: true
+
+steps:
+  - id: step-01
+    name: "Container egress 5-tuple loop (NGFW App-ID/URL session generation)"
+    command: |
+      for i in $(seq 1 10); do
+        SRC_PORT="$((RANDOM % 30000 + 20000))"
+        curl -sSL -m 5 --local-port "$SRC_PORT" -A 'CortexSimContainerBeacon/1.0' \
+          "http://testmynids.org/uid/index.html?stitch=$i" -o /dev/null || true
+        sleep 1
+      done
+      echo "[*] Container egress 5-tuple loop generated — NGFW should log App-ID/URL sessions"
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "NGFW logs the container outbound sessions with App-ID/URL classification, keyed on the 5-tuple"
+        ttp_ref: "TTP-2026-0086"
+        detection_id: xql-mp-006-ngfw-container-egress-app-id-url-and-dga-signal
+        verification_xql: |
+          dataset = panw_ngfw_traffic_raw
+          | filter app contains "web-browsing" or url_category != null
+          | comp count() as ngfw_sessions by source_ip, source_port, dest_ip, dest_port, protocol
+          | filter ngfw_sessions >= 1
+      - plane: CDR
+        type: XQL
+        description: "The Cortex agent records the same outbound session as a container process network event, keyed on the 5-tuple + container_id"
+        ttp_ref: "TTP-2026-0086"
+        detection_id: xql-mp-006-endpoint-container-process-network-causality
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.NETWORK
+          | filter actor_container_info != null
+          | alter container_id = json_extract_scalar(actor_container_info, "$.id")
+          | comp count() as endpoint_sessions by container_id, action_local_ip, action_remote_ip, action_remote_port
+
+  - id: step-02
+    name: "DGA-shaped hostname resolution (NGFW DNS/URL analytics)"
+    command: |
+      for i in $(seq 1 5); do
+        HOST="$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n').example.net"
+        curl -sSL -m 5 "http://${HOST}/" -o /dev/null 2>/dev/null || true
+        sleep 1
+      done
+      echo "[*] DGA-shaped hostnames generated — NGFW DNS/URL analytics should flag high-entropy labels"
+    identity: container-runtime
+    mitre_technique: "T1568"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "NGFW DNS/URL analytics flag the DGA-shaped high-entropy hostnames in the same container's egress, keyed on the 5-tuple"
+        ttp_ref: "TTP-2026-0086"
+        detection_id: xql-mp-006-ngfw-container-egress-app-id-url-and-dga-signal
+
+  - id: step-03
+    name: "Stitch NGFW session + endpoint container process into one incident"
+    command: |
+      echo "[*] Cortex correlation CR-MP-0006 joins the NGFW App-ID/URL/DGA session and the endpoint container process on the shared 5-tuple + container_id within a 10s window"
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "XSIAM correlation CR-MP-0006 joins the NGFW session and the endpoint container process on the 5-tuple + container_id within 10s, asserting ≥ 2 distinct planes (CDR + NDR) under one incident_id"
+        ttp_ref: "TTP-2026-0086"
+        detection_id: CR-MP-0006
+        verification_xql: |
+          // F2 stitching verifier — distinct planes under one incident_id on the 5-tuple
+          dataset = xdr_data
+          | filter actor_container_info != null
+          | alter container_id = json_extract_scalar(actor_container_info, "$.id")
+          | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by container_id, action_remote_ip, action_remote_port
+          | filter plane_count >= 2 and incident_count = 1
+        kpi_contribution:
+          kpi: "Causality Chain Completeness"
+          op: "≥"
+          value: 2
+          unit: "planes"
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-MP-006 cleanup complete — no persistent artifacts; benign egress only'"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - multi-plane
+  - stitching
+  - ngfw-container-correlation
+  - app-id
+  - dga
+  - cloud-native

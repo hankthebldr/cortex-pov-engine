@@ -56,7 +56,7 @@ def _seed_scenario(session_factory, *, scenario_id: str, external_tools: list[di
             ))
             await db.commit()
 
-    asyncio.get_event_loop().run_until_complete(_do())
+    asyncio.run(_do())
 
 
 def test_infra_hints_resolves_adapter_refs(client, session_factory):
@@ -177,7 +177,7 @@ def _seed_with_ttp_ref(session_factory, *, scenario_id: str, ttp_ref: str | None
             ))
             await db.commit()
 
-    asyncio.get_event_loop().run_until_complete(_do())
+    asyncio.run(_do())
 
 
 def test_list_scenarios_ttp_ref_filter_returns_only_citers(client, session_factory):

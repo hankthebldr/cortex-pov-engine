@@ -1,0 +1,416 @@
+{
+  "id": "TTP-2026-0077",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-15T00:00:00+00:00",
+    "updated_at": "2026-06-15T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-asm",
+      "vector-web-application",
+      "industry-all",
+      "severity-high",
+      "asm",
+      "reconnaissance",
+      "active-scanning",
+      "web-app",
+      "injection"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-CISA"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1200,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Web-Application Attack-Surface Enumeration & Injection Probing — Cortex ASM + NGFW (T1595.002 / T1595.003 / T1190)",
+    "summary": "External web enumeration and injection probing against the asm module's exposed nginx surface and the gocortexbrokenbank app on :9001. WhatWeb/CMSeeK fingerprint, Gobuster/Feroxbuster brute-force content, Nikto scans vulns, SQLmap/Commix probe injection. Cortex ASM discovers the surface while NGFW/NDR detects the scan+injection traffic, stitched into one exposure incident.",
+    "description": "Active reconnaissance of a public-facing web application is the most common precursor to exploitation: an attacker fingerprints the stack, brute-forces hidden content, scans for known web vulnerabilities, then probes the highest-value endpoints for injection. This scenario reproduces that full kill-chain stage against the intentionally exposed surface the asm Terraform module provisions — an internet-facing nginx host with directory listing and bait files (/admin, /config, /backup) plus the gocortexbrokenbank deliberately-vulnerable banking application on port 9001. The simulation runs seven web-recon tools in sequence: WhatWeb and CMSeeK fingerprint the technology stack and any CMS; Gobuster brute-forces directories and virtual hosts; Feroxbuster recursively discovers hidden content; Nikto runs a web-vulnerability scan; SQLmap probes the banking app's parameters for SQL injection; and Commix tests for OS-command injection. The dual-use tools (Gobuster, Feroxbuster, SQLmap, Commix) are gated behind the orchestrator's adapter-consent check, so the scenario refuses to launch without simulation_authorized. Detection spans two Cortex planes. Cortex ASM/Xpanse is the asset-discovery half: it inventories the exposed web service, fingerprints the technology stack, and surfaces the high-risk exposure (the directory-listing nginx and the vulnerable banking app) as exposure-management findings in asm_findings. The NGFW/NDR runtime half is the traffic-detection half: validation XQL runs against panw_ngfw_traffic_raw (the content-discovery URI fan-out from a single source) and panw_ngfw_threat_raw (the web-vulnerability-scan and injection threat signatures), and three BIOCs cover the content-discovery brute-force burst, the SQL-injection probe pattern, and the OS-command-injection probe pattern in inbound web requests. A correlation rule fuses the static ASM discovery findings with the live NGFW scan-and-injection detections into a single exposure-management incident a DC can present in the executive readout — proving that Cortex both discovers the exposed web surface and detects it being actively enumerated and exploited.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Opportunistic web-application attackers and automated mass-scanning infrastructure"
+      }
+    ],
+    "campaigns": [
+      "Generic internet-facing web-application enumeration and injection"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2020-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1595",
+        "subtechnique_id": "T1595.002",
+        "name": "Active Scanning: Vulnerability Scanning",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1595",
+        "subtechnique_id": "T1595.003",
+        "name": "Active Scanning: Wordlist Scanning",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1592",
+        "name": "Gather Victim Host Information",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1190",
+        "name": "Exploit Public-Facing Application",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Network Traffic: Network Traffic Content",
+      "Network Traffic: Network Traffic Flow",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ASM-004 — Web-application enumeration & injection probing via WhatWeb/Gobuster/Feroxbuster/Nikto/SQLmap/Commix/CMSeeK against the asm IaC exposed surface",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "asm IaC module applied so the exposed nginx host (:80/:443), the gocortexbrokenbank app (:9001), and the public S3 website are reachable.",
+        "check_command": "curl -s -o /dev/null -w \"%{http_code}\\n\" http://${ASM_TARGET_HOST}/"
+      },
+      {
+        "description": "Cortex ASM/Xpanse connected to the account and Cortex NGFW/NDR ingesting traffic+threat logs for the exposed subnet.",
+        "check_command": "aws resourcegroupstaggingapi get-resources --tag-filters Key=CortexSimASMFinding --profile cortexsim-lab"
+      },
+      {
+        "description": "Launch consent (simulation_authorized) granted — the dual-use Gobuster/Feroxbuster/SQLmap/Commix adapters are gated by the orchestrator adapter-consent check.",
+        "check_command": "echo \"consent.simulation_authorized must be true at launch\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Web-application attack-surface enumeration + injection probing against the\n# asm IaC exposed surface. WhatWeb/CMSeeK/Gobuster/Feroxbuster/Nikto target the\n# nginx surface; SQLmap/Commix target gocortexbrokenbank on :9001.\nset -uo pipefail\nTARGET=\"${ASM_TARGET_HOST:-127.0.0.1}\"\nwhatweb -a 3 \"http://${TARGET}/\" || true\ncmseek -u \"http://${TARGET}/\" --batch || true\ngobuster dir -u \"http://${TARGET}/\" -w /usr/share/wordlists/dirb/common.txt -t 30 -q || true\nferoxbuster -u \"http://${TARGET}/\" -d 2 -t 30 --silent || true\nnikto -h \"http://${TARGET}:9001\" -Tuning 1234567890 || true\nsqlmap -u \"http://${TARGET}:9001/login.php?id=1\" --batch --random-agent --level=2 --risk=1 || true\ncommix -u \"http://${TARGET}:9001/ping.php?host=127.0.0.1\" --batch || true",
+      "input_variables": [
+        {
+          "name": "ASM_TARGET_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Public IP / hostname of the asm-module exposed EC2 host."
+        }
+      ],
+      "timeout_seconds": 1200
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "High-volume inbound HTTP requests from a single source fanning out across many URIs/paths against the exposed nginx surface (content-discovery brute force).",
+        "expected_value": "src_ip distinct uri_path count >= 50 within 300s"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Web-vulnerability-scan and injection threat signatures (SQLi / command-injection / scanner user-agents) inbound to the exposed web surface and the banking app on :9001.",
+        "expected_value": "threat_category in (vulnerability, sql-injection, code-injection) and dst_port in (80, 9001)"
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Cortex ASM/Xpanse exposure-management findings enumerating the exposed web service, its technology fingerprint, and the vulnerable banking app.",
+        "expected_value": "asm_findings tagged CortexSimASMFinding for the multi-service exposed host"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/sqlmap-cortexsim /tmp/feroxbuster-asm-004.txt /tmp/gobuster-asm-004.txt /tmp/nikto-asm-004.txt /tmp/whatweb-asm-004.json /tmp/cmseek-asm-004; echo '[CortexSim] SIM-ASM-004 cleanup complete — exposed AWS resources owned by terraform destroy.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "WhatWeb/0.5.5",
+        "context": "Web technology-fingerprinting tool user-agent observed on inbound requests to the exposed surface.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "user-agent",
+        "value": "gobuster/3.6",
+        "context": "Directory/content brute-force tool user-agent observed on the inbound content-discovery burst.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "url",
+        "value": "/login.php?id=1",
+        "context": "SQL-injection probe endpoint on the gocortexbrokenbank banking app exercised by SQLmap.",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "ASM-004 Web Content-Discovery Path Brute-Force Burst From Single Source",
+        "description": "A single source IP issues a high-volume burst of distinct URI paths against the exposed nginx web surface within a short window — the signature of directory/content brute-forcing (Gobuster/Feroxbuster). The world-exposed nginx host is the static ASM finding; this BIOC fires when that surface is actively enumerated, bridging ASM discovery into NGFW/NDR runtime detection.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"web-browsing\" or dst_port in (80, 443, 9001)\n| filter flow_direction = \"inbound\"\n| comp count_distinct(uri_path) as distinct_paths, count() as total_reqs by src_ip, dst_ip\n| filter distinct_paths >= 50",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1595.003"
+        ]
+      },
+      {
+        "name": "ASM-004 SQL-Injection Probe Pattern In Web Request",
+        "description": "An inbound web request to the exposed surface (notably the gocortexbrokenbank app on :9001) carries a SQL-injection probe pattern in its URI or payload — the SQLmap detection bridging ASM exposure into runtime exploitation detection.",
+        "logic": "dataset = panw_ngfw_threat_raw\n| filter dst_port in (80, 443, 9001)\n| filter threat_category = \"sql-injection\" or uri_path ~= \"(?i)(union(\\s|\\+)+select|or(\\s|\\+)+1=1|sleep\\(|information_schema)\"",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1190"
+        ]
+      },
+      {
+        "name": "ASM-004 OS-Command-Injection Probe Pattern In Web Request",
+        "description": "An inbound web request to the exposed surface carries an OS-command-injection probe pattern (shell metacharacters / chained commands) in a parameter — the Commix detection completing the injection-probe coverage on the exposed banking app.",
+        "logic": "dataset = panw_ngfw_threat_raw\n| filter dst_port in (80, 443, 9001)\n| filter threat_category = \"code-injection\" or uri_path ~= \"(?i)(;\\s*(cat|id|whoami|uname)|\\|\\s*(cat|id|whoami)|`.*`|\\$\\(.*\\))\"",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1190"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ASM-004 Ground-Truth Manifest Capture Bookkeeping",
+        "query": "dataset = asm_findings\n| filter _time > to_timestamp(current_time() - 1800)\n| filter tags contains \"CortexSimASMFinding\"\n| filter finding_class in (\"multi-service-exposed-host\", \"multiple-exposed-ports\")\n| comp count_distinct(resource_id) as assets by finding_class\n| fields finding_class, assets",
+        "expected_rows_min": 0,
+        "dataset": "asm_findings"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-004 Web Technology Fingerprint And CMS Enumeration Findings",
+        "query": "dataset = asm_findings\n| filter _time > to_timestamp(current_time() - 1800)\n| filter tags contains \"CortexSimASMFinding\"\n| filter service in (\"http\", \"https\") and dst_port in (80, 443, 9001)\n| filter detected_technology != null or finding_class = \"exposed-web-application\"\n| comp count_distinct(detected_technology) as fingerprints by resource_id, dst_port\n| filter fingerprints >= 1\n| fields resource_id, dst_port, fingerprints",
+        "expected_rows_min": 1,
+        "dataset": "asm_findings"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-004 Content-Discovery Path Fan-Out 1 Src To Many URIs",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port in (80, 443, 9001) and flow_direction = \"inbound\"\n| comp count_distinct(uri_path) as distinct_paths, count() as reqs by src_ip, dst_ip\n| filter distinct_paths >= 50\n| sort desc distinct_paths\n| fields src_ip, dst_ip, distinct_paths, reqs",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-004 Web Vulnerability-Scan Threat-Signature Burst",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port in (80, 443, 9001)\n| filter threat_category in (\"vulnerability\", \"scan\", \"info-leak\")\n| comp count() as threat_hits, count_distinct(threat_name) as distinct_sigs by src_ip, dst_ip\n| filter threat_hits >= 5\n| fields src_ip, dst_ip, threat_hits, distinct_sigs",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-004 Injection-Probe Threat Signatures Against Banking App",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 9001\n| filter threat_category in (\"sql-injection\", \"code-injection\")\n| comp count() as injection_hits by src_ip, dst_ip, threat_category\n| filter injection_hits >= 1\n| fields src_ip, dst_ip, threat_category, injection_hits",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Exposure Management — Exposed Web Surface Discovered + Actively Enumerated + Injection-Probed",
+        "rule_id": "CR-ASM-0004",
+        "logic": "XQL(ASM-004 Web Technology Fingerprint And CMS Enumeration Findings) AND (XQL(ASM-004 Content-Discovery Path Fan-Out 1 Src To Many URIs) OR XQL(ASM-004 Web Vulnerability-Scan Threat-Signature Burst)) AND (BIOC(ASM-004 SQL-Injection Probe Pattern In Web Request) OR BIOC(ASM-004 OS-Command-Injection Probe Pattern In Web Request) OR XQL(ASM-004 Injection-Probe Threat Signatures Against Banking App)) — stitches the static ASM web-surface discovery with the live NGFW content-discovery + vulnerability-scan + injection-probe detections into one exposure-management incident."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex ASM / Xpanse — exposed web-application discovery and technology fingerprinting",
+      "Cortex XSIAM Analytics — anomalous inbound web content-discovery URI fan-out",
+      "Cortex NGFW Threat Prevention — web vulnerability scan + SQL/command-injection signature coverage"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-asm",
+        "submodule": "exposure-management",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "ASM-EXPOSED-WEB-APPLICATION",
+          "ASM-WEB-TECH-FINGERPRINT",
+          "ASM-VULNERABLE-BANKING-APP"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter tags contains \"CortexSimASMFinding\" | filter service in (\"http\", \"https\") | comp count_distinct(resource_id) by finding_class | fields finding_class, resource_id"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "threat-prevention",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "NGFW-WEB-VULN-SCAN",
+          "NGFW-SQL-INJECTION",
+          "NGFW-COMMAND-INJECTION"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_threat_raw | filter dst_port in (80, 443, 9001) | filter threat_category in (\"vulnerability\", \"sql-injection\", \"code-injection\") | comp count() by threat_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-ASM-0004"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-ASM-0004 fuses the ASM web-surface discovery finding with the NGFW content-discovery, vulnerability-scan, and injection-probe detections into one exposure-management incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ASM-004",
+        "name": "Web-Application Attack-Surface Enumeration & Exploitation Detection via Cortex ASM + NGFW",
+        "description": "Cortex ASM/Xpanse discovers and fingerprints the exposed web application while Cortex NGFW/NDR detects the active content-discovery brute force, web-vulnerability scan, and SQL/command-injection probing, correlating both into a single exposure-management incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ASM-004A",
+            "objective": "Cortex ASM discovers and fingerprints the exposed web surface, and the NGFW detects the content-discovery + vulnerability-scan traffic from a single source.",
+            "preconditions": [
+              "asm IaC fixture applied (exposed nginx + gocortexbrokenbank on :9001).",
+              "Cortex ASM/Xpanse connected and NGFW/NDR ingesting traffic+threat logs.",
+              "Launch consent (simulation_authorized) granted for the dual-use adapters."
+            ],
+            "steps": [
+              "Run SIM-ASM-004 fingerprint + content-discovery + vuln-scan steps.",
+              "Observe the ASM web-application findings and the NGFW traffic/threat detections."
+            ],
+            "success_criteria": [
+              "ASM web technology-fingerprint query returns >= 1 fingerprinted asset.",
+              "Content-discovery URI fan-out query returns >= 1 single-source row with distinct_paths >= 50.",
+              "Web vulnerability-scan threat-signature query returns >= 1 row.",
+              "BIOC `ASM-004 Web Content-Discovery Path Brute-Force Burst From Single Source` fires."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-ASM-004B",
+            "objective": "Injection probing against the vulnerable banking app is detected and correlated with the ASM discovery into one exposure incident.",
+            "preconditions": [
+              "gocortexbrokenbank reachable on :9001."
+            ],
+            "steps": [
+              "Run the SQLmap + Commix injection-probe steps against :9001.",
+              "Observe the injection threat signatures and CR-ASM-0004 escalation."
+            ],
+            "success_criteria": [
+              "Injection-probe threat-signature query returns >= 1 row against :9001.",
+              "BIOC `ASM-004 SQL-Injection Probe Pattern In Web Request` OR BIOC `ASM-004 OS-Command-Injection Probe Pattern In Web Request` fires.",
+              "Correlation CR-ASM-0004 raises a single exposure-management incident stitching discovery + scan + injection."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Disable nginx directory listing (autoindex off) and remove bait/backup files from the web root.",
+      "Place internet-facing web applications behind a WAF / Cortex NGFW with web-vulnerability and injection signatures enabled in blocking mode.",
+      "Parameterize all database queries and validate/escape user input to eliminate SQL- and command-injection paths.",
+      "Continuously reconcile internet-exposed web assets discovered by Cortex ASM/Xpanse against an approved exposure baseline."
+    ],
+    "detection_engineering": [
+      "Alert on single-source URI fan-out exceeding a content-discovery threshold against any internet-facing asset.",
+      "Alert on web-vulnerability-scan and injection threat signatures inbound to ASM-discovered exposed services.",
+      "Stitch static ASM web-surface findings to NGFW runtime scan/injection telemetry so an actively-probed exposure escalates."
+    ],
+    "response_playbook": "XSOAR-PB-ExposedWebSurfaceTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 Attack Surface Threat Report — Internet-Exposed Web Applications",
+      "url": "https://unit42.paloaltonetworks.com/attack-surface-threat-report/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1595.002 — Active Scanning: Vulnerability Scanning",
+      "url": "https://attack.mitre.org/techniques/T1595/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1595.003 — Active Scanning: Wordlist Scanning",
+      "url": "https://attack.mitre.org/techniques/T1595/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1190 — Exploit Public-Facing Application",
+      "url": "https://attack.mitre.org/techniques/T1190/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "CISA — Web Application Security and Reconnaissance Mitigations",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "Initial ASM web-application enumeration & injection-probing card for SIM-ASM-004. Real ASM/NGFW XQL against asm_findings / panw_ngfw_traffic_raw / panw_ngfw_threat_raw validating content-discovery fan-out, web-vuln-scan threat bursts, and SQL/command-injection probes against the asm-module exposed nginx surface + gocortexbrokenbank app; three NGFW/NDR BIOCs, three recon IOCs, correlation CR-ASM-0004, and full PANW/UC-TC mapping. Promoted to active."
+    }
+  ]
+}

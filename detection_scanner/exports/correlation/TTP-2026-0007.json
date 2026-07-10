@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1567",
+    "T1041"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(AIACC-001 Pre-flight LLM Provider Egress Plugin Registered) OR XQL(AIACC-001 Source Code Shape POST to OpenAI With Canary Marker) OR XQL(AIACC-001 DLP Source Code Structure Regex Match in LLM Prompt) OR XQL(AIACC-001 NGFW Generative AI App-ID Outbound HTTPS to OpenAI) OR XQL(AIACC-001 Repeated Source Paste Burst to OpenAI Single User)",
+      "name": "Shadow-AI Source Code Disclosure to OpenAI",
+      "rule_id": "CR-AIACC-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0007"
+}

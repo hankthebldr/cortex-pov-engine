@@ -1,0 +1,93 @@
+title: "Cross-Plane Correlation MOAT \u2014 EDR + NDR + ITDR Stitch Into One Incident (T1078 / T1071.001 / T1110.003) \u2014 MP-005 Interactive Bash From www-data Service Context"
+id: ttp-2026-0060-bioc-01
+status: experimental
+description: |
+  XDR BIOC — interactive bash from www-data service context (process lineage anchor). The endpoint leg of the cross-plane stitch: an interactive shell under a non-login web service identity anchors the process lineage that the correlation rule joins to the network and identity signals.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("bash", "sh")
+    | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+    | comp count() as proc_count by agent_hostname, action_local_ip, actor_effective_username
+    | filter proc_count >= 1
+    | fields agent_hostname, action_local_ip, actor_effective_username, proc_count
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+    - attack.t1078
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cross-Plane Correlation MOAT \u2014 EDR + NDR + ITDR Stitch Into One Incident (T1078 / T1071.001 / T1110.003) \u2014 MP-005 NGFW Outbound HTTP Beacon To Known IOC Domain"
+id: ttp-2026-0060-bioc-02
+status: experimental
+description: |
+  NDR BIOC — outbound HTTP beacon from the src_host to a known IOC domain (testmynids.org). The network leg of the cross-plane stitch, joined to the endpoint lineage by source host/IP.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("web-browsing", "ssl", "http") or dst_port in (80, 443)
+    | filter dst_host = "testmynids.org"
+    | comp count() as beacon_hits by src_ip, dst_host
+    | filter beacon_hits >= 5
+    | fields src_ip, dst_host, beacon_hits
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cross-Plane Correlation MOAT \u2014 EDR + NDR + ITDR Stitch Into One Incident (T1078 / T1071.001 / T1110.003) \u2014 MP-005 Identity Kerberos PreAuth Failure Burst From One Client"
+id: ttp-2026-0060-bioc-03
+status: experimental
+description: |
+  ITDR BIOC — Kerberos pre-auth (4768) failure burst against multiple seeded service accounts from one client_ip, with an IdP sign-in fallback across okta_sso / msft_azure_ad_signin. The identity leg of the cross-plane stitch, joined by source host/IP.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = ad_audit
+    | filter event_id = 4768
+    | filter result_code != "0x0"
+    | comp count_distinct(target_user_name) as targeted_users, count() as failures by client_ip
+    | filter targeted_users >= 3
+    | fields client_ip, targeted_users, failures
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110.003
+    - attack.t1078
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     CORTEXSIM_SCENARIOS_DIR: str = "scenarios"
     CORTEXSIM_STATIC_DIR: str = "core/static"
 
+    # Auto-reconcile loop (measurement loop). OFF by default — it makes outbound
+    # calls to a configured Cortex tenant, so it must be opted into explicitly.
+    # When on, a background task periodically reconciles recently-finished runs
+    # that still have unobserved detections against every configured connector
+    # integration, setting observed_at/MTTD without a manual trigger.
+    CORTEXSIM_AUTO_RECONCILE: bool = False
+    CORTEXSIM_AUTO_RECONCILE_INTERVAL: int = 300          # seconds between sweeps
+    CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
+    CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
@@ -46,11 +56,32 @@ def validate_master_key(secret: str, *, env: str) -> None:
     if not (is_forbidden or is_short):
         return
 
+    reason = (
+        "it is empty or a placeholder value (e.g. 'changeme')"
+        if is_forbidden
+        else f"it is shorter than the required {_MIN_MASTER_KEY_LEN} bytes "
+        f"(got {len(stripped)})"
+    )
+
+    # Actionable, copy-pasteable remediation. The guard runs once at boot, so a
+    # verbose message here is cheap and saves the operator a trip to the docs.
     msg = (
-        f"CORTEXSIM_SECRET is misconfigured: "
-        f"{'empty or default value' if is_forbidden else f'shorter than {_MIN_MASTER_KEY_LEN} bytes'}. "
-        f"Set CORTEXSIM_SECRET to a high-entropy value (>= {_MIN_MASTER_KEY_LEN} bytes) before booting. "
-        f"Recommended: `export CORTEXSIM_SECRET=$(op read 'op://Private/cortexsim-master/key')`"
+        f"CORTEXSIM_SECRET is misconfigured: {reason}.\n"
+        f"\n"
+        f"This key encrypts every credential CortexSim stores, so production "
+        f"refuses to boot with a weak or default value.\n"
+        f"\n"
+        f"To fix:\n"
+        f"  1. Generate a high-entropy secret (>= {_MIN_MASTER_KEY_LEN} bytes):\n"
+        f"       export CORTEXSIM_SECRET=$(openssl rand -hex 32)\n"
+        f"  2. Persist it in your local .env (see .env.example for the full template):\n"
+        f"       echo \"CORTEXSIM_SECRET=$CORTEXSIM_SECRET\" >> .env\n"
+        f"     In production, source it from a secrets manager instead, e.g.:\n"
+        f"       export CORTEXSIM_SECRET=$(op read 'op://Private/cortexsim-master/key')\n"
+        f"  3. Re-run the boot command.\n"
+        f"\n"
+        f"Note: development mode (CORTEXSIM_ENV=development) only logs this "
+        f"warning and boots anyway, so local pytest and dev servers keep working."
     )
 
     if env == "production":

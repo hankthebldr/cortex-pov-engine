@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1082",
+    "T1656"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(AIRS LLM07 Model Response Contains Literal System Prompt Role String) OR BIOC(AIRS LLM07 System Prompt Embedded AKIA Canary Key Leaks Into Response) OR XQL(AIRS LLM07 Prompt Stealer Family Classifier Repeat Words Above)",
+      "name": "AIRS LLM07 Prompt Stealer Request Plus System Prompt Or Secret Leak",
+      "rule_id": "CR-AIRS-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0014"
+}

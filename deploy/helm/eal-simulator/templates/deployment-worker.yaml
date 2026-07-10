@@ -43,6 +43,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "eal-simulator.fullname" . }}-config
+          env:
+            # Same master key as the API pod — required by validate_master_key().
+            - name: CORTEXSIM_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "eal-simulator.masterSecretName" . }}
+                  key: {{ .Values.masterSecret.key }}
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
 {{- end }}

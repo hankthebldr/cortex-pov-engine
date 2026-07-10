@@ -1,0 +1,314 @@
+{
+  "id": "TTP-2026-0080",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-behavioral-anomaly",
+      "industry-all",
+      "severity-high",
+      "kubernetes",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "microservices",
+      "sockshop"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "kubernetes",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "kubernetes",
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1500,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Sock-Shop Microservices Behavioral Anomaly — Cortex Analytics Behavioral IOC (ABIOC) (T1610 / T1611 / T1046)",
+    "summary": "Deploy the Weaveworks Sock-Shop microservices demo into the cdr EKS cluster, let Cortex learn its east-west and per-container process baseline, then inject an anomalous behavioral deviation. The deviation is what a PANW-authored, auto-tuned Analytics Behavioral IOC (ABIOC) detects — a single suspicious event with an identified causality chain across the endpoint and network profiles.",
+    "description": "Analytics Behavioral IOC (ABIOC) is a separately-documented, first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the user, endpoint, and network behavioral profiles Cortex learns for each environment, and fires on a single event of suspicious behavior that carries an identified chain of causality. This scenario exercises that detector class against a realistic microservices workload. It deploys the Weaveworks Sock-Shop demo (carts, catalogue, orders, payment, user, front-end, queue-master and their datastores) into the cdr module's EKS cluster — a tens-of-services east-west mesh that gives Cortex a rich, learnable baseline of normal pod-to-pod connectivity and per-container process trees. After a baseline window, the scenario injects a controlled behavioral deviation: it execs a privileged debug helper into the catalogue service that (a) opens east-west connections to services the catalogue pod has never talked to before (a fan-out connection spike that deviates from the learned service-mesh profile) and (b) spawns a process tree — a shell launching network and packaging tools inside a container whose learned baseline is a single long-running Go/Java service process — that diverges from the per-container process-tree baseline. Neither action is individually a known-bad IOC; what makes them detectable is the deviation from the learned behavioral profile plus the causality chain (privileged exec -> anomalous child process -> anomalous east-west connection) an ABIOC is built to anchor on. Two ABIOCs cover the two deviation shapes — anomalous east-west connection spike from a baselined microservice, and anomalous container process-tree deviation from the learned baseline — each carrying XQL-shaped behavioral logic against xdr_data / network_story and an explicit causality_anchor. Supporting validation XQL confirms the baseline was learned and the deviation surfaced; a correlation rule stitches the two ABIOCs into a single behavioral-anomaly incident the DC presents as proof that Cortex's auto-tuned behavioral analytics caught a novel deviation no static rule was written for.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Opportunistic cloud/container intruders pivoting through a compromised microservice"
+      }
+    ],
+    "campaigns": [
+      "Cloud-native lateral movement and in-cluster discovery"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "containers",
+    "techniques": [
+      {
+        "technique_id": "T1610",
+        "name": "Deploy Container",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1611",
+        "name": "Escape to Host",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Container: Container Enumeration",
+      "Process: Process Creation",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "kubernetes",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-009 — Sock-Shop microservices baseline + behavioral deviation for Cortex ABIOC validation",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM / Cortex Cloud CDR connected to the EKS cluster with the Linux agent daemonset deployed so per-container process + network telemetry reaches xdr_data and network_story.",
+        "check_command": "kubectl -n kube-system get daemonset | grep -i cortex"
+      },
+      {
+        "description": "cdr IaC module applied so the EKS cluster with worker nodes exists and is reachable via kubeconfig.",
+        "check_command": "kubectl get nodes -o name"
+      },
+      {
+        "description": "Sufficient baseline window has elapsed for Cortex analytics to learn the Sock-Shop east-west and per-container process profile before the deviation is injected.",
+        "check_command": "kubectl -n sock-shop get pods --field-selector=status.phase=Running"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No detonation of known-bad payloads. Deploy the Sock-Shop microservices,\n# allow a baseline window, then inject a controlled behavioral deviation that\n# an auto-tuned ABIOC is built to detect.\nset -euo pipefail\nkubectl apply -f \"${SOCKSHOP_MANIFEST:-sockshop-weaveworks-spec.yaml}\"\nkubectl -n sock-shop rollout status deploy/catalogue --timeout=300s || true\nsleep \"${BASELINE_WINDOW_SECONDS:-600}\"\nNS=sock-shop\nPOD=\"$(kubectl -n \"$NS\" get pods -l name=catalogue -o jsonpath='{.items[0].metadata.name}')\"\n# (a) anomalous east-west connection spike from a baselined service\nkubectl -n \"$NS\" exec \"$POD\" -- sh -c 'for svc in user payment orders queue-master rabbitmq carts-db; do (echo > /dev/tcp/$svc/80) 2>/dev/null && echo connected:$svc; done'\n# (b) anomalous container process-tree deviation\nkubectl -n \"$NS\" exec \"$POD\" -- sh -c 'sh -c \"which curl nc nmap python3 apt apk; ps aux | head\"'",
+      "input_variables": [
+        {
+          "name": "SOCKSHOP_MANIFEST",
+          "type": "string",
+          "default": "sockshop-weaveworks-spec.yaml",
+          "description": "Path to the Sock-Shop Weaveworks demo manifest applied into the cluster."
+        },
+        {
+          "name": "BASELINE_WINDOW_SECONDS",
+          "type": "string",
+          "default": "600",
+          "description": "Baseline-learning window before the behavioral deviation is injected."
+        }
+      ],
+      "timeout_seconds": 1500
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Fan-out of east-west TCP connections from the catalogue pod to services it has never previously contacted within the baseline window.",
+        "expected_value": "actor_process_image_name = \"sh\" and east-west connection count to new peers exceeds learned baseline"
+      },
+      {
+        "artifact_type": "process",
+        "description": "A shell process tree spawning network/packaging tooling inside a container whose learned baseline is a single long-running service process.",
+        "expected_value": "actor_process_image_name = \"sh\" and child process in (curl, nc, nmap, apt, apk)"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "kubectl delete -f \"${SOCKSHOP_MANIFEST:-sockshop-weaveworks-spec.yaml}\" --ignore-not-found; kubectl delete namespace sock-shop --ignore-not-found; echo '[CortexSim] SIM-CDR-009 cleanup complete — EKS cluster owned by terraform destroy.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "CDR-009 Anomalous East-West Connection Spike from Baselined Microservice",
+        "description": "A Sock-Shop microservice that Cortex has profiled to a stable set of east-west peers suddenly fans out connections to services it has never contacted in the learned baseline window. ABIOC anchors the deviation to the causality chain (privileged exec into the pod -> shell child -> new east-west peers), distinguishing a real behavioral anomaly from normal mesh traffic.",
+        "logic": "dataset = network_story\n| filter action_local_ip != null and action_remote_ip != null\n| filter actor_process_image_name in (\"sh\", \"bash\", \"nc\", \"curl\")\n| comp count_distinct(action_remote_ip) as distinct_peers by actor_effective_username, agent_hostname\n| filter distinct_peers >= 5\n| sort desc distinct_peers\n| fields agent_hostname, actor_effective_username, distinct_peers",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1046"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Privileged kubectl exec into the catalogue pod -> shell child process -> burst of east-west connections to peers absent from the learned service-mesh profile for this container."
+      },
+      {
+        "name": "CDR-009 Anomalous Container Process-Tree Deviation from Learned Baseline",
+        "description": "A container whose learned per-process baseline is a single long-running service binary suddenly hosts a shell process tree spawning network and packaging tooling. ABIOC fires on the single deviation event with the causality chain that ties the anomalous children back to the exec, rather than on a static known-bad process name.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"sh\", \"bash\")\n| filter action_process_image_name in (\"curl\", \"nc\", \"nmap\", \"python3\", \"apt\", \"apk\", \"ps\")\n| comp count() as anomalous_children by agent_hostname, actor_process_image_name\n| filter anomalous_children >= 1\n| fields agent_hostname, actor_process_image_name, anomalous_children",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1610",
+          "T1611"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-container process baseline (single service process) -> exec-spawned shell -> network/packaging child processes that diverge from the baseline, anchored to the originating exec."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CDR-009 Sock-Shop Baseline Service-Mesh Learned",
+        "query": "dataset = network_story\n| filter _time > to_timestamp(current_time() - 1500)\n| filter agent_hostname contains \"sock-shop\" or action_local_ip != null\n| comp count_distinct(action_remote_ip) as peers by actor_effective_username\n| filter peers >= 1\n| fields actor_effective_username, peers",
+        "expected_rows_min": 0,
+        "dataset": "network_story"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-009 Behavioral Deviation Surfaced in Endpoint Telemetry",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1500)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"sh\", \"bash\")\n| comp count() as shell_spawns by agent_hostname\n| filter shell_spawns >= 1\n| fields agent_hostname, shell_spawns",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Sock-Shop Microservices Behavioral Anomaly — ABIOC Causality Stitch",
+        "rule_id": "CR-CDR-0009",
+        "logic": "ABIOC(CDR-009 Anomalous East-West Connection Spike from Baselined Microservice) AND ABIOC(CDR-009 Anomalous Container Process-Tree Deviation from Learned Baseline) — fuses the two auto-tuned behavioral deviations into a single microservices-anomaly incident with the privileged-exec causality chain."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of container east-west connectivity and per-container process trees"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-ABIOC-CDR-0009-EASTWEST",
+          "XSIAM-ABIOC-CDR-0009-PROCTREE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Two ABIOCs fire on the learned-baseline deviation; CR-CDR-0009 stitches them into one behavioral-anomaly incident anchored to the privileged-exec causality chain."
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-MICROSERVICE-ANOMALY"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter actor_process_image_name in (\"sh\", \"bash\") | filter action_process_image_name in (\"curl\", \"nc\", \"nmap\")"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CLOUD-009",
+        "name": "Microservices Behavioral Anomaly Detection via Cortex ABIOC",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a microservices workload's east-west and per-container process baseline and detect a novel behavioral deviation no static rule was written for, anchored to its causality chain.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CLOUD-009A",
+            "objective": "Cortex learns the Sock-Shop baseline and an injected behavioral deviation fires both ABIOCs.",
+            "preconditions": [
+              "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",
+              "Sock-Shop deployed and a baseline window elapsed before deviation injection."
+            ],
+            "steps": [
+              "Deploy Sock-Shop and let the baseline window elapse.",
+              "Inject the anomalous east-west connection spike and process-tree deviation.",
+              "Observe both ABIOCs fire and CR-CDR-0009 raise a behavioral-anomaly incident."
+            ],
+            "success_criteria": [
+              "ABIOC `CDR-009 Anomalous East-West Connection Spike from Baselined Microservice` fires.",
+              "ABIOC `CDR-009 Anomalous Container Process-Tree Deviation from Learned Baseline` fires.",
+              "Correlation CR-CDR-0009 raises one stitched microservices behavioral-anomaly incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce a network policy (Calico/Cilium) that restricts each microservice to its declared east-west peers so anomalous fan-out is blocked at the mesh.",
+      "Run service containers as non-root with a read-only root filesystem and no shell, so an exec-spawned process tree cannot diverge from the service baseline.",
+      "Restrict kubectl exec into running pods via RBAC and audit every exec."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned east-west and per-container process baseline rather than hand-authoring static rules for every microservice.",
+      "Alert on a baselined microservice fanning out to previously-unseen east-west peers.",
+      "Alert on a container process tree diverging from its learned single-service-process baseline."
+    ],
+    "response_playbook": "XSOAR-PB-MicroserviceBehavioralAnomalyTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1610 — Deploy Container",
+      "url": "https://attack.mitre.org/techniques/T1610/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1046 — Network Service Discovery",
+      "url": "https://attack.mitre.org/techniques/T1046/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Unit 42 Cloud Threat Report — The State of Cloud-Native Security",
+      "url": "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    }
+  ]
+}

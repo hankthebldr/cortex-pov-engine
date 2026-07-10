@@ -6,7 +6,6 @@ status: active
 plane: CDR
 detection_types:
   - BIOC
-  - Analytics
 
 uc_ref: UCS-CDR-04
 tc_ref: TC-CDR-04
@@ -35,6 +34,26 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Container Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The container/k8s TTP signals injected by this scenario produce the
+  expected Cortex Cloud / XDR detections within the MTTD budget. Each
+  expected_detections row is validated against the container runtime and
+  cloud audit telemetry.
+moat_tier: "LEAD"
+
 external_tools:
   - name: kubectl
     source: "https://kubernetes.io/docs/tasks/tools/"
@@ -59,12 +78,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Kubernetes API server enumeration from within pod using mounted service account token"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-pod-api-server-enumeration-with-service-account-token
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Service account token used for API server discovery — anomalous cluster enumeration behavior"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-service-account-token-used-for-api-discovery-audit
 
   - id: step-02
@@ -83,12 +102,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Service account token read and copied — Kubernetes credential theft from mounted secret volume"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-service-account-token-read-and-copied-in-pod
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Sensitive Kubernetes credential file access pattern — token exfiltration to /tmp staging directory"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-service-account-token-staged-to-tmp-in-pod
 
   - id: step-03
@@ -108,12 +127,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "kubectl --all-namespaces enumeration from within pod — cross-namespace discovery using stolen token"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-kubectl-all-namespaces-enumeration-from-pod
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Cluster-wide pod discovery via kubectl in container — lateral movement reconnaissance pattern"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-cluster-wide-pod-discovery-audit-anomaly
 
   - id: step-04
@@ -136,12 +155,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "kubectl exec into pod in different namespace — lateral movement via Kubernetes API (high fidelity CDR BIOC)"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-kubectl-exec-into-adjacent-pod-lateral-movement
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Cross-namespace pod exec from compromised container — Kubernetes lateral movement chain detected"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-pod-exec-subresource-create-audit-anomaly
 
   - id: step-05
@@ -179,12 +198,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Kubernetes CronJob creation via kubectl — scheduled task persistence mechanism in cluster"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-malicious-cronjob-creation-via-kubectl-from-pod
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "CronJob creation anomaly — new batch workload created from compromised pod context, cross-namespace pattern"
-        ttp_ref: TTP-2026-0025
+        ttp_ref: "TTP-2026-0025"
         detection_id: bioc-cdr-004-cronjob-resource-create-audit-anomaly
 
 cleanup:

@@ -1,0 +1,151 @@
+scenario_id: SIM-CDR-009
+name: "Sock-Shop Microservices Behavioral Anomaly — Cortex ABIOC"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CDR-09
+tc_ref: TC-CDR-09
+uc_name: "Microservices Behavioral Anomaly Detection via Cortex ABIOC"
+tc_name: "Sock-Shop Baseline + Behavioral Deviation Detection"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1046"
+mitre_technique_name: "Network Service Discovery"
+additional_techniques:
+  - technique: "T1610"
+    name: "Deploy Container"
+  - technique: "T1611"
+    name: "Escape to Host"
+
+threat_report: "Unit42 - Cloud Threat Report: The State of Cloud-Native Security"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# This scenario validates Cortex Analytics Behavioral IOCs (ABIOC) — PANW's
+# auto-tuned, causality-anchored behavioral-ML detection type. It deploys the
+# Weaveworks Sock-Shop microservices mesh so Cortex can learn an east-west and
+# per-container process baseline, then injects a controlled deviation no static
+# rule was written for. Maps to the Signal Injection & Detection Accuracy
+# family (F1) — the deviation drives a behavioral detection, not a posture check.
+validation_methodology: "Behavioral Anomaly Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  After a baseline-learning window over the Sock-Shop microservices mesh, the
+  injected behavioral deviation (an anomalous east-west connection spike from a
+  baselined service and a container process-tree divergence from the learned
+  per-container baseline) fires both Cortex ABIOCs, and the correlation rule
+  stitches them into one behavioral-anomaly incident within the MTTD budget —
+  proving Cortex's auto-tuned behavioral analytics caught a novel deviation no
+  static BIOC was authored for, anchored to its privileged-exec causality chain.
+moat_tier: "LEAD"
+
+steps:
+  - id: step-01
+    name: "Deploy Sock-Shop microservices mesh and let Cortex learn the baseline"
+    command: |
+      kubectl apply -f "${SOCKSHOP_MANIFEST:-sockshop-weaveworks-spec.yaml}"
+      kubectl -n sock-shop rollout status deploy/catalogue --timeout=300s || true
+      echo "[*] Sock-Shop deployed — baselining east-west + per-container process profile"
+      sleep "${BASELINE_WINDOW_SECONDS:-600}"
+    identity: container-runtime
+    mitre_technique: "T1610"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Cortex learns the Sock-Shop east-west service-mesh baseline (per-service peer set) over the baselining window — precondition for behavioral-deviation detection"
+        ttp_ref: "TTP-2026-0080"
+        detection_id: xql-cdr-009-sock-shop-baseline-service-mesh-learned
+
+  - id: step-02
+    name: "Inject anomalous east-west connection spike from a baselined microservice"
+    command: |
+      NS=sock-shop
+      POD="$(kubectl -n "$NS" get pods -l name=catalogue -o jsonpath='{.items[0].metadata.name}')"
+      kubectl -n "$NS" exec "$POD" -- sh -c \
+        'for svc in user payment orders queue-master rabbitmq carts-db; do (echo > /dev/tcp/$svc/80) 2>/dev/null && echo connected:$svc; done'
+      echo "[*] Anomalous east-west fan-out injected from catalogue pod"
+    identity: container-runtime
+    mitre_technique: "T1046"
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "A baselined Sock-Shop microservice fans out east-west connections to peers absent from its learned service-mesh profile — auto-tuned ABIOC fires on the deviation, anchored to the privileged-exec causality chain"
+        ttp_ref: "TTP-2026-0080"
+        detection_id: abioc-cdr-009-anomalous-east-west-connection-spike-from-baselined-microservice
+
+  - id: step-03
+    name: "Inject anomalous container process-tree deviation from the learned baseline"
+    command: |
+      NS=sock-shop
+      POD="$(kubectl -n "$NS" get pods -l name=catalogue -o jsonpath='{.items[0].metadata.name}')"
+      kubectl -n "$NS" exec "$POD" -- sh -c 'sh -c "which curl nc nmap python3 apt apk; ps aux | head"'
+      echo "[*] Anomalous process tree spawned inside catalogue container"
+    identity: container-runtime
+    mitre_technique: "T1611"
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "A container whose learned baseline is a single long-running service process now hosts a shell process tree spawning network/packaging tooling — auto-tuned ABIOC fires on the process-tree divergence anchored to the exec"
+        ttp_ref: "TTP-2026-0080"
+        detection_id: abioc-cdr-009-anomalous-container-process-tree-deviation-from-learned-baseline
+      - plane: CDR
+        type: XQL
+        description: "The behavioral deviation surfaces in endpoint telemetry (exec-spawned shell process starts on the Sock-Shop node) — validation that the deviation reached xdr_data"
+        ttp_ref: "TTP-2026-0080"
+        detection_id: xql-cdr-009-behavioral-deviation-surfaced-in-endpoint-telemetry
+
+  - id: step-04
+    name: "Stitch the two ABIOCs into a single behavioral-anomaly incident"
+    command: |
+      echo "[*] Cortex correlation CR-CDR-0009 fuses the two ABIOC deviations into one microservices behavioral-anomaly incident"
+    identity: container-runtime
+    mitre_technique: "T1046"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation rule CR-CDR-0009 stitches the east-west connection-spike ABIOC and the process-tree-deviation ABIOC into one behavioral-anomaly incident with the privileged-exec causality chain"
+        ttp_ref: "TTP-2026-0080"
+        detection_id: CR-CDR-0009
+
+cleanup:
+  commands:
+    - "kubectl delete -f ${SOCKSHOP_MANIFEST:-sockshop-weaveworks-spec.yaml} --ignore-not-found"
+    - "kubectl delete namespace sock-shop --ignore-not-found"
+    - "echo '[CortexSim] SIM-CDR-009 cleanup complete'"
+  k8s_teardown: "kubectl delete -f {manifest_path}"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - container-security
+  - kubernetes
+  - abioc
+  - behavioral-analytics
+  - microservices
+  - cloud-native
+infra_modules_needed:
+  - cdr
+  - base

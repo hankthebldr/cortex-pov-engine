@@ -1,0 +1,295 @@
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Container Capability Read With Block Device Access"
+id: ttp-2026-0024-bioc-01
+status: experimental
+description: |
+  Container privilege enumeration — /proc/self/status capability read combined with /dev device access. A container process reads its own capability mask and probes a host block device, the precondition check for a privileged-mode escape.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter action_process_image_command_line contains_any ("/proc/self/status", "CapEff", "CapBnd")
+    | filter action_process_image_command_line contains_any ("/dev/sda", "/dev/sd", "/dev/nvme", "/dev/xvda")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1613/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1613
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Privileged Container Full Capability Set Anomaly"
+id: ttp-2026-0024-bioc-02
+status: experimental
+description: |
+  Privileged container anomaly — process capability set indicates full host capabilities. A container process is observed running with the full Linux capability bounding set (privileged mode).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_command_line contains_any ("CapEff:\t0000003fffffffff", "CapBnd:\t0000003fffffffff", "CapPrm:\t0000003fffffffff")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Host Filesystem Access Via Proc1 Root From Container"
+id: ttp-2026-0024-bioc-03
+status: experimental
+description: |
+  Host filesystem access via /proc/1/root from container — namespace traversal attempt. A container process reads host paths through /proc/1/root, reaching the host root filesystem without a formal escape.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter container_id != null
+    | filter action_file_path contains "/proc/1/root/"
+    | filter actor_process_image_name in ("ls", "cat", "bash", "sh", "find")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1083/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1083
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Proc1 Root Traversal Host Namespace Enumeration"
+id: ttp-2026-0024-bioc-04
+status: experimental
+description: |
+  Suspicious /proc/1/root traversal in container context — host namespace enumeration. A container process lists or reads host configuration through PID 1's root link to map the host before escaping.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter action_process_image_command_line contains "/proc/1/root"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1083/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1083
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 nsenter Into PID1 Mount Namespace Container Escape"
+id: ttp-2026-0024-bioc-05
+status: experimental
+description: |
+  nsenter execution targeting PID 1 mount namespace — container escape via privileged mode (high fidelity). nsenter joins the host (PID 1) mount namespace from inside a container, the definitive escape primitive.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_name = "nsenter"
+    | filter action_process_image_command_line contains_any ("/proc/1/ns/mnt", "--mount=/proc/1", "-t 1", "--target 1")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Anomalous Namespace Switch From Container Process"
+id: ttp-2026-0024-bioc-06
+status: experimental
+description: |
+  Host namespace access via nsenter — anomalous namespace switch from container process. A container process switches into a host namespace via nsenter, an action no legitimate workload performs.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_name = "nsenter"
+    | filter action_process_image_command_line contains_any ("--mount", "--pid", "--net", "--ipc", "--uts")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1611/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1611
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Host Passwd Read From Container Via Namespace Escape"
+id: ttp-2026-0024-bioc-07
+status: experimental
+description: |
+  Host /etc/passwd access from container via namespace escape — credential harvesting post-escape. After escaping, the process reads the host /etc/passwd or /etc/shadow through the joined namespace.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter container_id != null
+    | filter action_file_path in ("/etc/passwd", "/etc/shadow")
+    | filter causality_actor_process_image_name = "nsenter" or actor_process_image_name = "nsenter"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.008
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Sensitive Host File Read Following Container Escape"
+id: ttp-2026-0024-bioc-08
+status: experimental
+description: |
+  Sensitive host file read following successful container escape — multi-stage attack chain detected. A sensitive host credential file is read in the same container lineage that just performed an nsenter escape.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_name = "nsenter"
+    | filter action_process_image_command_line contains_any ("/etc/passwd", "/etc/shadow", "cat /etc")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.008
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Host Cron Persistence Written From Escaped Container"
+id: ttp-2026-0024-bioc-09
+status: experimental
+description: |
+  Cron persistence written to host filesystem from container escape — T1611 + T1053 chained. The escaped process writes a cron job to the host /etc/cron.d to persist on the node.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type = ENUM.FILE_CREATE
+    | filter container_id != null
+    | filter action_file_path contains "/etc/cron.d/"
+    | filter causality_actor_process_image_name = "nsenter" or actor_process_image_name = "nsenter"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Container Escape via Privileged Mode and nsenter (T1611) \u2014 CDR-003 Host CronD File Creation After Namespace Escape"
+id: ttp-2026-0024-bioc-10
+status: experimental
+description: |
+  Host cron.d file creation following container namespace escape — kill chain stitching signal. A new /etc/cron.d file appears on the host in a lineage that performed a namespace switch.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter action_process_image_command_line contains "/etc/cron.d/"
+    | filter causality_actor_process_image_name = "nsenter"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical

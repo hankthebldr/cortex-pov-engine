@@ -2,7 +2,19 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import { getTtps, getTtp, getTtpRuns, getScenarios, postRun } from '../../api/client.js'
 import { downloadTtpLayer } from './exportNavigatorLayer.js'
 import TtpEditorView from './TtpEditorView.jsx'
+import DetectionTypeChip from './DetectionTypeChip.jsx'
 import { tokeniserFor } from './syntaxHighlight.js'
+
+// Maps a card detection-family key to the canonical detection-type chip token
+// so Correlation (the XSIAM differentiator) and XQL render with their distinct
+// colors in the accordion headers. See DetectionTypeChip / GAP-2.
+const DETECTION_KIND_CHIP = {
+  biocs:             'BIOC',
+  xql_queries:       'XQL',
+  correlation_rules: 'Correlation',
+  iocs:              'IOC',
+  analytics_modules: 'Analytics',
+}
 
 /**
  * TtpBrowserView — surface the TTP corpus that lives under
@@ -349,6 +361,25 @@ function TtpCard({ ttp, isSelected, onSelect }) {
               >
                 {p}
               </span>
+            ))}
+          </div>
+        )}
+        {/* Detection-kind chips — Correlation/XQL stand out at a glance so a
+            DC can spot stitching coverage without opening the card. */}
+        {totalDetections > 0 && (
+          <div className="adapter-card__det-kinds" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+            {[
+              { type: 'BIOC',        n: counts.biocs },
+              { type: 'XQL',         n: counts.xql_queries },
+              { type: 'Correlation', n: counts.correlation_rules },
+              { type: 'Analytics',   n: counts.analytics_modules },
+              { type: 'IOC',         n: counts.iocs },
+            ].filter((k) => k.n > 0).map((k) => (
+              <DetectionTypeChip
+                key={k.type}
+                type={k.type}
+                title={`${k.n} ${k.type} detection${k.n === 1 ? '' : 's'}`}
+              />
             ))}
           </div>
         )}
@@ -728,10 +759,16 @@ function DetectionsBreakdown({ detections }) {
         return (
           <div key={key} className="ttp-detections__group">
             <div
-              className="competitive__detail-label mono"
-              style={{ fontSize: 10, opacity: 0.7, marginBottom: 4 }}
+              className="ttp-detections__group-head"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}
             >
-              {label} · {items.length}
+              <DetectionTypeChip type={DETECTION_KIND_CHIP[key] || label} />
+              <span
+                className="competitive__detail-label mono"
+                style={{ fontSize: 10, opacity: 0.7 }}
+              >
+                {items.length}
+              </span>
             </div>
             {items.map((item, idx) => (
               <DetectionItem

@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0037",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -132,7 +132,34 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "203.0.113.10",
+        "context": "US-West (San Francisco) source IP of the first SUCCESS sign-in in the impossible-travel pair, as emitted by the idp_signin_emulator (_LOCATIONS[\"us-west\"]). Appears in the Okta client.ipAddress / Entra ipAddress field of the synthetic event.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "192.0.2.77",
+        "context": "APAC-East (Singapore) source IP of the second SUCCESS sign-in seconds later for the same principal — the geographically-impossible second leg the emulator stamps with impossible_travel_marker (_LOCATIONS[\"apac-east\"]).",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "user-agent",
+        "value": "Mozilla/5.0 (X11; Linux x86_64) CortexSim/1.0",
+        "context": "Default outbound User-Agent the idp_signin_emulator stamps on the impossible-travel sign-in events (ua_default). A single UA reused across both distant geos for one identity reinforces the session-replay reading.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "email-sender",
+        "value": "ada.lovelace@cortexsim-canary.invalid",
+        "context": "Target user principal whose Okta system-log / Entra signInLogs carry the impossible-travel pair (idp_signin_emulator target_user default). Pivot identity for the account-compromise incident.",
+        "reputation_required": "any"
+      }
+    ],
     "biocs": [
       {
         "name": "ITDR-001 Pre-Flight idp_signin_emulator Metadata Visible",
@@ -278,6 +305,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real IdP-log impossible-travel XQL (Okta + Entra), pre-flight BIOC, NGFW corroboration query, correlation CR-ITDR-0001; enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10 IOC coverage: added 4 IOCs grounded in the idp_signin_emulator impossible_travel synthetic telemetry — the US-West (203.0.113.10) and APAC-East (192.0.2.77) source IPs of the two SUCCESS sign-ins, the default CortexSim sign-in User-Agent, and the ada.lovelace target-user principal. No change to existing BIOC/XQL/correlation logic."
     }
   ]
 }

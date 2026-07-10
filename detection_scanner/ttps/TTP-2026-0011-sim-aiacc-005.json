@@ -1,7 +1,7 @@
 {
   "id": "TTP-2026-0011",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:11+00:00",
@@ -23,11 +23,13 @@
       "industry-all",
       "severity-high",
       "cross-provider",
-      "stitching"
+      "stitching",
+      "mitre-atlas"
     ],
     "source_refs": [
       "SRC-MITRE-ATTACK",
-      "SRC-UNIT42"
+      "SRC-UNIT42",
+      "SRC-MITRE-ATLAS"
     ],
     "pov_engine": {
       "engine_version_min": "0.1.0",
@@ -47,9 +49,9 @@
     }
   },
   "identity": {
-    "name": "AI Access \u2014 Cross-Provider Rotation (OpenAI \u2192 Gemini \u2192 Anthropic)",
-    "summary": "A single user rotates the same source-code content across all three AI providers within five minutes to evade per-provider policy. The llm_provider_egress plugin POSTs source payloads to api.openai.com, then generativelanguage.googleapis.com, then api.anthropic.com \u2014 each request sharing an X-Simulation-Run-ID prefix. Cortex AI Access Security flags the provider-hopping pattern and XSIAM stitch\u2026",
-    "description": "Provider hopping is a defense-evasion pattern: a user who is blocked or throttled at one AI provider rotates the same content to another to stay under per-provider thresholds. This scenario rotates a marked source-code payload across all three providers within five minutes from a single user \u2014 OpenAI, then Gemini, then Anthropic \u2014 with each outbound request sharing an X-Simulation-Run-ID prefix so the SOC can tie them together. Detection is sequence-based: (1) the first egress to OpenAI marks the user active in the provider matrix; (2) the same user appearing at the second provider within the rotation window raises the hop signal; (3) hitting all three providers within five minutes fires the provider-hopping policy-evasion alert; (4) XSIAM correlates the three provider sessions on the single user identity into one incident; (5) the NGFW sees the generative-AI App-ID across three FQDNs sharing the run-ID prefix. A correlation rule fuses the per-provider analytics signals into one cross-provider-rotation incident.",
+    "name": "AI Access — Cross-Provider Rotation (OpenAI → Gemini → Anthropic)",
+    "summary": "A single user rotates the same source-code content across all three AI providers within five minutes to evade per-provider policy. The llm_provider_egress plugin POSTs source payloads to api.openai.com, then generativelanguage.googleapis.com, then api.anthropic.com — each request sharing an X-Simulation-Run-ID prefix. Cortex AI Access Security flags the provider-hopping pattern and XSIAM stitch…",
+    "description": "Provider hopping is a defense-evasion pattern: a user who is blocked or throttled at one AI provider rotates the same content to another to stay under per-provider thresholds. This scenario rotates a marked source-code payload across all three providers within five minutes from a single user — OpenAI, then Gemini, then Anthropic — with each outbound request sharing an X-Simulation-Run-ID prefix so the SOC can tie them together. Detection is sequence-based: (1) the first egress to OpenAI marks the user active in the provider matrix; (2) the same user appearing at the second provider within the rotation window raises the hop signal; (3) hitting all three providers within five minutes fires the provider-hopping policy-evasion alert; (4) XSIAM correlates the three provider sessions on the single user identity into one incident; (5) the NGFW sees the generative-AI App-ID across three FQDNs sharing the run-ID prefix. A correlation rule fuses the per-provider analytics signals into one cross-provider-rotation incident.",
     "severity": "high",
     "confidence": "high"
   },
@@ -91,6 +93,13 @@
       "Network Traffic: Network Connection Creation",
       "Network Traffic: Network Traffic Content",
       "Application Log: Application Log Content"
+    ],
+    "atlas_techniques": [
+      {
+        "atlas_id": "AML.T0057",
+        "name": "LLM Data Leakage",
+        "atlas_tactic": "Exfiltration"
+      }
     ]
   },
   "execution": {
@@ -109,7 +118,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# step-1: Provider 1 \u2014 OpenAI\ncat > /tmp/aiacc-005-openai.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access \u2014 rotation step 1 OpenAI\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\ntags: [ai-access, cross-provider, rotation]\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-openai.yml --live\n# step-2: Provider 2 \u2014 Gemini (overlapping content within 60s)\nsleep 30\ncat > /tmp/aiacc-005-gemini.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access \u2014 rotation step 2 Gemini\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - generativelanguage.googleapis.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: gemini\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-gemini.yml --live\n# step-3: Provider 3 \u2014 Anthropic completes the rotation triangle\nsleep 30\ncat > /tmp/aiacc-005-anthropic.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access \u2014 rotation step 3 Anthropic\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.anthropic.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: anthropic\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-anthropic.yml --live",
+      "code": "# step-1: Provider 1 — OpenAI\ncat > /tmp/aiacc-005-openai.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access — rotation step 1 OpenAI\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.openai.com\ndry_run: false\ntags: [ai-access, cross-provider, rotation]\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: openai\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-openai.yml --live\n# step-2: Provider 2 — Gemini (overlapping content within 60s)\nsleep 30\ncat > /tmp/aiacc-005-gemini.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access — rotation step 2 Gemini\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - generativelanguage.googleapis.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: gemini\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-gemini.yml --live\n# step-3: Provider 3 — Anthropic completes the rotation triangle\nsleep 30\ncat > /tmp/aiacc-005-anthropic.yml <<'YML'\ncampaign_id: CMP-AIACC-005\nname: \"AI Access — rotation step 3 Anthropic\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - api.anthropic.com\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params:\n      provider: anthropic\n      payload_type: source\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-anthropic.yml --live",
       "input_variables": [],
       "timeout_seconds": 240
     },
@@ -178,8 +187,8 @@
       }
     ],
     "analytics_modules": [
-      "Cortex AI Access Security \u2014 Cross-provider behaviour stitching",
-      "Cortex XSIAM \u2014 Identity-based session correlation across data planes"
+      "Cortex AI Access Security — Cross-provider behaviour stitching",
+      "Cortex XSIAM — Identity-based session correlation across data planes"
     ]
   },
   "panw_mapping": {
@@ -273,7 +282,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1090 \u2014 Proxy",
+      "title": "MITRE ATT&CK T1090 — Proxy",
       "url": "https://attack.mitre.org/techniques/T1090/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -291,6 +300,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real cross-provider rotation / XSIAM stitching XQL against panw_ngfw_traffic_raw, added correlation CR-AIACC-0005, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
     }
   ]
 }

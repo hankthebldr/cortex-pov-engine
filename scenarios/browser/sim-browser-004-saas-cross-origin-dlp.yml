@@ -35,6 +35,25 @@ required_content:
 infra_modules_needed:
   - base
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Prisma Browser Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The Playwright-driven browser actions produce the expected Prisma Browser
+  DLP / extension / phishing detection. Detection Accuracy is the share of
+  injected browser events that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
 external_tools:
   - name: Cortex Browser Attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -58,7 +77,7 @@ steps:
       - plane: BROWSER
         type: Analytics
         description: "Pre-flight: plugin metadata visible to operator"
-        ttp_ref: TTP-2026-0020
+        ttp_ref: "TTP-2026-0020"
         detection_id: xql-pre-flight-plugin-metadata-visible-to-operator
 
   - id: step-02
@@ -91,17 +110,17 @@ steps:
       - plane: BROWSER
         type: BIOC
         description: "Prisma Browser — cross-origin paste from sanctioned CRM into personal webmail (DLP rule)"
-        ttp_ref: TTP-2026-0020
+        ttp_ref: "TTP-2026-0020"
         detection_id: bioc-prisma-browser-cross-origin-paste-from-sanctioned-crm-into-personal-webmail-dlp-rule
       - plane: BROWSER
         type: Analytics
         description: "Prisma Browser — clipboard origin tag mismatch with paste destination origin"
-        ttp_ref: TTP-2026-0020
+        ttp_ref: "TTP-2026-0020"
         detection_id: xql-prisma-browser-clipboard-origin-tag-mismatch-with-paste-destination-origin
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM stitching — copy + paste correlated by clipboard payload hash"
-        ttp_ref: TTP-2026-0020
+        ttp_ref: "TTP-2026-0020"
         detection_id: xql-xsiam-stitching-copy-paste-correlated-by-clipboard-payload-hash
 
   - id: step-03
@@ -114,7 +133,7 @@ steps:
       - plane: ANALYTICS
         type: Analytics
         description: "XSIAM — stitched cross-origin DLP incident with both origins on the timeline"
-        ttp_ref: TTP-2026-0020
+        ttp_ref: "TTP-2026-0020"
         detection_id: xql-xsiam-stitched-cross-origin-dlp-incident-with-both-origins-on-the-timeline
 
 cleanup:

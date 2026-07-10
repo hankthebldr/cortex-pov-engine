@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1526",
+    "T1580"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AISPM-001 AI Asset Scan Cycle Discovery) AND XQL(AISPM-001 Inventory API AI Tagged Assets Count) AND XQL(AISPM-001 Asset Discovery Coverage Reconciliation)",
+      "name": "Shadow-AI Inventory Coverage \u2014 Full Asset Discovery",
+      "rule_id": "CR-AISPM-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0054"
+}

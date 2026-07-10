@@ -1,0 +1,25 @@
+{
+  "mitre_techniques": [
+    "T1613",
+    "T1526",
+    "T1552.001",
+    "T1046"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(CDR-007 Trivy Image and IaC Critical Findings Surfaced) AND XQL(CDR-007 kube-bench CIS Benchmark Failures Surfaced) AND XQL(CDR-007 Kubescape NSA CISA Hardening Gaps Surfaced) AND XQL(CDR-007 Bulk Secret Pattern File Reads During Sweep) AND XQL(CDR-007 Cloudsplaining IAM Privilege Escalation Paths Surfaced)",
+      "name": "Container & Kubernetes Posture Coverage \u2014 Full Supply-Chain & Hardening Sweep",
+      "rule_id": "CR-CDR-0007",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "BIOC(CDR-007 Privileged Container Exec into EKS Workload) OR BIOC(CDR-007 IAM GetAccountAuthorizationDetails Bulk Enumeration) \u2014 promotes the posture sweep to a runtime-discovery incident when the scan activity matches the same shape an attacker's container/cloud discovery would produce.",
+      "name": "Cluster Posture-to-Runtime \u2014 Discovery Activity Detected During Sweep",
+      "rule_id": "CR-CDR-0008",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0076"
+}

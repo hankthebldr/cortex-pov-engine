@@ -78,7 +78,7 @@ def seeded_run(session_factory):
                 )
             await db.commit()
 
-    asyncio.get_event_loop().run_until_complete(_seed())
+    asyncio.run(_seed())
     return "r-1"
 
 
@@ -178,7 +178,7 @@ def run_with_tools(session_factory):
             ))
             await db.commit()
 
-    asyncio.get_event_loop().run_until_complete(_seed())
+    asyncio.run(_seed())
     return "r-tools"
 
 
@@ -325,7 +325,7 @@ def test_run_complete_transitions_status(client, session_factory):
             )
             await db.commit()
 
-    asyncio.get_event_loop().run_until_complete(_seed())
+    asyncio.run(_seed())
 
     r = client.post(
         "/api/runs/r-fail/complete",

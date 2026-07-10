@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1176",
+    "T1195",
+    "T1552.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate) OR BIOC(KOI-004 VSCode Extension Activate Beacons Outbound To Non Microsoft Domain)",
+      "name": "Agentic Supply Chain \u2014 Malicious IDE Extension Credential Theft",
+      "rule_id": "CR-KOI-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0045"
+}

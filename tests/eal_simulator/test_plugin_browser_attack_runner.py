@@ -75,7 +75,7 @@ def _campaign(*, allowlist_host: str, campaign_path: str,
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def test_plugin_dry_run_does_not_invoke_binary(tmp_path: Path):

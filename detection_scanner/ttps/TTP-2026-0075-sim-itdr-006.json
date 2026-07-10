@@ -1,0 +1,380 @@
+{
+  "id": "TTP-2026-0075",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-10T00:00:00+00:00",
+    "updated_at": "2026-06-10T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "plane-ndr",
+      "vector-kerberoast",
+      "vector-asrep-roast",
+      "actor-all",
+      "industry-all",
+      "severity-high",
+      "identity",
+      "windows",
+      "active-directory"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 180,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Active Directory Offline-Roasting Credential Harvest — AS-REP Roast + Kerberoast (T1558.004 / T1558.003)",
+    "summary": "Against the authorised CortexSim AD lab, an operator harvests crackable Kerberos material two ways: impacket-GetNPUsers pulls an AS-REP for the pre-auth-disabled helpdesk-admin account (AS-REP Roasting), and impacket-GetUserSPNs requests TGS tickets for the SPN-bearing service accounts (Kerberoasting). Cortex ITDR fires BIOCs on the pre-auth AS-REQ, the SPN LDAP sweep, and the RC4 TGS-REQ burst.",
+    "description": "Offline roasting is the lowest-friction credential-access path in Active Directory because it requires only a valid (or, for AS-REP, no) domain context and yields a hash crackable entirely offline — no lateral movement, no malware on the DC. This card reproduces both roasting families against the deliberately-misconfigured CortexSim AD lab (the `itdr` IaC module seeds five SPN-bearing service accounts — sql-svc, web-svc, bkp-svc, ora-svc, app-svc — with the weak password `Summer2024`, and one Domain-Admin-equivalent account, helpdesk-admin, with DoesNotRequirePreAuth set). AS-REP Roasting (T1558.004): impacket-GetNPUsers asks the KDC for an AS-REP for helpdesk-admin; because Kerberos pre-authentication is disabled, the KDC returns an AS-REP whose encrypted part is a crackable hash of the account password — observable as an AS-REQ for a pre-auth-disabled principal and (on a 4768 audit) an unusual pre-auth type. Kerberoasting (T1558.003): impacket-GetUserSPNs first issues an LDAP query filtered on servicePrincipalName=* to enumerate roastable accounts (the recon tell ITDR keys on), then requests RC4-encrypted TGS service tickets for each SPN, producing a burst of Kerberos 4769 TGS-REQ events for multiple service principals from one source. Both hashes are cracked offline (simulated here — no real cracking) and the cracked credential becomes the pivot for the separate lateral-movement chain (SIM-MP-002). The detection model is identity-behavioural: (1) a BIOC fires on an AS-REQ / 4768 for an account flagged DoesNotRequirePreAuth; (2) a BIOC fires on a servicePrincipalName LDAP sweep from a non-DC, non-admin host; (3) a BIOC fires on a 4769 TGS-REQ burst requesting RC4 (etype 0x17) tickets for multiple distinct SPNs from one source; validation XQL confirms each, the NGFW XQL confirms the port-88 spike, and a correlation rule groups AS-REP + Kerberoast from one source into a single Credential Access incident. This card is the dedicated single-plane ITDR roasting scenario; the cross-plane Kerberoast→PtH→DCSync chain remains TTP-2026-0063 / SIM-MP-002.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Wizard Spider",
+        "aliases": [
+          "Conti / Ryuk operators"
+        ]
+      },
+      {
+        "name": "FIN7"
+      }
+    ],
+    "campaigns": [
+      "Commodity ransomware AD credential-access tradecraft 2020-2025"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2016-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1558",
+        "name": "Steal or Forge Kerberos Tickets: AS-REP Roasting",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1558.004"
+      },
+      {
+        "technique_id": "T1558",
+        "name": "Steal or Forge Kerberos Tickets: Kerberoasting",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1558.003"
+      },
+      {
+        "technique_id": "T1087",
+        "name": "Account Discovery: Domain Account",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ],
+        "subtechnique_id": "T1087.002"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Active Directory: Active Directory Object Access",
+      "Logon Session: Logon Session Creation",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "impacket-GetNPUsers / impacket-GetUserSPNs (SIM-ITDR-006)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex ITDR connected to the Active Directory domain (security event + LDAP/Kerberos telemetry) on the authorised CortexSim AD lab.",
+        "check_command": "nslookup -type=SRV _ldap._tcp.cortexsim.local"
+      },
+      {
+        "description": "Lab matching the `itdr` IaC module: seeded SPN-bearing service accounts (sql-svc/web-svc/bkp-svc/ora-svc/app-svc) and the pre-auth-disabled helpdesk-admin account.",
+        "check_command": "impacket-GetUserSPNs cortexsim.local/Administrator -dc-ip 10.0.10.10 2>&1 | head -3"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# All activity targets the authorised CortexSim itdr-module AD lab.\n# AS-REP Roast: pull a crackable AS-REP for the pre-auth-disabled DA-equivalent account.\nimpacket-GetNPUsers cortexsim.local/ -no-pass -usersfile helpdesk-admin -dc-ip 10.0.10.10 -request\n# Kerberoast: enumerate SPNs then request RC4 TGS tickets for every service account.\nimpacket-GetUserSPNs cortexsim.local/Administrator:$ADMIN_PWD -dc-ip 10.0.10.10 -request",
+      "input_variables": [],
+      "timeout_seconds": 180
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Kerberos AS-REQ (4768) for an account flagged DoesNotRequirePreAuth (AS-REP Roasting).",
+        "expected_value": "event_id = 4768 and account_name = \"helpdesk-admin\" and pre_auth_type = 0"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "LDAP search with a servicePrincipalName filter from a non-DC host (Kerberoast recon).",
+        "expected_value": "search_filter contains \"servicePrincipalName\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Burst of Kerberos 4769 TGS-REQ requesting RC4 (etype 0x17) for multiple service principals from one source.",
+        "expected_value": "event_id = 4769 and ticket_encryption_type = 0x17 and count_distinct(service_name) >= 3"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Spike of outbound Kerberos (TCP/UDP 88) sessions from the operator host to the DC.",
+        "expected_value": "dst_port = 88 from operator host"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-ITDR-006 cleanup complete — removing simulated roast artifacts'; rm -f /tmp/cortexsim_itdr006_asrep.txt /tmp/cortexsim_itdr006_tgs.txt"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "ITDR-006 AS-REQ For Pre-Auth-Disabled Account (AS-REP Roast)",
+        "description": "ITDR - a Kerberos AS-REQ / 4768 is observed for a domain account whose userAccountControl has DoesNotRequirePreAuth set. Requesting an AS-REP for such an account returns a crackable hash with no prior authentication — the AS-REP Roasting fingerprint (T1558.004).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter event_id = 4768\n| filter pre_authentication_type = 0\n| filter src_host not in (\"DC01\", \"DC02\")\n| fields _time, account_name, src_host, pre_authentication_type",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1558.004"
+        ]
+      },
+      {
+        "name": "ITDR-006 LDAP SPN Sweep From Non-Typical Host",
+        "description": "ITDR - LDAP search filter (servicePrincipalName=*) from a host that is not a domain controller and not an established admin workstation — the enumeration that precedes Kerberoasting (T1558.003).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter operation_name in (\"LDAP_SEARCH\", \"DirectorySearch\")\n| filter lower(search_filter) contains \"serviceprincipalname\"\n| filter src_host not in (\"DC01\", \"DC02\")\n| filter actor_effective_username not in (\"Administrator\", \"svc-bloodhound\")\n| fields _time, src_host, actor_effective_username, search_filter",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1558.003",
+          "T1087.002"
+        ]
+      },
+      {
+        "name": "ITDR-006 Kerberos TGS-REQ RC4 Burst For Multiple SPNs",
+        "description": "ITDR - a single source requests RC4-encrypted (etype 0x17) TGS service tickets (4769) for three or more distinct service principals in a short window — the Kerberoasting ticket-harvest fingerprint (T1558.003). RC4 is requested because its TGS is the easiest to crack offline.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter event_id = 4769\n| filter ticket_encryption_type = \"0x17\"\n| bin _time span=5m\n| comp count_distinct(service_name) as spn_count by src_host, actor_effective_username, _time\n| filter spn_count >= 3\n| fields _time, src_host, actor_effective_username, spn_count",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1558.003"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-006 Validate AS-REP Roast AS-REQ For Pre-Auth-Disabled Account",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter event_id = 4768 and pre_authentication_type = 0\n| comp count() as asrep_requests by account_name, src_host\n| filter asrep_requests >= 1\n| fields account_name, src_host, asrep_requests",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-006 Validate Kerberoast TGS-REQ RC4 Burst",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter event_id = 4769 and ticket_encryption_type = \"0x17\"\n| comp count_distinct(service_name) as spn_count by src_host, actor_effective_username\n| filter spn_count >= 3\n| fields src_host, actor_effective_username, spn_count",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-006 NGFW Kerberos Port 88 Traffic Spike From Operator Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port = 88\n| filter app in (\"kerberos\", \"ms-kerberos\") or proto in (\"tcp\", \"udp\")\n| comp count(session_id) as kerb_sessions by source_ip, dest_ip\n| filter kerb_sessions >= 5\n| fields source_ip, dest_ip, kerb_sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ITDR-006 Hunt All Roastable Principals Targeted From One Source",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 86400)\n| filter event_type = ENUM.ACTIVE_DIRECTORY\n| filter event_id in (4768, 4769)\n| comp count_distinct(service_name) as spns_targeted, count_distinct(account_name) as accounts_targeted by src_host\n| sort desc spns_targeted\n| fields src_host, spns_targeted, accounts_targeted",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AD Offline-Roasting Credential Harvest From One Source",
+        "rule_id": "CR-ITDR-0006",
+        "logic": "(BIOC(ITDR-006 AS-REQ For Pre-Auth-Disabled Account (AS-REP Roast)) OR BIOC(ITDR-006 Kerberos TGS-REQ RC4 Burst For Multiple SPNs)) AND BIOC(ITDR-006 LDAP SPN Sweep From Non-Typical Host) — groups AS-REP Roasting and Kerberoasting harvesting from one source host into a single Credential Access incident."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex ITDR — Kerberoasting recon (LDAP SPN sweep + RC4 TGS-REQ burst)",
+        "validated": true,
+        "note": "Backed by BIOC 'ITDR-006 Kerberos TGS-REQ RC4 Burst For Multiple SPNs' + its validation XQL on this card."
+      },
+      {
+        "module": "Cortex ITDR — AS-REP Roastable account targeting",
+        "validated": true,
+        "note": "Backed by BIOC 'ITDR-006 AS-REQ For Pre-Auth-Disabled Account' + its validation XQL on this card."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — Kerberos encryption-downgrade (RC4 request) anomaly",
+        "validated": false
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "identity-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "ITDR-BIOC-0075-ASREP-ROAST",
+          "ITDR-BIOC-0075-SPN-SWEEP",
+          "ITDR-ANL-0075-TGS-RC4-BURST"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.ACTIVE_DIRECTORY | filter (event_id = 4768 and pre_authentication_type = 0) or (event_id = 4769 and ticket_encryption_type = \"0x17\") | fields _time, account_name, src_host, service_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-ANL-0075-KERB88"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_port = 88 | comp count(session_id) as sessions by source_ip, dest_ip"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-ITDR-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-ITDR-0006 groups AS-REP Roasting and Kerberoasting from one source host into a single Credential Access incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-RoastingResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: disable the targeted roastable accounts, force a long random password / gMSA rotation, and enable Kerberos pre-auth."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CRED-075",
+        "name": "Active Directory Offline Roasting — AS-REP Roast + Kerberoast Harvest",
+        "description": "Detect both offline-roasting credential-access families (AS-REP Roasting and Kerberoasting) when harvested from a single source against the seeded AD lab, and group them into one Credential Access incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CRED-075A",
+            "objective": "AS-REP Roast and Kerberoast each fire their ITDR detection during SIM-ITDR-006.",
+            "preconditions": [
+              "Cortex ITDR connected to AD with the seeded pre-auth-disabled and SPN-bearing accounts.",
+              "BIOCs from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-ITDR-006 steps 1-3 against the seeded lab.",
+              "Observe the AS-REP, SPN-sweep, and TGS-REQ-burst ITDR detections in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `ITDR-006 AS-REQ For Pre-Auth-Disabled Account (AS-REP Roast)` fires on the AS-REP harvest step.",
+              "BIOC `ITDR-006 Kerberos TGS-REQ RC4 Burst For Multiple SPNs` fires with spn_count >= 3.",
+              "All three XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-CRED-075B",
+            "objective": "Both roasting techniques stitch into one Credential Access incident.",
+            "success_criteria": [
+              "Correlation `CR-ITDR-0006` groups the AS-REP + Kerberoast signals from one source into a single incident.",
+              "Incident severity is High."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Set long (25+ character) random passwords or use group Managed Service Accounts (gMSA) for all SPN-bearing service accounts so a roasted TGS is uncrackable.",
+      "Enable Kerberos pre-authentication on every account and audit for the DoesNotRequirePreAuth flag.",
+      "Disable RC4 for Kerberos and require AES, removing the cheap-to-crack TGS encryption type.",
+      "Restrict and monitor who can read servicePrincipalName attributes across the directory."
+    ],
+    "detection_engineering": [
+      "Alert on AS-REQ / 4768 events for accounts flagged DoesNotRequirePreAuth.",
+      "Alert on LDAP searches filtering servicePrincipalName from non-DC, non-admin hosts.",
+      "Alert on a burst of 4769 TGS-REQ requesting RC4 (etype 0x17) for multiple SPNs from a single source.",
+      "Correlate AS-REP Roasting and Kerberoasting from one source into a single Credential Access incident."
+    ],
+    "response_playbook": "XSOAR-PB-RoastingResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Active Directory Attack Paths",
+      "url": "https://unit42.paloaltonetworks.com/active-directory-attack-paths/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1558.004 — AS-REP Roasting",
+      "url": "https://attack.mitre.org/techniques/T1558/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1558.003 — Kerberoasting",
+      "url": "https://attack.mitre.org/techniques/T1558/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-10",
+      "author": "Henry Reed",
+      "change": "GAP-ADAPT-02: dedicated single-plane ITDR offline-roasting card for SIM-ITDR-006 — AS-REP Roast (T1558.004) + Kerberoast (T1558.003) harvest against the itdr-module seeded lab. Real ITDR AS-REQ / SPN-sweep / RC4-TGS-burst BIOCs+XQL, NGFW port-88 XQL, correlation CR-ITDR-0006, GAP-11 validated/unvalidated analytics split. Wired to the adapter-gated SIM-ITDR-006 scenario (TOOL-IMPACKET / TOOL-RUBEUS)."
+    }
+  ]
+}

@@ -18,8 +18,9 @@ provider "aws" {
   region = var.region
   default_tags {
     tags = {
-      CortexSimBundle = "{{ bundle_id }}"
-      Project         = var.project_name
+      CortexSimBundle   = "{{ bundle_id }}"
+      Project           = var.project_name
+      CortexSimTTLHours = tostring(var.ttl_hours)
     }
   }
 }
@@ -127,6 +128,7 @@ module "ai-spm" {
   vpc_id            = module.base.vpc_id
   subnet_id         = module.base.public_subnet_ids[0]
   region            = var.region
+  enable_shadow_gpu = var.aispm_enable_shadow_gpu
   tags              = var.tags
 }
 {% endif %}

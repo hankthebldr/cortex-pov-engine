@@ -1,0 +1,28 @@
+title: "Prisma Browser \u2014 Screen Capture of Sensitive SaaS Page (T1113) \u2014 Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert"
+id: ttp-2026-0021-bioc-01
+status: experimental
+description: |
+  Prisma Browser — page.screenshot() called against origin tagged sensitive — block + alert. A programmatic screen capture targets a page whose origin is classified sensitive; policy blocks and alerts.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = prisma_browser_events
+    | filter action = "screen-capture"
+    | filter data_classification in ("sensitive", "confidential", "restricted")
+    | filter origin in ("crm.cortexsim-test.invalid", "crm.corp.example.com", "salesforce.com")
+    | filter capture_method in ("page.screenshot", "getDisplayMedia", "os-capture")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1113/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1113
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

@@ -1,0 +1,62 @@
+title: "WildFire Test-Sample Retrieval in Container + Pod Misconfiguration \u2014 Cortex Cloud CDR (T1610 / T1204) \u2014 CDR-012 Privileged or HostPath Pod Misconfiguration"
+id: ttp-2026-0084-bioc-01
+status: experimental
+description: |
+  A pod runs with a privileged securityContext, runs as root (runAsUser 0), or mounts a hostPath volume — the runtime-observable insecure-pod misconfiguration the lab's K8-container-misconfig manifest plants (T1610 Deploy Container). This is the posture state that enables container escape and malware staging.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_container_info != null
+    | alter privileged = json_extract_scalar(actor_container_info, "$.privileged")
+    | filter privileged = "true" or actor_effective_username = "root"
+    | comp count() as privileged_proc_events by agent_hostname, actor_effective_username
+    | filter privileged_proc_events >= 1
+    | fields agent_hostname, actor_effective_username, privileged_proc_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1610/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1610
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "WildFire Test-Sample Retrieval in Container + Pod Misconfiguration \u2014 Cortex Cloud CDR (T1610 / T1204) \u2014 CDR-012 Container Executes Downloaded Sample"
+id: ttp-2026-0084-bioc-02
+status: experimental
+description: |
+  A container chmod-s and executes a file it just downloaded into a hidden staging directory (the WildFire sample path /var/tmp/.hidden_wildfire_samples), the download-then-execute shape of container malware delivery (T1204 User Execution). CortexSim stages only benign WildFire test files, but the telemetry shape is identical to a real drop.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_container_info != null
+    | filter action_process_image_command_line contains "/var/tmp/.hidden_wildfire_samples" or actor_process_image_command_line contains "chmod +x"
+    | comp count() as exec_events by agent_hostname, actor_process_image_name
+    | filter exec_events >= 1
+    | fields agent_hostname, actor_process_image_name, exec_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1204/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1204
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1053.003",
+    "T1543.002",
+    "T1136.001",
+    "T1098.004",
+    "T1546.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(EDR-003 Cron Job Creation With Suspicious Command Path) OR BIOC(EDR-003 Systemd Unit With Suspicious ExecStart) OR BIOC(EDR-003 Local Account Created With Sudo Group) OR BIOC(EDR-003 SSH Key Generation Then Authorized Keys Write) OR BIOC(EDR-003 Shell Profile Modified With Background Execution)",
+      "name": "Linux Multi-Mechanism Persistence Installation",
+      "rule_id": "CR-EDR-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0034"
+}

@@ -55,7 +55,7 @@ def _campaign(*, target_url: str, probes_dir: str, binary: str) -> Campaign:
 
 
 def _run_async(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def test_plugin_dry_run_does_not_invoke_binary(tmp_path: Path):

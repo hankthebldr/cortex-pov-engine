@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
+import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
 import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
@@ -287,7 +288,12 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
     >
       <div className="scorecard__tid">{row.tid}</div>
       <div className="scorecard__plane">
-        {row.plane}{row.detectionType && ` · ${row.detectionType}`}
+        <span>{row.plane}</span>
+        {row.detectionType && (
+          detectionTypeToken(row.detectionType)
+            ? <DetectionTypeChip type={row.detectionType} />
+            : <span>{` · ${row.detectionType}`}</span>
+        )}
       </div>
       <div className="scorecard__alert">{row.alert}</div>
       <div className="scorecard__mttd">

@@ -1,0 +1,68 @@
+title: "Cloud Posture Misconfiguration Sweep \u2014 Cortex Cloud CSPM (T1530 / T1078.004 / T1098) \u2014 Inbound Connection Accepted on World-Open SSH/DB Security Group"
+id: ttp-2026-0065-bioc-01
+status: experimental
+description: |
+  An inbound network connection from a public source IP is accepted against a host whose security group exposes SSH (22) or a database port (3306/5432/6379) to 0.0.0.0/0. The world-open SG is the static CSPM finding; this BIOC fires when that exposure is actually reached, bridging CSPM into CDR/NDR runtime detection.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source = "vpc-flow"
+    | filter flow_direction = "ingress" and flow_action = "ACCEPT"
+    | filter dst_port in (22, 3306, 5432, 6379)
+    | filter not incidr(src_ip, "10.0.0.0/8") and not incidr(src_ip, "172.16.0.0/12") and not incidr(src_ip, "192.168.0.0/16")
+    | join type=inner (
+        dataset = cortex_cloud_posture
+        | filter resource_type = "aws_security_group"
+        | filter tags contains "CortexSimCSPMFinding"
+        | filter finding_class in ("ssh-open-to-world", "database-port-open-to-world")
+      ) as sg on dst_security_group_id = sg.resource_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cloud Posture Misconfiguration Sweep \u2014 Cortex Cloud CSPM (T1530 / T1078.004 / T1098) \u2014 Over-Privileged CSPM IAM Principal Used for Control-Plane Action"
+id: ttp-2026-0065-bioc-02
+status: experimental
+description: |
+  The IAM principal that CSPM flagged as over-privileged (AdministratorAccess role or iam:* wildcard user) performs a sensitive control-plane action (IAM mutation, key creation, policy attach). Confirms the latent privilege-escalation finding is exercisable, stitching CSPM posture to ITDR runtime identity abuse.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source = "iam.amazonaws.com"
+    | filter event_name in ("CreateAccessKey", "AttachRolePolicy", "AttachUserPolicy", "PutUserPolicy", "CreateUser", "UpdateAssumeRolePolicy")
+    | join type=inner (
+        dataset = cortex_cloud_posture
+        | filter resource_type in ("aws_iam_role", "aws_iam_user")
+        | filter tags contains "CortexSimCSPMFinding"
+        | filter finding_class in ("role-with-admin-access", "user-with-wildcard-iam")
+      ) as flagged on user_identity.arn = flagged.resource_arn
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098
+    - attack.t1078.004
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

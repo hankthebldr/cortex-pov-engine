@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "registry_version": "1.1.0",
+  "registry_version": "1.4.0",
   "description": "Indexed threat-intel and execution-framework sources for the cortex-pov-engine TTP corpus. Consumed by the cortex-scraper to crawl, parse, and emit candidate TTP drafts. Tier 1 = primary/canonical; Tier 2 = vendor intel; Tier 3 = government; Tier 4 = IR/community; Tier 5 = execution frameworks (payload sources, not intel).",
   "updated_at": "2026-07-10",
   "sources": [
@@ -91,6 +91,51 @@
       "last_canvass_note": "No new ATT&CK release this cycle."
     },
     {
+      "id": "SRC-OWASP-LLM",
+      "name": "OWASP Top 10 for LLM Applications & Generative AI",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "standards-body",
+      "homepage": "https://genai.owasp.org/",
+      "blog_index": "https://genai.owasp.org/llm-top-10/",
+      "data_endpoints": [
+        {
+          "type": "html",
+          "url": "https://genai.owasp.org/llm-top-10/"
+        }
+      ],
+      "purpose": "Canonical taxonomy (LLM01-LLM10) for generative-AI application risks. Anchors AIRS / AI Runtime Security TTP cards (prompt injection, system-prompt leakage, excessive agency, unbounded consumption, vector & embedding weaknesses) to a vendor-neutral standard alongside MITRE ATT&CK / ATLAS.",
+      "update_cadence": "annual",
+      "discovery_queries": [
+        "OWASP Top 10 for LLM Applications {category}",
+        "OWASP GenAI LLM01 prompt injection",
+        "OWASP LLM Top 10 v2025"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MITRE-ATLAS",
+      "name": "MITRE ATLAS — Adversarial Threat Landscape for AI Systems",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "standards-body",
+      "homepage": "https://atlas.mitre.org/",
+      "data_endpoints": [
+        {
+          "type": "yaml",
+          "url": "https://raw.githubusercontent.com/mitre-atlas/atlas-data/main/dist/ATLAS.yaml"
+        }
+      ],
+      "purpose": "Canonical IDs for AI/ML adversary tactics and techniques (AML.TXXXX). Used ALONGSIDE MITRE ATT&CK for the AI planes (AIRS / AI Access / AI-SPM), where ATT&CK has no native home for prompt injection, LLM jailbreak, model data leakage, or cost harvesting. Anchors the atlas_techniques[] field on AI-plane TTP cards so AI coverage is no longer forced onto ATT&CK catch-alls like T1567 (GAP-9).",
+      "update_cadence": "quarterly",
+      "discovery_queries": [
+        "MITRE ATLAS technique {atlas_id}",
+        "MITRE ATLAS LLM prompt injection AML.T0051",
+        "MITRE ATLAS case study {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
       "id": "SRC-MANDIANT",
       "name": "Mandiant — Google Threat Intelligence",
       "tier": 2,
@@ -144,6 +189,29 @@
         "Microsoft Threat Intelligence {weather-actor}",
         "MSTIC Storm-{number}",
         "Microsoft Defender Threat Intelligence {year}"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MICROSOFT",
+      "name": "Microsoft Security Blog & Vendor Guidance",
+      "tier": 2,
+      "weight": 0.85,
+      "publisher_class": "vendor-external",
+      "homepage": "https://www.microsoft.com/en-us/security/blog/",
+      "feeds": [
+        {
+          "type": "rss",
+          "url": "https://www.microsoft.com/en-us/security/blog/feed/"
+        }
+      ],
+      "purpose": "Microsoft's general security blog and identity-protection guidance (Entra ID / Azure AD password-spray, MFA fatigue, token replay). Broader-scope vendor source than the dedicated SRC-MSTIC threat-intelligence feed; anchors ITDR identity-attack TTP cards.",
+      "notes": "Use SRC-MSTIC for named-actor threat intelligence; use SRC-MICROSOFT for product-and-defense guidance and campaign write-ups on the main security blog.",
+      "update_cadence": "weekly",
+      "discovery_queries": [
+        "Microsoft Security blog {topic}",
+        "Microsoft Entra ID password spray protection",
+        "Microsoft identity threat {year}"
       ],
       "last_canvassed": null
     },
@@ -650,6 +718,54 @@
       "discovery_queries": [
         "rclone documentation flags",
         "rclone copy --transfers --multi-thread-streams"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-PANW-TECHDOCS",
+      "name": "Palo Alto Networks TechDocs — Cortex XSIAM / Cortex Cloud Product Documentation",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "vendor-docs",
+      "homepage": "https://docs-cortex.paloaltonetworks.com/",
+      "purpose": "Authoritative Cortex product documentation. Grounds first-party detection-content concepts the corpus models — Analytics BIOC (ABIOC), XDM data-model parsing/modeling rules, correlation rules, and Cortex Cloud CDR posture — referenced when a card or scenario depends on a documented Cortex detection primitive rather than external threat research.",
+      "update_cadence": "continuous",
+      "discovery_queries": [
+        "Cortex XSIAM Analytics BIOC ABIOC behavioral detection",
+        "Cortex XDM data modeling rules dataset MODEL",
+        "Cortex Cloud CDR Kubernetes posture detection"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-PROOFPOINT-TAP-DOCS",
+      "name": "Palo Alto Networks — Proofpoint TAP Ingestion (proofpoint_tap_raw) Docs + Palo-Cortex/soc-proofpoint-tap",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "vendor-docs",
+      "homepage": "https://docs-cortex.paloaltonetworks.com/",
+      "purpose": "Authoritative Cortex XSIAM / NG-SIEM ingestion + parsing/modeling-rule documentation for the Proofpoint TAP SIEM-API feed (proofpoint_tap_raw, modeling content_id ProofpointTAP) plus the Palo-Cortex/soc-proofpoint-tap GitHub content pack. Grounds the field names and dataset shape the EMAIL-plane phishing/BEC cards model.",
+      "update_cadence": "continuous",
+      "discovery_queries": [
+        "Cortex XSIAM Proofpoint TAP ingestion proofpoint_tap_raw modeling rule",
+        "Palo-Cortex soc-proofpoint-tap content pack GitHub",
+        "Proofpoint TAP SIEM API messagesBlocked clicksPermitted schema"
+      ],
+      "last_canvassed": null
+    },
+    {
+      "id": "SRC-MICROSOFT-365-DOCS",
+      "name": "Microsoft 365 / Defender for Office 365 — Cortex Connector & Email Telemetry Docs",
+      "tier": 1,
+      "weight": 1.0,
+      "publisher_class": "vendor-docs",
+      "homepage": "https://docs-cortex.paloaltonetworks.com/",
+      "purpose": "Cortex XSIAM Microsoft 365 / Defender for Office 365 connector documentation grounding the msft_o365 dataset shape (EmailEvents / message-trace / threat telemetry) the EMAIL-plane cards model for malicious-link, attachment, BEC, and thread-hijack detection.",
+      "update_cadence": "continuous",
+      "discovery_queries": [
+        "Cortex XSIAM Microsoft 365 connector msft_o365 EmailEvents",
+        "Microsoft Defender for Office 365 EmailEvents ThreatTypes schema",
+        "Microsoft 365 message trace ingestion Cortex"
       ],
       "last_canvassed": null
     }

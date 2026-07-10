@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1610",
+    "T1204"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(CDR-012 Privileged or HostPath Pod Misconfiguration) AND BIOC(CDR-012 Container Executes Downloaded Sample) \u2014 fuses the posture misconfiguration with the in-container download-and-execute into one posture-plus-runtime container-malware incident.",
+      "name": "Container Malware Delivery \u2014 Misconfiguration Plus WildFire Sample Execution",
+      "rule_id": "CR-CDR-0012",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0084"
+}

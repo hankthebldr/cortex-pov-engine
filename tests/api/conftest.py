@@ -28,7 +28,7 @@ def memory_db() -> tuple[Callable[[], AsyncIterator[AsyncSession]], async_sessio
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.get_event_loop().run_until_complete(_init())
+    asyncio.run(_init())
 
     async def _get_db() -> AsyncIterator[AsyncSession]:
         async with SessionLocal() as session:

@@ -20,8 +20,8 @@ const scenarios = [
 
 // Two of the three have run history.
 const runs = [
-  { id: 'r-1', scenario_id: 'SIM-EDR-001', status: 'completed', started_at: '2026-05-10T10:00:00Z' },
-  { id: 'r-2', scenario_id: 'SIM-EDR-002', status: 'completed', started_at: '2026-05-11T10:00:00Z' },
+  { id: 'r-1', scenario_id: 'SIM-EDR-001', status: 'complete', started_at: '2026-05-10T10:00:00Z' },
+  { id: 'r-2', scenario_id: 'SIM-EDR-002', status: 'complete', started_at: '2026-05-11T10:00:00Z' },
 ]
 
 beforeEach(() => {

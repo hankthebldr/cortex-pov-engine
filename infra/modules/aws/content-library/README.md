@@ -1,7 +1,7 @@
 ---
 name: content-library
 description: Detection content repositories for customer hand-off (SIEM rules, XQL queries, BIOCs). Installs on the jumpbox only — no infrastructure provisioned.
-providers: [aws, gcp, azure]
+providers: [aws]
 required_params: []
 optional_params: []
 dependencies: [base]

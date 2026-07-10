@@ -378,6 +378,9 @@ class IdpSigninEmulator(BaseSimulation):
         bytes_sent = 0
         responses_seen: dict[int, int] = {}
 
+        # Stash verify_tls where _build_client reads it without changing its
+        # (monkeypatched-in-tests) signature.
+        self._verify_tls = ctx.verify_tls
         client = self._build_client(params)
         try:
             for i in range(params.iterations):
@@ -422,7 +425,9 @@ class IdpSigninEmulator(BaseSimulation):
             headers["user-agent"] = params.user_agent
         return httpx.AsyncClient(
             timeout=params.request_timeout,
-            verify=False,
+            # default False (NGFW MitM friendly); opt back in per campaign via
+            # the verify_tls knob, read off the plugin instance (set in run()).
+            verify=getattr(self, "_verify_tls", False),
             follow_redirects=False,
             headers=headers,
         )
@@ -573,6 +578,10 @@ class IdpSigninEmulator(BaseSimulation):
         for evt in events:
             body_bytes = json.dumps(evt).encode("utf-8")
             bytes_sent += len(body_bytes)
+            # Charge the campaign-level cumulative budget per event POST
+            # (EAL-G06) before sending.
+            ctx.charge_request()
+            ctx.charge_bytes(len(body_bytes))
             try:
                 resp = await client.post(
                     params.collector_url, headers=headers, content=body_bytes,

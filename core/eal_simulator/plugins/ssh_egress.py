@@ -140,7 +140,10 @@ class SshEgress(BaseSimulation):
         params: SshEgressParams = ctx.params  # type: ignore[assignment]
         started_at = self.utcnow()
 
-        getattr(ctx, "authorise")(params.target_host)
+        # Authorise host AND port: a port-pinned allowlist entry
+        # (``ssh.lab.invalid:22``) only admits that port; a host-level entry
+        # still admits any port (backwards compatible).
+        ctx.authorise(params.target_host, port=params.target_port)
 
         if ctx.dry_run:
             await ctx.emit_event(ecs_event(
@@ -189,6 +192,8 @@ class SshEgress(BaseSimulation):
                 )
                 bytes_sent += sent
                 events_emitted += 1
+                ctx.charge_request()
+                ctx.charge_bytes(sent)
                 outcome = "success"
                 detail_extra = {"bytes_sent_this_session": sent}
             except OSError as exc:

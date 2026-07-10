@@ -1,0 +1,15 @@
+# detection_scanner/ttps/_drafts/ — local-only scraper output
+
+This directory is the landing zone for candidate TTP cards emitted by the
+`cortex-scraper` (see the `scraper_contract` block in
+`../../sources/source-registry.json`). Drafts arrive here with
+`status: "draft"` and a `TTP-{YYYY}-{NNNN}-{slug}.json` filename.
+
+Drafts are **local-only and never committed**. A human reviewer promotes a
+draft to the active corpus by moving it up to `ttps/` and flipping its status
+to `active` *after* it passes `scripts/validate.py` and has been enriched with
+Cortex-specific fields (IOCs, BIOCs, product mapping, use cases).
+
+Only this `.gitkeep` is tracked; every `*.json` under `_drafts/` is gitignored
+(see the repo-root `.gitignore`). The directory exists so the documented
+promote-from-drafts workflow has a stable, committed home.

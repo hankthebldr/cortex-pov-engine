@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1621",
+    "T1556.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(ITDR-002 MFA Fatigue Marker Boolean Explicit Match) OR XQL(ITDR-002 MFA Fatigue Push Burst Then Approval)",
+      "name": "MFA Push-Bombing Incident \u2014 Burst Then Approve",
+      "rule_id": "CR-ITDR-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0038"
+}

@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1110.003",
+    "T1110.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ITDR-005 Ten Consecutive Failed Sign-Ins Brute Force) OR BIOC(ITDR-005 Account Lock State Transition Recorded)",
+      "name": "Brute-Force Lockout Password Spray \u2014 Same Identity",
+      "rule_id": "CR-ITDR-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0041"
+}

@@ -55,4 +55,6 @@ jumpbox to watch progress.
 terraform destroy
 ```
 
-When using Torque, the environment's TTL triggers automatic destroy.
+When using Torque, the environment's TTL ({{ ttl_hours }}h) triggers automatic
+destroy. The same hint is written to `terraform.tfvars` (`ttl_hours`) and applied
+to every resource as the `CortexSimTTLHours` tag for external reapers.

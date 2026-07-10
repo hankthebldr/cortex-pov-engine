@@ -2,7 +2,7 @@ adapter_id: TOOL-SCAPY
 name: Scapy
 version: "2.6.1"
 
-tier: 2
+tier: 4
 category: network-scan
 
 upstream:
@@ -21,8 +21,10 @@ cortex_signal:
 safety_class: dual-use-lab-only
 
 install:
-  source_path: sources/scapy   # submodule path; matches the existing pattern
-  build_cmd: "pip install --no-input -e ."
+  # Tier 4 (runtime-fetched): pip-install the upstream release at dispatch.
+  # Scapy is a pure-Python library; no submodule checkout is required.
+  runtime_install_command: "python3 -c 'import scapy' 2>/dev/null || pip3 install --no-input scapy==2.6.1"
+  binary: python3
 
 invoke:
   target_platform: linux
@@ -43,7 +45,7 @@ cleanup:
 ttp_refs: []
 
 equivalents:
-  - TOOL-HPING3
+  - TOOL-NMAP  # network-scan equivalent producing overlapping NDR traffic signal
 
 author: Henry Reed
 created: "2026-05-20"
@@ -51,4 +53,4 @@ last_updated: "2026-05-20"
 tags:
   - packet-forging
   - python-library
-  - already-submoduled-target
+  - runtime-fetched

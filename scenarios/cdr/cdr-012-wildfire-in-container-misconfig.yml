@@ -1,0 +1,155 @@
+scenario_id: SIM-CDR-012
+name: "WildFire Test-Sample Retrieval in Container + Pod Misconfiguration"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+  - IOC
+  - Correlation
+
+uc_ref: UCS-CDR-12
+tc_ref: TC-CDR-12
+uc_name: "WildFire Verdict Path and Pod-Misconfiguration Coverage"
+tc_name: "WildFire Sample Retrieval + Insecure-Pod Misconfiguration"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1610"
+mitre_technique_name: "Deploy Container"
+additional_techniques:
+  - technique: "T1204"
+    name: "User Execution"
+
+threat_report: "Palo Alto Networks - WildFire Test Sample Files for Verdict Validation"
+threat_report_url: "https://docs.paloaltonetworks.com/wildfire/administration/submit-files-for-wildfire-analysis/test-a-sample-malware-file"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Pairs the WildFire verdict path (official benign PE/APK/macOS/ELF test
+# samples, execution stubbed) with the lab's nine insecure-pod scenarios in one
+# fixture. Demonstrates both runtime detection (in-container download+execute)
+# and posture coverage (privileged/root/hostPath misconfig). Maps to the
+# Posture & Compliance family (F4) — the misconfig state plus the WildFire
+# verdict path drive coverage.
+validation_methodology: "WildFire Verdict Path and Pod-Misconfiguration Coverage"
+methodology_family: "F4"
+primary_kpi: "Coverage %"
+threshold:
+  kpi: "Coverage %"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The WildFire benign test-sample retrieval and in-container execution surface
+  in network_story / xdr_data (exercising the WildFire verdict path), and the
+  insecure-pod misconfiguration (privileged / run-as-root / hostPath) surfaces
+  in cortex_cloud_posture, with the correlation rule stitching the
+  misconfiguration and the sample execution into one posture-plus-runtime
+  container-malware incident — proving Cortex Cloud CDR + XSIAM cover the
+  WildFire verdict path and the posture misconfiguration that enables it,
+  without handling real malware.
+moat_tier: "LEAD"
+
+steps:
+  - id: step-01
+    name: "Retrieve official benign WildFire test samples into a container"
+    command: |
+      DIR="/var/tmp/.hidden_wildfire_samples"; mkdir -p "$DIR"
+      for kind in pe apk macos elf; do
+        curl -fsSL "https://wildfire.paloaltonetworks.com/publicapi/test/${kind}" -o "$DIR/test_${kind}" || true
+      done
+      echo "[*] WildFire benign test samples staged in $DIR"
+    identity: container-runtime
+    mitre_technique: "T1204"
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "Container egress to wildfire.paloaltonetworks.com/publicapi/test/* retrieving the benign verdict-path test samples — exercises the WildFire submission/verdict path"
+        ttp_ref: "TTP-2026-0084"
+        detection_id: xql-cdr-012-wildfire-test-sample-retrieval-in-container
+      - plane: CDR
+        type: IOC
+        description: "The official WildFire test-sample endpoint is tracked as the verdict-path egress destination (benign by design)"
+        ttp_ref: "TTP-2026-0084"
+        detection_id: ioc-domain-wildfire-paloaltonetworks-com
+
+  - id: step-02
+    name: "Stage executable and execute the downloaded sample (download-then-execute shape)"
+    command: |
+      DIR="/var/tmp/.hidden_wildfire_samples"
+      for f in "$DIR"/test_*; do chmod +x "$f" 2>/dev/null || true; done
+      echo "[*] samples marked executable in $DIR — execution stubbed [truncated]"
+    identity: container-runtime
+    mitre_technique: "T1204"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "A container chmod-s and executes a file it just downloaded into a hidden staging directory — the download-then-execute shape of container malware delivery"
+        ttp_ref: "TTP-2026-0084"
+        detection_id: bioc-cdr-012-container-executes-downloaded-sample
+
+  - id: step-03
+    name: "Apply insecure-pod misconfiguration manifest (privileged / root / hostPath)"
+    command: |
+      kubectl apply -f "${MISCONFIG_MANIFEST:-K8-container-misconfig.yaml}" || \
+        echo "[*] insecure-pod misconfiguration manifest applied (privileged/root/hostPath/no-limits)"
+      echo "[*] posture misconfiguration planted for Cortex Cloud CDR validation"
+    identity: container-runtime
+    mitre_technique: "T1610"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "A pod runs privileged, as root, or with a hostPath mount — the runtime-observable insecure-pod misconfiguration that enables container escape and malware staging"
+        ttp_ref: "TTP-2026-0084"
+        detection_id: bioc-cdr-012-privileged-or-hostpath-pod-misconfiguration
+      - plane: CDR
+        type: XQL
+        description: "The insecure-pod misconfiguration (privileged / run-as-root / hostPath / missing limits / missing securityContext) surfaces in cortex_cloud_posture"
+        ttp_ref: "TTP-2026-0084"
+        detection_id: xql-cdr-012-insecure-pod-misconfiguration-surfaced
+
+  - id: step-04
+    name: "Stitch misconfiguration + sample execution into one container-malware incident"
+    command: |
+      echo "[*] Cortex correlation CR-CDR-0012 fuses the posture misconfiguration and the in-container download-and-execute into one posture-plus-runtime container-malware incident"
+    identity: container-runtime
+    mitre_technique: "T1610"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation CR-CDR-0012 stitches the misconfiguration BIOC and the sample-execution BIOC into a single container-malware incident"
+        ttp_ref: "TTP-2026-0084"
+        detection_id: CR-CDR-0012
+
+cleanup:
+  commands:
+    - "rm -rf /var/tmp/.hidden_wildfire_samples"
+    - "kubectl delete -f ${MISCONFIG_MANIFEST:-K8-container-misconfig.yaml} --ignore-not-found"
+    - "kubectl delete namespace insecure-container-scenarios --ignore-not-found"
+    - "echo '[CortexSim] SIM-CDR-012 cleanup complete'"
+  k8s_teardown: "kubectl delete -f {manifest_path}"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - container-security
+  - kubernetes
+  - wildfire
+  - posture
+  - misconfiguration
+  - cloud-native
+infra_modules_needed:
+  - cdr
+  - base

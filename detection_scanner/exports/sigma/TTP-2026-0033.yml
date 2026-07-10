@@ -1,0 +1,179 @@
+title: "Linux Reverse Shell \u2014 Multi-Method C2 Callback (T1059.004) \u2014 EDR-002 Bash devtcp Reverse Shell Redirection"
+id: ttp-2026-0033-bioc-01
+status: experimental
+description: |
+  Bash reverse shell pattern — /dev/tcp redirection detected by XDR Agent behavioral rule. bash -i is launched with its stdio redirected to a /dev/tcp socket.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("bash", "sh")
+    | filter action_process_image_command_line contains "/dev/tcp/"
+    | filter action_process_image_command_line contains_any (">&", "0>&1", "0<&")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Linux Reverse Shell \u2014 Multi-Method C2 Callback (T1059.004) \u2014 EDR-002 Interactive Bash From Service Account With Network Redirect"
+id: ttp-2026-0033-bioc-02
+status: experimental
+description: |
+  Interactive bash spawned from service account with network redirect — C2 callback pattern. An interactive shell with a socket redirect runs under a non-login service identity.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("bash", "sh")
+    | filter action_process_image_command_line contains "-i"
+    | filter action_process_image_command_line contains "/dev/tcp/"
+    | filter actor_effective_username in ("www-data", "nobody", "node", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Linux Reverse Shell \u2014 Multi-Method C2 Callback (T1059.004) \u2014 EDR-002 Python Socket Subprocess Reverse Shell"
+id: ttp-2026-0033-bioc-03
+status: experimental
+description: |
+  Python reverse shell pattern — socket+subprocess import with connect call from service account. python3 -c imports socket and subprocess and calls connect().
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("python", "python3")
+    | filter action_process_image_command_line contains "socket"
+    | filter action_process_image_command_line contains_any ("subprocess", "pty", ".connect(")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Reverse Shell \u2014 Multi-Method C2 Callback (T1059.004) \u2014 EDR-002 Netcat Shell Exec Flag Reverse Shell"
+id: ttp-2026-0033-bioc-04
+status: experimental
+description: |
+  Netcat with -e flag — classic reverse shell pattern detected by endpoint BIOC rule. nc/ncat is invoked with -e/-c to pipe a shell.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("nc", "ncat", "netcat")
+    | filter action_process_image_command_line contains_any ("-e /bin/sh", "-e /bin/bash", " -e ", "-c /bin/sh")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Linux Reverse Shell \u2014 Multi-Method C2 Callback (T1059.004) \u2014 EDR-002 Perl Socket Reverse Shell One-Liner"
+id: ttp-2026-0033-bioc-05
+status: experimental
+description: |
+  Perl socket-based reverse shell pattern — one-liner execution from service account. perl -e contains Socket/connect/sockaddr_in.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "perl"
+    | filter action_process_image_command_line contains "Socket"
+    | filter action_process_image_command_line contains_any ("sockaddr_in", "connect(", "inet_aton")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Reverse Shell \u2014 Multi-Method C2 Callback (T1059.004) \u2014 EDR-002 OpenSSL s_client Encrypted C2 From Service Account"
+id: ttp-2026-0033-bioc-06
+status: experimental
+description: |
+  OpenSSL s_client invoked from non-interactive service account — encrypted C2 channel attempt. openssl s_client opens an outbound TLS channel from a service identity.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "openssl"
+    | filter action_process_image_command_line contains "s_client"
+    | filter actor_effective_username in ("www-data", "nobody", "node", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1573/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1573.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

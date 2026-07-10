@@ -1,0 +1,243 @@
+title: "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105) \u2014 CDR-005 WildFire Known Bad ELF Download In Container"
+id: ttp-2026-0026-bioc-01
+status: experimental
+description: |
+  WildFire test file download in container — known-bad file signature matched by WildFire cloud intelligence. A container process downloads an ELF that WildFire verdicts as malicious.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_name in ("curl", "wget")
+    | filter action_process_image_command_line contains_any (".elf", "wildfire.paloaltonetworks.com", "publicapi/test")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105) \u2014 CDR-005 Executable Downloaded To Tmp And Made Executable In Container"
+id: ttp-2026-0026-bioc-02
+status: experimental
+description: |
+  Executable file downloaded to /tmp and made executable — download-then-execute pattern in container. A binary lands in /tmp and is immediately chmod +x within the same container lineage.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_name = "chmod"
+    | filter action_process_image_command_line contains "/tmp/"
+    | filter action_process_image_command_line contains_any ("+x", "0755", "755")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105) \u2014 CDR-005 WildFire ELF Execution In Container"
+id: ttp-2026-0026-bioc-03
+status: experimental
+description: |
+  WildFire test file execution — malicious ELF execution in container triggers CDR BIOC rule. The downloaded ELF binary is executed from /tmp inside the container.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_path contains "/tmp/"
+    | filter actor_process_image_path contains_any (".elf", "test_backdoor", "wf_sim")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105) \u2014 CDR-005 Downloaded Binary Executed By Service Account In Container"
+id: ttp-2026-0026-bioc-04
+status: experimental
+description: |
+  Downloaded binary executed from /tmp by www-data context — high-risk execution chain in container. A service identity executes a binary that originated from a download into /tmp.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_path contains "/tmp/"
+    | filter actor_effective_username in ("www-data", "nobody", "node", "apache", "nginx")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105) \u2014 CDR-005 Periodic Outbound HTTP Beacon From Container"
+id: ttp-2026-0026-bioc-05
+status: experimental
+description: |
+  Regular periodic outbound HTTP connections from container — C2 beacon interval pattern (3 attempts to 192.0.2.1). A container process makes repeated timed HTTP requests to a single external host.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter container_id != null
+    | filter dst_action_external_hostname = "192.0.2.1" or action_remote_ip = "192.0.2.1"
+    | filter dst_action_external_port = 80
+    | comp count() as beacon_count by container_id, action_remote_ip
+    | filter beacon_count >= 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105) \u2014 CDR-005 Post Execution C2 Network Activity In Container"
+id: ttp-2026-0026-bioc-06
+status: experimental
+description: |
+  C2 communication pattern following malware execution — post-execution network activity in container. Outbound network activity originates from a curl process spawned in the same container that executed the dropped binary.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter container_id != null
+    | filter actor_process_image_name = "curl"
+    | filter action_process_image_command_line contains "192.0.2.1"
+    | filter action_process_image_command_line contains_any ("beacon", "User-Agent", "-A ", "MSIE")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105) \u2014 CDR-005 Mass File Modification Ransomware Pattern In Container"
+id: ttp-2026-0026-bioc-07
+status: experimental
+description: |
+  Mass file modification pattern in container — ransomware-style encryption simulation matches T1486 behavioral rule. A burst of file writes/removes in a single directory mimics ransomware impact.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter container_id != null
+    | filter event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_REMOVE, ENUM.FILE_RENAME)
+    | comp count() as file_ops by container_id, causality_actor_process_instance_id
+    | filter file_ops >= 5
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105) \u2014 CDR-005 Bulk Enc Extension Rename After Execution In Container"
+id: ttp-2026-0026-bioc-08
+status: experimental
+description: |
+  Bulk file rename with .enc extension following malware execution — post-execution encryption behavior in container. Multiple files acquire a .enc extension shortly after the dropped binary runs.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type = ENUM.FILE_CREATE
+    | filter container_id != null
+    | filter action_file_extension = "enc"
+    | comp count() as enc_files by container_id
+    | filter enc_files >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

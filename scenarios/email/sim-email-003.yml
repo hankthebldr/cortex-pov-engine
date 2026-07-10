@@ -1,0 +1,165 @@
+scenario_id: SIM-EMAIL-003
+name: "EMAIL — BEC / Executive Impersonation (Proofpoint TAP + Microsoft 365)"
+version: "1.0"
+status: active
+
+plane: EMAIL
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-EMAIL-003
+tc_ref: TC-EMAIL-003A
+uc_name: "BEC / Executive Impersonation Detection"
+tc_name: "Impostor-Classified Executive Display-Name Spoof Raises BEC Alert And Stitches To Identity"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1656"
+mitre_technique_name: "Impersonation"
+additional_techniques:
+  - technique: "T1534"
+    name: "Internal Spearphishing"
+
+threat_report: "Cortex XSIAM — Proofpoint TAP Ingestion & Modeling (proofpoint_tap_raw)"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+validation_methodology: "Email-to-Identity Stitch & Incident Correlation"
+methodology_family: "F2"
+primary_kpi: "Stitch Completeness"
+threshold:
+  kpi: "Stitch Completeness"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Proofpoint TAP / Microsoft 365 BEC-impersonation signal raises
+  the expected Cortex XSIAM impostor alert and stitches to the recipient's
+  identity follow-on under one BEC incident. Stitch Completeness is the share of
+  injected BEC lures whose email and identity signals land in one incident
+  (target ≥ 90%).
+moat_tier: "MOAT"
+
+correlation_window_seconds: 60
+required_planes_in_incident:
+  - EMAIL
+  - ITDR
+stitching_key: user_principal
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm email_emitter plugin is registered"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe email_emitter \
+        | jq -e '.eal_targets | length > 0'
+    identity: container-runtime
+    mitre_technique: "T1656"
+    expected_detections:
+      - plane: EMAIL
+        type: BIOC
+        description: "Pre-flight: email_emitter metadata visible to operator"
+        ttp_ref: "TTP-2026-0092"
+        detection_id: bioc-email-003-pre-flight-email-emitter-metadata-visible
+
+  - id: step-02
+    name: "Emit a BEC executive-impersonation message (Proofpoint TAP shape)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/email-003.yml <<YML
+      campaign_id: CMP-EMAIL-003
+      name: "EMAIL — Proofpoint TAP BEC impersonation"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [email, proofpoint, bec, impersonation]
+      steps:
+        - step_id: step-01
+          plugin: email_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: proofpoint
+            event_pattern: bec_impersonation
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+            burst_count: 3
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/email-003.yml --live
+    identity: container-runtime
+    mitre_technique: "T1656"
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "EMAIL — impostor display-name spoof from external sender for one recipient"
+        ttp_ref: "TTP-2026-0092"
+        detection_id: xql-email-003-bec-executive-impersonation-display-name-spoof
+
+  - id: step-03
+    name: "Stitch: BEC lure correlates to the recipient identity/endpoint follow-on"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/email-003-m365.yml <<YML
+      campaign_id: CMP-EMAIL-003
+      name: "EMAIL — Microsoft 365 BEC impersonation"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: email_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: microsoft365
+            event_pattern: bec_impersonation
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+            burst_count: 3
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/email-003-m365.yml --live
+    identity: container-runtime
+    mitre_technique: "T1534"
+    expected_detections:
+      - plane: EMAIL
+        type: Correlation
+        description: "EMAIL — BEC lure stitches to the recipient identity follow-on under one incident"
+        ttp_ref: "TTP-2026-0092"
+        detection_id: CR-EMAIL-0003
+
+cleanup:
+  commands:
+    - "rm -f /tmp/email-003.yml /tmp/email-003-m365.yml"
+
+author: "Henry Reed"
+created: "2026-06-17"
+last_updated: "2026-06-17"
+tags:
+  - email
+  - proofpoint
+  - microsoft365
+  - bec
+  - impersonation
+  - eal-plugin

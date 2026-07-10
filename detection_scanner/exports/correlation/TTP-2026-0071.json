@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1595.002",
+    "T1595.001",
+    "T1190"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ASM-002 Xpanse Active-Scan Observation Tied To Exposed Asset) AND (BIOC(ASM EAL \u2014 Inbound Vulnerability-Scan URI Fan-Out Against Perimeter Asset) OR BIOC(ASM EAL \u2014 Known Vulnerability-Scanner User-Agent On Perimeter Asset)) \u2014 raises a single exposure-management reconnaissance incident tying the discovered exposures to the live vulnerability scan probing them.",
+      "name": "Exposure Management \u2014 Perimeter Asset Under Active Vulnerability Scanning",
+      "rule_id": "CR-ASM-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0071"
+}

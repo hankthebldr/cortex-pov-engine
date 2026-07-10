@@ -45,7 +45,7 @@ class DetectionCard:
 
     ttp_ref: str                 # e.g. "TTP-2026-0002"
     detection_id: str            # e.g. "BIOC-LSASS-001"
-    kind: str                    # bioc | xql | correlation | ioc | analytics
+    kind: str                    # bioc | xql | correlation | ioc | analytics | abioc | modeling
     name: str
     description: str
     severity: Optional[str]
@@ -195,6 +195,100 @@ class TtpCatalog:
         by the list endpoint to render card-grid metadata cheaply."""
         return dict(self._raw_by_ttp)
 
+    def card_techniques(self, ttp_ref: str) -> list[dict[str, str]]:
+        """Return the authoritative ATT&CK techniques a card maps to.
+
+        Reads ``mitre_attack.techniques[]`` from the raw card JSON — the
+        multi-technique view the parsed :class:`TtpEntry` deliberately drops.
+        Each item is normalized to ``{technique, name, tactic_id, tactic_name}``
+        where ``technique`` is the most-specific id (``subtechnique_id`` when
+        present, else ``technique_id``). Returns ``[]`` for an unknown card.
+
+        This is the join the coverage heatmap uses to fuse the full authored
+        card corpus (82 techniques) into the otherwise scenario-thin view —
+        see ``core/api/mitre.py`` (GAP-6).
+        """
+        raw = self._raw_by_ttp.get(ttp_ref)
+        if not raw:
+            return []
+        mitre = raw.get("mitre_attack") or {}
+        out: list[dict[str, str]] = []
+        for t in mitre.get("techniques") or []:
+            if not isinstance(t, dict):
+                continue
+            tid = t.get("subtechnique_id") or t.get("technique_id")
+            if not isinstance(tid, str) or not tid:
+                continue
+            tactic_ids = t.get("tactic_ids") or []
+            tactic_names = t.get("tactic_names") or []
+            out.append({
+                "technique": tid,
+                "name": t.get("name") or "",
+                "tactic_id": tactic_ids[0] if tactic_ids else "",
+                "tactic_name": tactic_names[0] if tactic_names else "",
+            })
+        return out
+
+    def card_atlas_techniques(self, ttp_ref: str) -> list[dict[str, str]]:
+        """Return the MITRE ATLAS techniques a card maps to (GAP-9).
+
+        Reads ``mitre_attack.atlas_techniques[]`` — the AI-native threat
+        mappings (prompt injection, jailbreak, model data leakage, cost
+        harvesting) used ALONGSIDE ATT&CK for the AI planes where ATT&CK has no
+        home. Each item is normalized to ``{atlas_id, name, atlas_tactic}``.
+        Returns ``[]`` for an unknown card or a card with no ATLAS mappings.
+        """
+        raw = self._raw_by_ttp.get(ttp_ref)
+        if not raw:
+            return []
+        mitre = raw.get("mitre_attack") or {}
+        out: list[dict[str, str]] = []
+        for t in mitre.get("atlas_techniques") or []:
+            if not isinstance(t, dict):
+                continue
+            aid = t.get("atlas_id")
+            if not isinstance(aid, str) or not aid:
+                continue
+            out.append({
+                "atlas_id": aid,
+                "name": t.get("name") or "",
+                "atlas_tactic": t.get("atlas_tactic") or "",
+            })
+        return out
+
+    def card_detection_kind_counts(self, ttp_ref: str) -> dict[str, int]:
+        """Per-card tally of deployable detection objects by kind.
+
+        Returns a dict keyed by
+        ``bioc | xql | correlation | ioc | analytics | abioc | modeling``
+        with the count of each family on the card. Reads the raw
+        ``detections`` block so the coverage heatmap can surface *which*
+        Cortex detection kinds back a technique (notably ``correlation`` —
+        XSIAM's headline differentiator — and named ``analytics`` modules,
+        which GAP-11 flags as mapped-but-not-logic). ``abioc`` (Plan 01) is a
+        validated, logic-bearing behavioral-ML kind counted like bioc/xql;
+        ``modeling`` (Plan 02) is the XDM normalization *substrate* counted
+        informationally only — it enables firing, it does not itself fire, so
+        callers must NOT fold it into validated-detection depth. Returns
+        all-zero for an unknown card.
+        """
+        raw = self._raw_by_ttp.get(ttp_ref)
+        counts = {
+            "bioc": 0, "xql": 0, "correlation": 0, "ioc": 0, "analytics": 0,
+            "abioc": 0, "modeling": 0,
+        }
+        if not raw:
+            return counts
+        det = raw.get("detections") or {}
+        counts["bioc"] = len(det.get("biocs") or [])
+        counts["xql"] = len(det.get("xql_queries") or [])
+        counts["correlation"] = len(det.get("correlation_rules") or [])
+        counts["ioc"] = len(det.get("iocs") or [])
+        counts["analytics"] = len(det.get("analytics_modules") or [])
+        counts["abioc"] = len(det.get("abiocs") or [])
+        counts["modeling"] = len(det.get("modeling_rules") or [])
+        return counts
+
     def count(self) -> int:
         return len(self._by_pair)
 
@@ -224,6 +318,8 @@ def _parse_entry(raw: dict[str, Any]) -> Optional[TtpEntry]:
     cards.extend(_parse_xql_list(ttp_ref, detections_raw.get("xql_queries") or []))
     cards.extend(_parse_correlation_list(ttp_ref, detections_raw.get("correlation_rules") or []))
     cards.extend(_parse_ioc_list(ttp_ref, detections_raw.get("iocs") or []))
+    cards.extend(_parse_abioc_list(ttp_ref, detections_raw.get("abiocs") or []))
+    cards.extend(_parse_modeling_list(ttp_ref, detections_raw.get("modeling_rules") or []))
 
     panw_mapping = raw.get("panw_mapping") or {}
     products: list[str] = []
@@ -346,6 +442,55 @@ def _parse_ioc_list(ttp_ref: str, iocs: list[Any]) -> list[DetectionCard]:
             severity=None,
             logic=value,
             mitre_techniques=[],
+        ))
+    return out
+
+
+def _parse_abioc_list(ttp_ref: str, abiocs: list[Any]) -> list[DetectionCard]:
+    """Plan 01 — Analytics Behavioral IOC. PANW-authored, auto-tuned,
+    causality-anchored behavioral-ML detection. Logic-bearing and validated
+    like a BIOC (slug prefix ``abioc-``), distinct from hand-authored biocs
+    and from the un-validated named ``analytics_modules`` channel."""
+    out: list[DetectionCard] = []
+    for idx, a in enumerate(abiocs):
+        if not isinstance(a, dict):
+            continue
+        name = a.get("name") or f"abioc-{idx+1}"
+        det_id = a.get("detection_id") or _slug(name, "abioc")
+        out.append(DetectionCard(
+            ttp_ref=ttp_ref,
+            detection_id=det_id,
+            kind="abioc",
+            name=name,
+            description=a.get("description") or "",
+            severity=a.get("severity"),
+            logic=a.get("logic"),
+            mitre_techniques=list(a.get("mitre_technique_ids") or []),
+        ))
+    return out
+
+
+def _parse_modeling_list(ttp_ref: str, rules: list[Any]) -> list[DetectionCard]:
+    """Plan 02 — XDM modeling rule. The normalization *substrate* beneath
+    detections (``[MODEL: dataset=…]`` XQL mapping raw event JSON → XDM
+    fields). It enables firing, it does not itself fire — slug prefix
+    ``modeling-``; counted informationally in the rollup, NOT as validated
+    detection depth."""
+    out: list[DetectionCard] = []
+    for idx, m in enumerate(rules):
+        if not isinstance(m, dict):
+            continue
+        name = m.get("name") or f"modeling-{idx+1}"
+        det_id = m.get("detection_id") or _slug(name, "modeling")
+        out.append(DetectionCard(
+            ttp_ref=ttp_ref,
+            detection_id=det_id,
+            kind="modeling",
+            name=name,
+            description=m.get("description") or "",
+            severity=None,
+            logic=m.get("logic"),
+            mitre_techniques=list(m.get("mitre_technique_ids") or []),
         ))
     return out
 

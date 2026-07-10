@@ -1,6 +1,6 @@
 ---
 name: ai-spm
-description: Heterogeneous AI/ML assets (SageMaker, Bedrock, Lambda→OpenAI, shadow GPU LLM, training data with PII) for Cortex AI-SPM validation. Every asset is a planted finding that Cortex AI-SPM should surface in inventory and posture.
+description: Heterogeneous AI/ML assets (SageMaker, Lambda→OpenAI, shadow GPU LLM, training data with PII) for Cortex AI-SPM validation. Every asset is a planted finding that Cortex AI-SPM should surface in inventory and posture.
 providers: [aws]
 required_params: [project_name]
 optional_params: [enable_shadow_gpu]
@@ -21,12 +21,17 @@ Every resource is tagged with `CortexSimAISPMFinding=<finding-type>` so the DC c
 |----------|---------|----------|-------------|
 | **Managed AI** | SageMaker endpoint (canary) | `*-aispm-sagemaker-endpoint` | AISP-01, AISP-02 |
 | **Managed AI** | SageMaker model with insecure pickle artifact | `*-aispm-pickled-model` (S3 object) | AISP-04 |
-| **Managed AI** | Bedrock invocation logging **disabled** | account-wide setting | AISP-02 |
 | **Third-party AI** | Lambda with hardcoded OpenAI API key in env | `*-aispm-openai-proxy` | AISP-01, AISP-04 |
 | **Shadow AI** | EC2 g4dn with Ollama LLM container (optional) | `*-aispm-shadow-gpu-llm` | AISP-01 (the headline finding) |
 | **Training data** | S3 bucket with PII/PHI/PCI canary fixtures | `*-aispm-training-data` | AISP-05 |
 | **IAM** | SageMaker execution role with `*:*` policy | `*-aispm-sagemaker-overprivileged` | AISP-02 |
-| **Supply chain** | Lambda layer with known-vulnerable ML deps | `*-aispm-vulnerable-ml-deps` (layer) | AISP-03 |
+
+### Deferred (no Terraform resource yet)
+
+Two findings were specced for this fixture but are **not** provisioned by `main.tf` today — they are tracked as future content so the table above stays a faithful manifest of what actually applies:
+
+- **Bedrock invocation logging disabled** (account-wide `aws_bedrock_model_invocation_logging_configuration`) — AISP-02. Deferred: it is an account-scoped singleton that would conflict with a customer's existing Bedrock config.
+- **Lambda layer with known-vulnerable ML deps** (`aws_lambda_layer_version`) — AISP-03. Deferred: requires staging a real vulnerable-dependency zip artifact.
 
 ## What this does NOT include
 

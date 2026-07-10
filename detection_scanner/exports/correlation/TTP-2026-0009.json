@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AIACC-003 Gemini Request Rate Exceeds Per User Baseline) OR XQL(AIACC-003 NGFW Sustained Generative AI Session Count Single Source) OR XQL(AIACC-003 Unsanctioned AI Provider Gemini For User)",
+      "name": "Anomalous Gemini Usage Volume Single User",
+      "rule_id": "CR-AIACC-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0009"
+}

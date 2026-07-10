@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1566.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(EMAIL-002 Malicious Attachment Blocked By TAP) OR XQL(EMAIL-002 Malicious Attachment Microsoft 365 EmailEvents Shape) FOLLOWED_BY xdr_data file or process with the same sha256 for the recipient within 2h",
+      "name": "Malicious Attachment Delivered Then Endpoint Detonation \u2014 Email to Endpoint Stitch",
+      "rule_id": "CR-EMAIL-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0091"
+}

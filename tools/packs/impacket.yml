@@ -2,7 +2,7 @@ adapter_id: TOOL-IMPACKET
 name: "Impacket"
 version: "0.12.0"
 
-tier: 2
+tier: 4
 category: identity-credential
 
 upstream:
@@ -20,11 +20,13 @@ cortex_signal:
 safety_class: dual-use-lab-only
 
 install:
-  source_path: sources/impacket
-  build_cmd: "pip install ."
+  # Tier 4 (runtime-fetched): pip-install the upstream release at dispatch.
+  # impacket ships console scripts (secretsdump.py, GetUserSPNs.py, …) on PATH.
+  runtime_install_command: "command -v secretsdump.py >/dev/null 2>&1 || pip3 install --no-input impacket==0.12.0"
+  binary: secretsdump.py
 
 invoke:
-  target_platform: any
+  target_platform: linux
   run_template: "{tool} {args}"
   default_args:
     tool: "secretsdump.py"
@@ -44,3 +46,4 @@ last_updated: "2026-06-02"
 tags:
   - phase-c
   - identity-credential
+  - runtime-fetched

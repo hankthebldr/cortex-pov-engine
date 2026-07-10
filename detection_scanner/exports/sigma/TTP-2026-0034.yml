@@ -1,0 +1,139 @@
+title: "Linux Persistence \u2014 Cron, Systemd, Backdoor User and SSH Keys (T1053.003) \u2014 EDR-003 Cron Job Creation With Suspicious Command Path"
+id: ttp-2026-0034-bioc-01
+status: experimental
+description: |
+  Cron job creation with suspicious command path — persistence mechanism via scheduled task. crontab installs an entry, or a cron file is written referencing a hidden/temp binary.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = "crontab") or (event_type = ENUM.FILE and action_file_path contains_any ("/etc/cron", "/var/spool/cron"))
+    | filter action_process_image_command_line contains_any ("/tmp/", "/dev/shm/", "/.", "curl", "wget") or action_file_path contains "cron"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Persistence \u2014 Cron, Systemd, Backdoor User and SSH Keys (T1053.003) \u2014 EDR-003 Systemd Unit With Suspicious ExecStart"
+id: ttp-2026-0034-bioc-02
+status: experimental
+description: |
+  Systemd service unit creation with suspicious ExecStart path — persistence via system service. A .service file is written with Restart=always and an ExecStart in /tmp or /dev/shm.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)
+    | filter action_file_path contains ".service"
+    | filter action_file_path contains_any ("/etc/systemd/system", "/usr/lib/systemd/system", "/.config/systemd", "/tmp/")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1543/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1543.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Persistence \u2014 Cron, Systemd, Backdoor User and SSH Keys (T1053.003) \u2014 EDR-003 Local Account Created With Sudo Group"
+id: ttp-2026-0034-bioc-03
+status: experimental
+description: |
+  Local account creation with sudo group membership — backdoor account for persistent access. useradd/usermod adds an account to sudo/wheel/admin.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("useradd", "usermod", "adduser")
+    | filter action_process_image_command_line contains_any ("sudo", "wheel", "admin", "root")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1136/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1136.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Linux Persistence \u2014 Cron, Systemd, Backdoor User and SSH Keys (T1053.003) \u2014 EDR-003 SSH Key Generation Then Authorized Keys Write"
+id: ttp-2026-0034-bioc-04
+status: experimental
+description: |
+  SSH key generation followed by authorized_keys write — key-based persistence installation. ssh-keygen runs and an authorized_keys file is written.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = "ssh-keygen") or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE) and action_file_path contains "authorized_keys")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Linux Persistence \u2014 Cron, Systemd, Backdoor User and SSH Keys (T1053.003) \u2014 EDR-003 Shell Profile Modified With Background Execution"
+id: ttp-2026-0034-bioc-05
+status: experimental
+description: |
+  Shell profile modification with nohup background execution — login-triggered persistence. A shell init file is written containing nohup/disown background launch.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)
+    | filter action_file_path contains_any (".bashrc", ".bash_profile", ".profile", "/etc/profile", ".zshrc")
+    | filter actor_process_image_name in ("bash", "sh", "echo", "tee", "cat", "vi", "vim", "sed")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1546/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1546.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -58,7 +58,7 @@ ttp_refs:
 
 equivalents:
   - TOOL-MIMIKATZ
-  - TOOL-IMPACKET-GETUSERSPNS
+  - TOOL-IMPACKET  # GetUserSPNs / Kerberoasting equivalent (impacket toolkit)
 
 author: Henry Reed
 created: "2026-05-21"

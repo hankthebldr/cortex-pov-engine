@@ -1,0 +1,62 @@
+title: "Container & Kubernetes Supply-Chain Posture Sweep \u2014 Cortex Cloud CDR (T1613 / T1526 / T1552.001 / T1046) \u2014 CDR-007 Privileged Container Exec into EKS Workload"
+id: ttp-2026-0076-bioc-01
+status: experimental
+description: |
+  A kubectl exec lands a shell inside a running pod which then reads /proc/1/status capability masks and the mounted Kubernetes service-account token. This is the privileged-container-exec + in-cluster discovery shape produced by both the posture sweep and an attacker pivoting into a cluster workload (T1613 Container and Resource Discovery).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("kubectl", "crictl", "runc", "containerd-shim")
+    | filter action_process_image_command_line contains "exec" or action_process_image_command_line contains "/proc/1/status" or action_process_image_command_line contains "serviceaccount/token"
+    | fields agent_hostname, actor_process_image_name, action_process_image_command_line, action_process_image_name
+    | comp count() as exec_events by agent_hostname, actor_process_image_name
+    | filter exec_events >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1613/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1613
+    - attack.t1552.001
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Container & Kubernetes Supply-Chain Posture Sweep \u2014 Cortex Cloud CDR (T1613 / T1526 / T1552.001 / T1046) \u2014 CDR-007 IAM GetAccountAuthorizationDetails Bulk Enumeration"
+id: ttp-2026-0076-bioc-02
+status: experimental
+description: |
+  The EKS node/cluster principal calls iam:GetAccountAuthorizationDetails (optionally paired with ListRoles/ListPolicies) to download every IAM principal and policy in one pass — the bulk Cloud Service Discovery shape Cloudsplaining and an attacker both produce (T1526 Cloud Service Discovery).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source = "iam.amazonaws.com"
+    | filter event_name in ("GetAccountAuthorizationDetails", "ListRoles", "ListPolicies", "ListUsers", "ListPolicyVersions")
+    | comp count() as iam_enum_calls by user_identity_arn, source_ip
+    | filter iam_enum_calls >= 3
+    | sort desc iam_enum_calls
+    | fields user_identity_arn, source_ip, iam_enum_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1526/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1526
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

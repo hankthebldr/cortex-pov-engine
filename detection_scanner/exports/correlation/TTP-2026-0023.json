@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1496",
+    "T1105",
+    "T1562.001",
+    "T1053.005"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(CDR-002 XMRig Binary Download And Extraction In Container) OR BIOC(CDR-002 Known Mining Pool In Config File In Container) OR BIOC(CDR-002 XMRig Process Execution In Container) OR BIOC(CDR-002 Sustained High CPU Mining Workload In Container) OR BIOC(CDR-002 Crontab Modification To Persist Cryptominer In Container) OR BIOC(CDR-002 Cryptominer Added To Cron Schedule In Container)",
+      "name": "Cryptominer Deploy Execute Persist \u2014 Same Container",
+      "rule_id": "CR-CDR-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0023"
+}

@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1078.004",
+    "T1539"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ITDR-001 Impossible Travel Two Distant Geos Within Window) OR XQL(ITDR-001 Impossible Travel Microsoft SignInLogs Shape)",
+      "name": "Impossible Travel Account Compromise \u2014 Cross-Provider Identity",
+      "rule_id": "CR-ITDR-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0037"
+}

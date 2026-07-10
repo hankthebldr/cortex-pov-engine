@@ -1,0 +1,34 @@
+title: "TIM Resource-Development Detection \u2014 Adversary Infrastructure Staging Surfaced From the Defender Vantage (T1583.001 / T1608.001 / T1585) \u2014 TIM-002 Resolution of Newly-Registered Look-Alike Domain From Adversary Infrastructure Feed"
+id: ttp-2026-0079-bioc-01
+status: experimental
+description: |
+  An estate host resolves a TAXII-fed newly-registered look-alike / staged-capability subdomain (.internal C2 zone) that TIM has armed as a Resource-Development indicator. Behavioral leg that catches the adversary's acquired domain the instant it is reached — before any payload runs.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = pan_dns
+    | filter dns_query_name contains_any ("payload-delivery.", "dga-1a2b3c.", "cortexsim-tim-update.")
+    | filter dns_query_name contains ".internal"
+    | join type=inner (
+        dataset = threat_intel
+        | filter feed_source = "mocktaxii"
+        | filter indicator_type = "domain-name"
+        | fields indicator_value
+      ) as feed on dns_query_name = feed.indicator_value
+    | fields _time, src_ip, dns_query_name, dns_response_ip
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1583/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1583.001
+    - attack.t1608.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

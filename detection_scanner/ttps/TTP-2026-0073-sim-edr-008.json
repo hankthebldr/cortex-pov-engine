@@ -1,0 +1,369 @@
+{
+  "id": "TTP-2026-0073",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-08T00:00:00+00:00",
+    "updated_at": "2026-06-08T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "vector-ransomware",
+      "actor-akira",
+      "industry-all",
+      "severity-critical",
+      "endpoint",
+      "linux",
+      "impact"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": true,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 180,
+      "cleanup_required": true,
+      "safety_class": "destructive-with-cleanup"
+    }
+  },
+  "identity": {
+    "name": "Linux Host File Mass-Encryption for Impact — SAFE-MODE (T1486 / T1490)",
+    "summary": "A Linux ransomware-style payload rewrites a seeded victim directory with a ransomware extension and drops a ransom note (SAFE-MODE writes an inert marker, no real crypto), then inhibits recovery by deleting snapshots/backups. Cortex XDR for Linux fires mass-rewrite, ransom-note, and recovery-inhibition BIOCs into one Impact incident — a Linux-host variant distinct from the ESXi card.",
+    "description": "Linux is now a first-class ransomware target: Akira, Black Basta, and RansomEXX affiliates ship dedicated ELF encryptors that walk a victim's filesystem, encrypt files in place, append a ransomware extension, and drop a ransom note in every traversed directory — the canonical Data Encrypted for Impact (T1486) behaviour — and then inhibit recovery (T1490) by removing local snapshots, backups, and shadow copies. This card reproduces that telemetry shape on a single Linux host (NOT an ESXi hypervisor — that is the distinct TTP-2026-0006 / SIM-EDR-007), giving the EDR plane a second, independent detection variant for T1486 so a DC can prove the rule fires on host-level encryption as well as hypervisor-level. SAFE-MODE: the payload seeds an isolated victim directory, then for each file appends the `.cortexlock` ransomware extension and overwrites the content with an inert `CORTEXSIM-SAFE-MODE-NOT-ENCRYPTED` marker (no real cryptography, fully reversible by cleanup), and drops a `READ_ME_CORTEXSIM.txt` note; the recovery-inhibition step deletes only CortexSim-created snapshot/backup artefacts. The detection model is behavioural and content-based: (1) a rapid mass file-rewrite/rename BIOC fires when one process modifies an abnormal number of files with a new uniform extension in a short window — the encryptor fingerprint; (2) a ransom-note BIOC fires on the recurring note filename written across many directories; (3) a recovery-inhibition BIOC fires on snapshot/backup deletion commands; (4) validation XQL confirms each in xdr_data. IOC signatures pin the ransomware extension and the ransom-note filename. A correlation rule fuses the mass-encryption, ransom-note, and recovery-inhibition signals from one host into a single critical Impact incident.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Akira affiliates",
+        "aliases": [
+          "Akira Linux/ESXi encryptor operators"
+        ]
+      },
+      {
+        "name": "Black Basta affiliates"
+      }
+    ],
+    "campaigns": [
+      "Linux/ESXi big-game ransomware 2024-2025"
+    ],
+    "malware_families": [
+      {
+        "name": "Akira (Linux variant)"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2023-06-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1490",
+        "name": "Inhibit System Recovery",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1083",
+        "name": "File and Directory Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "File: File Modification",
+      "File: File Creation",
+      "Process: Process Creation",
+      "Command: Command Execution"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1486 — Linux host file mass-encryption (SAFE-MODE marker overwrite) + T1490 recovery inhibition",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting healthy on the target host.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "Isolated lab host — the payload only touches the seeded /tmp/cortexsim_victim directory and CortexSim-created snapshot artefacts (lab only)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE Linux ransomware telemetry — NO real encryption, fully reversible.\n# step-1: seed an isolated victim directory and discover files (T1083)\nVDIR=/tmp/cortexsim_victim; mkdir -p $VDIR; for i in $(seq 1 40); do echo \"original content $i\" > $VDIR/document_$i.dat; done\nfind $VDIR -type f | head -1000 > /tmp/cortexsim_targetlist.txt\n# step-2: mass rewrite + ransomware extension + SAFE-MODE inert marker (T1486)\nwhile read -r f; do printf 'CORTEXSIM-SAFE-MODE-NOT-ENCRYPTED' > \"${f}.cortexlock\" && rm -f \"$f\"; done < /tmp/cortexsim_targetlist.txt\n# step-3: drop a ransom note in the victim directory (T1486)\nprintf 'Your files are locked (CORTEXSIM SAFE-MODE — nothing was actually encrypted).' > $VDIR/READ_ME_CORTEXSIM.txt\n# step-4: inhibit recovery — delete ONLY CortexSim snapshot/backup artefacts (T1490)\nrm -f /tmp/cortexsim_snapshot_*.img /tmp/cortexsim_backup_*.tar 2>/dev/null; echo '[*] recovery-inhibition step issued (CortexSim artefacts only)'",
+      "input_variables": [],
+      "timeout_seconds": 180
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Many files rewritten with a uniform ransomware extension by one process in a short window.",
+        "expected_value": "action_file_extension = \"cortexlock\" and count() per actor_process_instance_id >= 20"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Ransom-note file written into the victim directory.",
+        "expected_value": "action_file_name = \"READ_ME_CORTEXSIM.txt\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Recovery-inhibition command deleting snapshot/backup artefacts.",
+        "expected_value": "action_process_image_command_line contains_any (\"rm -f /tmp/cortexsim_snapshot\", \"rm -f /tmp/cortexsim_backup\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "VDIR=/tmp/cortexsim_victim\nfor f in $VDIR/*.cortexlock; do orig=\"${f%.cortexlock}\"; [ -e \"$f\" ] && echo 'restored content' > \"$orig\" && rm -f \"$f\"; done 2>/dev/null\nrm -f $VDIR/READ_ME_CORTEXSIM.txt /tmp/cortexsim_targetlist.txt\nrm -rf $VDIR\necho '[CortexSim] SIM-EDR-008 cleanup complete — SAFE-MODE markers removed, victim dir restored'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "*.cortexlock",
+        "context": "Uniform ransomware extension appended to mass-rewritten files — Linux-host encryptor signature (SAFE-MODE marker stands in for the real extension).",
+        "reputation_required": "any",
+        "cortex_severity_override": "critical"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "READ_ME_CORTEXSIM.txt",
+        "context": "Ransom note dropped across encrypted directories — recurring-note ransomware signature.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "EDR-008 Rapid Mass File Rewrite With Uniform New Extension",
+        "description": "A single process modifies/creates an abnormally large number of files carrying one new uniform extension in a short window — the host-level file-encryption fingerprint (T1486). Distinct from the ESXi VMDK-adjacent mass-write BIOC on TTP-2026-0006.",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE, ENUM.FILE_RENAME)\n| filter action_file_extension in (\"cortexlock\", \"akira\", \"locked\", \"crypt\", \"encrypted\")\n| bin _time span=1m\n| comp count() as files_rewritten by actor_process_instance_id, actor_process_image_name, agent_hostname, _time\n| filter files_rewritten >= 20\n| fields _time, agent_hostname, actor_process_image_name, files_rewritten",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1486"
+        ]
+      },
+      {
+        "name": "EDR-008 Ransom Note Written Across Multiple Directories",
+        "description": "A recurring ransom-note filename is written into multiple directories by one process — the note-drop stage of a ransomware encryptor (T1486).",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_name contains_any (\"READ_ME\", \"RANSOM\", \"_DECRYPT_\", \"HOW_TO_RESTORE\", \"akira_readme\")\n| comp count_distinct(action_file_directory) as note_dirs by actor_process_instance_id, agent_hostname\n| filter note_dirs >= 1\n| fields agent_hostname, actor_process_instance_id, note_dirs",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1486"
+        ]
+      },
+      {
+        "name": "EDR-008 Local Recovery Inhibition — Snapshot Or Backup Deletion",
+        "description": "Deletion of local snapshots/backups/shadow copies on a Linux host — recovery inhibition (T1490) co-occurring with mass file rewriting.",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"rm\", \"lvremove\", \"btrfs\", \"zfs\", \"rsnapshot\", \"shred\")\n| filter action_process_image_command_line contains_any (\"snapshot\", \"backup\", \".img\", \".tar\", \"--delete\", \"destroy\")\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1490"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-008 Validate Mass File Rewrite With Ransomware Extension",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and action_file_extension in (\"cortexlock\", \"akira\", \"locked\", \"crypt\", \"encrypted\")\n| comp count() as files_rewritten by actor_process_image_name, agent_hostname\n| filter files_rewritten >= 20\n| fields agent_hostname, actor_process_image_name, files_rewritten",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-008 Validate Ransom Note Creation",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_name contains_any (\"READ_ME\", \"RANSOM\", \"_DECRYPT_\", \"HOW_TO_RESTORE\")\n| fields _time, agent_hostname, actor_process_image_name, action_file_name, action_file_directory",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-008 Validate Local Recovery Inhibition",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"rm\", \"lvremove\", \"btrfs\", \"zfs\", \"shred\")\n| filter action_process_image_command_line contains_any (\"snapshot\", \"backup\", \".img\", \".tar\")\n| fields _time, agent_hostname, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-008 Hunt Encryptor Process Lineage Across Hosts",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 86400)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and action_file_extension in (\"cortexlock\", \"akira\", \"locked\", \"crypt\")\n| comp count() as encrypted_files, count_distinct(agent_hostname) as hosts by causality_actor_process_image_name, actor_process_image_name\n| sort desc encrypted_files\n| fields causality_actor_process_image_name, actor_process_image_name, encrypted_files, hosts",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Ransomware — Linux Host Mass-Encryption + Recovery Inhibition (Same Host)",
+        "rule_id": "CR-EDR-0008",
+        "logic": "BIOC(EDR-008 Rapid Mass File Rewrite With Uniform New Extension) AND (BIOC(EDR-008 Ransom Note Written Across Multiple Directories) OR BIOC(EDR-008 Local Recovery Inhibition — Snapshot Or Backup Deletion)) — fuses the encryption, ransom-note, and recovery-inhibition stages from one host into a single critical Impact incident."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XDR for Linux — Ransomware mass file-modification behavioral detector",
+        "validated": true,
+        "note": "Backed by BIOC 'EDR-008 Rapid Mass File Rewrite With Uniform New Extension' + the mass-rewrite validation XQL on this card."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — Anomalous file-rename burst with new uniform extension",
+        "validated": false
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "anti-ransomware",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "XDR-RANSOMWARE-LINUX-MASS-ENCRYPT-001",
+          "XDR-BIOC-EDR-0073-RANSOMNOTE"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter agent_os_type = ENUM.AGENT_OS_LINUX and action_file_extension = \"cortexlock\" | comp count() by actor_process_image_name, agent_hostname"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0008"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EDR-0008 fuses mass-encryption, ransom-note, and recovery-inhibition from one Linux host into one Impact incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-RansomwareContainment-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: isolate the host, kill the encryptor process tree, and trigger recovery from off-host backups."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-RANSOM-073",
+        "name": "Ransomware Impact Detection — Linux Host File Encryption",
+        "description": "Detect and stitch a Linux-host file mass-encryption + recovery-inhibition chain (a second, host-level detection variant of T1486 distinct from the ESXi card).",
+        "test_cases": [
+          {
+            "test_case_id": "TC-RANSOM-073A",
+            "objective": "Mass file-rewrite, ransom-note, and recovery-inhibition each fire their Cortex XDR BIOC.",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
+              "BIOCs from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-EDR-008 steps 1-4 against the seeded victim directory.",
+              "Observe the per-stage BIOC alerts in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `EDR-008 Rapid Mass File Rewrite With Uniform New Extension` fires within 60s with files_rewritten >= 20.",
+              "BIOC `EDR-008 Ransom Note Written Across Multiple Directories` fires on the note drop.",
+              "All three XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-RANSOM-073B",
+            "objective": "The encryption stages stitch into one Impact incident.",
+            "success_criteria": [
+              "Correlation `CR-EDR-0008` groups the stages from one host into a single critical incident.",
+              "Incident severity is Critical and the XSOAR containment playbook is offered."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Cortex XDR anti-ransomware behavioral protection on Linux hosts to block rapid mass file-rewrite with a uniform new extension.",
+      "Keep immutable / off-host backups so recovery-inhibition on the host cannot destroy the only copy.",
+      "Restrict write access to data directories and alert on uniform-extension mass renames."
+    ],
+    "detection_engineering": [
+      "Alert on a single process modifying many files with one new extension in a short window.",
+      "Alert on recurring ransom-note filenames written across directories and on snapshot/backup deletion commands.",
+      "Correlate mass-encryption + ransom-note + recovery-inhibition on one host into a single Impact incident."
+    ],
+    "response_playbook": "XSOAR-PB-RansomwareContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Akira Ransomware Linux/ESXi Encryptor Analysis",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1486 — Data Encrypted for Impact",
+      "url": "https://attack.mitre.org/techniques/T1486/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1490 — Inhibit System Recovery",
+      "url": "https://attack.mitre.org/techniques/T1490/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "GAP-8: detection-variant DEPTH on Impact T1486 — Linux-host file mass-encryption variant (SAFE-MODE) distinct from the ESXi-hypervisor card TTP-2026-0006. Real rapid-rewrite / ransom-note / recovery-inhibition BIOCs+XQL, correlation CR-EDR-0008, IOC signatures, GAP-11 validated/unvalidated analytics split. Wired to SIM-EDR-008."
+    }
+  ]
+}

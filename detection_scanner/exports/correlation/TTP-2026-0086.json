@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1071.001",
+    "T1568"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(MP-006 NGFW Container Egress App-ID URL and DGA Signal) AND XQL(MP-006 Endpoint Container Process Network Causality) joined on the shared 5-tuple (source_ip, source_port, dest_ip, dest_port, protocol) plus container_id within a 10-second correlation window \u2014 asserts >= 2 distinct planes (CDR endpoint + NDR network) under one incident_id, producing the container-process -> outbound-session -> NGFW App-ID/URL/DGA causality chain.",
+      "name": "NGFW Container Egress to Endpoint Process Causality Stitch",
+      "rule_id": "CR-MP-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0086"
+}

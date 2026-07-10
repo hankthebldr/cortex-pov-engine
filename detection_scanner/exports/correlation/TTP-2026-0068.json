@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1041",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(NGFW EAL outbound bytes per session greatly exceeds host baseline) AND (XQL(NGFW EAL large sustained outbound bytes to single destination) OR XDR(originating process on src_host)) on same src_host within 30m",
+      "name": "Bulk HTTPS Exfil Cross-Plane Stitch \u2014 NGFW Volume Anomaly Plus XDR Originating Process",
+      "rule_id": "CR-NDR-0008",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0068"
+}

@@ -1,0 +1,29 @@
+title: "Cryptojacking \u2014 Stratum Mining Pool Connection via App-ID (T1496) \u2014 NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port"
+id: ttp-2026-0052-bioc-01
+status: experimental
+description: |
+  NGFW EAL — repeated short-lived TCP sessions to mining pool port
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_port in (3333, 4444, 5555, 7777, 14444, 45700)
+    | filter action = "allow"
+    | comp count() as session_count, avg(bytes_sent + bytes_received) as avg_bytes by src_ip, dst_ip, dst_port
+    | filter session_count >= 4
+    | fields src_ip, dst_ip, dst_port, session_count, avg_bytes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1496/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1496
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,299 @@
+{
+  "id": "TTP-2026-0090",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-email",
+      "vector-phishing-link",
+      "credential-harvest",
+      "proofpoint-tap",
+      "microsoft-365",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-PROOFPOINT-TAP-DOCS",
+      "SRC-MICROSOFT-365-DOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "email",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "EMAIL — Phishing Credential-Harvest Link (Proofpoint TAP + Microsoft 365)",
+    "summary": "The email_emitter emits a Proofpoint TAP messagesBlocked event carrying a credential-harvest URL plus a clicksPermitted event for one recipient, then proves the same phishing-link logic fires over the Microsoft 365 EmailEvents shape. Cortex XSIAM analyzes the email ingestion stream and raises a credential-phishing alert on the recipient mailbox, corroborated by the NGFW egress to the collector.",
+    "description": "Spearphishing-link credential harvest is the #1 initial-access vector: an inbound message carries a URL that lures the recipient to a credential-capture page (T1566.002), often paired with information-gathering pretexts (T1598). This card drives CortexSim's email_emitter to POST a Proofpoint TAP messagesBlocked event (threatsInfoMap classification=credphish, threatType=url) and a clicksPermitted event for ada.lovelace into the email log collector, then repeats the pattern in Microsoft 365 / Defender for Office 365 EmailEvents shape. Detection is pure email-log analytics in Cortex XSIAM: an XQL rule windows blocked + permitted-click events per recipient over the proofpoint_tap_raw dataset and alerts when a credential-phishing URL is delivered or clicked, with a parallel query proving the same resolves over msft_o365, and an NGFW EAL query confirming the outbound POST burst. A correlation rule fuses the email phishing signal with the recipient's endpoint/identity follow-on into a single account-compromise incident.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology",
+      "financial-services"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "name": "Phishing: Spearphishing Link",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1566.002"
+      },
+      {
+        "technique_id": "T1598",
+        "name": "Phishing for Information",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      }
+    ],
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "CortexSim email_emitter EAL plugin — event_pattern=phishing_link",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "CortexSim email_emitter EAL plugin registered and an authorized email log collector endpoint reachable.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe email_emitter | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Cortex XSIAM ingesting the Proofpoint TAP (proofpoint_tap_raw) and Microsoft 365 (msft_o365) email datasets."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Emit a phishing credential-link message (Proofpoint TAP then Microsoft 365 shape).\npython3 -m scripts.eal_simulator.cli run /tmp/email-001.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/email-001-m365.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "A blocked inbound message and a permitted click for one recipient carrying a credential-harvest URL classified as credphish.",
+        "expected_value": "classification = \"credphish\" and threatsInfoMap.threatType = \"url\" for one recipient"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS POST burst from the scenario runner to the email log collector.",
+        "expected_value": "dst_port = 443 and url contains \"/email/events\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/email-001.yml /tmp/email-001-m365.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "secure-mail-update.invalid",
+        "context": "Sender domain of the credential-harvest phishing message emitted by email_emitter (_PATTERN_INDICATORS[\"phishing_link\"].sender_domain). Appears in the Proofpoint TAP senderDomain / M365 SenderMailFromDomain field.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://secure-mail-update.invalid/sso/verify?id=cortexsim",
+        "context": "Credential-capture URL carried in the threatsInfoMap.threatUrl / M365 Url field of the synthetic phishing message.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "email-sender",
+        "value": "it-helpdesk@secure-mail-update.invalid",
+        "context": "Spoofed IT-helpdesk sender address of the credential-harvest lure (email_emitter phishing_link indicators). Pivot for the account-compromise incident.",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "EMAIL-001 Pre-Flight email_emitter Metadata Visible",
+        "description": "Pre-flight: email_emitter metadata visible to operator. Confirms the EAL plugin is registered and exposes EMAIL targets before any events are emitted, so a null result means a harness fault rather than a detection miss.",
+        "logic": "dataset = proofpoint_tap_raw\n| filter messageType in (\"messagesBlocked\", \"messagesDelivered\", \"clicksPermitted\") or _raw_log contains \"email_emitter\"\n| comp count() as preflight_events by recipient\n| filter preflight_events >= 0",
+        "severity": "informational",
+        "mitre_technique_ids": [
+          "T1566.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EMAIL-001 Phishing Credential-Link Blocked + Permitted Click",
+        "query": "// [MODEL: dataset=proofpoint_tap_raw, content_id=\"ProofpointTAP\"]\ndataset = proofpoint_tap_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter classification in (\"credphish\", \"phish\") and messageType in (\"messagesBlocked\", \"clicksPermitted\")\n| comp count() as phish_events, values(messageType) as event_kinds, values(threatUrl) as urls by recipient, sender\n| filter phish_events >= 1\n| fields recipient, sender, phish_events, event_kinds, urls",
+        "expected_rows_min": 1,
+        "dataset": "proofpoint_tap_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "EMAIL-001 Phishing Link Microsoft 365 EmailEvents Shape",
+        "query": "dataset = msft_o365\n| filter _time > to_timestamp(current_time() - 1800)\n| filter RecordType = \"EmailEvents\" and ThreatTypes contains \"Phish\" and UrlCount >= 1\n| comp count() as phish_events, values(Url) as urls by RecipientEmailAddress, SenderFromAddress\n| filter phish_events >= 1\n| fields RecipientEmailAddress, SenderFromAddress, phish_events, urls",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365"
+      },
+      {
+        "purpose": "validation",
+        "name": "EMAIL-001 NGFW Outbound POST Burst To Email Collector",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"web-browsing\", \"ssl\") and dst_port = 443\n| filter uri_path contains \"/email/events\" or url contains \"/email/events\"\n| comp count() as post_count, sum(bytes_sent) as bytes_out by src_ip, dst_host\n| filter post_count >= 1\n| fields src_ip, dst_host, post_count, bytes_out",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Phishing Credential-Link Account Compromise — Email to Endpoint Stitch",
+        "rule_id": "CR-EMAIL-0001",
+        "logic": "XQL(EMAIL-001 Phishing Credential-Link Blocked + Permitted Click) OR XQL(EMAIL-001 Phishing Link Microsoft 365 EmailEvents Shape) FOLLOWED_BY xdr_data endpoint process for the same recipient within 1h"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Email Analytics — Credential-phishing URL delivered/clicked per recipient",
+      "Cortex XSIAM Correlation — Email phishing to endpoint follow-on stitch"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "EMAIL-PHISH-LINK-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = proofpoint_tap_raw | filter classification in (\"credphish\", \"phish\") | comp count() by recipient | filter _count >= 1"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EMAIL-0001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EMAIL-0001 stitches the email phishing-link signal to the recipient's endpoint follow-on into one account-compromise incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-EMAIL-001",
+        "name": "Phishing Credential-Link Detection",
+        "description": "Detect a credential-harvest phishing URL delivered to or clicked by a recipient across both Proofpoint TAP and Microsoft 365 email log shapes, stitched to the endpoint follow-on.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-EMAIL-001A",
+            "objective": "A blocked phishing message plus a permitted click for one recipient raises a credential-phishing alert.",
+            "preconditions": [
+              "Cortex XSIAM ingesting proofpoint_tap_raw and msft_o365 datasets.",
+              "email_emitter authorized against the lab collector."
+            ],
+            "steps": [
+              "Run SIM-EMAIL-001 steps 1-3.",
+              "Observe the credential-phishing alert per recipient in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `EMAIL-001 Phishing Credential-Link Blocked + Permitted Click` returns >= 1 row.",
+              "XQL `EMAIL-001 Phishing Link Microsoft 365 EmailEvents Shape` returns >= 1 row.",
+              "NGFW POST-burst query corroborates the collector egress."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-EMAIL-001B",
+            "objective": "The email phishing signal stitches to the recipient endpoint follow-on.",
+            "success_criteria": [
+              "Correlation `CR-EMAIL-0001` groups the email phishing-link signal with the recipient endpoint follow-on under one incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Rewrite and detonate inbound URLs (time-of-click protection) before delivery.",
+      "Enforce phishing-resistant MFA so a harvested password is insufficient.",
+      "Strip or quarantine messages from newly-registered or look-alike sender domains."
+    ],
+    "detection_engineering": [
+      "Window blocked + permitted-click events per recipient over the Proofpoint TAP dataset and alert on credential-phishing classifications.",
+      "Normalize Proofpoint TAP and Microsoft 365 EmailEvents into one email schema so the rule fires regardless of provider.",
+      "Stitch the email phishing signal to the recipient's endpoint/identity follow-on."
+    ],
+    "response_playbook": "XSOAR-PB-EmailPhishingLink-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM — Proofpoint TAP Ingestion & Modeling (proofpoint_tap_raw)",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks",
+      "publisher_id": "SRC-PROOFPOINT-TAP-DOCS",
+      "primary": true
+    },
+    {
+      "title": "Cortex XSIAM — Microsoft 365 / Defender for Office 365 Connector (msft_o365)",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks",
+      "publisher_id": "SRC-MICROSOFT-365-DOCS"
+    },
+    {
+      "title": "MITRE ATT&CK T1566.002 — Phishing: Spearphishing Link",
+      "url": "https://attack.mitre.org/techniques/T1566/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-17",
+      "author": "Henry Reed",
+      "change": "Initial EMAIL-plane card: phishing credential-harvest link (T1566.002 + T1598) over Proofpoint TAP + Microsoft 365 with NGFW corroboration and CR-EMAIL-0001 email-to-endpoint stitch."
+    }
+  ]
+}

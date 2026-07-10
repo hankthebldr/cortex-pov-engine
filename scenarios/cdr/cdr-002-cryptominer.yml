@@ -6,7 +6,6 @@ status: active
 plane: CDR
 detection_types:
   - BIOC
-  - Analytics
 
 uc_ref: UCS-CDR-02
 tc_ref: TC-CDR-02
@@ -33,6 +32,26 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention
+# (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
+# fabricated KPIs — they map this plane to the methodology family its
+# detection shape already belongs to in the v2.0 master methodology.
+validation_methodology: "Container Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The container/k8s TTP signals injected by this scenario produce the
+  expected Cortex Cloud / XDR detections within the MTTD budget. Each
+  expected_detections row is validated against the container runtime and
+  cloud audit telemetry.
+moat_tier: "LEAD"
+
 external_tools:
   - name: xmrig
     source: "https://github.com/xmrig/xmrig"
@@ -52,9 +71,9 @@ steps:
     mitre_technique: "T1562.001"
     expected_detections:
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "System limit modification in container — ulimit/sysctl tuning consistent with cryptominer pre-deployment"
-        ttp_ref: TTP-2026-0023
+        ttp_ref: "TTP-2026-0023"
         detection_id: bioc-cdr-002-container-resource-limit-tuning-pre-mining
 
   - id: step-02
@@ -73,12 +92,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "XMRig binary download and extraction — cryptominer tool transfer signature"
-        ttp_ref: TTP-2026-0023
+        ttp_ref: "TTP-2026-0023"
         detection_id: bioc-cdr-002-xmrig-binary-download-and-extraction-in-container
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Compressed binary downloaded and extracted to /tmp hidden directory in container"
-        ttp_ref: TTP-2026-0023
+        ttp_ref: "TTP-2026-0023"
         detection_id: bioc-cdr-002-compressed-binary-extracted-to-hidden-tmp-in-container
 
   - id: step-03
@@ -101,9 +120,9 @@ steps:
     mitre_technique: "T1496"
     expected_detections:
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Known cryptomining pool domain/IP in config file — pool.minexmr.com association"
-        ttp_ref: TTP-2026-0023
+        ttp_ref: "TTP-2026-0023"
         detection_id: bioc-cdr-002-known-mining-pool-in-config-file-in-container
 
   - id: step-04
@@ -115,12 +134,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Cryptominer binary execution — XMRig process tree detected by CDR runtime BIOC"
-        ttp_ref: TTP-2026-0023
+        ttp_ref: "TTP-2026-0023"
         detection_id: bioc-cdr-002-xmrig-process-execution-in-container
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Sustained CPU spike from container process consistent with cryptomining workload"
-        ttp_ref: TTP-2026-0023
+        ttp_ref: "TTP-2026-0023"
         detection_id: bioc-cdr-002-sustained-high-cpu-mining-workload-in-container
 
   - id: step-05
@@ -135,12 +154,12 @@ steps:
       - plane: CDR
         type: BIOC
         description: "Crontab modification to persist cryptominer — scheduled task creation from container"
-        ttp_ref: TTP-2026-0023
+        ttp_ref: "TTP-2026-0023"
         detection_id: bioc-cdr-002-crontab-modification-to-persist-cryptominer-in-container
       - plane: CDR
-        type: Analytics
+        type: BIOC
         description: "Cryptominer binary added to cron schedule — multi-stage malware persistence behavior"
-        ttp_ref: TTP-2026-0023
+        ttp_ref: "TTP-2026-0023"
         detection_id: bioc-cdr-002-cryptominer-added-to-cron-schedule-in-container
 
 cleanup:

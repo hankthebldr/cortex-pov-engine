@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1113"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert)",
+      "name": "Browser Sensitive Screen Capture \u2014 Repeat Collection",
+      "rule_id": "CR-BROWSER-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0021"
+}

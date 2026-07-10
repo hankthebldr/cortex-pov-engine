@@ -56,6 +56,21 @@ _COMMON_FTP_PORTS = {21, 990, 2121}
 _DEFAULT_STOR_BYTES = 4096
 
 
+def _mask_username(username: str) -> str:
+    """Mask a non-sentinel username before it lands in the ECS audit event.
+
+    The default sentinel (``cortexsim``) is attributable to the simulator and
+    is logged verbatim so a DLP rule matching it is traceable. Any operator-
+    supplied override could carry a real account name, so we mask it to
+    first+last char with the middle elided (e.g. ``svc_backup`` → ``s******p``).
+    """
+    if username == _DEFAULT_USERNAME:
+        return username
+    if len(username) <= 2:
+        return "*" * len(username)
+    return f"{username[0]}{'*' * (len(username) - 2)}{username[-1]}"
+
+
 def _clean_field(v: str, *, name: str, max_len: int = 64) -> str:
     """Reject CRLF / NUL / control bytes in user-supplied FTP fields so
     callers cannot smuggle additional protocol commands through a USER
@@ -133,8 +148,10 @@ class FtpEgress(BaseSimulation):
         params: FtpEgressParams = ctx.params  # type: ignore[assignment]
         started_at = self.utcnow()
 
-        # Safety: host must be on the campaign's target_allowlist.
-        getattr(ctx, "authorise")(params.target_host)
+        # Safety: host AND port must be on the campaign's target_allowlist. A
+        # port-pinned entry (``ftp.lab.invalid:21``) only admits that port; a
+        # host-level entry still admits any port (backwards compatible).
+        ctx.authorise(params.target_host, port=params.target_port)
 
         if ctx.dry_run:
             await ctx.emit_event(ecs_event(
@@ -186,6 +203,8 @@ class FtpEgress(BaseSimulation):
                 )
                 bytes_sent += sent
                 events_emitted += 1
+                ctx.charge_request()
+                ctx.charge_bytes(sent)
                 outcome = "success"
                 detail_extra = {"bytes_sent_this_session": sent}
             except OSError as exc:
@@ -209,7 +228,11 @@ class FtpEgress(BaseSimulation):
                 bytes_sent=bytes_sent,
                 extra={
                     "iteration": i + 1,
-                    "username": params.username,  # surfaces in the audit trail; the value is a sentinel by default
+                    # Masked unless it is the default sentinel — an operator
+                    # override could be a real account name (EAL-G11). The
+                    # cleartext USER command still hits the wire (that IS the
+                    # signal); we just don't echo it into the audit trail.
+                    "username": _mask_username(params.username),
                     "stor": params.send_stor,
                     **detail_extra,
                 },

@@ -1,0 +1,2 @@
+type,value,context,notes
+# (no atomic IOCs emitted by this scenario — detection is BIOC/XQL/correlation)

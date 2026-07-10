@@ -1,0 +1,153 @@
+title: "Active Directory Privilege Escalation & Token Manipulation Chain \u2014 LSASS to SYSTEM (T1068 / T1134 / T1003.001) \u2014 ITDR-007 LSASS Process Handle Open By Non-System Process"
+id: ttp-2026-0078-bioc-01
+status: experimental
+description: |
+  XDR - a non-system process opens a process handle to lsass.exe with credential-read access rights. Reading LSASS memory is the canonical credential-dumping primitive (T1003.001); pypykatz parses the resulting dump offline.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter action_type = ENUM.PROCESS_HANDLE
+    | filter lower(target_process_image_name) = "lsass.exe"
+    | filter actor_effective_username not in ("NT AUTHORITY\\SYSTEM", "NT AUTHORITY\\LOCAL SERVICE")
+    | filter requested_access_mask contains "0x10"
+    | fields _time, src_host, actor_process_image_name, actor_effective_username, requested_access_mask
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Active Directory Privilege Escalation & Token Manipulation Chain \u2014 LSASS to SYSTEM (T1068 / T1134 / T1003.001) \u2014 ITDR-007 Abnormal DACL Write To AdminSDHolder Or Privileged Group"
+id: ttp-2026-0078-bioc-02
+status: experimental
+description: |
+  ITDR - an abnormal write to the nTSecurityDescriptor (DACL) of AdminSDHolder or a privileged group (Domain Admins / Enterprise Admins) granting GenericAll or WriteDACL. ACL-based escalation (T1098) lets a foothold account take control of privileged objects; bloodyAD writes the malicious ACE.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = ad_audit
+    | filter event_id = 4662
+    | filter lower(object_properties) contains "writedacl" or lower(object_properties) contains "ntsecuritydescriptor"
+    | filter lower(object_name) contains "adminsdholder" or lower(object_name) contains "domain admins" or lower(object_name) contains "enterprise admins"
+    | filter actor_effective_username not in ("Administrator", "svc-adsync")
+    | fields _time, src_host, actor_effective_username, object_name, object_properties
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Active Directory Privilege Escalation & Token Manipulation Chain \u2014 LSASS to SYSTEM (T1068 / T1134 / T1003.001) \u2014 ITDR-007 Kerberos Relay To LDAP From Local Host (KrbRelayUp)"
+id: ttp-2026-0078-bioc-03
+status: experimental
+description: |
+  ITDR - a Kerberos authentication is relayed from the local host to LDAP/LDAPS on a domain controller, immediately followed by a write to the local computer object's msDS-AllowedToActOnBehalfOfOtherIdentity (RBCD). This self-relay to obtain a SYSTEM ticket is the KrbRelayUp local-privilege-escalation fingerprint (T1550 / T1068).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter dst_port in (389, 636)
+    | filter lower(app_id) contains "kerberos" or lower(auth_protocol) contains "kerberos"
+    | filter src_host = dst_host
+    | fields _time, src_host, dst_host, dst_port, actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Active Directory Privilege Escalation & Token Manipulation Chain \u2014 LSASS to SYSTEM (T1068 / T1134 / T1003.001) \u2014 ITDR-007 SeImpersonate Named-Pipe Privilege Escalation To SYSTEM"
+id: ttp-2026-0078-bioc-04
+status: experimental
+description: |
+  XDR - a service account holding SeImpersonatePrivilege (IIS w3wp.exe, MSSQL sqlservr.exe, or a 'potato' tool) spawns a child process running as NT AUTHORITY\SYSTEM via named-pipe token impersonation. This is the PrintSpoofer / potato-family local escalation (T1134).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter action_type = ENUM.PROCESS_START
+    | filter actor_effective_username = "NT AUTHORITY\\SYSTEM"
+    | filter lower(causality_actor_process_image_name) in ("w3wp.exe", "sqlservr.exe", "printspoofer64.exe", "printspoofer.exe")
+    | fields _time, src_host, causality_actor_process_image_name, action_process_image_name, actor_effective_username
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1134/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1134
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Active Directory Privilege Escalation & Token Manipulation Chain \u2014 LSASS to SYSTEM (T1068 / T1134 / T1003.001) \u2014 ITDR-007 Access Token Theft And Impersonation Via Token Duplication"
+id: ttp-2026-0078-bioc-05
+status: experimental
+description: |
+  XDR - a process duplicates and impersonates the access token of a privileged/SYSTEM process (e.g. winlogon.exe) so it runs in that security context. DuplicateTokenEx + ImpersonateLoggedOnUser against a high-privilege parent is the access-token-theft fingerprint (T1134); Tokenvator automates it.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter action_type = ENUM.PROCESS_TOKEN
+    | filter lower(target_process_image_name) in ("winlogon.exe", "lsass.exe", "services.exe")
+    | filter actor_effective_username not in ("NT AUTHORITY\\SYSTEM")
+    | fields _time, src_host, actor_process_image_name, actor_effective_username, target_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1134/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1134
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

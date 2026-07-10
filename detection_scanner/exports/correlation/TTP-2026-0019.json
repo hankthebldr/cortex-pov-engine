@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1176",
+    "T1539"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(Prisma Browser \u2014 sideloaded extension blocked by managed-extension policy)",
+      "name": "Browser Risky Extension Sideload \u2014 Overbroad Permissions",
+      "rule_id": "CR-BROWSER-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0019"
+}

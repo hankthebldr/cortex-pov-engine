@@ -1,0 +1,4 @@
+# Tier-C runtime artifacts — never commit these.
+results/
+.bundle-stage/
+bundle/

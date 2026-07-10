@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1078.004",
+    "T1098"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AISPM-002 Model Security Assessment Cycle Complete) AND XQL(AISPM-002 Three Model Security Findings On SageMaker Fixture)",
+      "name": "AI Model Security \u2014 Overprivileged Role Plus Misconfig Same Model",
+      "rule_id": "CR-AISPM-0002",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0055"
+}

@@ -1,0 +1,281 @@
+{
+  "id": "TTP-2026-0091",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-06-17",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-email",
+      "vector-malicious-attachment",
+      "malware-delivery",
+      "proofpoint-tap",
+      "microsoft-365",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-PROOFPOINT-TAP-DOCS",
+      "SRC-MICROSOFT-365-DOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "email",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "EMAIL — Malicious Attachment (macro / ISO / HTML-smuggling) via Proofpoint TAP + Microsoft 365",
+    "summary": "The email_emitter emits a burst of Proofpoint TAP messagesBlocked events carrying a weaponized attachment (threatType=attachment, sha256 set) for one recipient, then proves the same attachment logic fires over the Microsoft 365 EmailEvents shape. Cortex XSIAM raises a malware-attachment alert on the recipient mailbox and stitches the attachment hash to the endpoint follow-on.",
+    "description": "Spearphishing-attachment delivery (T1566.001) carries a weaponized file — a macro-enabled document, ISO/IMG container, or HTML-smuggling page — to the victim mailbox. This card drives CortexSim's email_emitter to POST a burst of Proofpoint TAP messagesBlocked events (threatsInfoMap classification=malware, threatType=attachment, sha256 set) for ada.lovelace into the email log collector, then repeats the pattern in Microsoft 365 / Defender for Office 365 EmailEvents shape. Detection is email-log analytics in Cortex XSIAM: an XQL rule over the proofpoint_tap_raw dataset windows blocked-attachment events per recipient and alerts when a malware-classified attachment is delivered, with a parallel query proving the same resolves over msft_o365. A correlation rule pivots the attachment sha256 into the endpoint xdr_data file/process stream to confirm whether the payload reached an endpoint.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology",
+      "manufacturing"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "name": "Phishing: Spearphishing Attachment",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1566.001"
+      }
+    ],
+    "kill_chain_phase": "delivery",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "File: File Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "CortexSim email_emitter EAL plugin — event_pattern=malicious_attachment",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "CortexSim email_emitter EAL plugin registered and an authorized email log collector endpoint reachable.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe email_emitter | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Cortex XSIAM ingesting the Proofpoint TAP (proofpoint_tap_raw) and Microsoft 365 (msft_o365) email datasets."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Emit a malicious-attachment message burst (Proofpoint TAP then Microsoft 365 shape).\npython3 -m scripts.eal_simulator.cli run /tmp/email-002.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/email-002-m365.yml --live",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "A burst of blocked inbound messages carrying a malware-classified attachment for one recipient.",
+        "expected_value": "classification = \"malware\" and threatsInfoMap.threatType = \"attachment\" for one recipient"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Weaponized attachment identified by its sha256 in the email telemetry, pivotable into the endpoint file stream.",
+        "expected_value": "sha256 = \"9f2a1c0b7e4d5a63c1f0e9d8b7a6f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/email-002.yml /tmp/email-002-m365.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "invoices-billing.invalid",
+        "context": "Sender domain of the malicious-attachment message emitted by email_emitter (_PATTERN_INDICATORS[\"malicious_attachment\"].sender_domain). Appears in the Proofpoint TAP senderDomain / M365 SenderMailFromDomain field.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "9f2a1c0b7e4d5a63c1f0e9d8b7a6f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d",
+        "context": "SHA-256 of the weaponized ISO attachment (email_emitter malicious_attachment indicators). Appears in threatsInfoMap.sha256 / M365 SHA256 and is the pivot into the endpoint xdr_data file stream.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "Invoice_948213.iso",
+        "context": "Attachment filename of the malware lure (email_emitter malicious_attachment indicators). An ISO container is a common HTML-smuggling / mark-of-the-web bypass delivery.",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "EMAIL-002 Pre-Flight email_emitter Metadata Visible",
+        "description": "Pre-flight: email_emitter metadata visible to operator. Confirms the EAL plugin is registered and exposes EMAIL targets before any events are emitted, so a null result means a harness fault rather than a detection miss.",
+        "logic": "dataset = proofpoint_tap_raw\n| filter messageType in (\"messagesBlocked\", \"messagesDelivered\", \"clicksPermitted\") or _raw_log contains \"email_emitter\"\n| comp count() as preflight_events by recipient\n| filter preflight_events >= 0",
+        "severity": "informational",
+        "mitre_technique_ids": [
+          "T1566.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EMAIL-002 Malicious Attachment Blocked By TAP",
+        "query": "// [MODEL: dataset=proofpoint_tap_raw, content_id=\"ProofpointTAP\"]\ndataset = proofpoint_tap_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter classification = \"malware\" and messageType = \"messagesBlocked\"\n| comp count() as malware_events, values(sha256) as hashes, values(threat) as files by recipient, sender\n| filter malware_events >= 1\n| fields recipient, sender, malware_events, hashes, files",
+        "expected_rows_min": 1,
+        "dataset": "proofpoint_tap_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "EMAIL-002 Malicious Attachment Microsoft 365 EmailEvents Shape",
+        "query": "dataset = msft_o365\n| filter _time > to_timestamp(current_time() - 1800)\n| filter RecordType = \"EmailEvents\" and ThreatTypes contains \"Malware\" and AttachmentCount >= 1\n| comp count() as malware_events, values(SHA256) as hashes, values(FileName) as files by RecipientEmailAddress, SenderFromAddress\n| filter malware_events >= 1\n| fields RecipientEmailAddress, SenderFromAddress, malware_events, hashes, files",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Malicious Attachment Delivered Then Endpoint Detonation — Email to Endpoint Stitch",
+        "rule_id": "CR-EMAIL-0002",
+        "logic": "XQL(EMAIL-002 Malicious Attachment Blocked By TAP) OR XQL(EMAIL-002 Malicious Attachment Microsoft 365 EmailEvents Shape) FOLLOWED_BY xdr_data file or process with the same sha256 for the recipient within 2h"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Email Analytics — Malware-classified attachment delivered per recipient",
+      "Cortex XSIAM Correlation — Attachment hash to endpoint file/process pivot"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "EMAIL-ATTACH-MALWARE-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = proofpoint_tap_raw | filter classification = \"malware\" | comp count() by recipient | filter _count >= 1"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EMAIL-0002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EMAIL-0002 pivots the attachment sha256 into the endpoint file/process stream for the recipient."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-EMAIL-002",
+        "name": "Malicious Attachment Detection",
+        "description": "Detect a malware-classified attachment delivered to a recipient across both Proofpoint TAP and Microsoft 365 email log shapes, pivoting the hash into the endpoint stream.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-EMAIL-002A",
+            "objective": "A burst of blocked malware-attachment messages for one recipient raises a malware-attachment alert.",
+            "preconditions": [
+              "Cortex XSIAM ingesting proofpoint_tap_raw and msft_o365 datasets.",
+              "email_emitter authorized against the lab collector."
+            ],
+            "steps": [
+              "Run SIM-EMAIL-002 steps 1-3.",
+              "Observe the malware-attachment alert per recipient in the Cortex console."
+            ],
+            "success_criteria": [
+              "XQL `EMAIL-002 Malicious Attachment Blocked By TAP` returns >= 1 row.",
+              "XQL `EMAIL-002 Malicious Attachment Microsoft 365 EmailEvents Shape` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "test_case_id": "TC-EMAIL-002B",
+            "objective": "The attachment hash pivots into the endpoint file/process stream.",
+            "success_criteria": [
+              "Correlation `CR-EMAIL-0002` ties the attachment sha256 to the recipient endpoint follow-on under one incident."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Detonate attachments in a sandbox before delivery and block container/macro file types by policy.",
+      "Enforce mark-of-the-web propagation and block ISO/IMG auto-mount for email-sourced files.",
+      "Strip active content (macros) from inbound Office documents."
+    ],
+    "detection_engineering": [
+      "Window blocked-attachment events per recipient over the Proofpoint TAP dataset and alert on malware classifications.",
+      "Normalize Proofpoint TAP and Microsoft 365 EmailEvents attachment telemetry into one schema.",
+      "Pivot the attachment sha256 into the endpoint file/process stream to confirm reach."
+    ],
+    "response_playbook": "XSOAR-PB-EmailMaliciousAttachment-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM — Proofpoint TAP Ingestion & Modeling (proofpoint_tap_raw)",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks",
+      "publisher_id": "SRC-PROOFPOINT-TAP-DOCS",
+      "primary": true
+    },
+    {
+      "title": "Cortex XSIAM — Microsoft 365 / Defender for Office 365 Connector (msft_o365)",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks",
+      "publisher_id": "SRC-MICROSOFT-365-DOCS"
+    },
+    {
+      "title": "MITRE ATT&CK T1566.001 — Phishing: Spearphishing Attachment",
+      "url": "https://attack.mitre.org/techniques/T1566/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-17",
+      "author": "Henry Reed",
+      "change": "Initial EMAIL-plane card: malicious attachment (T1566.001) over Proofpoint TAP + Microsoft 365 with CR-EMAIL-0002 attachment-hash to endpoint pivot."
+    }
+  ]
+}

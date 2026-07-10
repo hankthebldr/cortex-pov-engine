@@ -1,0 +1,407 @@
+{
+  "id": "TTP-2026-0072",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-06-08T00:00:00+00:00",
+    "updated_at": "2026-06-08T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-asm",
+      "vector-osint",
+      "vector-gather-victim-info",
+      "protocol-dns",
+      "protocol-https",
+      "industry-all",
+      "severity-medium",
+      "exposure-mgmt",
+      "reconnaissance",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "aws",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Passive OSINT Victim-Info Gathering — Subdomain / Cert / Email Harvesting (T1592 / T1589 / T1590)",
+    "summary": "An operator performs passive pre-intrusion reconnaissance: subdomain enumeration (DNS brute + cert-transparency), TLS-cert harvesting, and email/identity harvesting (theHarvester-style) against the org's external footprint. The signal is outbound OSINT egress plus the asset-inventory delta Cortex ASM/Xpanse produces as it independently discovers the same subdomains, certs, and identity exposures.",
+    "description": "Before active scanning (T1595) and before any exploit, adversaries gather victim information from open sources: enumerating subdomains and DNS records (Gather Victim Network Information, T1590), harvesting TLS certificates and host/software banners (Gather Victim Host Information, T1592), and collecting employee names and email addresses (Gather Victim Identity Information, T1589) to seed later phishing or credential-stuffing. This reconnaissance is largely passive — much of it never touches the victim's own infrastructure (it queries certificate-transparency logs, search engines, and breach corpora) — so the detectable footprint is twofold. First, the OSINT tooling run from a CortexSim jumpbox generates a recognisable outbound egress shape: a burst of DNS queries against the organisation's domain and many subdomain candidates (subdomain brute-forcing), and HTTPS sessions to certificate-transparency / OSINT aggregator endpoints (crt.sh, search APIs). Second — and this is the headline for the exposure-management story — Cortex ASM/Xpanse independently discovers the very same externally-observable assets (subdomains, valid certs, exposed mail/identity surfaces) from the outside, producing an asset-inventory and attack-path delta the DC reconciles against what the harvest found. The detection model: (1) an NGFW BIOC for the outbound subdomain-enumeration DNS burst (one source, many distinct labels under one parent domain in a short window) and an OSINT-aggregator egress XQL; (2) validation XQL confirming Cortex ASM/Xpanse enumerated the same subdomains/certs and any identity-exposure findings; (3) IOC signatures for the OSINT tooling fingerprints (theHarvester / amass user-agents, crt.sh access pattern). A correlation rule fuses the OSINT egress with the ASM discovery delta into a single 'organisation under reconnaissance' exposure-management incident — the earliest possible warning in the kill chain. SAFE-BY-DESIGN: this card only queries public OSINT sources and the org's own DNS; it touches no victim service and changes no state.",
+    "severity": "medium",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Targeted-intrusion actors (initial-access brokers, ransomware affiliates performing pre-engagement OSINT)"
+      }
+    ],
+    "campaigns": [
+      "Generic pre-intrusion open-source reconnaissance"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2017-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1592",
+        "name": "Gather Victim Host Information",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1589",
+        "name": "Gather Victim Identity Information",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1590",
+        "name": "Gather Victim Network Information: DNS",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ],
+        "subtechnique_id": "T1590.002"
+      },
+      {
+        "technique_id": "T1596",
+        "name": "Search Open Technical Databases: Digital Certificates",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ],
+        "subtechnique_id": "T1596.003"
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Domain Name: Active DNS",
+      "Internet Scan: Response Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "T1592/T1589/T1590 — subdomain enumeration + cert-transparency harvesting + email/identity harvesting against the org external footprint",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Target organisation domain set (defaults to the lab domain that fronts the infra/modules/aws/asm public assets).",
+        "check_command": "test -n \"${TARGET_DOMAIN}\" && echo domain-set"
+      },
+      {
+        "description": "Outbound DNS + HTTPS egress from the jumpbox is forwarded to XSIAM (panw_ngfw_traffic_raw / DNS logs) and Cortex ASM/Xpanse is monitoring the organisation's external footprint."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# step-1: subdomain enumeration via DNS brute-force (T1590.002) — many labels, one parent\nfor sub in www mail vpn dev staging api admin portal test git jenkins gitlab autodiscover; do\n  host ${sub}.${TARGET_DOMAIN} 2>/dev/null | head -1\ndone\n# step-2: certificate-transparency harvest (T1592 / T1596.003) — passive, public CT log\ncurl -sk -A \"cortexsim-osint/1.0 (amass-like)\" \"https://crt.sh/?q=%25.${TARGET_DOMAIN}&output=json\" | head -c 4000\n# step-3: email / identity harvest (T1589) — theHarvester-style passive query (public sources only)\ntheHarvester -d ${TARGET_DOMAIN} -b crtsh,bing,duckduckgo -l 100 2>/dev/null | head -40 || echo '[CortexSim] theHarvester not installed — DNS+CT recon footprint already emitted'",
+      "input_variables": [
+        {
+          "name": "TARGET_DOMAIN",
+          "type": "string",
+          "description": "Organisation domain to enumerate (lab domain fronting the asm exposed assets)."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "dns-query",
+        "description": "A burst of DNS resolutions for many distinct subdomain labels under one parent domain from a single source.",
+        "expected_value": "count_distinct(dns_query) per src_ip >= 8 sharing the parent domain in a 5m window"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS to a certificate-transparency / OSINT aggregator (crt.sh) carrying an OSINT-tooling user-agent.",
+        "expected_value": "dst_host contains \"crt.sh\" and http_user_agent contains_any (\"amass\", \"cortexsim-osint\")"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Cortex ASM/Xpanse independently enumerates the same subdomains/certs and any identity-exposure findings.",
+        "expected_value": "asm_findings.finding_type in (\"subdomain_discovered\", \"certificate_observed\", \"identity_exposure\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/theharvester-*.html /tmp/theharvester-*.xml 2>/dev/null || true\necho '[CortexSim] SIM-ASM-003 cleanup complete (passive recon — no state changed)'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "crt.sh",
+        "context": "Certificate-transparency log aggregator queried during passive subdomain/cert harvesting — OSINT reconnaissance egress signature when paired with a tooling user-agent.",
+        "reputation_required": "any",
+        "cortex_severity_override": "low"
+      },
+      {
+        "ioc_type": "user-agent",
+        "value": "cortexsim-osint/1.0 (amass-like)",
+        "context": "OSINT subdomain/cert harvesting tooling user-agent (amass-class) — passive victim-host-info gathering signature.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "ASM EAL — Outbound Subdomain-Enumeration DNS Burst",
+        "description": "A single source resolves an abnormally large number of distinct subdomain labels under one parent domain in a short window — the subdomain brute-force / DNS reconnaissance fingerprint (T1590.002) that precedes targeting.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"dns\" or dst_port = 53\n| filter dns_query != null and src_ip != null\n| alter parent_domain = arrayindex(regextract(dns_query, \"([a-z0-9-]+\\.[a-z]{2,})$\"), 0)\n| bin _time span=5m\n| comp count_distinct(dns_query) as distinct_subdomains by src_ip, parent_domain, _time\n| filter distinct_subdomains >= 8\n| fields _time, src_ip, parent_domain, distinct_subdomains",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1590.002",
+          "T1592"
+        ]
+      },
+      {
+        "name": "ASM EAL — Outbound OSINT Aggregator Egress With Tooling User-Agent",
+        "description": "Outbound HTTPS to a certificate-transparency / OSINT aggregator (crt.sh and similar) carrying a recognised OSINT-tooling user-agent — passive victim-info gathering against the organisation's external footprint.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"ssl\", \"web-browsing\") and dst_port = 443\n| filter dst_host contains_any (\"crt.sh\", \"censys.io\", \"shodan.io\", \"hunter.io\", \"securitytrails.com\")\n| filter http_user_agent contains_any (\"amass\", \"theHarvester\", \"cortexsim-osint\", \"subfinder\")\n| fields _time, src_ip, dst_host, http_user_agent, uri_path",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1592",
+          "T1596.003",
+          "T1589"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ASM-003 Subdomain-Enumeration DNS Burst (1 src -> many labels, one parent)",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app = \"dns\" or dst_port = 53\n| filter dns_query contains \"${TARGET_DOMAIN}\"\n| comp count_distinct(dns_query) as distinct_subdomains, count() as queries by src_ip\n| filter distinct_subdomains >= 8\n| fields src_ip, distinct_subdomains, queries",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-003 OSINT Aggregator / Cert-Transparency Egress",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_host contains_any (\"crt.sh\", \"censys.io\", \"shodan.io\", \"securitytrails.com\")\n| filter http_user_agent contains_any (\"amass\", \"theHarvester\", \"cortexsim-osint\", \"subfinder\") or uri_path contains \"${TARGET_DOMAIN}\"\n| comp count() as osint_sessions by src_ip, dst_host\n| fields src_ip, dst_host, osint_sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-003 Xpanse Subdomain / Certificate / Identity Discovery Delta",
+        "query": "dataset = asm_findings\n| filter _time > to_timestamp(current_time() - 86400)\n| filter finding_type in (\"subdomain_discovered\", \"certificate_observed\", \"identity_exposure\", \"exposed_mailserver\")\n| filter asset_domain contains \"${TARGET_DOMAIN}\" or tags contains \"CortexSimASMFinding\"\n| comp count() as discovered_assets by finding_type\n| fields finding_type, discovered_assets",
+        "expected_rows_min": 1,
+        "dataset": "asm_findings"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ASM-003 Identity-Exposure Roll-Up — Harvested Email / Breached Credential Surface",
+        "query": "dataset = asm_findings\n| filter _time > to_timestamp(current_time() - 86400)\n| filter finding_type in (\"identity_exposure\", \"leaked_credential\", \"exposed_mailserver\")\n| filter asset_domain contains \"${TARGET_DOMAIN}\"\n| comp count() as identity_findings by finding_type, exposure_source, risk_score\n| sort desc risk_score\n| fields finding_type, exposure_source, risk_score, identity_findings",
+        "expected_rows_min": 0,
+        "dataset": "asm_findings"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Exposure Management — Organisation Under Open-Source Reconnaissance",
+        "rule_id": "CR-ASM-0003",
+        "logic": "XQL(ASM-003 Xpanse Subdomain / Certificate / Identity Discovery Delta) AND (BIOC(ASM EAL — Outbound Subdomain-Enumeration DNS Burst) OR BIOC(ASM EAL — Outbound OSINT Aggregator Egress With Tooling User-Agent)) — raises a single exposure-management reconnaissance incident when the OSINT harvesting egress co-occurs with Cortex ASM/Xpanse independently enumerating the same external footprint."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Network Security Analytics — Outbound Subdomain-Enumeration DNS Burst",
+        "validated": true,
+        "note": "Backed by BIOC 'ASM EAL — Outbound Subdomain-Enumeration DNS Burst' + the DNS-burst validation XQL on this card."
+      },
+      {
+        "module": "Cortex Xpanse / ASM — External Footprint Discovery (subdomains, certificates, identity exposure)",
+        "validated": false
+      },
+      {
+        "module": "Cortex XSIAM Identity Analytics — Harvested-Identity / Leaked-Credential Exposure Correlation",
+        "validated": false
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-asm",
+        "submodule": "external-footprint-discovery",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "ASM-SUBDOMAIN-DISCOVERY-001",
+          "ASM-IDENTITY-EXPOSURE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter finding_type in (\"subdomain_discovered\",\"identity_exposure\") | comp count() by finding_type"
+      },
+      {
+        "module": "cortex-xpanse",
+        "submodule": "certificate-monitoring",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XPANSE-CERT-OBSERVED-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter asset_domain contains \"${TARGET_DOMAIN}\" | comp count() by finding_type"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-SUBDOMAIN-DNS-BURST",
+          "XSIAM-CR-ASM-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dns_query contains \"${TARGET_DOMAIN}\" | comp count_distinct(dns_query) as subs by src_ip | filter subs >= 8"
+      },
+      {
+        "module": "advanced-dns-security",
+        "coverage_tier": "detection",
+        "license_required": "advanced",
+        "evidence_query": "High-cardinality subdomain resolution burst for one parent domain flagged as DNS reconnaissance."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-ExposureRemediation-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: snapshot the discovered external footprint, flag any net-new subdomain/cert, and notify the identity team of harvested-email exposure for targeted-phishing readiness."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ASM-072",
+        "name": "Pre-Intrusion Reconnaissance Detection — Open-Source Victim-Info Gathering",
+        "description": "Validate that Cortex surfaces passive OSINT reconnaissance (subdomain enumeration, cert harvesting, identity harvesting) against the organisation and correlates it with the external footprint Cortex ASM/Xpanse independently discovers.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ASM-072A",
+            "objective": "The OSINT harvesting egress fires its NGFW BIOCs and is confirmed in telemetry.",
+            "preconditions": [
+              "Target organisation domain set; outbound DNS + HTTPS egress forwarded to XSIAM.",
+              "Cortex ASM/Xpanse monitoring the organisation's external footprint."
+            ],
+            "steps": [
+              "Run SIM-ASM-003 step-01 (subdomain DNS enumeration).",
+              "Run SIM-ASM-003 step-02/03 (cert-transparency + email/identity harvest).",
+              "Inspect Network Security Analytics for the DNS burst and OSINT-aggregator egress."
+            ],
+            "success_criteria": [
+              "BIOC `ASM EAL — Outbound Subdomain-Enumeration DNS Burst` fires with distinct_subdomains >= 8.",
+              "XQL `ASM-003 OSINT Aggregator / Cert-Transparency Egress` returns >= 1 row.",
+              "IOC match on crt.sh egress with the OSINT-tooling user-agent."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-ASM-072B",
+            "objective": "The recon is correlated with the independently-discovered external footprint into one incident.",
+            "steps": [
+              "Inspect Cortex ASM/Xpanse for the subdomain/cert/identity discovery delta.",
+              "Inspect the correlation incident."
+            ],
+            "success_criteria": [
+              "XQL `ASM-003 Xpanse Subdomain / Certificate / Identity Discovery Delta` returns >= 1 row.",
+              "Correlation `CR-ASM-0003` raises a single 'organisation under reconnaissance' exposure-management incident.",
+              "Any harvested identity exposure surfaces in the identity-exposure roll-up for phishing readiness."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Minimise external footprint: retire stale subdomains, scope wildcard certificates, and keep dev/staging/admin hosts off the public internet.",
+      "Reduce identity exposure: avoid publishing role-based email schemas, and monitor breach corpora for leaked employee credentials.",
+      "Treat net-new public certificates and subdomains as change events requiring review before they go live."
+    ],
+    "detection_engineering": [
+      "Alert on outbound high-cardinality subdomain DNS bursts for one parent domain and on OSINT-aggregator egress carrying recon-tooling user-agents.",
+      "Continuously diff the Cortex ASM/Xpanse external footprint and alert on net-new subdomains, certificates, and identity exposures.",
+      "Stitch OSINT harvesting egress with the ASM discovery delta so pre-intrusion reconnaissance is one early-warning incident."
+    ],
+    "response_playbook": "XSOAR-PB-ExposureRemediation-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Attack Surface Threat Report (Internet-Exposed Assets)",
+      "url": "https://unit42.paloaltonetworks.com/",
+      "publisher": "Unit42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1592 — Gather Victim Host Information",
+      "url": "https://attack.mitre.org/techniques/T1592/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1589 — Gather Victim Identity Information",
+      "url": "https://attack.mitre.org/techniques/T1589/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1590.002 — Gather Victim Network Information: DNS",
+      "url": "https://attack.mitre.org/techniques/T1590/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-08",
+      "author": "Henry Reed",
+      "change": "GAP-1: initial Reconnaissance (TA0043) card for the ASM plane (SIM-ASM-003): passive OSINT victim-info gathering (T1592/T1589/T1590.002/T1596.003) with real NGFW subdomain-DNS-burst + OSINT-aggregator-egress BIOCs/XQL, OSINT IOC signatures, correlation CR-ASM-0003, and a GAP-11 validated/unvalidated analytics-module split."
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+title: "Backdoored PyPI Package With Import-Time Subprocess (T1195.002) \u2014 KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook"
+id: ttp-2026-0044-bioc-01
+status: experimental
+description: |
+  Code scan — package __init__.py contains subprocess.run on import (post-install hook pattern). A python interpreter spawns a child process immediately on package import — the import-time subprocess shape a SAST/EDR control must flag.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("python", "python3", "pip", "pip3")
+    | filter actor_process_image_name in ("python", "python3")
+    | filter action_process_image_command_line contains_any (".aws/credentials", "urllib.request", "urlopen", "-c")
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1195/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1195.002
+    - attack.t1059.006
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Backdoored PyPI Package With Import-Time Subprocess (T1195.002) \u2014 KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint"
+id: ttp-2026-0044-bioc-02
+status: experimental
+description: |
+  Cortex Cloud SCA — SBOM correlates package digest with known-bad fingerprint. The SCA/SBOM scan surfaces the typosquat package by name in the build toolchain command line, matching a known-bad fingerprint.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("pip", "pip3", "python", "python3", "twistcli", "cortexcloud", "syft")
+    | filter action_process_image_command_line contains "mcp-server-helpers"
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1195/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1195.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

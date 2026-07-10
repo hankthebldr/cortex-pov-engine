@@ -42,6 +42,11 @@ class Scenario(Base):
     mitre_technique: Mapped[str] = mapped_column(String, nullable=False)
     mitre_technique_name: Mapped[str] = mapped_column(String, nullable=False)
 
+    # GAP-5 — secondary MITRE techniques exercised beyond the primary one.
+    # Stored as a list of {technique, name} dicts (name may be "") so the
+    # coverage heatmap (/api/mitre/coverage) can fuse them in. Default [].
+    additional_techniques: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+
     threat_report: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     threat_report_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
@@ -78,6 +83,7 @@ class Scenario(Base):
             "mitre_tactic_name": self.mitre_tactic_name,
             "mitre_technique": self.mitre_technique,
             "mitre_technique_name": self.mitre_technique_name,
+            "additional_techniques": self.additional_techniques,
             "threat_report": self.threat_report,
             "threat_report_url": self.threat_report_url,
             "execution_identity": self.execution_identity,
@@ -101,7 +107,11 @@ class Run(Base):
     mode: Mapped[str] = mapped_column(String, nullable=False)           # pull | push
     target: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     identity_context: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")  # pending | running | complete | failed
+    # pending | running | complete | failed | aborted | staged
+    #   staged — terminal state for a push-mode run: the self-contained bundle
+    #   was generated and SimCore has no further role (the bundle never phones
+    #   home). See orchestrator._handle_push (GAP-API-004 / GAP-PUSH-001).
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     output: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -216,6 +226,41 @@ class ToolInstance(Base):
         }
 
 
+class QueuedTask(Base):
+    """Durable pull-mode task queue (GAP-API-005).
+
+    The orchestrator keeps an in-memory queue for the hot path, but a SimCore
+    restart would otherwise drop every undelivered task while the durable Run
+    row stays ``running`` forever. Each enqueued Task is mirrored here so the
+    queue can be rehydrated on boot; rows are deleted on dequeue/abort/complete.
+
+    The full Task payload (steps + identity context) is stored as JSON so the
+    orchestrator can reconstruct an identical ``Task`` dataclass on rehydrate
+    without re-reading the scenario.
+    """
+
+    __tablename__ = "queued_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    agent_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    scenario_id: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "task_id": self.task_id,
+            "run_id": self.run_id,
+            "agent_id": self.agent_id,
+            "scenario_id": self.scenario_id,
+            "payload": self.payload,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class Agent(Base):
     __tablename__ = "agents"
 
@@ -226,7 +271,7 @@ class Agent(Base):
     capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     registered_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
-    status: Mapped[str] = mapped_column(String, nullable=False, default="online")  # online | offline
+    status: Mapped[str] = mapped_column(String, nullable=False, default="online")  # online | stale | offline (derived from last_seen at read time)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -238,6 +283,56 @@ class Agent(Base):
             "registered_at": self.registered_at.isoformat() if self.registered_at else None,
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "status": self.status,
+        }
+
+
+class EnrollmentToken(Base):
+    """A one-time-ish enrollment credential for agent self-onboarding.
+
+    Replaces the "build the Go binary yourself and invent an --id" flow: a DC
+    mints a token in the console, then runs ONE line on the jumpbox
+    (``curl <server>/api/agents/install?token=... | bash``). The installer
+    redeems the token via ``POST /api/agents/enroll``; SimCore assigns the
+    agent_id (so identities are server-controlled and traceable), registers the
+    agent, and decrements the token's remaining uses.
+
+    Tokens are bounded by ``expires_at`` and ``max_uses`` and can be revoked.
+    The token value is high-entropy and only its tail is ever shown after
+    creation (the full value is returned exactly once, at mint time).
+    """
+
+    __tablename__ = "enrollment_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    label: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    max_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    def is_valid(self, now: datetime) -> bool:
+        """True if the token can still be redeemed at ``now``."""
+        if self.revoked:
+            return False
+        if self.expires_at is not None and now >= self.expires_at:
+            return False
+        return self.used_count < self.max_uses
+
+    def to_dict(self, *, reveal: bool = False) -> dict[str, Any]:
+        # Never echo the full token after mint — only a tail for identification.
+        token_display = self.token if reveal else f"...{self.token[-6:]}"
+        return {
+            "id": self.id,
+            "token": token_display,
+            "label": self.label,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "max_uses": self.max_uses,
+            "used_count": self.used_count,
+            "remaining_uses": max(0, self.max_uses - self.used_count),
+            "revoked": self.revoked,
         }
 
 

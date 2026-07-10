@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1656",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(AIACC-004 Pre-flight Jailbreak Payload Contains DAN Markers) OR BIOC(AIACC-004 Outbound Prompt Requests DLP Circumvention Policy Violation) OR XQL(AIACC-004 Jailbreak Fingerprint DAN Ignore Previous Instructions) OR XQL(AIACC-004 Jailbreak Detection Consistent Across Providers)",
+      "name": "Jailbreak Prompt Attempt Across Providers",
+      "rule_id": "CR-AIACC-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0010"
+}

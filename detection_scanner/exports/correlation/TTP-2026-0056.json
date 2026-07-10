@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1195.002",
+    "T1574"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AISPM-003 CVE Tagged ML Dependency Findings) AND XQL(AISPM-003 Dependency Graph Chain SageMaker Lambda Provider)",
+      "name": "AI Supply Chain Risk \u2014 CVE Dependency In Traced AI Chain",
+      "rule_id": "CR-AISPM-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0056"
+}

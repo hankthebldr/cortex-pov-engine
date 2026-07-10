@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1530",
+    "T1213"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AISPM-005 DSPM Three Regulated Data Classes In Training Bucket) AND XQL(AISPM-005 Data Lineage Edge Bucket To Training Job) AND XQL(AISPM-005 Governance Violation Regulated Data In Training Set)",
+      "name": "AI Data Governance \u2014 Regulated Data In Training Set With Lineage",
+      "rule_id": "CR-AISPM-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0058"
+}

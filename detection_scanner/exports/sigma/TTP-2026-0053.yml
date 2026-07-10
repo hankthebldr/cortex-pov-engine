@@ -1,0 +1,30 @@
+title: "SMB/RPC Lateral Sweep \u2014 Internal Host Discovery (T1046 / T1018 / T1021.002) \u2014 NGFW EAL \u2014 anomalous SMB traffic outside admin baseline"
+id: ttp-2026-0053-bioc-01
+status: experimental
+description: |
+  NGFW EAL — anomalous SMB traffic outside admin baseline
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_port in (445, 139, 135) or app in ("smb", "ms-ds-smb", "msrpc", "netbios-ss")
+    | filter src_ip != null
+    | comp count_distinct(dst_ip) as dst_host_count, count() as session_count by src_ip, dst_port
+    | filter dst_host_count >= 8
+    | fields src_ip, dst_port, dst_host_count, session_count
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1018/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1018
+    - attack.t1021.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

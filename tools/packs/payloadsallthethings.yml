@@ -2,7 +2,7 @@ adapter_id: TOOL-PAYLOADSALLTHETHINGS
 name: "PayloadsAllTheThings"
 version: "master"
 
-tier: 2
+tier: 4
 category: web-app
 
 upstream:
@@ -19,14 +19,16 @@ cortex_signal:
 safety_class: safe
 
 install:
-  source_path: sources/PayloadsAllTheThings
-  build_cmd: "true"
+  # Tier 4 (runtime-fetched): shallow git-clone the payload corpus at dispatch
+  # into /tmp. Payload data only — no build step.
+  runtime_install_command: "test -d /tmp/PayloadsAllTheThings || git clone --depth 1 https://github.com/swisskyrepo/PayloadsAllTheThings /tmp/PayloadsAllTheThings"
+  binary: "ls"
 
 invoke:
-  target_platform: any
-  run_template: "ls {payload_dir}"
+  target_platform: linux
+  run_template: "{binary} {payload_dir}"
   default_args:
-    payload_dir: "sources/PayloadsAllTheThings"
+    payload_dir: "/tmp/PayloadsAllTheThings"
   identity_required: root
 
 ttp_refs: []
@@ -38,3 +40,4 @@ last_updated: "2026-06-02"
 tags:
   - phase-c
   - web-app
+  - runtime-fetched

@@ -1,0 +1,76 @@
+# ===========================================================================
+# CortexSim Tier-C  —  auditd ruleset
+# ---------------------------------------------------------------------------
+# Ground-truth telemetry for the isolated runner. These rules capture the
+# identity-causality chain a CortexSim push bundle produces so the run output
+# can be diffed against a scenario's expected_detections:
+#
+#   - execve            → full process tree (which binary forked, under which
+#                         comm/exe), the spine of "the right binary fired"
+#   - setuid/setgid/    → identity transitions (runuser/sudo -u/su switching
+#     setreuid/setresuid  from root → www-data/postgres/node/...), the spine of
+#                         "under the right identity"
+#   - connect           → outbound network intent (C2 / exfil shape). With the
+#                         compose sinkhole + no-egress network these resolve to
+#                         the sinkhole, but the *syscall* still fires and is
+#                         recorded — that's the signal we want.
+#   - file watches      → reads of credential / auth artifacts
+#
+# Loaded into /etc/audit/rules.d/ by the Dockerfile; auditctl reads it at
+# entrypoint. All rules carry a -k key so the entrypoint can ausearch by key
+# and emit a structured observed-signals summary.
+#
+# Keys (stable contract — the entrypoint + tests grep for these):
+#   cortexsim_exec    cortexsim_setid   cortexsim_net   cortexsim_creds
+# ===========================================================================
+
+## --- reset: start from a clean ruleset every boot -----------------------
+-D
+
+## --- buffer + failure mode ----------------------------------------------
+# Generous backlog so a burst of execve from a multi-step bundle is not lost.
+-b 8192
+# failure=1 (printk) not 2 (panic): a sandbox should never panic the kernel.
+-f 1
+
+## --- process execution (the process tree) -------------------------------
+-a always,exit -F arch=b64 -S execve -k cortexsim_exec
+-a always,exit -F arch=b32 -S execve -k cortexsim_exec
+
+## --- identity transitions (setuid / setgid family) ----------------------
+# These capture the harness switching the effective identity for a step.
+-a always,exit -F arch=b64 -S setuid    -k cortexsim_setid
+-a always,exit -F arch=b64 -S setgid    -k cortexsim_setid
+-a always,exit -F arch=b64 -S setreuid  -k cortexsim_setid
+-a always,exit -F arch=b64 -S setregid  -k cortexsim_setid
+-a always,exit -F arch=b64 -S setresuid -k cortexsim_setid
+-a always,exit -F arch=b64 -S setresgid -k cortexsim_setid
+-a always,exit -F arch=b32 -S setuid    -k cortexsim_setid
+-a always,exit -F arch=b32 -S setgid    -k cortexsim_setid
+-a always,exit -F arch=b32 -S setreuid  -k cortexsim_setid
+-a always,exit -F arch=b32 -S setregid  -k cortexsim_setid
+-a always,exit -F arch=b32 -S setresuid -k cortexsim_setid
+-a always,exit -F arch=b32 -S setresgid -k cortexsim_setid
+
+## --- outbound network intent (C2 / exfil shape) -------------------------
+# Captures connect(2) regardless of where it lands — the sinkhole catches the
+# packet, audit catches the intent. Restricted to >= uid 0 so we get every
+# step's egress attempt.
+-a always,exit -F arch=b64 -S connect -k cortexsim_net
+-a always,exit -F arch=b32 -S connect -k cortexsim_net
+
+## --- credential / auth file access --------------------------------------
+# Reads of these are the canonical credential-access signal. -p r = read,
+# -p wa on auth.log catches tamper attempts too.
+-w /etc/shadow                -p r  -k cortexsim_creds
+-w /etc/gshadow               -p r  -k cortexsim_creds
+-w /etc/passwd                -p wa -k cortexsim_creds
+-w /var/log/auth.log          -p wa -k cortexsim_creds
+-w /root/.aws/credentials     -p r  -k cortexsim_creds
+-w /root/.ssh                 -p r  -k cortexsim_creds
+-w /home                      -p r  -k cortexsim_creds
+
+## --- do NOT make the config immutable -----------------------------------
+# A locked ruleset (-e 2) would require a reboot to change; the runner is
+# ephemeral and re-created per run, so we leave it mutable for inspectability.
+-e 1

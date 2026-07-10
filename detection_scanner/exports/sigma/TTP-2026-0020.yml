@@ -1,0 +1,29 @@
+title: "Prisma Browser \u2014 Cross-Origin SaaS Copy-Paste DLP (T1567) \u2014 Prisma Browser \u2014 cross-origin paste from sanctioned CRM into personal webmail (DLP rule)"
+id: ttp-2026-0020-bioc-01
+status: experimental
+description: |
+  Prisma Browser — cross-origin paste from sanctioned CRM into personal webmail (DLP rule). A paste whose clipboard-source origin is a sanctioned CRM lands in a personal webmail destination origin.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = prisma_browser_events
+    | filter action = "paste"
+    | filter clipboard_origin in ("crm.cortexsim-test.invalid", "crm.corp.example.com", "salesforce.com")
+    | filter origin in ("mail.cortexsim-test.invalid", "mail.google.com", "outlook.live.com")
+    | filter clipboard_origin != origin
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+    - attack.t1005
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

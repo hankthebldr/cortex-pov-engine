@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0017",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-06-15",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -132,7 +132,22 @@
     }
   },
   "detections": {
-    "iocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "login.cortexsim-test.invalid",
+        "context": "Non-sanctioned phishing origin the managed Prisma Browser is driven to (cred-paste campaign BC-BROWSER-001) where a corporate-SSO-shaped secret is pasted into the password field. Synthetic, non-resolvable .invalid lab phishing host.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://login.cortexsim-test.invalid/signin",
+        "context": "Exact phishing sign-in URL the Prisma Browser navigates to immediately before the credential-shape paste (canary CANARY-CRED-001). Synthetic lab URL emitted by the cred-paste campaign.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
     "biocs": [
       {
         "name": "Prisma Browser \u2014 credential-shape paste into non-sanctioned origin (DLP rule)",
@@ -279,6 +294,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real Prisma Browser credential-paste DLP BIOC/XQL, added correlation CR-BROWSER-0001, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-06-15",
+      "author": "Henry Reed",
+      "change": "GAP-10: added detections.iocs[] — the login.cortexsim-test.invalid non-sanctioned phishing origin and its /signin URL. Grounded in the synthetic values the cred-paste campaign (BC-BROWSER-001) emits. All other content intact."
     }
   ]
 }

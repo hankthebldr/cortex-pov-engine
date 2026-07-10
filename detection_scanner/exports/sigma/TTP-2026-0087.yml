@@ -1,0 +1,67 @@
+title: "Malicious In-Cluster Multi-Stage TTP Chain \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078 / T1071 / T1560 / T1496 / T1574) \u2014 CDR-014 In-Cluster TTP Chain Behavioral Causality"
+id: ttp-2026-0087-abioc-01
+status: experimental
+description: |
+  A container whose learned baseline is a single long-running service process suddenly executes a multi-stage sequence — system discovery, outbound HTTP, data archival, and execution-flow modification — within one short window. ABIOC anchors the chain to its causality (one shell parent spawning discovery -> C2 -> archive -> hijack children) and fires on the deviating sequence as one story rather than on any single static process name.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_container_info != null
+    | filter actor_process_image_name in ("sh", "bash")
+    | filter action_process_image_name in ("uname", "curl", "tar", "id", "lscpu", "hostname")
+    | comp count_distinct(action_process_image_name) as distinct_stages by agent_hostname, actor_process_image_name
+    | filter distinct_stages >= 3
+    | sort desc distinct_stages
+    | fields agent_hostname, actor_process_image_name, distinct_stages
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071
+    - attack.t1560
+    - attack.t1574
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Malicious In-Cluster Multi-Stage TTP Chain \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078 / T1071 / T1560 / T1496 / T1574) \u2014 CDR-014 Anomalous Multi-Stage Container Discovery and Exfil"
+id: ttp-2026-0087-abioc-02
+status: experimental
+description: |
+  A baselined container deviates by archiving collected data and then opening outbound connections — the collection-then-exfil shape of the in-cluster chain. ABIOC fires on the single deviation event (archive creation followed by egress from a container that never archived or exfiltrated in its learned baseline) with the causality chain that ties the egress back to the archive.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_container_info != null
+    | filter action_process_image_name in ("tar", "gzip", "curl", "wget", "scp")
+    | comp count() as collect_exfil_events by agent_hostname, actor_process_image_name
+    | filter collect_exfil_events >= 1
+    | sort desc collect_exfil_events
+    | fields agent_hostname, actor_process_image_name, collect_exfil_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1560/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1560
+    - attack.t1496
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

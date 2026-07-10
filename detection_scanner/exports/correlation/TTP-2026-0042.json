@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1195",
+    "T1059",
+    "T1059.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(KOI-001 MCP Tool Description Embeds Instruction Injection and AKIA Canary) OR BIOC(KOI-001 Cortex Cloud Code Instruction Injection In Tool Description)",
+      "name": "Agentic Supply Chain \u2014 Typosquat MCP Server Installed",
+      "rule_id": "CR-KOI-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0042"
+}
