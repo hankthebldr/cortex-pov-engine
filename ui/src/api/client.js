@@ -350,6 +350,22 @@ export async function downloadReportBundle(runId) {
 }
 
 /**
+ * GET /api/runs/:runId/report?format=scorecard | scorecard-html
+ * Executive efficacy scorecard (the CISO one-pager) as a downloadable blob.
+ * Markdown (text/plain) by default; pass { html: true } for the HTML render.
+ * @param {string} runId
+ * @param {{ html?: boolean }} [opts]
+ * @returns {Promise<Blob>}
+ */
+export async function downloadReportScorecard(runId, { html = false } = {}) {
+  const format = html ? 'scorecard-html' : 'scorecard'
+  const response = await request(`/api/runs/${runId}/report?format=${format}`, {
+    _returnBlob: true,
+  })
+  return response.blob()
+}
+
+/**
  * GET /api/runs/:runId/report?format=json
  * Returns structured report data.
  * @param {string} runId

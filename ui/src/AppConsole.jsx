@@ -55,22 +55,32 @@ import { getHealth, getRuns, getScenarios, getScenario, downloadReportBundle } f
  *     every generated push bundle)
  */
 
-// All 11 detection planes present in the scenario library. Keep this in sync
-// with the planes that actually load (the rail must reconcile with the Library
-// total — previously only 6 of 11 were listed, so the rail summed to ~32 while
-// the Library showed 58). Names map Cortex codes → human labels.
-const PLANE_META = [
-  { code: 'EDR',       name: 'Endpoint'    },
-  { code: 'CDR',       name: 'Cloud'       },
-  { code: 'NDR',       name: 'Network'     },
-  { code: 'ITDR',      name: 'Identity'    },
-  { code: 'CLOUD_APP', name: 'Cloud App'   },
-  { code: 'AI_ACCESS', name: 'AI Access'   },
-  { code: 'AIRS',      name: 'AI Runtime'  },
-  { code: 'AI_SPM',    name: 'AI Posture'  },
-  { code: 'BROWSER',   name: 'Browser'     },
-  { code: 'KOI',       name: 'Agentic'     },
-  { code: 'ANALYTICS', name: 'Multi-plane' },
+// The plane rail is DERIVED from the distinct planes present in the loaded
+// scenario list (see the `planes` useMemo), so it can never drift from the
+// Library total again. This map only supplies human-friendly labels; a plane
+// with no entry here falls back to a humanized code, so newly-added planes
+// (CSPM/ASM/TIM/EMAIL, …) surface automatically. PLANE_ORDER is display
+// preference only — unlisted planes sort alphabetically after the known ones.
+const PLANE_LABELS = {
+  EDR:       'Endpoint',
+  CDR:       'Cloud',
+  NDR:       'Network',
+  ITDR:      'Identity',
+  CLOUD_APP: 'Cloud App',
+  AI_ACCESS: 'AI Access',
+  AIRS:      'AI Runtime',
+  AI_SPM:    'AI Posture',
+  BROWSER:   'Browser',
+  KOI:       'Agentic',
+  CSPM:      'Cloud Posture',
+  ASM:       'Attack Surface',
+  TIM:       'Threat Intel',
+  EMAIL:     'Email',
+  ANALYTICS: 'Multi-plane',
+}
+const PLANE_ORDER = [
+  'EDR', 'CDR', 'NDR', 'ITDR', 'CLOUD_APP', 'AI_ACCESS', 'AIRS', 'AI_SPM',
+  'BROWSER', 'KOI', 'CSPM', 'ASM', 'TIM', 'EMAIL', 'ANALYTICS',
 ]
 
 export default function AppConsole() {
@@ -119,7 +129,11 @@ export default function AppConsole() {
           // The /api/health endpoint doesn't yet expose sensor status — filled
           // with placeholders; the env pill will show muted until we wire the
           // aggregated health endpoint (see open question #2 in design doc).
-          sensors: { xdr: 'healthy', cdr: 'healthy', ndr: 'healthy' },
+          // No aggregated read-only /healthcheck sensor feed yet (Phase 9,
+          // opt-in). Do NOT fabricate green lights in a customer-facing tool —
+          // leave the map empty so the env pill renders muted/"pending" until a
+          // real source is wired.
+          sensors: {},
         })
       })
       .catch(() => {
@@ -201,14 +215,30 @@ export default function AppConsole() {
   const planes = useMemo(() => {
     const counts = scenarioList.reduce((acc, s) => {
       const p = (s.plane || '').toUpperCase()
-      acc[p] = (acc[p] || 0) + 1
+      if (p) acc[p] = (acc[p] || 0) + 1
       return acc
     }, {})
-    return PLANE_META.map((p) => ({
-      ...p,
-      count: counts[p.code] || 0,
-      isActive: selectedPlane === p.code,
-    }))
+    const humanize = (code) =>
+      PLANE_LABELS[code] ||
+      code
+        .split('_')
+        .map((w) => (w ? w.charAt(0) + w.slice(1).toLowerCase() : w))
+        .join(' ')
+    return Object.keys(counts)
+      .sort((a, b) => {
+        const ia = PLANE_ORDER.indexOf(a)
+        const ib = PLANE_ORDER.indexOf(b)
+        if (ia !== -1 && ib !== -1) return ia - ib
+        if (ia !== -1) return -1
+        if (ib !== -1) return 1
+        return a.localeCompare(b)
+      })
+      .map((code) => ({
+        code,
+        name: humanize(code),
+        count: counts[code],
+        isActive: selectedPlane === code,
+      }))
   }, [scenarioList, selectedPlane])
 
   // Resolve pinned IDs against the live scenario list. If a scenario was
@@ -355,7 +385,7 @@ export default function AppConsole() {
         title: 'Go to Tenants',
         meta: 'XSIAM tenant health & config',
         icon: '\u26a1',
-        shortcut: ['G', 'T'],
+        shortcut: ['G', 'N'],
         onSelect: () => setActiveTab('tenants'),
       },
       {

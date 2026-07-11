@@ -4,6 +4,7 @@ import {
   downloadReportMatrix,
   downloadReportNavigator,
   downloadReportBundle,
+  downloadReportScorecard,
 } from '../../api/client.js'
 
 /**
@@ -42,7 +43,7 @@ export default function ExportMenu({ runId, onError = () => {}, disabled = false
     }
   }, [open])
 
-  const doExport = async (kind, fetcher, ext) => {
+  const doExport = async (kind, fetcher, ext, namePrefix = 'pov') => {
     if (!runId) { onError('No run selected for export'); return }
     setBusy(kind)
     try {
@@ -50,7 +51,7 @@ export default function ExportMenu({ runId, onError = () => {}, disabled = false
       const url  = URL.createObjectURL(blob)
       const a    = document.createElement('a')
       a.href     = url
-      a.download = `cortexsim-pov-${runId}.${ext}`
+      a.download = `cortexsim-${namePrefix}-${runId}.${ext}`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -117,6 +118,21 @@ export default function ExportMenu({ runId, onError = () => {}, disabled = false
             label={busyLabel('navigator', 'ATT&CK Navigator layer')}
             sub=".json · v4.5 layer for attack-navigator.mitre.org"
             onClick={() => doExport('navigator', downloadReportNavigator, 'json')}
+            disabled={busy != null}
+          />
+
+          <div className="export-menu__section-label mono">executive scorecard</div>
+
+          <MenuItem
+            label={busyLabel('scorecard-md', 'Executive scorecard')}
+            sub=".md · CISO efficacy one-pager (markdown)"
+            onClick={() => doExport('scorecard-md', (id) => downloadReportScorecard(id), 'md', 'scorecard')}
+            disabled={busy != null}
+          />
+          <MenuItem
+            label={busyLabel('scorecard-html', 'Executive scorecard')}
+            sub=".html · CISO efficacy one-pager (styled)"
+            onClick={() => doExport('scorecard-html', (id) => downloadReportScorecard(id, { html: true }), 'html', 'scorecard')}
             disabled={busy != null}
           />
         </div>
