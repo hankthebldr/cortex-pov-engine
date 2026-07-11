@@ -9,6 +9,7 @@ import TenantManager from './components/console/TenantManager.jsx'
 import TargetsView from './components/console/TargetsView.jsx'
 import LaunchView from './components/console/LaunchView.jsx'
 import DetectionStoryline from './components/DetectionStoryline.jsx'
+import CausalityGraph from './components/CausalityGraph.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
 import { isRunTerminal } from './components/console/runStatus.js'
@@ -535,6 +536,16 @@ export default function AppConsole() {
       <DetectionStoryline
         runId={storyRun?.runId || null}
         scenarioId={storyRun?.scenarioId || null}
+        onOpenEvidence={() => setActiveTab('evidence')}
+        onError={(msg) => setToast({ message: msg, type: 'error' })}
+      />
+    )
+  } else if (activeTab === 'graph') {
+    const graphRun = activeRun || lastRun || pinnedRun
+    tabContent = (
+      <CausalityGraph
+        runId={graphRun?.runId || null}
+        scenarioId={graphRun?.scenarioId || null}
         onOpenEvidence={() => setActiveTab('evidence')}
         onError={(msg) => setToast({ message: msg, type: 'error' })}
       />

@@ -1,0 +1,345 @@
+/* ============================================================
+   CausalityGraph — left-rooted Cortex Causality-View look-alike.
+   The third projection of the seeded-Result denominator: an attack
+   graph (endpoint lane vs network lane, exposure left rail,
+   STAGE·EXPLOIT·IMPACT backdrop) coloured by edge state.
+   Cortex design tokens (cortex-theme.css). Plain CSS, no deps.
+   ============================================================ */
+
+.cg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+  padding: var(--space-5, 20px);
+  font-family: var(--font-primary);
+  color: var(--cortex-ink, #1a2b3c);
+}
+
+.cg--empty,
+.cg--loading,
+.cg--error {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3, 12px);
+  min-height: 240px;
+  color: var(--cortex-steel);
+}
+.cg--loading { flex-direction: row; }
+.cg-empty__icon { font-size: 40px; opacity: 0.4; }
+.cg-error__msg { color: var(--cortex-danger); font-size: 14px; }
+
+/* ── Header / KPI strip ──────────────────────────────────────────────────── */
+.cg-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 16px);
+  padding: var(--space-4, 16px) var(--space-5, 20px);
+  background: var(--cortex-navy);
+  color: var(--cortex-white);
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: var(--shadow-md);
+}
+.cg-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  flex-wrap: wrap;
+}
+.cg-header__title h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.cg-header__scenario {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--cortex-teal);
+  opacity: 0.9;
+}
+.cg-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--cortex-teal);
+}
+.cg-live__dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--cortex-teal);
+  box-shadow: 0 0 0 0 rgba(0, 192, 232, 0.6);
+  animation: cg-pulse 1.6s ease-out infinite;
+}
+@keyframes cg-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(0, 192, 232, 0.6); }
+  70%  { box-shadow: 0 0 0 8px rgba(0, 192, 232, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 192, 232, 0); }
+}
+
+.cg-kpis {
+  display: flex;
+  gap: var(--space-5, 20px);
+  flex-wrap: wrap;
+}
+.cg-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 96px;
+}
+.cg-kpi__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.6);
+}
+.cg-kpi__value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.cg-kpi__sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cortex-teal);
+}
+.cg-kpi--warn .cg-kpi__value { color: var(--cortex-warning, #f0a020); }
+.cg-header__updated {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ── Legend ──────────────────────────────────────────────────────────────── */
+.cg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4, 16px);
+  padding: 0 var(--space-2, 8px);
+  font-size: 12px;
+  color: var(--cortex-steel);
+}
+.cg-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cg-legend__item--hero { font-weight: 600; color: var(--cortex-navy); }
+.cg-legend__swatch {
+  width: 16px;
+  height: 0;
+  border-top-width: 3px;
+  border-top-style: solid;
+  display: inline-block;
+}
+.cg-legend__swatch--confirmed { border-top-color: var(--cortex-teal); }
+.cg-legend__swatch--expected  { border-top-color: var(--cortex-steel); border-top-style: dashed; }
+.cg-legend__swatch--broken    { border-top-color: var(--cortex-danger); border-top-style: dashed; }
+.cg-legend__swatch--hero      { border-top-color: var(--cortex-navy); border-top-width: 4px; }
+
+/* ── Canvas / SVG ────────────────────────────────────────────────────────── */
+.cg-canvas {
+  overflow-x: auto;
+  overflow-y: hidden;
+  background:
+    linear-gradient(180deg, rgba(0, 51, 102, 0.02), rgba(0, 192, 232, 0.02));
+  border: 1px solid var(--cortex-border, #d9e1e8);
+  border-radius: var(--radius-lg, 10px);
+  padding: var(--space-3, 12px);
+}
+.cg-svg {
+  display: block;
+  min-width: 100%;
+  font-family: var(--font-primary);
+}
+
+/* Stage backdrop */
+.cg-stage__band {
+  fill: rgba(107, 126, 142, 0.05);
+  stroke: rgba(107, 126, 142, 0.18);
+  stroke-dasharray: 3 5;
+}
+.cg-stage--stage   .cg-stage__band { fill: rgba(0, 192, 232, 0.05); }
+.cg-stage--exploit .cg-stage__band { fill: rgba(240, 160, 32, 0.05); }
+.cg-stage--impact  .cg-stage__band { fill: rgba(200, 44, 44, 0.05); }
+.cg-stage__label {
+  fill: var(--cortex-steel);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-anchor: middle;
+}
+
+/* Lane guides */
+.cg-lane__rule {
+  stroke: var(--cortex-border, #d9e1e8);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+.cg-lane__label {
+  fill: var(--cortex-steel);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  dominant-baseline: middle;
+}
+.cg-lane--endpoint .cg-lane__label { fill: var(--cortex-navy); }
+.cg-lane--network  .cg-lane__label { fill: var(--cortex-teal-deep, #0090b0); }
+.cg-lane--exposure .cg-lane__label { fill: var(--cortex-warning, #f0a020); }
+
+/* ── Edges ───────────────────────────────────────────────────────────────── */
+.cg-edge {
+  fill: none;
+  stroke-width: 2;
+  stroke: var(--cortex-steel);
+  opacity: 0.85;
+}
+.cg-edge--confirmed { stroke: var(--cortex-teal); }
+.cg-edge--expected  { stroke: var(--cortex-steel); stroke-dasharray: 5 5; opacity: 0.6; }
+.cg-edge--broken    { stroke: var(--cortex-danger); stroke-dasharray: 4 4; stroke-width: 2.5; }
+.cg-edge--hero      { stroke-width: 3.5; opacity: 1; }
+/* exposure→exploit reads as the code-to-cloud dotted link even when confirmed */
+.cg-edge--kind-exposure_exploit { stroke-dasharray: 2 4; }
+.cg-edge--kind-exposure_exploit.cg-edge--confirmed { stroke: var(--cortex-navy); }
+.cg-edge--kind-endpoint_network_stitch.cg-edge--confirmed { stroke: var(--cortex-teal); }
+
+.cg-edge__label {
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: middle;
+  fill: var(--cortex-navy);
+  paint-order: stroke;
+  stroke: var(--cortex-white);
+  stroke-width: 3px;
+}
+.cg-edge__label--broken { fill: var(--cortex-danger); }
+
+/* Arrow markers */
+.cg-arrow path { fill: var(--cortex-steel); }
+.cg-arrow--confirmed path { fill: var(--cortex-teal); }
+.cg-arrow--expected path  { fill: var(--cortex-steel); }
+.cg-arrow--broken path    { fill: var(--cortex-danger); }
+.cg-arrow--hero path      { fill: var(--cortex-navy); }
+
+/* ── Nodes ───────────────────────────────────────────────────────────────── */
+.cg-node-fo { overflow: visible; }
+.cg-node {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md, 8px);
+  border: 1.5px solid var(--cortex-border, #d9e1e8);
+  background: var(--cortex-white, #fff);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.cg-node--clickable { cursor: pointer; }
+.cg-node--clickable:hover { box-shadow: var(--shadow-md); border-color: var(--cortex-teal); }
+.cg-node--clickable:focus-visible { outline: 2px solid var(--cortex-teal); outline-offset: 2px; }
+
+.cg-node__top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 14px;
+}
+.cg-node__plane {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--cortex-steel);
+  text-transform: uppercase;
+}
+.cg-node__engine {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(0, 51, 102, 0.08);
+  color: var(--cortex-navy);
+}
+.cg-node__engine--cgo  { background: var(--cortex-navy); color: var(--cortex-white); }
+.cg-node__engine--proc { background: rgba(107, 126, 142, 0.15); color: var(--cortex-steel); }
+.cg-node__engine--exp  { background: rgba(240, 160, 32, 0.16); color: #b9770f; }
+.cg-node__label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--cortex-ink, #1a2b3c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cg-node__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.cg-node__sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--cortex-steel);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cg-node__mttd {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--cortex-success, #1c9e6a);
+  white-space: nowrap;
+}
+
+/* Node kind / status accents (left border rail) */
+.cg-node--cgo {
+  border-color: var(--cortex-navy);
+  background: linear-gradient(180deg, rgba(0, 51, 102, 0.06), var(--cortex-white));
+  border-width: 2px;
+}
+.cg-node--process { border-left: 4px solid var(--cortex-steel); }
+.cg-node--exposure {
+  border-left: 4px solid var(--cortex-warning, #f0a020);
+  background: linear-gradient(180deg, rgba(240, 160, 32, 0.06), var(--cortex-white));
+}
+.cg-node--alert.cg-node--detected { border-left: 4px solid var(--cortex-success, #1c9e6a); }
+.cg-node--alert.cg-node--pending  { border-left: 4px solid var(--cortex-warning, #f0a020); }
+.cg-node--alert.cg-node--missed   { border-left: 4px solid var(--cortex-danger); }
+
+.cg-node--flash {
+  animation: cg-flash 1.6s ease-out;
+}
+@keyframes cg-flash {
+  0%   { box-shadow: 0 0 0 3px rgba(0, 192, 232, 0.6); }
+  100% { box-shadow: var(--shadow-sm); }
+}
+
+/* ── Dark theme ──────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  .cg { color: #e6edf3; }
+  .cg-canvas {
+    background: rgba(255, 255, 255, 0.02);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .cg-node {
+    background: #12202e;
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+  .cg-node__label { color: #e6edf3; }
+  .cg-node--cgo,
+  .cg-node--exposure { background: #16273a; }
+  .cg-edge__label { stroke: #0b141d; fill: #cfe8f4; }
+}

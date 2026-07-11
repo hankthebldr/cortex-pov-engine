@@ -41,6 +41,7 @@ const STEPS = [
 ]
 const MORE_ITEMS = [
   { id: 'storyline', label: 'Storyline'       },
+  { id: 'graph',     label: 'Causality'       },
   { id: 'coverage', label: 'ATT&CK Coverage' },
   { id: 'lab',      label: 'Environments'    },
   { id: 'tenants',  label: 'Tenants'         },
