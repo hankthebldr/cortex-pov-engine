@@ -391,6 +391,10 @@ def build_causality_graph(
     if window is None and meta:
         window = _DEFAULT_STITCH_WINDOW if meta.get("stitching_key") else None
     stitching_key = meta.get("stitching_key")
+    # CG-04: temporal edges use the RAW scenario-declared window (no stitch-key
+    # fallback). A scenario that never declares correlation_window_seconds emits
+    # no temporal edges.
+    temporal_window = meta.get("correlation_window_seconds")
 
     cgo_id = f"cgo:{run_id}"
     causality_id = cgo_id
@@ -583,6 +587,9 @@ def build_causality_graph(
     # --- Cross-plane evidence edges over alert nodes ------------------------
     alert_nodes = [n for n in nodes if n["kind"] == NODE_ALERT]
     _emit_evidence_edges(edges, alert_nodes, stitching_key, window)
+    # CG-04: temporal-proximity edges over detected alerts, governed by the raw
+    # declared correlation window (distinct from the evidence-edge stitch window).
+    _emit_temporal_edges(edges, alert_nodes, temporal_window)
 
     # --- Summaries ----------------------------------------------------------
     summary = build_summary(entries)  # delegated — identical to timeline/scorecard
@@ -759,13 +766,54 @@ def _emit_evidence_edges(edges, alert_nodes, stitching_key, window):
                 edges.append(_edge(a["id"], b["id"], EDGE_SHARED_ENTITY, state,
                                    f"shared {shared[0]}={shared[1]}"))
                 continue
+            # temporal edges are emitted separately by _emit_temporal_edges (CG-04).
 
-            # temporal — co-fired within the correlation window (only meaningful
-            # once both observed and a window is declared).
-            if a_obs and b_obs and window is not None and a_time and b_time:
-                if abs((a_time - b_time).total_seconds()) <= window:
-                    edges.append(_edge(a["id"], b["id"], EDGE_TEMPORAL, STATE_CONFIRMED,
-                                       f"co-fired within {window}s window"))
+
+def _emit_temporal_edges(edges, alert_nodes, window):
+    """temporal (CG-04) — detections that co-fired within the scenario's declared
+    correlation window.
+
+    ``correlation_window_seconds`` is the scenario's stitch-window contract; the
+    storyline only ever computed a per-detection MTTD, never the proximity
+    *between* two catches. Here — independent of any shared entity or 5-tuple —
+    every pair of DETECTED alert nodes whose ``observed_at`` timestamps fall
+    within ``window`` seconds gets a CONFIRMED ``temporal`` edge, the primitive
+    XSIAM uses to fold near-simultaneous signal into one incident.
+
+    Pairs already joined by a stronger evidence edge (5-tuple session /
+    endpoint↔network stitch / shared entity) are skipped so ``temporal`` stays a
+    distinct, non-duplicative residual. Pure: no declared window (``window is
+    None``) or unparseable timestamps → no temporal edges, spine unchanged.
+    """
+    if window is None:
+        return
+    timed: list[tuple[dict[str, Any], datetime]] = []
+    for node in alert_nodes:
+        if node.get("status") != STATUS_DETECTED:
+            continue
+        ts = _parse_ts(node.get("observed_at"))
+        if ts is not None:
+            timed.append((node, ts))
+    already_joined = {
+        frozenset((e["source"], e["target"]))
+        for e in edges
+        if e["kind"] in (
+            EDGE_NETWORK_SESSION, EDGE_ENDPOINT_NETWORK_STITCH, EDGE_SHARED_ENTITY,
+        )
+    }
+    for i in range(len(timed)):
+        a, a_ts = timed[i]
+        for j in range(i + 1, len(timed)):
+            b, b_ts = timed[j]
+            if frozenset((a["id"], b["id"])) in already_joined:
+                continue
+            delta = abs((a_ts - b_ts).total_seconds())
+            if delta <= window:
+                edges.append(_edge(
+                    a["id"], b["id"], EDGE_TEMPORAL, STATE_CONFIRMED,
+                    f"co-fired {delta:.0f}s apart (≤ {window:.0f}s window)",
+                    delta_seconds=delta,
+                ))
 
 
 def _shared_entity(a_ent: dict[str, Any], b_ent: dict[str, Any]) -> Optional[tuple]:
