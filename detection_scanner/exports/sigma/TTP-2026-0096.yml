@@ -1,0 +1,64 @@
+title: "Hands-on-Keyboard Behavioral Anomaly on a Service Account \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1059.004 / T1078.003 / T1046) \u2014 EDR-010 Anomalous Interactive Shell Lineage from Automation Account"
+id: ttp-2026-0096-abioc-01
+status: experimental
+description: |
+  A service account whose learned Cortex behavioral profile is scheduled, non-interactive automation suddenly parents an interactive shell (login-style bash with a controlling tty). ABIOC anchors the deviation to the causality chain (service-account auth -> interactive shell) rather than to any known-bad binary, catching hands-on-keyboard use of a legitimate account that a static rule keyed on a bad command string would miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username in ("svc-backup", "www-data", "nobody")
+    | filter action_process_image_name in ("bash", "sh", "zsh")
+    | filter action_process_command_line contains "-i" or action_process_command_line contains "login"
+    | comp count() as interactive_shells by agent_hostname, actor_effective_username
+    | filter interactive_shells >= 1
+    | fields agent_hostname, actor_effective_username, interactive_shells
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+    - attack.t1078.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Hands-on-Keyboard Behavioral Anomaly on a Service Account \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1059.004 / T1078.003 / T1046) \u2014 EDR-010 Living-off-the-Land Discovery Burst Deviating from Account Baseline"
+id: ttp-2026-0096-abioc-02
+status: experimental
+description: |
+  An automation account whose learned baseline is a narrow, repetitive process set runs a rapid burst of discovery/staging utilities (whoami, id, uname, hostname, ss, curl). Every utility is legitimate; the ABIOC fires on the cadence-and-diversity deviation from the account's learned behavior, anchored to the interactive shell that spawned them.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username in ("svc-backup", "www-data", "nobody")
+    | filter action_process_image_name in ("whoami", "id", "uname", "hostname", "ss", "netstat", "curl", "wget")
+    | comp count_distinct(action_process_image_name) as distinct_tools by agent_hostname, actor_effective_username
+    | filter distinct_tools >= 4
+    | sort desc distinct_tools
+    | fields agent_hostname, actor_effective_username, distinct_tools
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

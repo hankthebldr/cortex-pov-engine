@@ -95,4 +95,5 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0092` | EMAIL — BEC / Executive Impersonation (Proofpoint TAP + Microsoft 365) | [sigma](sigma/TTP-2026-0092.yml), [xql](xql/TTP-2026-0092.xql), [correlation](correlation/TTP-2026-0092.json) |
 | `TTP-2026-0093` | EMAIL — Thread-Hijack Reply-Chain Phishing (Proofpoint TAP + Microsoft 365) | [sigma](sigma/TTP-2026-0093.yml), [xql](xql/TTP-2026-0093.xql), [correlation](correlation/TTP-2026-0093.json) |
 | `TTP-2026-0095` | MCP Runtime Tool-Response Poisoning (T1656 / T1059) | [sigma](sigma/TTP-2026-0095.yml), [xql](xql/TTP-2026-0095.xql), [correlation](correlation/TTP-2026-0095.json) |
+| `TTP-2026-0096` | Hands-on-Keyboard Behavioral Anomaly on a Service Account — Cortex Analytics Behavioral IOC (ABIOC) (T1059.004 / T1078.003 / T1046) | [sigma](sigma/TTP-2026-0096.yml), [xql](xql/TTP-2026-0096.xql), [correlation](correlation/TTP-2026-0096.json) |
 

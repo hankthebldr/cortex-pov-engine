@@ -1,0 +1,108 @@
+scenario_id: SIM-EDR-010
+name: "Hands-on-Keyboard Behavioral Anomaly — Automation Account (Cortex ABIOC)"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-EDR-10
+tc_ref: TC-EDR-10
+uc_name: "Endpoint Behavioral-ML Detection"
+tc_name: "Hands-on-Keyboard Intrusion on an Automation Account"
+
+mitre_tactic: "TA0002"
+mitre_tactic_name: "Execution"
+mitre_technique: "T1059.004"
+mitre_technique_name: "Command and Scripting Interpreter: Unix Shell"
+additional_techniques:
+  - technique: "T1078.003"
+    name: "Valid Accounts: Local Accounts"
+  - technique: "T1046"
+    name: "Network Service Discovery"
+
+threat_report: "Unit 42 — Muddled Libra (Scattered Spider) Threat Assessment"
+threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra/"
+
+execution_identity:
+  default: svc-backup
+  options:
+    - svc-backup
+    - www-data
+    - nobody
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the svc-backup automation baseline (scheduled, non-interactive
+  jobs). The injected interactive-shell lineage and living-off-the-land discovery
+  burst deviate from that learned baseline; both auto-tuned ABIOCs fire and the
+  correlation rule stitches them into a single hands-on-keyboard-intrusion incident.
+  This is the "behavioral-ML catches what a static BIOC misses" proof: every binary
+  used is a legitimate admin tool, so the catch comes from the deviation and its
+  causality chain, not a known-bad signature. Mean time from deviation to alert is
+  within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Attach an interactive shell to the automation account"
+    command: "bash -ic 'id; echo cortexsim-interactive-shell-attached-svc-backup' || true"
+    identity: svc-backup
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "An automation account whose learned baseline is scheduled, non-interactive jobs parents an interactive (tty-attached) shell — auto-tuned ABIOC fires on the deviation from the learned per-identity process profile, anchored to the service-account causality chain."
+        ttp_ref: "TTP-2026-0096"
+        detection_id: "abioc-edr-010-anomalous-interactive-shell-lineage-from-automation-account"
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms an interactive shell spawn surfaced on svc-backup within the run window (the deviation is observable in xdr_data)."
+        ttp_ref: "TTP-2026-0096"
+        detection_id: "xql-edr-010-interactive-deviation-surfaced-on-automation-account"
+
+  - id: step-02
+    name: "Living-off-the-land discovery burst under the automation account"
+    command: "whoami; id; uname -a; hostname; ss -tunlp; cat /etc/passwd | head; curl -s --max-time 5 http://127.0.0.1/tool -o /tmp/.stage || true; echo cortexsim-lolbin-discovery-burst-complete"
+    identity: svc-backup
+    mitre_technique: "T1046"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The automation account runs a rapid fan-out of distinct discovery/staging utilities (whoami/id/uname/hostname/ss/curl) that exceeds its learned process diversity — auto-tuned ABIOC fires on the cadence-and-diversity deviation, anchored to the interactive shell that spawned them. No single utility is a known-bad IOC."
+        ttp_ref: "TTP-2026-0096"
+        detection_id: "abioc-edr-010-living-off-the-land-discovery-burst-deviating-from-account-baseline"
+
+  - id: step-03
+    name: "Correlation stitches the two behavioral deviations into one incident"
+    command: "echo cortexsim-edr-010-cr-edr-0010-stitched-hands-on-keyboard-incident"
+    identity: svc-backup
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Correlation rule fuses the interactive-shell-lineage ABIOC and the LOLBin-discovery-burst ABIOC on the same host+account into a single hands-on-keyboard-intrusion incident anchored to the service-account causality chain."
+        ttp_ref: "TTP-2026-0096"
+        detection_id: "CR-EDR-0010"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/.stage"
+    - "echo cortexsim-edr-010-cleanup-complete"
