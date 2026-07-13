@@ -8,16 +8,18 @@ loader's *contract* using only pyyaml, so it runs anywhere:
 
   - REQUIRED-field presence + enum membership + step structure  → ERROR (blocks),
     mirroring the loader, which REJECTS schema-invalid scenarios at boot.
+  - cleanup shape (must be a {commands: [...]} mapping, not a list)  → ERROR,
+    the exact CleanupSchema mismatch the loader rejects (Pydantic).
   - dangling ttp_ref / adapter_ref                              → WARNING only,
     mirroring the loader, which logs these as non-fatal warnings.
-
-detection_id slug resolution is intentionally left to the boot loader and the
-detection-corpus-reviewer subagent (it needs ttp_catalog's slug logic).
+  - detection_id slug resolution against the referenced card    → WARNING,
+    reproducing ttp_catalog._slug so a typo'd slug is caught at edit time.
 
 Usage:  python3 lint-scenario.py <scenario.yml> [repo_root]
 Exit:   0 = schema-valid (warnings may be printed), 1 = schema error / not lintable
 """
 import glob
+import json
 import re
 import sys
 from pathlib import Path
@@ -57,6 +59,54 @@ def _index_ids(pattern: str, id_regex: str) -> set:
             continue
         ids.update(rx.findall(text))
     return ids
+
+
+def _slug(name: str, prefix: str) -> str:
+    """EXACT copy of core/engine/ttp_catalog._slug so resolution never false-warns."""
+    clean = "".join(c if c.isalnum() else "-" for c in str(name).lower()).strip("-")
+    while "--" in clean:
+        clean = clean.replace("--", "-")
+    return f"{prefix}-{clean}"[:120]
+
+
+def _card_detection_ids(card: dict) -> set:
+    """Rebuild the set of valid detection_ids a card exposes, mirroring the
+    per-kind id derivation in ttp_catalog (explicit detection_id/rule_id wins,
+    else the slug of the name/value)."""
+    dets = card.get("detections") or {}
+    ids: set = set()
+    for i, b in enumerate(dets.get("biocs") or []):
+        ids.add(b.get("detection_id") or _slug(b.get("name") or f"bioc-{i+1}", "bioc"))
+    for i, q in enumerate(dets.get("xql_queries") or []):
+        ids.add(q.get("detection_id") or _slug(q.get("name") or f"xql-{i+1}", "xql"))
+    for i, a in enumerate(dets.get("abiocs") or []):
+        ids.add(a.get("detection_id") or _slug(a.get("name") or f"abioc-{i+1}", "abioc"))
+    for i, r in enumerate(dets.get("correlation_rules") or []):
+        ids.add(r.get("rule_id") or r.get("detection_id")
+                or _slug(r.get("name") or f"correlation-{i+1}", "correlation"))
+    for i, m in enumerate(dets.get("modeling_rules") or []):
+        ids.add(m.get("detection_id") or _slug(m.get("name") or f"modeling-{i+1}", "modeling"))
+    for i, ioc in enumerate(dets.get("iocs") or []):
+        if isinstance(ioc, dict):
+            val = ioc.get("value") or f"ioc-{i+1}"
+            ioc_type = ioc.get("type") or ioc.get("ioc_type") or "ioc"
+            ids.add(ioc.get("detection_id") or _slug(f"{ioc_type}-{val}", "ioc"))
+        else:
+            ids.add(_slug(str(ioc), "ioc"))
+    return ids
+
+
+def _load_cards_by_id(root: Path) -> dict:
+    """Map every TTP card id -> its parsed JSON (for slug resolution)."""
+    out: dict = {}
+    for path in glob.glob(str(root / "detection_scanner" / "ttps" / "*.json")):
+        try:
+            card = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(card, dict) and card.get("id"):
+            out[card["id"]] = card
+    return out
 
 
 def main() -> int:
@@ -141,8 +191,20 @@ def main() -> int:
                         f"step[{i}].expected_detections[{j}] type '{dtype}' invalid"
                     )
 
+    # ---- cleanup shape (ERROR — loader's CleanupSchema rejects a list) ----
+    cleanup = raw.get("cleanup")
+    if cleanup is not None:
+        if not isinstance(cleanup, dict):
+            errors.append(
+                f"cleanup must be a mapping {{commands: [...]}}, not a "
+                f"{type(cleanup).__name__} (a YAML list fails the loader's CleanupSchema)"
+            )
+        elif cleanup.get("commands") is not None and not isinstance(cleanup["commands"], list):
+            errors.append("cleanup.commands must be a list of strings")
+
     # ---- dangling reference WARNINGS (non-fatal, matches loader) ----
     ttp_refs, adapter_refs, detection_ids = set(), set(), set()
+    det_pairs: list = []  # (ttp_ref, detection_id) for slug resolution
     for step in steps if isinstance(steps, list) else []:
         if not isinstance(step, dict):
             continue
@@ -152,6 +214,7 @@ def main() -> int:
                     ttp_refs.add(det["ttp_ref"])
                 if det.get("detection_id"):
                     detection_ids.add(det["detection_id"])
+                    det_pairs.append((det.get("ttp_ref"), det["detection_id"]))
     for tool in raw.get("external_tools") or []:
         if isinstance(tool, dict) and tool.get("adapter_ref"):
             adapter_refs.add(tool["adapter_ref"])
@@ -166,11 +229,21 @@ def main() -> int:
                            r"TOOL-[A-Z0-9-]+")
         for ref in sorted(adapter_refs - known):
             warnings.append(f"dangling adapter_ref: {ref} (no pack in tools/packs/)")
-    if detection_ids:
-        warnings.append(
-            f"{len(detection_ids)} detection_id ref(s) present — slug resolution not "
-            "checked here; the boot loader + detection-corpus-reviewer verify these."
-        )
+    if det_pairs:
+        cards = _load_cards_by_id(root)
+        for ttp_ref, det_id in det_pairs:
+            if not ttp_ref:
+                warnings.append(f"detection_id '{det_id}' has no ttp_ref to resolve against")
+                continue
+            card = cards.get(ttp_ref)
+            if card is None:
+                continue  # already flagged as a dangling ttp_ref above
+            valid = _card_detection_ids(card)
+            if det_id not in valid:
+                warnings.append(
+                    f"detection_id '{det_id}' does not resolve in card {ttp_ref} "
+                    f"(the boot loader would log this as a dangling detection)"
+                )
 
     for w in warnings:
         print(f"WARNING: {w}")
