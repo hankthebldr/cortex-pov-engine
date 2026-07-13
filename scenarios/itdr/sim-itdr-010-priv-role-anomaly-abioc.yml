@@ -1,0 +1,124 @@
+scenario_id: SIM-ITDR-010
+name: "ITDR — Anomalous Privileged Role / Consent Grant on a Sync Account (Cortex ABIOC)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-10
+tc_ref: TC-ITDR-10
+uc_name: "Identity Behavioral-ML Detection"
+tc_name: "Rogue Privileged Role / Consent Grant on a Directory-Sync Account"
+
+mitre_tactic: "TA0004"
+mitre_tactic_name: "Privilege Escalation"
+mitre_technique: "T1098.003"
+mitre_technique_name: "Account Manipulation: Additional Cloud Roles"
+additional_techniques:
+  - technique: "T1484"
+    name: "Domain or Tenant Policy Modification"
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1528"
+    name: "Steal Application Access Token"
+
+threat_report: "Microsoft Threat Intelligence — Storm-0501 Hybrid Cloud Ransomware"
+threat_report_url: "https://www.microsoft.com/en-us/security/blog/2024/08/27/storm-0501-ransomware-attacks-expanding-to-hybrid-cloud-environments/"
+
+execution_identity:
+  default: svc-backup
+  options:
+    - svc-backup
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Identity Behavioral-ML Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the directory-sync account's read-and-sync governance
+  baseline. The injected privileged directory-role assignment and high-risk
+  OAuth consent grant deviate from that learned baseline; both auto-tuned
+  ABIOCs fire and the correlation rule stitches them into a single
+  rogue-privilege-escalation incident. This is the "behavioral-ML catches what
+  a static BIOC misses" proof: every action uses a legitimate Entra ID
+  administrative API, so the catch comes from the deviation and its causality
+  chain, not a known-bad signature. Mean time from deviation to alert is within
+  the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Sync account assigns a privileged directory role"
+    command: "id; echo cortexsim-itdr-010-privileged-role-grant-global-administrator-svc-backup"
+    identity: svc-backup
+    mitre_technique: "T1098.003"
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "A directory-sync / identity-automation account whose learned baseline is read-and-sync governance assigns a privileged directory role (Global Administrator / Privileged Role Administrator) — auto-tuned ABIOC fires on the deviation from the learned per-identity administration profile, anchored to the sync-account causality chain. No role id is a known-bad IOC."
+        ttp_ref: "TTP-2026-0100"
+        detection_id: abioc-itdr-010-anomalous-privileged-directory-role-assignment-by-non-governance-identity
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms a privileged role assignment surfaced outside the governance workflow within the run window (the deviation is observable in msft_azure_ad_audit)."
+        ttp_ref: "TTP-2026-0100"
+        detection_id: xql-itdr-010-privileged-role-assignment-surfaced-outside-governance-workflow
+
+  - id: step-02
+    name: "Sync account grants a high-risk OAuth consent"
+    command: "whoami; echo cortexsim-itdr-010-oauth-consent-directory-readwrite-all-tenant-wide-grant"
+    identity: svc-backup
+    mitre_technique: "T1528"
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "The sync account consents to a tenant-wide OAuth application scope (Directory.ReadWrite.All-class) or adds service-principal credentials that exceed its learned consent baseline — auto-tuned ABIOC fires on the deviation, anchored to the privileged-role grant that preceded it. Every action uses a legitimate Entra ID application API."
+        ttp_ref: "TTP-2026-0100"
+        detection_id: abioc-itdr-010-high-risk-oauth-consent-and-app-credential-grant-deviating-from-baseline
+
+  - id: step-03
+    name: "Correlation stitches the two behavioral deviations into one incident"
+    command: "echo cortexsim-itdr-010-cr-itdr-0010-stitched-rogue-privilege-escalation-incident"
+    identity: svc-backup
+    mitre_technique: "T1098.003"
+    expected_detections:
+      - plane: ITDR
+        type: Correlation
+        description: "Correlation rule fuses the privileged-role-assignment ABIOC and the high-risk-consent ABIOC on the same tenant+identity into a single rogue-privilege-escalation incident anchored to the sync-account causality chain."
+        ttp_ref: "TTP-2026-0100"
+        detection_id: CR-ITDR-0010
+
+cleanup:
+  commands:
+    - "echo cortexsim-itdr-010-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-13"
+last_updated: "2026-07-13"
+tags:
+  - itdr
+  - entra-id
+  - storm-0501
+  - privilege-escalation
+  - oauth-consent
+  - abioc
+  - behavioral-ml

@@ -1,0 +1,114 @@
+scenario_id: SIM-EDR-012
+name: "Collection and Data-Staging Behavioral Anomaly — Service Process (Cortex ABIOC)"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-EDR-12
+tc_ref: TC-EDR-12
+uc_name: "Endpoint Behavioral-ML Detection"
+tc_name: "Collection and Data-Staging Intrusion on a Service Process"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1074.001"
+mitre_technique_name: "Data Staged: Local Data Staging"
+additional_techniques:
+  - technique: "T1560.001"
+    name: "Archive Collected Data: Archive via Utility"
+  - technique: "T1005"
+    name: "Data from Local System"
+
+threat_report: "Unit 42 — Muddled Libra (Scattered Spider) Threat Assessment"
+threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - node
+    - nobody
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the www-data non-staging baseline (a narrow, stable process and
+  file-access profile that never sweeps files nor produces archives). The injected
+  bulk file-read sweep and archive/compression staging burst deviate from that learned
+  baseline; both auto-tuned ABIOCs fire and the correlation rule stitches them into a
+  single collection-and-staging (pre-exfil) incident. This is the "behavioral-ML
+  catches what a static BIOC misses" proof: tar, gzip, and cat are legitimate on every
+  host, so the catch comes from the deviation and its causality chain, not a known-bad
+  signature. Mean time from deviation to alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Bulk file-read sweep under the service process"
+    command: "mkdir -p /tmp/cortexsim-collect; for i in 1 2 3 4 5 6; do dd if=/dev/urandom of=/tmp/cortexsim-collect/doc-$i.dat bs=1k count=8 2>/dev/null; done; cat /tmp/cortexsim-collect/doc-1.dat /tmp/cortexsim-collect/doc-2.dat /tmp/cortexsim-collect/doc-3.dat > /dev/null; echo cortexsim-bulk-file-read-sweep-complete"
+    identity: www-data
+    mitre_technique: "T1005"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A service process whose learned baseline touches a narrow, stable file set suddenly reads a fan-out of distinct files — auto-tuned ABIOC fires on the read-count-and-diversity deviation from the learned per-process profile, anchored to the acting process. No file or binary is a known-bad IOC."
+        ttp_ref: "TTP-2026-0098"
+        detection_id: "abioc-edr-012-anomalous-bulk-file-read-sweep-from-non-staging-process"
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms the service-process non-staging baseline is present in xdr_data over the run window (the deviation is measured against it)."
+        ttp_ref: "TTP-2026-0098"
+        detection_id: "xql-edr-012-service-process-non-staging-baseline-learned"
+
+  - id: step-02
+    name: "Archive and compression staging burst under the service process"
+    command: "tar -czf /tmp/cortexsim-stage.tar.gz /tmp/cortexsim-collect 2>/dev/null || true; gzip -k /tmp/cortexsim-collect/doc-1.dat 2>/dev/null || true; echo cortexsim-archive-staging-burst-complete"
+    identity: www-data
+    mitre_technique: "T1560.001"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The service process spawns tar/gzip to compress the swept files into a staging archive it has never produced — auto-tuned ABIOC fires on the archive-creation deviation, anchored to the bulk-read sweep that fed it. Every utility is legitimate; the catch is the pre-exfil staging behavior."
+        ttp_ref: "TTP-2026-0098"
+        detection_id: "abioc-edr-012-archive-compression-staging-burst-deviating-from-process-baseline"
+      - plane: EDR
+        type: XQL
+        description: "Validation query surfaces the archive/compression staging spawn (tar/gzip/zip) on www-data within the run window."
+        ttp_ref: "TTP-2026-0098"
+        detection_id: "xql-edr-012-staging-deviation-surfaced-on-process-baseline"
+
+  - id: step-03
+    name: "Correlation stitches the two behavioral deviations into one incident"
+    command: "echo cortexsim-edr-012-cr-edr-0012-stitched-collection-staging-incident"
+    identity: www-data
+    mitre_technique: "T1074.001"
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Correlation rule fuses the bulk-file-read-sweep ABIOC and the archive/compression-staging-burst ABIOC on the same host+process into a single collection-and-staging (pre-exfil) incident anchored to the read-sweep-to-archive causality chain."
+        ttp_ref: "TTP-2026-0098"
+        detection_id: "CR-EDR-0012"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-collect"
+    - "rm -f /tmp/cortexsim-stage.tar.gz"
+    - "echo cortexsim-edr-012-cleanup-complete"

@@ -1,0 +1,175 @@
+scenario_id: SIM-MP-008
+name: "Identity → Endpoint → Network Hands-on-Keyboard Campaign (Cross-Plane XSIAM Stitch)"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+# ANALYTICS — this is a multi-plane correlation scenario. Its thesis is the
+# takeover fan-out: one compromised identity produces an anomalous IdP sign-in
+# (ITDR), hands-on-keyboard living-off-the-land activity on the endpoint (EDR),
+# then attacker-controlled egress (NDR). XSIAM must stitch all three into ONE
+# incident anchored to the shared identity/host/session causality chain.
+plane: ANALYTICS
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UCS-MP-08
+tc_ref: TC-MP-08
+uc_name: "Cross-Plane Incident Stitching"
+tc_name: "Identity → Endpoint → Network Hands-on-Keyboard Campaign Correlation"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Kill-chain arc: TA0001 Initial Access (T1078 Valid Accounts, social-engineered
+# takeover) → TA0006 Credential Access (T1621 MFA fatigue) → TA0002 Execution
+# (T1059.004 hands-on-keyboard shell) → TA0011 Command and Control (T1071.001).
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1078.004"
+mitre_technique_name: "Valid Accounts: Cloud Accounts"
+additional_techniques:
+  - technique: "T1621"
+    name: "Multi-Factor Authentication Request Generation"
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Muddled Libra (Scattered Spider) Threat Assessment; Microsoft Threat Intelligence — Octo Tempest"
+threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: svc-backup
+  options:
+    - svc-backup
+    - www-data
+    - nobody
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+  - edr
+  - ndr
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Cross-Plane Causality Correlation"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  Three staged signals from one compromised identity — an anomalous IdP sign-in
+  (ITDR), a hands-on-keyboard living-off-the-land burst on the endpoint (EDR),
+  and repetitive C2 egress (NDR) — stitch into a single XSIAM incident_id whose
+  causality chain spans all three planes within the correlation window. Both
+  auto-tuned ABIOCs (identity sign-in anomaly + endpoint behavioral deviation)
+  fire and CR-MP-0013 fuses them with the NDR egress. Over a 5-run batch, ≥ 80 %
+  of runs must produce a single stitched incident_id. Each successful run shows:
+    - one incident_id
+    - planes ⊇ {ITDR, EDR, NDR}
+    - mttd ≤ 60 s from last signal emit to incident creation
+  This is the "behavioral-ML + correlation catches what three point tools miss"
+  proof: every binary, session, and login is legitimate in isolation — the
+  escalation comes from the behavioral deviations and the stitched causality
+  chain, not any known-bad signature.
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+correlation_window_seconds: 300
+required_planes_in_incident:
+  - ITDR
+  - EDR
+  - NDR
+stitching_key: identity
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Ordered fan-out from one identity. The ITDR sign-in anomaly precedes the EDR
+# hands-on-keyboard burst which precedes the NDR C2 egress; the terminal step
+# asserts the three-plane stitch.
+steps:
+  - id: step-01
+    name: "ITDR signal — anomalous IdP sign-in with MFA-fatigue burst"
+    command: "echo cortexsim-mp-008-step01-idp-signin-anomaly-impossible-travel-mfa-fatigue; whoami; id; hostname"
+    identity: svc-backup
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "A privileged account authenticates from an improbable geography while a burst of MFA challenges is pushed at it — auto-tuned ABIOC fires on the impossible-travel-plus-MFA-fatigue deviation from the account's learned sign-in profile, anchored to the identity as the root of the causality chain."
+        ttp_ref: "TTP-2026-0104"
+        detection_id: "abioc-mp-008-identity-sign-in-anomaly-on-a-privileged-account"
+
+  - id: step-02
+    name: "EDR signal — hands-on-keyboard living-off-the-land discovery burst"
+    command: "whoami; id; uname -a; hostname; ss -tunlp 2>/dev/null; cat /etc/passwd | head; echo cortexsim-mp-008-step02-hands-on-keyboard-burst"
+    identity: svc-backup
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The same account, whose learned endpoint baseline is non-interactive automation, parents an interactive shell and runs a rapid fan-out of distinct discovery utilities that exceeds its learned process diversity — auto-tuned ABIOC fires on the deviation, anchored to the spawning shell and the originating identity. No single utility is a known-bad IOC."
+        ttp_ref: "TTP-2026-0104"
+        detection_id: "abioc-mp-008-hands-on-keyboard-endpoint-behavioral-deviation"
+
+  - id: step-03
+    name: "NDR signal — repetitive C2 egress from the compromised host"
+    command: "for i in 1 2 3 4 5; do curl -s --max-time 5 http://127.0.0.1/beacon?i=$i -o /dev/null 2>/dev/null || true; done; echo cortexsim-mp-008-step03-c2-egress-beacon-burst"
+    identity: svc-backup
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "The NGFW records a burst of repetitive outbound sessions from the compromised host to an attacker-staging destination — the network half of the takeover fan-out, joined to the identity/host by the same src_host."
+        ttp_ref: "TTP-2026-0104"
+        detection_id: "xql-mp-008-c2-egress-session-burst-from-the-compromised-host"
+
+  - id: step-04
+    name: "Correlation terminal — assert one incident spans ITDR + EDR + NDR"
+    command: "sleep 2; echo cortexsim-mp-008-step04-cr-mp-0013-stitched-identity-endpoint-network-incident"
+    identity: root
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "XSIAM correlation fuses the ITDR sign-in-anomaly ABIOC, the EDR hands-on-keyboard behavioral-deviation ABIOC, and the NDR C2 egress from the same identity/host into ONE incident_id spanning ≥ 3 planes, producing the anomalous-auth → interactive-shell-plus-discovery → C2-egress causality chain."
+        ttp_ref: "TTP-2026-0104"
+        detection_id: "CR-MP-0013"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Cross-plane convergence check — asserts the three planes report under a single incident_id for the compromised host within the run window."
+        ttp_ref: "TTP-2026-0104"
+        detection_id: "xql-mp-008-cross-plane-stitch-convergence-check"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -f /tmp/.mp008"
+    - "echo cortexsim-mp-008-cleanup-complete"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-13"
+last_updated: "2026-07-13"
+tags:
+  - multi-plane
+  - stitching
+  - cross-plane-correlation
+  - identity-endpoint-network
+  - abioc
+  - hands-on-keyboard
+  - moat
+  - v2.0-methodology
+  - f2

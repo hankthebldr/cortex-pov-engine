@@ -1,0 +1,122 @@
+scenario_id: SIM-ITDR-009
+name: "ITDR — Sign-In Account Takeover on a Learned Identity Baseline (Cortex ABIOC)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-09
+tc_ref: TC-ITDR-09
+uc_name: "Identity Behavioral-ML Detection"
+tc_name: "Sign-In Account Takeover on a Learned Identity Baseline"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1078"
+mitre_technique_name: "Valid Accounts"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1621"
+    name: "Multi-Factor Authentication Request Generation"
+
+threat_report: "Unit 42 — Muddled Libra (Scattered Spider) Threat Assessment"
+threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra/"
+
+execution_identity:
+  default: svc-backup
+  options:
+    - svc-backup
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Identity Behavioral-ML Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the user's sign-in baseline (a stable set of ASNs,
+  geographies and authentication cadence). The injected auth-velocity spike from
+  a new ASN and the impossible-travel session pair deviate from that learned
+  baseline; both auto-tuned ABIOCs fire and the correlation rule stitches them
+  into a single sign-in-account-takeover incident. This is the "behavioral-ML
+  catches what a static BIOC misses" proof: every sign-in is a legitimate
+  authentication event, so the catch comes from the deviation and its causality
+  chain, not a known-bad signature. Mean time from deviation to alert is within
+  the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Anomalous auth-velocity from a new ASN on a learned identity"
+    command: "id; echo cortexsim-itdr-009-signin-auth-velocity-spike-new-asn-deviation"
+    identity: svc-backup
+    mitre_technique: "T1078"
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "A user whose learned sign-in baseline is a stable set of ASNs and a low authentication cadence suddenly authenticates at high velocity from a never-before-seen ASN — auto-tuned ABIOC fires on the deviation from the learned per-identity sign-in profile, anchored to the account causality chain. No single sign-in is a known-bad IOC."
+        ttp_ref: "TTP-2026-0099"
+        detection_id: abioc-itdr-009-sign-in-auth-velocity-and-new-asn-deviation-from-learned-identity-baseline
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms an anomalous session pair surfaced for the identity within the run window (the deviation is observable in the sign-in telemetry)."
+        ttp_ref: "TTP-2026-0099"
+        detection_id: xql-itdr-009-anomalous-session-pair-surfaced
+
+  - id: step-02
+    name: "Impossible-travel session pair on the same identity"
+    command: "whoami; echo cortexsim-itdr-009-impossible-travel-geo-velocity-deviation"
+    identity: svc-backup
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "Two successful sign-ins for the same identity occur from geographies whose separation exceeds any feasible travel speed for the elapsed time — auto-tuned ABIOC fires on the geo-velocity deviation from the learned sign-in baseline, anchored to the auth-velocity anomaly that preceded it. Every sign-in is a legitimate authentication event."
+        ttp_ref: "TTP-2026-0099"
+        detection_id: abioc-itdr-009-impossible-travel-geo-velocity-deviation-from-learned-sign-in-baseline
+
+  - id: step-03
+    name: "Correlation stitches the two behavioral deviations into one incident"
+    command: "echo cortexsim-itdr-009-cr-itdr-0008-stitched-signin-account-takeover-incident"
+    identity: svc-backup
+    mitre_technique: "T1078"
+    expected_detections:
+      - plane: ITDR
+        type: Correlation
+        description: "Correlation rule fuses the auth-velocity/new-ASN ABIOC and the impossible-travel ABIOC on the same tenant+identity into a single sign-in-account-takeover incident anchored to the identity causality chain."
+        ttp_ref: "TTP-2026-0099"
+        detection_id: CR-ITDR-0008
+
+cleanup:
+  commands:
+    - "echo cortexsim-itdr-009-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-13"
+last_updated: "2026-07-13"
+tags:
+  - itdr
+  - entra-id
+  - scattered-spider
+  - account-takeover
+  - impossible-travel
+  - abioc
+  - behavioral-ml

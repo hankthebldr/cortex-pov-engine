@@ -1,0 +1,62 @@
+title: "Cloud Workload IAM Usage Anomaly \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1580) \u2014 CDR-016 Anomalous IAM API-Call Rate Spike from Baselined Workload Role"
+id: ttp-2026-0103-abioc-01
+status: experimental
+description: |
+  A cloud workload identity whose learned Cortex baseline is a narrow set of API calls at a low, steady rate suddenly issues a burst of calls well above its learned rate within a short window. ABIOC anchors the deviation to the causality chain (assumed-role session -> call-rate spike from a source/agent new for this identity) rather than to any known-bad API name, catching post-compromise credential abuse a static rule keyed on a specific action would miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and identity_type = "AssumedRole"
+    | filter _time > to_timestamp(current_time() - 300)
+    | comp count() as call_count by identity_name, caller_ip
+    | filter call_count >= 30
+    | sort desc call_count
+    | fields identity_name, caller_ip, call_count
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cloud Workload IAM Usage Anomaly \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1580) \u2014 CDR-016 New-Action-Set Deviation from Learned IAM Usage Baseline"
+id: ttp-2026-0103-abioc-02
+status: experimental
+description: |
+  A workload role whose learned action set is a small, stable list of application API calls suddenly invokes Discovery and IAM actions it has never used in its learned profile. Every action is a legitimate AWS call; the ABIOC fires on the new-action-set deviation from the identity's learned behavior, anchored to the assumed-role session that issued them.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and identity_type = "AssumedRole"
+    | filter operation_name in ("GetCallerIdentity", "ListUsers", "ListRoles", "DescribeInstances", "ListBuckets")
+    | comp count_distinct(operation_name) as new_actions by identity_name, caller_ip
+    | filter new_actions >= 3
+    | sort desc new_actions
+    | fields identity_name, caller_ip, new_actions
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1580/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1580
+    - attack.t1078.004
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

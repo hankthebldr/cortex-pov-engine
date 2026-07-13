@@ -1,0 +1,144 @@
+scenario_id: SIM-EDR-011
+name: "Ransomware Pre-Encryption Behavioral Anomaly — Host File-I/O Baseline (Cortex ABIOC)"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It reproduces the PRE-ENCRYPTION
+# telemetry shape of the Akira (Howling Scorpius) encryptor so Cortex behavioral
+# analytics can be shown to catch it BEFORE bulk encryption completes — WITHOUT
+# real encryption. SAFE-MODE: all writes land only in an isolated /tmp victim
+# directory, a uniform ".locked" extension is appended over high-entropy content,
+# and only CortexSim-created snapshot/backup artefacts are removed. Cleanup fully
+# restores the directory. LAB ONLY.
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-EDR-11
+tc_ref: TC-EDR-11
+uc_name: "Endpoint Behavioral-ML Detection"
+tc_name: "Ransomware Pre-Encryption Behavioral Anomaly on a Host"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1486"
+mitre_technique_name: "Data Encrypted for Impact"
+additional_techniques:
+  - technique: "T1490"
+    name: "Inhibit System Recovery"
+  - technique: "T1083"
+    name: "File and Directory Discovery"
+
+threat_report: "Unit 42 — Threat Assessment: Howling Scorpius (Akira Ransomware)"
+threat_report_url: "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/"
+
+execution_identity:
+  default: svc-backup
+  options:
+    - svc-backup
+    - www-data
+    - nobody
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 120
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned this host's normal file-I/O profile (few processes writing
+  at a modest, low-entropy cadence; a backup routine that creates snapshots and
+  never bulk-deletes them). The injected high-entropy mass-rewrite burst and the
+  snapshot/backup deletion deviate from that learned baseline; both auto-tuned
+  ABIOCs fire and the correlation rule stitches them into a single
+  pre-encryption-ransomware incident. This is the "behavioral-ML catches what a
+  static BIOC misses" proof: a fresh Akira build has no known hash, extension, or
+  ransom-note string, so the catch comes from the rate/entropy deviation and its
+  causality chain, not a signature. Mean time from deviation to alert is within
+  the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Seed isolated victim set and enumerate targets"
+    command: "mkdir -p /tmp/cortexsim_preenc; for i in $(seq 1 60); do echo baseline-content-$i > /tmp/cortexsim_preenc/doc_$i.dat; done; find /tmp/cortexsim_preenc -type f > /tmp/cortexsim_preenc_targets.txt; wc -l /tmp/cortexsim_preenc_targets.txt"
+    identity: svc-backup
+    mitre_technique: "T1083"
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms the host file-modification baseline is observable in xdr_data (pre-flight bookkeeping before the deviation)."
+        ttp_ref: "TTP-2026-0097"
+        detection_id: "xql-edr-011-host-file-modification-baseline-learned"
+
+  - id: step-02
+    name: "High-entropy pre-encryption mass rewrite burst (SAFE-MODE)"
+    command: "while read -r f; do head -c 4096 /dev/urandom > $f.locked && rm -f $f; done < /tmp/cortexsim_preenc_targets.txt; echo cortexsim-preenc-file-burst-complete"
+    identity: svc-backup
+    mitre_technique: "T1486"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A single process produces a rapid burst of high-entropy file rewrites with a uniform new extension at a rate far above the host's learned file-modification profile — auto-tuned ABIOC fires on the rate-and-entropy deviation, anchored to the enumeration -> mass-rewrite causality chain. No single write is a known-bad IOC."
+        ttp_ref: "TTP-2026-0097"
+        detection_id: "abioc-edr-011-anomalous-pre-encryption-file-modification-burst-deviating-from-host-baseline"
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms the anomalous file-modification burst surfaced on the host within the run window (the deviation is observable in xdr_data)."
+        ttp_ref: "TTP-2026-0097"
+        detection_id: "xql-edr-011-pre-encryption-file-burst-surfaced-on-host"
+
+  - id: step-03
+    name: "Recovery inhibition — delete snapshot/backup artefacts"
+    command: "rm -f /tmp/cortexsim_snapshot_baseline.img /tmp/cortexsim_backup_baseline.tar 2>/dev/null; echo cortexsim-preenc-recovery-inhibition-issued"
+    identity: svc-backup
+    mitre_technique: "T1490"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A process deletes snapshot/backup artefacts on a host whose learned backup routine only creates snapshots and never bulk-deletes them, co-occurring with the mass-rewrite burst — auto-tuned ABIOC fires on the recovery-inhibition deviation, anchored to the encryptor that immediately precedes it."
+        ttp_ref: "TTP-2026-0097"
+        detection_id: "abioc-edr-011-recovery-inhibition-snapshot-deletion-deviating-from-host-baseline"
+
+  - id: step-04
+    name: "Correlation stitches the two behavioral deviations into one incident"
+    command: "echo cortexsim-edr-011-cr-edr-0011-stitched-pre-encryption-ransomware-incident"
+    identity: svc-backup
+    mitre_technique: "T1486"
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Correlation rule fuses the pre-encryption file-burst ABIOC and the recovery-inhibition ABIOC on the same host into a single pre-encryption-ransomware incident anchored to the enumeration -> mass-rewrite -> recovery-inhibition causality chain."
+        ttp_ref: "TTP-2026-0097"
+        detection_id: "CR-EDR-0011"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim_preenc"
+    - "rm -f /tmp/cortexsim_preenc_targets.txt"
+    - "echo cortexsim-edr-011-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-13"
+last_updated: "2026-07-13"
+tags:
+  - impact
+  - ransomware
+  - akira
+  - pre-encryption
+  - behavioral-ml
+  - abioc
+  - inhibit-recovery
+  - safe-mode

@@ -1,0 +1,324 @@
+{
+  "id": "TTP-2026-0101",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-13T00:00:00+00:00",
+    "updated_at": "2026-07-13T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-c2-beacon",
+      "vector-behavioral-anomaly",
+      "protocol-http",
+      "malware-cobalt-strike",
+      "malware-sliver",
+      "severity-high",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS",
+      "SRC-UNIT42",
+      "SRC-MANDIANT"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Low-and-Slow Jittered C2 Beacon Behavioral Anomaly — Cortex Network Analytics Behavioral IOC (ABIOC) (T1071 / T1571)",
+    "summary": "A host emits a periodic, low-and-slow trickle of small outbound sessions to one destination with sleep jitter — the Cobalt Strike / Sliver beacon profile. No domain or IP is a known-bad IOC; the deviation from the host's learned egress baseline (destination rarity, connection periodicity, small stable payload) is what an auto-tuned network ABIOC anchors on and fires on.",
+    "description": "Modern C2 frameworks such as Cobalt Strike (Malleable C2) and Sliver deliberately defeat static IOC matching: the operator rotates the callback domain/IP, tunes the sleep interval and adds jitter so the cadence looks irregular, and keeps each check-in small so it blends into ordinary web noise. A domain-blocklist or IOC rule keyed on a specific address therefore misses the beacon the moment infrastructure rotates. The signal that survives rotation is behavioral and lives entirely in the network plane: a single internal source repeatedly reaching one external destination at a near-constant interval (even with jitter the periodicity is statistically tight relative to normal browsing), with a small and stable per-request byte volume, to a destination that is rare for that host, sometimes over a non-standard port. Cortex Network Security Analytics learns each host's egress baseline — which destinations it talks to, at what cadence, with what payload profile — and PANW authors and continually auto-tunes Analytics Behavioral IOCs (ABIOCs) against that learned baseline, firing on a single suspicious flow that carries an identified chain of causality rather than on a known-bad indicator. This card exercises that detector class on the NDR plane. It injects two behavioral deviations from the learned host egress baseline: (a) a periodic low-and-slow beacon cadence with small stable payloads that diverges from the host's normal bursty, high-volume web traffic, and (b) a jittered beacon to a rare destination on a non-standard port that the host has never contacted at that cadence. Two ABIOCs cover the two deviation shapes; supporting validation XQL surfaces the periodicity and the rare-destination/non-standard-port deviation from panw_ngfw_traffic_raw; and a correlation rule stitches the two ABIOCs into a single C2-beacon incident anchored to the host egress causality chain (rare destination -> periodic small sessions -> jittered cadence), which a static domain/IOC rule would never have raised.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Cobalt Strike Malleable C2 beaconing",
+      "Sliver implant low-and-slow C2"
+    ],
+    "malware_families": [
+      {
+        "name": "Cobalt Strike"
+      },
+      {
+        "name": "Sliver"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2012-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1571",
+        "name": "Non-Standard Port",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-NDR-008 — Low-and-slow jittered C2 beacon behavioral deviation from a learned host egress baseline for Cortex network ABIOC validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "NGFW inline with Enhanced Application Logs forwarding into XSIAM so per-session egress telemetry reaches panw_ngfw_traffic_raw.",
+        "check_command": "python3 -m scripts.eal_simulator.cli list-plugins | jq -e '.total >= 4'"
+      },
+      {
+        "description": "A baseline window has elapsed during which the source host produced only its normal egress so Cortex Network Security Analytics learned the host egress profile.",
+        "check_command": "ip route get 1.1.1.1"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No known-bad IOC. Emit a periodic low-and-slow beacon that deviates from the\n# host's learned egress baseline (destination rarity + tight periodicity + small\n# stable payload), then a jittered beacon to a rare destination on a non-standard port.\nset -euo pipefail\nfor i in $(seq 1 12); do curl -s --max-time 3 http://${BEACON_HOST:-127.0.0.1}/beacon >/dev/null 2>&1 || true; sleep 2; done\nfor i in $(seq 1 8); do curl -s --max-time 3 http://${BEACON_HOST:-127.0.0.1}:8443/task >/dev/null 2>&1 || true; sleep 3; done",
+      "input_variables": [
+        {
+          "name": "BEACON_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised internal host the low-and-slow beacon reaches during the deviation."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Repeated small outbound sessions from one source to a single destination at a near-constant low-and-slow interval that diverges from the host's learned egress baseline.",
+        "expected_value": "action = \"allow\" AND beacon_count >= 8 AND avg_bytes < 2048"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "A jittered beacon to a destination that is rare for the host, over a non-standard port the host has never used at that cadence.",
+        "expected_value": "dst_port NOT IN (80, 443, 53) AND dst_cardinality = 1"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-NDR-008 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "NDR-008 Periodic Low-and-Slow Beacon Deviating from Host Egress Baseline",
+        "description": "A source host that Cortex has learned emits bursty, high-volume web traffic suddenly produces a tight, periodic trickle of small sessions to a single destination — the Cobalt Strike / Sliver low-and-slow beacon shape. Every destination is legitimate-looking and rotates, so no IOC matches; the ABIOC fires on the periodicity-and-small-payload deviation from the host's learned egress baseline, anchored to the destination causality chain rather than to a known-bad indicator.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"web-browsing\", \"http\", \"ssl\", \"unknown-tcp\")\n| filter action = \"allow\"\n| comp count() as beacon_count, avg(bytes_sent) as avg_bytes, count_distinct(uri) as uri_variants by src_ip, dst_ip, dst_host\n| filter beacon_count >= 8 and avg_bytes < 2048\n| sort desc beacon_count\n| fields src_ip, dst_ip, dst_host, beacon_count, avg_bytes, uri_variants",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned host egress baseline (bursty, high-volume, many destinations) -> a single rare destination contacted at a tight periodic interval with small stable payloads, anchored to the originating source host."
+      },
+      {
+        "name": "NDR-008 Jittered Beacon to Rare Destination With Non-Standard Port Deviation",
+        "description": "A host contacts a destination that is rare for it over a non-standard port at a jittered but still statistically periodic cadence — the sleep-with-jitter profile Malleable C2 and Sliver use to evade fixed-interval rules. The ABIOC fires on the rare-destination-plus-non-standard-port deviation from the learned baseline, anchored to the periodic beacon that spawned the flows, catching the beacon after infrastructure rotation defeats any IOC.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter action = \"allow\"\n| filter dst_port not in (80, 443, 53)\n| comp count() as sessions, count_distinct(dst_ip) as dst_cardinality, avg(bytes_sent) as avg_bytes by src_ip, dst_host, dst_port\n| filter sessions >= 6 and dst_cardinality = 1 and avg_bytes < 2048\n| sort desc sessions\n| fields src_ip, dst_host, dst_port, sessions, dst_cardinality, avg_bytes",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1571"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Periodic low-and-slow beacon under the source host -> a rare destination reached on a non-standard port the host never used at that cadence, anchored to the beacon flow that generated the sessions."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "NDR-008 Beacon Periodicity Surfaced Against Host Egress Baseline",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 900)\n| filter app in (\"web-browsing\", \"http\", \"ssl\", \"unknown-tcp\")\n| filter action = \"allow\"\n| comp count() as beacon_count, avg(bytes_sent) as avg_bytes by src_ip, dst_ip, dst_host\n| filter beacon_count >= 8 and avg_bytes < 2048\n| fields src_ip, dst_ip, dst_host, beacon_count, avg_bytes",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NDR-008 Rare Destination and Non-Standard Port Deviation Surfaced",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 900)\n| filter action = \"allow\"\n| filter dst_port not in (80, 443, 53)\n| comp count() as sessions by src_ip, dst_host, dst_port\n| filter sessions >= 6\n| fields src_ip, dst_host, dst_port, sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Low-and-Slow C2 Beacon Behavioral Anomaly — ABIOC Causality Stitch",
+        "rule_id": "CR-NDR-0008",
+        "logic": "ABIOC(NDR-008 Periodic Low-and-Slow Beacon Deviating from Host Egress Baseline) AND ABIOC(NDR-008 Jittered Beacon to Rare Destination With Non-Standard Port Deviation) — fuses the two auto-tuned network behavioral deviations for the same source host into a single low-and-slow C2 beacon incident anchored to the host egress causality chain, surviving destination/IP rotation that defeats any static IOC."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Network Security Analytics — Periodic Beaconing / low-and-slow C2",
+      "Cortex XSIAM Analytics — rare destination for source host",
+      "Cortex XSIAM Analytics — non-standard port egress deviation"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-ABIOC-NDR-0008-PERIODICITY",
+          "XSIAM-ABIOC-NDR-0008-RARE-DEST-NONSTD-PORT"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Two ABIOCs fire on the host egress behavioral deviation; CR-NDR-0008 stitches them into one low-and-slow C2 beacon incident anchored to the host egress causality chain."
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id-enhanced-application-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-EAL-BEACON-JITTER-008"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter action = \"allow\" | comp count() as beacon_count, avg(bytes_sent) as avg_bytes by src_ip, dst_ip, dst_host | filter beacon_count >= 8 and avg_bytes < 2048"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-C2BeaconBehavioralTriage-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: enrich destination reputation, block URL/host and non-standard port at NGFW, isolate the beaconing source host, open DFIR ticket."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-NDR-008",
+        "name": "Low-and-Slow C2 Beacon Behavioral Anomaly Detection via Cortex Network ABIOC",
+        "description": "Cortex's auto-tuned Network Analytics Behavioral IOCs learn a host's egress baseline and detect a jittered low-and-slow beacon by its periodicity, small stable payload, destination rarity and non-standard port deviation, anchored to the host egress causality chain, after infrastructure rotation defeats any static IOC.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-NDR-008A",
+            "objective": "Cortex learns the host egress baseline and an injected low-and-slow jittered beacon fires both ABIOCs.",
+            "preconditions": [
+              "NGFW inline with EAL forwarding to XSIAM (panw_ngfw_traffic_raw populated).",
+              "Baseline window elapsed with the source host producing only its normal egress."
+            ],
+            "steps": [
+              "Let the host egress baseline window elapse.",
+              "Emit a periodic low-and-slow beacon, then a jittered beacon to a rare destination on a non-standard port.",
+              "Observe both ABIOCs fire and CR-NDR-0008 raise a low-and-slow C2 beacon incident."
+            ],
+            "success_criteria": [
+              "ABIOC `NDR-008 Periodic Low-and-Slow Beacon Deviating from Host Egress Baseline` fires.",
+              "ABIOC `NDR-008 Jittered Beacon to Rare Destination With Non-Standard Port Deviation` fires.",
+              "Correlation CR-NDR-0008 raises one stitched low-and-slow C2 beacon incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce App-ID least-privilege egress and require an authenticated egress proxy so servers cannot reach arbitrary destinations or non-standard ports directly.",
+      "Block newly-registered / high-entropy domains and deny outbound to non-standard ports on egress NGFW policy so beacon channels are cut, not merely detected.",
+      "Apply Advanced Threat Prevention and URL Filtering on all outbound web traffic."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune network ABIOCs against the learned per-host egress baseline rather than hand-authoring IOC rules for individual C2 domains that rotate.",
+      "Baseline per-host destination cardinality, inter-request interval and payload profile; alert on low-jitter periodic small sessions to a rare destination.",
+      "Alert on egress to a non-standard port for a host whose baseline never used it, and correlate periodicity + rare-destination + non-standard-port into one C2 incident."
+    ],
+    "response_playbook": "XSOAR-PB-C2BeaconBehavioralTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM — Network Security Analytics and Analytics BIOC (ABIOC) behavioral detection",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1071 — Application Layer Protocol",
+      "url": "https://attack.mitre.org/techniques/T1071/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1571 — Non-Standard Port",
+      "url": "https://attack.mitre.org/techniques/T1571/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Unit 42 — Cobalt Strike Malleable C2 Profile Analysis (beacon sleep/jitter tradecraft)",
+      "url": "https://unit42.paloaltonetworks.com/cobalt-strike-malleable-c2-profile/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "Mandiant — Sliver C2 framework adversary emulation and detection",
+      "url": "https://cloud.google.com/blog/topics/threat-intelligence/sliver-c2-leveraged-by-malicious-actors",
+      "publisher": "Mandiant",
+      "publisher_id": "SRC-MANDIANT"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-13",
+      "author": "Henry Reed",
+      "change": "Initial NDR network ABIOC card — low-and-slow jittered C2 beacon behavioral anomaly (periodicity + rare-destination + non-standard-port deviation from learned host egress baseline), two ABIOCs stitched by CR-NDR-0008. Backs scenario SIM-NDR-008."
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+title: "Sign-In Behavioral Anomaly on a Learned Identity Baseline \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1110.004) \u2014 ITDR-009 Sign-In Auth-Velocity and New-ASN Deviation from Learned Identity Baseline"
+id: ttp-2026-0099-abioc-01
+status: experimental
+description: |
+  A user whose learned Cortex sign-in profile is a narrow, stable set of source ASNs at a human auth cadence suddenly authenticates successfully from an autonomous system absent from the baseline, at a velocity the account never exhibits. Every credential is valid and no single IP is a known-bad IOC; the ABIOC fires on the ASN-and-velocity deviation from the account's learned behavior, anchored to the valid-account causality chain rather than to any static indicator.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = okta_sso
+    | filter _time > to_timestamp(current_time() - 1800)
+    | filter eventType = "user.session.start" and auth_outcome = "SUCCESS"
+    | comp count() as success_count, count_distinct(src_asn) as distinct_asns, values(src_asn) as asns, earliest(_time) as first_seen, latest(_time) as last_seen by actor_effective_username
+    | alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)
+    | filter distinct_asns >= 2 and success_count >= 5 and window_minutes <= 60
+    | fields actor_effective_username, success_count, distinct_asns, asns, window_minutes, first_seen, last_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+    - attack.t1110.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Sign-In Behavioral Anomaly on a Learned Identity Baseline \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078.004 / T1110.004) \u2014 ITDR-009 Impossible-Travel Geo-Velocity Deviation from Learned Sign-In Baseline"
+id: ttp-2026-0099-abioc-02
+status: experimental
+description: |
+  The same user succeeds at two sign-ins from geographically distant locations inside a travel-impossibility window, deviating from the single-region geography Cortex learned for the account. The credentials are valid and each session in isolation is benign; the ABIOC fires on the geo-velocity deviation from the learned sign-in profile, anchored to the session pair spawned by the same stolen-credential intrusion.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter _time > to_timestamp(current_time() - 1800)
+    | filter auth_outcome = "SUCCESS"
+    | comp count_distinct(src_geo_country) as geo_count, count_distinct(src_asn) as asn_count, values(src_geo_city) as cities, earliest(_time) as first_seen, latest(_time) as last_seen by user_name
+    | alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)
+    | filter geo_count >= 2 and window_minutes <= 300
+    | sort desc geo_count
+    | fields user_name, geo_count, asn_count, cities, window_minutes, first_seen, last_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+    - attack.t1539
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

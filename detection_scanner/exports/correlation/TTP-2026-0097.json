@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1486",
+    "T1490",
+    "T1083"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(EDR-011 Anomalous Pre-Encryption File-Modification Burst Deviating from Host Baseline) AND ABIOC(EDR-011 Recovery-Inhibition Snapshot Deletion Deviating from Host Baseline) \u2014 fuses the two auto-tuned behavioral deviations on the same host into a single pre-encryption-ransomware incident anchored to the enumeration -> mass-rewrite -> recovery-inhibition causality chain, catching the Akira encryptor before bulk encryption completes.",
+      "name": "Pre-Encryption Ransomware on Host \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-EDR-0011",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0097"
+}
