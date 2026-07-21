@@ -1,0 +1,88 @@
+# Attack surface management — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Attack surface management"
+operations:
+  - op_id: OP-ASSETS-GET-EXTERNAL-SERVICE
+    name: "Get External Service"
+    method: POST
+    path: "/public_api/v1/assets/get_external_service"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/8nuq8sfzvv5ft-get-external-service"
+  - op_id: OP-ASSETS-GET-EXTERNAL-SERVICES
+    name: "Get All Services"
+    method: POST
+    path: "/public_api/v1/assets/get_external_services"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/yv4dl9libk83r-get-all-services"
+  - op_id: OP-ASSETS-GET-ASSETS-INTERNET-EXPOSURE
+    name: "Get all Internet Exposures"
+    method: POST
+    path: "/public_api/v1/assets/get_assets_internet_exposure"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/rs6v6v1bp5yz7-get-all-internet-exposures"
+  - op_id: OP-ASSETS-GET-ASSET-INTERNET-EXPOSURE
+    name: "Get Internet Exposure"
+    method: POST
+    path: "/public_api/v1/assets/get_asset_internet_exposure"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/2bsjkufb13krj-get-internet-exposure"
+  - op_id: OP-ASSETS-GET-EXTERNAL-IP-ADDRESS-RANGES
+    name: "Get all External IP Address Ranges"
+    method: POST
+    path: "/public_api/v1/assets/get_external_ip_address_ranges"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/4hqamad5c9sx8-get-all-external-ip-address-ranges"
+  - op_id: OP-ASSETS-GET-EXTERNAL-IP-ADDRESS-RANGE
+    name: "Get External IP Address Range"
+    method: POST
+    path: "/public_api/v1/assets/get_external_ip_address_range"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/0pddi7pfvmywy-get-external-ip-address-range"
+  - op_id: OP-ASSETS-GET-VULNERABILITY-TESTS
+    name: "Get vulnerability tests"
+    method: POST
+    path: "/public_api/v1/assets/get_vulnerability_tests"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/80za5trcdioc7-get-vulnerability-tests"
+  - op_id: OP-ASSETS-BULK-UPDATE-VULNERABILITY-TESTS
+    name: "Bulk Update Vulnerability Tests"
+    method: POST
+    path: "/public_api/v1/assets/bulk_update_vulnerability_tests"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ex0fkjq6ddqqv-bulk-update-vulnerability-tests"
+  - op_id: OP-ASM-MANAGEMENT-UPLOAD-ASM-DATA
+    name: "Upload assets to the inventory"
+    method: POST
+    path: "/public_api/v1/asm_management/upload_asm_data"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/y4rq33rcr39cz-upload-assets-to-the-inventory"
+  - op_id: OP-ASSETS-GET-EXTERNAL-WEBSITE
+    name: "Get Website Details"
+    method: POST
+    path: "/public_api/v1/assets/get_external_website"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/d9eth6lamzn3a-get-website-details"
+  - op_id: OP-ASSETS-GET-EXTERNAL-WEBSITES
+    name: "Get all Websites"
+    method: POST
+    path: "/public_api/v1/assets/get_external_websites"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/dmibn6xk1gq57-get-all-websites"
+  - op_id: OP-ASSETS-GET-EXTERNAL-WEBSITES-LAST-EXTERNAL-ASSESSMENT
+    name: "Get Websites Last Assessment"
+    method: POST
+    path: "/public_api/v1/assets/get_external_websites/last_external_assessment"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/t7mn07osbjc4v-get-websites-last-assessment"
+  - op_id: OP-GET-ATTACK-SURFACE-RULES
+    name: "Get all Attack Surface Rules"
+    method: POST
+    path: "/public_api/v1/get_attack_surface_rules"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/5foznb1borwdz-get-all-attack-surface-rules"
+  - op_id: OP-ASM-MANAGEMENT-REMOVE-ASM-DATA
+    name: "Remove Assets"
+    method: POST
+    path: "/public_api/v1/asm_management/remove_asm_data"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/m2mh8rdtamd7j-remove-assets"

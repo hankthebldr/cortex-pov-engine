@@ -1,0 +1,22 @@
+# API Keys — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "API Keys"
+operations:
+  - op_id: OP-API-KEYS-GET-API-KEYS
+    name: "Get existing API Keys"
+    method: POST
+    path: "/public_api/v1/api_keys/get_api_keys"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/jw4z2kkdty75e-get-existing-api-keys"
+  - op_id: OP-API-KEYS-GENERATE
+    name: "Generate an API Key"
+    method: POST
+    path: "/public_api/v1/api_keys/generate"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/w9fmnq8q0rit1-generate-an-api-key"
+  - op_id: OP-API-KEYS-DELETE
+    name: "Delete API Keys"
+    method: POST
+    path: "/public_api/v1/api_keys/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/rn2mv5j2xofd4-delete-api-keys"

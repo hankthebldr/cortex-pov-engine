@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
     CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
 
+    # XSIAM API harness — master safety switches for the operation executor.
+    # Both OFF by default: the harness pulls freely from a configured tenant
+    # (read ops), but any write/delete operation additionally requires the
+    # matching flag here AND per-request consent, and defaults to dry-run.
+    # These are the "does not write to Cortex" invariant's off-switch — flip
+    # them only for a tenant you are explicitly authorized to mutate.
+    CORTEXSIM_XSIAM_ALLOW_WRITE: bool = False
+    CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE: bool = False
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
