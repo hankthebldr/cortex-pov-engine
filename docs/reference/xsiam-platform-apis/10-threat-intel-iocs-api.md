@@ -1,5 +1,13 @@
 # Threat Intelligence / IOCs API
 
+> **Paths confirmed (2026-07):** the authoritative operation catalog
+> ([`14-operation-catalog.md`](14-operation-catalog.md)) confirms the `api_name` is
+> **`indicators`** and resolves the family: **Get Indicators** `POST /public_api/v1/indicators/get`
+> (the "list IOCs" read *does* exist), **Insert/update** `.../indicators/insert`, **Delete**
+> `.../indicators/delete`, and the simple-indicator uploads `.../indicators/insert_csv` and
+> `.../indicators/insert_jsons`. The `⚠ verify` notes below on call existence/paths are resolved
+> by the catalog; nested field shapes still warrant a live-tenant check.
+>
 > Covers the indicator/IOC-management family (`api_name` is **`indicators`** — ⚠ verify: some
 > tenants/clients expose it as **`iocs`**). This family is **chiefly for UPLOADING IOCs (PUSH)** —
 > seeding a tenant's threat-intel store with hashes, IPs, domains, and filenames plus their

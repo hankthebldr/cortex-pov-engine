@@ -1,0 +1,22 @@
+# Correlation Rules — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Correlation Rules"
+operations:
+  - op_id: OP-CORRELATIONS-GET
+    name: "Get Correlation Rules"
+    method: POST
+    path: "/public_api/v1/correlations/get"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/8zu0di9ad9nwm-get-correlation-rules"
+  - op_id: OP-CORRELATIONS-INSERT
+    name: "Insert or update Correlation Rules"
+    method: POST
+    path: "/public_api/v1/correlations/insert"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/dqsouie24u615-insert-or-update-correlation-rules"
+  - op_id: OP-CORRELATIONS-DELETE
+    name: "Delete Correlation Rules"
+    method: POST
+    path: "/public_api/v1/correlations/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/78wvp0dby10uz-delete-correlation-rules"

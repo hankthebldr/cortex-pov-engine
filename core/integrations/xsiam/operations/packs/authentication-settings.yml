@@ -1,0 +1,34 @@
+# Authentication settings — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Authentication settings"
+operations:
+  - op_id: OP-AUTHENTICATION-SETTINGS-CREATE
+    name: "Create authentication settings for IdP SSO or metadata URL"
+    method: POST
+    path: "/public_api/v1/authentication-settings/create"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/5l3oodszqi37p-create-authentication-settings-for-id-p-sso-or-metadata-url"
+  - op_id: OP-AUTHENTICATION-SETTINGS-UPDATE
+    name: "Update authentication settings"
+    method: POST
+    path: "/public_api/v1/authentication-settings/update"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ecvad2y47sogk-update-authentication-settings"
+  - op_id: OP-AUTHENTICATION-SETTINGS-DELETE
+    name: "Delete authentication settings by domain"
+    method: POST
+    path: "/public_api/v1/authentication-settings/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/gmpgtevk3baqr-delete-authentication-settings-by-domain"
+  - op_id: OP-AUTHENTICATION-SETTINGS-GET-SETTINGS
+    name: "Get authentication settings for all configured domains"
+    method: POST
+    path: "/public_api/v1/authentication-settings/get/settings"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/nhqz0tta8z99m-get-authentication-settings-for-all-configured-domains"
+  - op_id: OP-AUTHENTICATION-SETTINGS-GET-METADATA
+    name: "Get IdP metadata"
+    method: POST
+    path: "/public_api/v1/authentication-settings/get/metadata"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ex29erdded5z7-get-id-p-metadata"

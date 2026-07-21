@@ -1,0 +1,34 @@
+# Asset inventory — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Asset inventory"
+operations:
+  - op_id: OP-ASSETS
+    name: "Get all or filtered assets"
+    method: POST
+    path: "/public_api/v1/assets"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/fed2351a8c999-get-all-or-filtered-assets"
+  - op_id: OP-ASSETS-ID
+    name: "Get asset by ID"
+    method: GET
+    path: "/public_api/v1/assets/{id}"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/fveqneo44ui9b-get-asset-by-id"
+  - op_id: OP-ASSETS-ID-RAW-FIELDS
+    name: "Get raw fields of asset by ID"
+    method: GET
+    path: "/public_api/v1/assets/{id}/raw_fields"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/558aa6d5460af-get-raw-fields-of-asset-by-id"
+  - op_id: OP-ASSETS-SCHEMA
+    name: "Get schema of asset inventory"
+    method: GET
+    path: "/public_api/v1/assets/schema"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/c3acd957a0efc-get-schema-of-asset-inventory"
+  - op_id: OP-ASSETS-ENUM-FIELD-NAME
+    name: "Get enum values of specified field"
+    method: GET
+    path: "/public_api/v1/assets/enum/{field_name}"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/f9605d8505dd4-get-enum-values-of-specified-field"

@@ -1,0 +1,16 @@
+# Indicator rules — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Indicator rules"
+operations:
+  - op_id: OP-INDICATORS-INSERT-CSV
+    name: "Insert Simple Indicators, CSV"
+    method: POST
+    path: "/public_api/v1/indicators/insert_csv"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/2vloefum4wu9r-insert-simple-indicators-csv"
+  - op_id: OP-INDICATORS-INSERT-JSONS
+    name: "Insert Simple Indicators, JSON"
+    method: POST
+    path: "/public_api/v1/indicators/insert_jsons"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ndxpbus7azvf0-insert-simple-indicators-json"

@@ -1,9 +1,17 @@
 # Cortex XSIAM Platform APIs — Engineering Vault
 
-Reference documentation for the **Cortex XSIAM Platform APIs**, written to support building
-CortexSim's next feature: a **read-only API harness** that lets the POV engine make opt-in
-calls into a registered XSIAM tenant and pull incidents, alerts, XQL results, endpoint state,
-audit logs, and health/metrics.
+Reference documentation for the **Cortex XSIAM Platform APIs**, backing CortexSim's
+**API harness**: a declarative catalog of every Platform API operation that the POV engine
+can invoke against a registered XSIAM tenant to pull incidents, alerts, XQL results, endpoint
+state, audit logs, health/metrics — and, where explicitly authorized, act on the tenant.
+
+> **Implemented.** The harness ships as `core/integrations/xsiam/operations/` (a 116-operation
+> catalog mirroring the Tool Adapter Framework) plus the `/api/xsiam/operations*` and
+> `POST /api/xsiam/tenants/{name}/operations/{op_id}` endpoints. Reads run live; **write and
+> destructive ops are dry-run by default and gated** by a global off-switch
+> (`CORTEXSIM_XSIAM_ALLOW_WRITE` / `..._DESTRUCTIVE`) plus per-request consent. See
+> [`14-operation-catalog.md`](14-operation-catalog.md) for the full index and
+> [`99-harness-design-notes.md`](99-harness-design-notes.md) for the architecture.
 
 > **Upstream source:** [Cortex XSIAM Platform APIs](https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM-Platform-APIs/Cortex-XSIAM-Platform-APIs)
 > · interactive mirror on [Stoplight](https://cortex-panw.stoplight.io/docs/cortex-xdr/).
@@ -40,6 +48,7 @@ audit logs, and health/metrics.
 | [11](11-distributions-assets-api.md) | Distributions / device control / assets | `distributions`/`device_control` | ✅ some reads (prefer XQL for assets) |
 | [12](12-data-ingestion-api.md) | Data ingestion (push) | collector / `alerts` | ⚠ reference-only — **do not implement** |
 | [13](13-healthcheck-metrics.md) | Health & metrics | `healthcheck` + `xql` | ✅ read — **Phase-9 track** |
+| [14](14-operation-catalog.md) | **Operation catalog (all 116 ops)** | every family | authoritative index driving the harness |
 
 ## The one-paragraph model
 

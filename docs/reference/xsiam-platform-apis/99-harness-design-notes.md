@@ -1,9 +1,33 @@
 # Harness Design Notes — Consuming the XSIAM Platform APIs from CortexSim
 
-> How the POV engine's **read-only API harness** should consume everything in this vault.
-> This page ties the external API surface to the code that already exists in the repo
-> (`core/connectors/`, `core/security/credentials.py`) and to the Phase-9 design spec
+> How the POV engine's **API harness** consumes everything in this vault.
+> This page ties the external API surface to the code in the repo
+> (`core/integrations/xsiam/`, `core/connectors/`, `core/security/credentials.py`) and to the
+> Phase-9 design spec
 > [`docs/superpowers/specs/2026-06-01-xsiam-tenant-health-config-integration-design.md`](../../superpowers/specs/2026-06-01-xsiam-tenant-health-config-integration-design.md).
+
+## 0. Implemented architecture (what shipped)
+
+The harness is built as a declarative **operation catalog** mirroring the Tool Adapter
+Framework, driving a gated executor on the existing `XsiamClient`:
+
+| Layer | Path |
+|-------|------|
+| Operation schema (`op_id`, method, path, `access_class`, consent, `path_params`) | `core/integrations/xsiam/operations/schema.py` |
+| Loader (reject-and-log, never raises) | `core/integrations/xsiam/operations/loader.py` |
+| Singleton catalog (`catalog.load/find/all/list_for_*`) | `core/integrations/xsiam/operations/catalog.py` |
+| 116 operations in category-grouped YAML packs | `core/integrations/xsiam/operations/packs/*.yml` |
+| Generic transport `XsiamClient.request(method, path, json, params)` + advanced auth | `core/integrations/xsiam/client.py`, `auth.py` |
+| List / detail / **gated executor** endpoints | `core/api/xsiam.py` (`/operations`, `/operations/{id}`, `POST /tenants/{name}/operations/{id}`) |
+| Boot load + health component | `core/main.py` (lifespan 2c, `xsiam_operation_catalog`) |
+| Master off-switches | `core/config.py` (`CORTEXSIM_XSIAM_ALLOW_WRITE`, `..._DESTRUCTIVE`) |
+
+**Executor contract:** the request body is `{path_params, query, body, dry_run, consent}`.
+Reads run live. Write/destructive ops **default to dry-run** (return the composed request,
+send nothing); a live mutation requires the matching global flag **and** the matching
+consent key (`write_authorized` / `destructive_authorized`). The client sends `body` verbatim
+(never invents a payload) and unwraps `reply`. Both auth modes (standard + advanced-signed)
+are supported; tenant FQDNs accept both `.xdr.` and `.xsiam.` hosts.
 
 ---
 

@@ -1,5 +1,13 @@
 # Response Actions API
 
+> **Paths confirmed (2026-07):** the authoritative operation catalog
+> ([`14-operation-catalog.md`](14-operation-catalog.md)) resolves several markers that were
+> `⚠ verify` on this page: **Get Quarantine Status** is `POST /public_api/v1/quarantine/status`
+> (not `endpoints/get_quarantine_status`); **File Retrieval Details** is
+> `POST /public_api/v1/actions/file_retrieval_details`; **allow/block lists** are
+> `POST /public_api/v1/hash_exceptions/allowlist` and `.../hash_exceptions/blocklist` (the
+> `hash_exceptions` `api_name` is confirmed). Prefer the catalog paths where they differ below.
+>
 > Covers the response/remediation families — **file retrieval** (`endpoints`), **quarantine**
 > (`endpoints`), **block/allow lists** (`hash_exceptions`, ⚠ verify api_name), and **action
 > management** (`actions`). This is overwhelmingly a **WRITE / ACTION** surface: it isolates

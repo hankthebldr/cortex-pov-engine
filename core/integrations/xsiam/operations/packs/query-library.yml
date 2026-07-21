@@ -1,0 +1,22 @@
+# Query Library — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Query Library"
+operations:
+  - op_id: OP-XQL-LIBRARY-GET
+    name: "Get XQL Queries"
+    method: POST
+    path: "/public_api/xql_library/get"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/4bl2e1wi5yr3n-get-xql-queries"
+  - op_id: OP-XQL-LIBRARY-INSERT
+    name: "Insert or update XQL queries"
+    method: POST
+    path: "/public_api/xql_library/insert"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/y8yaywvxhsg76-insert-or-update-xql-queries"
+  - op_id: OP-XQL-LIBRARY-DELETE
+    name: "Delete XQL Queries"
+    method: POST
+    path: "/public_api/xql_library/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/drsuk452hzlex-delete-xql-queries"

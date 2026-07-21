@@ -115,6 +115,14 @@ async def lifespan(app: FastAPI):
     adapters_loaded = adapter_catalog.load(packs_dir)
     logger.info("Tool adapter catalog ready: %d adapter(s)", adapters_loaded)
 
+    # 2c. Load XSIAM API operation catalog (API harness). Declarative packs
+    #     describing every callable Cortex Platform API operation; same
+    #     reject-and-log, warn-not-fail policy as the adapter catalog.
+    from integrations.xsiam.operations.catalog import catalog as xsiam_op_catalog  # noqa: PLC0415
+    from integrations.xsiam.operations.loader import default_ops_dir  # noqa: PLC0415
+    ops_loaded = xsiam_op_catalog.load(default_ops_dir(settings.CORTEXSIM_BASE_DIR))
+    logger.info("XSIAM operation catalog ready: %d operation(s)", ops_loaded)
+
     async with _db_context() as db:
         loaded = await load_scenarios(scenarios_dir, db)
     logger.info("Scenarios loaded: %d scenario(s)", len(loaded))
@@ -360,6 +368,14 @@ async def _component_health() -> dict:
         components["adapter_catalog"] = {"status": "ok", "count": adapter_catalog.count()}
     except Exception as exc:  # noqa: BLE001
         components["adapter_catalog"] = {"status": "error", "detail": str(exc)}
+
+    # XSIAM API operation catalog.
+    try:
+        from integrations.xsiam.operations.catalog import catalog as xsiam_op_catalog  # noqa: PLC0415
+
+        components["xsiam_operation_catalog"] = {"status": "ok", "count": xsiam_op_catalog.count()}
+    except Exception as exc:  # noqa: BLE001
+        components["xsiam_operation_catalog"] = {"status": "error", "detail": str(exc)}
 
     # EAL simulator plugin registry.
     try:

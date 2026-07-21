@@ -1,0 +1,22 @@
+# IOCs — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "IOCs"
+operations:
+  - op_id: OP-INDICATORS-GET
+    name: "Get Indicators (IOCs)"
+    method: POST
+    path: "/public_api/v1/indicators/get"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/3n8jxnuxhy57s-get-indicators-io-cs"
+  - op_id: OP-INDICATORS-INSERT
+    name: "Insert or update IOCs"
+    method: POST
+    path: "/public_api/v1/indicators/insert"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/vmlrb0v0w8ext-insert-or-update-io-cs"
+  - op_id: OP-INDICATORS-DELETE
+    name: "Delete Indicators (IOCs)"
+    method: POST
+    path: "/public_api/v1/indicators/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/8k2z33znsby6w-delete-indicators-io-cs"

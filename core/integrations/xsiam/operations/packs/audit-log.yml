@@ -1,0 +1,16 @@
+# Audit log — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Audit log"
+operations:
+  - op_id: OP-AUDITS-MANAGEMENT-LOGS
+    name: "Get Audit Management Log"
+    method: POST
+    path: "/public_api/v1/audits/management_logs"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/fm9q36cnnrp1f-get-audit-management-log"
+  - op_id: OP-AUDITS-AGENTS-REPORTS
+    name: "Get Audit Agent Report"
+    method: POST
+    path: "/public_api/v1/audits/agents_reports"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/bj6uc1r6f4z9a-get-audit-agent-report"
