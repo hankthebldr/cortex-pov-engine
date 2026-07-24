@@ -1,0 +1,499 @@
+{
+  "id": "TTP-2026-0119",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:37:27+00:00",
+    "updated_at": "2026-07-24T01:37:27+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "actor-phantom-taurus",
+      "malware-net-star",
+      "web-shell",
+      "fileless",
+      "iis-backdoor",
+      "in-memory-dotnet",
+      "vector-web-shell",
+      "severity-high",
+      "endpoint"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "ASPX Web Shell Reflectively Loads a Fileless .NET IIS Backdoor into w3wp.exe (Phantom Taurus NET-STAR) (T1505.003 / T1620 / T1071.001)",
+    "summary": "An OutlookEN.aspx web shell decodes an embedded Base64-compressed .NET assembly (IIServerCore) directly into the running w3wp.exe IIS worker and invokes its Run method fileless. Inbound C2 is operator-driven request-response over cookies carrying a literal STAR delimiter, encoded Gzip -> AES-ECB/PKCS7 -> Base64 — no beacon-periodicity rule fires on it.",
+    "description": "Phantom Taurus's NET-STAR suite turns a public-facing IIS server into a fileless espionage foothold. The delivery artifact is an ASPX web shell (OutlookEN.aspx) written into the IIS web root; on first request it decodes an embedded Base64-compressed binary — the IIServerCore backdoor — and loads it straight into the memory of the w3wp.exe worker process via reflective .NET assembly loading, invoking the exported Run method. IIServerCore then operates entirely in memory: it manages session state with HTTP cookies, handling two request shapes (an initial handshake to establish a C2 session, and subsequent command-execution requests that load and run additional .NET assemblies dynamically). Payloads and results travel a layered encoding chain — Gzip compression, then AES encryption in ECB mode with PKCS7 padding, then Base64 — and the literal string 'STAR' is used as a field delimiter inside the Base64 blobs. The backdoor exposes an 18-command surface (fileExist, listDir, createDir, renameDir, fileRead, deleteFile, createFile, changeLastModified, code_self, code_pid, run_code, addshell, bypassPrecompiledApp, listShell, removeShell, executeSQLQuery, ExecuteNonQuery, Dictionary), including database access via executeSQLQuery/ExecuteNonQuery and anti-forensic timestomping via changeLastModified (matching legitimate file timestamps; compile timestamps forged to random future dates). Two AssemblyExecuter helper modules run .NET assemblies in memory without touching disk — V2 dynamically applies AMSI and ETW bypass. Because every stage after the initial .aspx write is fileless and the C2 is operator-paced request-response, no static beacon-periodicity or single known-bad-command rule reliably catches it. This card anchors detection on the durable behavioural seams the technique CANNOT hide: an IIS worker process (w3wp.exe) spawning command interpreters, unbacked/reflective .NET module loads inside w3wp.exe, AMSI/CLR module co-loads indicative of in-memory assembly execution, .aspx writes into the web root, timestomp events on web-root files, and cookie-borne STAR-delimited encoded C2 on the wire. Five BIOCs cover those seams, two validation XQLs confirm the command lineage and the cookie C2, and a correlation rule stitches web-shell install -> reflective load -> STAR cookie C2 into one NET-STAR incident anchored to the w3wp.exe process instance. Published SHA256 hashes for IIServerCore and both AssemblyExecuter versions, the OutlookEN.aspx / ServerCore.dll filenames, and the leaked PDB build paths ship as atomic IOCs.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Phantom Taurus",
+        "aliases": []
+      }
+    ],
+    "campaigns": [
+      "NET-STAR fileless IIS-backdoor espionage against government, diplomatic, and telecommunications IIS servers"
+    ],
+    "malware_families": [
+      {
+        "name": "NET-STAR"
+      },
+      {
+        "name": "IIServerCore"
+      },
+      {
+        "name": "AssemblyExecuter"
+      }
+    ],
+    "industries_targeted": [
+      "government",
+      "telecommunications"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1505",
+        "subtechnique_id": "T1505.003",
+        "name": "Server Software Component: Web Shell",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1620",
+        "name": "Reflective Code Loading",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1027",
+        "name": "Obfuscated Files or Information",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1132",
+        "subtechnique_id": "T1132.001",
+        "name": "Data Encoding: Standard Encoding",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1573",
+        "subtechnique_id": "T1573.001",
+        "name": "Encrypted Channel: Symmetric Cryptography",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.006",
+        "name": "Indicator Removal: Timestomp",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1562",
+        "subtechnique_id": "T1562.001",
+        "name": "Impair Defenses: Disable or Modify Tools",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Process: Process Creation",
+      "File: File Creation",
+      "Module: Module Load",
+      "Command: Command Execution",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-014 — ASPX web shell reflectively loads a fileless .NET IIS backdoor into w3wp.exe (Phantom Taurus NET-STAR). Non-destructive SAFE-MODE model: benign .aspx marker, representative w3wp-style command lineage, forged file timestamp on our own marker, and a loopback STAR-delimited cookie request. No real backdoor assembly is loaded and no data is read, written, or exfiltrated.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the IIS host so per-process, module-load, file, and network telemetry reaches xdr_data and network_story.",
+        "check_command": "sc query cortex || ls /opt/traps"
+      },
+      {
+        "description": "An IIS-style web root exists (or a stand-in directory) into which the benign OutlookEN.aspx marker is written.",
+        "check_command": "test -d \"${WEBROOT:-/var/www/html}\" || echo missing-webroot"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Non-destructive SAFE-MODE model of NET-STAR. No real IIServerCore assembly is\n# loaded into w3wp.exe, no database is touched, and nothing is exfiltrated.\nset -euo pipefail\nWEBROOT=\"${WEBROOT:-/var/www/html}\"\nC2_HOST=\"${C2_HOST:-127.0.0.1}\"\nmkdir -p \"$WEBROOT\"\n# (1) Web-shell delivery artifact — benign marker, NOT a working shell.\nprintf '%s\\n' '<%-- CortexSim SAFE-MODE marker for SIM-EDR-014 / NET-STAR OutlookEN.aspx. No executable web-shell logic. --%>' > \"$WEBROOT/OutlookEN.aspx\"\n# (2) Representative post-exploitation command lineage a web shell operator runs.\nfor c in 'whoami' 'hostname' 'id'; do sh -c \"$c\" >/dev/null 2>&1 || true; done\n# (3) Anti-forensic timestomp — forge the marker's mtime to a fixed past date (our own file only).\ntouch -t 202001010000.00 \"$WEBROOT/OutlookEN.aspx\" 2>/dev/null || true\n# (4) STAR-delimited cookie C2 request to an authorised loopback host (encoded-blob shape only).\ncurl -s --max-time 5 -H 'Cookie: sid=R2ppcA==STARQUJD==STARUEtDUzc=' \"http://${C2_HOST}/owa/OutlookEN.aspx\" -o /dev/null 2>/dev/null || true\necho '[CortexSim] SIM-EDR-014 NET-STAR SAFE-MODE model complete.'\n",
+      "input_variables": [
+        {
+          "name": "WEBROOT",
+          "type": "string",
+          "default": "/var/www/html",
+          "description": "Web-root directory the benign OutlookEN.aspx marker is written into (stands in for inetpub\\wwwroot on a Windows IIS lab host)."
+        },
+        {
+          "name": "C2_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised loopback/internal host the STAR-delimited cookie request reaches. Never a real adversary endpoint."
+        }
+      ],
+      "timeout_seconds": 420
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "OutlookEN.aspx web-shell artifact written into the IIS web root.",
+        "expected_value": "action_file_name = \"OutlookEN.aspx\" and action_file_path contains \"wwwroot\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "IIS worker process (w3wp.exe) parenting a command interpreter — web-shell command execution lineage.",
+        "expected_value": "actor_process_image_name = \"w3wp.exe\" and action_process_image_name in (cmd.exe, powershell.exe, whoami.exe)"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Inbound HTTP request whose Cookie header carries the STAR field delimiter inside a Base64 blob.",
+        "expected_value": "request_cookies contains \"STAR\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f \"${WEBROOT:-/var/www/html}/OutlookEN.aspx\"; echo '[CortexSim] SIM-EDR-014 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "eeed5530fa1cdeb69398dc058aaa01160eab15d4dcdcd6cb841240987db284dc",
+        "context": "IIServerCore backdoor (ServerCore.dll) — the fileless .NET assembly reflectively loaded into w3wp.exe.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "3e55bf8ecaeec65871e6fca4cb2d4ff2586f83a20c12977858348492d2d0dec4",
+        "context": "AssemblyExecuter V1 (ExecuteAssembly.dll) — in-memory .NET assembly runner via Assembly.Load().",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "afcb6289a4ef48bf23bab16c0266f765fab8353d5e1b673bd6e39b315f83676e",
+        "context": "AssemblyExecuter V2 — in-memory .NET runner with AMSI and ETW bypass.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "b76e243cf1886bd0e2357cbc7e1d2812c2c0ecc5068e61d681e0d5cff5b8e038",
+        "context": "AssemblyExecuter V2 (alternate build) — in-memory .NET runner with AMSI and ETW bypass.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "OutlookEN.aspx",
+        "context": "ASPX web shell delivery artifact that decodes and reflectively loads IIServerCore into w3wp.exe."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "ServerCore.dll",
+        "context": "On-disk name of the IIServerCore backdoor assembly (typically embedded Base64 in the web shell, but named ServerCore.dll in the build)."
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "C:\\Users\\Administrator\\Desktop\\tmp\\NETstarshard\\ServerCore\\obj\\Release\\ServerCore.pdb",
+        "context": "PDB build path leaked in the IIServerCore assembly — hunt for this string in memory/module metadata."
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "C:\\Users\\admin\\Desktop\\starshard\\NETstarshard\\ExecuteAssembly\\obj\\Debug\\ExecuteAssembly.pdb",
+        "context": "PDB build path leaked in the AssemblyExecuter assembly — hunt for this string in memory/module metadata."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "IIS Worker Process w3wp.exe Spawns a Command Interpreter",
+        "description": "The IIS worker process w3wp.exe should never parent an interactive command interpreter under normal operation. When it does, it is the durable, non-fileless seam of a web shell running operator commands. Fires on w3wp.exe as the causality actor spawning cmd/powershell/net/whoami/sqlcmd/csc — the command lineage NET-STAR's run_code / executeSQLQuery / bypassPrecompiledApp commands produce even though the backdoor assembly itself is in memory.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"w3wp.exe\" or actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"net.exe\", \"net1.exe\", \"whoami.exe\", \"sqlcmd.exe\", \"csc.exe\")\n| fields agent_hostname, actor_process_image_name, action_process_image_name, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1505.003"
+        ]
+      },
+      {
+        "name": "OutlookEN ASPX Web Shell Written to IIS Web Root",
+        "description": "Creation of an .aspx file (OutlookEN.aspx and its kin) under the IIS web root by the worker process or an interactive shell — the on-disk delivery artifact that seeds the fileless chain. This is the one file NET-STAR must drop before everything else goes memory-resident, so it is the earliest reliable catch.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_extension = \"aspx\" or action_file_name contains \".aspx\"\n| filter action_file_path contains \"inetpub\" or action_file_path contains \"wwwroot\"\n| filter actor_process_image_name in (\"w3wp.exe\", \"cmd.exe\", \"powershell.exe\", \"pwsh.exe\")\n| fields agent_hostname, actor_process_image_name, action_file_name, action_file_path",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1505.003",
+          "T1027"
+        ]
+      },
+      {
+        "name": "Reflective Fileless .NET Assembly Load in IIS Worker Process",
+        "description": "IIServerCore and the AssemblyExecuter helpers are reflectively loaded into w3wp.exe from memory, so the loaded module has no backing file on disk (unsigned / no module path) or carries the NET-STAR build names. Fires on module-load events in w3wp.exe whose module is unbacked or named ServerCore/ExecuteAssembly/AssemblyExecuter — the reflective code-loading seam.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD\n| filter actor_process_image_name = \"w3wp.exe\"\n| filter action_module_path = \"\" or action_module_signature_status = \"UNSIGNED\" or action_module_name contains \"ServerCore\" or action_module_name contains \"ExecuteAssembly\" or action_module_name contains \"AssemblyExecuter\"\n| fields agent_hostname, actor_process_image_name, action_module_name, action_module_path, action_module_signature_status",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1620",
+          "T1027"
+        ]
+      },
+      {
+        "name": "AMSI and CLR In-Memory Execution Modules Co-Loaded in IIS Worker",
+        "description": "In-memory .NET execution inside w3wp.exe co-loads the CLR (clr.dll / clrjit.dll) alongside amsi.dll, and AssemblyExecuter V2 patches AMSI/ETW to blind the scanner. An IIS worker that suddenly hosts the CLR plus amsi.dll is the fingerprint of reflectively executed .NET where none belongs. Fires when w3wp.exe loads two or more of these execution/evasion modules within one process instance.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD\n| filter actor_process_image_name = \"w3wp.exe\"\n| filter action_module_name in (\"amsi.dll\", \"clr.dll\", \"clrjit.dll\", \"mscoree.dll\", \"coreclr.dll\")\n| comp count_distinct(action_module_name) as exec_modules by agent_hostname, actor_process_instance_id\n| filter exec_modules >= 2\n| fields agent_hostname, actor_process_instance_id, exec_modules",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1562.001",
+          "T1620"
+        ]
+      },
+      {
+        "name": "ASPX Web Root File Timestomped via changeLastModified",
+        "description": "NET-STAR's changeLastModified command forges file modification times on web-root artifacts to match legitimate neighbours, and forges compile timestamps to random future dates. Fires when a web-root file's modification time predates its creation time or is set in the future — the timestomp anti-forensic seam.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_TIMES_MODIFIED\n| filter action_file_extension = \"aspx\" or action_file_path contains \"wwwroot\" or action_file_path contains \"inetpub\"\n| filter action_file_modification_time < action_file_creation_time or action_file_modification_time > current_time()\n| fields agent_hostname, actor_process_image_name, action_file_name, action_file_path, action_file_creation_time, action_file_modification_time",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1070.006"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Web Shell Command Execution Lineage Under w3wp.exe",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"w3wp.exe\" or actor_process_image_name = \"w3wp.exe\"\n| comp count() as child_processes by agent_hostname, action_process_image_name\n| sort desc child_processes\n| fields agent_hostname, action_process_image_name, child_processes",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Cookie-Based STAR-Delimited C2 to IIS Host",
+        "query": "dataset = network_story\n| filter _time > to_timestamp(current_time() - 900)\n| filter request_cookies contains \"STAR\" or request_headers contains \"STAR\"\n| filter uri_path contains \".aspx\" or app_id_transitions contains \"web-browsing\"\n| comp count() as star_requests by agent_hostname, dst_ip, dst_port\n| filter star_requests >= 1\n| fields agent_hostname, dst_ip, dst_port, star_requests",
+        "expected_rows_min": 1,
+        "dataset": "network_story"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "NET-STAR Fileless IIS Backdoor — Web Shell to STAR Cookie C2 Stitch",
+        "rule_id": "CR-EDR-0014",
+        "logic": "Fires when BIOC(OutlookEN ASPX Web Shell Written to IIS Web Root) or BIOC(IIS Worker Process w3wp.exe Spawns a Command Interpreter) is followed on the same agent_hostname by BIOC(Reflective Fileless .NET Assembly Load in IIS Worker Process) and by XQL(Cookie-Based STAR-Delimited C2 to IIS Host) within a 30-minute window. Stitches web-shell install, in-memory .NET load, AMSI/CLR co-load, and STAR-delimited cookie C2 into a single NET-STAR IIS-backdoor incident anchored to the w3wp.exe process instance."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XDR Web Shell Protection Module",
+        "validated": true,
+        "note": "Backed on this card by BIOC 'OutlookEN ASPX Web Shell Written to IIS Web Root' and BIOC 'IIS Worker Process w3wp.exe Spawns a Command Interpreter'; the module detected and prevented the NET-STAR loader in Unit 42's reporting."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "TBD-XDR-001",
+          "TBD-XDR-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START | filter causality_actor_process_image_name = \"w3wp.exe\" | filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"whoami.exe\") | fields agent_hostname, action_process_image_name, action_process_image_command_line"
+      },
+      {
+        "module": "advanced-wildfire",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-WILDFIRE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Search WildFire submissions/verdicts for the NET-STAR sample hashes eeed5530fa1cdeb69398dc058aaa01160eab15d4dcdcd6cb841240987db284dc (IIServerCore), 3e55bf8ecaeec65871e6fca4cb2d4ff2586f83a20c12977858348492d2d0dec4 and afcb6289a4ef48bf23bab16c0266f765fab8353d5e1b673bd6e39b315f83676e (AssemblyExecuter) — confirm a malicious verdict on the extracted ServerCore.dll / ExecuteAssembly.dll assemblies."
+      },
+      {
+        "module": "advanced-threat-prevention",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ATP-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "In the NGFW/ATP threat log, filter HTTP sessions to the IIS host whose Cookie header carries the literal 'STAR' delimiter inside a Base64 blob (Gzip -> AES-ECB/PKCS7 -> Base64 encoded C2) — the operator-driven request-response channel that carries no beacon periodicity."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-EDR-014",
+        "name": "Fileless IIS Backdoor Detection — ASPX Web Shell to In-Memory .NET (NET-STAR)",
+        "description": "Prove Cortex catches a fileless IIS backdoor that no beacon-periodicity or single known-bad-command rule fires on: an ASPX web shell reflectively loads IIServerCore into w3wp.exe and runs an operator-paced, STAR-delimited cookie C2. Detection anchors on the behavioural seams the technique cannot hide — the web-shell file write, w3wp.exe command lineage, reflective/unbacked module loads, AMSI/CLR co-load, timestomping, and STAR cookie traffic — stitched into one incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-EDR-014A",
+            "objective": "The OutlookEN.aspx web-shell drop and the w3wp.exe command lineage raise the two web-shell BIOCs and the validation XQL.",
+            "preconditions": [
+              "IIS host with the Cortex agent installed.",
+              "A web root the scenario can write the benign OutlookEN.aspx marker into."
+            ],
+            "steps": [
+              "Write the OutlookEN.aspx marker into the web root.",
+              "Run the representative w3wp-style post-exploitation commands.",
+              "Observe the file-write BIOC, the w3wp-spawns-interpreter BIOC, and the command-lineage XQL fire."
+            ],
+            "success_criteria": [
+              "BIOC `OutlookEN ASPX Web Shell Written to IIS Web Root` fires on the .aspx write.",
+              "BIOC `IIS Worker Process w3wp.exe Spawns a Command Interpreter` fires on the command lineage.",
+              "XQL `Web Shell Command Execution Lineage Under w3wp.exe` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-EDR-014B",
+            "objective": "The reflective in-memory .NET load and AMSI/CLR co-load raise the fileless-execution BIOCs.",
+            "preconditions": [
+              "IIS host with the Cortex agent installed and module-load telemetry flowing to xdr_data."
+            ],
+            "steps": [
+              "Reflectively load the in-memory .NET assembly into the worker process (represented in SAFE mode).",
+              "Observe the reflective-load and AMSI/CLR co-load BIOCs fire."
+            ],
+            "success_criteria": [
+              "BIOC `Reflective Fileless .NET Assembly Load in IIS Worker Process` fires on the unbacked/named module load.",
+              "BIOC `AMSI and CLR In-Memory Execution Modules Co-Loaded in IIS Worker` fires when w3wp.exe co-loads the CLR with amsi.dll."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "test_case_id": "TC-EDR-014C",
+            "objective": "The STAR-delimited cookie C2 is surfaced and the correlation stitches the chain into one incident.",
+            "preconditions": [
+              "Network telemetry (network_story) flowing so the cookie C2 request is observable."
+            ],
+            "steps": [
+              "Issue the STAR-delimited cookie request to the authorised host.",
+              "Observe the cookie-C2 XQL return rows and the correlation raise one incident."
+            ],
+            "success_criteria": [
+              "XQL `Cookie-Based STAR-Delimited C2 to IIS Host` returns >= 1 row.",
+              "Correlation `CR-EDR-0014` raises exactly one stitched NET-STAR IIS-backdoor incident."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Run IIS application pools under least-privilege identities with no interactive-logon or command-shell rights, so a web shell cannot spawn cmd/powershell.",
+      "Enable AMSI for .NET / ASP.NET and block unsigned in-memory assembly execution; alert on AMSI/ETW tampering inside w3wp.exe.",
+      "File-integrity-monitor the IIS web root (inetpub\\wwwroot) and block write access for the worker identity outside sanctioned deployment pipelines.",
+      "Egress-filter the web tier so an IIS server cannot serve operator-paced cookie C2 to arbitrary destinations."
+    ],
+    "detection_engineering": [
+      "Alert on w3wp.exe (or any IIS worker) parenting a command interpreter or LOLBin — the durable web-shell seam.",
+      "Alert on reflective/unbacked .NET module loads inside w3wp.exe and on the CLR being co-loaded with amsi.dll where no managed app is deployed.",
+      "Hunt for .aspx writes into the web root and for timestomp events (modify-time earlier than create-time, or future-dated) on web-root files.",
+      "Hunt HTTP cookies carrying the literal 'STAR' delimiter inside Base64 blobs, and network content matching the Gzip -> AES-ECB/PKCS7 -> Base64 encoding shape."
+    ],
+    "response_playbook": "XSOAR-PB-FilelessIISWebShellTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Phantom Taurus: A New Chinese Nexus APT and its Novel NET-STAR Malware Suite",
+      "url": "https://unit42.paloaltonetworks.com/phantom-taurus/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1505.003 — Server Software Component: Web Shell",
+      "url": "https://attack.mitre.org/techniques/T1505/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1620 — Reflective Code Loading",
+      "url": "https://attack.mitre.org/techniques/T1620/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XDR — Web Shell Protection and In-Memory Threat Detection",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

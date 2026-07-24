@@ -1,0 +1,412 @@
+{
+  "id": "TTP-2026-0118",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:37:18+00:00",
+    "updated_at": "2026-07-24T01:37:18+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-authentication-bypass",
+      "cve-2026-0257",
+      "globalprotect",
+      "prisma-access",
+      "vpn",
+      "bioc",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "GlobalProtect Authentication Bypass — Fully Connected VPN Session with No Preceding Authentication (PAN-OS CVE-2026-0257)",
+    "summary": "PAN-OS CVE-2026-0257 lets an unauthenticated attacker bypass GlobalProtect portal/gateway auth and establish a VPN tunnel. The tell is a gateway-connected success with no preceding authentication. A durable BIOC and correlation rule key on that missing auth event; fingerprint BIOCs match the public PoC's placeholder MACs, template hostnames, and known exploitation IPs.",
+    "description": "Unit 42 reported active exploitation of PAN-OS CVE-2026-0257, an authentication bypass in the GlobalProtect portal and gateway components that allows unauthorized attackers to circumvent security controls and initiate VPN connections. In observed telemetry only a small portion of probed devices actually established VPN sessions, each surfacing as a successful gateway-connected event with no upstream successful authentication — the behavioral core of the bypass. The public proof-of-concept ships hard-coded client configuration that leaves a distinctive fingerprint in GlobalProtect logs: placeholder MAC addresses (aa:bb:cc:dd:ee:ff, 00:11:22:33:44:55), template machine names (WINDOWS-LAPTOP-001, DESKTOP-GP01, GP-CLIENT), a fixed endpoint_os_version string ('Microsoft Windows 10 Pro 64-bit'), and an empty source_user_info.domain field. Unit 42 additionally published nine pre-PoC-release source IPs used by the attacker to probe and connect. This card exercises the ITDR/identity plane against that behavior: a placeholder-fingerprint BIOC matches the PoC's placeholder MAC/hostname, a durable behavioral BIOC keys on a gateway-connected success with no preceding portal/gateway authentication event (fingerprint-independent), and an infrastructure BIOC matches the known exploitation IPs; a validation XQL confirms the fingerprinted session is observable, a hunt XQL implements Unit 42's guidance to sweep GlobalProtect logs for successful gateway-connected events from the published IPs, and a correlation rule (CR-ITDR-0012) stitches the behavioral and fingerprint BIOCs into the durable 'session-without-authentication' incident — a gateway-connected success with no preceding portal/gateway auth success within the session window — that keys on the bypass behavior rather than the mutable PoC placeholders. The published attacker IPs are carried as IOCs. Non-destructive by design: the simulation emits SAFE-MODE synthetic GlobalProtect log records to a local marker file to model the fingerprinted session shape; it never touches a real PAN-OS device or establishes a real tunnel.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Active exploitation of PAN-OS GlobalProtect CVE-2026-0257 (2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2026-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1190",
+        "name": "Exploit Public-Facing Application",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1133",
+        "name": "External Remote Services",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1556",
+        "name": "Modify Authentication Process",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Logon Session: Logon Session Creation",
+      "Application Log: Application Log Content",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ITDR-012 — GlobalProtect CVE-2026-0257 authentication-bypass session-shape emulation for Cortex ITDR/analytics validation.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "GlobalProtect portal/gateway logs from the PAN-OS firewall or Prisma Access are ingested into the XSIAM tenant (normalized into the panw_ngfw_globalprotect_raw dataset) so gateway-connected events are queryable.",
+        "check_command": "test -d /tmp/cortexsim-itdr-012 || mkdir -p /tmp/cortexsim-itdr-012"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE. Emit SAFE-MODE synthetic GlobalProtect gateway-connected\n# records that model the CVE-2026-0257 auth-bypass session shape. No real\n# PAN-OS device is touched and no VPN tunnel is established.\nset -euo pipefail\nMARKER_DIR=\"${MARKER_DIR:-/tmp/cortexsim-itdr-012}\"\nmkdir -p \"$MARKER_DIR\"\nLOG=\"$MARKER_DIR/globalprotect_raw.ndjson\"\n# (a) PoC placeholder fingerprint session (placeholder MAC + template hostname + fixed OS + empty domain, no preceding auth)\nprintf '%s\\n' '{\"log_type\":\"globalprotect\",\"event_id\":\"gateway-connected\",\"status\":\"success\",\"public_ip\":\"185.195.232.139\",\"machine_name\":\"WINDOWS-LAPTOP-001\",\"endpoint_mac\":\"aa:bb:cc:dd:ee:ff\",\"endpoint_os_version\":\"Microsoft Windows 10 Pro 64-bit\",\"source_user\":\"guest\",\"source_user_domain\":\"\",\"preceding_auth_event\":\"NONE\",\"note\":\"SAFE-MODE synthetic CVE-2026-0257 PoC fingerprint session\"}' >> \"$LOG\"\n# (b) Session from known pre-PoC exploitation infrastructure\nprintf '%s\\n' '{\"log_type\":\"globalprotect\",\"event_id\":\"gateway-connected\",\"status\":\"success\",\"public_ip\":\"146.19.216.119\",\"machine_name\":\"DESKTOP-GP01\",\"endpoint_mac\":\"00:11:22:33:44:55\",\"endpoint_os_version\":\"Microsoft Windows 10 Pro 64-bit\",\"source_user\":\"\",\"source_user_domain\":\"\",\"preceding_auth_event\":\"NONE\",\"note\":\"SAFE-MODE synthetic CVE-2026-0257 exploitation-infra session\"}' >> \"$LOG\"\necho '[CortexSim] SIM-ITDR-012 synthetic GlobalProtect auth-bypass sessions emitted.'",
+      "input_variables": [
+        {
+          "name": "MARKER_DIR",
+          "type": "string",
+          "default": "/tmp/cortexsim-itdr-012",
+          "description": "Local directory the SAFE-MODE synthetic GlobalProtect log records are written to (models tenant ingestion; no real device is touched)."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "A local NDJSON marker file of synthetic GlobalProtect gateway-connected records carrying the CVE-2026-0257 PoC fingerprints, modeling the auth-bypass session shape.",
+        "expected_value": "/tmp/cortexsim-itdr-012/globalprotect_raw.ndjson"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-itdr-012; echo '[CortexSim] SIM-ITDR-012 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "23.128.228.6",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "104.207.144.154",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "146.19.216.119",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "146.19.216.120",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "146.19.216.125",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "179.43.172.213",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "185.195.232.139",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "198.12.106.60",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "202.144.192.47",
+        "context": "Pre-PoC-release CVE-2026-0257 GlobalProtect exploitation source IP (Unit 42).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "GlobalProtect Gateway-Connected Session with Placeholder PoC Client Fingerprint",
+        "description": "A successful GlobalProtect gateway-connected event whose client fingerprint matches the public CVE-2026-0257 PoC: one of the placeholder MAC addresses (aa:bb:cc:dd:ee:ff, 00:11:22:33:44:55) or one of the template machine names (WINDOWS-LAPTOP-001, DESKTOP-GP01, GP-CLIENT). A real endpoint never presents these values, so a match on an established tunnel is a high-confidence bypass indicator.",
+        "logic": "dataset = panw_ngfw_globalprotect_raw\n| filter log_type = \"globalprotect\" and event_id = \"gateway-connected\" and status = \"success\"\n| filter endpoint_mac in (\"aa:bb:cc:dd:ee:ff\", \"00:11:22:33:44:55\") or machine_name in (\"WINDOWS-LAPTOP-001\", \"DESKTOP-GP01\", \"GP-CLIENT\")\n| fields _time, public_ip, source_user, source_user_domain, machine_name, endpoint_mac, endpoint_os_version",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1190",
+          "T1556"
+        ],
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "GlobalProtect Gateway-Connected Success With No Preceding Authentication Event",
+        "description": "A successful GlobalProtect gateway-connected event with no preceding successful portal/gateway authentication for the same source — a fully established VPN tunnel whose upstream authentication step never occurred. This is the durable, fingerprint-independent behavioral core of the CVE-2026-0257 bypass: it keys on the missing authentication event rather than any mutable client attribute, so it still fires after an attacker rotates the placeholder MAC, template hostname, or OS string the fingerprint BIOC matches. On this corpus the missing-auth condition is carried as preceding_auth_event = \"NONE\"; against a live tenant, join gateway-connected successes against portal-auth/gateway-auth successes for the same source within the session window and keep the rows with no auth match.",
+        "logic": "dataset = panw_ngfw_globalprotect_raw\n| filter log_type = \"globalprotect\" and event_id = \"gateway-connected\" and status = \"success\"\n| filter preceding_auth_event = \"NONE\"\n| fields _time, public_ip, source_user, source_user_domain, machine_name, endpoint_mac, endpoint_os_version, preceding_auth_event",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1556"
+        ],
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "GlobalProtect Gateway Connection from Known CVE-2026-0257 Exploitation Infrastructure",
+        "description": "A successful GlobalProtect gateway-connected event whose public source IP matches one of the nine pre-PoC-release CVE-2026-0257 exploitation IPs Unit 42 published. Implements the vendor guidance to hunt GlobalProtect logs for successful gateway-connected events from the known attacker infrastructure.",
+        "logic": "dataset = panw_ngfw_globalprotect_raw\n| filter event_id = \"gateway-connected\" and status = \"success\"\n| filter public_ip in (\"23.128.228.6\", \"104.207.144.154\", \"146.19.216.119\", \"146.19.216.120\", \"146.19.216.125\", \"179.43.172.213\", \"185.195.232.139\", \"198.12.106.60\", \"202.144.192.47\")\n| fields _time, public_ip, source_user, source_user_domain, machine_name, endpoint_mac",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1190",
+          "T1133"
+        ],
+        "suppression_window_seconds": 0
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "GlobalProtect PoC Fingerprint Session Observed",
+        "query": "dataset = panw_ngfw_globalprotect_raw\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_id = \"gateway-connected\"\n| filter endpoint_mac in (\"aa:bb:cc:dd:ee:ff\", \"00:11:22:33:44:55\") or machine_name in (\"WINDOWS-LAPTOP-001\", \"DESKTOP-GP01\", \"GP-CLIENT\") or endpoint_os_version = \"Microsoft Windows 10 Pro 64-bit\"\n| comp count() as fingerprint_sessions by public_ip, machine_name, endpoint_mac\n| filter fingerprint_sessions >= 1\n| fields public_ip, machine_name, endpoint_mac, fingerprint_sessions",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_globalprotect_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Hunt GlobalProtect Gateway-Connected Events from CVE-2026-0257 Infrastructure",
+        "query": "dataset = panw_ngfw_globalprotect_raw\n| filter _time > to_timestamp(current_time() - 2592000)\n| filter event_id = \"gateway-connected\" and status = \"success\"\n| filter public_ip in (\"23.128.228.6\", \"104.207.144.154\", \"146.19.216.119\", \"146.19.216.120\", \"146.19.216.125\", \"179.43.172.213\", \"185.195.232.139\", \"198.12.106.60\", \"202.144.192.47\")\n| comp count() as connections by public_ip, source_user, machine_name\n| sort desc connections\n| fields public_ip, source_user, machine_name, connections",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_globalprotect_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "GlobalProtect Session Without Preceding Authentication — CVE-2026-0257 Auth-Bypass Stitch",
+        "rule_id": "CR-ITDR-0012",
+        "logic": "Fires when a GlobalProtect `event_id = \"gateway-connected\"` with `status = \"success\"` is observed for a given public_ip and machine_name with NO preceding successful `event_id = \"portal-auth\"` or `event_id = \"gateway-auth\"` for the same source within the prior 300 seconds — a fully connected VPN tunnel with no upstream authentication event, the behavioral core of the bypass. Stitches BIOC(GlobalProtect Gateway-Connected Session with Placeholder PoC Client Fingerprint) and BIOC(GlobalProtect Gateway-Connected Success With No Preceding Authentication Event) into one CVE-2026-0257 authentication-bypass incident. This rule is durable: both it and the no-preceding-authentication BIOC it stitches key on the missing authentication event, so they still fire after an attacker changes the placeholder MAC, hostname, or OS string that the fingerprint BIOC matches."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — GlobalProtect VPN session and identity anomaly profiling",
+        "validated": true,
+        "note": "Backed by CR-ITDR-0012 (session-without-authentication stitch) and the three GlobalProtect gateway-connected BIOCs on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "prisma-access",
+        "submodule": "globalprotect",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-PRISMA-ACCESS-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "In the Prisma Access / GlobalProtect log viewer, filter for Event=gateway-connected Status=success where the endpoint MAC is aa:bb:cc:dd:ee:ff or 00:11:22:33:44:55, the machine name is WINDOWS-LAPTOP-001 / DESKTOP-GP01 / GP-CLIENT, or the source region maps to one of the published CVE-2026-0257 IPs — surfacing the bypassed VPN sessions with no preceding authentication."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-ITDR-0012",
+          "TBD-XSIAM-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_globalprotect_raw | filter event_id = \"gateway-connected\" and status = \"success\" | filter preceding_auth_event = \"NONE\" | fields _time, public_ip, machine_name, endpoint_mac, source_user, preceding_auth_event"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ITDR-012",
+        "name": "GlobalProtect Authentication-Bypass Detection (PAN-OS CVE-2026-0257)",
+        "description": "Prove that Cortex detects a GlobalProtect VPN session established via the CVE-2026-0257 authentication bypass — both by fingerprinting the public PoC's placeholder client attributes and, durably, by correlating a gateway-connected success with the absence of any preceding authentication event.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ITDR-012A",
+            "objective": "The placeholder-fingerprint BIOC and the durable no-preceding-authentication behavioral BIOC both fire on the emitted gateway-connected session.",
+            "preconditions": [
+              "GlobalProtect logs are ingested into the XSIAM tenant (panw_ngfw_globalprotect_raw).",
+              "The SAFE-MODE synthetic gateway-connected session (placeholder fingerprint, no preceding auth event) has been emitted."
+            ],
+            "steps": [
+              "Emit the synthetic gateway-connected event with the PoC placeholder fingerprints and preceding_auth_event = NONE.",
+              "Observe the fingerprint BIOC and the no-preceding-authentication BIOC fire and the validation XQL return the session."
+            ],
+            "success_criteria": [
+              "BIOC `GlobalProtect Gateway-Connected Session with Placeholder PoC Client Fingerprint` fires.",
+              "BIOC `GlobalProtect Gateway-Connected Success With No Preceding Authentication Event` fires.",
+              "XQL `GlobalProtect PoC Fingerprint Session Observed` returns at least one row."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-ITDR-012B",
+            "objective": "A gateway-connected session from the published CVE-2026-0257 exploitation infrastructure fires the IP-infrastructure BIOC and matches a published IOC.",
+            "preconditions": [
+              "The nine published exploitation IPs are loaded as Cortex IOCs.",
+              "The SAFE-MODE synthetic exploitation-infra session has been emitted."
+            ],
+            "steps": [
+              "Emit the synthetic gateway-connected event sourced from a known exploitation IP (146.19.216.119).",
+              "Observe the infrastructure BIOC fire and the IP match as an IOC."
+            ],
+            "success_criteria": [
+              "BIOC `GlobalProtect Gateway Connection from Known CVE-2026-0257 Exploitation Infrastructure` fires.",
+              "IOC match on ipv4 146.19.216.119 is raised."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-ITDR-012C",
+            "objective": "The durable correlation rule raises a single authentication-bypass incident from a gateway-connected success with no preceding authentication event.",
+            "preconditions": [
+              "Both synthetic gateway-connected sessions have been emitted with preceding_auth_event = NONE."
+            ],
+            "steps": [
+              "Let the fingerprint BIOCs fire on the emitted sessions.",
+              "Observe CR-ITDR-0012 stitch them into one session-without-authentication incident."
+            ],
+            "success_criteria": [
+              "Correlation `CR-ITDR-0012` raises exactly one CVE-2026-0257 authentication-bypass incident.",
+              "The incident references the gateway-connected event and the absent authentication event."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Upgrade PAN-OS to a version that fixes CVE-2026-0257 on every firewall and Prisma Access instance exposing a GlobalProtect portal or gateway.",
+      "Restrict GlobalProtect portal/gateway exposure to required source geographies and, where feasible, front it with source-IP allow-listing.",
+      "Enforce certificate-based client authentication and phishing-resistant MFA so a control-plane bypass alone cannot yield a usable session.",
+      "Block the nine published CVE-2026-0257 exploitation source IPs at the perimeter and add them to the Cortex IOC set."
+    ],
+    "detection_engineering": [
+      "Alert on any GlobalProtect gateway-connected success with no preceding successful portal/gateway authentication for the same source within the session window — the durable, fingerprint-independent signal.",
+      "Fingerprint the public PoC's static client attributes (placeholder MACs, template hostnames, fixed OS string, empty source-user domain) as high-confidence corroborating BIOCs.",
+      "Hunt historical GlobalProtect logs for successful gateway-connected events from the published exploitation IPs to scope pre-detection activity."
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Active Exploitation of PAN-OS CVE-2026-0257 (GlobalProtect Authentication Bypass)",
+      "url": "https://unit42.paloaltonetworks.com/active-exploitation-of-pan-os-cve-2026-0257/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1190 Exploit Public-Facing Application",
+      "url": "https://attack.mitre.org/techniques/T1190/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — GlobalProtect / PAN-OS log ingestion and correlation reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

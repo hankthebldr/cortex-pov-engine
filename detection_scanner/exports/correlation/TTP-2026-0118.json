@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1190",
+    "T1133",
+    "T1556",
+    "T1078",
+    "T1021"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when a GlobalProtect `event_id = \"gateway-connected\"` with `status = \"success\"` is observed for a given public_ip and machine_name with NO preceding successful `event_id = \"portal-auth\"` or `event_id = \"gateway-auth\"` for the same source within the prior 300 seconds \u2014 a fully connected VPN tunnel with no upstream authentication event, the behavioral core of the bypass. Stitches BIOC(GlobalProtect Gateway-Connected Session with Placeholder PoC Client Fingerprint) and BIOC(GlobalProtect Gateway-Connected Success With No Preceding Authentication Event) into one CVE-2026-0257 authentication-bypass incident. This rule is durable: both it and the no-preceding-authentication BIOC it stitches key on the missing authentication event, so they still fire after an attacker changes the placeholder MAC, hostname, or OS string that the fingerprint BIOC matches.",
+      "name": "GlobalProtect Session Without Preceding Authentication \u2014 CVE-2026-0257 Auth-Bypass Stitch",
+      "rule_id": "CR-ITDR-0012",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0118"
+}

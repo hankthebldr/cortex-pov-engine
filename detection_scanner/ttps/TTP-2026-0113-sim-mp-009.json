@@ -1,0 +1,393 @@
+{
+  "id": "TTP-2026-0113",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:36:34+00:00",
+    "updated_at": "2026-07-24T01:36:34+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane",
+      "vector-cloud-attack-chain",
+      "autonomous-agent-swarm",
+      "machine-tempo",
+      "abioc",
+      "cloud-privilege-escalation",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "gcp"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Machine-Tempo Autonomous Agent-Swarm Cloud Attack Chain — Cortex Analytics ABIOC (T1580 / T1552.005 / T1548.005 / T1537)",
+    "summary": "An LLM agent swarm (Unit 42 'Zealot') compresses recon -> SSRF -> IMDS token theft -> IAM self-escalation -> BigQuery/bucket exfil into one machine-speed run under a single derived service-account identity. No individual GCP API call is malicious; the detectable feature is the sub-minute inter-stage latency and the breadth of distinct high-risk stages threaded through one identity.",
+    "description": "Unit 42 built 'Zealot', an autonomous offensive system in which a LangGraph supervisor agent coordinates three specialist agents (Infrastructure, Application Security, Cloud Security) sharing one AttackState object, and drove a full cloud breach at machine speed. The ordered chain: (1) the Infrastructure Agent scans the host network and a peered VPC with Nmap, finding a connected VM instance with open ports 22 and 3000; (2) the Application Security Agent exploits an SSRF vulnerability on that workload to reach the GCP Instance Metadata Service (169.254.169.254) and extract the attached service-account access token; (3) the Cloud Security Agent enumerates IAM permissions with the stolen token, lists BigQuery datasets, and is denied on a direct query of the 'production' dataset; (4) it works around the denial by creating a new storage bucket, granting itself the storage.objectAdmin role, exporting the BigQuery table into the bucket, and exfiltrating from the now-readable bucket. Unit 42's own framing is that no single link is a known-bad IOC — every API call is a legitimate operation — so a static signature misses it, and 'breaking any single link in this chain stalls the entire operation'. The detectable signal is behavioral and cross-stage: one derived identity performing an abnormally broad set of distinct control-plane operations at a cadence (seconds between stages) no human operator sustains, plus the tell-tale self-grant of storage.objectAdmin immediately after an IMDS-minted token first appears. This card exercises Cortex's auto-tuned Analytics Behavioral IOCs on that shape: ABIOC-1 fires on the machine-speed stage fan-out under a single service-account identity in cloud_audit_logs; ABIOC-2 fires on the autonomous IAM self-escalation (storage.objectAdmin self-grant); ABIOC-3 fires on the endpoint side (xdr_data) when a workload process reaches the instance metadata IP after SSRF. Validation XQL surfaces the derived-identity fan-out and the export-to-new-bucket, and correlation rule CR-MP-0015 stitches the SSRF/IMDS theft, the machine-speed fan-out, and the self-escalation into one machine-tempo autonomous-agent cloud-attack incident — the two cloud stages joined on the shared service-account identity_name, and the endpoint SSRF stage bridged in via the cloud asset-inventory host -> instance -> attached-service-account mapping (the discarded IMDS token is never carried in endpoint telemetry) plus a tight time window. The models used were deliberately not disclosed by the authors, so no model/host IOCs are published.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Unit 42 'Zealot' autonomous-agent-swarm cloud attack research (2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1580",
+        "name": "Cloud Infrastructure Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1526",
+        "name": "Cloud Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.005",
+        "name": "Unsecured Credentials: Cloud Instance Metadata API",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1548",
+        "subtechnique_id": "T1548.005",
+        "name": "Abuse Elevation Control Mechanism: Temporary Elevated Cloud Access",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1537",
+        "name": "Transfer Data to Cloud Account",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Enumeration",
+      "Cloud Storage: Cloud Storage Modification",
+      "User Account: User Account Authentication",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-009 — machine-tempo autonomous-agent-swarm cloud attack chain for Cortex ABIOC + correlation validation",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the workload host so per-process and network telemetry (the SSRF -> IMDS reach) lands in xdr_data.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "GCP Cloud Audit Logs (Admin Activity + Data Access) forwarded to the Cortex tenant so control-plane operations land in cloud_audit_logs for the ABIOC behavioral baseline.",
+        "check_command": "echo 'confirm cloud_audit_logs ingestion in the Cortex tenant before the POV'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Machine-tempo autonomous-agent-swarm cloud chain — SAFE-MODE, non-destructive.\n# Nothing is created, granted, or exfiltrated on a real cloud account; the cloud\n# stages are modelled with marker files. The only real network artifact is a\n# read-only self-request to the instance metadata IP (token is discarded).\nset -euo pipefail\nSTAGE_LOG=\"/tmp/cortexsim-mp-009-cloud-stages.log\"\necho \"[CortexSim] SIM-MP-009 machine-tempo agent-swarm chain (SAFE-MODE)\"\n# Stage 1 — recon + SSRF-driven instance metadata token access (read-only; discarded).\nss -tunlp 2>/dev/null | head -n 5 || true\ncurl -s --max-time 2 -H \"Metadata-Flavor: Google\" \"http://${METADATA_IP:-169.254.169.254}/computeMetadata/v1/instance/service-accounts/default/token\" -o /dev/null || true\n# Stage 2 — machine-speed cloud enumeration fan-out (marker-only; no real GCP calls).\nfor op in compute.instances.list compute.networks.list resourcemanager.projects.getIamPolicy bigquery.datasets.get; do echo \"SAFE-MODE ${op} $(date +%s%N)\" >> \"${STAGE_LOG}\"; done\n# Stage 3 — self-escalation + export (SAFE-MODE markers; nothing granted or copied).\necho \"SAFE-MODE storage.setIamPermissions roles/storage.objectAdmin $(date +%s%N)\" >> \"${STAGE_LOG}\"\necho \"SAFE-MODE bigquery.tables.export -> cortexsim-marker-bucket $(date +%s%N)\" >> \"${STAGE_LOG}\"\ntouch /tmp/cortexsim-mp-009-exfil-SAFE-MODE.marker\necho \"[CortexSim] SIM-MP-009 chain complete\"",
+      "input_variables": [
+        {
+          "name": "METADATA_IP",
+          "type": "string",
+          "default": "169.254.169.254",
+          "description": "Instance metadata service IP the SSRF stage reaches (read-only self-request; the returned token is written to /dev/null, never parsed or reused)."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound connection to the instance metadata service (169.254.169.254) from a workload process, the observable tell of SSRF-driven token theft.",
+        "expected_value": "action_remote_ip = \"169.254.169.254\" and actor_process_image_name in (node, python3, curl)"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "A single service-account identity issues a fan-out of distinct control-plane operations (compute list, IAM getIamPolicy, storage.buckets.create, bigquery.tables.export) within a sub-two-minute window.",
+        "expected_value": "identity_type = \"serviceAccount\" and count_distinct(operation_name) >= 5 within 120s"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "The same identity grants itself roles/storage.objectAdmin (setIamPermissions) immediately before a BigQuery export to a newly created bucket.",
+        "expected_value": "operation_name = \"storage.setIamPermissions\" and granted_role = \"roles/storage.objectAdmin\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cortexsim-mp-009-cloud-stages.log /tmp/cortexsim-mp-009-exfil-SAFE-MODE.marker; echo '[CortexSim] SIM-MP-009 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Machine-Tempo Multi-Stage Cloud Attack Chain Under a Single Derived Identity",
+        "description": "A newly-observed service-account identity (one with no operation history in the prior 24h — the token minted from the instance metadata service) performs an abnormally broad set of distinct high-risk GCP control-plane operations — infrastructure discovery, IAM enumeration, bucket creation, BigQuery export — within a sub-two-minute window. Known automation principals (terraform / cloudbuild / config-connector / deploymentmanager service accounts, which produce the same broad op-set on every IaC apply) are excluded, and the identity must be first-seen, so a normal Terraform/Config-Connector run does not fire. Every call is individually legitimate; the ABIOC anchors on the cadence-and-breadth deviation under one newly-derived identity, not on any single known-bad API. This is the core 'Zealot' signal: inter-stage latency and stage diversity under an identity that has no baseline history, not a signature.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"gcp\"\n| filter identity_type = \"serviceAccount\"\n| filter _time > to_timestamp(current_time() - 3600)\n| filter identity_name not contains \"terraform\" and identity_name not contains \"cloudbuild\" and identity_name not contains \"config-connector\" and identity_name not contains \"deploymentmanager\"\n| filter operation_name in (\"compute.instances.list\", \"compute.networks.list\", \"resourcemanager.projects.getIamPolicy\", \"bigquery.datasets.get\", \"bigquery.tables.export\", \"storage.buckets.create\", \"storage.setIamPermissions\")\n| comp count_distinct(operation_name) as distinct_stages, count() as api_calls, min(_time) as first_call, max(_time) as last_call by identity_name, caller_ip\n| alter chain_span_seconds = timestamp_diff(last_call, first_call, \"SECOND\")\n| filter distinct_stages >= 5 and chain_span_seconds <= 120\n| join type=left (dataset = cloud_audit_logs\n| filter cloud_provider = \"gcp\"\n| filter identity_type = \"serviceAccount\"\n| filter _time < to_timestamp(current_time() - 86400)\n| comp count() as prior_calls by identity_name) as baseline baseline.identity_name = identity_name\n| alter prior_calls = coalesce(prior_calls, 0)\n| filter prior_calls = 0\n| fields identity_name, caller_ip, distinct_stages, api_calls, chain_span_seconds",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1580",
+          "T1526"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity cloud-API baseline (a service account touches a narrow, stable set of operations at human/scheduled cadence) -> IMDS-minted derived identity -> fan-out of distinct control-plane stages at sub-minute inter-stage latency, anchored to the single derived identity threading every stage."
+      },
+      {
+        "name": "Autonomous IAM Self-Escalation via storage.objectAdmin Grant Following IMDS Token Theft",
+        "description": "The derived service-account identity grants roles/storage.objectAdmin to ITSELF (setIamPermissions / setIamPolicy where the added member equals the acting identity) — the exact work-around 'Zealot' used to defeat a BigQuery access denial by creating a bucket, self-granting object admin, exporting the table, and reading it back. The `granted_member = identity_name` predicate is the discriminator: a routine IaC-managed objectAdmin grant to a DIFFERENT principal (the normal google_storage_bucket_iam_member case) does not fire — only a true self-grant does. The ABIOC anchors the self-grant to the IMDS-minted identity's causality chain rather than to any single API, catching autonomous privilege escalation that a static rule keyed on a benign setIamPolicy would miss.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"gcp\"\n| filter identity_type = \"serviceAccount\"\n| filter operation_name in (\"storage.setIamPermissions\", \"resourcemanager.projects.setIamPolicy\", \"compute.instances.setIamPolicy\")\n| filter granted_role = \"roles/storage.objectAdmin\" or policy_delta contains \"storage.objectAdmin\"\n| filter granted_member = identity_name\n| comp count() as self_grants, min(_time) as first_grant by identity_name, granted_member, target_resource\n| filter self_grants >= 1\n| fields identity_name, granted_member, target_resource, self_grants, first_grant",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1548.005",
+          "T1078.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "IMDS-minted service-account identity -> IAM setIamPolicy adding roles/storage.objectAdmin to itself -> immediate export/read of the newly accessible bucket, anchored to the derived identity that first appeared via instance-metadata token use."
+      },
+      {
+        "name": "SSRF-Driven Instance Metadata Token Theft from an Anomalous Workload Process",
+        "description": "A workload process (node, python3, java, ruby, php-fpm, curl) on the exposed VM reaches the instance metadata service IP (169.254.169.254) for the FIRST time — the host's learned baseline shows no prior IMDS contact in the preceding day, then a sudden reach appears. The novelty gate (prior_imds_requests = 0 from the baseline join) is the discriminator: a GCP workload that routinely mints Application-Default-Credentials tokens has a non-zero IMDS baseline and does NOT fire, so the rule no longer alerts on the normal ADC credential flow — only on a first-ever metadata reach, the endpoint-side tell of the SSRF that 'Zealot' used to steal the attached service-account token. The deviation is anchored to the workload host+identity so the endpoint signal can be stitched to the cloud-plane stages that follow.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = \"169.254.169.254\"\n| filter _time > to_timestamp(current_time() - 3600)\n| filter actor_process_image_name in (\"node\", \"python3\", \"java\", \"ruby\", \"php-fpm\", \"curl\")\n| comp count() as imds_requests_now, min(_time) as first_seen by agent_hostname, actor_effective_username, actor_process_image_name\n| join type=left (dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = \"169.254.169.254\"\n| filter _time < to_timestamp(current_time() - 3600)\n| comp count() as prior_imds_requests by agent_hostname) as baseline baseline.agent_hostname = agent_hostname\n| alter prior_imds_requests = coalesce(prior_imds_requests, 0)\n| filter imds_requests_now >= 1 and prior_imds_requests = 0\n| fields agent_hostname, actor_effective_username, actor_process_image_name, imds_requests_now, prior_imds_requests, first_seen",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.005"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned workload-process baseline (the web service never contacts the metadata IP) -> SSRF -> outbound request to 169.254.169.254 from that process, anchored to the workload host+identity so it stitches forward to the cloud-plane fan-out."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SIM-MP-009 Derived-Identity Stage Fan-Out in Cloud Audit Logs",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 900)\n| filter cloud_provider = \"gcp\"\n| filter identity_type = \"serviceAccount\"\n| comp count_distinct(operation_name) as distinct_operations, count() as api_calls by identity_name\n| filter distinct_operations >= 3\n| sort desc distinct_operations\n| fields identity_name, distinct_operations, api_calls",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "hunt",
+        "name": "SIM-MP-009 BigQuery Export to Newly Created Storage Bucket",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 900)\n| filter cloud_provider = \"gcp\"\n| filter operation_name in (\"bigquery.tables.export\", \"bigquery.jobs.insert\", \"storage.buckets.create\", \"storage.objects.create\")\n| comp count() as export_ops, count_distinct(operation_name) as distinct_ops by identity_name, target_resource\n| filter export_ops >= 1\n| fields identity_name, target_resource, export_ops, distinct_ops",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Machine-Tempo Autonomous-Agent Cloud Attack Chain — ABIOC Causality Stitch",
+        "rule_id": "CR-MP-0015",
+        "logic": "ABIOC(SSRF-Driven Instance Metadata Token Theft from an Anomalous Workload Process) AND ABIOC(Machine-Tempo Multi-Stage Cloud Attack Chain Under a Single Derived Identity) AND ABIOC(Autonomous IAM Self-Escalation via storage.objectAdmin Grant Following IMDS Token Theft) within 300 seconds, bridged host -> instance -> attached-service-account. The two cloud ABIOCs share one join key (the service-account identity_name, which both emit from cloud_audit_logs). The endpoint ABIOC emits agent_hostname (an OS host identity) and carries no service-account email — the SSRF-minted token is discarded and never appears in endpoint telemetry — so it is stitched to the cloud stages NOT on a shared identity field but via the cloud asset-inventory mapping agent_hostname -> GCP instance -> attached service account, correlating on that host/instance-to-identity_name bridge plus the tight 300-second window. This fuses the SSRF/IMDS token theft, the machine-speed cross-stage fan-out, and the self-granted storage.objectAdmin escalation into one machine-tempo autonomous-agent cloud-attack incident."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex Cloud — cloud-API behavioral analytics (per-identity operation cadence and stage breadth)",
+        "validated": true,
+        "note": "Backed by ABIOC 'Machine-Tempo Multi-Stage Cloud Attack Chain Under a Single Derived Identity' and ABIOC 'Autonomous IAM Self-Escalation via storage.objectAdmin Grant Following IMDS Token Theft' on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0015",
+          "TBD-XSIAM-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter identity_type = \"serviceAccount\" | comp count_distinct(operation_name) as distinct_operations, min(_time) as first_call, max(_time) as last_call by identity_name | alter chain_span_seconds = timestamp_diff(last_call, first_call, \"SECOND\") | filter distinct_operations >= 5 and chain_span_seconds <= 120"
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-detection-response",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "Cloud infrastructure enumeration activity",
+          "Cloud Unusual Instance Metadata Service (IMDS) access",
+          "Unusual IAM enumeration activity by a non-user Identity",
+          "GCP service account impersonation attempt",
+          "BigQuery table or query results exfiltrated to a foreign project",
+          "Cloud storage object copied to a foreign cloud account"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter operation_name in (\"storage.setIamPermissions\", \"bigquery.tables.export\", \"storage.buckets.create\") | comp count() as ops by identity_name, target_resource"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-MP-009",
+        "name": "Machine-Tempo Autonomous-Agent Cloud Attack Chain Detection via Cortex ABIOC",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn the per-identity cloud-API baseline and detect an autonomous agent swarm compressing recon -> SSRF/IMDS token theft -> IAM self-escalation -> exfil into one machine-speed run under a single derived identity, then correlate the endpoint and cloud signals into one incident — where no static rule was written for the individually-benign API calls.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-MP-009A",
+            "objective": "The machine-speed cloud stage fan-out under a single derived service-account identity fires ABIOC-1 and surfaces in the validation XQL.",
+            "preconditions": [
+              "GCP Cloud Audit Logs ingested into the Cortex tenant.",
+              "A learned per-identity baseline of normal service-account API cadence has elapsed."
+            ],
+            "steps": [
+              "Run the cloud-enumeration fan-out stage under the derived identity.",
+              "Observe ABIOC-1 fire on distinct-stage breadth at sub-minute inter-stage latency.",
+              "Confirm the derived-identity fan-out XQL returns the identity."
+            ],
+            "success_criteria": [
+              "ABIOC `Machine-Tempo Multi-Stage Cloud Attack Chain Under a Single Derived Identity` fires.",
+              "XQL `SIM-MP-009 Derived-Identity Stage Fan-Out in Cloud Audit Logs` returns the derived identity with distinct_operations >= 3."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-MP-009B",
+            "objective": "The autonomous self-grant of storage.objectAdmin and the export to a newly created bucket fire ABIOC-2 and the export hunt XQL.",
+            "preconditions": [
+              "GCP Cloud Audit Logs ingested into the Cortex tenant."
+            ],
+            "steps": [
+              "Run the self-escalation + export stage under the derived identity.",
+              "Observe ABIOC-2 fire on the storage.objectAdmin self-grant.",
+              "Confirm the export-to-new-bucket hunt XQL returns the identity and target resource."
+            ],
+            "success_criteria": [
+              "ABIOC `Autonomous IAM Self-Escalation via storage.objectAdmin Grant Following IMDS Token Theft` fires.",
+              "XQL `SIM-MP-009 BigQuery Export to Newly Created Storage Bucket` returns the export operations."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "test_case_id": "TC-MP-009C",
+            "objective": "The SSRF/IMDS endpoint signal and the two cloud-plane deviations correlate into a single machine-tempo incident.",
+            "preconditions": [
+              "Cortex agent on the workload host emitting network telemetry to xdr_data.",
+              "GCP Cloud Audit Logs ingested into the Cortex tenant."
+            ],
+            "steps": [
+              "Run the SSRF/IMDS token-access stage on the workload host.",
+              "Run the cloud fan-out and self-escalation stages under the derived identity.",
+              "Observe ABIOC-3 fire on the metadata-IP reach and CR-MP-0015 stitch all three ABIOCs."
+            ],
+            "success_criteria": [
+              "ABIOC `SSRF-Driven Instance Metadata Token Theft from an Anomalous Workload Process` fires.",
+              "Correlation CR-MP-0015 raises one machine-tempo autonomous-agent cloud-attack incident stitching the endpoint and cloud signals."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict Instance Metadata Service access from workloads (GKE Workload Identity / metadata concealment, enforce the Metadata-Flavor header) so an SSRF cannot mint a service-account token.",
+      "Enforce least-privilege IAM: deny service accounts the ability to grant themselves roles (self-setIamPolicy) and remove standing storage.objectAdmin and broad BigQuery-export permissions.",
+      "Break the misconfiguration chain — Unit 42 notes that severing any single link (peered-VPC reachability, IMDS exposure, over-broad service account, self-grant) stalls the entire operation.",
+      "Constrain and monitor lateral reachability across VPC peering between the exposed workload and sensitive data services."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs on the per-identity cloud-API cadence and stage breadth rather than signaturing any single (benign) API call — the detectable feature is machine-speed inter-stage latency and stage diversity under one derived identity.",
+      "Alert on a service-account identity that first appears via instance-metadata token use and then self-grants an IAM role (storage.objectAdmin) within minutes.",
+      "Stitch SSRF/IMDS access, cross-stage cloud enumeration, and export-to-new-bucket into one incident with a correlation rule, and respond at machine speed (seconds, not hours) as the authors recommend."
+    ],
+    "response_playbook": "XSOAR-PB-MachineTempoCloudChainContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Autonomous AI Cloud Attacks: an agent swarm ('Zealot') breaches a GCP environment at machine speed",
+      "url": "https://unit42.paloaltonetworks.com/autonomous-ai-cloud-attacks/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1552.005 — Unsecured Credentials: Cloud Instance Metadata API",
+      "url": "https://attack.mitre.org/techniques/T1552/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1548.005 — Abuse Elevation Control Mechanism: Temporary Elevated Cloud Access",
+      "url": "https://attack.mitre.org/techniques/T1548/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM / Cortex Cloud — cloud analytics + IMDS/IAM alert reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

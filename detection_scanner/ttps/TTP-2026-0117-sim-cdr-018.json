@@ -1,0 +1,431 @@
+{
+  "id": "TTP-2026-0117",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:37:11+00:00",
+    "updated_at": "2026-07-23T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "cloud",
+      "aws",
+      "vector-cloud-persistence",
+      "iam-abuse",
+      "roles-anywhere",
+      "certificate-backed-persistence",
+      "correlation",
+      "cspm-to-runtime-pivot",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AWS IAM Roles Anywhere Trust-Anchor Abuse for Certificate-Backed Persistence (T1098.001 / T1550.001 / T1078.004)",
+    "summary": "With a stolen client certificate and key, an attacker registers a self-signed CA as an IAM Roles Anywhere trust anchor and mints STS credentials indefinitely via CreateSession. The unconditioned role trust policy that trusts rolesanywhere.amazonaws.com is a CSPM-to-runtime pivot: the misconfiguration is a posture finding, the abuse is a runtime session.",
+    "description": "AWS IAM Roles Anywhere lets non-AWS/hybrid workloads obtain temporary AWS credentials by presenting an X.509 certificate that chains to a registered trust anchor. Unit 42 shows this becomes a durable, certificate-backed persistence substrate when the role's trust policy is left in its default, unconditioned form. The default policy grants rolesanywhere.amazonaws.com the three actions sts:AssumeRole, sts:SetSourceIdentity and sts:TagSession with NO Condition block, so ANY trust anchor can assume the role. An attacker who has lifted a client certificate + private key from a compromised on-prem/hybrid host (T1552.004) enumerates the account with rolesanywhere:ListTrustAnchors and rolesanywhere:ListProfiles (T1580), then either creates a fresh trust anchor from an attacker-controlled self-signed CA (rolesanywhere:CreateTrustAnchor, sourceType CERTIFICATE_BUNDLE) or repoints an existing anchor at a malicious CA (rolesanywhere:UpdateTrustAnchor) — Additional Cloud Credentials (T1098.001). From then on the aws_signing_helper credential helper exchanges the certificate + private key for STS credentials on demand via rolesanywhere:CreateSession — Use Alternate Authentication Material: Application Access Token (T1550.001) resolving to Valid Accounts: Cloud Accounts (T1078.004). The CloudTrail CreateSession event is the highest-fidelity tell: it records the ARNs of the trust anchor, the profile, and one of its attached roles, so a single log line reveals the whole persistence triangle. This card is CORRELATION-led: two correlation rules stitch (a) trust-anchor registration to the first certificate-minted session (the persistence-establishment chain) and (b) a Prisma Cloud / Cortex Cloud posture finding for the unconditioned trust policy to the runtime CreateSession against that same role ARN (the CSPM-to-runtime pivot that proves the misconfiguration was exercised, not theoretical). Supporting BIOCs key on the trust-anchor write, the enumeration burst, and CreateSession minting; validation XQL confirms the session occurred and surfaces the trust-anchor/profile/role ARN triangle. Unit 42's own Cortex XDR XQL hunts for the root-cause misconfiguration: roles trusting rolesanywhere.amazonaws.com with an empty condition.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Unattributed cloud-persistence operators",
+        "aliases": []
+      }
+    ],
+    "campaigns": [
+      "IAM Roles Anywhere trust-anchor abuse for durable same-account certificate-backed persistence"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "cloud",
+    "techniques": [
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.004",
+        "name": "Unsecured Credentials: Private Keys",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1580",
+        "name": "Cloud Infrastructure Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1098",
+        "subtechnique_id": "T1098.001",
+        "name": "Account Manipulation: Additional Cloud Credentials",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "subtechnique_id": "T1550.001",
+        "name": "Use Alternate Authentication Material: Application Access Token",
+        "tactic_ids": [
+          "TA0005",
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0003",
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Persistence",
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Cloud Service: Cloud Service Enumeration",
+      "Cloud Service: Cloud Service Modification",
+      "User Account: User Account Authentication",
+      "Logon Session: Logon Session Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-018 — Roles Anywhere trust-anchor abuse for same-account certificate-backed persistence (SAFE-MODE: writes are marker-gated).",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "AWS CloudTrail is forwarding management-event logs (including the rolesanywhere.amazonaws.com event source) to Cortex Cloud / XSIAM so CreateTrustAnchor, ListProfiles, and CreateSession events reach cloud_audit_logs.",
+        "check_command": "aws cloudtrail get-trail-status --name ${LAB_TRAIL} --region ${LAB_REGION}"
+      },
+      {
+        "description": "A lab AWS account with an IAM role whose trust policy trusts rolesanywhere.amazonaws.com (the intentionally-unconditioned role the CSPM finding fires on).",
+        "check_command": "aws iam get-role --role-name cortexsim-rolesanywhere-target --query 'Role.AssumeRolePolicyDocument'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Roles Anywhere trust-anchor abuse — SAFE-MODE by design. Read-only discovery\n# runs live; every WRITE (CreateTrustAnchor / CreateSession) is written to a\n# marker file and only executed when CORTEXSIM_LAB_APPLY=1 in a sanctioned lab.\nset -euo pipefail\nWORK=\"/tmp/cortexsim-cdr-018-${POV_RUN_ID}\"\nmkdir -p \"$WORK\"\n\n# (1) Credential Access (T1552.004) — model the stolen client certificate + key\n#     with a locally generated self-signed CA. Keys never leave the host.\nopenssl req -x509 -newkey rsa:2048 -nodes -days 3650 \\\n  -keyout \"$WORK/attacker-ca.key\" -out \"$WORK/attacker-ca.pem\" \\\n  -subj \"/CN=cortexsim-rolesanywhere-safe-marker\" 2>/dev/null || true\n\n# (2) Discovery (T1580) — enumerate trust anchors + profiles (read-only, safe).\naws rolesanywhere list-trust-anchors --region \"${LAB_REGION}\" 2>/dev/null || echo \"[CortexSim] list-trust-anchors skipped (no lab creds)\"\naws rolesanywhere list-profiles --region \"${LAB_REGION}\" 2>/dev/null || echo \"[CortexSim] list-profiles skipped (no lab creds)\"\n\n# (3) Persistence (T1098.001) — register the attacker CA as a trust\n#     anchor. SAFE-MODE: the command is marked, not run, unless LAB_APPLY=1.\ncat > \"$WORK/SAFE-MODE-createtrustanchor.marker\" <<MARKER\naws rolesanywhere create-trust-anchor --name cortexsim-safe-anchor --enabled --source sourceType=CERTIFICATE_BUNDLE,sourceData={x509CertificateData=attacker-ca.pem} --region ${LAB_REGION}\nMARKER\n\n# (4) Cred use (T1550.001 / T1078.004) — mint STS credentials via CreateSession\n#     with the certificate + private key. SAFE-MODE marker only.\ncat > \"$WORK/SAFE-MODE-createsession.marker\" <<MARKER\naws_signing_helper credential-process --certificate attacker-ca.pem --private-key attacker-ca.key --trust-anchor-arn TRUST_ANCHOR_ARN --profile-arn PROFILE_ARN --role-arn ${TARGET_ROLE_ARN}\nMARKER\n\nif [ \"${CORTEXSIM_LAB_APPLY:-0}\" = \"1\" ]; then\n  echo \"[CortexSim] CORTEXSIM_LAB_APPLY=1 — sanctioned-lab trust-anchor write would execute here\"\nfi\necho \"[CortexSim] SIM-CDR-018 SAFE-MODE complete — markers under $WORK\"\n",
+      "input_variables": [
+        {
+          "name": "POV_RUN_ID",
+          "type": "string",
+          "description": "Per-run unique id used to isolate and clean up the working directory."
+        },
+        {
+          "name": "LAB_REGION",
+          "type": "string",
+          "default": "us-east-1",
+          "description": "AWS region the read-only Roles Anywhere enumeration runs against."
+        },
+        {
+          "name": "TARGET_ROLE_ARN",
+          "type": "string",
+          "default": "arn:aws:iam::000000000000:role/cortexsim-rolesanywhere-target",
+          "description": "ARN of the lab IAM role with the unconditioned Roles Anywhere trust policy."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "rolesanywhere ListTrustAnchors + ListProfiles enumeration burst from a new sourceIPAddress.",
+        "expected_value": "event_source = \"rolesanywhere.amazonaws.com\" AND event_name in (ListTrustAnchors, ListProfiles)"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "rolesanywhere CreateTrustAnchor (or UpdateTrustAnchor) registering an inline self-signed CA as a CERTIFICATE_BUNDLE source.",
+        "expected_value": "event_name in (CreateTrustAnchor, UpdateTrustAnchor) AND request_parameters.source.sourceType = \"CERTIFICATE_BUNDLE\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "rolesanywhere CreateSession minting STS credentials; the record carries the trust anchor, profile, and role ARNs.",
+        "expected_value": "event_name = \"CreateSession\" AND request_parameters.roleArn = TARGET_ROLE_ARN"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Locally generated self-signed CA (attacker-ca.pem/.key) plus SAFE-MODE marker files modelling the intended CreateTrustAnchor/CreateSession writes."
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-cdr-018-${POV_RUN_ID}\necho '[CortexSim] SIM-CDR-018 cleanup complete.'",
+      "manual_steps": [
+        "If CORTEXSIM_LAB_APPLY=1 was set, delete any created trust anchor (aws rolesanywhere delete-trust-anchor) and profile in the sanctioned lab account.",
+        "Confirm no rolesanywhere trust anchor named cortexsim-safe-anchor remains in the lab account."
+      ]
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Roles Anywhere Trust Anchor Created or Repointed to External CA",
+        "description": "A rolesanywhere CreateTrustAnchor or UpdateTrustAnchor call registers or repoints an anchor at an inline, attacker-supplied certificate bundle (sourceType CERTIFICATE_BUNDLE) rather than an AWS-managed ACM-PCA certificate authority. Registering a self-signed CA as a trust anchor is the persistence-substrate write: any certificate chaining to it can subsequently mint STS credentials.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source = \"rolesanywhere.amazonaws.com\"\n| filter event_name in (\"CreateTrustAnchor\", \"UpdateTrustAnchor\")\n| filter request_parameters.source.sourceType = \"CERTIFICATE_BUNDLE\"\n| comp count() as anchor_writes by user_identity.arn, source_ip, user_agent, request_parameters.name\n| filter anchor_writes >= 1\n| fields user_identity.arn, source_ip, user_agent, request_parameters.name, anchor_writes",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1098.001"
+        ]
+      },
+      {
+        "name": "Roles Anywhere Trust Anchor and Profile Enumeration Burst",
+        "description": "An identity issues a short burst of rolesanywhere read/list calls (ListTrustAnchors, ListProfiles, GetTrustAnchor, GetProfile) that enumerates the certificate-federation surface. This is the reconnaissance that precedes trust-anchor abuse: the attacker maps existing anchors, profiles, and the roles they attach before creating or repointing an anchor.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source = \"rolesanywhere.amazonaws.com\"\n| filter event_name in (\"ListTrustAnchors\", \"ListProfiles\", \"GetTrustAnchor\", \"GetProfile\")\n| bin _time span=300s\n| comp count_distinct(event_name) as distinct_recon_calls by user_identity.arn, source_ip, _time\n| filter distinct_recon_calls >= 4 and source_ip not in user_baseline.recent_ips[user_identity.arn]\n| fields user_identity.arn, source_ip, distinct_recon_calls, _time",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1580"
+        ]
+      },
+      {
+        "name": "Roles Anywhere CreateSession Minting STS Credentials From Unmanaged Trust Anchor",
+        "description": "A rolesanywhere CreateSession event mints STS credentials via the aws_signing_helper credential helper against a trust anchor that is NOT on the approved-anchor allowlist (i.e. an unmanaged / attacker-supplied anchor rather than a sanctioned ACM-PCA one) and from a source IP not previously seen minting for that role. The event record exposes the trust anchor, profile, and role ARNs. Scoping to unapproved anchors and new source IPs keeps benign, continuous aws_signing_helper minting by legitimate hybrid workloads from firing while surfacing the certificate-backed credential-use signal a static IAM-key rule never sees.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source = \"rolesanywhere.amazonaws.com\" and event_name = \"CreateSession\"\n| filter user_agent contains \"aws_signing_helper\"\n| filter request_parameters.trustAnchorArn not in cloud_baseline.approved_trust_anchors\n| filter source_ip not in user_baseline.recent_ips[request_parameters.roleArn]\n| comp count() as sessions_minted by request_parameters.trustAnchorArn, request_parameters.profileArn, request_parameters.roleArn, source_ip\n| filter sessions_minted >= 1\n| fields request_parameters.trustAnchorArn, request_parameters.profileArn, request_parameters.roleArn, source_ip, sessions_minted",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550.001",
+          "T1078.004"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Confirm Roles Anywhere CreateSession Occurred in Run Window",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 1800)\n| filter cloud_provider = \"AWS\" and event_source = \"rolesanywhere.amazonaws.com\" and event_name = \"CreateSession\"\n| fields _time, request_parameters.trustAnchorArn, request_parameters.profileArn, request_parameters.roleArn, source_ip, user_agent\n| sort _time desc",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Surface Trust Anchor Profile and Role ARNs From CreateSession Records",
+        "query": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and event_source = \"rolesanywhere.amazonaws.com\" and event_name = \"CreateSession\"\n| comp count() as session_count by request_parameters.trustAnchorArn, request_parameters.profileArn, request_parameters.roleArn, source_ip, user_agent\n| sort desc session_count\n| fields request_parameters.trustAnchorArn, request_parameters.profileArn, request_parameters.roleArn, source_ip, user_agent, session_count",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Roles Anywhere Certificate-Backed Persistence Establishment Chain",
+        "rule_id": "CR-CDR-0018",
+        "logic": "BIOC(Roles Anywhere Trust Anchor Created or Repointed to External CA) AND BIOC(Roles Anywhere CreateSession Minting STS Credentials From Unmanaged Trust Anchor) on the same AWS account within 60m — stitches the attacker-controlled CA registration to the first certificate-minted STS session, evidencing a durable certificate-backed persistence substrate rather than a one-off key use."
+      },
+      {
+        "name": "Unconditioned Roles Anywhere Trust Policy Exploited From Posture Finding to Runtime Session",
+        "rule_id": "CR-CDR-0018-PIVOT",
+        "logic": "Fires when a Prisma Cloud / Cortex Cloud posture finding flags an IAM role whose trust policy has Principal.Service rolesanywhere.amazonaws.com with an empty Condition, AND BIOC(Roles Anywhere CreateSession Minting STS Credentials From Unmanaged Trust Anchor) observes a runtime CreateSession minting credentials against that same role ARN within 24h — the CSPM-to-runtime pivot proving the unconditioned trust policy was exercised, not merely present."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex Cloud — Identity Threat Detection (ITDR): anomalous Roles Anywhere session minting",
+        "validated": true,
+        "note": "Backed by BIOC 'Roles Anywhere CreateSession Minting STS Credentials From Unmanaged Trust Anchor' and correlation CR-CDR-0018."
+      },
+      "Cortex Cloud — Cloud Infrastructure Enumeration anomaly"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "prisma-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "TBD-PRISMA-001"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Config policy: IAM roles whose AssumeRolePolicyDocument trusts rolesanywhere.amazonaws.com without an aws:SourceArn or aws:PrincipalTag/x509Subject/CN condition — the unconditioned trust-anchor policy the runtime CreateSession abuses."
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "itdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CORTEX-CLOUD-001",
+          "CR-CDR-0018-PIVOT"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "preset:cloud_identity | filter event_source = \"rolesanywhere.amazonaws.com\" and event_name = \"CreateSession\""
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-CDR-0018",
+          "CR-CDR-0018-PIVOT",
+          "TBD-XSIAM-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "filter service = \"rolesanywhere.amazonaws.com\" | alter is_condition_empty = if(condition != null, false, true) | filter is_condition_empty = true"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "TBD-XSOAR-001"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: on Roles Anywhere abuse — disable/delete the offending trust anchor, revoke the profile, snapshot the CloudTrail rolesanywhere window, and require an aws:SourceArn + x509Subject/CN condition on the role trust policy."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CDR-018",
+        "name": "IAM Roles Anywhere Trust-Anchor Abuse — CSPM-to-Runtime Persistence Detection",
+        "description": "Prove that Cortex ties an IAM Roles Anywhere posture misconfiguration (unconditioned trust policy) to its runtime exploitation (certificate-minted STS sessions) and stitches trust-anchor registration to credential minting into a single certificate-backed-persistence incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CDR-018A",
+            "objective": "Posture surfaces the unconditioned Roles Anywhere trust policy as a finding.",
+            "preconditions": [
+              "Lab IAM role with a trust policy trusting rolesanywhere.amazonaws.com and no Condition block.",
+              "Prisma Cloud / Cortex Cloud posture scanning enabled on the lab account."
+            ],
+            "steps": [
+              "Run the SIM-CDR-018 enumeration step.",
+              "Inspect the posture findings for the lab role."
+            ],
+            "success_criteria": [
+              "A posture finding flags the role trusting rolesanywhere.amazonaws.com with an empty Condition.",
+              "The finding names the missing aws:SourceArn and aws:PrincipalTag/x509Subject/CN conditions."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-CDR-018B",
+            "objective": "Runtime BIOCs fire on the trust-anchor write and the CreateSession minting.",
+            "preconditions": [
+              "CloudTrail rolesanywhere management events forwarding to cloud_audit_logs."
+            ],
+            "steps": [
+              "In a sanctioned lab (CORTEXSIM_LAB_APPLY=1) register the self-signed CA as a trust anchor and mint a session via CreateSession.",
+              "Wait for ingestion + analytics.",
+              "Observe Cortex incidents."
+            ],
+            "success_criteria": [
+              "BIOC `Roles Anywhere Trust Anchor Created or Repointed to External CA` fires on the CERTIFICATE_BUNDLE write.",
+              "BIOC `Roles Anywhere CreateSession Minting STS Credentials From Unmanaged Trust Anchor` fires on the aws_signing_helper CreateSession.",
+              "Validation XQL `Confirm Roles Anywhere CreateSession Occurred in Run Window` returns >= 1 row exposing the trust anchor, profile, and role ARNs."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-CDR-018C",
+            "objective": "Correlation stitches the persistence chain and the CSPM-to-runtime pivot into one incident.",
+            "success_criteria": [
+              "Correlation `CR-CDR-0018` links the trust-anchor registration to the first certificate-minted session within 60 minutes.",
+              "Correlation `CR-CDR-0018-PIVOT` links the unconditioned-trust-policy posture finding to the runtime CreateSession against the same role ARN."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Add an aws:SourceArn condition to every Roles Anywhere role trust policy so only a named, approved trust anchor can assume the role.",
+      "Bind the role to certificate identity with an aws:PrincipalTag/x509Subject/CN condition so only certificates with an approved subject can mint credentials.",
+      "Prefer AWS ACM Private CA (ACM-PCA) trust anchors over inline CERTIFICATE_BUNDLE sources so an attacker cannot upload a self-signed CA.",
+      "Restrict rolesanywhere:CreateTrustAnchor / UpdateTrustAnchor / CreateProfile to a small break-glass admin role; deny it in workload accounts via SCP."
+    ],
+    "detection_engineering": [
+      "Alert on any CreateTrustAnchor / UpdateTrustAnchor whose source is a CERTIFICATE_BUNDLE (attacker-supplied CA) rather than an ACM-PCA ARN.",
+      "Hunt IAM roles trusting rolesanywhere.amazonaws.com with an empty Condition — Unit 42: filter service = \"rolesanywhere.amazonaws.com\" | alter is_condition_empty = if(condition != null, false, true) | filter is_condition_empty = true.",
+      "Baseline rolesanywhere CreateSession per (role ARN, source IP, user agent); alert on new source IPs or a spike in aws_signing_helper session minting.",
+      "Correlate posture findings for unconditioned trust policies with runtime CreateSession events against the same role ARN."
+    ],
+    "response_playbook": "XSOAR-PB-RolesAnywhereTrustAnchorAbuse-v1"
+  },
+  "references": [
+    {
+      "title": "Roles Here? Roles There? Roles Anywhere: Exploring the Security of AWS IAM Roles Anywhere",
+      "url": "https://unit42.paloaltonetworks.com/aws-roles-anywhere/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1098.001 — Account Manipulation: Additional Cloud Credentials",
+      "url": "https://attack.mitre.org/techniques/T1098/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1550.001 — Use Alternate Authentication Material: Application Access Token",
+      "url": "https://attack.mitre.org/techniques/T1550/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex Cloud / XSIAM — Cloud audit (CloudTrail) analytics and correlation reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-23",
+      "author": "Henry Reed",
+      "change": "Replace research-intake scaffold with real Roles Anywhere trust-anchor abuse detection logic (3 BIOCs, 2 XQL, 2 correlation rules) grounded in the Unit 42 aws-roles-anywhere post."
+    }
+  ]
+}

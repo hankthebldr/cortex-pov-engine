@@ -1,0 +1,23 @@
+{
+  "mitre_techniques": [
+    "T1552.001",
+    "T1078.004",
+    "T1098.003",
+    "T1136.003",
+    "T1651",
+    "T1580",
+    "T1526",
+    "T1537",
+    "T1657"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(IAM Self-Escalation to AdministratorAccess by a Newly Observed Access Key) AND ABIOC(Denied EC2 Compute Attempt Immediately Followed by Cross-Region Lambda Deployment) on the same access_key_id within a 30-minute window, corroborated by XQL(Cross-Region Lambda Function Ex Fan-Out From Single Principal) and XQL(SES Sending-Quota Enumeration Burst After Key Validation), fuse into one leaked-credential self-propagating-Lambda extortion incident anchored to the harvested access key's causality chain (key validation -> SES/discovery recon -> IAM self-escalation to AdministratorAccess -> denied EC2 -> victim-funded multi-region Lambda deployment -> S3 bucket-metadata exfil fan-out).",
+      "name": "Leaked Cloud Credential Self-Propagating Lambda Extortion Chain",
+      "rule_id": "CR-CDR-0017",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0112"
+}

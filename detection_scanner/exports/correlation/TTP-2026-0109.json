@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1620",
+    "T1140",
+    "T1106",
+    "T1027",
+    "T1574.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(EDR-013 DLL Side-Loaded Module Loads from a User-Writable Path in a Signed Host Process) AND ABIOC(EDR-013 Unbacked Private-Heap Execution Reached via Locale or Window Enumeration Callback) observed on the same agent_hostname and causality_actor_process within a 10-minute window \u2014 fuses the side-loading delivery stage and the fileless enum-callback shellcode execution into a single UUID-string-staging intrusion incident anchored to the signed-host-binary causality chain (no VirtualAlloc RWX, no CreateThread, no cross-process injection to key on).",
+      "name": "UUID-String Shellcode Staging with Enum-Callback Execution \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-EDR-0013",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0109"
+}

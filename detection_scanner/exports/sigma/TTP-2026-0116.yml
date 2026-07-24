@@ -1,0 +1,91 @@
+title: "Ivanti Connect Secure Pre-Auth IF-T Overflow to Internal Windows Pivot (SPAWN / CL-UNK-0979) \u2014 Ivanti-to-Windows Pivot: DcomSrv Service Created via vixDiskLib DLL Sideload"
+id: ttp-2026-0116-bioc-01
+status: experimental
+description: |
+  Fires on the internal Windows pivot host only when BOTH SPAWN-family signals are present on the same host: (1) vixDiskLib.dll is side-loaded by the legitimate vmdisk.exe as an UNSIGNED module or from outside Program Files — the anomaly that distinguishes the attacker-supplied DLL from the legitimate VMware VDDK library that vmdisk.exe normally loads — modeled on a MODULE_LOAD event; and (2) a service named DcomSrv is created. Requiring the load anomaly AND the DcomSrv persistence together avoids firing on normal VMware/Veeam backup activity, and keying on module + service name rather than a hash survives repacking.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter (event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD and action_module_name contains "vixDiskLib.dll" and actor_process_image_name = "vmdisk.exe" and (action_module_signature_status = "UNSIGNED" or action_module_path not contains "Program Files")) or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name in ("sc.exe", "services.exe", "vmdisk.exe") and action_process_image_command_line contains "DcomSrv")
+    | alter dcom_signal = if(event_type = ENUM.MODULE, "vixdisklib_anomalous_sideload", "dcomsrv_service_create")
+    | comp count_distinct(dcom_signal) as dcom_signals by agent_hostname
+    | filter dcom_signals >= 2
+    | fields agent_hostname, dcom_signals
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1543/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1543.003
+    - attack.t1574.002
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Ivanti Connect Secure Pre-Auth IF-T Overflow to Internal Windows Pivot (SPAWN / CL-UNK-0979) \u2014 Ivanti-to-Windows Pivot: /mail Scheduled Task Launching DeElevate64"
+id: ttp-2026-0116-bioc-02
+status: experimental
+description: |
+  Fires when a scheduled task named /mail launches DeElevate64.exe (which side-loads deelevator64.dll) on the internal Windows pivot host — the second SPAWN-family persistence mechanism. Keys on the /mail task name plus the DeElevate64 launcher.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "schtasks.exe" or actor_process_image_name = "svchost.exe"
+    | filter action_process_image_command_line contains "/mail" and action_process_image_command_line contains "DeElevate64"
+    | comp count() as sched_task_events by agent_hostname
+    | filter sched_task_events >= 1
+    | fields agent_hostname, sched_task_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Ivanti Connect Secure Pre-Auth IF-T Overflow to Internal Windows Pivot (SPAWN / CL-UNK-0979) \u2014 Ivanti-to-Windows Pivot: LSASS Memory Dump via Hollowed svchost"
+id: ttp-2026-0116-bioc-03
+status: experimental
+description: |
+  Fires when at least two of the credential-dump observables are seen on one host, each modeled on its real event type: (1) an LSASS handle opened with read/query rights (PROCESS_ACCESS against lsass.exe with PROCESS_VM_READ|PROCESS_QUERY_INFORMATION); (2) process hollowing into a suspended svchost.exe (PROCESS_ACCESS against svchost.exe with PROCESS_VM_WRITE|PROCESS_CREATE_THREAD rights); and (3) the XOR-encoded dump written to C:\Users\Public\Downloads\VM.txt (FILE write). Requiring two distinct real observables avoids the dead PROCESS_START/action_file_path match the earlier body degraded to.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "lsass.exe" and requested_access bitand 0x0410 != 0) or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "svchost.exe" and requested_access bitand 0x0022 != 0) or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains "C:\Users\Public\Downloads\VM.txt")
+    | alter dump_signal = if(event_type = ENUM.FILE, "vm_txt_dump_write", if(target_process_name = "lsass.exe", "lsass_handle_open", "svchost_hollow_inject"))
+    | comp count_distinct(dump_signal) as dump_signals by agent_hostname
+    | filter dump_signals >= 2
+    | fields agent_hostname, dump_signals
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,27 @@
+title: "Edge-Appliance Telemetry Collapse + WebVPN-Session C2 on Cisco ASA/FTD (ArcaneDoor / LINE VIPER) \u2014 Cisco ASA WebVPN Client Authentication Session From Modeled Peer IP"
+id: ttp-2026-0106-bioc-01
+status: experimental
+description: |
+  A genuine single-event BIOC: matches each Cisco ASA WebVPN client-authentication session-start (message id 716001) event that carries a modeled peer IP — the LINE VIPER C2-over-WebVPN channel, which blends into legitimate SSL-VPN logins. It reads the WebVPN modeling rule's normalized xdm.event.id and xdm.source.ipv4 fields rather than re-parsing the raw syslog line, so the substrate is load-bearing. A BIOC matches one event and cannot express a per-window count threshold; the beacon cadence (many sessions from one peer in a short window) is supplied by the CR-NDR-0010 correlation rule, not by this BIOC.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cisco_asa_raw
+    | filter xdm.event.id = "716001"
+    | filter xdm.source.ipv4 != null
+    | fields xdm.source.ipv4, xdm.source.user.username, xdm.event.id, _time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: network-fabric
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

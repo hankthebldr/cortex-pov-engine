@@ -1,0 +1,65 @@
+title: "UUID-String Shellcode Staging with Enum-Callback Fileless Execution \u2014 Cortex ABIOC (Bookworm / ToneShell) \u2014 EDR-013 DLL Side-Loaded Module Loads from a User-Writable Path in a Signed Host Process"
+id: ttp-2026-0109-abioc-01
+status: experimental
+description: |
+  Cortex's learned per-application baseline is that a given signed host binary installed under Program Files / System32 loads only its known, signed modules from its own install tree. The ABIOC fires on the baseline deviation where such a signed, trusted-path host binary loads an unsigned/unknown DLL from a user-writable path (Users, ProgramData, AppData, Temp) that differs from the host binary's install directory — the classic search-order-hijack shape of the UUID-string loader's side-load delivery stage. Constraining the actor to a Program Files / Windows install location suppresses the benign case of an AppData-resident app (Teams, Slack, updaters) loading its own unsigned components, so the anchor is the anomalous causality chain (trusted-path signed host binary -> unsigned module from a writable path outside its install tree), not any known-bad DLL name. Unit 42 labeled this side-loading T1574.001 under the legacy id; this card carries the MITRE-canonical T1574.002 (DLL Side-Loading).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD
+    | filter actor_process_signature_status = "SIGNED"
+    | filter actor_process_image_path contains "\Program Files" or actor_process_image_path contains "\Windows\"
+    | filter action_module_signature_status in ("UNSIGNED", "UNKNOWN")
+    | filter action_module_path contains "\Users\" or action_module_path contains "\ProgramData\" or action_module_path contains "\AppData\" or action_module_path contains "\Temp\"
+    | comp count() as sideloaded_modules by agent_hostname, actor_process_image_name, actor_process_image_path, action_module_name, action_module_path
+    | filter sideloaded_modules >= 1
+    | fields agent_hostname, actor_process_image_name, action_module_name, action_module_path, sideloaded_modules
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1574/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1574.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "UUID-String Shellcode Staging with Enum-Callback Fileless Execution \u2014 Cortex ABIOC (Bookworm / ToneShell) \u2014 EDR-013 Unbacked Private-Heap Execution Reached via Locale or Window Enumeration Callback"
+id: ttp-2026-0109-abioc-02
+status: experimental
+description: |
+  The fileless core: a signed host process loads an unsigned module that has no backing image on disk (action_module_path is empty — an in-memory / unbacked region rather than a file-backed DLL) into its own address space. This is the observable xdr_data footprint of the UUID-string reflective-load idiom (bytes reassembled with UuidFromStringA onto a private heap and run without a file), which produces no VirtualAlloc(RWX), no CreateThread, and no cross-process injection to key on. In the public form of the technique control is handed to that region by passing it as the callback argument to a Win32 enumeration API such as EnumSystemLocalesA / EnumChildWindows / EnumSystemLanguageGroupsA — that callback idiom is tradecraft context, not a queryable xdr_data column, so the ABIOC anchors the deviation to the in-process causality (signed host process -> unsigned unbacked module load) that Cortex's behavioral-ML has never observed for that application. Sibling card TTP-2026-0119 keys the same unbacked-execution shape on action_module_path = "" + action_module_signature_status = "UNSIGNED".
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD
+    | filter causality_actor_process_signature_status = "SIGNED"
+    | filter action_module_path = "" and action_module_signature_status = "UNSIGNED"
+    | comp count() as unbacked_module_loads by agent_hostname, causality_actor_process_image_name, action_module_signature_status
+    | filter unbacked_module_loads >= 1
+    | sort desc unbacked_module_loads
+    | fields agent_hostname, causality_actor_process_image_name, unbacked_module_loads
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1620/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1620
+    - attack.t1106
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,423 @@
+{
+  "id": "TTP-2026-0108",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:35:48+00:00",
+    "updated_at": "2026-07-24T01:35:48+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-tim",
+      "vector-dns-tunneling",
+      "strategically-aged-domains",
+      "sleeper-domain",
+      "dga",
+      "dns-security",
+      "command-and-control",
+      "severity-high",
+      "abioc"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Strategically Aged Sleeper-Domain Activation — Dormancy-Break DNS Burst with DGA Subdomain Fan-Out (T1568.002 / T1071.004)",
+    "summary": "A C2 apex registered years early and left dormant wakes as a same-day DNS query jump from below its learned baseline into the top 5%, plus a fan-out of never-before-seen DGA subdomains. Aged (not newly registered), it evades NRD blocks; Advanced DNS Security and Cortex analytics catch the dormancy-break burst and DGA fan-out as behavioral deviations, not reputation hits.",
+    "description": "Unit 42 documents that adversaries register C2 domains years before use and leave them dormant so the apex accrues age and evades newly-registered-domain (NRD) blocking. SUNBURST's C2 apex avsvmcloud[.]com was registered in 2018 and stayed dormant for two years before activation drove a ~165x traffic increase; Pegasus C2 apexes permalinking[.]com and opposedarrangement[.]net (both registered 2019) activated in July 2021 with a ~56x same-day increase. Unit 42's activation signal is quantitative: a strategically aged domain that held limited traffic (below its 75th-percentile activity) for months-to-years and then gains more than 10.3x its traffic increment within a single day (average increment on activation day 11.3x), jumping into the top 5% of activity. Activation is accompanied by a subdomain fan-out — an average of 2,443 newly-observed subdomains per domain activation, of which ~161 are algorithmically generated (DGA), and DGA traffic accounts for 43.19% of the burst; half of detected domains had DGA rates above 36.76%. SUNBURST exfiltrated victim identity inside DGA subdomain labels of the form DGAstring.appsync-api.<region>.avsvmcloud[.]com; Pegasus used labels such as imgdsg4f35.permalinking[.]com and php78mp9v.opposedarrangement[.]net; a phishing gateway used DGA cloaking under ui1io[.]cn (e.g. jcxivnmqfqoiopdlvejvgucpmrfgmhwdlrkvzqyb.ui1io[.]cn); level-squatting phishing apex mailingmarketing[.]net produced 47 new DGA subdomains on a single day; wildcard-DNS black-hat-SEO apex fiorichiari[.]com burst on 2021-09-29. Strategically aged domains are malicious at 3.8% versus 1.27% for newly registered domains — more than three times higher — which is exactly why an NRD block misses them and a behavioral detector must carry the load. This card exercises that detector class on the TIM plane: two ABIOCs anchor on per-apex learned DNS behavior — (a) the dormancy-break traffic burst crossing the activation multiple, and (b) the never-before-seen DGA subdomain fan-out exceeding the apex's learned subdomain diversity. Supporting validation XQL surfaces both deviations against the real published IOC apexes, and a correlation rule stitches the two ABIOCs on the same apex within the activation window into a single strategically-aged-sleeper-domain-activation incident the DC presents as proof that Cortex caught an aged, reputation-clean C2 domain that no NRD control would have flagged.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "SUNBURST / SolarWinds supply-chain intrusion (aged C2 avsvmcloud[.]com, 2020)",
+      "Pegasus spyware infrastructure (aged C2 permalinking[.]com / opposedarrangement[.]net, activated 2021)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1568",
+        "subtechnique_id": "T1568.002",
+        "name": "Dynamic Resolution: Domain Generation Algorithms",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.004",
+        "name": "Application Layer Protocol: DNS",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1583",
+        "subtechnique_id": "T1583.001",
+        "name": "Acquire Infrastructure: Domains",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1584",
+        "subtechnique_id": "T1584.001",
+        "name": "Compromise Infrastructure: Domains",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1048",
+        "subtechnique_id": "T1048.003",
+        "name": "Exfiltration Over Alternative Protocol: Unencrypted Non-C2 Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Domain Name: Active DNS",
+      "Domain Name: Passive DNS",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-TIM-003 — Strategically aged sleeper-domain activation (dormancy-break DNS burst + DGA subdomain fan-out) for Cortex Advanced DNS Security / analytics ABIOC validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "DNS resolution tooling present so the step can emit query telemetry (dig from bind-tools / dnsutils).",
+        "check_command": "command -v dig || command -v nslookup"
+      },
+      {
+        "description": "DNS telemetry reaches Cortex — Advanced DNS Security (pan_dns) or NGFW DNS logs are onboarded so per-apex query volume and subdomain fan-out are observable.",
+        "check_command": "echo 'confirm pan_dns / Advanced DNS Security ingestion in the tenant'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Non-destructive: emit DNS query telemetry that models a strategically aged\n# sleeper-domain waking up. Queries go ONLY to the lab-controlled resolver\n# (${DNS_RESOLVER}); no data is encrypted, deleted, or exfiltrated. A SAFE-MODE\n# marker records the simulated activation.\nset -euo pipefail\nRESOLVER=\"${DNS_RESOLVER:-127.0.0.1}\"\nAPEX=\"${SLEEPER_APEX:-avsvmcloud.com}\"\nmkdir -p /tmp/cortexsim-tim-003\necho \"SAFE-MODE simulated sleeper-domain activation of ${APEX} at $(date -u +%FT%TZ)\" > /tmp/cortexsim-tim-003/activation.marker\n# (a) dormancy-break burst: spike apex query volume into the top-5% band\nfor i in $(seq 1 120); do dig +short +time=1 +tries=1 \"@${RESOLVER}\" \"${APEX}\" >/dev/null 2>&1 || true; done\n# (b) DGA subdomain fan-out: never-before-seen high-entropy labels under the apex\nfor pub in imgdsg4f35 php78mp9v dga1a2b3c appsync-api-70e2b8f4; do dig +short +time=1 +tries=1 \"@${RESOLVER}\" \"${pub}.${APEX}\" >/dev/null 2>&1 || true; done\nfor i in $(seq 1 60); do sub=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \\n'); dig +short +time=1 +tries=1 \"@${RESOLVER}\" \"${sub}.${APEX}\" >/dev/null 2>&1 || true; done\necho '[CortexSim] SIM-TIM-003 dormancy-break burst + DGA fan-out emitted'",
+      "input_variables": [
+        {
+          "name": "DNS_RESOLVER",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Lab-controlled resolver the modeled queries are sent to. Keep this a sinkhole / lab zone so no query reaches real (sinkholed) attacker infrastructure."
+        },
+        {
+          "name": "SLEEPER_APEX",
+          "type": "string",
+          "default": "avsvmcloud.com",
+          "description": "The strategically aged apex whose dormancy break is being modeled (published SUNBURST C2 apex, now sinkholed)."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "dns-query",
+        "description": "A same-day burst of DNS queries for a single aged apex whose learned baseline was below its 75th-percentile activity, crossing the activation multiple into the top-5% band.",
+        "expected_value": "apex_domain = \"avsvmcloud.com\" and activation_multiple >= 10.3"
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "A fan-out of never-before-seen high-entropy DGA subdomains (alphanumeric leftmost label, length >= 8, >= 2 digits) under the activated apex, exceeding the apex's learned subdomain diversity.",
+        "expected_value": "apex_domain = \"avsvmcloud.com\" and distinct_dga_subdomains >= 50"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-tim-003; echo '[CortexSim] SIM-TIM-003 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "avsvmcloud.com",
+        "context": "SUNBURST C2 apex — registered 2018, dormant two years, ~165x traffic increase on activation (Unit 42).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "permalinking.com",
+        "context": "Pegasus C2 apex — registered 2019, activated July 2021 with ~56x same-day traffic increase (Unit 42).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "opposedarrangement.net",
+        "context": "Pegasus C2 apex — registered 2019, activated July 2021 (Unit 42).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "ui1io.cn",
+        "context": "Phishing gateway apex using DGA-cloaked subdomains (Unit 42).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "mailingmarketing.net",
+        "context": "Level-squatting phishing apex (created 2020) — 47 new DGA subdomains on 2021-09-23 (Unit 42).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "fiorichiari.com",
+        "context": "Wildcard-DNS black-hat-SEO apex (registered 2021-07-27), burst detected 2021-09-29 (Unit 42).",
+        "reputation_required": "suspicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "imgdsg4f35.permalinking.com",
+        "context": "Published Pegasus DGA subdomain example (Unit 42).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "php78mp9v.opposedarrangement.net",
+        "context": "Published Pegasus DGA subdomain example (Unit 42).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "jcxivnmqfqoiopdlvejvgucpmrfgmhwdlrkvzqyb.ui1io.cn",
+        "context": "Published DGA-cloaked phishing subdomain example (Unit 42).",
+        "reputation_required": "malicious"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Dormancy-Break Traffic Burst on a Strategically Aged Domain",
+        "description": "An apex domain whose learned DNS query-volume baseline — a per-apex average daily query count computed over a 90-day baseline window while the apex held below its 75th-percentile activity — is suddenly exceeded by the activation-day volume by more than 10.3x, jumping into the top-5% band. The activation multiple is measured against that learned multi-day average (over the explicit 90-day window, excluding the activation day) rather than against an adjacent in-window bucket, so a prior baseline window must exist (a hard precondition) and the detector fires on aged, reputation-clean C2 apexes (SUNBURST/Pegasus lineage) that a newly-registered-domain block cannot see. Statistical baseline-deviation detector.",
+        "logic": "dataset = pan_dns\n| filter dns_query_name != null and _time > to_timestamp(current_time() - 7776000)\n| alter apex_domain = arrayindex(regextract(lowercase(dns_query_name), \"([a-z0-9_-]+\\.[a-z]+)$\"), 0)\n| alter day_bucket = format_timestamp(\"%Y-%m-%d\", _time)\n| alter is_activation_day = if(_time >= to_timestamp(current_time() - 86400), 1, 0)\n| comp count() as day_query_count by apex_domain, day_bucket, is_activation_day\n| comp sum(if(is_activation_day = 1, day_query_count, 0)) as activation_day_queries, avg(if(is_activation_day = 0, day_query_count, null)) as baseline_daily_avg, count_distinct(if(is_activation_day = 0, day_bucket, null)) as baseline_days by apex_domain\n| filter baseline_days >= 1 and baseline_daily_avg > 0\n| alter activation_multiple = divide(activation_day_queries, baseline_daily_avg)\n| filter activation_multiple >= 10.3\n| sort desc activation_multiple\n| fields apex_domain, baseline_days, baseline_daily_avg, activation_day_queries, activation_multiple",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.004",
+          "T1568.002"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Per-apex learned DNS request-volume baseline — a 90-day average daily query count accrued while the apex held below its 75th-percentile activity for months-to-years — compared against the activation-day volume; the >10.3x activation multiple is measured against that learned average, not against an adjacent in-window bucket, so it anchors to the apex's own months-to-years history rather than to domain reputation."
+      },
+      {
+        "name": "Never-Before-Seen DGA Subdomain Fan-Out Under a Newly-Activated Apex",
+        "description": "Under a single apex, a burst of distinct, high-entropy, never-before-seen subdomain labels appears within the activation window — the DGA fan-out Unit 42 measures at an average 161 DGA subdomains per activation (43.19% of burst traffic). The ABIOC anchors on the per-apex learned subdomain-diversity baseline and a label character-class/entropy gate: the left-most label must be an alphanumeric string of length >= 8 carrying >= 2 digits (a DGA/high-entropy shape that pure-dictionary subdomains like `login` or `api` fail, but the cited 9-10 char Pegasus labels imgdsg4f35 / php78mp9v clear), and known-benign CDN/cloud apexes (cloudfront.net, amazonaws.com, akamai*, azurefd.net, googleusercontent.com, cloudflare.net) are excluded so long benign labels do not roll up as a false fan-out. It fires when the count of distinct qualifying never-before-seen labels under one apex exceeds the apex's learned diversity. It catches identity-in-the-subdomain exfiltration (SUNBURST DGAstring.appsync-api.<region>.avsvmcloud[.]com) and DGA-cloaked phishing that no static IOC list enumerates.",
+        "logic": "dataset = pan_dns\n| filter dns_query_name != null\n| alter apex_domain = arrayindex(regextract(lowercase(dns_query_name), \"([a-z0-9_-]+\\.[a-z]+)$\"), 0)\n| filter apex_domain not in (\"cloudfront.net\", \"amazonaws.com\", \"akamaiedge.net\", \"akamai.net\", \"azurefd.net\", \"googleusercontent.com\", \"cloudflare.net\")\n| alter leftmost_label = arrayindex(split(lowercase(dns_query_name), \".\"), 0)\n| filter leftmost_label ~= \"^[a-z0-9]{8,}$\"\n| alter label_digit_count = array_length(regextract(leftmost_label, \"[0-9]\"))\n| filter label_digit_count >= 2\n| comp count_distinct(dns_query_name) as distinct_dga_subdomains, count() as dga_query_volume by apex_domain\n| filter distinct_dga_subdomains >= 50\n| sort desc distinct_dga_subdomains\n| fields apex_domain, distinct_dga_subdomains, dga_query_volume",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1568.002",
+          "T1048.003"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Per-apex learned subdomain-diversity + label character-class/entropy baseline -> activation-window fan-out of distinct never-before-seen high-entropy labels (alphanumeric, length >= 8, >= 2 digits) exceeding the learned diversity, with known-benign CDN/cloud apexes excluded, anchored to the same apex that broke dormancy."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Sleeper-Domain Activation Burst Surfaced in DNS Telemetry",
+        "query": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 900)\n| filter dns_query_name != null\n| alter apex_domain = arrayindex(regextract(lowercase(dns_query_name), \"([a-z0-9_-]+\\.[a-z]+)$\"), 0)\n| filter apex_domain in (\"avsvmcloud.com\", \"permalinking.com\", \"opposedarrangement.net\", \"ui1io.cn\", \"mailingmarketing.net\", \"fiorichiari.com\")\n| comp count() as activation_queries by apex_domain\n| filter activation_queries >= 1\n| sort desc activation_queries\n| fields apex_domain, activation_queries",
+        "expected_rows_min": 1,
+        "dataset": "pan_dns"
+      },
+      {
+        "purpose": "validation",
+        "name": "DGA Subdomain Fan-Out Surfaced Under an Activated Apex",
+        "query": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 900)\n| filter dns_query_name != null\n| alter apex_domain = arrayindex(regextract(lowercase(dns_query_name), \"([a-z0-9_-]+\\.[a-z]+)$\"), 0)\n| alter leftmost_label = arrayindex(split(lowercase(dns_query_name), \".\"), 0)\n| filter apex_domain in (\"avsvmcloud.com\", \"permalinking.com\", \"opposedarrangement.net\", \"ui1io.cn\")\n| filter leftmost_label ~= \"^[a-z0-9]{8,}$\"\n| alter label_digit_count = array_length(regextract(leftmost_label, \"[0-9]\"))\n| filter label_digit_count >= 2\n| comp count_distinct(dns_query_name) as distinct_subdomains by apex_domain\n| filter distinct_subdomains >= 1\n| sort desc distinct_subdomains\n| fields apex_domain, distinct_subdomains",
+        "expected_rows_min": 1,
+        "dataset": "pan_dns"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Strategically Aged Sleeper-Domain Activation — Burst + DGA Fan-Out Stitch",
+        "rule_id": "CR-TIM-0003",
+        "logic": "ABIOC(Dormancy-Break Traffic Burst on a Strategically Aged Domain) AND ABIOC(Never-Before-Seen DGA Subdomain Fan-Out Under a Newly-Activated Apex) — fuses the same-day dormancy-break traffic burst and the never-before-seen DGA subdomain fan-out on the SAME apex_domain within the activation window into a single strategically-aged-sleeper-domain-activation incident, anchored to the aged apex the newly-registered-domain block never flagged."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex Advanced DNS Security — strategically-aged-domain activation + DGA subdomain detection",
+        "validated": true,
+        "note": "Backed on this card by ABIOC 'Dormancy-Break Traffic Burst on a Strategically Aged Domain' + ABIOC 'Never-Before-Seen DGA Subdomain Fan-Out Under a Newly-Activated Apex' and their pan_dns validation queries."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "advanced-dns-security",
+        "submodule": "dns-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ADNS-001",
+          "TBD-ADNS-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = pan_dns | filter dns_query_name != null | alter apex_domain = arrayindex(regextract(lowercase(dns_query_name), \"([a-z0-9_-]+\\.[a-z]+)$\"), 0) | filter apex_domain in (\"avsvmcloud.com\", \"permalinking.com\", \"opposedarrangement.net\") | comp count() as activation_queries, count_distinct(dns_query_name) as distinct_subdomains by apex_domain | sort desc activation_queries",
+        "agent_version_min": ""
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-TIM-0003",
+          "TBD-XSIAM-DNS-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Two ABIOCs fire on the per-apex DNS behavioral deviation (dormancy-break burst + DGA fan-out); CR-TIM-0003 stitches them on the same apex_domain into one strategically-aged-sleeper-domain-activation incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-TIM-003",
+        "name": "Strategically Aged Sleeper-Domain Activation Detection via Behavioral DNS Analytics",
+        "description": "Cortex Advanced DNS Security and XSIAM analytics detect an aged, reputation-clean C2 apex waking from dormancy — a same-day traffic burst into the top-5% band plus a fan-out of never-before-seen DGA subdomains — where a newly-registered-domain block sees nothing because the domain is years old.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-TIM-003A",
+            "objective": "The dormancy-break traffic burst on a strategically aged apex is detected as a behavioral deviation from the apex's learned volume baseline.",
+            "preconditions": [
+              "DNS telemetry (pan_dns / Advanced DNS Security) onboarded to the tenant.",
+              "A prior 90-day baseline window has elapsed during which the apex held below-75th-percentile activity, so a per-apex average-daily-query baseline exists. This is a HARD precondition: the ABIOC measures the activation multiple against that learned multi-day average, not against traffic emitted inside the run window, so the baseline must predate the simulated activation."
+            ],
+            "steps": [
+              "Emit a same-day burst of DNS queries for the aged apex crossing the >10.3x activation multiple.",
+              "Observe the dormancy-break ABIOC fire and the activation-burst validation query return the apex."
+            ],
+            "success_criteria": [
+              "ABIOC `Dormancy-Break Traffic Burst on a Strategically Aged Domain` fires on the aged apex.",
+              "XQL `Sleeper-Domain Activation Burst Surfaced in DNS Telemetry` returns >= 1 row for the apex."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-TIM-003B",
+            "objective": "The never-before-seen DGA subdomain fan-out under the activated apex is detected as exceeding the apex's learned subdomain diversity.",
+            "preconditions": [
+              "DNS telemetry onboarded.",
+              "The apex activation from TC-TIM-003A has occurred."
+            ],
+            "steps": [
+              "Emit a fan-out of distinct high-entropy DGA subdomains under the activated apex.",
+              "Observe the DGA-fan-out ABIOC fire and the fan-out validation query return the apex."
+            ],
+            "success_criteria": [
+              "ABIOC `Never-Before-Seen DGA Subdomain Fan-Out Under a Newly-Activated Apex` fires.",
+              "XQL `DGA Subdomain Fan-Out Surfaced Under an Activated Apex` returns >= 1 row for the apex."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "test_case_id": "TC-TIM-003C",
+            "objective": "The two behavioral deviations stitch into a single sleeper-domain-activation incident on the same apex.",
+            "preconditions": [
+              "Both ABIOCs from TC-TIM-003A and TC-TIM-003B have fired on the same apex within the activation window."
+            ],
+            "steps": [
+              "Let the correlation window elapse.",
+              "Observe CR-TIM-0003 raise one stitched incident."
+            ],
+            "success_criteria": [
+              "Correlation CR-TIM-0003 raises exactly one strategically-aged-sleeper-domain-activation incident anchored to the aged apex."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Do not rely on newly-registered-domain (NRD) blocking alone — strategically aged domains are malicious at 3.8% vs 1.27% for NRDs and defeat age-based allow-listing by design.",
+      "Enable Advanced DNS Security to inline-block DGA and DNS-tunneling query patterns rather than only alerting on them.",
+      "Sinkhole and rate-limit resolution to apexes exhibiting a sudden dormancy-break burst pending analyst review."
+    ],
+    "detection_engineering": [
+      "Let Cortex learn a per-apex DNS request-volume baseline and alert on a same-day jump past the >10.3x activation multiple into the top-5% band, independent of domain reputation or age.",
+      "Alert on a per-apex fan-out of distinct never-before-seen high-entropy left-most labels exceeding the apex's learned subdomain diversity (the DGA fan-out).",
+      "Stitch the dormancy-break burst and the DGA fan-out on the same apex within the activation window into a single incident so the aged-domain activation is one alert, not two weak signals."
+    ],
+    "response_playbook": "XSOAR-PB-StrategicallyAgedDomainActivationTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Strategically Aged Domain Detection: Capture APT Attacks With DNS Traffic Trends",
+      "url": "https://unit42.paloaltonetworks.com/strategically-aged-domain-detection/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1568.002 — Dynamic Resolution: Domain Generation Algorithms",
+      "url": "https://attack.mitre.org/techniques/T1568/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.004 — Application Layer Protocol: DNS",
+      "url": "https://attack.mitre.org/techniques/T1071/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex Advanced DNS Security — DGA and DNS tunneling detection",
+      "url": "https://docs.paloaltonetworks.com/advanced-dns-security",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

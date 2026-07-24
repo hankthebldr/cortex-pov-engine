@@ -1,0 +1,519 @@
+{
+  "id": "TTP-2026-0114",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-23T00:00:00+00:00",
+    "updated_at": "2026-07-23T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-browser",
+      "vector-indirect-prompt-injection",
+      "browsing-ai-agent",
+      "dom-hidden-payload",
+      "abioc",
+      "mitre-atlas",
+      "ai-access-security",
+      "web",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-MITRE-ATLAS",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "web",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 360,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Web-Based Indirect Prompt Injection Against a Browsing AI Agent — DOM-Hidden Payload Drives Autonomous Action (SIM-BROWSER-006)",
+    "summary": "A browsing AI agent visits an attacker page whose instructions are hidden in the DOM (zero-sized, off-screen, opacity 0, white-on-white, obfuscated). It ingests them and, with no human gesture, performs a cross-origin payment/OAuth action or a data leak. The catch is the page-load -> hidden-ingest -> unattended-action causality chain plus egress to the published IDPI domains.",
+    "description": "Unit 42 documented in-the-wild web-based indirect prompt injection (IDPI) against autonomous browsing agents: benign-looking pages carry instructions the human never sees but the agent's DOM/innerText scan ingests. The payload is concealed with CSS (font-size:0/line-height:0, position:absolute;left:-9999px, display:none, visibility:hidden, opacity:0, color:#ffffff on #ffffff), hidden <textarea> and data-* attribute cloaking, SVG/XML CDATA, canvas-rendered (OCR-only) text, and runtime base64 decode with timed delays; the instruction text itself is obfuscated with zero-width Unicode, Cyrillic/Greek homoglyphs, U+202E bidi override, HTML-entity (&#73;) and URL (%49) encoding, nested encoding chains, and payload-splitting across elements. Observed hijacked actions: approval override on an ad-review agent (reviewerpress[.]com), 'delete your database' (splintered[.]co[.]uk), contact-list theft (dylansparks[.]com), forced donation/payment to buy.stripe[.]com and paypal[.]me/shiftypumpkin, an unattended Google OAuth consent + Pro-plan subscription (llm7-landing.pages[.]dev -> token.llm7[.]io), system-prompt exfiltration, and destructive backend command attempts (fork bomb / recursive-delete strings present as page text on cblanke2.pages[.]dev). This card models that on the BROWSER plane and validates the Cortex catch. Because every tool the agent uses is legitimate (its own navigator, its own network stack), a hand-authored signature misses it — so the emphasis is behavioral: two auto-tuned ABIOCs anchor on the causality chain rather than a bad string. ABIOC A fires when, within one agent session, an untrusted page load is followed by a hidden-DOM ingest and then a cross-origin navigation to a sensitive-origin class (payment/OAuth/LLM-billing) that is absent from the agent's task manifest — the learned baseline is that the agent only reaches sensitive origins it was tasked with, so an off-manifest sensitive navigation right after ingesting concealed page content is the anomaly (not the mere absence of a human gesture, which an unattended agent never produces). ABIOC B fires when a browser-engine process (chrome/chromium/chromium-browser/headless_shell — generic node workers excluded) parents an OS shell after a page load — a lineage a browser engine's learned profile never exhibits, which is exactly what the injected backend-command attempts produce. A validation XQL surfaces the gesture-less navigation; a hunting XQL keys Advanced DNS Security on resolutions to the published IDPI and payment domains; a correlation rule stitches the browser deviation and the egress on one agent_hostname + browser_session_id into a single IDPI incident the DC presents as proof Cortex caught an unattended agent hijack no static rule was written for.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "In-the-wild web-based indirect prompt injection (IDPI) against autonomous browsing agents — 22 distinct payload-engineering techniques; 75.8% single-injection pages, 85.2% social-engineering jailbreaks, 73.2% on .com (Unit 42, 2025-2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2025-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1189",
+        "name": "Drive-by Compromise",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1204",
+        "subtechnique_id": "T1204.001",
+        "name": "User Execution: Malicious Link",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.004",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1583",
+        "subtechnique_id": "T1583.001",
+        "name": "Acquire Infrastructure: Domains",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1656",
+        "name": "Impersonation",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1657",
+        "name": "Financial Theft",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      }
+    ],
+    "atlas_techniques": [
+      {
+        "atlas_id": "AML.T0051.001",
+        "name": "LLM Prompt Injection: Indirect",
+        "atlas_tactic": "Initial Access"
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Network Traffic: Network Connection Creation",
+      "Process: Process Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-BROWSER-006 — DOM-hidden indirect prompt injection driving an autonomous browsing-agent action for Cortex ABIOC + Advanced DNS Security validation.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM Linux agent (and Prisma Browser telemetry where available) installed so browsing-agent process lineage and navigation/network telemetry reach xdr_data / prisma_browser_events.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "A browsing-agent identity (e.g. a Node/Playwright headless agent running as 'node') exists whose learned Cortex profile is unattended automation with no interactive shell and no gesture-less sensitive-origin navigation.",
+        "check_command": "id node"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE. Models the IDPI causality chain: browsing agent loads an\n# attacker page carrying a DOM-hidden instruction, then performs an autonomous\n# (no-human-gesture) cross-origin action and a browser->shell lineage. Nothing\n# destructive is executed; the injected backend command is left as an inert\n# SAFE-MODE marker (never run).\nset -euo pipefail\nMARK=\"${MARKER_DIR:-/tmp}/cortexsim-browser-006\"\n# (1) Agent fetches the attacker IDPI page (page-load + egress signal).\ncurl -s --max-time 5 \"http://${STAGE_HOST:-127.0.0.1}/idpi/advertorial\" -o \"${MARK}.page\" 2>/dev/null || true\n# (2) Autonomous cross-origin action with no human gesture: instead of a real\n#     payment/OAuth, drop a marker recording the redirect the injection forces.\ncurl -s --max-time 5 \"http://${STAGE_HOST:-127.0.0.1}/pay/checkout\" -o \"${MARK}.autonomous-action\" 2>/dev/null || true\n# (3) Browser->shell lineage: the injected backend-command attempt. Recorded as\n#     an inert SAFE-MODE marker string; the destructive payload is NOT executed.\nprintf 'SAFE-MODE: injected backend-command attempt (recursive-delete / fork-bomb class) neutralized — not executed\\n' > \"${MARK}.injected-command.SAFE-MODE\"\necho '[CortexSim] SIM-BROWSER-006 IDPI causality chain emitted (non-destructive).'",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised internal staging host that serves the emulated IDPI page and the emulated payment/OAuth endpoint the autonomous action reaches."
+        },
+        {
+          "name": "MARKER_DIR",
+          "type": "string",
+          "default": "/tmp",
+          "description": "Directory the non-destructive SAFE-MODE marker files are written to."
+        }
+      ],
+      "timeout_seconds": 360
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "The browsing-agent identity makes a cross-origin request to the emulated payment/OAuth endpoint immediately after the IDPI page load, with no interposed human input event.",
+        "expected_value": "actor_effective_username = \"node\" and dst_action_external_hostname contains \"checkout\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "The browser-engine process parents an OS shell (the injected backend-command lineage) — a lineage the browser engine's learned baseline never produces. Scoped to browser-engine images, not generic node workers.",
+        "expected_value": "actor_process_image_name in (\"chrome\", \"chromium\", \"chromium-browser\", \"headless_shell\") and action_process_image_name in (\"sh\", \"bash\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f \"${MARKER_DIR:-/tmp}\"/cortexsim-browser-006.*; echo '[CortexSim] SIM-BROWSER-006 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "reviewerpress.com",
+        "context": "IDPI hosting domain — ad-review approval-override injection (advertorial-maxvision-can); 24 distinct injection attempts.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "reviewerpressus.mycartpanda.com",
+        "context": "Redirect target for the ad-review-bypass scam advertisement.",
+        "reputation_required": "suspicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "splintered.co.uk",
+        "context": "IDPI hosting domain — 'delete your database' destructive instruction via CSS rendering suppression.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "dylansparks.com",
+        "context": "IDPI hosting domain — company contact-list exfiltration via visible-plaintext footer injection.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "llm7-landing.pages.dev",
+        "context": "IDPI hosting domain — forces unattended Google OAuth consent + Pro-plan subscription via dynamic JavaScript.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "cblanke2.pages.dev",
+        "context": "IDPI hosting domain — fork-bomb / recursive-delete destructive strings present as page text.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "storage3d.com",
+        "context": "IDPI hosting domain — forced donation via HTML attribute cloaking (storage/2009.11).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "1winofficialsite.in",
+        "context": "IDPI hosting domain — SEO poisoning impersonating betting platform 1win via visible plaintext footer.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "perceptivepumpkin.com",
+        "context": "IDPI hosting domain — $5,000 transfer coercion to attacker-controlled account via CSS rendering suppression.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "shiftypumpkin.com",
+        "context": "IDPI hosting domain — payment coercion paired with paypal.me/shiftypumpkin.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "trinca.tornidor.com",
+        "context": "IDPI hosting domain — recruiting-screener manipulation ('extremely qualified') via transparency + off-screen positioning.",
+        "reputation_required": "suspicious"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "runners-daily-blog.com",
+        "context": "IDPI hosting domain — forced shoe purchase via off-screen hidden instructions.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://buy.stripe.com/7sY4gsbMKdZwfx39Sq0oM00",
+        "context": "Abused payment link the injection redirects a hijacked agent to (forced donation).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://buy.stripe.com/9B600jaQo3QC4rU3beg7e02",
+        "context": "Abused payment link used in agent payment-coercion injections.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://paypal.me/shiftypumpkin",
+        "context": "Abused PayPal.me payment target for hijacked-agent transfers.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://token.llm7.io/?subscription=show",
+        "context": "Endpoint the agent is driven to for the unauthorized Pro-plan subscription + Google OAuth consent flow.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://llm7-landing.pages.dev/_next/static/chunks/app/page-94a1a9b785a7305c.js",
+        "context": "Dynamic-JavaScript payload chunk that assembles the OAuth/subscription injection at runtime.",
+        "reputation_required": "suspicious"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Browsing Agent Sensitive-Origin Action After Hidden-DOM Ingest Outside Task Manifest",
+        "description": "Within one browsing-agent session, an untrusted page load is followed by ingestion of non-rendered DOM content (hidden / off-screen / zero-size / transparent) and then a cross-origin navigation to a sensitive-origin class (payment / OAuth-consent / LLM-billing) that was NOT present in the agent's task/instruction manifest. The ABIOC anchors on the page-load -> hidden-DOM-ingest -> off-manifest sensitive-navigation causality chain correlated by browser_session_id, not on any bad URL string and not on the mere absence of a human gesture (an unattended agent never produces gestures, so gesture-less navigation is its baseline, not the anomaly). The learned baseline is that the agent only reaches sensitive origins that appear in its task manifest; the injection adds an off-manifest sensitive navigation immediately after it ingests concealed page content. It generalizes to any sensitive origin the agent reaches off-manifest after a hidden-DOM ingest, catching the IDPI hijack even though every binary the agent uses is legitimate.",
+        "logic": "dataset = prisma_browser_events\n| filter actor_effective_username in (\"node\", \"www-data\", \"nobody\")\n| filter event_type in (\"page_load\", \"dom_content_ingest\", \"navigation\")\n| alter untrusted_page_load = if(event_type = \"page_load\" and page_origin_trust = \"untrusted\", 1, 0)\n| alter hidden_dom_ingest = if(event_type = \"dom_content_ingest\" and dom_visibility in (\"hidden\", \"offscreen\", \"zero_size\", \"transparent\"), 1, 0)\n| alter offmanifest_sensitive_nav = if(event_type = \"navigation\" and cross_origin = true and dest_origin_class = \"sensitive\" and in_task_manifest = false, 1, 0)\n| comp sum(untrusted_page_load) as untrusted_loads, sum(hidden_dom_ingest) as hidden_ingests, sum(offmanifest_sensitive_nav) as offmanifest_navs, min(_time) as chain_start, max(_time) as chain_end by agent_hostname, actor_effective_username, browser_session_id\n| filter untrusted_loads >= 1 and hidden_ingests >= 1 and offmanifest_navs >= 1\n| fields agent_hostname, actor_effective_username, browser_session_id, untrusted_loads, hidden_ingests, offmanifest_navs",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1189",
+          "T1204.001",
+          "T1657"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Untrusted page load in the agent session -> ingestion of non-rendered/hidden DOM content -> cross-origin navigation to a sensitive-origin class that is absent from the agent's task manifest, all correlated on browser_session_id. The injected instruction that drives an off-manifest sensitive navigation right after a hidden-DOM ingest — not a human gesture and not a known-bad domain list — is what the chain isolates."
+      },
+      {
+        "name": "Browsing Agent Process Spawns Shell After DOM-Hidden Ingest",
+        "description": "A browser-engine process (chrome/chromium/chromium-browser/headless_shell) parents an OS shell shortly after loading a page — the lineage the injected backend-command attempts (recursive-delete / fork-bomb class) produce. The parent set is scoped to actual browser-engine images only; generic 'node' workers are deliberately excluded because Node.js shelling out to /bin/sh (child_process.exec, npm/yarn scripts) is ubiquitous and benign, so a node->sh match cannot carry this detection. A browser engine's learned per-process profile never spawns an interpreter, so the ABIOC fires on the browser-engine->shell lineage deviation anchored to the page load, not on any command string.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"chrome\", \"chromium\", \"chromium-browser\", \"headless_shell\")\n| filter action_process_image_name in (\"sh\", \"bash\", \"dash\", \"python3\")\n| filter actor_effective_username in (\"node\", \"www-data\", \"nobody\")\n| comp count() as agent_spawned_shells by agent_hostname, actor_effective_username, actor_process_instance_id\n| filter agent_spawned_shells >= 1\n| fields agent_hostname, actor_effective_username, actor_process_instance_id, agent_spawned_shells",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.004",
+          "T1204.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned browsing-agent baseline (never parents an OS interpreter) -> IDPI page load and DOM-hidden ingest -> browsing-agent process spawns sh/bash for the injected backend-command attempt, anchored to the agent process lineage."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SIM-BROWSER-006 Autonomous Cross-Origin Navigation Surfaced",
+        "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 900)\n| filter actor_effective_username in (\"node\", \"www-data\", \"nobody\")\n| filter event_type = \"navigation\" and cross_origin = true and dest_origin_class = \"sensitive\"\n| filter in_task_manifest = false and preceded_by_hidden_dom_ingest = true\n| comp count() as offmanifest_sensitive_navs by agent_hostname, browser_session_id\n| filter offmanifest_sensitive_navs >= 1\n| fields agent_hostname, browser_session_id, offmanifest_sensitive_navs",
+        "expected_rows_min": 1,
+        "dataset": "prisma_browser_events"
+      },
+      {
+        "purpose": "hunt",
+        "name": "SIM-BROWSER-006 IDPI Domain and Payment Egress Hunt",
+        "query": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 900)\n| filter dns_query_name in (\"reviewerpress.com\", \"splintered.co.uk\", \"dylansparks.com\", \"llm7-landing.pages.dev\", \"cblanke2.pages.dev\", \"storage3d.com\", \"buy.stripe.com\", \"token.llm7.io\", \"1winofficialsite.in\", \"perceptivepumpkin.com\", \"shiftypumpkin.com\")\n| comp count() as idpi_lookups by agent_hostname, dns_query_name\n| filter idpi_lookups >= 1\n| sort desc idpi_lookups\n| fields agent_hostname, dns_query_name, idpi_lookups",
+        "expected_rows_min": 0,
+        "dataset": "pan_dns"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Web-Based Indirect Prompt Injection Incident — Browsing-Agent Causality Stitch",
+        "rule_id": "CR-BROWSER-0006",
+        "logic": "ABIOC(Browsing Agent Sensitive-Origin Action After Hidden-DOM Ingest Outside Task Manifest) AND (ABIOC(Browsing Agent Process Spawns Shell After DOM-Hidden Ingest) OR XQL(SIM-BROWSER-006 IDPI Domain and Payment Egress Hunt)) — fuses the off-manifest sensitive-origin action that follows a hidden-DOM ingest, the browser-engine-parents-shell lineage, and the IDPI/payment egress on the same agent_hostname and browser_session_id within a 5-minute window into a single web-based indirect-prompt-injection incident anchored to the page-load -> hidden-ingest -> off-manifest-navigation causality chain."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — auto-tuned behavioral profiling of browsing-agent navigation gestures and per-process lineage",
+        "validated": true,
+        "note": "Backed by the two ABIOCs on this card (off-manifest sensitive-origin action after hidden-DOM ingest; browser-engine-parents-shell)."
+      },
+      "AI Access Security — risky agent OAuth-consent / LLM-billing egress detection"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ai-access-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-AIACCESS-001",
+          "TBD-AIACCESS-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Surface the browsing-agent's unattended OAuth consent + LLM-billing subscription flow (token.llm7.io / accounts.google.com) initiated with no human gesture in the AI Access Security agent-activity view."
+      },
+      {
+        "module": "advanced-dns-security",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "TBD-ADNS-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = pan_dns | filter dns_query_name in (\"reviewerpress.com\", \"splintered.co.uk\", \"llm7-landing.pages.dev\", \"cblanke2.pages.dev\", \"token.llm7.io\") | comp count() as hits by agent_hostname, dns_query_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-ABIOC-BROWSER-0006-AUTONOMOUS",
+          "XSIAM-ABIOC-BROWSER-0006-BROWSERSHELL",
+          "CR-BROWSER-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Both browsing-agent ABIOCs fire on the IDPI deviation and CR-BROWSER-0006 stitches them with the IDPI/payment egress into one indirect-prompt-injection incident anchored to the agent's page-load -> hidden-ingest -> no-gesture causality chain."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-BROWSER-006",
+        "name": "Web-Based Indirect Prompt Injection Against a Browsing AI Agent",
+        "description": "Cortex behavioral analytics and Advanced DNS Security catch a browsing AI agent hijacked by DOM-hidden instructions on an attacker page: the agent performs an unattended cross-origin payment/OAuth action and a browser-parented shell attempt, anchored to the page-load-to-hidden-ingest-to-no-gesture causality chain, where no static rule was written for the legitimate agent binaries involved.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-BROWSER-006A",
+            "objective": "The browsing agent's off-manifest cross-origin action to a sensitive (payment/OAuth) origin — reached right after it ingests hidden DOM content — fires ABIOC A and is surfaced by the validation XQL.",
+            "preconditions": [
+              "Browser/EDR target with the Cortex agent (and Prisma Browser telemetry where available).",
+              "Baseline window elapsed with the browsing agent reaching only task-manifest sensitive origins."
+            ],
+            "steps": [
+              "Drive the browsing agent onto the IDPI page so it ingests the DOM-hidden instruction.",
+              "Observe the agent perform a cross-origin navigation to a sensitive origin absent from its task manifest immediately after the hidden-DOM ingest.",
+              "Confirm ABIOC A fires and the validation XQL returns the off-manifest sensitive navigation."
+            ],
+            "success_criteria": [
+              "ABIOC `Browsing Agent Sensitive-Origin Action After Hidden-DOM Ingest Outside Task Manifest` fires.",
+              "XQL `SIM-BROWSER-006 Autonomous Cross-Origin Navigation Surfaced` returns >= 1 row for the agent session."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-BROWSER-006B",
+            "objective": "The browsing-agent process parenting an OS shell (the injected backend-command lineage) fires ABIOC B.",
+            "preconditions": [
+              "EDR target with the Cortex Linux agent installed.",
+              "Browsing-agent identity whose learned profile never parents an interpreter."
+            ],
+            "steps": [
+              "Let the IDPI page inject a backend-command instruction (SAFE-MODE; not executed).",
+              "Observe the browsing-agent process attempt to spawn sh/bash.",
+              "Confirm ABIOC B fires on the browser->shell lineage deviation."
+            ],
+            "success_criteria": [
+              "ABIOC `Browsing Agent Process Spawns Shell After DOM-Hidden Ingest` fires.",
+              "The alert is anchored to the browsing-agent process lineage, not a command-string signature."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-BROWSER-006C",
+            "objective": "Correlation stitches the browser deviations and the IDPI/payment egress into one incident; Advanced DNS Security flags the domain resolutions.",
+            "preconditions": [
+              "Both ABIOCs available and DNS telemetry (pan_dns) reaching the tenant.",
+              "Egress to the emulated IDPI/payment staging host authorised."
+            ],
+            "steps": [
+              "Run the full IDPI causality chain (page load -> autonomous action -> browser->shell).",
+              "Observe CR-BROWSER-0006 raise one incident on the agent session.",
+              "Confirm the DNS hunt / Advanced DNS Security surfaces resolutions to the IDPI/payment domains."
+            ],
+            "success_criteria": [
+              "Correlation `CR-BROWSER-0006` raises one stitched web-based indirect-prompt-injection incident.",
+              "XQL `SIM-BROWSER-006 IDPI Domain and Payment Egress Hunt` (or Advanced DNS Security) surfaces the IDPI/payment domain resolutions."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Require a human-in-the-loop confirmation gesture before a browsing agent performs any payment, OAuth consent, or cross-origin credentialed action; deny unattended sensitive-origin navigation.",
+      "Run browsing agents inside Prisma Browser / remote browser isolation so untrusted web content is separated from the agent's trusted instruction channel (spotlighting), and strip non-rendered DOM (zero-sized, off-screen, opacity-0, hidden <textarea>, data-* payloads) before the agent's context ingest.",
+      "Block/sinkhole resolution of known IDPI and abused-payment domains with Advanced DNS Security and Advanced URL Filtering; scope agent egress to an allowlist.",
+      "Constrain the browsing-agent service identity so it cannot spawn an OS shell or reach payment/OAuth origins outside an explicit allowlist."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs on the browsing-agent's learned navigation-gesture and per-process baseline rather than hand-authoring signatures for the legitimate agent binaries.",
+      "Alert on any cross-origin sensitive-origin (payment / OAuth / LLM-billing) navigation that is absent from the agent's task manifest and follows a hidden/non-rendered DOM ingest in the same agent session — not on the absence of a human gesture, which an unattended agent never produces.",
+      "Alert on a browser-engine process (chrome/chromium/chromium-browser/headless_shell) parenting an OS interpreter; do not key on generic node->shell, which is ubiquitous and benign.",
+      "Hunt DNS/egress for resolutions to the published IDPI and abused-payment domains and stitch them to the agent session via correlation."
+    ],
+    "response_playbook": "XSOAR-PB-BrowsingAgentIndirectPromptInjectionTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Web-Based Indirect Prompt Injection Against Browsing AI Agents (in-the-wild DOM-hidden payloads)",
+      "url": "https://unit42.paloaltonetworks.com/ai-agent-prompt-injection/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "Unit 42 — Autonomous AI and cloud attacks (research index)",
+      "url": "https://unit42.paloaltonetworks.com/autonomous-ai-cloud-attacks/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK T1189 — Drive-by Compromise",
+      "url": "https://attack.mitre.org/techniques/T1189/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATLAS AML.T0051.001 — LLM Prompt Injection: Indirect",
+      "url": "https://atlas.mitre.org/techniques/AML.T0051.001",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATLAS"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

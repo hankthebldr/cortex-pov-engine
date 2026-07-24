@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1190",
+    "T1133",
+    "T1542.003",
+    "T1562.001",
+    "T1562.006",
+    "T1071.001",
+    "T1095"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(Cisco ASA Informational and Debug Log Volume Collapse) AND count(BIOC(Cisco ASA WebVPN Client Authentication Session From Modeled Peer IP)) >= 6 by xdm.source.ipv4 within 1h \u2014 fires when the same Cisco ASA appliance shows an Informational/Debug syslog-volume collapse below its trailing baseline AND at least 6 WebVPN client-authentication session-start matches from a single modeled peer IP within a one-hour window. The per-window cadence threshold lives here in the correlation (a Correlation Rule / scheduled query is where an N-per-window count belongs); the referenced BIOC matches each individual 716001 session-start event. This stitches the absence-of-signal defense-evasion indicator to the WebVPN C2 channel into one edge-appliance-compromise incident anchored to the appliance host and the beacon peer.",
+      "name": "Edge Appliance Telemetry Collapse with WebVPN C2 Beacon",
+      "rule_id": "CR-NDR-0010",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0106"
+}
