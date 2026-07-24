@@ -248,28 +248,28 @@
       {
         "purpose": "validation",
         "name": "EDR-003 Analytics Service Unit Restart Always Hidden Path",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and action_file_path contains \".service\"\n| fields _time, agent_hostname, actor_process_image_name, action_file_path",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and action_file_path contains \".service\"\n| fields _time, agent_hostname, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-003 Analytics User Account Creation Non-Login Session",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"useradd\", \"adduser\", \"chpasswd\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"useradd\", \"adduser\", \"chpasswd\")\n| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-003 Analytics ssh-keygen Non-Interactive Persistence",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh-keygen\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh-keygen\"\n| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-003 Analytics Shell Init File Modification",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains_any (\".bashrc\", \".profile\", \".bash_profile\", \".zshrc\")\n| fields _time, agent_hostname, actor_process_image_name, action_file_path",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains_any (\".bashrc\", \".profile\", \".bash_profile\", \".zshrc\")\n| fields _time, agent_hostname, actor_process_image_name, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -278,7 +278,7 @@
       {
         "name": "Linux Multi-Mechanism Persistence Installation",
         "rule_id": "CR-EDR-0003",
-        "logic": "BIOC(EDR-003 Cron Job Creation With Suspicious Command Path) OR BIOC(EDR-003 Systemd Unit With Suspicious ExecStart) OR BIOC(EDR-003 Local Account Created With Sudo Group) OR BIOC(EDR-003 SSH Key Generation Then Authorized Keys Write) OR BIOC(EDR-003 Shell Profile Modified With Background Execution)"
+        "logic": "BIOC(EDR-003 Cron Job Creation With Suspicious Command Path) OR BIOC(EDR-003 Systemd Unit With Suspicious ExecStart) OR BIOC(EDR-003 Local Account Created With Sudo Group) OR BIOC(EDR-003 SSH Key Generation Then Authorized Keys Write) OR BIOC(EDR-003 Shell Profile Modified With Background Execution) STITCH BY agent_hostname, causality_actor_process_instance_id WITHIN 900s"
       }
     ],
     "analytics_modules": [

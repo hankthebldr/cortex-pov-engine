@@ -63,7 +63,7 @@ preset = xdr_data
 preset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.FILE and action_file_path contains ".service"
-| fields _time, agent_hostname, actor_process_image_name, action_file_path
+| fields _time, agent_hostname, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path
 
 ## VALIDATION — EDR-003 Analytics User Account Creation Non-Login Session
 # purpose: validation
@@ -73,7 +73,7 @@ preset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("useradd", "adduser", "chpasswd")
-| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — EDR-003 Analytics ssh-keygen Non-Interactive Persistence
 # purpose: validation
@@ -83,7 +83,7 @@ preset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = "ssh-keygen"
-| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — EDR-003 Analytics Shell Init File Modification
 # purpose: validation
@@ -93,5 +93,5 @@ preset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)
 | filter action_file_path contains_any (".bashrc", ".profile", ".bash_profile", ".zshrc")
-| fields _time, agent_hostname, actor_process_image_name, action_file_path
+| fields _time, agent_hostname, actor_process_image_name, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path
 

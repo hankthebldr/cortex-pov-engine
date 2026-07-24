@@ -68,11 +68,11 @@ description: |
   Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
   ----
     dataset = xdr_data
-    | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "lsass.exe" and requested_access bitand 0x0410 != 0) or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "svchost.exe" and requested_access bitand 0x0022 != 0) or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains "C:\Users\Public\Downloads\VM.txt")
+    | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "lsass.exe" and requested_access bitand 0x0410 != 0) or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "svchost.exe" and requested_access bitand 0x0022 != 0 and causality_actor_process_image_name not in ("services.exe", "svchost.exe")) or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains "C:\Users\Public\Downloads\VM.txt")
     | alter dump_signal = if(event_type = ENUM.FILE, "vm_txt_dump_write", if(target_process_name = "lsass.exe", "lsass_handle_open", "svchost_hollow_inject"))
-    | comp count_distinct(dump_signal) as dump_signals by agent_hostname
+    | comp count_distinct(dump_signal) as dump_signals, values(causality_actor_process_image_name) as injector_images by agent_hostname
     | filter dump_signals >= 2
-    | fields agent_hostname, dump_signals
+    | fields agent_hostname, dump_signals, injector_images
   ----
 references:
   - https://attack.mitre.org/techniques/T1003/

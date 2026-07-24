@@ -7,11 +7,11 @@
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-| filter actor_process_image_name = "w3wp.exe"
+| filter causality_actor_process_image_name = "w3wp.exe" or actor_process_image_name = "w3wp.exe"
 | filter action_process_image_name in ("cmd.exe", "powershell.exe", "pwsh.exe", "wmic.exe")
-| comp count() as backdoor_children by agent_hostname, actor_process_image_name
+| comp count() as backdoor_children by agent_hostname, causality_actor_process_image_name, actor_process_instance_id
 | filter backdoor_children >= 1
-| fields agent_hostname, actor_process_image_name, backdoor_children
+| fields agent_hostname, causality_actor_process_image_name, actor_process_instance_id, backdoor_children
 
 ## BIOC — MP-011 Ntospy Network Provider DLL Credential Interception
 # severity: high
@@ -58,11 +58,11 @@ dataset = xdr_data
 dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 900)
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-| filter actor_process_image_name = "w3wp.exe"
+| filter causality_actor_process_image_name = "w3wp.exe" or actor_process_image_name = "w3wp.exe"
 | filter action_process_image_name in ("cmd.exe", "powershell.exe", "pwsh.exe", "wmic.exe")
-| comp count() as child_procs by agent_hostname
+| comp count() as child_procs by agent_hostname, actor_process_instance_id
 | filter child_procs >= 1
-| fields agent_hostname, child_procs
+| fields agent_hostname, actor_process_instance_id, child_procs
 
 ## VALIDATION — MP-011 STAR-Delimited Encrypted HTTPS Exfil from w3wp
 # purpose: hunt

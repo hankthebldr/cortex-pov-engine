@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0044",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -189,7 +189,7 @@
       {
         "purpose": "validation",
         "name": "KOI-003 Outbound HTTPS To Non Canonical PyPI Mirror With Pip User Agent",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dns_query_name contains \"cortexsim-canary\"\n| filter action_external_port = 443\n| filter http_req_user_agent contains_any (\"pip\", \"python-requests\", \"python-urllib\") or actor_process_image_name in (\"pip\", \"pip3\", \"python\", \"python3\")\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, http_req_user_agent",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dns_query_name contains \"cortexsim-canary\"\n| filter action_external_port = 443\n| filter http_req_user_agent contains_any (\"pip\", \"python-requests\", \"python-urllib\") or actor_process_image_name in (\"pip\", \"pip3\", \"python\", \"python3\")\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, http_req_user_agent",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -212,7 +212,7 @@
       {
         "name": "Agentic Supply Chain \u2014 Backdoored PyPI Package Post-Install Hook",
         "rule_id": "CR-KOI-0003",
-        "logic": "BIOC(KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook) OR BIOC(KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint)"
+        "logic": "BIOC(KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook) OR BIOC(KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint) OR XQL(KOI-003 Outbound HTTPS To Non Canonical PyPI Mirror With Pip User Agent) — stitched by shared agent_hostname + causality_id so the runtime import-time child-spawn, the SCA/SBOM fingerprint finding, and the NGFW mirror fetch (endpoint_network_stitch) collapse into ONE agentic-supply-chain incident"
       }
     ],
     "analytics_modules": [
@@ -333,6 +333,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real KOI backdoored-PyPI BIOCs/XQL grounded in the mcp-server-helpers-typo artifact, added correlation CR-KOI-0003, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract retune: added causality_actor_process_image_name + causality_id/actor_process_instance_id evidence to the PyPI-mirror fetch XQL; enriched CR-KOI-0003 to OR-in the NDR fetch so the import-time child-spawn BIOC (already causality_actor-keyed), the SCA SBOM finding, and the NGFW mirror session stitch (endpoint_network_stitch) into ONE incident. Detection names/slugs unchanged. Scenario SIM-KOI-003 gains cgo_anchor (node/developer) + per-step causality/platforms (endpoint_network_stitch → shared_entity spine)."
     }
   ]
 }

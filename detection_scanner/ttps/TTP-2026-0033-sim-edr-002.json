@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0033",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02T00:00:00Z",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -193,7 +193,7 @@
       {
         "name": "EDR-002 Interactive Bash From Service Account With Network Redirect",
         "description": "Interactive bash spawned from service account with network redirect \u2014 C2 callback pattern. An interactive shell with a socket redirect runs under a non-login service identity.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"-i\"\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"-i\"\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"httpd\", \"nginx\", \"php-fpm\", \"node\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name, causality_actor_process_instance_id",
         "severity": "critical",
         "mitre_technique_ids": [
           "T1059.004"
@@ -229,7 +229,7 @@
       {
         "name": "EDR-002 OpenSSL s_client Encrypted C2 From Service Account",
         "description": "OpenSSL s_client invoked from non-interactive service account \u2014 encrypted C2 channel attempt. openssl s_client opens an outbound TLS channel from a service identity.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"openssl\"\n| filter action_process_image_command_line contains \"s_client\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"openssl\"\n| filter action_process_image_command_line contains \"s_client\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"httpd\", \"nginx\", \"php-fpm\", \"node\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name, causality_actor_process_instance_id",
         "severity": "high",
         "mitre_technique_ids": [
           "T1573.002"
@@ -393,6 +393,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real Linux XDR reverse-shell BIOCs/XQL, added correlation CR-EDR-0002, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract tuning: keyed the two service-account reverse-shell BIOCs (interactive-bash-with-network-redirect, openssl-s_client) on causality_actor_process_image_name (apache2/httpd/nginx/php-fpm/node — the web-service CGO that owns the chain) so the ownership tell is the compromised web service spawning the interpreter, and surfaced causality_actor_process_instance_id in their fields. Aligns with SIM-EDR-002 cgo_anchor (apache2/www-data) + the connected process_lineage spine across the five methods, which the CR-EDR-0002 multi-method stitch fuses on the shared CGO instance id. Detection bodies otherwise intact."
     }
   ]
 }

@@ -21,7 +21,9 @@ preset = xdr_data
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
 | filter actor_process_image_name in ("bash", "sh")
+| filter causality_actor_process_image_name in ("bash", "sh", "runc", "containerd-shim")
 | filter action_process_image_command_line contains "deepce"
+| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_process_image_command_line
 
 ## BIOC — CDR-001 Curl Pipe Bash Download Execute In Container
 # severity: high
@@ -65,6 +67,8 @@ preset = xdr_data
 | filter container_id != null
 | filter action_file_path contains "serviceaccount/token"
 | filter actor_process_image_name in ("cat", "find", "bash", "sh", "cp")
+| filter causality_actor_process_image_name in ("bash", "sh", "runc", "containerd-shim")
+| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_file_path
 
 ## BIOC — CDR-001 Broad Filesystem Credential Search In Container
 # severity: medium

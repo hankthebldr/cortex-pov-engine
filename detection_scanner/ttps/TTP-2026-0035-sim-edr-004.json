@@ -242,35 +242,35 @@
       {
         "purpose": "validation",
         "name": "EDR-004 Analytics History Evasion Sequence",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains_any (\"history -c\", \"HISTFILE\", \".bash_history\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains_any (\"history -c\", \"HISTFILE\", \".bash_history\")\n| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-004 Analytics Auth Log Access Non-Syslog Process",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and action_file_path contains_any (\"/var/log/auth.log\", \"/var/log/syslog\")\n| filter actor_process_image_name not in (\"rsyslogd\", \"systemd-journald\", \"logrotate\")\n| fields _time, agent_hostname, actor_process_image_name, action_file_path",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and action_file_path contains_any (\"/var/log/auth.log\", \"/var/log/syslog\")\n| filter actor_process_image_name not in (\"rsyslogd\", \"systemd-journald\", \"logrotate\")\n| fields _time, agent_hostname, actor_process_image_name, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-004 Analytics Timestomp Reference File",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"touch\"\n| filter action_process_image_command_line contains_any (\" -r \", \" -t \")\n| fields _time, agent_hostname, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"touch\"\n| filter action_process_image_command_line contains_any (\" -r \", \" -t \")\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-004 Analytics Shell Binary Copied To System Name",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"cp\", \"mv\")\n| filter action_process_image_command_line contains_any (\"/bin/sh\", \"/bin/bash\") and action_process_image_command_line contains_any (\"kworker\", \"systemd-\", \"/tmp/\")\n| fields _time, agent_hostname, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"cp\", \"mv\")\n| filter action_process_image_command_line contains_any (\"/bin/sh\", \"/bin/bash\") and action_process_image_command_line contains_any (\"kworker\", \"systemd-\", \"/tmp/\")\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-004 Analytics Security Tool Discovery Via Process Listing",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"grep\", \"egrep\", \"pgrep\")\n| filter action_process_image_command_line contains_any (\"falcon\", \"crowd\", \"cortex\", \"sentinel\", \"cylance\", \"carbon\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"grep\", \"egrep\", \"pgrep\")\n| filter action_process_image_command_line contains_any (\"falcon\", \"crowd\", \"cortex\", \"sentinel\", \"cylance\", \"carbon\")\n| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -279,7 +279,7 @@
       {
         "name": "Linux Anti-Forensics And Defense Evasion Chain",
         "rule_id": "CR-EDR-0004",
-        "logic": "BIOC(EDR-004 Bash History Clearing And HISTFILE Manipulation) OR BIOC(EDR-004 System Log Access Or Truncation) OR BIOC(EDR-004 File Timestomp Via Touch) OR BIOC(EDR-004 Binary Masquerade As Kernel Thread) OR BIOC(EDR-004 Security Product Enumeration)"
+        "logic": "BIOC(EDR-004 Bash History Clearing And HISTFILE Manipulation) OR BIOC(EDR-004 System Log Access Or Truncation) OR BIOC(EDR-004 File Timestomp Via Touch) OR BIOC(EDR-004 Binary Masquerade As Kernel Thread) OR BIOC(EDR-004 Security Product Enumeration) STITCH BY agent_hostname, causality_actor_process_instance_id WITHIN 900s"
       }
     ],
     "analytics_modules": [

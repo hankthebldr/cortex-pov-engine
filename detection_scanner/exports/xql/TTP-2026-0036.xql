@@ -11,6 +11,7 @@ preset = xdr_data
 | filter actor_process_image_name in ("bash", "sh")
 | filter action_process_image_command_line contains "/dev/tcp/"
 | filter actor_effective_username in ("www-data", "nobody", "node", "postgres", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "httpd", "nginx", "php-fpm", "tomcat", "java", "node", "uwsgi", "gunicorn")
 
 ## BIOC — EDR-005 Batch Mode SSH From Service Account
 # severity: high
@@ -22,6 +23,7 @@ preset = xdr_data
 | filter actor_process_image_name = "ssh"
 | filter action_process_image_command_line contains_any ("BatchMode=yes", "StrictHostKeyChecking=no")
 | filter actor_effective_username in ("www-data", "nobody", "node", "postgres", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "httpd", "nginx", "php-fpm", "tomcat", "java", "node", "uwsgi", "gunicorn")
 
 ## BIOC — EDR-005 SSH Tunnel Creation With Forward Flags
 # severity: high
@@ -43,7 +45,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("ip", "ifconfig", "route", "arp")
 | filter actor_effective_username != "root"
-| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — EDR-005 Analytics Sequential Port Connection Attempts
 # purpose: validation
@@ -65,7 +67,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = "ssh"
 | filter action_process_image_command_line contains "StrictHostKeyChecking=no"
-| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — EDR-005 Analytics SSH Port Forwarding From Service Account
 # purpose: validation
@@ -76,7 +78,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = "ssh"
 | filter action_process_image_command_line contains_any (" -L ", " -D ", " -R ")
-| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — EDR-005 Analytics DNS And Host File Enumeration
 # purpose: validation
@@ -87,5 +89,5 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter action_process_image_command_line contains_any ("/etc/hosts", "resolv.conf", "nslookup", "dig", "getent hosts", "hostname -f")
 | filter actor_effective_username != "root"
-| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 

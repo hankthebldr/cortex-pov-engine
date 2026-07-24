@@ -9,9 +9,9 @@ dataset = xdr_data
 | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN
 | filter action_file_path contains "Login Data" or action_file_path contains "cookies.sqlite" or action_file_path contains "logins.json" or action_file_path contains "key4.db"
 | filter actor_process_image_name not in ("chrome", "chromium", "google-chrome", "msedge", "firefox", "firefox-bin", "cortex-agent")
-| comp count_distinct(action_file_path) as stores_read by agent_hostname, actor_effective_username, actor_process_image_name
+| comp count_distinct(action_file_path) as stores_read by agent_hostname, actor_effective_username, actor_process_image_name, actor_process_instance_id
 | filter stores_read >= 2
-| fields agent_hostname, actor_effective_username, actor_process_image_name, stores_read
+| fields agent_hostname, actor_effective_username, actor_process_image_name, actor_process_instance_id, stores_read
 
 ## BIOC — MP-014 AzureHound Microsoft Graph Reachability Probe
 # severity: medium

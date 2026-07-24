@@ -217,7 +217,7 @@
       {
         "name": "Microsoft Admin-Consent OAuth Abuse Cloud Persistence \u2014 Same Identity",
         "rule_id": "CR-CLOUDAPP-0002",
-        "logic": "XQL(CLOUD-002 Microsoft Directory ReadWrite All Admin-Consent Scope Request) OR BIOC(CLOUD-002 Microsoft Application ReadWrite All In Same Grant Body) OR XQL(CLOUD-002 Microsoft Repeat Admin-Consent Persistence Attempt)"
+        "logic": "XQL(CLOUD-002 Microsoft Directory ReadWrite All Admin-Consent Scope Request) OR BIOC(CLOUD-002 Microsoft Application ReadWrite All In Same Grant Body) OR XQL(CLOUD-002 Microsoft Repeat Admin-Consent Persistence Attempt) GROUPED BY user, client_id, source_ip WITHIN 300s"
       }
     ],
     "analytics_modules": [

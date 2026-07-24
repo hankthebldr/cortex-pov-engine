@@ -29,7 +29,7 @@ dataset = proofpoint_tap_raw
 dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 3600)
 | filter event_type = ENUM.PROCESS
-| comp count() as endpoint_events, values(action_process_image_name) as procs by actor_effective_username
+| comp count() as endpoint_events, values(action_process_image_name) as procs, values(causality_actor_process_image_name) as cgo_procs by actor_effective_username, causality_actor_effective_username, causality_id
 | filter endpoint_events >= 1
-| fields actor_effective_username, endpoint_events, procs
+| fields actor_effective_username, causality_actor_effective_username, causality_id, endpoint_events, procs, cgo_procs
 

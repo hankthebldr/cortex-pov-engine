@@ -13,24 +13,25 @@ dataset = xdr_data
 | filter action_process_image_name in ("bash", "sh", "zsh")
 | filter action_process_command_line contains "sh -i"
 | filter causality_actor_process_image_name in ("sshd", "su", "runuser", "sudo", "login", "systemd")
-| comp count() as interactive_sessions by agent_hostname, actor_effective_username, causality_actor_process_image_name
+| comp count() as interactive_sessions by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id
 | filter interactive_sessions >= 1
-| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, interactive_sessions
+| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id, interactive_sessions
 
 ## ABIOC — AI-SOC-72 Rapid Privilege Escalation After Valid-Account Compromise (behavioral-ML, causality-anchored)
 # severity: high
 # behavioral_profile: machine-learning
-# causality_anchor: Interactive shell under the compromised valid account -> rapid fan-out of distinct escalation utilities that exceeds the account's learned process diversity, anchored to the spawning shell as the privilege-escalation phase.
+# causality_anchor: Interactive shell under the compromised valid account (the sshd->shell CGO) -> rapid fan-out of distinct escalation utilities that exceeds the account's learned process diversity, keyed on causality_actor_process_image_name (the spawning shell) + causality_id so the burst is provably a lineage descendant of the same initial-access chain, not an unrelated cluster of elevated processes — the privilege-escalation phase the AI narrative names second.
 # Within minutes of the anomalous valid-account session, the account runs a scripted-interpreter escalation burst (sudo / pkexec / PowerShell-style encoded execution) at a cadence and privilege-seeking shape its learned baseline never exhibits. Every binary is legitimate; the ABIOC fires on the escalation-diversity deviation, anchored to the interactive shell that spawned it — the privilege-escalation phase the AI narrative must name second.
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_effective_username in ("svc-backup", "svc-identity")
 | filter action_process_image_name in ("sudo", "su", "pkexec", "pwsh", "powershell")
-| comp count_distinct(action_process_image_name) as escalation_tools by agent_hostname, actor_effective_username
+| filter causality_actor_process_image_name in ("bash", "sh", "zsh", "sshd", "su", "runuser")
+| comp count_distinct(action_process_image_name) as escalation_tools by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id
 | filter escalation_tools >= 2
 | sort desc escalation_tools
-| fields agent_hostname, actor_effective_username, escalation_tools
+| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id, escalation_tools
 
 ## VALIDATION — AI-SOC-72 Exfiltration to Cloud Storage From Compromised Host
 # purpose: validation

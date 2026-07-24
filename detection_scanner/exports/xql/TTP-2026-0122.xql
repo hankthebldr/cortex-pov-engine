@@ -8,20 +8,20 @@
 dataset = xdr_data
 | filter event_type = ENUM.LOAD_IMAGE and event_sub_type = ENUM.DRIVER_LOAD
 | filter action_module_path contains "wnbios" or action_module_path contains "wn_64" or action_module_sha256 = "6106d1ce671b92d522144fcd3bc01276a975fe5d5b0fde09ca1cca16d09b7143"
-| comp min(_time) as tamper_t0, count() as driver_loads by agent_hostname, causality_actor_process_image_name, action_module_sha256
+| comp min(_time) as tamper_t0, count() as driver_loads by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_module_sha256
 | filter driver_loads >= 1
-| fields agent_hostname, causality_actor_process_image_name, action_module_sha256, tamper_t0, driver_loads
+| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_module_sha256, tamper_t0, driver_loads
 
 ## BIOC — MP-012 EDR Hook Removal via disabler.exe (EDRSandBlast Fork)
 # severity: high
-# disabler.exe — a public EDRSandBlast fork with the CLI stripped — uses the BYOVD kernel primitive to remove EDR user-mode hooks and kernel-mode callbacks. The BIOC keys on the tool image name or its SHA256 under the same host that just loaded the vulnerable driver, confirming the tamper is deliberate rather than an incidental signed-driver load.
+# disabler.exe — a public EDRSandBlast fork with the CLI stripped — uses the BYOVD kernel primitive to remove EDR user-mode hooks and kernel-mode callbacks. The BIOC keys on the tool image/SHA256 AND on the causality_actor_process_image_name + causality_id that owns it, so the hook-removal binds to the SAME foothold (CGO) that just loaded the vulnerable driver — confirming the tamper is a deliberate step in one chain, not an incidental signed-driver load.
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter action_process_image_name = "disabler.exe" or action_process_image_sha256 = "3758c5eb1fbab2362ef23091f082710606c1b4ebaeaff9b514896dc2a1e2ab17"
-| comp min(_time) as tamper_tool_time, count() as tamper_events by agent_hostname, actor_process_image_name, action_process_image_sha256
+| comp min(_time) as tamper_tool_time, count() as tamper_events by agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, action_process_image_sha256
 | filter tamper_events >= 1
-| fields agent_hostname, actor_process_image_name, action_process_image_sha256, tamper_tool_time, tamper_events
+| fields agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, action_process_image_sha256, tamper_tool_time, tamper_events
 
 ## VALIDATION — MP-012 Cobalt Strike Beacon to beamofthemoon.com C2 Infrastructure
 # purpose: hunt

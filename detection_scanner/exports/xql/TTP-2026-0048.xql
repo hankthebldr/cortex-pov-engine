@@ -11,6 +11,7 @@ preset = xdr_data
 | filter action_file_path in ("/etc/passwd", "/etc/shadow")
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
 | filter actor_process_image_name in ("cat", "head", "cp", "dd", "bash", "sh")
+| filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
 
 ## BIOC — MP-003 Tar Gzip Compression Of Tmp Staging By Service Account
 # severity: high
@@ -23,6 +24,7 @@ preset = xdr_data
 | filter action_process_image_command_line contains "/tmp/"
 | filter action_process_image_command_line contains_any ("-czf", "-cf", "-z", ".tar.gz")
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
 
 ## BIOC — MP-003 Dig TXT Tight Loop From Service Account
 # severity: high
@@ -35,6 +37,7 @@ preset = xdr_data
 | filter action_process_image_command_line contains "TXT"
 | filter action_process_image_command_line contains_any (".exfil.", "@1.1.1.1", "@8.8.8.8")
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
 
 ## BIOC — MP-003 Curl Form Upload Of Staged Data By Service Account
 # severity: high
@@ -47,6 +50,7 @@ preset = xdr_data
 | filter action_process_image_command_line contains_any ("-F ", "--form", "-X POST", "--data-binary")
 | filter action_process_image_command_line contains "@/tmp/"
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
 
 ## VALIDATION — MP-003 Sensitive File Path Access From Service Account
 # purpose: validation

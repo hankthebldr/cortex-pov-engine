@@ -1,7 +1,7 @@
 {
   "id": "TTP-2026-0073",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-06-08T00:00:00+00:00",
@@ -179,7 +179,7 @@
       {
         "name": "EDR-008 Rapid Mass File Rewrite With Uniform New Extension",
         "description": "A single process modifies/creates an abnormally large number of files carrying one new uniform extension in a short window — the host-level file-encryption fingerprint (T1486). Distinct from the ESXi VMDK-adjacent mass-write BIOC on TTP-2026-0006.",
-        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE, ENUM.FILE_RENAME)\n| filter action_file_extension in (\"cortexlock\", \"akira\", \"locked\", \"crypt\", \"encrypted\")\n| bin _time span=1m\n| comp count() as files_rewritten by actor_process_instance_id, actor_process_image_name, agent_hostname, _time\n| filter files_rewritten >= 20\n| fields _time, agent_hostname, actor_process_image_name, files_rewritten",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE, ENUM.FILE_RENAME)\n| filter action_file_extension in (\"cortexlock\", \"akira\", \"locked\", \"crypt\", \"encrypted\")\n| bin _time span=1m\n| comp count() as files_rewritten by actor_process_instance_id, causality_actor_process_image_name, actor_process_image_name, container_id, agent_hostname, _time\n| filter files_rewritten >= 20\n| fields _time, agent_hostname, container_id, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, files_rewritten",
         "severity": "critical",
         "mitre_technique_ids": [
           "T1486"
@@ -188,7 +188,7 @@
       {
         "name": "EDR-008 Ransom Note Written Across Multiple Directories",
         "description": "A recurring ransom-note filename is written into multiple directories by one process — the note-drop stage of a ransomware encryptor (T1486).",
-        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_name contains_any (\"READ_ME\", \"RANSOM\", \"_DECRYPT_\", \"HOW_TO_RESTORE\", \"akira_readme\")\n| comp count_distinct(action_file_directory) as note_dirs by actor_process_instance_id, agent_hostname\n| filter note_dirs >= 1\n| fields agent_hostname, actor_process_instance_id, note_dirs",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_name contains_any (\"READ_ME\", \"RANSOM\", \"_DECRYPT_\", \"HOW_TO_RESTORE\", \"akira_readme\")\n| comp count_distinct(action_file_directory) as note_dirs by actor_process_instance_id, causality_actor_process_image_name, container_id, agent_hostname\n| filter note_dirs >= 1\n| fields agent_hostname, container_id, causality_actor_process_image_name, actor_process_instance_id, note_dirs",
         "severity": "high",
         "mitre_technique_ids": [
           "T1486"
@@ -197,7 +197,7 @@
       {
         "name": "EDR-008 Local Recovery Inhibition — Snapshot Or Backup Deletion",
         "description": "Deletion of local snapshots/backups/shadow copies on a Linux host — recovery inhibition (T1490) co-occurring with mass file rewriting.",
-        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"rm\", \"lvremove\", \"btrfs\", \"zfs\", \"rsnapshot\", \"shred\")\n| filter action_process_image_command_line contains_any (\"snapshot\", \"backup\", \".img\", \".tar\", \"--delete\", \"destroy\")\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"rm\", \"lvremove\", \"btrfs\", \"zfs\", \"rsnapshot\", \"shred\")\n| filter action_process_image_command_line contains_any (\"snapshot\", \"backup\", \".img\", \".tar\", \"--delete\", \"destroy\")\n| fields _time, agent_hostname, container_id, causality_actor_process_image_name, causality_id, actor_process_image_name, action_process_image_command_line",
         "severity": "high",
         "mitre_technique_ids": [
           "T1490"
@@ -364,6 +364,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-8: detection-variant DEPTH on Impact T1486 — Linux-host file mass-encryption variant (SAFE-MODE) distinct from the ESXi-hypervisor card TTP-2026-0006. Real rapid-rewrite / ransom-note / recovery-inhibition BIOCs+XQL, correlation CR-EDR-0008, IOC signatures, GAP-11 validated/unvalidated analytics split. Wired to SIM-EDR-008."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract retune: the three encryptor BIOCs (mass-rewrite, ransom-note, recovery-inhibition) now key on causality_actor_process_image_name + container_id (and causality_id on the recovery-inhibition rule) so the mass-encryption, note-drop, and snapshot/backup deletion are attributed to the SAME containerized encryptor causality chain (the CGO owner) rather than only the immediate actor image — the ownership tell CR-EDR-0008 stitches into one Impact incident. SIM-EDR-008 gains cgo_anchor (containerd-shim) + a shared_entity step spine + linux/container platforms."
     }
   ]
 }

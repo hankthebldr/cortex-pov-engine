@@ -9,8 +9,9 @@ dataset = xdr_data
 | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
 | filter action_file_name = "tmp.txt"
 | filter action_file_path contains "/tmp/" or action_file_path contains "/var/tmp/"
-| filter actor_process_image_name in ("node", "npx", "python3", "claude", "code")
-| fields agent_hostname, actor_effective_username, actor_process_image_name, action_file_path, action_file_name
+| filter actor_process_image_name in ("node", "npx", "python3", "claude", "code", "mcp-server")
+| filter causality_actor_process_image_name in ("node", "npx", "python3", "claude", "code")
+| fields agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, actor_process_instance_id, causality_id, action_file_path, action_file_name
 
 ## ABIOC — KOI-007 Unattended MCP Tool Invocation with No User Interaction (behavioral-ML, causality-anchored)
 # severity: high
@@ -22,11 +23,12 @@ dataset = xdr_data
 | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
 | filter actor_process_image_name = "mcp-server"
 | filter action_file_path contains "/tmp/" or action_file_path contains "/var/tmp/"
+| filter causality_actor_process_image_name in ("node", "npx", "python3", "claude", "code")
 | filter causality_actor_process_image_name not in ("bash", "sh", "zsh", "dash", "gnome-terminal", "sshd", "login", "tmux", "screen")
-| comp count() as unattended_writes by agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name
+| comp count() as unattended_writes by agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, causality_id
 | filter unattended_writes >= 2
 | sort desc unattended_writes
-| fields agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, unattended_writes
+| fields agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, causality_id, unattended_writes
 
 ## ABIOC — KOI-007 Sampling-Request Token Consumption Anomaly from MCP Host (behavioral-ML, causality-anchored)
 # severity: high

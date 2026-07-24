@@ -192,7 +192,7 @@
       {
         "purpose": "validation",
         "name": "XSIAM stitching \u2014 DNS exfil + endpoint process lineage correlated",
-        "query": "preset = network_story\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"dns\", \"dns-base\")\n| filter dns_query_name contains \".testmynids.org\"\n| join type=inner (xdr_data\n    | filter event_type = ENUM.NETWORK\n    | fields agent_hostname, actor_process_image_name, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip\n| comp count() as stitched_dns by src_ip, ep.agent_hostname, ep.actor_process_image_name\n| fields src_ip, ep.agent_hostname, ep.actor_process_image_name, stitched_dns",
+        "query": "preset = network_story\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app in (\"dns\", \"dns-base\")\n| filter dns_query_name contains \".testmynids.org\"\n| join type=inner (xdr_data\n    | filter event_type = ENUM.NETWORK\n    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip\n| comp count() as stitched_dns, count_distinct(dns_query_name) as unique_labels by src_ip, ep.agent_hostname, ep.causality_actor_process_image_name, ep.causality_actor_process_instance_id\n| fields src_ip, ep.agent_hostname, ep.causality_actor_process_image_name, ep.causality_actor_process_instance_id, stitched_dns, unique_labels",
         "expected_rows_min": 1,
         "dataset": "panw_ngfw_traffic_raw"
       }
@@ -201,7 +201,7 @@
       {
         "name": "DNS Tunneling Exfiltration \u2014 Volume Entropy And Length",
         "rule_id": "CR-NDR-0002",
-        "logic": "BIOC(NGFW EAL \u2014 long FQDN exceeding host baseline) OR (XQL(NGFW EAL \u2014 anomalous DNS query volume from single source) AND XQL(NGFW EAL \u2014 high-entropy DNS labels (base32 character profile))) OR XQL(NGFW EAL \u2014 TXT query burst from single host)"
+        "logic": "(BIOC(NGFW EAL \u2014 long FQDN exceeding host baseline) OR (XQL(NGFW EAL \u2014 anomalous DNS query volume from single source) AND XQL(NGFW EAL \u2014 high-entropy DNS labels (base32 character profile))) OR XQL(NGFW EAL \u2014 TXT query burst from single host)) AND XQL(XSIAM stitching \u2014 DNS exfil + endpoint process lineage correlated) stitched by src_host within 300s"
       }
     ],
     "analytics_modules": [

@@ -11,9 +11,9 @@ description: |
     | filter action_process_image_name in ("bash", "sh", "zsh")
     | filter action_process_command_line contains "sh -i"
     | filter causality_actor_process_image_name in ("sshd", "su", "runuser", "sudo", "login", "systemd")
-    | comp count() as interactive_sessions by agent_hostname, actor_effective_username, causality_actor_process_image_name
+    | comp count() as interactive_sessions by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id
     | filter interactive_sessions >= 1
-    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, interactive_sessions
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id, interactive_sessions
   ----
 references:
   - https://attack.mitre.org/techniques/T1078/
@@ -42,10 +42,11 @@ description: |
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter actor_effective_username in ("svc-backup", "svc-identity")
     | filter action_process_image_name in ("sudo", "su", "pkexec", "pwsh", "powershell")
-    | comp count_distinct(action_process_image_name) as escalation_tools by agent_hostname, actor_effective_username
+    | filter causality_actor_process_image_name in ("bash", "sh", "zsh", "sshd", "su", "runuser")
+    | comp count_distinct(action_process_image_name) as escalation_tools by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id
     | filter escalation_tools >= 2
     | sort desc escalation_tools
-    | fields agent_hostname, actor_effective_username, escalation_tools
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id, escalation_tools
   ----
 references:
   - https://attack.mitre.org/techniques/T1059/

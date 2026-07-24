@@ -1,7 +1,7 @@
 {
   "id": "TTP-2026-0011",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:11+00:00",
@@ -306,6 +306,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract pass: scenario SIM-AIACC-005 now declares a cgo_anchor (containerd-shim/root) and a connected shared_entity step spine (OpenAI -> Gemini -> Anthropic), and — because this scenario IS the identity stitch — sets stitching_key=user_principal + correlation_window_seconds=300 so the causality graph keys its cross-provider evidence edges on the single user within the 5-minute rotation window (aligned with correlation CR-AIACC-0005). Added Windows/macOS platform_variants on the first egress to show the rotation is client-OS-agnostic. Detection bodies intentionally NOT re-keyed to causality_actor_process_* fields: they are sequence/identity signatures over panw_ngfw_traffic_raw keyed on source_user/src_ip (the correct join for provider hopping), where process-causality fields do not exist."
     }
   ]
 }

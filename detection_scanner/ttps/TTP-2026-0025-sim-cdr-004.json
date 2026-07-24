@@ -189,7 +189,7 @@
       {
         "name": "CDR-004 Service Account Token Read And Copied In Pod",
         "description": "Service account token read and copied \u2014 Kubernetes credential theft from mounted secret volume. A pod process reads the projected token and copies it elsewhere on disk.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"cat\", \"cp\", \"bash\", \"sh\")\n| filter action_process_image_command_line contains \"serviceaccount/token\"",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"containerd-shim\", \"runc\", \"bash\", \"sh\")\n| filter actor_process_image_name in (\"cat\", \"cp\", \"bash\", \"sh\")\n| filter action_process_image_command_line contains \"serviceaccount/token\"",
         "severity": "high",
         "mitre_technique_ids": [
           "T1552.001"
@@ -225,7 +225,7 @@
       {
         "name": "CDR-004 kubectl Exec Into Adjacent Pod Lateral Movement",
         "description": "kubectl exec into pod in different namespace \u2014 lateral movement via Kubernetes API (high fidelity CDR BIOC). kubectl exec is invoked from inside one container to run a command in another pod.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"kubectl\"\n| filter action_process_image_command_line contains \"exec\"\n| filter action_process_image_command_line contains_any (\"-n \", \"--namespace\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"containerd-shim\", \"runc\", \"bash\", \"sh\")\n| filter actor_process_image_name = \"kubectl\"\n| filter action_process_image_command_line contains \"exec\"\n| filter action_process_image_command_line contains_any (\"-n \", \"--namespace\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1021.001"
@@ -243,7 +243,7 @@
       {
         "name": "CDR-004 Malicious CronJob Creation Via kubectl From Pod",
         "description": "Kubernetes CronJob creation via kubectl \u2014 scheduled task persistence mechanism in cluster. kubectl apply creates a CronJob resource from inside a compromised pod.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"kubectl\"\n| filter action_process_image_command_line contains_any (\"apply\", \"create\")\n| filter action_process_image_command_line contains_any (\"cronjob\", \".yaml\", \"-f \")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"containerd-shim\", \"runc\", \"bash\", \"sh\")\n| filter actor_process_image_name = \"kubectl\"\n| filter action_process_image_command_line contains_any (\"apply\", \"create\")\n| filter action_process_image_command_line contains_any (\"cronjob\", \".yaml\", \"-f \")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1053.005"
@@ -263,7 +263,7 @@
       {
         "purpose": "validation",
         "name": "CDR-004 Validate kubectl Exec From Pod In Container",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"kubectl\" and action_process_image_command_line contains \"exec\"\n| fields _time, agent_hostname, container_id, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"kubectl\" and action_process_image_command_line contains \"exec\"\n| fields _time, agent_hostname, container_id, causality_id, causality_actor_process_image_name, actor_process_instance_id, actor_effective_username, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -286,7 +286,7 @@
       {
         "name": "Kubernetes Lateral Movement Chain \u2014 Runtime And Audit",
         "rule_id": "CR-CDR-0004",
-        "logic": "BIOC(CDR-004 Service Account Token Read And Copied In Pod) OR BIOC(CDR-004 kubectl All Namespaces Enumeration From Pod) OR BIOC(CDR-004 Cluster Wide Pod Discovery Audit Anomaly) OR BIOC(CDR-004 kubectl Exec Into Adjacent Pod Lateral Movement) OR BIOC(CDR-004 Pod Exec Subresource Create Audit Anomaly) OR BIOC(CDR-004 Malicious CronJob Creation Via kubectl From Pod) OR BIOC(CDR-004 CronJob Resource Create Audit Anomaly)"
+        "logic": "BIOC(CDR-004 Service Account Token Read And Copied In Pod) OR BIOC(CDR-004 kubectl All Namespaces Enumeration From Pod) OR BIOC(CDR-004 Cluster Wide Pod Discovery Audit Anomaly) OR BIOC(CDR-004 kubectl Exec Into Adjacent Pod Lateral Movement) OR BIOC(CDR-004 Pod Exec Subresource Create Audit Anomaly) OR BIOC(CDR-004 Malicious CronJob Creation Via kubectl From Pod) OR BIOC(CDR-004 CronJob Resource Create Audit Anomaly) GROUPED BY container_id, causality_id, user_username WITHIN 300s"
       }
     ],
     "analytics_modules": [

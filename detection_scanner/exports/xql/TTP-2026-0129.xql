@@ -9,12 +9,12 @@
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-| filter actor_process_image_name = "mshta.exe"
+| filter actor_process_image_name = "mshta.exe" and causality_actor_process_image_name = "explorer.exe"
 | filter actor_process_command_line contains "http" or actor_process_command_line contains ".co/" or actor_process_command_line contains "=+"
 | filter action_process_image_name in ("cmd.exe", "powershell.exe")
-| comp count() as loader_spawns by agent_hostname, actor_process_command_line, action_process_image_name
+| comp count() as loader_spawns by agent_hostname, causality_actor_process_instance_id, actor_process_command_line, action_process_image_name
 | filter loader_spawns >= 1
-| fields agent_hostname, actor_process_command_line, action_process_image_name, loader_spawns
+| fields agent_hostname, causality_actor_process_instance_id, actor_process_command_line, action_process_image_name, loader_spawns
 
 ## ABIOC — AV and EDR Product Discovery via tasklist Piped to findstr in a Loader Lineage (behavioral-ML, causality-anchored)
 # severity: medium

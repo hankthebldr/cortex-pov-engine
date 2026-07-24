@@ -52,7 +52,7 @@ dataset = xdr_data
 | filter action_remote_ip = "169.254.169.254"
 | filter _time > to_timestamp(current_time() - 3600)
 | filter actor_process_image_name in ("node", "python3", "java", "ruby", "php-fpm", "curl")
-| comp count() as imds_requests_now, min(_time) as first_seen by agent_hostname, actor_effective_username, actor_process_image_name
+| comp count() as imds_requests_now, min(_time) as first_seen by agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, actor_process_instance_id, causality_id
 | join type=left (dataset = xdr_data
 | filter event_type = ENUM.NETWORK
 | filter action_remote_ip = "169.254.169.254"
@@ -60,7 +60,7 @@ dataset = xdr_data
 | comp count() as prior_imds_requests by agent_hostname) as baseline baseline.agent_hostname = agent_hostname
 | alter prior_imds_requests = coalesce(prior_imds_requests, 0)
 | filter imds_requests_now >= 1 and prior_imds_requests = 0
-| fields agent_hostname, actor_effective_username, actor_process_image_name, imds_requests_now, prior_imds_requests, first_seen
+| fields agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, actor_process_instance_id, causality_id, imds_requests_now, prior_imds_requests, first_seen
 
 ## VALIDATION — SIM-MP-009 Derived-Identity Stage Fan-Out in Cloud Audit Logs
 # purpose: validation

@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0042",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -154,7 +154,7 @@
       {
         "name": "KOI-001 MCP Tool Description Embeds Instruction Injection and AKIA Canary",
         "description": "Code scan \u2014 tool description embeds 'Ignore previous instructions' / AKIA canary. A read of an MCP mcp.json manifest surfaces a tool description field carrying an instruction-injection directive and an AKIA-prefixed access-key canary.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_name = \"mcp.json\"\n| filter action_file_path contains \"anthroopic-calculator\"",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_name = \"mcp.json\"\n| filter action_file_path contains \"anthroopic-calculator\"\n| filter causality_actor_process_image_name in (\"node\", \"claude\", \"code\", \"python3\")\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, action_file_path",
         "severity": "high",
         "mitre_technique_ids": [
           "T1195"
@@ -182,7 +182,7 @@
       {
         "purpose": "validation",
         "name": "KOI-001 Claude Desktop Fetches MCP Manifest From Non Canonical FQDN",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dns_query_name contains \"cortexsim-canary\"\n| filter action_external_port in (80, 443)\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_port, http_req_user_agent",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dns_query_name contains \"cortexsim-canary\"\n| filter action_external_port in (80, 443)\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, action_external_port, http_req_user_agent",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -205,7 +205,7 @@
       {
         "name": "Agentic Supply Chain \u2014 Typosquat MCP Server Installed",
         "rule_id": "CR-KOI-0001",
-        "logic": "BIOC(KOI-001 MCP Tool Description Embeds Instruction Injection and AKIA Canary) OR BIOC(KOI-001 Cortex Cloud Code Instruction Injection In Tool Description)"
+        "logic": "BIOC(KOI-001 MCP Tool Description Embeds Instruction Injection and AKIA Canary) OR BIOC(KOI-001 Cortex Cloud Code Instruction Injection In Tool Description) OR XQL(KOI-001 Claude Desktop Fetches MCP Manifest From Non Canonical FQDN) — stitched by shared agent_hostname + causality_id within 1800s so the endpoint code-scan finding and the NGFW manifest fetch (endpoint_network_stitch) collapse into ONE agentic-supply-chain incident"
       }
     ],
     "analytics_modules": [
@@ -327,6 +327,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real KOI MCP-typosquat BIOCs/XQL grounded in the cortex-malicious-agentic-pack artifact, added correlation CR-KOI-0001, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract retune: keyed the mcp.json manifest-read BIOC on causality_actor_process_image_name (the Claude Desktop/node MCP host that OWNS the chain as CGO) + causality_id/actor_process_instance_id evidence fields; added the same causality evidence to the manifest-fetch XQL; enriched CR-KOI-0001 to OR-in the NDR fetch so the endpoint code-scan and the NGFW manifest session stitch (endpoint_network_stitch) into ONE incident. Detection names/slugs unchanged (550/550 slug invariant preserved). Scenario SIM-KOI-001 gains cgo_anchor (node/developer) + per-step causality/platforms."
     }
   ]
 }

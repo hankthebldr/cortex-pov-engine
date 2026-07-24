@@ -9,7 +9,7 @@ description: |
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter causality_actor_process_image_name = "w3wp.exe" or actor_process_image_name = "w3wp.exe"
     | filter action_process_image_name in ("cmd.exe", "powershell.exe", "pwsh.exe", "net.exe", "net1.exe", "whoami.exe", "sqlcmd.exe", "csc.exe")
-    | fields agent_hostname, actor_process_image_name, action_process_image_name, action_process_image_command_line
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, actor_process_instance_id, action_process_image_name, action_process_image_command_line
   ----
 references:
   - https://attack.mitre.org/techniques/T1505/
@@ -69,7 +69,7 @@ description: |
     | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD
     | filter actor_process_image_name = "w3wp.exe"
     | filter action_module_path = "" or action_module_signature_status = "UNSIGNED" or action_module_name contains "ServerCore" or action_module_name contains "ExecuteAssembly" or action_module_name contains "AssemblyExecuter"
-    | fields agent_hostname, actor_process_image_name, action_module_name, action_module_path, action_module_signature_status
+    | fields agent_hostname, actor_process_image_name, actor_process_instance_id, action_module_name, action_module_path, action_module_signature_status
   ----
 references:
   - https://attack.mitre.org/techniques/T1620/

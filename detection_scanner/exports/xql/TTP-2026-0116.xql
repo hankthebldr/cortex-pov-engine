@@ -29,11 +29,11 @@ dataset = xdr_data
 # Fires when at least two of the credential-dump observables are seen on one host, each modeled on its real event type: (1) an LSASS handle opened with read/query rights (PROCESS_ACCESS against lsass.exe with PROCESS_VM_READ|PROCESS_QUERY_INFORMATION); (2) process hollowing into a suspended svchost.exe (PROCESS_ACCESS against svchost.exe with PROCESS_VM_WRITE|PROCESS_CREATE_THREAD rights); and (3) the XOR-encoded dump written to C:\Users\Public\Downloads\VM.txt (FILE write). Requiring two distinct real observables avoids the dead PROCESS_START/action_file_path match the earlier body degraded to.
 
 dataset = xdr_data
-| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "lsass.exe" and requested_access bitand 0x0410 != 0) or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "svchost.exe" and requested_access bitand 0x0022 != 0) or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains "C:\Users\Public\Downloads\VM.txt")
+| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "lsass.exe" and requested_access bitand 0x0410 != 0) or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = "svchost.exe" and requested_access bitand 0x0022 != 0 and causality_actor_process_image_name not in ("services.exe", "svchost.exe")) or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains "C:\Users\Public\Downloads\VM.txt")
 | alter dump_signal = if(event_type = ENUM.FILE, "vm_txt_dump_write", if(target_process_name = "lsass.exe", "lsass_handle_open", "svchost_hollow_inject"))
-| comp count_distinct(dump_signal) as dump_signals by agent_hostname
+| comp count_distinct(dump_signal) as dump_signals, values(causality_actor_process_image_name) as injector_images by agent_hostname
 | filter dump_signals >= 2
-| fields agent_hostname, dump_signals
+| fields agent_hostname, dump_signals, injector_images
 
 ## VALIDATION — Ivanti IF-T Pre-Auth Exploitation Tell Modeled from Appliance Telemetry
 # purpose: validation

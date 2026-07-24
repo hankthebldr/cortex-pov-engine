@@ -168,7 +168,7 @@
       {
         "name": "MP-005 Interactive Bash From www-data Service Context",
         "description": "XDR BIOC \u2014 interactive bash from www-data service context (process lineage anchor). The endpoint leg of the cross-plane stitch: an interactive shell under a non-login web service identity anchors the process lineage that the correlation rule joins to the network and identity signals.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| comp count() as proc_count by agent_hostname, action_local_ip, actor_effective_username\n| filter proc_count >= 1\n| fields agent_hostname, action_local_ip, actor_effective_username, proc_count",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"httpd\", \"php-fpm\")\n| comp count() as proc_count by agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, causality_id\n| filter proc_count >= 1\n| fields agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, causality_id, proc_count",
         "severity": "high",
         "mitre_technique_ids": [
           "T1059.004",
@@ -206,7 +206,7 @@
       {
         "purpose": "validation",
         "name": "MP-005 EDR Interactive Bash From Service Context",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| fields _time, agent_hostname, action_local_ip, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"httpd\", \"php-fpm\")\n| fields _time, agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, actor_process_instance_id, causality_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -220,7 +220,7 @@
       {
         "purpose": "validation",
         "name": "MP-005 Cross-Plane Stitch Single Incident Spanning Multiple Products",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by action_local_ip\n| filter plane_count >= 2 and incident_count = 1\n| fields action_local_ip, plane_count, incident_count",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count, count_distinct(causality_id) as chains by action_local_ip\n| filter plane_count >= 2 and incident_count = 1\n| fields action_local_ip, plane_count, incident_count, chains",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -248,7 +248,7 @@
         ],
         "agent_version_min": "8.4.0",
         "license_required": "pro",
-        "evidence_query": "preset = xdr_data | filter actor_process_image_name in (\"bash\",\"sh\") | filter actor_effective_username = \"www-data\" | fields _time, agent_hostname, action_local_ip"
+        "evidence_query": "preset = xdr_data | filter actor_process_image_name in (\"bash\",\"sh\") | filter actor_effective_username = \"www-data\" | filter causality_actor_process_image_name in (\"apache2\",\"nginx\",\"httpd\",\"php-fpm\") | fields _time, agent_hostname, action_local_ip, causality_actor_process_image_name, causality_id"
       },
       {
         "module": "ngfw-pa-series",

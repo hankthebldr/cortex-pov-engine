@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0021",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-15",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -188,7 +188,7 @@
       {
         "name": "Browser Sensitive Screen Capture \u2014 Repeat Collection",
         "rule_id": "CR-BROWSER-0005",
-        "logic": "BIOC(Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert)"
+        "logic": "BIOC(Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert) FOLLOWED BY BIOC(Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert) BY user WITHIN 1800s \u2192 single collection incident (shared_entity: user). Repeat captures by the same user also raise XQL(Prisma Browser \u2014 repeat screen-capture from same user counts toward elevated risk score), driving the user-risk / conditional-access escalation."
       }
     ],
     "analytics_modules": [
@@ -302,6 +302,12 @@
       "date": "2026-06-15",
       "author": "Henry Reed",
       "change": "GAP-10: added detections.iocs[] — the crm.cortexsim-test.invalid sensitive CRM origin (+ account detail URL) and the screen-capture output file path. Grounded in the synthetic values the screen-capture campaign (BC-BROWSER-005) emits. All other content intact."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality contract: retuned CR-BROWSER-0005 to stitch repeat screen-captures by the SAME user (shared_entity) within 1800s into one collection incident, and to note the repeat-capture analytic driving user-risk / conditional-access escalation. BIOC/XQL bodies unchanged — they are legitimately prisma_browser_events (SaaS/DLP) signatures keyed on user+origin, not a process tree, so no causality_actor_process fields were injected. Pairs with SIM-BROWSER-005 gaining cgo_anchor (chrome/corp-user) + shared_entity step causality + per-step platforms."
     }
   ]
 }

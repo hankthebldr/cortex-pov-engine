@@ -1,7 +1,7 @@
 {
   "id": "TTP-2026-0012",
   "schema_version": "1.0.0",
-  "entry_version": "1.2.0",
+  "entry_version": "1.3.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
@@ -338,6 +338,12 @@
       "date": "2026-06-15",
       "author": "Henry Reed",
       "change": "GAP-10: added detections.iocs[] — cortex-prompt-attacker tool user-agent and the cdn.cortexsim-canary.invalid attacker staging/exfil domain the vulnerable LLM is coerced to reference. Grounded in the synthetic values the AIRS lab (cortex-vulnerable-llm + airs_prompt_attack plugin) emits. All other content intact."
+    },
+    {
+      "entry_version": "1.3.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract pass: scenario SIM-AIRS-001 now declares a cgo_anchor (containerd-shim/root) and a genuinely connected step spine — step-02 (cortex-prompt-attacker) links to step-01 (cortex-vulnerable-llm Flask target) via a network_session pivot over the real localhost:8089 injection request, and step-03 (JSONL audit) links to step-02 via shared_entity on the same-host output file. Detection bodies intentionally NOT re-keyed to causality_actor_process_* fields: the request-side classifier XQL, the response-side leak BIOC and the audit XQL are prompt/response-content and audit signatures on panw_ngfw_traffic_raw / cortexsim_airs_raw keyed on dst_port + uri_path + request_body/response_body (the correct join for runtime prompt inspection), where process-causality fields do not exist. Correlation CR-AIRS-0001 already fuses request-side + response-side hits into one LLM01 incident along that same-session spine."
     }
   ]
 }

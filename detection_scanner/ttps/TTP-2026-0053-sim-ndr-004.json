@@ -176,7 +176,7 @@
       {
         "purpose": "validation",
         "name": "XSIAM correlation \u2014 sweep src host stitched with workstation context",
-        "query": "preset = network_story\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port in (445, 139, 135)\n| filter dst_ip in (\"10.50.10.0/24\")\n| join type=inner (xdr_data\n    | filter event_type = ENUM.NETWORK\n    | fields agent_hostname, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip\n| comp count_distinct(dst_ip) as swept_hosts by src_ip, ep.agent_hostname\n| filter swept_hosts >= 8\n| fields src_ip, ep.agent_hostname, swept_hosts",
+        "query": "preset = network_story\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port in (445, 139, 135)\n| filter dst_ip in (\"10.50.10.0/24\")\n| join type=inner (xdr_data\n    | filter event_type = ENUM.NETWORK\n    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip\n| comp count_distinct(dst_ip) as swept_hosts by src_ip, ep.agent_hostname, ep.causality_actor_process_image_name, ep.causality_actor_process_instance_id\n| filter swept_hosts >= 8\n| fields src_ip, ep.agent_hostname, ep.causality_actor_process_image_name, ep.causality_actor_process_instance_id, swept_hosts",
         "expected_rows_min": 1,
         "dataset": "panw_ngfw_traffic_raw"
       }

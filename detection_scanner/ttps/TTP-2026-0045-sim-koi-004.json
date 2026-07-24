@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0045",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -184,7 +184,7 @@
       {
         "purpose": "validation",
         "name": "KOI-004 VSCode Marketplace VSIX Fetch From Non Canonical CDN",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dns_query_name contains \"cortexsim-canary\"\n| filter action_external_url contains \"/vsx/\" or action_external_url contains \".vsix\"\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_url",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dns_query_name contains \"cortexsim-canary\"\n| filter action_external_url contains \"/vsx/\" or action_external_url contains \".vsix\"\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, action_external_url",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -198,7 +198,7 @@
       {
         "purpose": "validation",
         "name": "KOI-004 VSCode Child Process Emits Post Install Beacon Traffic",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter causality_actor_process_image_name in (\"code\", \"node\", \"Code\", \"code-server\") or actor_process_image_name in (\"code\", \"node\")\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dst_action_external_hostname not contains \"microsoft.com\"\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_port",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter causality_actor_process_image_name in (\"code\", \"node\", \"Code\", \"code-server\") or actor_process_image_name in (\"code\", \"node\")\n| filter dst_action_external_hostname contains \"cortexsim-canary\" or dst_action_external_hostname not contains \"microsoft.com\"\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, action_external_port",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -207,7 +207,7 @@
       {
         "name": "Agentic Supply Chain \u2014 Malicious IDE Extension Credential Theft",
         "rule_id": "CR-KOI-0004",
-        "logic": "BIOC(KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate) OR BIOC(KOI-004 VSCode Extension Activate Beacons Outbound To Non Microsoft Domain)"
+        "logic": "BIOC(KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate) OR BIOC(KOI-004 VSCode Extension Activate Beacons Outbound To Non Microsoft Domain) OR XQL(KOI-004 VSCode Marketplace VSIX Fetch From Non Canonical CDN) — stitched by shared agent_hostname + causality_id (CGO = code/node) so the .vsix marketplace fetch (endpoint_network_stitch), the activation credential read, and the outbound beacon (exploit_impact) collapse into ONE IDE-extension credential-theft incident"
       }
     ],
     "analytics_modules": [
@@ -329,6 +329,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real KOI IDE-extension BIOCs/XQL grounded in the helpful-ai-assistant artifact, added correlation CR-KOI-0004, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract retune: added causality_actor_process_image_name + causality_id/actor_process_instance_id evidence to the .vsix-fetch and post-install-beacon XQLs (the cred-read + beacon BIOCs already key causality_actor = code/node CGO); enriched CR-KOI-0004 to OR-in the marketplace fetch so the .vsix fetch (endpoint_network_stitch), the activation credential read, and the outbound beacon (exploit_impact) stitch into ONE incident. Detection names/slugs unchanged. Scenario SIM-KOI-004 gains cgo_anchor (code/developer) + per-step causality/platforms + Windows platform_variants (PowerShell equivalents for the manifest read and credential-path access)."
     }
   ]
 }

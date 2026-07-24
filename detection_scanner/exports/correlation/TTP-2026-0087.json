@@ -9,7 +9,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "ABIOC(CDR-014 In-Cluster TTP Chain Behavioral Causality) AND ABIOC(CDR-014 Anomalous Multi-Stage Container Discovery and Exfil) \u2014 fuses the two auto-tuned behavioral deviations into one in-cluster behavioral-anomaly incident with the single-shell multi-stage causality chain.",
+      "logic": "ABIOC(CDR-014 In-Cluster TTP Chain Behavioral Causality) AND ABIOC(CDR-014 Anomalous Multi-Stage Container Discovery and Exfil) GROUPED BY container_id, causality_id, causality_actor_process_image_name WITHIN 900s \u2014 fuses the two auto-tuned behavioral deviations into one in-cluster behavioral-anomaly incident anchored to the single containerd-shim -> shell process_lineage causality chain (same container_id + causality_id), not two disconnected anomalies.",
       "name": "Multi-Stage In-Cluster TTP Chain \u2014 ABIOC Causality Stitch",
       "rule_id": "CR-CDR-0014",
       "severity": "high"

@@ -4,7 +4,7 @@
 ## ABIOC — EDR-013 DLL Side-Loaded Module Loads from a User-Writable Path in a Signed Host Process (behavioral-ML, causality-anchored)
 # severity: high
 # behavioral_profile: machine-learning
-# causality_anchor: Learned per-application module-load baseline (signed process loads only its signed modules from trusted paths) -> deviation: the signed host binary side-loads an unsigned/unknown DLL from a user-writable directory, anchored to the loading process.
+# causality_anchor: Learned per-application module-load baseline (signed process loads only its signed modules from trusted paths) -> deviation: the signed host binary side-loads an unsigned/unknown DLL from a user-writable directory, anchored to the loading process. Surfaces causality_actor_process_image_name + actor_process_instance_id so the side-load stage shares the CGO / causality-actor join key with the fileless-execution ABIOC and CR-EDR-0013.
 # Cortex's learned per-application baseline is that a given signed host binary installed under Program Files / System32 loads only its known, signed modules from its own install tree. The ABIOC fires on the baseline deviation where such a signed, trusted-path host binary loads an unsigned/unknown DLL from a user-writable path (Users, ProgramData, AppData, Temp) that differs from the host binary's install directory — the classic search-order-hijack shape of the UUID-string loader's side-load delivery stage. Constraining the actor to a Program Files / Windows install location suppresses the benign case of an AppData-resident app (Teams, Slack, updaters) loading its own unsigned components, so the anchor is the anomalous causality chain (trusted-path signed host binary -> unsigned module from a writable path outside its install tree), not any known-bad DLL name. Unit 42 labeled this side-loading T1574.001 under the legacy id; this card carries the MITRE-canonical T1574.002 (DLL Side-Loading).
 
 dataset = xdr_data
@@ -13,9 +13,9 @@ dataset = xdr_data
 | filter actor_process_image_path contains "\Program Files" or actor_process_image_path contains "\Windows\"
 | filter action_module_signature_status in ("UNSIGNED", "UNKNOWN")
 | filter action_module_path contains "\Users\" or action_module_path contains "\ProgramData\" or action_module_path contains "\AppData\" or action_module_path contains "\Temp\"
-| comp count() as sideloaded_modules by agent_hostname, actor_process_image_name, actor_process_image_path, action_module_name, action_module_path
+| comp count() as sideloaded_modules by agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_image_path, actor_process_instance_id, action_module_name, action_module_path
 | filter sideloaded_modules >= 1
-| fields agent_hostname, actor_process_image_name, action_module_name, action_module_path, sideloaded_modules
+| fields agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, action_module_name, action_module_path, sideloaded_modules
 
 ## ABIOC — EDR-013 Unbacked Private-Heap Execution Reached via Locale or Window Enumeration Callback (behavioral-ML, causality-anchored)
 # severity: high
@@ -27,10 +27,10 @@ dataset = xdr_data
 | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD
 | filter causality_actor_process_signature_status = "SIGNED"
 | filter action_module_path = "" and action_module_signature_status = "UNSIGNED"
-| comp count() as unbacked_module_loads by agent_hostname, causality_actor_process_image_name, action_module_signature_status
+| comp count() as unbacked_module_loads by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_module_signature_status
 | filter unbacked_module_loads >= 1
 | sort desc unbacked_module_loads
-| fields agent_hostname, causality_actor_process_image_name, unbacked_module_loads
+| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, unbacked_module_loads
 
 ## VALIDATION — EDR-013 Unsigned DLL Side-Loaded from a User-Writable Path by a Signed Host Binary
 # purpose: validation

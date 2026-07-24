@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0023",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -228,7 +228,7 @@
       {
         "name": "CDR-002 XMRig Process Execution In Container",
         "description": "Cryptominer binary execution \u2014 XMRig process tree detected by CDR runtime BIOC. The xmrig binary launches inside a container, optionally with --config pointing at a pool.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"xmrig\" or action_process_image_command_line contains_any (\"xmrig\", \"--config\", \"stratum+tcp\", \"--max-threads-hint\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"xmrig\" or action_process_image_command_line contains_any (\"xmrig\", \"--config\", \"stratum+tcp\", \"--max-threads-hint\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\", \"cron\", \"crond\")\n| fields _time, container_id, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "severity": "critical",
         "mitre_technique_ids": [
           "T1496"
@@ -246,7 +246,7 @@
       {
         "name": "CDR-002 Crontab Modification To Persist Cryptominer In Container",
         "description": "Crontab modification to persist cryptominer \u2014 scheduled task creation from container. crontab is invoked to install a recurring job that re-launches the miner.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"crontab\"\n| filter action_process_image_command_line contains_any (\"xmrig\", \"-\", \"/tmp/.xmr\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"crontab\"\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\")\n| filter action_process_image_command_line contains_any (\"xmrig\", \"-\", \"/tmp/.xmr\")\n| fields _time, container_id, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "severity": "high",
         "mitre_technique_ids": [
           "T1053.005"
@@ -417,6 +417,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real container-context XMRig BIOCs/XQL, added correlation CR-CDR-0002, IOCs, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality contract: retuned the XMRig-execution and crontab-persistence BIOCs to key on causality_actor_process_image_name (the container entrypoint / runc / containerd-shim / cron lineage that OWNS the miner) plus container_id, and to surface actor_effective_username (the miner runs as the dropped `nobody` identity) + causality_actor_process_instance_id — the Linux privilege-drop-across-exec the sensor traces, not only actor_process_image_name = xmrig. Pairs with SIM-CDR-002 gaining cgo_anchor (containerd-shim/root) + a process_lineage deploy→execute→persist spine (step-04 drops to nobody) + per-step platforms (linux/container)."
     }
   ]
 }

@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0024",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -224,7 +224,7 @@
       {
         "name": "CDR-003 nsenter Into PID1 Mount Namespace Container Escape",
         "description": "nsenter execution targeting PID 1 mount namespace \u2014 container escape via privileged mode (high fidelity). nsenter joins the host (PID 1) mount namespace from inside a container, the definitive escape primitive.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"nsenter\"\n| filter action_process_image_command_line contains_any (\"/proc/1/ns/mnt\", \"--mount=/proc/1\", \"-t 1\", \"--target 1\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"nsenter\"\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\")\n| filter action_process_image_command_line contains_any (\"/proc/1/ns/mnt\", \"--mount=/proc/1\", \"-t 1\", \"--target 1\")\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_process_image_command_line",
         "severity": "critical",
         "mitre_technique_ids": [
           "T1611"
@@ -242,7 +242,7 @@
       {
         "name": "CDR-003 Host Passwd Read From Container Via Namespace Escape",
         "description": "Host /etc/passwd access from container via namespace escape \u2014 credential harvesting post-escape. After escaping, the process reads the host /etc/passwd or /etc/shadow through the joined namespace.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path in (\"/etc/passwd\", \"/etc/shadow\")\n| filter causality_actor_process_image_name = \"nsenter\" or actor_process_image_name = \"nsenter\"",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path in (\"/etc/passwd\", \"/etc/shadow\")\n| filter causality_actor_process_image_name = \"nsenter\" or actor_process_image_name = \"nsenter\"\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, action_file_path",
         "severity": "high",
         "mitre_technique_ids": [
           "T1003.008"
@@ -260,7 +260,7 @@
       {
         "name": "CDR-003 Host Cron Persistence Written From Escaped Container",
         "description": "Cron persistence written to host filesystem from container escape \u2014 T1611 + T1053 chained. The escaped process writes a cron job to the host /etc/cron.d to persist on the node.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type = ENUM.FILE_CREATE\n| filter container_id != null\n| filter action_file_path contains \"/etc/cron.d/\"\n| filter causality_actor_process_image_name = \"nsenter\" or actor_process_image_name = \"nsenter\"",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type = ENUM.FILE_CREATE\n| filter container_id != null\n| filter action_file_path contains \"/etc/cron.d/\"\n| filter causality_actor_process_image_name = \"nsenter\" or actor_process_image_name = \"nsenter\"\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path",
         "severity": "critical",
         "mitre_technique_ids": [
           "T1053.003"
@@ -426,6 +426,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real container-escape CDR BIOCs/XQL, added correlation CR-CDR-0003, IOC, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality contract: anchored the headline nsenter-escape BIOC on causality_actor_process_image_name (the container entrypoint / runc / containerd-shim lineage that OWNS the escape) plus container_id, and surfaced causality_actor_process_instance_id + actor_effective_username on the escape, the host /etc/passwd read, and the host /etc/cron.d write — the child-of-nsenter chain join (host↔runc cross-namespace lineage break) the sensor stamps, not only actor_process_image_name = nsenter. Pairs with SIM-CDR-003 gaining cgo_anchor (containerd-shim/root) + an exposure_exploit→process_lineage escape spine (host cred read and host cron persistence both descend from the nsenter escape step) + per-step platforms (linux/container)."
     }
   ]
 }

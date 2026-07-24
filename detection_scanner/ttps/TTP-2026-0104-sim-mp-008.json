@@ -197,15 +197,15 @@
       },
       {
         "name": "MP-008 Hands-on-Keyboard Endpoint Behavioral Deviation",
-        "description": "Immediately after the anomalous sign-in, the same account, whose learned endpoint baseline is narrow non-interactive automation, parents an interactive shell and runs a rapid living-off-the-land discovery burst. Every utility is a legitimate admin tool; the ABIOC fires on the interactive-lineage-plus-diversity deviation from the account's learned process profile, anchored to the shell that spawned the burst.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username in (\"svc-backup\", \"www-data\", \"nobody\")\n| filter action_process_image_name in (\"bash\", \"sh\", \"whoami\", \"id\", \"uname\", \"hostname\", \"ss\", \"netstat\", \"curl\")\n| comp count_distinct(action_process_image_name) as distinct_tools, count() as burst by agent_hostname, actor_effective_username\n| filter distinct_tools >= 4\n| sort desc distinct_tools\n| fields agent_hostname, actor_effective_username, distinct_tools, burst",
+        "description": "Immediately after the anomalous sign-in, the same account, whose learned endpoint baseline is narrow non-interactive automation, parents an interactive shell (the causality-group-owner of the burst) and runs a rapid living-off-the-land discovery burst. Every utility is a legitimate admin tool; the ABIOC fires on the interactive-lineage-plus-diversity deviation, keyed on the causality_actor_process (the owning shell) and its instance_id plus actor_effective_username (the dropped svc-account identity) rather than on any single child image, so the whole fan-out threads to one process-lineage owner.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username in (\"svc-backup\", \"www-data\", \"nobody\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"zsh\", \"sshd\")\n| filter action_process_image_name in (\"whoami\", \"id\", \"uname\", \"hostname\", \"ss\", \"netstat\", \"cat\", \"curl\")\n| comp count_distinct(action_process_image_name) as distinct_tools, count() as burst by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id\n| filter distinct_tools >= 4\n| sort desc distinct_tools\n| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, distinct_tools, burst",
         "severity": "high",
         "mitre_technique_ids": [
           "T1059.004",
           "T1078.003"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "Anomalous account sign-in -> interactive shell under the same account on a reachable host -> rapid fan-out of distinct discovery utilities exceeding the account's learned process diversity, anchored to the spawning shell and the originating identity."
+        "causality_anchor": "Anomalous account sign-in -> interactive shell under the same account on a reachable host (the causality_actor_process / CGO) -> rapid fan-out of distinct discovery utilities exceeding the account's learned process diversity, anchored to that owning shell's causality_actor_process_instance_id and the dropped actor_effective_username (svc-backup), not any single child image."
       }
     ],
     "xql_queries": [

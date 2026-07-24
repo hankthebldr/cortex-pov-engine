@@ -201,7 +201,7 @@
       {
         "name": "MP-001 Curl Beacon With Suspicious User-Agent From www-data",
         "description": "XDR \u2014 curl executed from www-data with suspicious user-agent. The endpoint process that opens the outbound HTTP beacon socket, providing the lineage leg the NGFW session lacks.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_process_image_command_line contains_any (\"CortexSimBeacon\", \"-A \", \"--user-agent\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_process_image_command_line contains_any (\"CortexSimBeacon\", \"-A \", \"--user-agent\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1071.001"
@@ -210,7 +210,7 @@
       {
         "name": "MP-001 Curl Wrote Second-Stage File To Tmp From Service Account",
         "description": "XDR \u2014 file written to /tmp/ by curl from service account. Ingress tool transfer: curl downloads a second stage into a world-writable path under a service identity.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_file_path contains \"/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_file_path contains \"/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1105"

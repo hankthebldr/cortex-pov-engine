@@ -284,7 +284,7 @@
       {
         "name": "IIS Worker Process w3wp.exe Spawns a Command Interpreter",
         "description": "The IIS worker process w3wp.exe should never parent an interactive command interpreter under normal operation. When it does, it is the durable, non-fileless seam of a web shell running operator commands. Fires on w3wp.exe as the causality actor spawning cmd/powershell/net/whoami/sqlcmd/csc — the command lineage NET-STAR's run_code / executeSQLQuery / bypassPrecompiledApp commands produce even though the backdoor assembly itself is in memory.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"w3wp.exe\" or actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"net.exe\", \"net1.exe\", \"whoami.exe\", \"sqlcmd.exe\", \"csc.exe\")\n| fields agent_hostname, actor_process_image_name, action_process_image_name, action_process_image_command_line",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"w3wp.exe\" or actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"net.exe\", \"net1.exe\", \"whoami.exe\", \"sqlcmd.exe\", \"csc.exe\")\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, actor_process_instance_id, action_process_image_name, action_process_image_command_line",
         "severity": "high",
         "mitre_technique_ids": [
           "T1505.003"
@@ -303,7 +303,7 @@
       {
         "name": "Reflective Fileless .NET Assembly Load in IIS Worker Process",
         "description": "IIServerCore and the AssemblyExecuter helpers are reflectively loaded into w3wp.exe from memory, so the loaded module has no backing file on disk (unsigned / no module path) or carries the NET-STAR build names. Fires on module-load events in w3wp.exe whose module is unbacked or named ServerCore/ExecuteAssembly/AssemblyExecuter — the reflective code-loading seam.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD\n| filter actor_process_image_name = \"w3wp.exe\"\n| filter action_module_path = \"\" or action_module_signature_status = \"UNSIGNED\" or action_module_name contains \"ServerCore\" or action_module_name contains \"ExecuteAssembly\" or action_module_name contains \"AssemblyExecuter\"\n| fields agent_hostname, actor_process_image_name, action_module_name, action_module_path, action_module_signature_status",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD\n| filter actor_process_image_name = \"w3wp.exe\"\n| filter action_module_path = \"\" or action_module_signature_status = \"UNSIGNED\" or action_module_name contains \"ServerCore\" or action_module_name contains \"ExecuteAssembly\" or action_module_name contains \"AssemblyExecuter\"\n| fields agent_hostname, actor_process_image_name, actor_process_instance_id, action_module_name, action_module_path, action_module_signature_status",
         "severity": "high",
         "mitre_technique_ids": [
           "T1620",

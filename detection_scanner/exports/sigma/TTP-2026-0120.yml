@@ -7,11 +7,11 @@ description: |
   ----
     dataset = xdr_data
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-    | filter actor_process_image_name = "w3wp.exe"
+    | filter causality_actor_process_image_name = "w3wp.exe" or actor_process_image_name = "w3wp.exe"
     | filter action_process_image_name in ("cmd.exe", "powershell.exe", "pwsh.exe", "wmic.exe")
-    | comp count() as backdoor_children by agent_hostname, actor_process_image_name
+    | comp count() as backdoor_children by agent_hostname, causality_actor_process_image_name, actor_process_instance_id
     | filter backdoor_children >= 1
-    | fields agent_hostname, actor_process_image_name, backdoor_children
+    | fields agent_hostname, causality_actor_process_image_name, actor_process_instance_id, backdoor_children
   ----
 references:
   - https://attack.mitre.org/techniques/T1505/

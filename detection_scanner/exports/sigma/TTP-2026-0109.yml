@@ -11,9 +11,9 @@ description: |
     | filter actor_process_image_path contains "\Program Files" or actor_process_image_path contains "\Windows\"
     | filter action_module_signature_status in ("UNSIGNED", "UNKNOWN")
     | filter action_module_path contains "\Users\" or action_module_path contains "\ProgramData\" or action_module_path contains "\AppData\" or action_module_path contains "\Temp\"
-    | comp count() as sideloaded_modules by agent_hostname, actor_process_image_name, actor_process_image_path, action_module_name, action_module_path
+    | comp count() as sideloaded_modules by agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_image_path, actor_process_instance_id, action_module_name, action_module_path
     | filter sideloaded_modules >= 1
-    | fields agent_hostname, actor_process_image_name, action_module_name, action_module_path, sideloaded_modules
+    | fields agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, action_module_name, action_module_path, sideloaded_modules
   ----
 references:
   - https://attack.mitre.org/techniques/T1574/
@@ -42,10 +42,10 @@ description: |
     | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD
     | filter causality_actor_process_signature_status = "SIGNED"
     | filter action_module_path = "" and action_module_signature_status = "UNSIGNED"
-    | comp count() as unbacked_module_loads by agent_hostname, causality_actor_process_image_name, action_module_signature_status
+    | comp count() as unbacked_module_loads by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_module_signature_status
     | filter unbacked_module_loads >= 1
     | sort desc unbacked_module_loads
-    | fields agent_hostname, causality_actor_process_image_name, unbacked_module_loads
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, unbacked_module_loads
   ----
 references:
   - https://attack.mitre.org/techniques/T1620/

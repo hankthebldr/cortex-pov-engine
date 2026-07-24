@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0080",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-06-17T00:00:00+00:00",
-    "updated_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
     "authors": [
       {
         "name": "Henry Reed",
@@ -170,7 +170,7 @@
       {
         "name": "CDR-009 Anomalous East-West Connection Spike from Baselined Microservice",
         "description": "A Sock-Shop microservice that Cortex has profiled to a stable set of east-west peers suddenly fans out connections to services it has never contacted in the learned baseline window. ABIOC anchors the deviation to the causality chain (privileged exec into the pod -> shell child -> new east-west peers), distinguishing a real behavioral anomaly from normal mesh traffic.",
-        "logic": "dataset = network_story\n| filter action_local_ip != null and action_remote_ip != null\n| filter actor_process_image_name in (\"sh\", \"bash\", \"nc\", \"curl\")\n| comp count_distinct(action_remote_ip) as distinct_peers by actor_effective_username, agent_hostname\n| filter distinct_peers >= 5\n| sort desc distinct_peers\n| fields agent_hostname, actor_effective_username, distinct_peers",
+        "logic": "dataset = network_story\n| filter action_local_ip != null and action_remote_ip != null\n| filter actor_process_image_name in (\"sh\", \"bash\", \"nc\", \"curl\")\n| filter causality_actor_process_image_name in (\"sh\", \"bash\")\n| comp count_distinct(action_remote_ip) as distinct_peers by actor_effective_username, causality_actor_process_image_name, container_id, agent_hostname\n| filter distinct_peers >= 5\n| sort desc distinct_peers\n| fields agent_hostname, container_id, causality_actor_process_image_name, actor_effective_username, distinct_peers",
         "severity": "high",
         "mitre_technique_ids": [
           "T1046"
@@ -181,7 +181,7 @@
       {
         "name": "CDR-009 Anomalous Container Process-Tree Deviation from Learned Baseline",
         "description": "A container whose learned per-process baseline is a single long-running service binary suddenly hosts a shell process tree spawning network and packaging tooling. ABIOC fires on the single deviation event with the causality chain that ties the anomalous children back to the exec, rather than on a static known-bad process name.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"sh\", \"bash\")\n| filter action_process_image_name in (\"curl\", \"nc\", \"nmap\", \"python3\", \"apt\", \"apk\", \"ps\")\n| comp count() as anomalous_children by agent_hostname, actor_process_image_name\n| filter anomalous_children >= 1\n| fields agent_hostname, actor_process_image_name, anomalous_children",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"sh\", \"bash\")\n| filter action_process_image_name in (\"curl\", \"nc\", \"nmap\", \"python3\", \"apt\", \"apk\", \"ps\")\n| filter causality_actor_process_image_name in (\"sh\", \"bash\")\n| comp count() as anomalous_children by agent_hostname, container_id, causality_actor_process_image_name, actor_process_instance_id\n| filter anomalous_children >= 1\n| fields agent_hostname, container_id, causality_actor_process_image_name, actor_process_instance_id, anomalous_children",
         "severity": "high",
         "mitre_technique_ids": [
           "T1610",
@@ -309,6 +309,14 @@
       "url": "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract tuning of the two ABIOCs. Both now key on the exec-spawned shell as the causality owner (causality_actor_process_image_name in sh/bash) and carry container_id — the east-west-spike ABIOC groups/fields by container_id + causality_actor, and the process-tree-deviation ABIOC groups by container_id + causality_actor + actor_process_instance_id — so the deviation is anchored to the privileged-exec causality chain in the specific catalogue container rather than a bare image-name match. Paired with SIM-CDR-009's cgo_anchor (containerd-shim / root) and per-step shared_entity spine on container_id (stitching_key: container_id, correlation_window_seconds: 600). Datasets (network_story / xdr_data), ENUMs, and techniques unchanged."
     }
   ]
 }

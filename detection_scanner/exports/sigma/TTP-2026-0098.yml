@@ -8,11 +8,12 @@ description: |
     dataset = xdr_data
     | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN
     | filter actor_effective_username in ("www-data", "node", "nobody")
+    | filter causality_actor_process_image_name in ("apache2", "httpd", "nginx", "node")
     | filter actor_process_image_name in ("cat", "dd", "cp", "tar", "find")
-    | comp count_distinct(action_file_path) as distinct_files by agent_hostname, actor_effective_username, actor_process_image_name
+    | comp count_distinct(action_file_path) as distinct_files, values(actor_process_instance_id) as proc_instances by agent_hostname, actor_effective_username, causality_actor_process_image_name
     | filter distinct_files >= 5
     | sort desc distinct_files
-    | fields agent_hostname, actor_effective_username, actor_process_image_name, distinct_files
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, distinct_files, proc_instances
   ----
 references:
   - https://attack.mitre.org/techniques/T1005/
@@ -41,11 +42,12 @@ description: |
     dataset = xdr_data
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter actor_effective_username in ("www-data", "node", "nobody")
+    | filter causality_actor_process_image_name in ("apache2", "httpd", "nginx", "node")
     | filter action_process_image_name in ("tar", "gzip", "zip", "7z", "xz", "bzip2")
     | filter action_process_command_line contains "-c" or action_process_command_line contains "tmp"
-    | comp count() as archive_ops by agent_hostname, actor_effective_username, action_process_image_name
+    | comp count() as archive_ops, values(actor_process_instance_id) as proc_instances by agent_hostname, actor_effective_username, causality_actor_process_image_name, action_process_image_name
     | filter archive_ops >= 1
-    | fields agent_hostname, actor_effective_username, action_process_image_name, archive_ops
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, action_process_image_name, archive_ops, proc_instances
   ----
 references:
   - https://attack.mitre.org/techniques/T1560/

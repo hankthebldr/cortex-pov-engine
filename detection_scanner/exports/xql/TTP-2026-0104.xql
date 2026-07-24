@@ -18,17 +18,18 @@ dataset = okta_sso
 ## ABIOC — MP-008 Hands-on-Keyboard Endpoint Behavioral Deviation (behavioral-ML, causality-anchored)
 # severity: high
 # behavioral_profile: machine-learning
-# causality_anchor: Anomalous account sign-in -> interactive shell under the same account on a reachable host -> rapid fan-out of distinct discovery utilities exceeding the account's learned process diversity, anchored to the spawning shell and the originating identity.
-# Immediately after the anomalous sign-in, the same account, whose learned endpoint baseline is narrow non-interactive automation, parents an interactive shell and runs a rapid living-off-the-land discovery burst. Every utility is a legitimate admin tool; the ABIOC fires on the interactive-lineage-plus-diversity deviation from the account's learned process profile, anchored to the shell that spawned the burst.
+# causality_anchor: Anomalous account sign-in -> interactive shell under the same account on a reachable host (the causality_actor_process / CGO) -> rapid fan-out of distinct discovery utilities exceeding the account's learned process diversity, anchored to that owning shell's causality_actor_process_instance_id and the dropped actor_effective_username (svc-backup), not any single child image.
+# Immediately after the anomalous sign-in, the same account, whose learned endpoint baseline is narrow non-interactive automation, parents an interactive shell (the causality-group-owner of the burst) and runs a rapid living-off-the-land discovery burst. Every utility is a legitimate admin tool; the ABIOC fires on the interactive-lineage-plus-diversity deviation, keyed on the causality_actor_process (the owning shell) and its instance_id plus actor_effective_username (the dropped svc-account identity) rather than on any single child image, so the whole fan-out threads to one process-lineage owner.
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_effective_username in ("svc-backup", "www-data", "nobody")
-| filter action_process_image_name in ("bash", "sh", "whoami", "id", "uname", "hostname", "ss", "netstat", "curl")
-| comp count_distinct(action_process_image_name) as distinct_tools, count() as burst by agent_hostname, actor_effective_username
+| filter causality_actor_process_image_name in ("bash", "sh", "zsh", "sshd")
+| filter action_process_image_name in ("whoami", "id", "uname", "hostname", "ss", "netstat", "cat", "curl")
+| comp count_distinct(action_process_image_name) as distinct_tools, count() as burst by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id
 | filter distinct_tools >= 4
 | sort desc distinct_tools
-| fields agent_hostname, actor_effective_username, distinct_tools, burst
+| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, distinct_tools, burst
 
 ## VALIDATION — MP-008 C2 Egress Session Burst From the Compromised Host
 # purpose: validation

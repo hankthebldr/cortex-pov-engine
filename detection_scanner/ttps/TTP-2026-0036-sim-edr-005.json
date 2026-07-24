@@ -185,7 +185,7 @@
       {
         "name": "EDR-005 Port Scan Via Bash devtcp",
         "description": "Port scanning via bash /dev/tcp \u2014 network service discovery from web service account. A bash loop probes multiple ports through /dev/tcp.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"postgres\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"postgres\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"httpd\", \"nginx\", \"php-fpm\", \"tomcat\", \"java\", \"node\", \"uwsgi\", \"gunicorn\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1046"
@@ -194,7 +194,7 @@
       {
         "name": "EDR-005 Batch Mode SSH From Service Account",
         "description": "SSH connection attempt from service account \u2014 lateral movement via remote service. ssh runs with BatchMode=yes and StrictHostKeyChecking=no under a service identity.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\"BatchMode=yes\", \"StrictHostKeyChecking=no\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"postgres\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\"BatchMode=yes\", \"StrictHostKeyChecking=no\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"postgres\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"httpd\", \"nginx\", \"php-fpm\", \"tomcat\", \"java\", \"node\", \"uwsgi\", \"gunicorn\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1021.004"
@@ -214,7 +214,7 @@
       {
         "purpose": "validation",
         "name": "EDR-005 Analytics Network Interface And Routing Enumeration",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"ip\", \"ifconfig\", \"route\", \"arp\")\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"ip\", \"ifconfig\", \"route\", \"arp\")\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -228,21 +228,21 @@
       {
         "purpose": "validation",
         "name": "EDR-005 Analytics Batch SSH StrictHostKey Disabled",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains \"StrictHostKeyChecking=no\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains \"StrictHostKeyChecking=no\"\n| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-005 Analytics SSH Port Forwarding From Service Account",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\" -L \", \" -D \", \" -R \")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\" -L \", \" -D \", \" -R \")\n| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "EDR-005 Analytics DNS And Host File Enumeration",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains_any (\"/etc/hosts\", \"resolv.conf\", \"nslookup\", \"dig\", \"getent hosts\", \"hostname -f\")\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains_any (\"/etc/hosts\", \"resolv.conf\", \"nslookup\", \"dig\", \"getent hosts\", \"hostname -f\")\n| filter actor_effective_username != \"root\"\n| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -251,7 +251,7 @@
       {
         "name": "Linux Lateral Movement Chain \u2014 Recon, Scan, SSH, Tunnel",
         "rule_id": "CR-EDR-0005",
-        "logic": "BIOC(EDR-005 Port Scan Via Bash devtcp) OR BIOC(EDR-005 Batch Mode SSH From Service Account) OR BIOC(EDR-005 SSH Tunnel Creation With Forward Flags)"
+        "logic": "BIOC(EDR-005 Port Scan Via Bash devtcp) OR BIOC(EDR-005 Batch Mode SSH From Service Account) OR BIOC(EDR-005 SSH Tunnel Creation With Forward Flags) STITCH BY agent_hostname, causality_actor_process_instance_id, actor_effective_username WITHIN 900s"
       }
     ],
     "analytics_modules": [

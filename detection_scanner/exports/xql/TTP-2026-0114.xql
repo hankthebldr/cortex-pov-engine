@@ -26,11 +26,12 @@ dataset = prisma_browser_events
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("chrome", "chromium", "chromium-browser", "headless_shell")
+| filter causality_actor_process_image_name in ("chrome", "chromium", "chromium-browser", "headless_shell")
 | filter action_process_image_name in ("sh", "bash", "dash", "python3")
 | filter actor_effective_username in ("node", "www-data", "nobody")
-| comp count() as agent_spawned_shells by agent_hostname, actor_effective_username, actor_process_instance_id
+| comp count() as agent_spawned_shells by agent_hostname, actor_effective_username, causality_actor_process_image_name, actor_process_instance_id, causality_actor_process_instance_id
 | filter agent_spawned_shells >= 1
-| fields agent_hostname, actor_effective_username, actor_process_instance_id, agent_spawned_shells
+| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, actor_process_instance_id, causality_actor_process_instance_id, agent_spawned_shells
 
 ## VALIDATION — SIM-BROWSER-006 Autonomous Cross-Origin Navigation Surfaced
 # purpose: validation

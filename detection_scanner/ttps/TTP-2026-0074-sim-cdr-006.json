@@ -164,7 +164,7 @@
       {
         "name": "CDR-006 Systemd Unit Written With Restart Always And Tmp ExecStart",
         "description": "A .service unit is written into a systemd unit directory with an ExecStart in /tmp or /dev/shm — the systemd-persistence file-write fingerprint (T1543.002). Narrower and deeper than the EDR-003 generic systemd BIOC.",
-        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains \".service\"\n| filter action_file_path contains_any (\"/etc/systemd/system\", \"/usr/lib/systemd/system\", \"/run/systemd/system\", \"/.config/systemd\")\n| fields _time, agent_hostname, container_id, actor_process_image_name, action_file_path",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains \".service\"\n| filter action_file_path contains_any (\"/etc/systemd/system\", \"/usr/lib/systemd/system\", \"/run/systemd/system\", \"/.config/systemd\")\n| fields _time, agent_hostname, container_id, actor_process_image_name, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_file_path",
         "severity": "high",
         "mitre_technique_ids": [
           "T1543.002"
@@ -173,7 +173,7 @@
       {
         "name": "CDR-006 Systemd Daemon-Reload Then Enable New Unit Sequence",
         "description": "systemctl daemon-reload immediately followed by systemctl enable/start of a freshly-written unit — the high-signal systemd-persistence process sequence that distinguishes malicious unit install from a benign package edit (T1543.002).",
-        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"systemctl\"\n| filter action_process_image_command_line contains_any (\"daemon-reload\", \"enable\", \"--now\", \"start\")\n| comp count() as systemctl_calls, values(action_process_image_command_line) as cmds by agent_hostname, causality_actor_process_instance_id\n| filter systemctl_calls >= 2\n| fields agent_hostname, causality_actor_process_instance_id, systemctl_calls, cmds",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"systemctl\"\n| filter action_process_image_command_line contains_any (\"daemon-reload\", \"enable\", \"--now\", \"start\")\n| comp count() as systemctl_calls, values(action_process_image_command_line) as cmds, values(causality_actor_process_image_name) as cgo_image by agent_hostname, causality_actor_process_instance_id, causality_id\n| filter systemctl_calls >= 2\n| fields agent_hostname, causality_actor_process_instance_id, causality_id, cgo_image, systemctl_calls, cmds",
         "severity": "high",
         "mitre_technique_ids": [
           "T1543.002"
@@ -182,7 +182,7 @@
       {
         "name": "CDR-006 Cron Watchdog Re-Enabling Systemd Unit",
         "description": "A crontab entry that invokes systemctl to re-enable a service unit — the self-healing cron watchdog that re-installs systemd persistence after eviction (T1053.003).",
-        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = \"crontab\" and action_process_image_command_line contains \"systemctl\") or (event_type = ENUM.FILE and action_file_path contains_any (\"/var/spool/cron\", \"/etc/cron\"))\n| filter action_process_image_command_line contains_any (\"systemctl\", \"enable\", \"is-enabled\", \".service\") or action_file_path contains \"cron\"\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line, action_file_path",
+        "logic": "preset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = \"crontab\" and action_process_image_command_line contains \"systemctl\") or (event_type = ENUM.FILE and action_file_path contains_any (\"/var/spool/cron\", \"/etc/cron\"))\n| filter action_process_image_command_line contains_any (\"systemctl\", \"enable\", \"is-enabled\", \".service\") or action_file_path contains \"cron\"\n| fields _time, agent_hostname, actor_process_image_name, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_command_line, action_file_path",
         "severity": "high",
         "mitre_technique_ids": [
           "T1053.003"

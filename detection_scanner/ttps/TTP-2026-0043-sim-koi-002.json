@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0043",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -181,14 +181,14 @@
       {
         "purpose": "validation",
         "name": "KOI-002 MCP Runtime Monitor Instruction Shaped String In Tool Result",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"pa-firewall-mcp\"\n| filter action_process_image_command_line contains_any (\"SYSTEM_OVERRIDE\", \"Ignore previous\", \"exfiltrate\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"pa-firewall-mcp\"\n| filter action_process_image_command_line contains_any (\"SYSTEM_OVERRIDE\", \"Ignore previous\", \"exfiltrate\")\n| filter causality_actor_process_image_name in (\"node\", \"claude\", \"code\", \"python3\")\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_effective_username, actor_process_image_name, actor_process_instance_id, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "KOI-002 AIRS Indirect Injection Scorer On MCP Result In Prompt",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter action_external_url contains_any (\"/v1/chat/completions\", \"/v1/messages\", \"generateContent\") or action_app_id_transitions contains \"airs\"\n| filter dst_action_external_hostname contains_any (\"openai\", \"anthropic\", \"googleapis\", \"cortexsim-canary\")\n| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_url",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter action_external_url contains_any (\"/v1/chat/completions\", \"/v1/messages\", \"generateContent\") or action_app_id_transitions contains \"airs\"\n| filter dst_action_external_hostname contains_any (\"openai\", \"anthropic\", \"googleapis\", \"cortexsim-canary\")\n| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, action_external_url",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -204,7 +204,7 @@
       {
         "name": "Agentic Supply Chain \u2014 MCP Tool-Response Indirect Injection",
         "rule_id": "CR-KOI-0002",
-        "logic": "BIOC(KOI-002 MCP Tool Response Embeds Instruction Injection And Credential Exfil String)"
+        "logic": "BIOC(KOI-002 MCP Tool Response Embeds Instruction Injection And Credential Exfil String) OR XQL(KOI-002 MCP Runtime Monitor Instruction Shaped String In Tool Result) OR XQL(KOI-002 AIRS Indirect Injection Scorer On MCP Result In Prompt) — stitched by shared agent_hostname + causality_id so the code-scan finding, the runtime tool-result consumption, and the AIRS indirect-injection detection (shared_entity: the same tainted result) collapse into ONE agentic-supply-chain incident"
       }
     ],
     "analytics_modules": [
@@ -356,6 +356,12 @@
       "date": "2026-06-17",
       "author": "Henry Reed",
       "change": "Anchored the connect-time↔runtime MCP trust gap: added CVE-2025-49596 / CVE-2025-54136 reference rows (NVD) + a [CVE] note in identity.description, added mitre_attack.atlas_techniques (AML.T0051.001 Indirect) with SRC-MITRE-ATLAS + SRC-OWASP-LLM source_refs, and a detection_engineering bullet pointing at SIM-KOI-006 (TTP-2026-0095) for the runtime tool-RESULT angle. Detections + detection_ids unchanged (494/494 slug invariant preserved); references still have exactly one primary (Unit42)."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract retune: keyed the MCP runtime-monitor XQL on causality_actor_process_image_name (the node/agent host that consumes the poisoned tool result as CGO) + causality_id/actor_process_instance_id evidence; added the same causality evidence to the AIRS indirect-injection XQL; enriched CR-KOI-0002 to OR-in the runtime-consumption and AIRS detections so the code-scan finding, the tool-result consumption, and the AIRS scorer stitch (shared_entity: the same tainted result) into ONE incident. Detection names/slugs unchanged. Scenario SIM-KOI-002 gains cgo_anchor (node/developer) + per-step causality/platforms (endpoint_network_stitch → shared_entity spine)."
     }
   ]
 }

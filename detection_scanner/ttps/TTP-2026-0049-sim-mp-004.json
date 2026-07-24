@@ -226,7 +226,7 @@
       {
         "name": "MP-004 Recursive AWS Key Pattern Grep From Service Account",
         "description": "XDR \u2014 recursive credential-pattern grep from non-interactive service account. The endpoint credential-access leg: www-data greps the filesystem for AWS key material.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"grep\", \"egrep\", \"rg\", \"find\")\n| filter action_process_image_command_line contains_any (\"AKIA\", \"aws_secret_access_key\", \".aws/credentials\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"grep\", \"egrep\", \"rg\", \"find\")\n| filter action_process_image_command_line contains_any (\"AKIA\", \"aws_secret_access_key\", \".aws/credentials\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1552.001"
@@ -235,7 +235,7 @@
       {
         "name": "MP-004 AWS CLI Invoked By www-data With Inline Access Key Env",
         "description": "XDR \u2014 aws cli invoked by www-data with inline access-key env vars. The hybrid pivot: the endpoint process that turns discovered keys into cloud API calls \u2014 the 'who/where' the cloud_audit leg cannot see.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"aws\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter action_process_image_command_line contains_any (\"sts\", \"get-caller-identity\", \"ec2\", \"s3\", \"iam\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"aws\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")\n| filter action_process_image_command_line contains_any (\"sts\", \"get-caller-identity\", \"ec2\", \"s3\", \"iam\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1078.004"

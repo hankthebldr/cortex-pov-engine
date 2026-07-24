@@ -12,9 +12,9 @@ dataset = xdr_data
 | filter actor_effective_username in ("svc-backup", "www-data", "nobody")
 | filter action_process_image_name in ("bash", "sh", "zsh")
 | filter action_process_command_line contains "-i" or action_process_command_line contains "login"
-| comp count() as interactive_shells by agent_hostname, actor_effective_username
+| comp count() as interactive_shells by agent_hostname, actor_effective_username, causality_actor_process_image_name
 | filter interactive_shells >= 1
-| fields agent_hostname, actor_effective_username, interactive_shells
+| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, interactive_shells
 
 ## ABIOC — EDR-010 Living-off-the-Land Discovery Burst Deviating from Account Baseline (behavioral-ML, causality-anchored)
 # severity: high
@@ -26,10 +26,10 @@ dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_effective_username in ("svc-backup", "www-data", "nobody")
 | filter action_process_image_name in ("whoami", "id", "uname", "hostname", "ss", "netstat", "curl", "wget")
-| comp count_distinct(action_process_image_name) as distinct_tools by agent_hostname, actor_effective_username
+| comp count_distinct(action_process_image_name) as distinct_tools by agent_hostname, actor_effective_username, actor_process_instance_id, causality_actor_process_image_name
 | filter distinct_tools >= 4
 | sort desc distinct_tools
-| fields agent_hostname, actor_effective_username, distinct_tools
+| fields agent_hostname, actor_effective_username, actor_process_instance_id, causality_actor_process_image_name, distinct_tools
 
 ## VALIDATION — EDR-010 Automation Account Baseline Learned
 # purpose: validation

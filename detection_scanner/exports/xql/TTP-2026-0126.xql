@@ -23,12 +23,12 @@ dataset = xdr_data
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-| filter actor_process_image_name = "explorer.exe"
+| filter actor_process_image_name = "explorer.exe" and causality_actor_process_image_name = "explorer.exe"
 | filter action_process_image_name in ("powershell.exe", "cmd.exe", "mshta.exe", "wscript.exe")
 | filter action_process_command_line contains "http" or action_process_command_line contains "curl" or action_process_command_line contains "DownloadString" or action_process_command_line contains "iwr"
-| comp count() as paste_exec_launches by agent_hostname, action_process_image_name
+| comp count() as paste_exec_launches by agent_hostname, causality_actor_process_instance_id, action_process_image_name
 | filter paste_exec_launches >= 1
-| fields agent_hostname, action_process_image_name, paste_exec_launches
+| fields agent_hostname, causality_actor_process_instance_id, action_process_image_name, paste_exec_launches
 
 ## ABIOC — EDR-016 Interpreter-Spawned LOLBin Fetching a Remote Payload (behavioral-ML, causality-anchored)
 # severity: high
@@ -39,11 +39,12 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("powershell.exe", "cmd.exe", "mshta.exe")
+| filter causality_actor_process_image_name = "explorer.exe"
 | filter action_process_image_name in ("curl.exe", "certutil.exe", "extrac32.exe", "rundll32.exe", "msiexec.exe", "bitsadmin.exe")
 | filter action_process_command_line contains "http" or action_process_command_line contains "urlcache" or action_process_command_line contains ".bin"
-| comp count() as lolbin_remote_fetches by agent_hostname, action_process_image_name
+| comp count() as lolbin_remote_fetches by agent_hostname, causality_actor_process_instance_id, action_process_image_name
 | filter lolbin_remote_fetches >= 1
-| fields agent_hostname, action_process_image_name, lolbin_remote_fetches
+| fields agent_hostname, causality_actor_process_instance_id, action_process_image_name, lolbin_remote_fetches
 
 ## VALIDATION — EDR-016 explorer.exe-Parented Interpreter Surfaced in Process Telemetry
 # purpose: validation

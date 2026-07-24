@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0022",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -202,7 +202,7 @@
       {
         "name": "CDR-001 DEEPCE Container Enumeration Script Execution",
         "description": "DEEPCE container enumeration script execution \u2014 known tool signature matched by CDR BIOC rule. bash runs deepce.sh inside a container to fingerprint the runtime for escape vectors.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"deepce\"",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\")\n| filter action_process_image_command_line contains \"deepce\"\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_process_image_command_line",
         "severity": "high",
         "mitre_technique_ids": [
           "T1613"
@@ -238,7 +238,7 @@
       {
         "name": "CDR-001 Service Account Token Access From Container",
         "description": "Service account token access from within container \u2014 credential harvesting behavior. A container process reads the projected Kubernetes service-account token from the secrets mount.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path contains \"serviceaccount/token\"\n| filter actor_process_image_name in (\"cat\", \"find\", \"bash\", \"sh\", \"cp\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path contains \"serviceaccount/token\"\n| filter actor_process_image_name in (\"cat\", \"find\", \"bash\", \"sh\", \"cp\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\")\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_file_path",
         "severity": "high",
         "mitre_technique_ids": [
           "T1552.001"
@@ -421,6 +421,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real container-context CDR BIOCs/XQL, added correlation CR-CDR-0001, IOCs, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality contract: retuned the two headline lineage BIOCs (DEEPCE exec, service-account-token access) to key on causality_actor_process_image_name (the container entrypoint / runc / containerd-shim lineage that OWNS the recon) plus container_id, and to surface causality_actor_process_instance_id + actor_effective_username (the dropped container-runtime identity) — the causality-aware fields the sensor stamps, not only actor_process_image_name. Pairs with SIM-CDR-001 gaining cgo_anchor (containerd-shim/root) + a process_lineage step spine + per-step platforms (linux/container, k8s on the service-account-token step)."
     }
   ]
 }

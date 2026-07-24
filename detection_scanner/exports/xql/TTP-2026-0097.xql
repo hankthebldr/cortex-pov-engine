@@ -10,10 +10,10 @@
 dataset = xdr_data
 | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_RENAME)
 | filter actor_process_image_name not in ("tar", "gzip", "rsync", "dpkg", "apt", "logrotate")
-| comp count() as file_ops, count_distinct(action_file_extension) as ext_spread by agent_hostname, actor_process_instance_id, actor_process_image_name
+| comp count() as file_ops, count_distinct(action_file_extension) as ext_spread by agent_hostname, actor_process_instance_id, actor_process_image_name, causality_actor_process_image_name
 | filter file_ops >= 200
 | sort desc file_ops
-| fields agent_hostname, actor_process_image_name, actor_process_instance_id, file_ops, ext_spread
+| fields agent_hostname, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, file_ops, ext_spread
 
 ## ABIOC — EDR-011 Recovery-Inhibition Snapshot Deletion Deviating from Host Baseline (behavioral-ML, causality-anchored)
 # severity: high
@@ -23,11 +23,11 @@ dataset = xdr_data
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-| filter action_process_image_name in ("rm", "shred", "btrfs", "lvremove", "vgremove", "unlink")
-| filter action_process_command_line contains "snapshot" or action_process_command_line contains "backup" or action_process_command_line contains ".img"
-| comp count() as recovery_inhibit_ops by agent_hostname, actor_effective_username
+| filter action_process_image_name in ("rm", "shred", "btrfs", "lvremove", "vgremove", "unlink", "vssadmin", "wbadmin")
+| filter action_process_command_line contains "snapshot" or action_process_command_line contains "backup" or action_process_command_line contains ".img" or action_process_command_line contains "shadows"
+| comp count() as recovery_inhibit_ops by agent_hostname, actor_effective_username, actor_process_instance_id, causality_actor_process_image_name
 | filter recovery_inhibit_ops >= 1
-| fields agent_hostname, actor_effective_username, recovery_inhibit_ops
+| fields agent_hostname, actor_effective_username, actor_process_instance_id, causality_actor_process_image_name, recovery_inhibit_ops
 
 ## VALIDATION — EDR-011 Host File-Modification Baseline Learned
 # purpose: validation

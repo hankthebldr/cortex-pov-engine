@@ -200,7 +200,7 @@
       {
         "name": "CDR-005 WildFire ELF Execution In Container",
         "description": "WildFire test file execution \u2014 malicious ELF execution in container triggers CDR BIOC rule. The downloaded ELF binary is executed from /tmp inside the container.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_path contains \"/tmp/\"\n| filter actor_process_image_path contains_any (\".elf\", \"test_backdoor\", \"wf_sim\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"bash\", \"sh\", \"test_backdoor.elf\")\n| filter actor_process_image_path contains \"/tmp/\"\n| filter actor_process_image_path contains_any (\".elf\", \"test_backdoor\", \"wf_sim\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1059.004"
@@ -209,7 +209,7 @@
       {
         "name": "CDR-005 Downloaded Binary Executed By Service Account In Container",
         "description": "Downloaded binary executed from /tmp by www-data context \u2014 high-risk execution chain in container. A service identity executes a binary that originated from a download into /tmp.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_path contains \"/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"bash\", \"sh\")\n| filter actor_process_image_path contains \"/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1059.004"
@@ -227,7 +227,7 @@
       {
         "name": "CDR-005 Post Execution C2 Network Activity In Container",
         "description": "C2 communication pattern following malware execution \u2014 post-execution network activity in container. Outbound network activity originates from a curl process spawned in the same container that executed the dropped binary.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"curl\"\n| filter action_process_image_command_line contains \"192.0.2.1\"\n| filter action_process_image_command_line contains_any (\"beacon\", \"User-Agent\", \"-A \", \"MSIE\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"bash\", \"sh\", \"test_backdoor.elf\")\n| filter actor_process_image_name = \"curl\"\n| filter action_process_image_command_line contains \"192.0.2.1\"\n| filter action_process_image_command_line contains_any (\"beacon\", \"User-Agent\", \"-A \", \"MSIE\")",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1071.001"
@@ -256,7 +256,7 @@
       {
         "purpose": "validation",
         "name": "CDR-005 Validate Dropped ELF Execution In Container",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_path contains \"/tmp/\" and actor_process_image_path contains_any (\".elf\", \"wf_sim\", \"test_backdoor\")\n| fields _time, agent_hostname, container_id, actor_effective_username, actor_process_image_path, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_path contains \"/tmp/\" and actor_process_image_path contains_any (\".elf\", \"wf_sim\", \"test_backdoor\")\n| fields _time, agent_hostname, container_id, causality_id, causality_actor_process_image_name, actor_process_instance_id, actor_effective_username, actor_process_image_path, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -279,7 +279,7 @@
       {
         "name": "WildFire Malware Kill Chain \u2014 Download Execute Beacon Encrypt",
         "rule_id": "CR-CDR-0005",
-        "logic": "BIOC(CDR-005 WildFire Known Bad ELF Download In Container) OR BIOC(CDR-005 WildFire ELF Execution In Container) OR BIOC(CDR-005 Downloaded Binary Executed By Service Account In Container) OR BIOC(CDR-005 Periodic Outbound HTTP Beacon From Container) OR BIOC(CDR-005 Post Execution C2 Network Activity In Container) OR BIOC(CDR-005 Mass File Modification Ransomware Pattern In Container) OR BIOC(CDR-005 Bulk Enc Extension Rename After Execution In Container)"
+        "logic": "BIOC(CDR-005 WildFire Known Bad ELF Download In Container) OR BIOC(CDR-005 WildFire ELF Execution In Container) OR BIOC(CDR-005 Downloaded Binary Executed By Service Account In Container) OR BIOC(CDR-005 Periodic Outbound HTTP Beacon From Container) OR BIOC(CDR-005 Post Execution C2 Network Activity In Container) OR BIOC(CDR-005 Mass File Modification Ransomware Pattern In Container) OR BIOC(CDR-005 Bulk Enc Extension Rename After Execution In Container) GROUPED BY container_id, causality_id WITHIN 300s"
       }
     ],
     "analytics_modules": [

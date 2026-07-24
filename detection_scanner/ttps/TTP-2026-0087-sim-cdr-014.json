@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0087",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-06-17T00:00:00+00:00",
-    "updated_at": "2026-06-17T00:00:00+00:00",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "Henry Reed",
@@ -183,7 +183,7 @@
       {
         "name": "CDR-014 In-Cluster TTP Chain Behavioral Causality",
         "description": "A container whose learned baseline is a single long-running service process suddenly executes a multi-stage sequence — system discovery, outbound HTTP, data archival, and execution-flow modification — within one short window. ABIOC anchors the chain to its causality (one shell parent spawning discovery -> C2 -> archive -> hijack children) and fires on the deviating sequence as one story rather than on any single static process name.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter actor_process_image_name in (\"sh\", \"bash\")\n| filter action_process_image_name in (\"uname\", \"curl\", \"tar\", \"id\", \"lscpu\", \"hostname\")\n| comp count_distinct(action_process_image_name) as distinct_stages by agent_hostname, actor_process_image_name\n| filter distinct_stages >= 3\n| sort desc distinct_stages\n| fields agent_hostname, actor_process_image_name, distinct_stages",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter causality_actor_process_image_name in (\"sh\", \"bash\", \"containerd-shim\")\n| filter action_process_image_name in (\"uname\", \"curl\", \"tar\", \"id\", \"lscpu\", \"hostname\")\n| comp count_distinct(action_process_image_name) as distinct_stages, values(action_process_image_name) as stages by agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id\n| filter distinct_stages >= 3\n| sort desc distinct_stages\n| fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, distinct_stages, stages",
         "severity": "high",
         "mitre_technique_ids": [
           "T1071",
@@ -191,19 +191,19 @@
           "T1574"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "Learned per-container process baseline (single service process) -> exec-spawned shell -> a multi-stage sequence of discovery, C2, archive, and hijack children, anchored to the single originating shell as one causality chain."
+        "causality_anchor": "Learned per-container process baseline (single service process) -> containerd-shim/runc CGO -> exec-spawned shell (causality_actor_process_image_name) -> a multi-stage sequence of discovery, C2, archive, and hijack children, keyed on causality_id + container_id + causality_actor_process_instance_id so every stage attributes to the SAME originating shell as one causality chain rather than to any single action image."
       },
       {
         "name": "CDR-014 Anomalous Multi-Stage Container Discovery and Exfil",
         "description": "A baselined container deviates by archiving collected data and then opening outbound connections — the collection-then-exfil shape of the in-cluster chain. ABIOC fires on the single deviation event (archive creation followed by egress from a container that never archived or exfiltrated in its learned baseline) with the causality chain that ties the egress back to the archive.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter action_process_image_name in (\"tar\", \"gzip\", \"curl\", \"wget\", \"scp\")\n| comp count() as collect_exfil_events by agent_hostname, actor_process_image_name\n| filter collect_exfil_events >= 1\n| sort desc collect_exfil_events\n| fields agent_hostname, actor_process_image_name, collect_exfil_events",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter action_process_image_name in (\"tar\", \"gzip\", \"curl\", \"wget\", \"scp\")\n| comp count() as collect_exfil_events, values(action_process_image_name) as tools by agent_hostname, container_id, causality_id, causality_actor_process_image_name\n| filter collect_exfil_events >= 1\n| sort desc collect_exfil_events\n| fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, collect_exfil_events, tools",
         "severity": "high",
         "mitre_technique_ids": [
           "T1560",
           "T1496"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "Learned per-container baseline (no archival/exfil) -> exec-spawned shell -> tar archive creation -> outbound egress, anchored to the originating shell as a collection-then-exfil deviation."
+        "causality_anchor": "Learned per-container baseline (no archival/exfil) -> containerd-shim CGO -> exec-spawned shell (causality_actor_process_image_name) -> tar archive creation -> outbound egress, keyed on causality_id + container_id so the archive and the egress attribute to the SAME shell as one collection-then-exfil deviation."
       }
     ],
     "xql_queries": [
@@ -217,7 +217,7 @@
       {
         "purpose": "validation",
         "name": "CDR-014 Multi-Stage In-Cluster Chain Surfaced",
-        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter action_process_image_name in (\"uname\", \"curl\", \"tar\", \"id\")\n| comp count_distinct(action_process_image_name) as stages by agent_hostname\n| filter stages >= 2\n| fields agent_hostname, stages",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter action_process_image_name in (\"uname\", \"curl\", \"tar\", \"id\")\n| comp count_distinct(action_process_image_name) as stages by agent_hostname, container_id, causality_id\n| filter stages >= 2\n| fields agent_hostname, container_id, causality_id, stages",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -226,7 +226,7 @@
       {
         "name": "Multi-Stage In-Cluster TTP Chain — ABIOC Causality Stitch",
         "rule_id": "CR-CDR-0014",
-        "logic": "ABIOC(CDR-014 In-Cluster TTP Chain Behavioral Causality) AND ABIOC(CDR-014 Anomalous Multi-Stage Container Discovery and Exfil) — fuses the two auto-tuned behavioral deviations into one in-cluster behavioral-anomaly incident with the single-shell multi-stage causality chain."
+        "logic": "ABIOC(CDR-014 In-Cluster TTP Chain Behavioral Causality) AND ABIOC(CDR-014 Anomalous Multi-Stage Container Discovery and Exfil) GROUPED BY container_id, causality_id, causality_actor_process_image_name WITHIN 900s — fuses the two auto-tuned behavioral deviations into one in-cluster behavioral-anomaly incident anchored to the single containerd-shim -> shell process_lineage causality chain (same container_id + causality_id), not two disconnected anomalies."
       }
     ],
     "analytics_modules": [
@@ -332,6 +332,12 @@
       "date": "2026-06-17",
       "author": "Henry Reed",
       "change": "Initial CDR multi-stage in-cluster ABIOC chain card for SIM-CDR-014, porting the xsiam-prisma-cdr-lab attk-ttp fixture (attk-ttp.sh + attk-k8.yml). Ran the nine-technique chain with safe stand-ins (benign HTTP, tar of self-created files, echo-stubbed cryptominer/privileged-deploy). Authored two ABIOCs (multi-stage causality, collection-then-exfil deviation) with machine-learning behavioral_profile + causality_anchor, a chain-surfaced validation XQL, the reusable container-workload projection hunt query, and correlation CR-CDR-0014. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality contract: retuned both ABIOCs (multi-stage causality, collection-then-exfil deviation) and the chain-surfaced validation XQL to key on causality_actor_process_image_name and group by container_id + causality_id (+ causality_actor_process_instance_id on the headline ABIOC) so every stage attributes to the SAME containerd-shim -> shell causality chain that OWNS the container, not to the immediate action image. CR-CDR-0014 now stitches GROUPED BY container_id, causality_id WITHIN 900s. Pairs with SIM-CDR-014 gaining cgo_anchor (containerd-shim/root) + a connected process_lineage step spine (baseline -> chain -> collection-then-exfil -> correlation) + per-step platforms (linux/container/k8s)."
     }
   ]
 }

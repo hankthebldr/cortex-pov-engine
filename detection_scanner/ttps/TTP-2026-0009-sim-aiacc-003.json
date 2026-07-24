@@ -1,7 +1,7 @@
 {
   "id": "TTP-2026-0009",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:11+00:00",
@@ -296,6 +296,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract pass: scenario SIM-AIACC-003 now declares a cgo_anchor (containerd-shim/root) and a connected shared_entity step spine (step-01 pre-flight -> step-02 burst -> step-03 cool-off), plus cross-OS platform_variants (Windows PowerShell / macOS curl) on the burst step so the same volume anomaly is exercised from any client OS. Detection bodies intentionally NOT re-keyed to causality_actor_process_* fields: these are network-egress volume signatures on panw_ngfw_traffic_raw keyed on source_user/src_ip where process-causality fields do not exist — re-keying them would break the detection. Correlation CR-AIACC-0003 already stitches on the user identity the spine's shared_entity pivot models."
     }
   ]
 }

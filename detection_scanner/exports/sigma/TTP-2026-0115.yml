@@ -42,13 +42,14 @@ description: |
     dataset = xdr_data
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter actor_process_image_name = "avp.exe"
+    | filter causality_actor_process_image_name = "avp.exe"
     | filter actor_process_image_path not contains "Kaspersky Lab" and actor_process_signature_status != "SIGNED"
     | filter action_process_image_name = "cmd.exe"
     | filter action_process_command_line contains "/e:ON" and action_process_command_line contains "/v:OFF" and action_process_command_line contains "/d /c"
-    | comp count() as dispatch_events by agent_hostname, actor_process_image_name, actor_process_image_path
+    | comp count() as dispatch_events by agent_hostname, causality_actor_process_image_name, actor_process_image_path, actor_process_instance_id, causality_actor_process_instance_id
     | filter dispatch_events >= 1
     | sort desc dispatch_events
-    | fields agent_hostname, actor_process_image_name, actor_process_image_path, dispatch_events
+    | fields agent_hostname, causality_actor_process_image_name, actor_process_image_path, actor_process_instance_id, causality_actor_process_instance_id, dispatch_events
   ----
 references:
   - https://attack.mitre.org/techniques/T1036/

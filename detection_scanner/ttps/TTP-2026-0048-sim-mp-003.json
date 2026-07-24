@@ -186,7 +186,7 @@
       {
         "name": "MP-003 Passwd Read Then Write To Tmp Staging Dir",
         "description": "XDR - /etc/passwd read followed by write to /tmp staging directory. The collection leg: a sensitive system file is read and concatenated into a staging file under /tmp.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_path in (\"/etc/passwd\", \"/etc/shadow\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter actor_process_image_name in (\"cat\", \"head\", \"cp\", \"dd\", \"bash\", \"sh\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_path in (\"/etc/passwd\", \"/etc/shadow\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter actor_process_image_name in (\"cat\", \"head\", \"cp\", \"dd\", \"bash\", \"sh\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1005"
@@ -195,7 +195,7 @@
       {
         "name": "MP-003 Tar Gzip Compression Of Tmp Staging By Service Account",
         "description": "XDR - data staging: tar compression of recently-written files in /tmp by service account. Classic exfil-prep: a service identity archives the staging directory.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"tar\", \"gzip\", \"zip\", \"7z\")\n| filter action_process_image_command_line contains \"/tmp/\"\n| filter action_process_image_command_line contains_any (\"-czf\", \"-cf\", \"-z\", \".tar.gz\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"tar\", \"gzip\", \"zip\", \"7z\")\n| filter action_process_image_command_line contains \"/tmp/\"\n| filter action_process_image_command_line contains_any (\"-czf\", \"-cf\", \"-z\", \".tar.gz\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1074.001"
@@ -204,7 +204,7 @@
       {
         "name": "MP-003 Dig TXT Tight Loop From Service Account",
         "description": "XDR - dig invocation in tight loop from service account (shell one-liner DNS exfil). The endpoint process leg of the DNS tunnel that the NGFW DNS anomaly lacks.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"dig\", \"nslookup\", \"host\")\n| filter action_process_image_command_line contains \"TXT\"\n| filter action_process_image_command_line contains_any (\".exfil.\", \"@1.1.1.1\", \"@8.8.8.8\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"dig\", \"nslookup\", \"host\")\n| filter action_process_image_command_line contains \"TXT\"\n| filter action_process_image_command_line contains_any (\".exfil.\", \"@1.1.1.1\", \"@8.8.8.8\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1048.003"
@@ -213,7 +213,7 @@
       {
         "name": "MP-003 Curl Form Upload Of Staged Data By Service Account",
         "description": "XDR - curl -F file upload of recently-staged data by service account. The redundant HTTPS-POST exfil channel: curl uploads the staged tarball as multipart form data.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_process_image_command_line contains_any (\"-F \", \"--form\", \"-X POST\", \"--data-binary\")\n| filter action_process_image_command_line contains \"@/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_process_image_command_line contains_any (\"-F \", \"--form\", \"-X POST\", \"--data-binary\")\n| filter action_process_image_command_line contains \"@/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1048"
