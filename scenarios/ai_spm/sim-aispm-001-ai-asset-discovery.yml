@@ -44,6 +44,13 @@ execution_identity:
 push_supported: true
 pull_supported: false
 
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "cortex-aispm-scan"
+  primary_username: "root"
+
 # ── External Tools ──────────────────────────────────────────────────────────
 external_tools:
   - name: aws-cli
@@ -113,6 +120,9 @@ steps:
       echo '[*] Scan window elapsed. Proceeding to inventory probe.'
     identity: root
     mitre_technique: "T1526"
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -134,6 +144,9 @@ steps:
       echo '[*] Discovered assets written to /tmp/aispm-discovered.json'
     identity: root
     mitre_technique: "T1526"
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -179,6 +192,9 @@ steps:
       fi
     identity: root
     mitre_technique: "T1526"
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: AI_SPM
         type: XQL

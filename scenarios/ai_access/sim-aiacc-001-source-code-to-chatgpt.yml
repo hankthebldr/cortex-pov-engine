@@ -33,6 +33,13 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "developer"
+
 infra_modules_needed:
   - base
 
@@ -119,6 +126,9 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-001.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: AI_ACCESS
         type: XQL
@@ -159,6 +169,9 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-001-burst.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: AI_ACCESS
         type: XQL

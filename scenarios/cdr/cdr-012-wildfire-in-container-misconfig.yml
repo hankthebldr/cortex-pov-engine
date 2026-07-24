@@ -35,6 +35,13 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # Pairs the WildFire verdict path (official benign PE/APK/macOS/ELF test
 # samples, execution stubbed) with the lab's nine insecure-pod scenarios in one
@@ -92,6 +99,9 @@ steps:
       echo "[*] samples marked executable in $DIR — execution stubbed [truncated]"
     identity: container-runtime
     mitre_technique: "T1204"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -107,6 +117,9 @@ steps:
       echo "[*] posture misconfiguration planted for Cortex Cloud CDR validation"
     identity: container-runtime
     mitre_technique: "T1610"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -125,6 +138,9 @@ steps:
       echo "[*] Cortex correlation CR-CDR-0012 fuses the posture misconfiguration and the in-container download-and-execute into one posture-plus-runtime container-malware incident"
     identity: container-runtime
     mitre_technique: "T1610"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

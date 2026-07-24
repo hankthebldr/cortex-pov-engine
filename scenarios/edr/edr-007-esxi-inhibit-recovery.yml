@@ -47,6 +47,13 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "hostd"
+  primary_username: "root"
+
 external_tools: []
 
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
@@ -97,6 +104,9 @@ steps:
     command: "ansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /tmp/pov-encrypt.yml --tags poweroff -f 16; echo '[*] vim-cmd power.off burst issued across cluster'"
     identity: root
     mitre_technique: "T1490"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -119,6 +129,9 @@ steps:
     command: "ansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /tmp/pov-encrypt.yml --tags markers -f 16; echo '[*] SAFE-MODE markers (.tttt) dropped — NO VMDKs were encrypted'"
     identity: root
     mitre_technique: "T1486"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC

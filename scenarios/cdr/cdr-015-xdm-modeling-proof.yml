@@ -33,6 +33,13 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # This scenario proves the XDM normalization SUBSTRATE beneath detections: an
 # XDM modeling rule (detections.modeling_rules[], NOT a detection_type) maps raw
@@ -84,6 +91,9 @@ steps:
       echo "[*] Privileged container started — raw actor_container_info now flowing"
     identity: container-runtime
     mitre_technique: "T1610"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: XQL
@@ -99,6 +109,9 @@ steps:
       echo "[*] This detection only works because the modeling rule made privileged addressable"
     identity: container-runtime
     mitre_technique: "T1613"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC

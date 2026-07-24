@@ -48,6 +48,13 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "root"
+
 external_tools:
   - name: rclone
     source: "https://rclone.org/docs/"
@@ -118,6 +125,9 @@ steps:
       echo '[*] XDR BIOC should fire on the rclone flag pattern even when the binary is named svchost'
     identity: container-runtime
     mitre_technique: "T1567.002"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -151,6 +161,9 @@ steps:
       echo '[*] XDR should flag the *.mega.nz resolution from a non-sanctioned host and the sustained high byte-out/byte-in egress to a non-corporate ASN'
     identity: container-runtime
     mitre_technique: "T1048.003"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -180,6 +193,9 @@ steps:
       echo '[*] XSIAM correlation CR-EXFIL-0001 should fuse the rclone flag-pattern process and the large non-corporate egress into a single exfiltration incident'
     identity: container-runtime
     mitre_technique: "T1567.002"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: Correlation

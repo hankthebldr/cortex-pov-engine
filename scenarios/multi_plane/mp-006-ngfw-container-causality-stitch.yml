@@ -34,6 +34,13 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "nginx"
+  primary_username: "www-data"
+
 required_content:
   - repo: "3CORESec/testmynids.org"
 
@@ -130,6 +137,9 @@ steps:
       echo "[*] DGA-shaped hostnames generated — NGFW DNS/URL analytics should flag high-entropy labels"
     identity: container-runtime
     mitre_technique: "T1568"
+    causality:
+      parent_step: step-01
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -143,6 +153,9 @@ steps:
       echo "[*] Cortex correlation CR-MP-0006 joins the NGFW App-ID/URL/DGA session and the endpoint container process on the shared 5-tuple + container_id within a 10s window"
     identity: container-runtime
     mitre_technique: "T1071.001"
+    causality:
+      parent_step: step-02
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

@@ -31,6 +31,13 @@ execution_identity:
 push_supported: true
 pull_supported: false
 
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "cortex-aispm-scan"
+  primary_username: "root"
+
 external_tools:
   - name: aws-cli
     type: binary
@@ -102,6 +109,9 @@ steps:
       echo '[*] Scan window elapsed'
     identity: root
     mitre_technique: "T1195.002"
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -141,6 +151,9 @@ steps:
       fi
     identity: root
     mitre_technique: "T1574"
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: AI_SPM
         type: XQL
