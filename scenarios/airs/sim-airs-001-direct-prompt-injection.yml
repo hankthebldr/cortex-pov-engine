@@ -39,6 +39,19 @@ required_content:
 infra_modules_needed:
   - base
 
+# ── Causality Group Owner anchor ─────────────────────────────────────────────
+# The deployed LLM app (cortex-vulnerable-llm Flask target) is the protected
+# runtime AIRS traces; it and the attacker both run inside the container, so the
+# real CGO is the container runtime that owns that process tree, NOT the
+# synthetic cortexsim-agent beacon. The per-step `causality` blocks build a
+# connected containerd-shim -> step-01 (LLM server) -> step-02 (attacker client)
+# -> step-03 (audit) spine: step-02 reaches step-01 over a real localhost:8089
+# network_session (the prompt-injection request), and step-03 reads step-02's
+# JSONL output on the same host (shared_entity).
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # Rolled out per the S-07 per-plane convention
 # (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
@@ -98,6 +111,7 @@ steps:
       echo "vllm_pid=$VLLM_PID" > /tmp/airs-001.env
     identity: container-runtime
     mitre_technique: "T1059.004"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: AIRS
         type: XQL
@@ -117,6 +131,13 @@ steps:
       jq '.[].outcome' /tmp/airs-001-events.jsonl | sort | uniq -c
     identity: container-runtime
     mitre_technique: "T1656"
+    # The attacker client POSTs the LLM01 injection to the step-01 Flask target
+    # over a real localhost:8089 flow — the two ends of one network session are
+    # what AIRS inspects, so network_session is the honest pivot (not a fork).
+    causality:
+      parent_step: "step-01"
+      pivot: network_session
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: AIRS
         type: XQL
@@ -142,6 +163,12 @@ steps:
       echo "[CortexSim] AIRS-001 events conform to expected schema"
     identity: container-runtime
     mitre_technique: "T1656"
+    # Audit step reads step-02's JSONL output file on the same host — no fork,
+    # no new network flow; shared_entity (same host/artifact) carries the spine.
+    causality:
+      parent_step: "step-02"
+      pivot: shared_entity
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: AIRS
         type: XQL

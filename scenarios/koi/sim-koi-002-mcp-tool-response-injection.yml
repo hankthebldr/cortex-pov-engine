@@ -59,6 +59,17 @@ success_criteria: |
   product equivalent.
 moat_tier: "MOAT"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The agentic host (the MCP client / node) is the Causality Group Owner — the
+# process that calls the malicious MCP tool and concatenates its poisoned reply
+# into the model context — NOT the synthetic beacon. The source-scan (step-01)
+# roots at the CGO; the bundle fetch (step-02) stitches the endpoint finding to
+# its NGFW session; the AIRS/XSIAM stage (step-03) consumes the SAME tainted
+# tool result downstream, so the graph is one connected spine.
+cgo_anchor:
+  image_name: "node"
+  primary_username: "developer"
+
 external_tools:
   - name: Cortex Malicious Agentic Pack
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -79,6 +90,7 @@ steps:
         sources/cortex-malicious-agentic-pack/mcp/pa-firewall-mcp/server.py || true
     identity: container-runtime
     mitre_technique: "T1656"
+    platforms: ["linux", "macos", "container"]
     expected_detections:
       - plane: KOI
         type: BIOC
@@ -110,6 +122,13 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/koi-002.yml --live
     identity: container-runtime
     mitre_technique: "T1059"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-01
+      # Endpoint source-scan finding (step-01) stitched to the NGFW session that
+      # fetches the SAME malicious MCP bundle whose tool reply carries the
+      # injection payload — the hero cross-plane edge.
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -129,6 +148,13 @@ steps:
       echo "[CortexSim] sanitising, AIRS LLM01 (indirect injection) detector fires."
     identity: container-runtime
     mitre_technique: "T1656"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-02
+      # The tainted MCP tool result fetched in step-02 is the SAME entity that
+      # now flows into the LLM prompt (AIRS) and the XSIAM stitch — same-entity
+      # reuse downstream, no direct fork.
+      pivot: shared_entity
     expected_detections:
       - plane: AIRS
         type: XQL

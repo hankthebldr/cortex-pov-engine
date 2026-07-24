@@ -68,6 +68,19 @@ success_criteria: |
   the MTTD budget.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The operator's shell that dropped and launched the encryptor OWNS the chain in
+# XDR's causality view (the Causality Group Owner), and every impact-phase exec
+# threads through it: file enumeration (step-01) is the root under the CGO; the
+# high-entropy mass-rewrite burst (step-02) forks from the enumeration lineage
+# (process_lineage); the recovery-inhibition deletion (step-03) is spawned by the
+# same encryptor lineage (process_lineage); the correlation marker (step-04)
+# fuses the two auto-tuned ABIOCs on the same host (shared_entity, no direct
+# fork). The spine mirrors enumeration -> mass-rewrite -> recovery-inhibition.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "svc-backup"
+
 external_tools: []
 
 steps:
@@ -76,6 +89,7 @@ steps:
     command: "mkdir -p /tmp/cortexsim_preenc; for i in $(seq 1 60); do echo baseline-content-$i > /tmp/cortexsim_preenc/doc_$i.dat; done; find /tmp/cortexsim_preenc -type f > /tmp/cortexsim_preenc_targets.txt; wc -l /tmp/cortexsim_preenc_targets.txt"
     identity: svc-backup
     mitre_technique: "T1083"
+    platforms: ["linux"]
     expected_detections:
       - plane: EDR
         type: XQL
@@ -88,6 +102,12 @@ steps:
     command: "while read -r f; do head -c 4096 /dev/urandom > $f.locked && rm -f $f; done < /tmp/cortexsim_preenc_targets.txt; echo cortexsim-preenc-file-burst-complete"
     identity: svc-backup
     mitre_technique: "T1486"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Get-ChildItem C:\\cortexsim_preenc -File | ForEach-Object { $b = New-Object byte[] 4096; (New-Object Random).NextBytes($b); [IO.File]::WriteAllBytes($_.FullName + '.locked', $b); Remove-Item $_.FullName }"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -105,6 +125,12 @@ steps:
     command: "rm -f /tmp/cortexsim_snapshot_baseline.img /tmp/cortexsim_backup_baseline.tar 2>/dev/null; echo cortexsim-preenc-recovery-inhibition-issued"
     identity: svc-backup
     mitre_technique: "T1490"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "vssadmin delete shadows /all /quiet; wbadmin delete catalog -quiet; bcdedit /set {default} recoveryenabled no"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -117,6 +143,10 @@ steps:
     command: "echo cortexsim-edr-011-cr-edr-0011-stitched-pre-encryption-ransomware-incident"
     identity: svc-backup
     mitre_technique: "T1486"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: Correlation

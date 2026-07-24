@@ -32,6 +32,19 @@ additional_techniques:
 threat_report: "Okta - Identity Threat Trends 2025"
 threat_report_url: "https://www.okta.com/identity-101/"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is an identity-plane scenario: the emulator runs inside the container
+# runtime, so the Causality Group Owner is the containerd-shim/container-runtime
+# that owns the emitter session (not the synthetic beacon). The detection is
+# pure IdP-log analytics — the meaningful pivot is not a process fork but the
+# SAME principal (ada.lovelace) appearing across two providers. step-02 follows
+# step-01 in the same runtime session (process_lineage); step-03 stitches to
+# step-02 on the shared identity (shared_entity), mirroring how correlation
+# CR-ITDR-0001 fuses the Okta and Microsoft anomalies for one identity.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
 execution_identity:
   default: container-runtime
   options:
@@ -78,6 +91,8 @@ steps:
         | jq -e '.eal_targets | length > 0'
     identity: container-runtime
     mitre_technique: "T1078.004"
+    # Root step: the emulator pre-flight inside the container-runtime CGO session.
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: ITDR
         type: BIOC
@@ -112,6 +127,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/itdr-001.yml --live
     identity: container-runtime
     mitre_technique: "T1078.004"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: ITDR
         type: XQL
@@ -150,6 +169,13 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/itdr-001-ms.yml --live
     identity: container-runtime
     mitre_technique: "T1078.004"
+    # The Microsoft leg stitches to the Okta leg on the SHARED identity
+    # (ada.lovelace), not a process fork — the cross-provider impossible-travel
+    # join CR-ITDR-0001 keys on.
+    causality:
+      parent_step: "step-02"
+      pivot: "shared_entity"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: ITDR
         type: XQL

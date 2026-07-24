@@ -90,6 +90,17 @@ success_criteria: |
   behavioral-ML catches the chain a static per-binary BIOC would miss.
 moat_tier: "LEAD"
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# This is the interpreter-DEPTH companion to SIM-EDR-016: the loader chain runs
+# AFTER the ClickFix Win+R paste, so the chain is still OWNED by explorer.exe
+# (the Run-dialog handler that executed the paste and spawned the mshta stager),
+# NOT the synthetic beacon. Each loader hop (mshta -> cmd loader -> extrac32 ->
+# renamed signed-AutoIt3) is a real process-create fork, so steps thread on
+# process_lineage; the terminal correlation joins to the NDR egress.
+cgo_anchor:
+  image_name: "explorer.exe"
+  primary_username: "user"
+
 external_tools: []
 
 steps:
@@ -104,6 +115,9 @@ steps:
       Write-Host 'cortexsim-edr-017-mshta-fetch-modelled'
     identity: user
     mitre_technique: "T1218.014"
+    # Root step — the mshta stager is spawned by the explorer.exe paste (CGO).
+    # Windows-only LOLBin tradecraft (mshta/extrac32/AutoIt3), no cross-OS variant.
+    platforms: ["windows"]
     # The mshta-fetch loader ABIOC is MODEL-ONLY (no mshta.exe is spawned under
     # SAFE-MODE), so it is NOT asserted here — only the network egress this step
     # actually produces (Invoke-WebRequest to the authorised host) is asserted.
@@ -122,6 +136,12 @@ steps:
       Write-Host 'cortexsim-edr-017-av-edr-discovery-probe-complete'
     identity: user
     mitre_technique: "T1518.001"
+    # The cmd loader stage running the AV/EDR discovery probe is forked by the
+    # mshta stager (step-01) — a real process-create, so pivot is process_lineage.
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -152,6 +172,12 @@ steps:
       Write-Host 'cortexsim-edr-017-extrac32-unpacked-benign-autoit3-modelled'
     identity: user
     mitre_technique: "T1036.005"
+    # The extrac32 unpack + masqueraded-AutoIt3 stage continues the same cmd
+    # loader lineage from step-02 — real process-create forks, pivot process_lineage.
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    platforms: ["windows"]
     # The extrac32->masqueraded-AutoIt3 grouping ABIOC (distinct_stages >= 2) is
     # MODEL-ONLY: SAFE-MODE runs the extrac32 unpack for real but only models the
     # renamed signed-AutoIt3 exec, so the two-stage grouping cannot fire and is
@@ -173,6 +199,13 @@ steps:
       Write-Host 'cortexsim-edr-017-cr-edr-0017-stitched-lumma-loader-incident'
     identity: user
     mitre_technique: "T1059.003"
+    # Terminal stitch — joins the endpoint loader lineage (steps 01-03) to the
+    # NDR stager/C2 egress: endpoint-signal <-> firewall-session, so the pivot
+    # is endpoint_network_stitch.
+    causality:
+      parent_step: step-03
+      pivot: endpoint_network_stitch
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: Correlation

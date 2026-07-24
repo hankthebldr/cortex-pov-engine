@@ -73,6 +73,7 @@ steps:
         description: "The XDM modeling rule (normalization substrate) maps the raw actor_container_info blob into addressable XDM container fields — the gating step that makes the source analytics-grade. Resolves to the card's modeling_rules[] object."
         ttp_ref: "TTP-2026-0081"
         detection_id: modeling-container-telemetry-xdm-normalization
+    platforms: ["k8s", "container"]
 
   - id: step-02
     name: "Start a privileged container so raw telemetry is emitted and modeled"
@@ -89,6 +90,7 @@ steps:
         description: "Validation that the modeled container fields (pod_namespace, privileged) are populated from the raw blob — confirms the modeling rule normalized the telemetry"
         ttp_ref: "TTP-2026-0081"
         detection_id: xql-cdr-xdm-modeled-container-fields-populated
+    platforms: ["k8s", "container", "linux"]
 
   - id: step-03
     name: "BIOC fires on the normalized privileged field"
@@ -103,6 +105,7 @@ steps:
         description: "Privileged-container-start BIOC fires on the normalized privileged field — proving the raw-source to modeled-field to detection chain end-to-end"
         ttp_ref: "TTP-2026-0081"
         detection_id: bioc-cdr-xdm-privileged-container-start-on-modeled-field
+    platforms: ["k8s", "container"]
 
 cleanup:
   commands:

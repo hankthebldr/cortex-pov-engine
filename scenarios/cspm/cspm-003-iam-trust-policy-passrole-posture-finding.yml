@@ -110,6 +110,20 @@ required_planes_in_incident:
   - ANALYTICS
 stitching_key: role_arn
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is a posture-to-impact chain, not a host process tree: the CGO is the
+# aws-cli driver on the compromised workload/jumpbox that assumes the exposed
+# role and walks it from misconfiguration to org-wide access. The connected
+# graph is carried by the SEMANTIC edge kinds rather than fork/exec — the
+# posture finding (Signal A, root) is abused at runtime (exposure_exploit ->
+# AssumeRole + IMDS), the assumed-role session is reused to escalate
+# (shared_entity, same principal/role ARN = the stitching_key), and the
+# escalation drives the KMS+S3 impact (exploit_impact). CR-CSPM-0005 stitches
+# that exact spine on the role ARN + principal + time window.
+cgo_anchor:
+  image_name: "aws"
+  primary_username: "root"
+
 # ── Steps ───────────────────────────────────────────────────────────────────
 steps:
   - id: step-01
@@ -121,6 +135,7 @@ steps:
       echo '[*] Cortex Cloud CSPM should regress the role to compliance_state=violation (wildcard-trust-principal / passrole-unrestricted-resource)'
     identity: root
     mitre_technique: "T1078.004"
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -141,6 +156,10 @@ steps:
       echo '[*] CloudTrail AssumeRole + IMDS credential read observable on the exposed role ARN'
     identity: root
     mitre_technique: "T1552.005"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: exposure_exploit
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -173,6 +192,10 @@ steps:
       echo '[*] CloudTrail AttachRolePolicy(AdministratorAccess) attributed to assumed-role/CortexSimExposedRole/cortexsim-exposure — the TA0004 privilege-escalation core; cleanup detaches it'
     identity: root
     mitre_technique: "T1548.005"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -200,6 +223,10 @@ steps:
       echo '[*] S3 GetObject/ListBucket are CloudTrail DATA events (enabled via the cspm module selector); KMS Decrypt is a management event — both observable under assumed-role/CortexSimExposedRole'
     identity: root
     mitre_technique: "T1530"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: exploit_impact
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -219,6 +246,10 @@ steps:
       echo '    - only 1 plane represented (cloud_audit_logs not ingested) -> required_planes_in_incident fails'
     identity: root
     mitre_technique: "T1098.003"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
     expected_detections:
       - plane: CSPM
         type: XQL

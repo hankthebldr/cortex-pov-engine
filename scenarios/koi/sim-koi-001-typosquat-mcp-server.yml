@@ -59,6 +59,17 @@ success_criteria: |
   product equivalent.
 moat_tier: "MOAT"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The agentic host (Claude Desktop's Electron/node main process) is the
+# Causality Group Owner — the process that loads the MCP server and OWNS the
+# supply-chain chain in XDR's causality view — NOT the synthetic beacon. The
+# code-scan (step-01) roots at the CGO; the manifest fetch (step-02) stitches
+# the endpoint finding to its NGFW session; the CI confirmation (step-03)
+# re-touches the same MCP artifact, so the graph is one connected spine.
+cgo_anchor:
+  image_name: "node"
+  primary_username: "developer"
+
 external_tools:
   - name: Cortex Malicious Agentic Pack
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -80,6 +91,7 @@ steps:
         sources/cortex-malicious-agentic-pack/mcp/anthroopic-calculator/mcp.json || true
     identity: container-runtime
     mitre_technique: "T1195"
+    platforms: ["linux", "macos", "container"]
     expected_detections:
       - plane: KOI
         type: XQL
@@ -116,6 +128,12 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/koi-001.yml --live
     identity: container-runtime
     mitre_technique: "T1059"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-01
+      # Endpoint code-scan finding (step-01) stitched to the NGFW session that
+      # fetches the SAME typosquat MCP manifest — the hero cross-plane edge.
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -135,6 +153,12 @@ steps:
         > /tmp/koi-001-scan.env
     identity: container-runtime
     mitre_technique: "T1195"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-02
+      # CI static scan re-touches the same MCP artifact that was fetched in
+      # step-02 — same-artifact reuse, no direct fork.
+      pivot: shared_entity
     expected_detections:
       - plane: KOI
         type: XQL

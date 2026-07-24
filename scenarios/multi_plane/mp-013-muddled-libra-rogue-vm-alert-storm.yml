@@ -66,6 +66,17 @@ pull_supported: true
 
 external_tools: []
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# Muddled Libra works from a rogue vSphere VM under an interactive local
+# Administrator desktop session — that session (explorer.exe / Administrator)
+# is the Causality Group Owner that spawns every operator tool (NTDS copy,
+# ADRecon, account creation, Chisel, exfil). Anchoring the CGO on the rogue-VM
+# Administrator session (NOT the synthetic beacon) ties the seven signals to one
+# owning host/actor so the AI-triage grouping keys on a real entity.
+cgo_anchor:
+  image_name: "explorer.exe"
+  primary_username: "Administrator"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # F7 — AI Triage & Summarization. The KPI is incident consolidation: seven
 # medium/low correlated ABIOCs must collapse into exactly ONE critical incident
@@ -113,6 +124,8 @@ steps:
     command: "mkdir -p /tmp/cortexsim-mp013 && touch /tmp/cortexsim-mp013/new-virtual-machine.SAFE-MODE && echo 'cortexsim-mp013-signal1-rogue-vsphere-vm-created-admin-login'"
     identity: root
     mitre_technique: "T1078"
+    # Root: the rogue vSphere VM + local-Administrator session is the CGO itself.
+    platforms: ["windows"]
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -125,6 +138,12 @@ steps:
     command: "touch /tmp/cortexsim-mp013/ntds.dit.SAFE-MODE /tmp/cortexsim-mp013/result.kerb.SAFE-MODE && echo 'cortexsim-mp013-signal2-ntds-dit-copied-from-mounted-dc-vmdk-safe-mode-no-real-hive'"
     identity: root
     mitre_technique: "T1003.003"
+    platforms: ["windows"]
+    # The Administrator session (CGO) spawns esentutl/cmd to copy NTDS.dit off
+    # the mounted DC VMDK — a real process descent from the rogue-VM session.
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -137,6 +156,12 @@ steps:
     command: "echo 'cortexsim-mp013-signal3-adrecon-domain-enumeration-computerspns'; ldapsearch -VV 2>/dev/null | head -1 || true"
     identity: www-data
     mitre_technique: "T1087.002"
+    platforms: ["windows"]
+    # ADRecon is a sibling PowerShell run under the same rogue-VM actor that
+    # extracted NTDS — same host/actor, not a fork of the NTDS process.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -149,6 +174,12 @@ steps:
     command: "echo 'cortexsim-mp013-signal4-local-admin-account-gooner-created-4720-4624'; touch /tmp/cortexsim-mp013/gooner-account.SAFE-MODE"
     identity: root
     mitre_technique: "T1136.001"
+    platforms: ["windows"]
+    # gooner local-admin creation is more operator persistence on the same rogue
+    # host — same-entity reuse, no direct process fork from ADRecon.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -161,6 +192,13 @@ steps:
     command: "echo 'cortexsim-mp013-signal5-forged-kerberos-ticket-pass-the-ticket-rdp-psexec-lateral-safe-mode'; touch /tmp/cortexsim-mp013/result.SAFE-MODE"
     identity: www-data
     mitre_technique: "T1550.003"
+    platforms: ["windows"]
+    # Forged tickets are minted from the krbtgt/NTDS material harvested in
+    # step-02 — a real non-adjacent credential-material reuse (shared_entity),
+    # not a descent from the intervening ADRecon/gooner steps.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -173,6 +211,12 @@ steps:
     command: "echo 'cortexsim-mp013-signal6-chisel-ssh-over-https-persistent-tunnel-443'; curl -s --max-time 5 \"https://${STAGE_HOST:-127.0.0.1}:443/tunnel\" -o /dev/null 2>/dev/null || true"
     identity: www-data
     mitre_technique: "T1572"
+    platforms: ["windows"]
+    # The Chisel tunnel joins the rogue-host operator activity to the NGFW 443
+    # session: an endpoint<->firewall stitch on the same host.
+    causality:
+      parent_step: step-05
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -185,6 +229,12 @@ steps:
     command: "echo 'cortexsim-mp013-signal7-bulk-cloud-exfil-s3-snowflake-safe-mode-no-real-data-moved'; touch /tmp/cortexsim-mp013/exfil-manifest.SAFE-MODE"
     identity: www-data
     mitre_technique: "T1537"
+    platforms: ["windows"]
+    # Bulk cloud exfil is a further egress from the SAME rogue host that dumped
+    # NTDS and tunneled out — same-entity (agent_hostname) reuse.
+    causality:
+      parent_step: step-06
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -202,6 +252,12 @@ steps:
       sleep "${CORTEXSIM_TRIAGE_WAIT_SECONDS:-30}"
     identity: root
     mitre_technique: "T1078"
+    platforms: ["windows"]
+    # Terminal: the AI SOC analyst groups all seven ABIOCs on the one rogue host
+    # (agent_hostname) into a single critical incident.
+    causality:
+      parent_step: step-07
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

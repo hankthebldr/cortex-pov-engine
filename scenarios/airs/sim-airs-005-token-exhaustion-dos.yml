@@ -74,6 +74,19 @@ moat_tier: "MOAT"
 # attack programmatically. They are two front-ends over one engine — not two
 # different detections — so probe packs under scenarios/airs/probes/ feed both.
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The pod running cortex-vulnerable-llm is owned by the container runtime
+# (containerd-shim) — the initial process that OWNS this chain in XDR's causality
+# view, NOT the synthetic beacon. step-01 (the rate-limit-free LLM endpoint)
+# descends from it; the 50-request high-token burst joins that endpoint over a
+# network_session; and the final oversized probe rides the SAME client→endpoint
+# session (network_session) to prove the circuit-breaker engages. The
+# denial-of-wallet graph is one connected chain, not a star of independent steps
+# off the agent node.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 external_tools:
   - name: Cortex Prompt Attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -113,6 +126,13 @@ steps:
       jq -s '[.[] | .detector_results.token_total] | add' /tmp/airs-005-events.jsonl
     identity: container-runtime
     mitre_technique: "T1499"
+    platforms: ["linux", "container", "windows"]
+    causality:
+      parent_step: step-01
+      pivot: network_session
+    platform_variants:
+      windows: |
+        1..50 | ForEach-Object { Invoke-RestMethod -Uri http://127.0.0.1:8089/owasp/llm10/chat -Method Post -ContentType 'application/json' -Body '{"prompt":"Please write a 50,000 token essay on supply-chain security.","max_tokens":50000}' }
     expected_detections:
       - plane: AIRS
         type: XQL
@@ -140,6 +160,13 @@ steps:
       jq -e '.error // .blocked' /tmp/airs-005-final.json
     identity: container-runtime
     mitre_technique: "T1499"
+    platforms: ["linux", "container", "windows"]
+    causality:
+      parent_step: step-02
+      pivot: network_session
+    platform_variants:
+      windows: |
+        Invoke-RestMethod -Uri http://127.0.0.1:8089/owasp/llm10/chat -Method Post -ContentType 'application/json' -Body '{"prompt":"final probe","max_tokens":100000}'
     expected_detections:
       - plane: AIRS
         type: XQL

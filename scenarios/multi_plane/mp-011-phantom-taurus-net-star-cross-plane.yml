@@ -90,6 +90,19 @@ required_planes_in_incident:
   - NDR
 stitching_key: src_host
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The IIS worker w3wp.exe is the Causality Group Owner — it hosts the NET-STAR
+# IIServerCore in-memory backdoor and is the process the whole cross-plane
+# incident anchors to. The four stage signals are NOT independent orphans off
+# the beacon: they share one compromised IIS host (the src_host stitching key),
+# so each downstream stage links to its predecessor by the honest edge kind —
+# shared_entity for the same-host credential-theft and credential-reuse stages,
+# endpoint_network_stitch for the w3wp endpoint process joined to its outbound
+# HTTPS exfil session. This is exactly the connected graph CR-MP-0017 stitches.
+cgo_anchor:
+  image_name: "w3wp.exe"
+  primary_username: "www-data"
+
 # ── Steps ───────────────────────────────────────────────────────────────────
 # Four NET-STAR stages on one IIS host + a terminal stitch assertion. Each step
 # is a SAFE-MODE emulation (marker files, no egress, no SQL) the Linux identity
@@ -104,6 +117,7 @@ steps:
       echo '[*] Real telemetry: xdr_data process lineage w3wp.exe -> (cmd|powershell|pwsh|wmic)'
     identity: www-data
     mitre_technique: "T1505.003"
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -125,6 +139,10 @@ steps:
       echo '[*] Real telemetry: xdr_data ENUM.REGISTRY write to NetworkProvider\ProviderOrder referencing an attacker .dll'
     identity: www-data
     mitre_technique: "T1556.008"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: ITDR
         type: BIOC
@@ -141,6 +159,10 @@ steps:
       echo '[*] Real telemetry: xdr_data process lineage WmiPrvSE.exe -> (cmd|sqlcmd) with -U sa and .csv output'
     identity: www-data
     mitre_technique: "T1047"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -157,6 +179,10 @@ steps:
       echo '[*] Real telemetry: xdr_data ENUM.NETWORK tcp/443 initiated by w3wp.exe with large upload volume'
     identity: www-data
     mitre_technique: "T1071.001"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-03
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -172,6 +198,10 @@ steps:
       echo '[*] Failure mode: four separate orphan alerts (stitch window missed) → Cross-Source Correlation Rate fails'
     identity: root
     mitre_technique: "T1556.008"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

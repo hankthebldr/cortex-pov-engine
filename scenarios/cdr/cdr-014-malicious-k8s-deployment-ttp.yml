@@ -67,6 +67,19 @@ success_criteria: |
   was written for.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# In-cluster process-causality chain. The CGO is the container runtime that
+# OWNS the workload (containerd-shim → runc → the pod entrypoint shell), NOT the
+# cortexsim beacon. Every stage of the multi-stage chain (baseline shell →
+# discovery/C2/archive → collection-then-exfil → correlation) descends from that
+# same containerized shell lineage, so the graph forms ONE connected
+# CGO→shell→child process_lineage spine keyed on container_id + causality_id —
+# exactly the per-container causality tree the ABIOCs and CR-CDR-0014 stitch on,
+# not nine independent nodes hanging off the beacon.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 steps:
   - id: step-01
     name: "Let Cortex learn the container's single-service-process baseline"
@@ -75,6 +88,7 @@ steps:
       sleep "${BASELINE_WINDOW_SECONDS:-600}"
     identity: container-runtime
     mitre_technique: "T1078"
+    platforms: ["linux", "container", "k8s"]
     expected_detections:
       - plane: CDR
         type: XQL
@@ -96,6 +110,10 @@ steps:
       echo "[*] multi-stage in-cluster chain executed with safe stand-ins in $WORK"
     identity: container-runtime
     mitre_technique: "T1560"
+    platforms: ["linux", "container", "k8s"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: ABIOC
@@ -111,6 +129,10 @@ steps:
       echo "[*] simulated collection-then-exfil deviation from $WORK — archive then egress"
     identity: container-runtime
     mitre_technique: "T1496"
+    platforms: ["linux", "container", "k8s"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: ABIOC
@@ -124,6 +146,10 @@ steps:
       echo "[*] Cortex correlation CR-CDR-0014 fuses the two ABIOC deviations into one in-cluster behavioral-anomaly incident with the single-shell multi-stage causality chain"
     identity: container-runtime
     mitre_technique: "T1574"
+    platforms: ["linux", "container", "k8s"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

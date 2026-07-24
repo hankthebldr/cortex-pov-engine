@@ -83,6 +83,18 @@ external_tools:
     type: binary
     install_inline: false
 
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# The workload identity is an EC2 instance role driven from the foothold
+# container: the containerd-shim runtime OWNS the aws-CLI process tree and is
+# the Causality Group Owner XDR blames for the chain — NOT the beacon. Every
+# step is an aws-CLI exec under the SAME assumed-role session; CloudTrail
+# observes no process fork between them, only the shared identity_name /
+# assumed-role entity, so the deviations thread on that shared-identity chain
+# (see the shared_entity pivots) instead of hanging as a star off the agent.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
 steps:
   - id: step-01
     name: "New-action-set deviation — invoke Discovery/IAM actions the workload role never uses"
@@ -102,6 +114,7 @@ steps:
       echo '[*] Cortex Cloud / CDR should flag Discovery/IAM actions absent from this identity learned action set'
     identity: container-runtime
     mitre_technique: "T1580"
+    platforms: ["linux", "container", "macos"]
     expected_detections:
       - plane: CDR
         type: ABIOC
@@ -128,6 +141,15 @@ steps:
       echo '[*] Cortex Cloud / CDR should flag an API-call-rate spike above the identity learned per-hour baseline'
     identity: container-runtime
     mitre_technique: "T1078.004"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # The call-rate spike and the new-action-set burst (step-01) are aws-CLI
+      # execs under the SAME assumed-role session on the SAME workload. CloudTrail
+      # carries no process-actor fields — both ABIOCs anchor on the shared
+      # identity_name / assumed-role entity, so the edge is a shared_entity join
+      # (same identity, no observed fork), not a process fork.
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: ABIOC
@@ -142,6 +164,14 @@ steps:
       echo '[*] XSIAM correlation CR-CDR-0016 should fuse the two ABIOC deviations into one compromised-workload-credential incident'
     identity: container-runtime
     mitre_technique: "T1078.004"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # Correlation terminal — CR-CDR-0016 fuses the call-rate-spike ABIOC and
+      # the new-action-set ABIOC on the SAME workload identity into one
+      # compromised-workload-credential incident. The join is the shared
+      # assumed-role identity the two ABIOCs share, so the edge is shared_entity.
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

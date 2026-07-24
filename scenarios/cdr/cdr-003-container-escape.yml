@@ -62,6 +62,21 @@ external_tools:
     type: binary
     install_inline: false
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The privileged pod's container runtime (containerd-shim → runc → container
+# entrypoint, running as root) is the Causality Group Owner — the process that
+# OWNS this escape chain, NOT the cortexsim-agent beacon. The chain models the
+# escape as: privileged-capability/block-device recon (the exposure) →
+# exposure_exploit into host-fs traversal via /proc/1/root → the nsenter escape
+# into PID 1's mount namespace → and the two genuine CHILDREN of that nsenter
+# (host /etc/passwd read and the host /etc/cron.d persistence write, both
+# `nsenter -- ...` forks) descend from the escape step via process_lineage — the
+# host↔runc cross-namespace lineage break the sensor traces. platforms tag the
+# Linux container env.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 steps:
   - id: step-01
     name: "Verify privileged container mode and enumerate escape preconditions"
@@ -74,6 +89,7 @@ steps:
       echo '[*] Privilege check complete'
     identity: root
     mitre_technique: "T1613"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -97,6 +113,10 @@ steps:
       echo '[*] Host filesystem enumeration complete'
     identity: root
     mitre_technique: "T1083"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: exposure_exploit
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -117,6 +137,10 @@ steps:
       echo '[*] Successfully entered host mount namespace' || echo '[!] nsenter attempt failed — container may not be privileged'
     identity: root
     mitre_technique: "T1611"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -138,6 +162,10 @@ steps:
       echo '[*] Host credential file access attempt complete'
     identity: root
     mitre_technique: "T1003.008"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -160,6 +188,10 @@ steps:
       echo '[CortexSim] Escape persistence step complete'
     identity: root
     mitre_technique: "T1053.003"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC

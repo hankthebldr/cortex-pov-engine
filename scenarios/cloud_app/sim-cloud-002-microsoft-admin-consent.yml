@@ -63,6 +63,19 @@ external_tools:
     type: script
     install_inline: false
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is a SaaS/CASB identity-correlation scenario, NOT an endpoint
+# process-causality chain: the detections key on the msft_o365_audit /
+# saas_audit_logs admin-consent grant shape, not on a process tree. There is
+# deliberately NO cgo_anchor — the only endpoint process is the EAL emulator
+# (our tooling/beacon), which the contract forbids as a CGO, and the M365 audit
+# datasets carry no causality_actor_process_* fields to anchor. The connected
+# graph is formed on the shared SOURCE IDENTITY: the initial admin-consent grant
+# and the repeat attempt originate from the same jumpbox source_ip / client_id
+# against login.microsoftonline.com, so they stitch via shared_entity into ONE
+# cloud-persistence incident (repeat = persistence intent) rather than hanging
+# off the beacon. step-01 is a local readiness probe (the root).
+
 steps:
   - id: step-01
     name: "Pre-flight: confirm Microsoft provider supported"
@@ -71,6 +84,7 @@ steps:
         | jq -e '.params_schema.properties.provider'
     identity: container-runtime
     mitre_technique: "T1078.004"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CLOUD_APP
         type: BIOC
@@ -101,6 +115,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/cloud-002.yml --live
     identity: container-runtime
     mitre_technique: "T1078.004"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: XQL
@@ -141,6 +159,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/cloud-002-rep.yml --live
     identity: container-runtime
     mitre_technique: "T1098"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: XQL

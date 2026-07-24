@@ -75,7 +75,28 @@ success_criteria: |
   signature. Mean time from the chain to the stitched incident is within the MTTD budget.
 moat_tier: "LEAD"
 
+# CR-MP-0015 stitches the endpoint SSRF/IMDS signal and the two cloud-plane
+# deviations within this window (machine-tempo == seconds, not hours).
+correlation_window_seconds: 300
+
 external_tools: []
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# Hybrid endpoint -> cloud chain. The CGO is the exposed workload web process
+# (node — the app listening on :3000 that carries the SSRF), NOT our beacon.
+# step-01 is the root: the SSRF makes that node workload reach the instance
+# metadata IP, so the endpoint ABIOC anchors on causality_actor_process_image_name
+# (= the node CGO) + actor_process_instance_id. step-02 is the endpoint->cloud
+# bridge: the IMDS-minted token is discarded and never appears in endpoint
+# telemetry, so the cloud stage is stitched to the workload via the asset-inventory
+# host -> instance -> attached-service-account mapping (endpoint_network_stitch),
+# not a shared identity field. step-03 and step-04 stay on the cloud plane under
+# the SAME derived service-account identity_name (shared_entity) — the join key
+# both cloud ABIOCs emit — fusing recon -> SSRF/IMDS -> self-escalation -> exfil
+# into ONE machine-tempo incident.
+cgo_anchor:
+  image_name: "node"
+  primary_username: "svc-account"
 
 steps:
   - id: step-01
@@ -83,6 +104,7 @@ steps:
     command: "ss -tunlp 2>/dev/null | head -n 5 || true; curl -s --max-time 2 -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token -o /dev/null || true; echo cortexsim-mp-009-ssrf-imds-token-access"
     identity: svc-account
     mitre_technique: "T1552.005"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -95,6 +117,10 @@ steps:
     command: "for op in compute.instances.list compute.networks.list resourcemanager.projects.getIamPolicy bigquery.datasets.get; do echo \"SAFE-MODE ${op} $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; done; echo cortexsim-mp-009-cloud-enum-fanout"
     identity: svc-account
     mitre_technique: "T1526"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -112,6 +138,10 @@ steps:
     command: "echo \"SAFE-MODE storage.setIamPermissions roles/storage.objectAdmin $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; echo \"SAFE-MODE bigquery.tables.export -> cortexsim-marker-bucket $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; touch /tmp/cortexsim-mp-009-exfil-SAFE-MODE.marker; echo cortexsim-mp-009-self-escalation-export-safe-mode"
     identity: svc-account
     mitre_technique: "T1548.005"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: ABIOC
@@ -129,6 +159,10 @@ steps:
     command: "echo cortexsim-mp-009-cr-mp-0009-machine-tempo-incident-stitched"
     identity: svc-account
     mitre_technique: "T1537"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

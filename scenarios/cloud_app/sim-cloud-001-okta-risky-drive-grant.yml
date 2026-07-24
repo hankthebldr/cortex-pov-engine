@@ -69,6 +69,19 @@ external_tools:
     type: script
     install_inline: false
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is a SaaS/CASB identity-correlation scenario, NOT an endpoint
+# process-causality chain: the detections key on the okta_sso / saas_audit_logs
+# grant-audit shape, not on a process tree. There is deliberately NO cgo_anchor
+# — the only endpoint process is the EAL emulator (our tooling/beacon), which
+# the contract forbids as a CGO, and the SaaS datasets carry no
+# causality_actor_process_* fields to anchor. Instead the connected graph is
+# formed on the shared SOURCE IDENTITY: every risky grant leaves the same
+# jumpbox source_ip against the same canary tenant, so the repeated grants
+# stitch via shared_entity into ONE consent-phishing / enumeration-burst
+# incident rather than hanging off the beacon as independent events. step-01 is
+# a local readiness probe (the root); the grant requests chain from it.
+
 steps:
   - id: step-01
     name: "Pre-flight: confirm oauth_grant_emulator plugin is registered"
@@ -77,6 +90,7 @@ steps:
         | jq -e '.eal_targets | length > 0'
     identity: container-runtime
     mitre_technique: "T1550.001"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CLOUD_APP
         type: BIOC
@@ -107,6 +121,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/cloud-001.yml --live
     identity: container-runtime
     mitre_technique: "T1550.001"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: XQL
@@ -142,6 +160,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/cloud-001-burst.yml --live
     identity: container-runtime
     mitre_technique: "T1550.001"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: XQL

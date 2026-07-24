@@ -59,6 +59,17 @@ success_criteria: |
   single vector.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The pod's container runtime (containerd-shim) is the Causality Group Owner.
+# The escape chain is modeled as the privileged-container exposure being
+# exploited into host-path access (exposure_exploit), escalating to
+# host-namespace process activity (exploit_impact) — the host↔runc cross-cgroup
+# lineage break — then folded by the correlation step (temporal) into one
+# container-escape-chain incident. platforms tag each step's container / k8s env.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 steps:
   - id: step-01
     name: "DIND / nsenter escape primitive from a privileged container (stubbed)"
@@ -68,6 +79,7 @@ steps:
         echo "[*] containerized PID 1 — nsenter -t 1 -m -u -n -i sh stubbed [truncated]" || true
     identity: container-runtime
     mitre_technique: "T1611"
+    platforms: ["container"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -82,6 +94,10 @@ steps:
       echo "[*] host-path mount access attempt complete"
     identity: container-runtime
     mitre_technique: "T1611"
+    platforms: ["container"]
+    causality:
+      parent_step: step-01
+      pivot: exposure_exploit
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -96,6 +112,10 @@ steps:
       echo "[*] simulating shell/id/cat execution in the entered host namespace [truncated]"
     identity: container-runtime
     mitre_technique: "T1611"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-02
+      pivot: exploit_impact
     expected_detections:
       - plane: CDR
         type: XQL
@@ -109,6 +129,10 @@ steps:
       echo "[*] Cortex correlation CR-CDR-0011 fuses the escape primitive and the resulting host-namespace process activity into one container-escape-chain incident"
     identity: container-runtime
     mitre_technique: "T1611"
+    platforms: ["k8s"]
+    causality:
+      parent_step: step-03
+      pivot: temporal
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

@@ -84,6 +84,7 @@ steps:
       echo "[*] Expected aggregate asset count: $EXPECTED_ASSETS"
     identity: root
     mitre_technique: "T1526"
+    platforms: ["linux"]
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -121,6 +122,7 @@ steps:
       fi
     identity: root
     mitre_technique: "T1526"
+    platforms: ["linux"]
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -160,6 +162,7 @@ steps:
       fi
     identity: root
     mitre_technique: "T1526"
+    platforms: ["linux"]
     expected_detections:
       - plane: AI_SPM
         type: XQL

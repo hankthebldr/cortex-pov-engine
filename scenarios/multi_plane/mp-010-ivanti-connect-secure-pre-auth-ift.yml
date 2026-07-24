@@ -75,6 +75,19 @@ success_criteria: |
   IP to the first internal host — the cross-plane chain an EDR-only stack misses.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The exploited Ivanti Connect Secure appliance web daemon (`web`, running as
+# www-data on the appliance) is the Causality Group Owner — the pre-auth
+# initial-access process that OWNS the whole chain. From that appliance CGO the
+# attacker pivots across the network to the first internal Windows host
+# (endpoint_network_stitch), where the SPAWN-family persistence (DcomSrv, /mail,
+# LSASS dump) are same-host follow-ons (shared_entity). This is the cross-plane
+# spine an EDR-only stack cannot assemble; CR-MP-0014 stitches the modeled
+# appliance tell to the endpoint persistence into one incident.
+cgo_anchor:
+  image_name: "web"
+  primary_username: "www-data"
+
 external_tools: []
 
 steps:
@@ -83,6 +96,7 @@ steps:
     command: "mkdir -p /tmp/cortexsim-mp-010 && printf '%s\\n' 'Invalid IFT packet received from unauthenticated client src=185.219.141.95' > /tmp/cortexsim-mp-010/ivanti-debug.log && echo cortexsim-mp-010-ivanti-ift-preauth-tell-emitted"
     identity: www-data
     mitre_technique: "T1190"
+    platforms: ["linux"]
     expected_detections:
       - plane: ANALYTICS
         type: XQL
@@ -95,6 +109,15 @@ steps:
     command: "printf '%s\\n' 'service=DcomSrv binary=vmdisk.exe module=vixDiskLib.dll desc=DCOMLIENT' > /tmp/cortexsim-mp-010/dcomsrv-service.marker && echo cortexsim-mp-010-dcomsrv-service-created-marker"
     identity: www-data
     mitre_technique: "T1543.003"
+    platforms: ["windows"]
+    causality:
+      # The cross-plane hop: from the exploited appliance (step-01) the attacker
+      # pivots over the network (decrypted creds via ldap.pl -> RDP) onto the
+      # first internal Windows host. This is the appliance-signal <-> endpoint-
+      # signal join that only an analytics platform with modeled appliance
+      # telemetry can make — an endpoint_network_stitch.
+      parent_step: step-01
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: ANALYTICS
         type: BIOC
@@ -107,6 +130,13 @@ steps:
     command: "printf '%s\\n' 'schtask=/mail action=DeElevate64.exe module=deelevator64.dll' > /tmp/cortexsim-mp-010/mail-task.marker && echo cortexsim-mp-010-mail-scheduled-task-marker"
     identity: www-data
     mitre_technique: "T1053.005"
+    platforms: ["windows"]
+    causality:
+      # Second SPAWN-family persistence mechanism on the SAME internal Windows
+      # host as the DcomSrv service — an independent persistence tree, not a fork
+      # of it, so it joins on the shared host entity.
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: BIOC
@@ -119,6 +149,13 @@ steps:
     command: "printf '%s\\n' 'SAFE-MODE marker only - package.dll VM.txt dump NOT performed' > /tmp/cortexsim-mp-010/VM.txt && printf '%s  package.dll\\n' '1dc0a3a5904ec35103538a018ef069fbe95b0a3c26cb0ff9ba0d1c268d1aaf98' > /tmp/cortexsim-mp-010/package.dll.sha256 && echo cortexsim-mp-010-lsass-dump-safe-mode-marker"
     identity: www-data
     mitre_technique: "T1003.001"
+    platforms: ["windows"]
+    causality:
+      # Credential access on the same internal Windows host after the foothold is
+      # established: package.dll (built via MSBuild) hollows a suspended
+      # svchost.exe and dumps LSASS. Same-host follow-on to the DcomSrv foothold.
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: BIOC
@@ -136,6 +173,14 @@ steps:
     command: "echo cortexsim-mp-010-cr-mp-0014-appliance-to-endpoint-stitch"
     identity: www-data
     mitre_technique: "T1190"
+    platforms: ["linux", "windows"]
+    causality:
+      # CR-MP-0014 fuses the modeled appliance pre-auth IF-T tell (step-01) with
+      # the endpoint persistence BIOCs into one incident within a 24h window —
+      # a cross-source temporal join stitching the appliance source IP to the
+      # first internal host.
+      parent_step: step-04
+      pivot: temporal
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

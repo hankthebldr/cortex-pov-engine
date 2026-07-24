@@ -58,6 +58,21 @@ external_tools:
     type: binary
     install_inline: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The pod's container runtime (containerd-shim → runc → container entrypoint
+# shell) is the Causality Group Owner — the process that OWNS this XMRig
+# deploy→execute→persist chain, NOT the cortexsim-agent beacon. The stages form
+# a process_lineage spine under the same container lineage: tune limits → curl
+# +tar the miner → write the pool config → execute xmrig → crontab persistence.
+# step-04 privilege-drops to `nobody` across a real exec (the miner runs as
+# nobody) while the CGO stays the root container shell — the Linux
+# user-transition-across-exec the sensor keys on (actor_effective_username =
+# nobody, causality_actor = the container shell). platforms tag the Linux
+# container env.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 steps:
   - id: step-01
     name: "Disable security limits and prepare mining environment"
@@ -69,6 +84,7 @@ steps:
       mkdir -p /tmp/.xmr && echo '[*] Mining env prepared'
     identity: container-runtime
     mitre_technique: "T1562.001"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -88,6 +104,10 @@ steps:
       echo '[*] XMRig downloaded successfully'
     identity: container-runtime
     mitre_technique: "T1105"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -118,6 +138,10 @@ steps:
       echo '[*] Mining pool config written'
     identity: container-runtime
     mitre_technique: "T1496"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -130,6 +154,10 @@ steps:
     command: "timeout 30 /tmp/.xmr/xmrig --config /tmp/.xmr/config.json --no-color 2>&1 | head -50 | tee /tmp/.xmr/miner.log; echo '[CortexSim] XMRig execution window complete'"
     identity: nobody
     mitre_technique: "T1496"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -150,6 +178,10 @@ steps:
       echo '[*] Persistence attempt complete'
     identity: container-runtime
     mitre_technique: "T1053.005"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC

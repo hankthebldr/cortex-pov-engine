@@ -68,6 +68,18 @@ moat_tier: "LEAD"
 
 external_tools: []
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is a SaaS/CASB identity-correlation scenario, NOT an endpoint
+# process-causality chain: the ABIOCs key on the Salesforce Bulk API
+# cloud_audit_logs shape (connected_app + integration_user + user_agent + job_id),
+# which carry no causality_actor_process_* fields — so there is deliberately NO
+# cgo_anchor (the only local process is curl, our tooling, which the contract
+# forbids as a CGO). The connected graph is formed on the shared SOURCE IDENTITY:
+# the learned baseline read, the high-volume export, and the export-then-erase
+# deletion all originate from the SAME already-consented Connected App
+# integration token, so they stitch via shared_entity into ONE post-consent
+# token-abuse incident (trusted token -> mass CRM export -> query-job deletion)
+# rather than hanging off the beacon. step-01 is the baseline read (the root).
 steps:
   - id: step-01
     name: "Baseline: low-volume single-record Salesforce API read (learned integration behavior)"
@@ -78,6 +90,7 @@ steps:
       echo cortexsim-cloud-006-integration-baseline-single-record-read
     identity: container-runtime
     mitre_technique: "T1550.001"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CLOUD_APP
         type: XQL
@@ -98,6 +111,10 @@ steps:
       echo cortexsim-cloud-006-bulk-api-mass-export-complete
     identity: container-runtime
     mitre_technique: "T1119"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: ABIOC
@@ -127,6 +144,10 @@ steps:
       echo cortexsim-cloud-006-query-job-deletion-anti-forensics-complete
     identity: container-runtime
     mitre_technique: "T1070.004"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: ABIOC
@@ -144,6 +165,10 @@ steps:
     command: "echo cortexsim-cloud-006-cr-cloud-0006-stitched-post-consent-token-abuse-incident"
     identity: container-runtime
     mitre_technique: "T1550.001"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: Correlation

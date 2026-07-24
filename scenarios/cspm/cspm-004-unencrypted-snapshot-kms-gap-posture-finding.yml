@@ -73,6 +73,17 @@ infra_modules_needed:
   - base
   - cspm
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The exfil chain is OWNED by the compromised EC2 instance role's session — the
+# aws control-plane client whose IMDS-minted credentials issue the snapshot
+# export. That instance-role session is the chain root, NOT the synthetic beacon.
+# The posture finding (Signal A) is configuration state with no acting identity,
+# so it links to the export by exposure_exploit (the encryption gap abused at
+# runtime); the off-region identity (Signal C) threads on the shared principal.
+cgo_anchor:
+  image_name: "aws"
+  primary_username: "root"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 validation_methodology: "Encryption-Gap Posture Finding to Runtime Exfil Correlation"
 methodology_family: "F4"
@@ -109,6 +120,10 @@ steps:
       echo '[*] Signal A recorded — CSPM encryption-gap finding on the CortexSimSnapshotExfil snapshot'
     identity: root
     mitre_technique: "T1530"
+    # Root step — the CSPM encryption-gap finding (posture/configuration state)
+    # links from the aws instance-role CGO. AWS control-plane technique, so the
+    # environment is the Linux jumpbox/SimCore container that runs the CLI.
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -125,6 +140,13 @@ steps:
       echo '[*] Signal B recorded — ModifySnapshotAttribute (external account added to createVolumePermission) + CopySnapshot to a foreign region captured in cloud_audit_logs'
     identity: root
     mitre_technique: "T1537"
+    # The runtime export ABUSES the encryption-gap posture finding (step-01):
+    # the missing CMK is what makes the shared snapshot readable off-account, so
+    # the pivot from the posture finding to the export is exposure_exploit.
+    causality:
+      parent_step: step-01
+      pivot: exposure_exploit
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -145,6 +167,13 @@ steps:
       echo '[*] Signal C recorded — impossible travel by the compute identity behind the snapshot export'
     identity: root
     mitre_technique: "T1552.005"
+    # The off-region compute identity IS the principal that performed the export
+    # (step-02) — the two join on user_identity_arn (same principal, new region),
+    # no process fork, so the pivot is shared_entity.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: ABIOC
@@ -166,6 +195,13 @@ steps:
       echo '[*] Correlation CR-CSPM-0004 should raise a single "unencrypted asset exfiltrated via snapshot share" incident — the encryption gap made the data readable off-account and the share event proves it left'
     identity: root
     mitre_technique: "T1537"
+    # Terminal stitch — the two-hop join (posture<->export on snapshot_id,
+    # export<->identity on principal) fuses Signals A+B+C into one incident;
+    # shared_entity is the join semantics across snapshot_id + principal.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: XQL

@@ -59,6 +59,18 @@ success_criteria: |
   product equivalent.
 moat_tier: "MOAT"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The agentic host (the AI coding agent / node) that auto-installs the Python
+# helper is the Causality Group Owner — NOT the synthetic beacon. The
+# package-scan (step-01) roots at the CGO; the pip fetch (step-02) stitches the
+# endpoint finding to its NGFW session; the SCA/SBOM stage (step-03) re-touches
+# the SAME package, so the graph is one connected spine. The import-time
+# subprocess BIOC additionally keys on its OWN within-step causality
+# (python/pip causality_actor → child subprocess).
+cgo_anchor:
+  image_name: "node"
+  primary_username: "developer"
+
 external_tools:
   - name: Cortex Malicious Agentic Pack
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -80,6 +92,7 @@ steps:
         sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/src/*.py || true
     identity: container-runtime
     mitre_technique: "T1195.002"
+    platforms: ["linux", "macos", "container"]
     expected_detections:
       - plane: KOI
         type: BIOC
@@ -116,6 +129,12 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/koi-003.yml --live
     identity: container-runtime
     mitre_technique: "T1195.002"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-01
+      # Endpoint package-scan finding (step-01) stitched to the NGFW session
+      # that fetches the SAME typosquat package from the non-canonical mirror.
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -135,6 +154,12 @@ steps:
       echo "[CortexSim] suspicious __init__ side-effect, and unverified publisher."
     identity: container-runtime
     mitre_technique: "T1195.002"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-02
+      # SCA/SBOM scan re-touches the same package (by name + digest) that was
+      # fetched in step-02 — same-artifact reuse, no direct fork.
+      pivot: shared_entity
     expected_detections:
       - plane: KOI
         type: XQL

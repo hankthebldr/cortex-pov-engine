@@ -43,6 +43,19 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# TeamTNT-style node persistence follows a container escape via an exposed
+# runtime: the malicious workload's runtime shim owns the on-node root session,
+# so the CGO is containerd-shim (NOT the cortexsim-agent beacon). All three
+# persistence steps run from that one operator root shell — step-01 writes the
+# unit, and steps 02/03 are real fork/exec hops off the same shell
+# (process_lineage), giving one connected containerd-shim → unit-write →
+# daemon-reload/enable → cron-watchdog spine instead of a star of independent
+# nodes. systemd + cron are Linux-node mechanisms, so every step is linux-only.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 external_tools: []
 
 steps:
@@ -63,6 +76,7 @@ steps:
       echo "[*] systemd unit written: /etc/systemd/system/cortexsim-node.service"
     identity: root
     mitre_technique: "T1543.002"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -94,6 +108,13 @@ steps:
       systemctl enable --now cortexsim-node.service 2>/dev/null || true
     identity: root
     mitre_technique: "T1543.002"
+    platforms: ["linux", "container"]
+    # Same operator root shell that wrote the unit now forks systemctl — a real
+    # process-create hop off step-01's session, so the daemon-reload→enable
+    # sequence carries the same causality_actor as the unit write.
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -114,6 +135,13 @@ steps:
       (crontab -l 2>/dev/null; echo '*/10 * * * * systemctl is-enabled cortexsim-node.service || systemctl enable --now cortexsim-node.service') | crontab -
     identity: root
     mitre_technique: "T1053.003"
+    platforms: ["linux", "container"]
+    # The watchdog is installed from the same operator root shell that ran the
+    # enable sequence — another fork/exec hop (crontab) off step-02, keeping the
+    # whole persistence chain under one causality_actor.
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC

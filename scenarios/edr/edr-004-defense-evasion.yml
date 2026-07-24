@@ -28,6 +28,17 @@ additional_techniques:
 threat_report: "Unit42 - xHunt Campaign: Attacks on Kuwait Shipping and Transportation"
 threat_report_url: "https://unit42.paloaltonetworks.com/xhunt-campaign-attacks-on-kuwait-shipping/"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# xHunt operates hands-on-keyboard through a web-shell foothold. The Causality
+# Group Owner is the compromised web daemon (apache2 / www-data); the anti-
+# forensics actions below are sequential execs from the same operator shell it
+# owns. step-01 anchors the session; the remaining evasion actions are its
+# process-lineage children, so the whole track collapses into one CGO-owned
+# defense-evasion chain rather than five disconnected alerts on the beacon.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
 execution_identity:
   default: root
   options:
@@ -78,6 +89,11 @@ steps:
       echo '[*] History evasion techniques executed'
     identity: root
     mitre_technique: "T1070.003"
+    # Root step: first track-covering action of the apache2-owned operator shell.
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'wevtutil cl Security & wevtutil cl System & Clear-History'
+      macos: 'rm -f ~/.zsh_history && unset HISTFILE && history -c'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -100,6 +116,12 @@ steps:
       echo '[*] Log tampering simulation complete — real logs NOT modified'
     identity: root
     mitre_technique: "T1070.002"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: 'wevtutil cl Security & wevtutil cl "Windows PowerShell"'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -122,6 +144,13 @@ steps:
       echo '[*] Timestomping simulation complete'
     identity: root
     mitre_technique: "T1070.006"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: '$f=Get-Item C:\Windows\Temp\beacon.exe; $f.CreationTime=$f.LastWriteTime="01/01/2023 00:00"'
+      macos: 'touch -t 202301010000 /tmp/cortexsim_timestomp_test; touch -r /bin/ls /tmp/cortexsim_timestomp_test'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -146,6 +175,12 @@ steps:
       echo '[*] Process masquerading simulation complete'
     identity: root
     mitre_technique: "T1036.005"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: 'copy C:\Windows\System32\cmd.exe C:\Windows\Temp\svchost.exe'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -169,6 +204,13 @@ steps:
       echo '[*] Security tooling reconnaissance complete'
     identity: root
     mitre_technique: "T1562.001"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'tasklist | findstr /I "cortex traps falcon sentinel cylance carbon defender"'
+      macos: 'ps aux | grep -E "cortex|falcon|sentinel|carbon" | grep -v grep'
     expected_detections:
       - plane: EDR
         type: BIOC

@@ -56,6 +56,17 @@ success_criteria: |
   the share of injected grants that raise the expected alert (target ≥ 90%).
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The oauth_grant_emulator (python3, container-runtime) is the Causality Group
+# Owner — the single identity that hops Okta → Microsoft → Google — NOT the
+# synthetic beacon. Each subsequent IdP grant is the SAME identity soliciting at
+# the NEXT provider with no direct process fork (a shared_entity pivot on
+# `user` / shared run-ID prefix / source_ip): this provider-hopping is precisely
+# the policy-evasion behaviour CR-CLOUDAPP-0004 stitches into one incident.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "container-runtime"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -86,6 +97,7 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-okta.yml --live
     identity: container-runtime
     mitre_technique: "T1550.001"
+    platforms: ["linux"]
     expected_detections:
       - plane: CLOUD_APP
         type: XQL
@@ -116,6 +128,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-ms.yml --live
     identity: container-runtime
     mitre_technique: "T1090"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: XQL
@@ -146,6 +162,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-google.yml --live
     identity: container-runtime
     mitre_technique: "T1090"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: XQL

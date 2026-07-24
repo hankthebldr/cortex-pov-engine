@@ -64,6 +64,20 @@ success_criteria: |
   equivalent and is distinct from SIM-KOI-002's source scan.
 moat_tier: "MOAT"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The MCP host process (the agent client that registered the benign-looking
+# pa-firewall-mcp server) OWNS the runtime chain in XDR's causality view — it is
+# the Causality Group Owner, NOT the synthetic beacon. step-01 materialises /
+# reads the poisoned tools/call RESULT fixture; step-02 is the same MCP host
+# consuming that result and POSTing it on the wire (process_lineage); step-03 is
+# the follow-on credential-file read the host attempts when it honours the
+# injected instruction (process_lineage from the consuming process). The whole
+# spine threads through one MCP-host process node so the runtime-injection
+# incident is one connected chain, not a star.
+cgo_anchor:
+  image_name: "mcp-host"
+  primary_username: "container-runtime"
+
 external_tools:
   - name: Cortex Malicious Agentic Pack
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -84,6 +98,7 @@ steps:
         sources/cortex-malicious-agentic-pack/mcp/pa-firewall-mcp/runtime-poisoned-response.json || true
     identity: container-runtime
     mitre_technique: "T1656"
+    platforms: ["linux", "macos"]
     expected_detections:
       - plane: KOI
         type: BIOC
@@ -115,6 +130,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/koi-006.yml --live
     identity: container-runtime
     mitre_technique: "T1059"
+    platforms: ["linux", "macos"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL
@@ -135,6 +154,10 @@ steps:
       echo "[CortexSim] stitches the poisoned-result content hit with the follow-on read."
     identity: container-runtime
     mitre_technique: "T1552.001"
+    platforms: ["linux", "macos"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: KOI
         type: Correlation

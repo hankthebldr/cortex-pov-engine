@@ -32,6 +32,17 @@ pull_supported: true
 infra_modules_needed:
   - base
 
+# ── Causality Group Owner anchor ─────────────────────────────────────────────
+# The burst egress runs from a containerized workload (identity
+# container-runtime); the real CGO is the container runtime that owns the app
+# process tree, NOT the synthetic cortexsim-agent beacon. The per-step
+# `causality` blocks below collapse the star into a connected
+# containerd-shim → step-01 → step-02 → step-03 spine keyed on the shared source
+# identity (same user / src_ip / container) that every detection here pivots on.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # Rolled out per the S-07 per-plane convention
 # (docs/uc_tc_mapping/scenario-methodology-defaults.md). Defaults are not
@@ -85,6 +96,7 @@ steps:
       echo "[CortexSim] burst target reachable"
     identity: container-runtime
     mitre_technique: "T1567"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: AI_ACCESS
         type: XQL
@@ -116,6 +128,20 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-003.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
+    # Same containerized workload / source identity as the pre-flight — no
+    # process fork between the DNS check and the burst, so the honest pivot is
+    # the shared source entity (user / src_ip / container) the volume detections
+    # key on, not process_lineage.
+    causality:
+      parent_step: "step-01"
+      pivot: shared_entity
+    platforms: ["linux", "container", "windows", "macos"]
+    # The volume anomaly is a client-OS-agnostic egress pattern: AI Access
+    # Security / the NGFW see the same sustained generative-AI session count
+    # whether the employee bursts from Linux, a Windows laptop, or macOS.
+    platform_variants:
+      windows: "1..30 | ForEach-Object { Invoke-RestMethod -Method Post -Uri 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' -ContentType 'application/json' -Body '{\"contents\":[{\"parts\":[{\"text\":\"benign\"}]}]}'; Start-Sleep -Seconds 2 }"
+      macos: "for i in $(seq 30); do curl -s -X POST 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent' -H 'Content-Type: application/json' -d '{\"contents\":[{\"parts\":[{\"text\":\"benign\"}]}]}' >/dev/null; sleep 2; done"
     expected_detections:
       - plane: AI_ACCESS
         type: XQL
@@ -157,6 +183,13 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-003-cool.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
+    # Negative-control probe from the same workload/identity as the burst,
+    # 120s later — same source entity, no fork; below baseline so it must NOT
+    # fire. shared_entity keeps it on the same spine without claiming lineage.
+    causality:
+      parent_step: "step-02"
+      pivot: shared_entity
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: AI_ACCESS
         type: XQL

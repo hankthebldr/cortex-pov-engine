@@ -33,6 +33,15 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The outbound SSH tunnel is driven from a containerized egress host: the CGO
+# root is the container entrypoint (containerd-shim) that owns the shell running
+# the reachability probe and the EAL banner beacon — NOT the synthetic
+# cortexsim-agent node. Collapses the step star into one connected CGO spine.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 infra_modules_needed:
   - base
   - ndr
@@ -73,6 +82,11 @@ steps:
       nc -zv 10.50.0.42 22 || echo "[CortexSim] sinkhole reachable check (best-effort)"
     identity: container-runtime
     mitre_technique: "T1572"
+    # Root of the causality spine — links from the CGO (containerd-shim). No
+    # causality block (this is the initial-access process of the chain).
+    platforms: ["linux", "container", "windows"]
+    platform_variants:
+      windows: "Test-NetConnection -ComputerName 10.50.0.42 -Port 22"
     expected_detections:
       - plane: NDR
         type: XQL
@@ -106,6 +120,17 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/ssh-egress-live.yml --live
     identity: container-runtime
     mitre_technique: "T1572"
+    # Same containerized egress host / operator session as the reachability probe
+    # (no fork between the nc probe and the python beacon) → shared_entity pivot.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "container", "windows"]
+    platform_variants:
+      # Windows SSH-tunnel egress with a non-OpenSSH client banner + repeated
+      # short-lived handshakes — same App-ID=ssh + atypical-banner + handshake-
+      # burst detection intent, exercised from a Windows endpoint via plink.
+      windows: 'for ($i=0;$i -lt 5;$i++){ plink.exe -ssh -P 22 -batch cortex@10.50.0.42 exit; Start-Sleep 12 }'
     expected_detections:
       - plane: NDR
         type: XQL

@@ -94,6 +94,19 @@ success_criteria: |
   proof — drift-and-correlate, not a flat snapshot.
 moat_tier: "MOAT"
 
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# This is an "execute-against-cloud-API" drift injection run from the jumpbox /
+# SimCore container: the operator aws-CLI session OWNS the control-plane chain
+# and is the process XDR would blame — NOT the beacon. step-01 (baseline
+# snapshot) is the root; step-02 (the drift-causing DeletePublicAccessBlock /
+# StopLogging) regresses the SAME drift-target resources (shared_entity);
+# step-03 reaches the now-public bucket at runtime, the posture-finding-abused
+# edge (exposure_exploit); step-04 correlates the findings to their cause. See
+# the per-step causality pivots.
+cgo_anchor:
+  image_name: "aws"
+  primary_username: "root"
+
 # ── Steps ───────────────────────────────────────────────────────────────────
 steps:
   - id: step-01
@@ -105,6 +118,7 @@ steps:
       echo '[*] Compliant baseline snapshot recorded for posture-drift comparison'
     identity: root
     mitre_technique: "T1619"
+    platforms: ["linux", "container", "macos"]
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -121,6 +135,14 @@ steps:
       echo '[*] Drift injected — bucket public-access-block removed and trail logging disabled; Cortex Cloud CSPM should regress both resources to drifted and stitch each to its CloudTrail cause'
     identity: root
     mitre_technique: "T1562.008"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # The drift-causing DeletePublicAccessBlock / StopLogging targets the SAME
+      # drift-target bucket + trail that step-01 baselined as compliant. No
+      # process fork links the snapshot to the mutation — the join is the shared
+      # CortexSimDriftTarget resource entity, so the edge is shared_entity.
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -146,6 +168,14 @@ steps:
       echo '[*] Post-drift data access exercised — the static drift finding should promote to an active drift-exploitation incident'
     identity: root
     mitre_technique: "T1530"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # The posture finding created by step-02 (the now-public bucket) is reached
+      # at runtime here — external GetObject/ListBucket on the drifted resource.
+      # This is a posture-exposure abused at runtime, so the edge is
+      # exposure_exploit (the exposure -> exploitation pivot).
+      parent_step: step-02
+      pivot: exposure_exploit
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -162,6 +192,14 @@ steps:
       echo '[*] Correlation CR-CSPM-0003 should fuse the drift findings with the CloudTrail control-plane cause and the post-drift access into one posture-drift incident'
     identity: root
     mitre_technique: "T1578"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # Correlation terminal — CR-CSPM-0003 fuses each drift finding with its
+      # CloudTrail control-plane cause and the post-drift external access into one
+      # posture-drift incident, anchored to the same CortexSimDriftTarget resource
+      # + responsible principal. The convergence edge is shared_entity.
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: CSPM
         type: XQL

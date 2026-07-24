@@ -88,6 +88,21 @@ required_planes_in_incident:
   - EDR
 stitching_key: normalized_user
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The identity-driven intrusion lands on the endpoint as a phishing Office
+# document spawning PowerShell (winword.exe -> powershell.exe -enc), so the CGO
+# that OWNS the malicious causality chain is that Office process running as the
+# compromised principal — NOT the synthetic cortexsim-agent beacon. Every
+# malicious endpoint node (abnormal PowerShell, the escalation cmd.exe) descends
+# from the winword.exe CGO via process_lineage; the impossible-travel sign-in is
+# joined to that chain on the shared normalized principal (shared_entity),
+# collapsing the star-off-the-agent layout into ONE connected identity->endpoint
+# spine. The benign decoys co-occur in the same window (temporal) but share
+# neither the CGO nor the principal, so they are NOT owned by this chain.
+cgo_anchor:
+  image_name: "winword.exe"
+  primary_username: "jdoe-admin"
+
 # ── Steps ───────────────────────────────────────────────────────────────────
 # Signals 1-3 are the genuine malicious chain from ONE principal; step-04 emits
 # the benign decoys the AI must NOT merge; step-05 asserts the terminal stitch.
@@ -104,6 +119,10 @@ steps:
       echo cortexsim-mp015-impossible-travel-signin-emitted
     identity: www-data
     mitre_technique: "T1078.004"
+    # ROOT of the malicious chain — no causality block; links from the winword.exe
+    # CGO. Impossible-travel is an identity-plane signal, OS-agnostic in origin
+    # (the compromised principal can authenticate from any endpoint OS).
+    platforms: ["windows", "linux", "macos"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -126,6 +145,14 @@ steps:
       echo cortexsim-mp015-abnormal-powershell-chain-emitted
     identity: www-data
     mitre_technique: "T1059.001"
+    # Office->PowerShell is a Windows-native lineage (winword.exe -> powershell.exe
+    # -enc); the endpoint process is OWNED by the winword.exe CGO (process_lineage
+    # from the CGO) and joined to the identity-plane sign-in on the shared
+    # normalized principal (shared_entity, the cross-plane identity key).
+    platforms: ["windows"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -150,6 +177,14 @@ steps:
       echo cortexsim-mp015-rapid-privesc-emitted
     identity: root
     mitre_technique: "T1078.004"
+    # The escalation cmd.exe (net localgroup administrators /add) is spawned within
+    # the same host process tree as the abnormal PowerShell — a real parent->child
+    # exec, so process_lineage from step-02 keeps the connected spine. net localgroup
+    # is a Windows-only administrative-account abuse primitive.
+    platforms: ["windows"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -171,6 +206,17 @@ steps:
       echo cortexsim-mp015-benign-decoys-emitted
     identity: svc-backup
     mitre_technique: "T1078"
+    # DECOYS — deliberately NOT part of the malicious chain. They co-occur in the
+    # same correlation window (temporal), but share neither the winword.exe CGO
+    # nor the compromised normalized principal, so the AI triage MUST leave them
+    # un-merged. temporal is the weakest edge kind (co-fired in window only), which
+    # is exactly the decoy-noise relationship the discrimination test asserts.
+    # (A declared spine allows only one root, so the decoy carries a temporal edge
+    # rather than hanging off the CGO as a second root.)
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-01
+      pivot: temporal
     expected_detections:
       - plane: ANALYTICS
         type: XQL
@@ -190,6 +236,14 @@ steps:
       echo cortexsim-mp015-terminal-stitch-verified
     identity: root
     mitre_technique: "T1078.004"
+    # TERMINAL correlation — the AI triage converges the three malicious signals on
+    # the shared normalized principal into ONE incident. shared_entity from step-03
+    # (the last malicious signal) terminates the connected spine at the correlation
+    # node without asserting a further process fork.
+    platforms: ["windows", "linux"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

@@ -55,6 +55,17 @@ success_criteria: |
   emit→alert latency.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The compromised host running the miner is modeled as the EAL-simulator
+# container: the containerd-shim runtime OWNS the python3 Stratum-client process
+# tree and is the Causality Group Owner — NOT the synthetic beacon. The sinkhole
+# reachability check and the Stratum-session step are discrete python3/nc execs
+# in the same container/campaign (no direct fork), threaded on the shared
+# simulator/source-host entity.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -70,6 +81,7 @@ steps:
       nc -zv 10.50.0.42 3333 || echo "[CortexSim] sinkhole reachable check (best-effort)"
     identity: container-runtime
     mitre_technique: "T1496"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -102,6 +114,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/stratum-live.yml --live
     identity: container-runtime
     mitre_technique: "T1496"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL

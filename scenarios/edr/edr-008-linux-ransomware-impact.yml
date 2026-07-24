@@ -45,6 +45,18 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The encryptor detonates inside a container (identity container-runtime), so
+# the process chain the Linux eBPF sensor traces is rooted at the container
+# runtime, not the synthetic beacon: containerd-shim → the encryptor shell →
+# discovery → mass-rewrite → recovery-inhibition. Anchoring the CGO on
+# containerd-shim makes the graph a connected impact spine and lets the BIOCs
+# key on causality_actor_process_image_name + container_id (the encryptor owner
+# inside the container) rather than only the immediate actor image.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 external_tools: []
 
 steps:
@@ -57,6 +69,7 @@ steps:
       echo "[*] seeded $(wc -l < /tmp/cortexsim_targetlist.txt) victim files"
     identity: container-runtime
     mitre_technique: "T1083"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: EDR
         type: XQL
@@ -77,6 +90,15 @@ steps:
         > /tmp/cortexsim_victim/READ_ME_CORTEXSIM.txt
     identity: container-runtime
     mitre_technique: "T1486"
+    platforms: ["linux", "container"]
+    # The mass-rewrite consumes the target list step-01 wrote and runs under the
+    # same encryptor identity inside the same container — the discovery and
+    # encryption stages of ONE encryptor. Not forked from step-01's exec, so the
+    # honest edge is shared_entity (same container_id + encryptor causality
+    # actor + the target-list artifact), keeping the impact spine connected.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -118,6 +140,14 @@ steps:
       echo '[*] recovery-inhibition step issued (CortexSim artefacts only)'
     identity: container-runtime
     mitre_technique: "T1490"
+    platforms: ["linux", "container"]
+    # Recovery inhibition is the same encryptor's next impact action on the same
+    # host/container immediately after mass-encryption — the correlation fuses the
+    # two on the shared host/encryptor. shared_entity (same container_id +
+    # causality actor) keeps the spine step-01 → step-02 → step-03.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: BIOC

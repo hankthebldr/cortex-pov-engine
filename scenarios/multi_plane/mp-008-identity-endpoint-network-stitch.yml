@@ -61,6 +61,18 @@ infra_modules_needed:
 
 external_tools: []
 
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# The takeover is hands-on-keyboard: the social-engineered svc-backup session
+# lands as a remote interactive logon, so the sshd-spawned shell OWNS the on-host
+# causality chain and is the CGO XDR blames — NOT the beacon. Stage 1 (the IdP
+# sign-in anomaly) is the root; stage 2 (the endpoint burst) threads to it on the
+# shared compromised identity (stitching_key: identity); stage 3 (C2 egress) is
+# the endpoint shell's curl seen on the NGFW, an endpoint_network_stitch join;
+# stage 4 asserts the three-plane fuse. See the per-step causality pivots.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "svc-backup"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 validation_methodology: "Cross-Plane Causality Correlation"
 methodology_family: "F2"
@@ -105,6 +117,9 @@ steps:
     command: "echo cortexsim-mp-008-step01-idp-signin-anomaly-impossible-travel-mfa-fatigue; whoami; id; hostname"
     identity: svc-backup
     mitre_technique: "T1078.004"
+    platforms: ["linux", "container", "macos", "windows"]
+    platform_variants:
+      windows: "Write-Output 'cortexsim-mp-008-step01-idp-signin-anomaly-impossible-travel-mfa-fatigue'; whoami; whoami /groups; hostname"
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -117,6 +132,18 @@ steps:
     command: "whoami; id; uname -a; hostname; ss -tunlp 2>/dev/null; cat /etc/passwd | head; echo cortexsim-mp-008-step02-hands-on-keyboard-burst"
     identity: svc-backup
     mitre_technique: "T1059.004"
+    platforms: ["linux", "container", "macos", "windows"]
+    platform_variants:
+      windows: "whoami; whoami /all; systeminfo | Select-Object -First 10; hostname; Get-NetTCPConnection -State Listen | Select-Object -First 10; net user; Write-Output 'cortexsim-mp-008-step02-hands-on-keyboard-burst'"
+      macos: "whoami; id; uname -a; hostname; netstat -an | head; dscl . -list /Users | head; echo cortexsim-mp-008-step02-hands-on-keyboard-burst"
+    causality:
+      # Identity -> endpoint. The anomalous IdP sign-in (step-01) and this on-host
+      # interactive burst share the compromised svc-backup identity (the scenario
+      # stitching_key). No process fork links an IdP event to the host shell — the
+      # cross-plane join is the shared identity entity, so the edge is
+      # shared_entity, seeding the endpoint leg from the takeover root.
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -129,6 +156,17 @@ steps:
     command: "for i in 1 2 3 4 5; do curl -s --max-time 5 http://127.0.0.1/beacon?i=$i -o /dev/null 2>/dev/null || true; done; echo cortexsim-mp-008-step03-c2-egress-beacon-burst"
     identity: svc-backup
     mitre_technique: "T1071.001"
+    platforms: ["linux", "container", "macos", "windows"]
+    platform_variants:
+      windows: "1..5 | ForEach-Object { try { Invoke-WebRequest -Uri \"http://127.0.0.1/beacon?i=$_\" -TimeoutSec 5 -UseBasicParsing | Out-Null } catch {} }; Write-Output 'cortexsim-mp-008-step03-c2-egress-beacon-burst'"
+    causality:
+      # Endpoint -> network. The curl beacon burst is spawned BY the interactive
+      # shell of step-02 and is observed as outbound sessions on the NGFW. The
+      # join is the endpoint process-create <-> firewall-session stitch on the
+      # same host (xdr_data curl node to the panw_ngfw_traffic_raw session), i.e.
+      # the hero cross-plane edge, so the pivot is endpoint_network_stitch.
+      parent_step: step-02
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -141,6 +179,14 @@ steps:
     command: "sleep 2; echo cortexsim-mp-008-step04-cr-mp-0013-stitched-identity-endpoint-network-incident"
     identity: root
     mitre_technique: "T1078.004"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # Correlation terminal — CR-MP-0013 fuses the ITDR sign-in ABIOC, the EDR
+      # hands-on-keyboard ABIOC, and the NDR C2 egress into ONE incident joined on
+      # the shared identity/host entity within the 300s window (stitching_key:
+      # identity). The convergence edge onto the egress node is shared_entity.
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

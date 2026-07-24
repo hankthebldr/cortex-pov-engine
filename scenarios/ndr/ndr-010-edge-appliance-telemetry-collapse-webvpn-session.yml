@@ -57,6 +57,15 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The chain OWNER is the exploited Cisco ASA/FTD VPN web server (CVE-2025-20333
+# RCE), NOT the synthetic beacon. Modeled as the appliance web-server process
+# (httpd/www-data) so the RayInitiator implant it loads, the syslog tamper, and
+# the WebVPN C2 beacon descend from one CGO instead of hanging off cortexsim-agent.
+cgo_anchor:
+  image_name: "httpd"
+  primary_username: "www-data"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 validation_methodology: "Appliance Telemetry Normalization & Absence-of-Signal Detection"
 methodology_family: "F1"
@@ -105,6 +114,7 @@ steps:
       echo "[*] Un-modeled, cisco_asa_raw is searchable but NOT analytics-grade"
     identity: www-data
     mitre_technique: "T1190"
+    platforms: ["linux"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -124,6 +134,10 @@ steps:
       echo "[*] In the recent window the high-volume ASA-6/ASA-7 stream drops far below its trailing baseline — an absence-of-signal collapse, not a quiet network"
     identity: www-data
     mitre_technique: "T1562.006"
+    causality:
+      parent_step: "step-01"
+      pivot: process_lineage
+    platforms: ["linux"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -148,6 +162,10 @@ steps:
       echo "[*] Apply MODEL-NDR-ASA-WEBVPN: parses 716001/716002 session messages into xdm.source.ipv4 / xdm.source.user.username"
     identity: www-data
     mitre_technique: "T1071.001"
+    causality:
+      parent_step: "step-02"
+      pivot: process_lineage
+    platforms: ["linux"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -167,6 +185,10 @@ steps:
       echo "cortexsim-ndr-010-cr-ndr-0010-edge-appliance-compromise-stitched"
     identity: www-data
     mitre_technique: "T1095"
+    causality:
+      parent_step: "step-03"
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: NDR
         type: Correlation

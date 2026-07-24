@@ -37,6 +37,16 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The chain OWNER is the phished Global/Intune admin's authenticated cloud-console
+# session (Edge -> Intune admin portal), NOT the synthetic beacon. The destructive
+# RemoteWipe/FactoryReset actions and the first-seen deviation all descend from
+# that one compromised-admin identity, so the graph roots on the phished session
+# instead of hanging every wipe off cortexsim-agent.
+cgo_anchor:
+  image_name: "msedge"
+  primary_username: "intune-admin"
+
 infra_modules_needed:
   - base
   - itdr
@@ -78,6 +88,7 @@ steps:
       echo cortexsim-itdr-011-bulk-remotewipe-broadcast-30-devices-safe-mode
     identity: svc-backup
     mitre_technique: "T1485"
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -100,6 +111,10 @@ steps:
       echo cortexsim-itdr-011-first-seen-destructive-action-and-risky-signin-precursor
     identity: svc-backup
     mitre_technique: "T1485"
+    causality:
+      parent_step: "step-01"
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -117,6 +132,10 @@ steps:
     command: "echo cortexsim-itdr-011-cr-itdr-0011-stitched-identity-weaponized-mass-device-wipe-incident"
     identity: svc-backup
     mitre_technique: "T1485"
+    causality:
+      parent_step: "step-02"
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: Correlation

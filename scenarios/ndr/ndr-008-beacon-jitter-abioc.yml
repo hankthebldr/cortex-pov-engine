@@ -34,6 +34,18 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The beacon is emitted from a compromised containerized workload: the Causality
+# Group Owner is the container runtime (containerd-shim) that owns the beaconing
+# process, not the synthetic beacon. The periodic low-and-slow beacon (step-01)
+# is the root and links from that CGO; the jittered rare-destination/non-standard
+# port beacon (step-02) is the SAME source host's continued egress (same src_ip +
+# beaconing process, two flows, no fork) → shared_entity; the correlation
+# (step-03) fuses both deviations on that same source host → shared_entity.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 infra_modules_needed:
   - base
   - ndr
@@ -67,6 +79,11 @@ steps:
     command: "for i in $(seq 1 12); do curl -s --max-time 3 http://127.0.0.1/beacon || true; sleep 2; done; echo cortexsim-ndr-008-periodic-low-and-slow-beacon-emitted"
     identity: container-runtime
     mitre_technique: "T1071.001"
+    # Root of the causality spine — links from the CGO (containerd-shim).
+    platforms: ["linux", "container", "windows", "macos"]
+    platform_variants:
+      # Same periodic low-and-slow small-session beacon shape from a Windows host.
+      windows: "1..12 | ForEach-Object { Invoke-WebRequest -Uri http://127.0.0.1/beacon -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null; Start-Sleep 2 }"
     expected_detections:
       - plane: NDR
         type: ABIOC
@@ -84,6 +101,16 @@ steps:
     command: "for i in $(seq 1 8); do curl -s --max-time 3 http://127.0.0.1:8443/task || true; sleep 3; done; echo cortexsim-ndr-008-jittered-rare-dest-nonstd-port-emitted"
     identity: container-runtime
     mitre_technique: "T1571"
+    # Same source host / beaconing process as step-01, second flow to a rare
+    # destination on a non-standard port (no fork between the two curl loops) →
+    # shared_entity (src host egress chain).
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "container", "windows", "macos"]
+    platform_variants:
+      # Same jittered beacon to a rare destination on a non-standard port.
+      windows: "1..8 | ForEach-Object { Invoke-WebRequest -Uri http://127.0.0.1:8443/task -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue | Out-Null; Start-Sleep 3 }"
     expected_detections:
       - plane: NDR
         type: ABIOC
@@ -101,6 +128,11 @@ steps:
     command: "echo cortexsim-ndr-008-cr-ndr-0008-stitched-low-and-slow-c2-beacon-incident"
     identity: container-runtime
     mitre_technique: "T1071.001"
+    # Correlation fuses both beacon deviations for the same source host → shared_entity.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: NDR
         type: Correlation

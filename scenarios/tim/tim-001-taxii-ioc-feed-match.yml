@@ -35,6 +35,16 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The IOC beacon is driven from a containerized lab host: the CGO root is the
+# container entrypoint (containerd-shim) that owns the shell running the TAXII
+# reachability check, the dry-run, and the live beacon — NOT the synthetic
+# cortexsim-agent node. The src_host stitch (below) joins this owner's session
+# to the TIM IOC feed match into one C2 incident.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 required_content:
   - repo: "PaloAltoNetworks/mocktaxii"
 
@@ -57,6 +67,8 @@ steps:
       python3 -m scripts.eal_simulator.cli list-plugins | jq -e '.total >= 4'
     identity: container-runtime
     mitre_technique: "T1071.001"
+    # Root of the causality spine — links from the CGO (containerd-shim).
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: TIM
         type: XQL
@@ -88,6 +100,12 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/tim-ioc-beacon-dry.yml
     identity: container-runtime
     mitre_technique: "T1071.001"
+    # Same lab host / operator session as the TAXII reachability check (no fork) →
+    # shared_entity; the dry-run validates safety policy before live egress.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: TIM
         type: XQL
@@ -122,6 +140,19 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/tim-ioc-beacon-live.yml --live
     identity: container-runtime
     mitre_technique: "T1071.001"
+    # Same lab host / operator session as the dry-run (no fork) → shared_entity.
+    # This host's src_host is the join key the TIM↔NDR correlation (CR-TIM-0001)
+    # stitches the IOC feed match to the outbound NGFW session on.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux", "container", "windows", "macos"]
+    platform_variants:
+      # Windows periodic HTTP beacon to the feed-listed IOC subdomain carrying
+      # the operator header — same NDR-leg beacon + IOC-match detection intent.
+      windows: '1..12 | ForEach-Object { Invoke-WebRequest -Uri "http://c2-beacon.cortexsim-tim.internal:8000/checkin" -Headers @{ "X-Simulation-Run-ID" = "CMP-TIM-001" } -UseBasicParsing; Start-Sleep 30 }'
+      # macOS/zsh periodic beacon loop with curl.
+      macos: 'for i in $(seq 1 12); do curl -s -H "X-Simulation-Run-ID: CMP-TIM-001" "http://c2-beacon.cortexsim-tim.internal:8000/checkin"; sleep 30; done'
     expected_detections:
       - plane: TIM
         type: IOC

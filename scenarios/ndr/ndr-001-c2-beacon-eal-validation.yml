@@ -60,6 +60,17 @@ success_criteria: |
   emit→alert latency.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The compromised host's foothold is modeled as the EAL-simulator container: the
+# containerd-shim runtime OWNS the python3 signal-generator process tree and is
+# the Causality Group Owner in XDR's causality view — NOT the synthetic beacon.
+# The preflight → dry-run → live-beacon steps are three discrete python3 execs in
+# that same container/campaign (no direct fork), so they thread on the shared
+# simulator entity rather than hanging as a star off the agent node.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -73,6 +84,7 @@ steps:
       python3 -m scripts.eal_simulator.cli list-plugins | jq -e '.total >= 4'
     identity: container-runtime
     mitre_technique: "T1071.001"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -103,6 +115,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-dry.yml
     identity: container-runtime
     mitre_technique: "T1071.001"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL
@@ -136,6 +152,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/c2-beacon-live.yml --live
     identity: container-runtime
     mitre_technique: "T1071.001"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL

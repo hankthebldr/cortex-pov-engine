@@ -60,6 +60,19 @@ external_tools:
     type: binary
     install_inline: false
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The compromised pod's container runtime (containerd-shim) is the Causality
+# Group Owner. Token theft descends from the in-pod enumeration shell
+# (process_lineage); the first kubectl call authenticates with the stolen
+# service-account token copied in step-02 (shared_entity — credential reuse,
+# not a fork), and the exec/CronJob kubectl calls chain forward as one process
+# spine. The result is a single connected cross-namespace lateral-movement
+# incident instead of five independent steps hanging off the beacon. platforms
+# tag each step's container/k8s environment.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 steps:
   - id: step-01
     name: "Enumerate Kubernetes service accounts and RBAC permissions"
@@ -74,6 +87,7 @@ steps:
       echo '[*] Namespace enumeration complete'
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["container", "k8s"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -98,6 +112,10 @@ steps:
       echo '[*] Service account credential harvest complete'
     identity: container-runtime
     mitre_technique: "T1552.001"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -123,6 +141,10 @@ steps:
       echo '[*] Cross-namespace pod enumeration complete'
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -151,6 +173,10 @@ steps:
       echo '[!] Successfully executed command in adjacent pod' || echo '[-] Exec into adjacent pod failed — RBAC may restrict exec'
     identity: node
     mitre_technique: "T1021.001"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -194,6 +220,10 @@ steps:
       echo '[!] Malicious CronJob deployed for persistence' || echo '[-] CronJob creation failed — may require additional RBAC'
     identity: container-runtime
     mitre_technique: "T1053.005"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC

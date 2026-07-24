@@ -35,6 +35,21 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# Identity-plane scenario: the detection telemetry is AD-side Kerberos/LDAP
+# audit (4768 AS-REQ, 4769 TGS-REQ, servicePrincipalName LDAP search on the DC),
+# which carries no endpoint process-causality tree on the domain controller.
+# The chain is stitched on the SHARED SOURCE HOST — the one operator host
+# (src_host) that runs impacket against the DC — exactly what CR-ITDR-0006 keys
+# on ("from one source host"). That single-source reuse is how Cortex ITDR folds
+# the SPN sweep, the AS-REP roast, and the Kerberoast TGS burst into one
+# Credential Access incident. The CGO is the impacket interpreter (python3) on
+# the operator host; steps 2..n pivot on shared_entity (the src_host), not a
+# fork. On Windows the same tradecraft runs through Rubeus (platform_variants).
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "root"
+
 required_content:
   - repo: "fortra/impacket"
   - repo: "GhostPack/Rubeus"
@@ -96,6 +111,9 @@ steps:
       command -v impacket-GetUserSPNs >/dev/null 2>&1 && echo '[*] impacket present' || echo '[*] demo-mode: impacket not installed'
     identity: root
     mitre_technique: "T1087.002"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "setspn -Q */* ; Get-ADUser -Filter {ServicePrincipalName -like '*'} -Properties ServicePrincipalName"
     expected_detections:
       - plane: ITDR
         type: BIOC
@@ -114,6 +132,15 @@ steps:
       echo '[*] ITDR should flag an AS-REQ/4768 for a pre-auth-disabled account'
     identity: root
     mitre_technique: "T1558.004"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Rubeus.exe asreproast /user:helpdesk-admin /format:hashcat /outfile:C:\\Windows\\Temp\\asrep.txt"
+    # Same operator source host that ran the SPN sweep now roasts a pre-auth-
+    # disabled account — shared_entity on src_host ties the AD-side signals to
+    # one origin (detection is DC-side 4768, no endpoint fork to trace).
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: ITDR
         type: BIOC
@@ -137,6 +164,15 @@ steps:
       echo '[*] ITDR should flag a 4769 TGS-REQ RC4 burst for >=3 distinct SPNs from one source'
     identity: root
     mitre_technique: "T1558.003"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Rubeus.exe kerberoast /rc4opsec /outfile:C:\\Windows\\Temp\\tgs.txt"
+    # Continues the harvest from the SAME operator source host — shared_entity on
+    # src_host so CR-ITDR-0006 folds the AS-REP roast and this TGS burst into one
+    # Credential Access incident.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ITDR
         type: BIOC

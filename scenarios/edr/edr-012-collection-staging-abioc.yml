@@ -38,6 +38,18 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The collection/staging tradecraft runs inside a compromised web/app service
+# context: the Causality Group Owner is the service daemon (apache2/www-data),
+# not the synthetic beacon. The bulk-read sweep (step-01) is the root and links
+# from that CGO; the archive/staging burst (step-02) is a sibling exec under the
+# same service account touching the same staging directory (no fork between cat
+# and tar), so it threads on shared_entity, and the correlation check (step-03)
+# reads the staged artifact on the same host/account → shared_entity again.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
 methodology_family: "F1"
@@ -66,6 +78,13 @@ steps:
     command: "mkdir -p /tmp/cortexsim-collect; for i in 1 2 3 4 5 6; do dd if=/dev/urandom of=/tmp/cortexsim-collect/doc-$i.dat bs=1k count=8 2>/dev/null; done; cat /tmp/cortexsim-collect/doc-1.dat /tmp/cortexsim-collect/doc-2.dat /tmp/cortexsim-collect/doc-3.dat > /dev/null; echo cortexsim-bulk-file-read-sweep-complete"
     identity: www-data
     mitre_technique: "T1005"
+    # Root of the causality spine — links from the CGO (apache2/www-data).
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      # Same bulk-read fan-out shape: read many distinct files the process never
+      # normally touches, under the service identity, on the other OSes.
+      windows: "Get-ChildItem C:\\inetpub\\wwwroot -Recurse -File | Select-Object -First 6 | Get-Content | Out-Null"
+      macos: "for f in $(find \"$HOME/Sites\" -type f 2>/dev/null | head -6); do cat \"$f\" >/dev/null; done"
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -83,6 +102,17 @@ steps:
     command: "tar -czf /tmp/cortexsim-stage.tar.gz /tmp/cortexsim-collect 2>/dev/null || true; gzip -k /tmp/cortexsim-collect/doc-1.dat 2>/dev/null || true; echo cortexsim-archive-staging-burst-complete"
     identity: www-data
     mitre_technique: "T1560.001"
+    # tar/gzip and the step-01 read sweep are sibling execs under the same
+    # www-data service CGO, sharing the /tmp/cortexsim-collect staging directory
+    # (no fork between cat and tar) → shared_entity, not process_lineage.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      # Same archive-of-swept-files staging burst the process never normally does.
+      windows: "Compress-Archive -Path $env:TEMP\\cortexsim-collect -DestinationPath $env:TEMP\\cortexsim-stage.zip -Force"
+      macos: "ditto -c -k --sequesterRsrc /tmp/cortexsim-collect /tmp/cortexsim-stage.zip"
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -100,6 +130,12 @@ steps:
     command: "echo cortexsim-edr-012-cr-edr-0012-stitched-collection-staging-incident"
     identity: www-data
     mitre_technique: "T1074.001"
+    # Correlation reads the staged archive step-02 produced, on the same host and
+    # under the same www-data CGO → shared_entity (host + staging artifact).
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: EDR
         type: Correlation

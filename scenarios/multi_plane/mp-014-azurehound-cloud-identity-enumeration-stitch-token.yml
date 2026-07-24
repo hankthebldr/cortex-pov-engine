@@ -60,6 +60,17 @@ pull_supported: true
 
 external_tools: []
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The chain begins with an endpoint infostealer (Raccoon/Redline class) that
+# sweeps the browser credential stores for session tokens — that non-browser
+# process is the initial-access CGO. The stolen token is then replayed to Entra
+# and drives the AzureHound Graph burst; every downstream plane binds to the
+# same session identity (user_principal), so anchoring the CGO on the stealer
+# (NOT the synthetic beacon) roots the identity-reuse spine on a real process.
+cgo_anchor:
+  image_name: "redline.exe"
+  primary_username: "svc-account"
+
 # ── v2.0 KPI / Methodology Metadata (DL-06 — F2 Causality Stitching) ─────────
 validation_methodology: "Cross-Plane Causality Correlation"
 methodology_family: "F2"
@@ -104,6 +115,11 @@ steps:
       echo '[*] XDR should record a non-browser process reading 2 browser credential-store FILE_OPENs under this identity'
     identity: svc-account
     mitre_technique: "T1528"
+    # Root: browser session-token theft is a cross-OS infostealer technique.
+    platforms: ["windows", "linux", "macos"]
+    platform_variants:
+      windows: "Copy-Item \"$env:LOCALAPPDATA\\Google\\Chrome\\User Data\\Default\\Network\\Cookies\" \"$env:TEMP\\cookies.db\""
+      macos: "cp \"$HOME/Library/Application Support/Google/Chrome/Default/Cookies\" /tmp/cookies.db"
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -121,6 +137,12 @@ steps:
       echo '[*] Entra non-interactive sign-in log should carry an out-of-region (impossible-travel) sign-in for this UPN'
     identity: svc-account
     mitre_technique: "T1078.004"
+    # The stolen session token (from step-01) is replayed to Entra — the sign-in
+    # binds to the SAME session identity (user_principal), a stolen-token reuse.
+    platforms: ["windows", "linux", "macos"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -140,6 +162,13 @@ steps:
       echo '[*] Graph activity logs should show >500 GET/hr with User-Agent azurehound/<version>'
     identity: svc-account
     mitre_technique: "T1087.004"
+    # AzureHound (cross-platform Go binary) drives the Graph burst on the SAME
+    # replayed session as the sign-in — identity reuse, correlated via
+    # signin_activity_id / user_principal.
+    platforms: ["windows", "linux", "macos"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CLOUD_APP
         type: ABIOC
@@ -162,6 +191,12 @@ steps:
       echo '[*] Failure modes: 3 separate alerts (window missed) OR only endpoint plane represented (Graph logging off)'
     identity: root
     mitre_technique: "T1078.004"
+    # Terminal stitch: token theft + sign-in + Graph enum collapse to one
+    # incident on the shared session identity (user_principal).
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

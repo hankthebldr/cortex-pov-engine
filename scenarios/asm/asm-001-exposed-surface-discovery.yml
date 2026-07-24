@@ -37,6 +37,18 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# ASM recon is OUTBOUND operator tooling from a CortexSim jumpbox: the ground-
+# truth inventory call, nmap, and nuclei are all execs the operator launches
+# from ONE interactive shell — not from the synthetic beacon. The CGO is that
+# operator shell (bash) so the causality graph shows a connected operator-
+# tooling spine instead of a star hanging off cortexsim-agent. The card's own
+# detections are NGFW/asm_findings (network + remote-discovery) signatures, so
+# no per-step process-lineage retuning applies — the anchor is for graph shape.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "root"
+
 infra_modules_needed:
   - base
   - asm
@@ -65,6 +77,7 @@ steps:
         --query 'ResourceTagMappingList[].ResourceARN' --output text || true
     identity: root
     mitre_technique: "T1595"
+    platforms: ["linux"]
     expected_detections:
       - plane: ASM
         type: XQL
@@ -83,6 +96,21 @@ steps:
         -oX /tmp/nmap-cortexsim-asm.xml ${ASM_TARGET_HOST}
     identity: root
     mitre_technique: "T1046"
+    platforms: ["linux", "windows", "macos"]
+    # nmap is a cross-platform binary; the NGFW active-scan fan-out signature is
+    # OS-agnostic, so the same detection is exercised whichever OS the scanner
+    # runs on. On Windows without Npcap raw sockets, a TCP connect scan (-sT) is
+    # the equivalent; on macOS the SYN scan needs sudo like Linux.
+    platform_variants:
+      windows: "nmap -sT -sV -Pn -T4 -p 80,443,2222,6379,9001,9200 -oX nmap-cortexsim-asm.xml %ASM_TARGET_HOST%"
+      macos: "sudo nmap -sS -sV -Pn -T4 -p 80,443,2222,6379,9001,9200 -oX /tmp/nmap-cortexsim-asm.xml ${ASM_TARGET_HOST}"
+    # nmap and the step-01 inventory call are sibling execs the operator launches
+    # from the same jumpbox shell (the CGO) against the same target asset — not a
+    # fork of each other — so they thread on shared_entity (shared host + operator
+    # shell + target), forming a connected spine off the bash CGO.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: ASM
         type: XQL
@@ -113,6 +141,18 @@ steps:
       curl -sk https://${ASM_TARGET_HOST}:9200/ | head -1 || true
     identity: root
     mitre_technique: "T1190"
+    platforms: ["linux", "windows", "macos"]
+    # nuclei is a cross-platform binary; the exposure/misconfig scan and the
+    # unauthenticated-service probes produce the same NGFW egress + asm_findings
+    # regardless of scanner OS. Windows uses PowerShell for the direct probes.
+    platform_variants:
+      windows: "nuclei -target http://%ASM_TARGET_HOST% -severity medium,high,critical -t exposures,misconfigurations,cves -o nuclei-cortexsim.json -j -rate-limit 150; Invoke-WebRequest -SkipCertificateCheck -Uri https://%ASM_TARGET_HOST%:9200/ | Select-Object -ExpandProperty Content"
+    # nuclei is another sibling exec off the same operator shell (CGO) against the
+    # same target as nmap — shared_entity keeps the operator-tooling spine
+    # connected step-01 → step-02 → step-03.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ASM
         type: XQL

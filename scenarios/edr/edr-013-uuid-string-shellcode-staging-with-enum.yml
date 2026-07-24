@@ -46,6 +46,16 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The chain OWNER is the user-launched signed host application (delivered via a
+# phished archive extracted under explorer.exe), NOT the synthetic beacon. The
+# DLL side-load and the in-process UUID-shellcode execution both descend from
+# that signed host vehicle, so the graph roots on the phishing foothold instead
+# of hanging every stage off cortexsim-agent.
+cgo_anchor:
+  image_name: "explorer.exe"
+  primary_username: "user"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
 methodology_family: "F1"
@@ -75,6 +85,7 @@ steps:
     command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-013'; New-Item -ItemType Directory -Force -Path $stage | Out-Null; Set-Content -Path (Join-Path $stage 'SAFE-MODE-sideloaded-module.dll.marker') -Value 'CortexSim SIM-EDR-013 SAFE-MODE marker: models an unsigned DLL side-loaded from a user-writable path into a signed host process. No executable code is present.'; Write-Host 'cortexsim-edr-013-dll-sideload-staged'"
     identity: user
     mitre_technique: "T1574.002"
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -92,6 +103,10 @@ steps:
     command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-013'; $uuids = @('00010203-0405-0607-0809-0a0b0c0d0e0f','10111213-1415-1617-1819-1a1b1c1d1e1f'); $bytes = foreach ($u in $uuids) { ([guid]$u).ToByteArray() }; Set-Content -Path (Join-Path $stage 'SAFE-MODE-decoded-blob.marker') -Value (\"CortexSim SIM-EDR-013 SAFE-MODE: reassembled {0} inert bytes from {1} benign UUID strings (models UuidFromStringA). Never placed on an executable heap and never run.\" -f $bytes.Count, $uuids.Count); Set-Content -Path (Join-Path $stage 'SAFE-MODE-enum-callback-exec.marker') -Value 'CortexSim SIM-EDR-013 SAFE-MODE marker: models control transfer into a private executable heap via an EnumSystemLocalesA / EnumChildWindows callback. Telemetry-shape marker only.'; Write-Host 'cortexsim-edr-013-uuid-reassembly-and-enum-callback-modeled'"
     identity: user
     mitre_technique: "T1620"
+    causality:
+      parent_step: "step-01"
+      pivot: process_lineage
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -109,6 +124,10 @@ steps:
     command: "Write-Host 'cortexsim-edr-013-cr-edr-0013-stitched-uuid-string-staging-incident'"
     identity: user
     mitre_technique: "T1106"
+    causality:
+      parent_step: "step-02"
+      pivot: shared_entity
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: Correlation

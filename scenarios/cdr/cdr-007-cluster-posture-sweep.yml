@@ -39,6 +39,23 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The sweep runs from one scanner/CI session whose container runtime owns the
+# on-node process tree, so the CGO is containerd-shim (NOT the cortexsim-agent
+# beacon). The spine has two arms off the root Trivy scan (step-01):
+#   • step-02 is a REAL process_lineage hop — the operator session execs kubectl
+#     into a running pod, crossing host → containerd → pod sh (container_id
+#     populates); this is the runtime-detectable in-cluster discovery.
+#   • steps 03..06 are sibling host-side scanners that share the same
+#     scanner session/host but do not fork from each other, so they thread on
+#     shared_entity into a connected host-scanner chain rather than a star of
+#     independent nodes.
+# The correlation (CR-CDR-0008) promotes the sweep to a runtime-discovery
+# incident when that container-exec / bulk-IAM shape is seen.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # This is a defensive posture sweep: the same enumeration shape an attacker's
 # discovery/credential-access would produce (privileged container exec, k8s API
@@ -108,6 +125,7 @@ steps:
       echo "[*] Trivy image + IaC + secret scan complete"
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CDR
         type: XQL
@@ -125,6 +143,14 @@ steps:
       echo "[*] In-cluster privileged exec enumeration complete"
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["k8s", "container"]
+    # Real process_lineage hop: the scanner session execs kubectl into a running
+    # pod, crossing host → containerd → pod sh so container_id + the in-cluster
+    # capability/token read carry the CGO's causality_actor. This is the
+    # runtime-detectable discovery arm of the sweep.
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -140,6 +166,13 @@ steps:
       echo "[*] kube-bench CIS benchmark complete"
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["k8s", "linux"]
+    # Sibling host-side scanner of the same session as step-01 (no fork from the
+    # in-pod exec) — shared_entity threads the host-scanner chain on the scanner
+    # host/session rather than hanging off the beacon.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: XQL
@@ -156,6 +189,11 @@ steps:
       echo "[*] Kubescape NSA/CISA scan + k8s API enumeration complete"
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["k8s", "linux"]
+    # Continues the host-scanner chain on the same scanner session — shared_entity.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: XQL
@@ -172,6 +210,11 @@ steps:
       echo "[*] gitleaks + bulk secret-pattern file read complete"
     identity: container-runtime
     mitre_technique: "T1552.001"
+    platforms: ["linux", "container"]
+    # Secret-pattern read burst from the same scanner session — shared_entity.
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: XQL
@@ -189,6 +232,13 @@ steps:
       echo "[*] Cloudsplaining IAM least-privilege assessment complete"
     identity: container-runtime
     mitre_technique: "T1526"
+    platforms: ["linux"]
+    # Bulk IAM GetAccountAuthorizationDetails from the same scanner session's
+    # node principal — shared_entity keeps the cloud-enum leg on one chain; its
+    # CloudTrail shape is the runtime-detectable Cloud Service Discovery arm.
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: BIOC

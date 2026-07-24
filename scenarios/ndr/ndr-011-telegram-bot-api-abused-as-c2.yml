@@ -68,6 +68,17 @@ success_criteria: |
   time from the first Bot API poll to alert is within the MTTD budget.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The compromised web workload (nginx / www-data) is the Causality Group Owner —
+# the process that hosts the LampoRAT implant and OWNS both the allowlisted-SaaS
+# C2 poll and the avp.exe masquerade dispatch on the same host. The Bot API poll
+# and the avp.exe->cmd.exe dispatch are two deviations on that one host entity,
+# stitched by CR-NDR-0011; declaring the CGO + shared_entity pivot collapses the
+# star into a connected chain instead of two independent nodes off the beacon.
+cgo_anchor:
+  image_name: "nginx"
+  primary_username: "www-data"
+
 external_tools: []
 
 steps:
@@ -76,6 +87,9 @@ steps:
     command: "SIM_TOKEN='bot0000000000:SIM-LAMPORAT-TELEGRAM-SHAPE'; for i in $(seq 1 10); do curl -s --max-time 3 \"http://127.0.0.1/${SIM_TOKEN}/getUpdates?timeout=25&offset=${i}\" || true; sleep 3; done; curl -s --max-time 3 -X POST \"http://127.0.0.1/${SIM_TOKEN}/sendMessage\" --data 'chat_id=0&text=CD to /tmp' || true; echo cortexsim-ndr-011-telegram-bot-api-c2-shape-emitted"
     identity: www-data
     mitre_technique: "T1102.002"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "for /L %i in (1,1,10) do @curl.exe -s --max-time 3 \"http://127.0.0.1/bot0000000000:SIM-LAMPORAT-TELEGRAM-SHAPE/getUpdates?timeout=25&offset=%i\" & timeout /t 3 >nul"
     expected_detections:
       - plane: NDR
         type: ABIOC
@@ -93,6 +107,16 @@ steps:
     command: "cp /bin/sh /tmp/avp.exe 2>/dev/null || true; /tmp/avp.exe -c 'echo \"cmd.exe /e:ON /v:OFF /d /c whoami\" > /tmp/.lamporat-dispatch.marker' 2>/dev/null || true; echo cortexsim-ndr-011-avp-cmd-masquerade-dispatch-modelled"
     identity: www-data
     mitre_technique: "T1036.005"
+    platforms: ["windows", "linux"]
+    platform_variants:
+      windows: "avp.exe /c \"cmd.exe /e:ON /v:OFF /d /c whoami\""
+    causality:
+      # Same host as the Bot API poll, no direct fork from the curl poller: the
+      # avp.exe masquerade is a sibling process tree on the same compromised
+      # workload. The two deviations join on the shared host entity
+      # (agent_hostname / src_ip), which is exactly what CR-NDR-0011 stitches.
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: ABIOC
@@ -110,6 +134,13 @@ steps:
     command: "echo cortexsim-ndr-011-cr-ndr-0011-stitched-lamporat-telegram-c2-incident"
     identity: www-data
     mitre_technique: "T1102.002"
+    platforms: ["linux", "windows"]
+    causality:
+      # CR-NDR-0011 fuses the network C2-egress ABIOC and the avp.exe masquerade
+      # ABIOC on the same agent_hostname / src_ip into one incident — a
+      # same-host shared-entity stitch.
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: Correlation

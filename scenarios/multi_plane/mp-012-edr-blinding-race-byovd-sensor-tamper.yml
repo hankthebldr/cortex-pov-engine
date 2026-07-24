@@ -53,6 +53,17 @@ pull_supported: true
 
 external_tools: []
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The real intrusion begins with RMM (Atera) abuse: AteraAgent.exe is the
+# initial-access process that OWNS the chain in XDR's causality view — it spawns
+# the shell that side-loads the vulnerable driver and runs disabler.exe, then
+# the Cobalt Strike beacon and the renamed-rclone exfil. Anchoring the CGO on
+# the RMM foothold (NOT the synthetic beacon) collapses the tamper t0, the C2
+# beacon, and the SFTP egress into one connected src_host spine.
+cgo_anchor:
+  image_name: "AteraAgent.exe"
+  primary_username: "SYSTEM"
+
 # ── v2.0 KPI / Methodology Metadata (F6 — Response Timing) ──────────────────
 # First F6 exemplar in the corpus. The incident's value is an elapsed-time
 # metric: the correlation opens its window at the BYOVD sensor-tamper t0 and
@@ -100,6 +111,9 @@ steps:
       echo '[*] XDR should record a signed-but-vulnerable driver load (t0) + hook-removal tool on this host'
     identity: root
     mitre_technique: "T1562.001"
+    # Root step: BYOVD is a Windows kernel-driver technique (wnbios.sys / WN_64.sys
+    # + disabler.exe). No meaningful Linux/macOS equivalent, so no platform_variants.
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -128,6 +142,12 @@ steps:
       echo '[*] NGFW should record repeating outbound sessions from this host after the tamper t0'
     identity: svc-account
     mitre_technique: "T1071.001"
+    platforms: ["windows"]
+    # The EDR tamper t0 (endpoint signal) joins the NGFW beacon session on the
+    # same host: an endpoint<->firewall stitch, not a process fork.
+    causality:
+      parent_step: step-01
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -145,6 +165,12 @@ steps:
       echo '[*] NGFW should record a sustained egress session (bulk bytes) from this host'
     identity: svc-account
     mitre_technique: "T1048"
+    platforms: ["windows"]
+    # The SFTP exfil is a second network session from the SAME tampered host,
+    # after the beacon — same-entity (src_host) reuse, no direct fork.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: XQL
@@ -165,6 +191,12 @@ steps:
       echo '    - metric returns 0 rows (no t0 or no exfil join) → F6 KPI not measurable'
     identity: root
     mitre_technique: "T1562.001"
+    platforms: ["windows"]
+    # Terminal correlation groups the tamper t0 + beacon + exfil on one
+    # agent_hostname (src_host) into a single time-to-contain incident.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

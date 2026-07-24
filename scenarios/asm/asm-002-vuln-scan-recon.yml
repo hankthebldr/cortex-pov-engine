@@ -37,6 +37,16 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# Outbound operator recon: the reachability probe, the nuclei vuln scan, and the
+# Nikto-style sensitive-path burst are sequential execs off ONE jumpbox shell,
+# not the beacon. Anchoring the CGO on that shell (bash) collapses the star into
+# a connected operator-tooling spine. Detections here are NGFW traffic
+# signatures (no process-actor fields), so no per-step lineage retuning applies.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "root"
+
 infra_modules_needed:
   - base
   - asm
@@ -58,6 +68,7 @@ steps:
       curl -s -o /dev/null -w "%{http_code}\n" http://${ASM_TARGET_HOST}/ || true
     identity: root
     mitre_technique: "T1595.001"
+    platforms: ["linux"]
     expected_detections:
       - plane: ASM
         type: XQL
@@ -76,6 +87,18 @@ steps:
         -o /tmp/nuclei-asm-002.json -j -rate-limit 200
     identity: root
     mitre_technique: "T1595.002"
+    platforms: ["linux", "windows", "macos"]
+    # nuclei is a cross-platform binary; the inbound URI-fan-out the NGFW sees is
+    # OS-agnostic, so the same vuln-scan detection fires whichever OS the scanner
+    # runs on. The invocation is identical on Windows/macOS.
+    platform_variants:
+      windows: "nuclei -target http://%ASM_TARGET_HOST% -severity low,medium,high,critical -t cves,exposures,default-logins,exposed-panels -o nuclei-asm-002.json -j -rate-limit 200"
+    # The nuclei scan and the step-01 reachability probe are sibling execs off the
+    # same operator shell (CGO) against the same perimeter asset — shared_entity
+    # (host + operator + target), not a fork — keeping the spine connected.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: BIOC
@@ -100,6 +123,17 @@ steps:
       done
     identity: root
     mitre_technique: "T1595.002"
+    platforms: ["linux", "windows", "macos"]
+    # The sensitive-path probe burst + scanner user-agent is a shell loop on
+    # Linux/macOS; PowerShell's Invoke-WebRequest with the same UA and path list
+    # emits the identical inbound 4xx-burst signature the NGFW BIOC keys on.
+    platform_variants:
+      windows: "'/.git/config','/.env','/admin','/wp-login.php','/server-status','/phpinfo.php','/.aws/credentials','/backup.zip','/config.php.bak' | ForEach-Object { try { Invoke-WebRequest -UseBasicParsing -UserAgent 'Mozilla/5.0 (Nikto/2.5.0)' -Uri (\"http://%ASM_TARGET_HOST%\" + $_) } catch { $_.Exception.Response.StatusCode.value__ } }"
+    # Another sibling exec off the operator shell (CGO) against the same asset as
+    # the nuclei scan — shared_entity keeps the spine step-01 → step-02 → step-03.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: BIOC

@@ -38,6 +38,18 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The rogue-governance actions are emitted by a python3 EAL process in the
+# container harness standing in for the compromised sync/automation identity —
+# the Causality Group Owner. The privileged-role assignment (step-01) is the root
+# and links from that CGO; the high-risk OAuth consent (step-02) is the SAME
+# sync identity's next off-baseline action (same tenant + principal, no process
+# fork between two Entra ID admin API calls), so it threads on shared_entity, and
+# the correlation (step-03) fuses both deviations on that identity → shared_entity.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "container-runtime"
+
 infra_modules_needed:
   - base
   - itdr
@@ -71,6 +83,8 @@ steps:
     command: "id; echo cortexsim-itdr-010-privileged-role-grant-global-administrator-svc-backup"
     identity: svc-backup
     mitre_technique: "T1098.003"
+    # Root of the causality spine — links from the CGO (python3 emitter).
+    platforms: ["container"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -88,6 +102,12 @@ steps:
     command: "whoami; echo cortexsim-itdr-010-oauth-consent-directory-readwrite-all-tenant-wide-grant"
     identity: svc-backup
     mitre_technique: "T1528"
+    # Next off-baseline action by the SAME sync identity as step-01 (same tenant+
+    # principal, no process fork between two Entra ID admin API calls) → shared_entity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["container"]
     expected_detections:
       - plane: ITDR
         type: ABIOC
@@ -100,6 +120,11 @@ steps:
     command: "echo cortexsim-itdr-010-cr-itdr-0010-stitched-rogue-privilege-escalation-incident"
     identity: svc-backup
     mitre_technique: "T1098.003"
+    # Correlation fuses both deviations on the same tenant+identity → shared_entity.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["container"]
     expected_detections:
       - plane: ITDR
         type: Correlation

