@@ -1,0 +1,263 @@
+scenario_id: SIM-MP-016
+name: "Muddled Libra Okta Admin Takeover to Rogue Federated IdP to Cross-Cloud Resource Exfiltration"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - XQL
+  - ABIOC
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UC-MP-016
+tc_ref: TC-MP-016A
+uc_name: "Muddled Libra Cross-Cloud Identity Takeover — Okta Admin to Rogue IdP to Data Exfil Stitch"
+tc_name: "Okta Admin Takeover + Rogue Federated IdP + Cross-Cloud Data-Plane Burst Stitch"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# The chain's signature depth is on TA0005 (Defense Evasion): the durable
+# persistence pivot is a rogue federated IdP added via tenant-trust modification
+# (T1484.002), not an initial-access re-skin. The MFA reset, cross-cloud SSO,
+# and data-plane exfil ride around that pivot.
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1484.002"
+mitre_technique_name: "Domain or Tenant Policy Modification: Trust Modification"
+additional_techniques:
+  - technique: "T1556.006"
+    name: "Modify Authentication Process: Multi-Factor Authentication"
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1537"
+    name: "Transfer Data to Cloud Account"
+  - technique: "T1530"
+    name: "Data from Cloud Storage"
+  - technique: "T1578.001"
+    name: "Modify Cloud Compute Infrastructure: Create Snapshot"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Muddled Libra's Evolution to the Cloud"
+threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra-evolution-to-cloud/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+# SAFE-MODE: no real Okta admin action, no real AWS/Azure API call. Every
+# plane's signal is modelled with local marker files under the identity harness
+# so XSIAM sees the identity + cloud-audit telemetry shape without touching a
+# real tenant. All IPs are RFC5737 documentation ranges.
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata (F2 — Causality Stitching) ───────────────
+validation_methodology: "Cross-Plane Causality Correlation"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  The Okta admin takeover (help-desk MFA reset -> privileged sign-in), the rogue
+  federated IdP add with impersonation, the cross-cloud SSO AssumeRole burst,
+  and the AWS/Azure data-plane exfil burst — all attributed to the same
+  compromised tech-admin identity — stitch into a single XSIAM incident_id whose
+  causality chain spans the ITDR and Cloud App planes within the correlation
+  window. Over a 5-run batch, >= 80 % of runs must produce one stitched incident
+  keyed on the shared normalized identity (causality_actor_primary_username).
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - ITDR
+  - CLOUD_APP
+stitching_key: user_principal
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The Causality Group Owner is the compromised tech-admin identity itself — the
+# whole chain is identity-driven, so the CGO node is that admin (labelled via
+# the harness runtime that proxies the SAFE-MODE emulation as the compromised
+# principal). The root step (help-desk MFA reset) links from the CGO; steps 2..6
+# wire a connected parent->child causality spine via typed pivots
+# (process_lineage -> exposure_exploit -> shared_entity -> exploit_impact ->
+# temporal) instead of a star of independent alerts.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "tadmin"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+steps:
+  - id: step-01
+    name: "Help-desk social engineering: reset MFA factor on tech-admin Okta account (ITDR)"
+    command: |
+      echo '[MP-016] ITDR: SAFE-MODE help-desk MFA factor reset on a privileged Okta account';
+      D="${WORK_DIR:-/tmp/cortexsim-mp016}"; mkdir -p "$D";
+      ADMIN="${TARGET_ADMIN:-tadmin@corp.example}";
+      printf '{"eventType":"user.mfa.factor.reset_all","target_user_email":"%s","target_admin_role":true,"actor_alternate_id":"helpdesk-agent@corp.example","client_ip_address":"203.0.113.10","outcome_result":"SUCCESS"}\n' "$ADMIN" > "$D/01-mfa-reset.json";
+      cat "$D/01-mfa-reset.json";
+      echo '[*] Okta system log should record a factor reset on an admin-role identity sourced from a help-desk flow'
+    identity: svc-account
+    mitre_technique: "T1556.006"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "ITDR hunt — privileged Okta MFA factor reset (help-desk-driven) on an admin-role identity"
+        ttp_ref: "TTP-2026-0134"
+        detection_id: "xql-mp-016-privileged-okta-factor-reset-from-help-desk-flow"
+
+  - id: step-02
+    name: "Actor completes privileged Okta admin-console sign-in with the reset factor from a new geo (ITDR)"
+    command: |
+      echo '[MP-016] ITDR: SAFE-MODE privileged Okta admin sign-in with reset factor, unusual geo';
+      D="${WORK_DIR:-/tmp/cortexsim-mp016}"; mkdir -p "$D";
+      ADMIN="${TARGET_ADMIN:-tadmin@corp.example}";
+      printf '{"eventType":"user.session.start","target_user_email":"%s","admin_console_access":true,"auth_result":"SUCCESS","client_geo_country":"UNUSUAL","client_ip_address":"198.51.100.20"}\n' "$ADMIN" > "$D/02-admin-signin.json";
+      cat "$D/02-admin-signin.json";
+      echo '[*] Okta should record a privileged admin-console sign-in for the same identity within minutes of the reset'
+    identity: svc-account
+    mitre_technique: "T1078.004"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "ITDR ABIOC — MFA reset immediately followed by a privileged admin-console sign-in for the same identity (account takeover)"
+        ttp_ref: "TTP-2026-0134"
+        detection_id: "abioc-mp-016-help-desk-mfa-reset-then-rapid-privileged-okta-sign-in"
+
+  - id: step-03
+    name: "Add rogue federated IdP with impersonation for durable persistence (Cloud App tenant-trust modification)"
+    command: |
+      echo '[MP-016] CLOUD_APP: SAFE-MODE rogue federated IdP created with JIT/impersonation linking';
+      D="${WORK_DIR:-/tmp/cortexsim-mp016}"; mkdir -p "$D";
+      ADMIN="${TARGET_ADMIN:-tadmin@corp.example}";
+      printf '{"eventType":"system.idp.lifecycle.create","actor_alternate_id":"%s","idp_display_name":"rogue-federation","idp_jit_enabled":true,"idp_account_link_action":"AUTO","outcome_result":"SUCCESS","client_ip_address":"198.51.100.20"}\n' "$ADMIN" > "$D/03-rogue-idp.json";
+      cat "$D/03-rogue-idp.json";
+      echo '[*] Okta system log should record a new IdP-lifecycle create with impersonation linking by the just-taken-over admin'
+    identity: svc-account
+    mitre_technique: "T1484.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: exposure_exploit
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "Cloud App ABIOC — rare IdP-lifecycle create/activate with JIT/impersonation linking by a recently-reset admin (rogue federated IdP persistence)"
+        ttp_ref: "TTP-2026-0134"
+        detection_id: "abioc-mp-016-rogue-federated-identity-provider-added-with-impersonation"
+
+  - id: step-04
+    name: "Federated SSO AssumeRole from the rogue IdP into AWS and Azure keyed on the same identity"
+    command: |
+      echo '[MP-016] CLOUD_APP: SAFE-MODE federated AssumeRole burst into multiple AWS/Azure accounts';
+      D="${WORK_DIR:-/tmp/cortexsim-mp016}"; mkdir -p "$D";
+      ADMIN="${TARGET_ADMIN:-tadmin@corp.example}";
+      for n in 1 2 3 4 5 6; do
+        printf '{"event_name":"AssumeRoleWithSAML","cloud_provider":"AWS","saml_subject":"%s","recipient_account_id":"acct-%s","assumed_role_arn":"arn:aws:iam::acct-%s:role/federated","source_ip":"198.51.100.20"}\n' "$ADMIN" "$n" "$n" > "$D/04-assumerole-$n.json";
+      done
+      ls -1 "$D"/04-assumerole-*.json | head -10;
+      echo '[*] Cloud audit logs should show a fan-out of federated role assumptions into >= 2 accounts on the same subject'
+    identity: svc-account
+    mitre_technique: "T1078.004"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: 'Use-STSRoleWithSAML -PrincipalArn $idp -RoleArn $role -SAMLAssertion $b64  # AWS Tools for PowerShell federated AssumeRole burst'
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "Cloud App ABIOC — federated SSO AssumeRole burst into >= 2 AWS/Azure accounts keyed on the shared federated subject"
+        ttp_ref: "TTP-2026-0134"
+        detection_id: "abioc-mp-016-federated-sso-assumerole-burst-across-cloud-accounts"
+
+  - id: step-05
+    name: "Cloud data-plane exfil burst: Transfer Family, DataSync, Secrets Manager, Azure snapshot copy"
+    command: |
+      echo '[MP-016] CLOUD_APP: SAFE-MODE cloud data-movement abuse burst (AWS + Azure)';
+      D="${WORK_DIR:-/tmp/cortexsim-mp016}"; mkdir -p "$D";
+      ADMIN="${TARGET_ADMIN:-tadmin@corp.example}";
+      for api in CreateServer CreateUser StartTaskExecution CreateLocationS3 GetSecretValue BatchGetSecretValue; do
+        printf '{"event_name":"%s","cloud_provider":"AWS","saml_subject":"%s","source_ip":"198.51.100.20"}\n' "$api" "$ADMIN" > "$D/05-aws-$api.json";
+      done
+      printf '{"event_name":"MICROSOFT.COMPUTE/SNAPSHOTS/WRITE","cloud_provider":"AZURE","caller_principal_id":"%s","target_subscription_id":"attacker-sub","home_subscription_id":"victim-sub","resource_id":"disk-01","source_ip":"198.51.100.20"}\n' "$ADMIN" > "$D/05-azure-snapshot.json";
+      ls -1 "$D"/05-*.json | head -10;
+      echo '[*] Cloud audit logs should show Transfer Family/DataSync/Secrets Manager APIs + an Azure snapshot copied to an external subscription'
+    identity: svc-account
+    mitre_technique: "T1537"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: 'aws transfer create-server; aws datasync start-task-execution; aws secretsmanager get-secret-value  # run from a Windows operator box via AWS CLI'
+    causality:
+      parent_step: step-04
+      pivot: exploit_impact
+    expected_detections:
+      - plane: CLOUD_APP
+        type: BIOC
+        description: "Cloud App BIOC — one identity drives a burst across >= 2 AWS data-movement services (Transfer Family / DataSync / Secrets Manager)"
+        ttp_ref: "TTP-2026-0134"
+        detection_id: "bioc-mp-016-aws-data-movement-service-abuse-burst"
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Cloud App hunt — Azure managed-disk snapshot created and copied to an attacker-controlled external subscription"
+        ttp_ref: "TTP-2026-0134"
+        detection_id: "xql-mp-016-azure-managed-disk-snapshot-copied-to-external-subscription"
+
+  - id: step-06
+    name: "Correlation stitch: single cross-cloud identity-takeover incident on the shared identity (ANALYTICS)"
+    command: |
+      echo '[MP-016] Terminal stitch: polling for the single cross-cloud incident';
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-90}";
+      echo '[*] Verifier runs: dataset=cloud_audit_logs | comp count_distinct(_product), count_distinct(incident_id) by causality_actor_primary_username';
+      echo '[*] Expected: plane_count >= 2 (ITDR + Cloud App) and incident_count = 1 on the shared compromised identity';
+      echo '[*] Failure modes: four separate alerts (window missed) OR shared identity key not emitted on every plane'
+    identity: root
+    mitre_technique: "T1484.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-05
+      pivot: temporal
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "XSIAM correlation — Okta takeover ABIOC + rogue-IdP ABIOC + AssumeRole-burst ABIOC + data-plane BIOC/XQL stitch into one incident on the shared identity"
+        ttp_ref: "TTP-2026-0134"
+        detection_id: "CR-MP-0016"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp016"
+    - "echo '[CortexSim] SIM-MP-016 cleanup complete - no persistent artifacts'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - multi-plane
+  - stitching
+  - cross-plane-correlation
+  - muddled-libra
+  - scattered-spider
+  - okta-admin-takeover
+  - rogue-federated-idp
+  - cross-cloud-exfil
+  - f2-methodology

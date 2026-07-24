@@ -1,0 +1,214 @@
+scenario_id: SIM-MP-017
+name: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182)"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-MP-017
+tc_ref: TC-MP-017
+uc_name: "React2Shell Pod-RCE to Cloud Control-Plane Pivot Detection"
+tc_name: "RSC RCE -> SAT Token Theft -> K8s Secret Enum -> Node IAM Role Theft -> Cloud Reuse, Stitched"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1190"
+mitre_technique_name: "Exploit Public-Facing Application"
+additional_techniques:
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+  - technique: "T1552.001"
+    name: "Unsecured Credentials: Credentials In Files"
+  - technique: "T1613"
+    name: "Container and Resource Discovery"
+  - technique: "T1552.005"
+    name: "Unsecured Credentials: Cloud Instance Metadata API"
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+
+threat_report: "Unit 42 — Modern Kubernetes Threats: React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182)"
+threat_report_url: "https://unit42.paloaltonetworks.com/modern-kubernetes-threats/"
+
+# An internet-facing React Server Components (RSC) deserialization RCE (CVE-2025-55182,
+# tied to Slow Pisces / Lazarus) turns a Kubernetes pod into a container-to-cloud breach.
+# The vulnerable app process (node / next.js behind an nginx ingress) is the Causality
+# Group Owner: deserialization RCE makes it spawn a shell, which reads the auto-mounted
+# service-account token, enumerates cluster secrets via the in-cluster K8s API, steals the
+# node's attached IAM role from the instance metadata service (169.254.169.254), and reuses
+# that role in the cloud control plane (aws sts get-caller-identity + backend reads). No
+# single call is a known-bad IOC — the detectable feature is the CONNECTED causality chain
+# rooted at the exposed app process, plus the stolen node IAM role as the shared entity that
+# bridges the container plane to the cloud plane. Runs SAFE-MODE / non-destructive: the SAT
+# read targets a synthetic token file, the K8s API + IMDS reaches are read-only self-requests
+# with responses discarded to /dev/null, and the cloud stage is modelled with marker files.
+
+execution_identity:
+  default: app
+  options:
+    - app
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the per-container process-lineage baseline (the RSC web app process
+  never spawns a shell, never reads the service-account token, never contacts the K8s API
+  or the metadata IP from a shell child) and the per-role cloud-API baseline (the node IAM
+  role performs a narrow, stable set of workload calls). The injected React2Shell chain
+  drives deserialization RCE -> shell spawn -> SAT token read -> in-cluster secret
+  enumeration -> node-IAM-role theft from IMDS -> cloud control-plane reuse. All four
+  endpoint ABIOCs fire anchored on the app-container CGO causality node, the cloud ABIOC
+  fires on the AssumedRole burst, and correlation rule CR-MP-0017 stitches the container
+  and cloud signals into ONE React2Shell pod-RCE-to-cloud incident — the endpoint stages
+  joined on the pod causality_id and the cloud stage bridged via the stolen node-IAM-role
+  shared entity. This is the "connected causality graph catches what a static rule misses"
+  proof — every individual step is a legitimate operation for some principal, so the catch
+  comes from the process lineage and the cross-plane pivot, not a signature. Mean time from
+  the chain to the stitched incident is within the MTTD budget.
+moat_tier: "LEAD"
+
+# CR-MP-0017 stitches the four endpoint ABIOCs (pod causality chain) and the cloud ABIOC
+# (node-IAM-role shared entity) within this window.
+correlation_window_seconds: 600
+
+external_tools: []
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The CGO is the exposed application container process (node / next.js behind the nginx
+# ingress) — NOT our beacon. cgo_anchor labels the root causality node with that process +
+# its runtime username. step-01 is the root (no parent_step): the RSC deserialization RCE
+# makes the app CGO spawn a shell, so the endpoint ABIOC anchors on
+# causality_actor_process_image_name (= node) + causality_actor_process_instance_id.
+# step-02 (SAT token read) and its descendants descend from the shell via process_lineage;
+# step-03 (K8s API secret enum) is a network_session off the shell; step-04 (IMDS node-role
+# theft) is the endpoint_network_stitch that bridges toward the cloud. step-05 is the cloud
+# pivot: the stolen node IAM role is the shared_entity linking the container plane to the
+# cloud control plane. step-06 is the exploit_impact — backend reads under that role — and
+# the correlation stitches every pivot into ONE incident.
+cgo_anchor:
+  image_name: "node"
+  primary_username: "app"
+
+steps:
+  - id: step-01
+    name: "RSC deserialization RCE — the app-container CGO process spawns a shell"
+    command: "echo 'cortexsim-mp-017-rsc-deserialization-rce-app-cgo-shell-spawn' && /bin/sh -c 'true'"
+    identity: app
+    mitre_technique: "T1190"
+    platforms: ["container", "k8s", "linux"]
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "The internet-facing app process that owns the pod's causality chain (node / next.js) spawns an interactive shell it never spawns in its learned baseline — the endpoint root of the React2Shell chain. Auto-tuned ABIOC fires on the first-ever shell spawn under the app CGO, anchored on causality_actor_process_instance_id so every downstream stage stitches back to this node."
+        ttp_ref: "TTP-2026-0136"
+        detection_id: "abioc-rsc-deserialization-rce-app-container-cgo-spawns-an-interactive-shell"
+
+  - id: step-02
+    name: "Read the auto-mounted Kubernetes service-account token"
+    command: "mkdir -p /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount && echo 'cortexsim-synthetic-sat-token' > /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount/token && cat /tmp/cortexsim-mp-017/var/run/secrets/kubernetes.io/serviceaccount/token > /dev/null && echo cortexsim-mp-017-sat-token-read"
+    identity: app
+    mitre_technique: "T1552.001"
+    platforms: ["container", "k8s", "linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "A shell descended from the app CGO reads /var/run/secrets/kubernetes.io/serviceaccount/token. Auto-tuned ABIOC fires on the sensitive SAT-path read by a shell-family process whose CGO is the web app, anchored on causality_actor_process_instance_id so the credential-access node joins the same pod lineage as the RCE."
+        ttp_ref: "TTP-2026-0136"
+        detection_id: "abioc-kubernetes-service-account-token-read-by-an-anomalous-descendant-of-the-app-container-cgo"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Validation query confirms the service-account token file was read inside the pod within the run window in xdr_data."
+        ttp_ref: "TTP-2026-0136"
+        detection_id: "xql-sim-mp-017-service-account-token-read-validation-in-xdr-data"
+
+  - id: step-03
+    name: "Enumerate cluster secrets via the in-cluster Kubernetes API"
+    command: "curl -s --max-time 2 -k -H 'Authorization: Bearer cortexsim-synthetic-sat-token' 'https://kubernetes.default.svc/api/v1/secrets' -o /dev/null || true; echo cortexsim-mp-017-k8s-api-secret-enum"
+    identity: app
+    mitre_technique: "T1613"
+    platforms: ["container", "k8s", "linux"]
+    causality:
+      parent_step: step-02
+      pivot: network_session
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "A shell/curl process descended from the app CGO opens a TLS session to the in-cluster Kubernetes API server (kubernetes.default.svc:443) with the stolen bearer token to enumerate secrets and RBAC scope. Auto-tuned ABIOC fires on the API reach from a non-app-runtime process in the app lineage, anchored on the pod causality_id."
+        ttp_ref: "TTP-2026-0136"
+        detection_id: "abioc-in-pod-kubernetes-api-secret-enumeration-from-an-app-rooted-process-lineage"
+
+  - id: step-04
+    name: "Steal the node IAM role from the instance metadata service"
+    command: "curl -s --max-time 2 'http://169.254.169.254/latest/meta-data/iam/security-credentials/' -o /dev/null || true; echo cortexsim-mp-017-imds-node-role-theft"
+    identity: app
+    mitre_technique: "T1552.005"
+    platforms: ["container", "k8s", "linux"]
+    causality:
+      parent_step: step-02
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "A container process descended from the app CGO reaches the instance metadata IP (169.254.169.254) for the first time to steal the node's attached IAM role — the container-to-cloud bridge. Auto-tuned ABIOC fires on the first-ever IMDS reach in the pod lineage, anchored on the pod causality chain and the node identity so it stitches to the cloud stage that reuses the role."
+        ttp_ref: "TTP-2026-0136"
+        detection_id: "abioc-ssrf-driven-instance-metadata-node-iam-role-theft-from-a-container-process"
+
+  - id: step-05
+    name: "Reuse the stolen node IAM role in the cloud control plane"
+    command: "echo \"SAFE-MODE aws.sts.GetCallerIdentity $(date +%s%N)\" >> /tmp/cortexsim-mp-017-cloud-stages.log; echo \"SAFE-MODE aws.s3.ListBuckets backend-infra $(date +%s%N)\" >> /tmp/cortexsim-mp-017-cloud-stages.log; echo cortexsim-mp-017-cloud-role-reuse-safe-mode"
+    identity: app
+    mitre_technique: "T1078.004"
+    platforms: ["container", "k8s", "linux"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "The stolen node IAM role (an AssumedRole tied to the compromised instance) issues sts:GetCallerIdentity plus a burst of distinct backend read/list operations from a session that first appears right after the pod's IMDS theft. Auto-tuned ABIOC fires on the AssumedRole operation burst, the shared cloud entity anchored to the node role that bridges the container-plane lineage into the cloud control plane."
+        ttp_ref: "TTP-2026-0136"
+        detection_id: "abioc-stolen-node-iam-role-used-in-the-cloud-control-plane-after-pod-compromise"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Hunt query surfaces the node IAM role reused across the container and cloud planes — the AssumedRole issuing distinct control-plane operations in cloud_audit_logs within the run window."
+        ttp_ref: "TTP-2026-0136"
+        detection_id: "xql-sim-mp-017-node-iam-role-reuse-across-container-and-cloud-planes"
+
+  - id: step-06
+    name: "Correlation stitches the container and cloud signals into one incident"
+    command: "echo cortexsim-mp-017-cr-mp-0017-react2shell-incident-stitched"
+    identity: app
+    mitre_technique: "T1078.004"
+    platforms: ["container", "k8s", "linux"]
+    causality:
+      parent_step: step-05
+      pivot: exploit_impact
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation rule fuses the RSC-RCE shell spawn, the service-account-token read, the in-cluster secret enumeration, the node-IAM-role theft, and the cloud control-plane reuse into a single React2Shell pod-RCE-to-cloud incident within the window. The four endpoint ABIOCs join on the pod causality chain (causality_id / causality_actor_process_instance_id rooted at the app CGO); the cloud ABIOC is bridged in via the asset-inventory host -> instance -> attached-node-role mapping (the stolen credential never appears in endpoint telemetry), the shared entity that stitches the container plane to the cloud control plane."
+        ttp_ref: "TTP-2026-0136"
+        detection_id: "CR-MP-0017"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp-017 /tmp/cortexsim-mp-017-cloud-stages.log"
+    - "echo cortexsim-mp-017-cleanup-complete"
