@@ -129,6 +129,13 @@ KNOWN_DATASETS = frozenset({
     # Plan 04 — EMAIL plane ingestion sources (Proofpoint TAP / M365 / Defender
     # for Office 365 message + threat telemetry).
     "proofpoint_tap_raw", "msft_o365_email", "msft_defender_o365",
+    # Unit 42 2026 expansion (TTP-2026-0106/0116/0118) — edge-appliance and
+    # VPN raw sources for the ArcaneDoor (Cisco ASA/FTD), Ivanti Connect Secure,
+    # and GlobalProtect cards. Convention-named (<vendor>_<product>_raw); the
+    # exact tenant dataset string still needs live-tenant field confirmation per
+    # RUNBOOK ("BIOC XQL dialects drift"), but these are real ingested products,
+    # not invented sources, so they should not WARN as typos.
+    "cisco_asa_raw", "ivanti_ics_raw", "panw_ngfw_globalprotect_raw",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain
