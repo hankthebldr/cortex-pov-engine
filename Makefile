@@ -21,7 +21,7 @@ COMPOSE     ?= docker compose
 SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up down build test test-backend test-agent test-ui validate \
-        validate-detection check-adapters ci clean
+        validate-detection check-adapters coverage coverage-strict ci clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -80,6 +80,12 @@ validate-detection: ## validate.py (0 fail) + export-determinism gate (CI 'detec
 
 check-adapters: ## tier-2 adapter source preflight (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
+
+coverage: ## detection coverage-quality report (WARN-only, exit 0)
+	python3 detection_scanner/scripts/coverage_report.py
+
+coverage-strict: ## coverage report as a hard gate (exit 1 on floor/target breach)
+	python3 detection_scanner/scripts/coverage_report.py --strict
 
 # -----------------------------------------------------------------------------
 # Everything
