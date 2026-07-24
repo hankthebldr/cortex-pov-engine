@@ -42,6 +42,25 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-07-23 — Unit 42 two-track final integration):**
+  **125 loadable scenarios** across **15 detection planes** (all `status: active`,
+  0 rejected / 0 dangling refs; **761/761 detection_id slugs resolve** — GAP-4 held) ·
+  **125 TTP cards** (**1078 resolvable catalog detection objects**) · **14 EAL plugins** ·
+  **69 tool-adapter packs** (34 distinct adapters wired across 41 scenarios) · 11 AWS
+  IaC modules. `make validate` is green (**256 pass / 0 warn / 0 fail**). This pass adds
+  the 12 `TTP-2026-0120..0131` pairs (113 + 12 = 125) sourced from Unit 42 threat research,
+  emphasizing cross-plane CORRELATION and ABIOC depth: Phantom Taurus NET-STAR stitch
+  (`SIM-MP-011`), IAM PassRole posture→runtime AssumeRole/IMDS (`SIM-CSPM-003`), EDR-blinding
+  BYOVD race (`SIM-MP-012`), Muddled Libra rogue-VM alert-storm grouping (`SIM-MP-013`),
+  AzureHound cloud-identity enumeration (`SIM-MP-014`), lateral-tool-transfer chisel/PsExec
+  (`SIM-EDR-015`), ClickFix pastejacking + interpreter-depth (`SIM-EDR-016/017`), BadSuccessor
+  dMSA privesc (`SIM-ITDR-013`), unencrypted-snapshot KMS-gap export (`SIM-CSPM-004`), and
+  AI-SOC triage/summarization validation (`SIM-MP-015`, `SIM-EDR-018`). This closes the CSPM
+  sub-floor (2→4, meets floor 3) and adds methodology-family depth (F1/F2/F4/F6/F7). It also
+  ships a new **coverage-analyzer** (`detection_scanner/scripts/coverage_report.py`, `make
+  coverage` / `make coverage-strict`). Per-plane on disk now: CDR=18 · EDR=18 · ANALYTICS=15 ·
+  ITDR=13 · NDR=11 · KOI=7 · ai_spm=6 · browser=6 · cloud_app=6 · ai_access=5 · airs=5 ·
+  asm=4 · cspm=4 · email=4 · tim=3.
 - **Counted ground truth (verified 2026-07-23 — Unit 42 final integration):**
   **113 loadable scenarios** across **15 detection planes** (all `status: active`,
   0 rejected / 0 dangling refs; **683/683 detection_id slugs resolve**) · **113 TTP
