@@ -57,7 +57,14 @@ async def tenant_health(name: str, session: AsyncSession = Depends(get_db)) -> d
     store = CredentialStore(session)
     row = await store.get_integration(name)
     if row is None or row.kind != XSIAM_KIND:
-        raise HTTPException(status_code=404, detail=f"XSIAM tenant '{name}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "XSIAM tenant not found",
+                "code": "TENANT_NOT_FOUND",
+                "detail": f"name='{name}'",
+            },
+        )
     return {
         "name": name,
         "last_verified_ok": row.last_verified_ok,
