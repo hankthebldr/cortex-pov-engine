@@ -42,6 +42,29 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-07-24 — causality-contract final integration):**
+  **133 loadable scenarios** across **15 detection planes** (all `status: active`,
+  0 rejected / 0 dangling refs; **823/823 detection_id slugs resolve** — GAP-4 held) ·
+  **133 TTP cards** (**1156 resolvable catalog detection objects**) · **14 EAL plugins** ·
+  **69 tool-adapter packs** (34 distinct adapters wired across 40 scenarios) · 11 AWS
+  IaC modules. `make validate` is green (**272 pass / 0 warn / 0 fail**). This pass
+  installs the **causality contract** — optional/additive schema fields (`cgo_anchor`
+  scenario-level; per-step `causality{parent_step,pivot}`, `platforms`,
+  `platform_variants`) that drive `core/engine/causality_graph.py` to build a real
+  CGO-rooted, parent→child **connected** process spine (and typed cross-plane pivot
+  edges) instead of a synthetic `cortexsim-agent` star. 117 scenarios declare the
+  contract; the connectedness sweep confirms **100 % (53/53)** of process_lineage-spine
+  scenarios yield a connected `proc:`-sourced chain and **114/117 (97.4 %)** of contract
+  scenarios are non-star. 114 cards were retuned to key on `causality_actor_process_*` +
+  `causality_id`, and **8 new causality-strong pairs** ship: `TTP-2026-0132..0139` /
+  `SIM-EDR-019` (Akira/Howling Scorpius vCenter→ESXi), `SIM-EDR-020` (CL-UNK-1068 web-shell
+  → in-memory Mimikatz + FRP), `SIM-ITDR-014` (ROADtools/roadtx Entra token abuse),
+  `SIM-MP-016` (Muddled Libra Okta admin takeover), `SIM-MP-017` (React2Shell pod-RCE →
+  cloud control-plane, CVE-2025-55182), `SIM-MP-018` (TeamPCP weaponized-scanner supply
+  chain), `SIM-KOI-008` (Shai-Hulud self-replicating npm worm), `SIM-AISPM-007` (GCP
+  Vertex AI double-agent). Per-plane on disk now: EDR=20 · ANALYTICS=18 · CDR=18 · ITDR=14 ·
+  NDR=11 · KOI=8 · AI_SPM=7 · BROWSER=6 · CLOUD_APP=6 · AIRS=5 · AI_ACCESS=5 · ASM=4 ·
+  CSPM=4 · EMAIL=4 · TIM=3.
 - **Counted ground truth (verified 2026-07-23 — Unit 42 two-track final integration):**
   **125 loadable scenarios** across **15 detection planes** (all `status: active`,
   0 rejected / 0 dangling refs; **761/761 detection_id slugs resolve** — GAP-4 held) ·
