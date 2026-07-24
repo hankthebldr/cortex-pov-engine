@@ -1,4 +1,15 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__cortexsim-db__read_query",
+      "mcp__cortexsim-db__list_tables",
+      "mcp__cortexsim-db__describe_table"
+    ],
+    "deny": [
+      "mcp__cortexsim-db__write_query",
+      "mcp__cortexsim-db__create_table"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
