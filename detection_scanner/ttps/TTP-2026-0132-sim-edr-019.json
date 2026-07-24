@@ -1,0 +1,431 @@
+{
+  "id": "TTP-2026-0132",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T21:07:20+00:00",
+    "updated_at": "2026-07-24T22:40:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "actor-howling-scorpius",
+      "malware-akira",
+      "vector-hypervisor-encryption",
+      "platform-esxi",
+      "platform-hypervisor",
+      "ransomware-chain",
+      "industry-all",
+      "severity-critical"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "ransomware-chain",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain — VMDK-Copy Offline Credential Theft to Akira_v2 Encryption (SIM-EDR-019)",
+    "summary": "Howling Scorpius pivots from a compromised vCenter into the ESXi hypervisor plane: it powers off the Domain Controller VM, clones the DC VMDK to an attacker VM to extract NTDS.dit + SYSTEM hive OFFLINE (bypassing on-host EDR entirely), redirects ESXi syslog to /tmp to blind the host, mass powers-off every guest via vim-cmd getallvms, and detonates the Rust Akira_v2 encryptor (--vmonly).",
+    "description": "Models the novel hypervisor kill chain from Unit 42's Howling Scorpius (Akira) threat assessment. The defensive point of this card is causality ownership: the Causality Group Owner is the ESXi shell (esxcli / vim-cmd) reached from a vCenter-initiated session — NOT the CortexSim beacon — and the whole chain (DC power-off -> VMDK clone -> offline credential theft on the cloned disk -> syslog blinding -> mass power-off -> Akira_v2 encryption) stitches into ONE incident on the causality_actor_process_* instance. The offline-VMDK credential-theft step is the differentiator: because the credentials are dumped from a cloned disk on the attacker's VM, an endpoint-only detection on the real DC never fires — Cortex catches it through the hypervisor process lineage + the cloned-VMDK shared entity instead.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Howling Scorpius",
+        "aliases": [
+          "Akira ransomware group",
+          "Akira operators"
+        ],
+        "unit42_actor_id": "Howling Scorpius"
+      }
+    ],
+    "campaigns": [
+      "Akira ESXi/vCenter ransomware operations (2023-2024)"
+    ],
+    "malware_families": [
+      {
+        "name": "Akira"
+      },
+      {
+        "name": "Akira_v2"
+      },
+      {
+        "name": "Megazord"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2023-03-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1006",
+        "name": "Direct Volume Access",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.003",
+        "name": "OS Credential Dumping: NTDS",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1562",
+        "subtechnique_id": "T1562.006",
+        "name": "Impair Defenses: Indicator Blocking",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1529",
+        "name": "System Shutdown/Reboot",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-019 — Akira Howling Scorpius vCenter-to-ESXi hypervisor kill chain (Unit 42).",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the ESXi/Linux target so per-process causality telemetry reaches xdr_data.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "#!/usr/bin/env bash\n# SAFE-MODE: non-destructive simulation of the Akira Howling Scorpius\n# vCenter-to-ESXi kill chain. Every hypervisor action is echoed with a\n# SAFE-MODE marker; no VM is powered off, no disk is cloned, nothing is\n# encrypted. The value is the process-causality telemetry, not real impact.\nset -euo pipefail\nMARK='[CortexSim SAFE-MODE SIM-EDR-019]'\nDC_VMID='42'\nDATASTORE='/vmfs/volumes/datastore1'\n\necho \"${MARK} step-01 ESXi shell established from vCenter session (CGO=esxcli)\"\nesxcli --version 2>/dev/null || echo \"${MARK} esxcli not present (simulated)\"\n\necho \"${MARK} step-02 power off DC VM (vim-cmd vmsvc/power.off ${DC_VMID})\"\necho \"${MARK} SAFE-MODE would run: vim-cmd vmsvc/power.off ${DC_VMID}\"\n\necho \"${MARK} step-03 clone DC VMDK to attacker VM folder\"\necho \"${MARK} SAFE-MODE would run: vmkfstools -i ${DATASTORE}/DC/DC.vmdk ${DATASTORE}/attacker/dc-clone.vmdk\"\n\necho \"${MARK} step-04 offline NTDS.dit + SYSTEM hive extraction on cloned disk\"\necho \"${MARK} SAFE-MODE would run: secretsdump.py -ntds ntds.dit -system SYSTEM LOCAL\"\n\necho \"${MARK} step-05 blind ESXi syslog (esxcli system syslog config set --logdir=/tmp)\"\necho \"${MARK} SAFE-MODE would run: esxcli system syslog config set --logdir=/tmp\"\n\necho \"${MARK} step-06 mass power-off all guests (vim-cmd vmsvc/getallvms | power.off)\"\necho \"${MARK} SAFE-MODE would run: vim-cmd vmsvc/getallvms | awk power.off fan-out\"\n\necho \"${MARK} step-07 detonate Akira_v2 --vmonly (encrypt .vmdk/.vmx datastore files)\"\necho \"${MARK} SAFE-MODE would run: ./akira --id <key> --vmonly --stopvm\"\necho \"${MARK} SIM-EDR-019 simulation complete (no destructive action taken)\"\n",
+      "input_variables": [
+        {
+          "name": "DC_VMID",
+          "type": "string",
+          "default": "42",
+          "description": "vim-cmd vmsvc id of the Domain Controller VM the chain targets (simulation only)."
+        },
+        {
+          "name": "DATASTORE",
+          "type": "path",
+          "default": "/vmfs/volumes/datastore1",
+          "description": "ESXi datastore path the cloned VMDK and encryption markers reference (simulation only)."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "esxcli / vim-cmd / vmkfstools process starts whose causality_actor is the vCenter-initiated ESXi shell (the CGO), forming a connected DC-power-off -> VMDK-clone -> mass-power-off lineage."
+      },
+      {
+        "artifact_type": "file",
+        "description": "Cloned .vmdk written to a non-standard datastore path, and Akira_v2 .akiranew markers / akiranew.txt ransom notes created under /vmfs/volumes/."
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim SAFE-MODE SIM-EDR-019] cleanup: no artifacts created; nothing to remove.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "akiranew.txt",
+        "context": "Akira_v2 ESXi ransom note dropped alongside encrypted datastore files."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "*.akiranew",
+        "context": "Extension appended by the Rust Akira_v2 encryptor to encrypted VM files."
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "1d3b5c650533d13c81e325972a912e3ff8776e36e18bca966dae50735f8ab296",
+        "context": "Linux/ESXi Akira encryptor sample (Unit 42 Howling Scorpius assessment).",
+        "reputation_required": "malicious"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Akira ESXi Interactive Shell From vCenter-Initiated Session",
+        "description": "The Causality Group Owner: an esxcli/vim-cmd shell whose causality actor is a vCenter-initiated sshd/hostd/dcui session. Keys on causality_actor_process_* + instance_id so every downstream hypervisor action is owned by this CGO rather than the beacon.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter action_process_image_name in (\"esxcli\", \"vim-cmd\", \"localcli\")\n| filter causality_actor_process_image_name in (\"sshd\", \"hostd\", \"dcui\")\n| comp count() as shell_execs by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id\n| filter shell_execs >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, shell_execs",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059",
+          "T1078"
+        ]
+      },
+      {
+        "name": "Akira ESXi Syslog Redirected to Ephemeral tmp for Log Blinding",
+        "description": "esxcli redirecting the ESXi syslog directory to /tmp (wiped on reboot) to blind the host before mass encryption — indicator blocking under the same CGO instance.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter action_process_image_name = \"esxcli\"\n| filter action_process_image_command_line contains \"system syslog config set\" and action_process_image_command_line contains \"--logdir=/tmp\"\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1562.006",
+          "T1562"
+        ]
+      },
+      {
+        "name": "Akira ESXi DC-VM VMDK Cloned to Attacker Datastore Path",
+        "description": "vmkfstools/cp/dd copying a .vmdk within /vmfs/volumes/ after the DC VM is powered off — the offline-disk clone that carries credentials off the DC. Anchored to the ESXi-shell CGO via causality_actor_process_instance_id.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter action_process_image_name in (\"vmkfstools\", \"cp\", \"dd\")\n| filter action_process_image_command_line contains \".vmdk\" and action_process_image_command_line contains \"/vmfs/volumes/\"\n| filter causality_actor_process_image_name in (\"esxcli\", \"vim-cmd\", \"localcli\", \"sshd\")\n| comp count() as clone_ops by agent_hostname, causality_actor_process_instance_id, action_process_image_command_line\n| filter clone_ops >= 1\n| fields agent_hostname, causality_actor_process_instance_id, action_process_image_command_line, clone_ops",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1006",
+          "T1003.003"
+        ]
+      },
+      {
+        "name": "Akira v2 VM-Only Encryption Impact on ESXi Datastore",
+        "description": "Burst of file creations with the .akiranew extension or the akiranew.txt ransom note under /vmfs/volumes/ — the Akira_v2 --vmonly encryption impact stage.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter action_file_path starts_with \"/vmfs/volumes/\"\n| filter action_file_extension = \"akiranew\" or action_file_name = \"akiranew.txt\"\n| bin _time span=5m\n| comp count() as impacted_files by agent_hostname, action_file_extension, _time\n| filter impacted_files >= 5\n| fields agent_hostname, action_file_extension, impacted_files, _time",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1486"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Confirm ESXi DC-VM Power-Off and VMDK Copy Sequence",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter (action_process_image_name = \"vim-cmd\" and action_process_image_command_line contains \"power.off\") or (action_process_image_name in (\"vmkfstools\", \"cp\") and action_process_image_command_line contains \".vmdk\")\n| comp count() as chain_events by agent_hostname, action_process_image_name\n| filter chain_events >= 1\n| fields agent_hostname, action_process_image_name, chain_events",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Akira vCenter-to-ESXi Hypervisor Ransomware Kill Chain",
+        "rule_id": "CR-EDR-0019",
+        "logic": "BIOC(Akira ESXi Interactive Shell From vCenter-Initiated Session) AND BIOC(Akira ESXi Syslog Redirected to Ephemeral tmp for Log Blinding) AND ABIOC(Akira ESXi Offline VMDK Credential-Theft Pivot) AND ABIOC(Akira ESXi Mass Guest Power-Off Fan-Out From Blinded Host) AND BIOC(Akira v2 VM-Only Encryption Impact on ESXi Datastore) within 6h stitched on the shared causality_actor_process_instance_id and the cloned-VMDK entity — auto-promotes to one P1 hypervisor-ransomware incident."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XDR for Linux (ESXi) — destructive hypervisor activity",
+      "Cortex XSIAM Analytics — anomalous vim-cmd mass power-off fan-out",
+      "Cortex XSIAM Cross-Source Correlation — vCenter session + ESXi process lineage + offline credential theft"
+    ],
+    "abiocs": [
+      {
+        "name": "Akira ESXi Offline VMDK Credential-Theft Pivot",
+        "description": "The novel differentiator: after the DC VMDK is cloned, an offline extractor (mimikatz/secretsdump/esentutl/reg) reads NTDS.dit + SYSTEM/SAM from the mounted clone on the attacker VM. Because the dump happens off-host, no endpoint detection fires on the real DC — the ABIOC anchors on the cloned-VMDK shared entity crossing into the attacker VM's process lineage.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"mimikatz.exe\", \"secretsdump.py\", \"impacket-secretsdump\", \"esentutl.exe\", \"reg.exe\")\n| filter action_process_image_command_line contains \"ntds\" or action_process_image_command_line contains \"NTDS\" or action_process_image_command_line contains \"SYSTEM\" or action_process_image_command_line contains \"SAM\"\n| comp count() as offline_extractions by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_instance_id\n| filter offline_extractions >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_instance_id, offline_extractions",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1003.003",
+          "T1006"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned baseline where DC credential material never leaves the DC endpoint -> deviation: NTDS.dit/SYSTEM-hive access originates from an attacker VM reading a cloned DC VMDK, anchored to the cloned-disk shared entity rather than to the DC's own process tree."
+      },
+      {
+        "name": "Akira ESXi Mass Guest Power-Off Fan-Out From Blinded Host",
+        "description": "A single ESXi shell lineage that powers off an anomalously high number of guest VMs via vim-cmd getallvms|power.off, diverging from the host's learned admin power-cycle baseline — the pre-encryption mass shutdown.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter action_process_image_name = \"vim-cmd\" and action_process_image_command_line contains \"power.off\"\n| comp count() as guests_powered_off by agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name\n| filter guests_powered_off >= 10\n| sort desc guests_powered_off\n| fields agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name, guests_powered_off",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1529",
+          "T1562.006"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Learned per-host baseline of concurrent guest power-off operations under a single ESXi shell instance -> deviation: dozens of power.off calls from one causality_actor_process_instance_id within minutes, immediately after syslog redirection."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-EDR-0019"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = xdr_data | filter agent_os_type = ENUM.AGENT_OS_LINUX | filter action_process_image_name = \"vim-cmd\" and action_process_image_command_line contains \"power.off\" | comp count() by agent_hostname, causality_actor_process_instance_id"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent-traps",
+        "coverage_tier": "detection",
+        "rule_ids": [],
+        "license_required": "advanced",
+        "evidence_query": "preset = xdr_data | filter action_process_image_name in (\"esxcli\", \"vmkfstools\") | fields agent_hostname, causality_actor_process_instance_id, action_process_image_command_line"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-EDR-019",
+        "name": "Detect the Akira vCenter-to-ESXi hypervisor kill chain as one incident",
+        "description": "Prove Cortex stitches the vCenter-initiated ESXi shell, the offline VMDK credential theft, the syslog blinding, the mass guest power-off, and the Akira_v2 encryption into a single causality-owned incident — including the offline credential theft that endpoint-only tooling misses.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-EDR-019A",
+            "objective": "The ESXi process lineage (shell -> DC power-off -> VMDK clone -> mass power-off) is owned by the vCenter-initiated CGO, not the beacon.",
+            "preconditions": [
+              "Cortex agent installed on the ESXi/Linux target."
+            ],
+            "steps": [
+              "Run the SIM-EDR-019 simulation.",
+              "Open the causality view for the esxcli/vim-cmd CGO."
+            ],
+            "success_criteria": [
+              "BIOC `Akira ESXi Interactive Shell From vCenter-Initiated Session` fires and the DC power-off + VMDK clone events share its causality_actor_process_instance_id."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-EDR-019B",
+            "objective": "The offline VMDK credential-theft pivot is detected via the cloned-disk shared entity despite no endpoint dump on the real DC.",
+            "preconditions": [
+              "Cortex agent on the attacker VM reading the cloned VMDK."
+            ],
+            "steps": [
+              "Run steps 03-04 of the simulation.",
+              "Confirm the ABIOC fires."
+            ],
+            "success_criteria": [
+              "ABIOC `Akira ESXi Offline VMDK Credential-Theft Pivot` raises on the offline NTDS/SYSTEM-hive access."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-EDR-019C",
+            "objective": "The full chain auto-promotes to one P1 incident.",
+            "preconditions": [
+              "All simulation steps executed within the correlation window."
+            ],
+            "steps": [
+              "Run the complete SIM-EDR-019 simulation.",
+              "Inspect the correlation incident."
+            ],
+            "success_criteria": [
+              "Correlation `CR-EDR-0019` stitches all five signals into a single hypervisor-ransomware incident."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce MFA and just-in-time access on vCenter/ESXi management interfaces; disable ESXi Shell and SSH except during change windows.",
+      "Ship ESXi syslog to a remote collector and alert on any local syslog-directory reconfiguration.",
+      "Restrict datastore browser and vmkfstools/VMDK-copy operations to a break-glass admin group; monitor VMDK clones to non-standard paths.",
+      "Isolate the vCenter management network and keep Domain Controllers off shared datastores accessible to general-purpose VMs."
+    ],
+    "detection_engineering": [
+      "Alert on esxcli `system syslog config set --logdir=/tmp` and any syslog reload that shortens retention.",
+      "Baseline concurrent vim-cmd power.off volume per ESXi host and fire on fan-out above the learned admin baseline.",
+      "Correlate DC-VM power-off -> VMDK clone -> offline NTDS/SYSTEM access on the cloned disk as one causality chain, keyed on causality_actor_process_instance_id and the cloned-VMDK entity."
+    ]
+  },
+  "references": [
+    {
+      "title": "Threat Assessment: Howling Scorpius (Akira Ransomware)",
+      "url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1486 Data Encrypted for Impact",
+      "url": "https://attack.mitre.org/techniques/T1486/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics / causality detection reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

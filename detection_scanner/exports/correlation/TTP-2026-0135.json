@@ -1,0 +1,22 @@
+{
+  "mitre_techniques": [
+    "T1190",
+    "T1505.003",
+    "T1059",
+    "T1003.002",
+    "T1003.001",
+    "T1574.001",
+    "T1027",
+    "T1572"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(CL-UNK-1068 IIS Worker w3wp Spawns Command Shell Web Shell CGO) AND (BIOC(CL-UNK-1068 SAM and SYSTEM Registry Hive Save Under Web Shell Causality) OR ABIOC(CL-UNK-1068 python DLL Side Load In Memory Credential Theft Under Web Shell Causality)) AND (BIOC(CL-UNK-1068 certutil Encode Fileless Loot Staging Under Web Shell Causality) OR XQL(CL-UNK-1068 FRP Reverse Tunnel Endpoint Network Egress Stitch)) that share the same agent_hostname and causality_actor_process_instance_id (the w3wp.exe web-shell CGO) within a 1800-second window fuse into ONE incident spanning web-shell code execution, SAM/SYSTEM hive theft, in-memory credential dumping, fileless staging, and the FRP reverse tunnel. The single stitched incident is keyed on the shared causality_id so the endpoint process lineage and the outbound tunnel session are the same causality group, not five independent alerts.",
+      "name": "CL-UNK-1068 Web Shell to Credential Theft to FRP Tunnel Incident Stitch",
+      "rule_id": "CR-EDR-0020",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0135"
+}

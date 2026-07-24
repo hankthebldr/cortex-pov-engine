@@ -1,0 +1,403 @@
+{
+  "id": "TTP-2026-0133",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T21:07:20+00:00",
+    "updated_at": "2026-07-24T21:07:20+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-cloud-token-abuse",
+      "roadtools",
+      "roadtx",
+      "entra-id",
+      "azure-ad",
+      "device-registration",
+      "primary-refresh-token",
+      "prt",
+      "mfa-bypass",
+      "microsoft-graph-enumeration",
+      "abioc",
+      "causality-chain",
+      "identity",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux",
+        "azure"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "ROADtools/roadtx Entra Token Abuse — Rogue Device Registration to PRT Theft to Bulk Graph Enumeration (Identity-Owned Causality Chain)",
+    "summary": "After phishing/password-spray, roadtx authenticates to Entra ID, registers a rogue device (OS 10.0.19041.928, DESKTOP-[8 digits]) against Azure DRS to mint a PRT, reuses the PRT to silently acquire tokens with MFA satisfied, then runs roadrecon to bulk-enumerate Graph. ABIOCs anchor on the rogue-device identity and roadtx->roadrecon lineage; the correlation stitches all into ONE ITDR incident.",
+    "description": "ROADtools (roadtx / roadrecon) is an open-source Entra ID (Azure AD) tradecraft toolkit; Unit 42 documents its abuse as a full cloud-identity attack chain that never touches on-prem Active Directory. Starting from credentials obtained by phishing or password spray, roadtx authenticates against login.microsoftonline.com (device-code and refresh-token flows) using a scripted HTTP stack whose user-agent (python-requests / roadtools) is distinct from an interactive browser sign-in. roadtx then registers a rogue device object with the Azure Device Registration Service (enterpriseregistration.windows.net) — the default synthetic device presents OS build 10.0.19041.928 and a DESKTOP-<8 digits> name — which yields a device-bound Primary Refresh Token (PRT). The PRT is the pivot: reused, it silently mints fresh access tokens for which MFA is already satisfied by a claim carried in the token, so no interactive MFA challenge is raised (the MFA-bypass moment). With those tokens roadrecon performs bulk Microsoft Graph enumeration (graph.microsoft.com/v1.0 and /beta) — hundreds of repetitive /users, /groups, /devices, /servicePrincipals, /applications calls per hour — building an offline map of the tenant. This card exercises Cortex ITDR / XDR Identity Analytics on the LINEAGE and the shared rogue-device identity rather than on any single blockable API call: (1) an ABIOC anchors on a learned per-identity sign-in baseline and fires when an interactive-only identity produces a programmatic roadtx sign-in; (2) an ABIOC fires when that same identity registers a device against DRS within minutes of its first programmatic sign-in; (3) a deterministic BIOC keys on the PRT-backed silent token acquisition where MFA is satisfied by the refresh token from the freshly-registered device; (4) an ABIOC over endpoint telemetry (xdr_data) anchors on the roadtx Causality Group Owner and fires when a roadrecon/python enumeration process descends from it — keyed on causality_actor_process_image_name and causality_actor_process_instance_id, the exact fields XDR uses to trace process causality; (5) an ABIOC fires on the bulk Graph enumeration burst (>100 directory-read calls/hour) bound to the rogue device identity. The correlation rule stitches the chain — programmatic sign-in -> DRS device registration -> PRT silent token mint (MFA bypass) -> roadtx-owned roadrecon lineage -> Graph enumeration burst — into a single identity-owned ITDR incident whose causality anchor is the rogue device object id + PRT, exactly how XSIAM folds the storyline together. NON-DESTRUCTIVE: the payload emits SAFE-MODE markers for each stage; no real tenant is touched and no device is actually registered.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1098",
+        "subtechnique_id": "T1098.005",
+        "name": "Account Manipulation: Device Registration",
+        "tactic_ids": [
+          "TA0003",
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "subtechnique_id": "T1550.001",
+        "name": "Use Alternate Authentication Material: Application Access Token",
+        "tactic_ids": [
+          "TA0005",
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1087",
+        "subtechnique_id": "T1087.004",
+        "name": "Account Discovery: Cloud Account",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Logon Session: Logon Session Creation",
+      "Active Directory: Active Directory Object Creation",
+      "User Account: User Account Authentication",
+      "Cloud Service: Cloud Service Enumeration",
+      "Process: Process Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ITDR-014 — ROADtools/roadtx Entra token-abuse identity-owned causality chain for Cortex ITDR / XDR Identity Analytics ABIOC validation",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the operator host so the roadtx -> roadrecon process lineage (causality_actor_process_*) reaches xdr_data, and Entra ID sign-in + Azure AD audit + Microsoft Graph activity logs are ingested (msft_azure_ad_signin / msft_o365_audit) so the cloud-identity side of the chain is observable.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "A baseline window has elapsed during which the acting identity signed in only interactively (browser) and never registered a device or drove Microsoft Graph programmatically, so Cortex learned an identity profile with no scripted-sign-in / device-registration / bulk-Graph behavior.",
+        "check_command": "whoami"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE: no real Entra tenant is touched and no device is actually\n# registered. SAFE-MODE marker files stand in for each stage of the ROADtools\n# chain so the run is observable without minting real tokens or mutating the\n# directory. On a sanctioned lab tenant the real stages are:\n#   1. roadtx auth --username <upn> --password <sprayed>   (login.microsoftonline.com)\n#   2. roadtx device --register --name DESKTOP-XXXXXXXX     (DRS -> PRT)\n#   3. roadtx prt --prt <blob>  ->  silent access-token mint (MFA satisfied by token)\n#   4. roadrecon dump / gather  ->  bulk Microsoft Graph enumeration burst\nset -euo pipefail\nMARK=/tmp/cortexsim-itdr-014\nmkdir -p \"$MARK\"\necho \"[CortexSim] SAFE-MODE stage-1: roadtx programmatic sign-in as ${COMPROMISED_UPN} via login.microsoftonline.com\" | tee \"$MARK/1-programmatic-signin.marker\"\nprintf 'SAFE-MODE stage-2 DRS device register name=%s os=10.0.19041.928\\n' \"${ROGUE_DEVICE_NAME}\" | tee \"$MARK/2-rogue-device-register.marker\"\necho '[CortexSim] SAFE-MODE stage-3: PRT reused to silently mint access token (MFA satisfied by refresh token)' | tee \"$MARK/3-prt-silent-token.marker\"\necho '[CortexSim] SAFE-MODE stage-4: roadrecon Graph enumeration burst /users /groups /devices /servicePrincipals' | tee \"$MARK/4-graph-enum-burst.marker\"\n",
+      "input_variables": [
+        {
+          "name": "COMPROMISED_UPN",
+          "type": "string",
+          "default": "ada.lovelace@cortexsim-canary.invalid",
+          "description": "User principal name of the phished/sprayed identity roadtx authenticates as (labels the CGO's primary_username and threads the identity chain)."
+        },
+        {
+          "name": "ROGUE_DEVICE_NAME",
+          "type": "string",
+          "default": "DESKTOP-4A7B2C9E",
+          "description": "Synthetic device name roadtx registers against the Device Registration Service (DESKTOP-<8 hex/digits>, roadtx default OS build 10.0.19041.928)."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "Entra ID sign-in from a scripted HTTP stack (python-requests / roadtools user-agent) for an identity whose baseline is interactive-only.",
+        "expected_value": "client_app_used = \"Mobile Apps and Desktop clients\" and user_agent contains \"python-requests\""
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "Azure AD audit 'Add device' / 'Register device' operation initiated by the just-authenticated identity, device os build 10.0.19041.928 and a DESKTOP-<8 digits> display name.",
+        "expected_value": "operation in (\"Add device\", \"Register device\") and device_os_version = \"10.0.19041.928\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "roadrecon (python) enumeration process whose Causality Group Owner is roadtx, keyed on causality_actor_process_image_name = roadtx.",
+        "expected_value": "causality_actor_process_image_name = \"roadtx\" and action_process_image_name in (\"python3\", \"roadrecon\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-itdr-014; echo '[CortexSim] SIM-ITDR-014 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "ITDR-014 PRT-Backed Silent Token Minting With MFA Satisfied By Refresh Token",
+        "description": "Deterministic Entra sign-in catch: a token acquisition where the incoming token type is a Primary Refresh Token and MFA is satisfied by a claim already carried in the token (no interactive challenge), originating from the rogue device registered seconds earlier. This is the MFA-bypass signature of the ROADtools chain — a PRT minted on a freshly-registered device silently issuing fresh access tokens — complementing the behavioral ABIOCs with an evidence-grade rule keyed to the PRT token type and the satisfied-by-token MFA result.",
+        "logic": "dataset = msft_azure_ad_signin\n| filter incoming_token_type = \"primaryRefreshToken\"\n| filter authentication_requirement = \"multiFactorAuthentication\" and mfa_detail_auth_method = \"PreviouslySatisfied\"\n| filter is_interactive = false\n| comp count() as prt_silent_tokens by user_principal_name, device_detail_device_id, ip_address\n| filter prt_silent_tokens >= 1\n| fields user_principal_name, device_detail_device_id, ip_address, prt_silent_tokens",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550.001"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "ITDR-014 Programmatic Entra Sign-In From Rogue roadtx Automation User-Agent",
+        "description": "An identity whose learned Cortex sign-in profile is interactive (browser) only produces a non-interactive, scripted Entra sign-in whose user-agent is a Python HTTP stack / roadtools rather than a browser. The ABIOC anchors the deviation to the per-identity sign-in baseline rather than to the user-agent string alone — roadtx blends into legitimate API traffic, so the catch is WHO is suddenly authenticating programmatically. This is the opening move of the ROADtools chain and the root of the causality graph.",
+        "logic": "dataset = msft_azure_ad_signin\n| filter is_interactive = false\n| filter user_agent contains \"python-requests\" or user_agent contains \"roadtools\" or client_app_used = \"Mobile Apps and Desktop clients\"\n| filter authentication_protocol in (\"deviceCode\", \"refreshToken\", \"ropc\")\n| comp count() as programmatic_signins by user_principal_name, ip_address, user_agent, authentication_protocol\n| filter programmatic_signins >= 1\n| fields user_principal_name, ip_address, user_agent, authentication_protocol, programmatic_signins",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity sign-in baseline (interactive/browser only) -> the same user_principal_name produces a non-interactive device-code/refresh-token sign-in from a Python/roadtools user-agent; anchors the chain root to that user_principal_name."
+      },
+      {
+        "name": "ITDR-014 Rogue Device Registration Burst Following First Programmatic Sign-In",
+        "description": "Within minutes of its first programmatic sign-in the same identity registers a device against the Azure Device Registration Service (Azure AD audit 'Add device' / 'Register device'), the synthetic roadtx device presenting OS build 10.0.19041.928 and a DESKTOP-<8 digits> display name. The ABIOC fires on the sign-in -> device-registration LINEAGE for an identity whose baseline never registers devices — a genuine device join is performed once by a real endpoint, not seconds after a scripted sign-in — anchoring the registration to the same user_principal_name as the programmatic sign-in and emitting the rogue device_id that owns the rest of the chain.",
+        "logic": "dataset = msft_o365_audit\n| filter workload = \"AzureActiveDirectory\"\n| filter operation in (\"Add device\", \"Register device\", \"Add registered owner to device\")\n| filter device_os_version = \"10.0.19041.928\" or device_display_name contains \"DESKTOP-\"\n| comp count() as device_registrations, values(target_device_id) as rogue_device_ids by user_principal_name, client_ip\n| filter device_registrations >= 1\n| fields user_principal_name, client_ip, rogue_device_ids, device_registrations",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1098.005"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Programmatic sign-in (same user_principal_name) -> Device Registration Service 'Add device' within minutes; the minted rogue device_id is the shared entity that links this registration to every subsequent PRT-backed token."
+      },
+      {
+        "name": "ITDR-014 roadrecon Graph Enumeration Process Descends From roadtx Causality Owner",
+        "description": "Endpoint process-lineage catch keyed to XDR causality: a roadrecon / python enumeration process is started whose Causality Group Owner (causality_actor_process_image_name) is roadtx. The ABIOC anchors on the roadtx CGO and the causality_actor_process_instance_id rather than on the child image name alone — python is ubiquitous, so the signal is that THIS python descends from the roadtx token-theft process that owns the whole chain. This is the process_lineage spine that ties the endpoint tradecraft to the cloud-identity abuse.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"roadtx\"\n| filter action_process_image_name in (\"python3\", \"python\", \"roadrecon\")\n| filter action_process_image_command_line contains \"roadrecon\" or action_process_image_command_line contains \"graph.microsoft.com\"\n| comp count() as enum_process_starts by agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name, actor_effective_username\n| filter enum_process_starts >= 1\n| fields agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name, actor_effective_username, enum_process_starts",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550.001",
+          "T1087.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "roadtx (Causality Group Owner) -> roadrecon/python enumeration process (action_process) under the same causality_actor_process_instance_id; the process_lineage edge that stitches the endpoint tradecraft to the roadtx-owned cloud-token abuse."
+      },
+      {
+        "name": "ITDR-014 Bulk Microsoft Graph Directory Enumeration Burst From Rogue Device Identity",
+        "description": "The PRT-backed access tokens drive roadrecon to bulk-read the directory: a burst of repetitive Microsoft Graph calls to /users, /groups, /devices, /servicePrincipals and /applications — well above any interactive-admin rate — bound to the rogue device identity. The ABIOC anchors the volume/endpoint-mix deviation to the per-identity Graph-usage baseline (an interactive user never enumerates the whole directory in an hour), surfacing the Discovery stage as the tail of the identity-owned chain.",
+        "logic": "dataset = msft_o365_audit\n| filter workload = \"MicrosoftGraphActivityLogs\"\n| filter request_uri contains \"/users\" or request_uri contains \"/groups\" or request_uri contains \"/devices\" or request_uri contains \"/servicePrincipals\" or request_uri contains \"/applications\"\n| comp count() as graph_reads, count_distinct(request_uri) as distinct_endpoints by user_principal_name, device_detail_device_id\n| filter graph_reads >= 100 and distinct_endpoints >= 3\n| fields user_principal_name, device_detail_device_id, graph_reads, distinct_endpoints",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1087.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Rogue device identity (device_detail_device_id from the DRS registration) -> a >100 calls/hour burst across >=3 distinct directory-read Graph endpoints; the enumeration tail of the chain, bound back to the same rogue device that minted the PRT."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-014 Validate Rogue Device Registration By Programmatically-Authenticated Identity",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 900)\n| filter workload = \"AzureActiveDirectory\"\n| filter operation in (\"Add device\", \"Register device\")\n| filter device_os_version = \"10.0.19041.928\" or device_display_name contains \"DESKTOP-\"\n| comp count() as registrations by user_principal_name, device_display_name\n| filter registrations >= 1\n| fields user_principal_name, device_display_name, registrations",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ITDR-014 Hunt roadtx PRT Reuse To Graph-Enumeration Identity Chain",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 3600)\n| filter incoming_token_type = \"primaryRefreshToken\"\n| filter is_interactive = false\n| comp count() as prt_token_events by user_principal_name, device_detail_device_id\n| filter prt_token_events >= 1\n| fields user_principal_name, device_detail_device_id, prt_token_events",
+        "expected_rows_min": 0,
+        "dataset": "msft_azure_ad_signin"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "ITDR-014 roadtx Entra Token-Abuse Identity-Owned Incident Stitch",
+        "rule_id": "CR-ITDR-0014",
+        "logic": "ABIOC(\"ITDR-014 Programmatic Entra Sign-In From Rogue roadtx Automation User-Agent\") AND ABIOC(\"ITDR-014 Rogue Device Registration Burst Following First Programmatic Sign-In\") joined on the same user_principal_name within 900 seconds — the sign-in and the DRS device registration share the compromised identity, and the registration emits the rogue device_detail_device_id. That device identity is then joined to BIOC(\"ITDR-014 PRT-Backed Silent Token Minting With MFA Satisfied By Refresh Token\") and ABIOC(\"ITDR-014 Bulk Microsoft Graph Directory Enumeration Burst From Rogue Device Identity\") on the SHARED device_detail_device_id: the PRT minted on the rogue device and the Graph enumeration burst both carry that same device id, tying the cloud-token abuse and the Discovery tail to the one rogue device. Finally the endpoint spine ABIOC(\"ITDR-014 roadrecon Graph Enumeration Process Descends From roadtx Causality Owner\") is joined on the roadtx causality_actor_process_instance_id and the acting user_principal_name, folding the roadtx to roadrecon process lineage from xdr_data into the same identity. All five signals fuse into a single identity-owned ITDR incident whose causality anchor is the rogue device object id + PRT — programmatic sign-in -> DRS registration -> PRT silent token mint (MFA bypass) -> roadtx-owned roadrecon lineage -> Graph enumeration burst — presented to the DC as end-to-end evidence of the ROADtools storyline."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XDR Identity Analytics — Entra sign-in, device-registration, and Microsoft Graph usage baselines",
+        "validated": true,
+        "note": "Backed by ABIOC 'ITDR-014 Programmatic Entra Sign-In From Rogue roadtx Automation User-Agent' and the rogue-device-identity correlation on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "identity-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-ITDR-0014"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_o365_audit | filter workload = \"MicrosoftGraphActivityLogs\" | filter request_uri contains \"/users\" or request_uri contains \"/servicePrincipals\" | comp count() as graph_reads by user_principal_name, device_detail_device_id | filter graph_reads >= 100"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "identity-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-IDA-014"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START | filter causality_actor_process_image_name = \"roadtx\" | filter action_process_image_name in (\"python3\", \"roadrecon\")"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ITDR-014",
+        "name": "ROADtools/roadtx Entra Token-Abuse Detection via Cortex ITDR / XDR Identity Analytics",
+        "description": "Cortex Identity Analytics learns that an identity signs in only interactively and never registers devices or drives Microsoft Graph programmatically, then detects the ROADtools chain — programmatic sign-in, rogue DRS device registration, PRT-backed MFA-bypass token minting, roadtx-owned roadrecon process lineage, and a bulk Graph enumeration burst — and stitches all five signals into a single identity-owned ITDR incident anchored on the rogue device id + PRT.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ITDR-014A",
+            "objective": "The behavioral ABIOCs fire on the anomalous programmatic sign-in and the rogue device registration lineage from an interactive-only identity.",
+            "preconditions": [
+              "Entra ID sign-in + Azure AD audit logs ingested (msft_azure_ad_signin / msft_o365_audit).",
+              "Baseline window elapsed so the acting identity signs in only interactively and never registers devices."
+            ],
+            "steps": [
+              "roadtx authenticates programmatically (device-code / refresh-token) as the compromised identity.",
+              "roadtx registers a rogue device against the Device Registration Service within minutes.",
+              "Observe both ABIOCs fire on the sign-in -> device-registration lineage."
+            ],
+            "success_criteria": [
+              "ABIOC 'ITDR-014 Programmatic Entra Sign-In From Rogue roadtx Automation User-Agent' fires on the scripted sign-in.",
+              "ABIOC 'ITDR-014 Rogue Device Registration Burst Following First Programmatic Sign-In' fires and emits the rogue device_detail_device_id."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-ITDR-014B",
+            "objective": "The correlation rule fuses the cloud-identity abuse and the roadtx-owned endpoint lineage into one identity-owned incident anchored on the rogue device id + PRT.",
+            "preconditions": [
+              "Both ABIOCs from TC-ITDR-014A have fired.",
+              "PRT silent-token, roadrecon process-lineage, and Graph enumeration events are ingested within the correlation window."
+            ],
+            "steps": [
+              "roadtx reuses the PRT to silently mint access tokens (MFA satisfied by the token).",
+              "roadtx spawns roadrecon to bulk-enumerate Microsoft Graph.",
+              "Let the XSIAM correlation engine converge over the 900s window and confirm a single stitched incident_id."
+            ],
+            "success_criteria": [
+              "Correlation CR-ITDR-0014 raises exactly one identity-owned ITDR incident spanning sign-in -> device registration -> PRT token mint -> roadrecon lineage -> Graph enumeration burst.",
+              "The incident causality chain identifies the rogue device_detail_device_id and the compromised user_principal_name."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-ITDR-014C",
+            "objective": "The deterministic BIOC catches the PRT-backed silent token minting with MFA satisfied by the refresh token.",
+            "preconditions": [
+              "Entra sign-in telemetry exposes incoming_token_type and the MFA auth-method detail."
+            ],
+            "steps": [
+              "roadtx reuses the PRT minted on the rogue device to acquire a fresh access token non-interactively.",
+              "Observe the sign-in where incoming_token_type is a primaryRefreshToken and MFA is previously satisfied."
+            ],
+            "success_criteria": [
+              "BIOC 'ITDR-014 PRT-Backed Silent Token Minting With MFA Satisfied By Refresh Token' fires on the PRT-backed token event."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict device registration: require MFA to register or join devices (Entra ID device-registration settings), scope registration to approved users, and enforce Conditional Access that blocks device-code flow for users who do not need it.",
+      "Enforce token-protection / device-bound Conditional Access so a Primary Refresh Token minted on an attacker-registered device cannot silently satisfy MFA for sensitive resources.",
+      "Baseline and rate-limit Microsoft Graph directory reads; alert on service-principal and app-registration enumeration from non-admin contexts, and prune over-privileged directory-read scopes (Directory.Read.All / Directory.ReadWrite.All)."
+    ],
+    "detection_engineering": [
+      "Let Cortex Identity Analytics auto-tune per-identity sign-in, device-registration, and Graph-usage baselines, then alert on the LINEAGE — programmatic sign-in followed within minutes by a DRS device registration for an interactive-only identity — rather than on any single API call.",
+      "Alert on Entra sign-ins where incoming_token_type is a primaryRefreshToken and MFA is satisfied by a claim already in the token (the PRT MFA-bypass signature), correlated to a device registered in the same session.",
+      "Correlate the rogue device_detail_device_id across sign-in, device-registration, PRT token-mint, and Microsoft Graph activity, and fold in the roadtx to roadrecon process lineage (causality_actor_process_instance_id in xdr_data) to raise a single identity-owned incident evidencing the full ROADtools chain."
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 — ROADtools and Cloud Attacks: Entra ID Token Abuse, Rogue Device Registration and PRT Theft",
+      "url": "https://unit42.paloaltonetworks.com/roadtools-cloud-attacks/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1098.005 — Account Manipulation: Device Registration",
+      "url": "https://attack.mitre.org/techniques/T1098/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1550.001 — Use Alternate Authentication Material: Application Access Token",
+      "url": "https://attack.mitre.org/techniques/T1550/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM / XDR — Identity Analytics and Entra ID sign-in / device-registration detection reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

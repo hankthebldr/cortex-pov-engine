@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1484.002",
+    "T1556.006",
+    "T1078.004",
+    "T1537",
+    "T1530",
+    "T1578.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(MP-016 Help-Desk MFA Reset Then Rapid Privileged Okta Sign-In) AND ABIOC(MP-016 Rogue Federated Identity Provider Added With Impersonation) AND ABIOC(MP-016 Federated SSO AssumeRole Burst Across Cloud Accounts) AND (BIOC(MP-016 AWS Data-Movement Service Abuse Burst) OR XQL(MP-016 Azure Managed-Disk Snapshot Copied To External Subscription)), all joined on the shared normalized_actor identity key -- the compromised tech-admin, emitted as causality_actor_primary_username on every plane -- within a 3600s window. The legs fuse into ONE cross-cloud identity-takeover incident anchored to that identity's causality chain: help-desk MFA reset -> privileged Okta admin sign-in [ITDR] -> rogue federated IdP with impersonation added [Cloud App tenant-trust modification, the persistence pivot] -> federated SSO AssumeRole into AWS and Azure [shared_entity] -> Transfer Family / DataSync / Secrets Manager / Azure snapshot data-plane burst [exploit_impact]. The incident spans the ITDR and Cloud App planes and ranks critical; failure mode is four separate alerts when the window is missed or the shared identity key is not emitted on every plane.",
+      "name": "MP-016 Cross-Cloud Identity Takeover Stitch",
+      "rule_id": "CR-MP-0016",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0134"
+}
