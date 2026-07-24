@@ -1,0 +1,195 @@
+scenario_id: SIM-NDR-010
+name: "Edge-Appliance Telemetry Collapse + WebVPN-Session C2 on Cisco ASA/FTD (ArcaneDoor / LINE VIPER)"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - XQL
+  - BIOC
+  - Correlation
+
+uc_ref: UC-NDR-010
+tc_ref: TC-NDR-010
+uc_name: "Edge-Appliance Telemetry Collapse and WebVPN C2 Detection via XDM Normalization"
+tc_name: "Absence-of-Signal Collapse Stitched to a WebVPN-Session C2 Beacon"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1562.006"
+mitre_technique_name: "Impair Defenses: Indicator Blocking"
+additional_techniques:
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1095"
+    name: "Non-Application Layer Protocol"
+  - technique: "T1190"
+    name: "Exploit Public-Facing Application"
+
+threat_report: "Cisco ASA/FTD Zero-Day Vulnerabilities Exploited (ArcaneDoor / RayInitiator / LINE VIPER)"
+threat_report_url: "https://unit42.paloaltonetworks.com/zero-day-vulnerabilities-affect-cisco-software/"
+
+# ── Detection thesis ────────────────────────────────────────────────────────
+# This is a MODELING-RULE-first NDR scenario. A nation-state actor exploits Cisco
+# ASA/FTD VPN web-server zero-days (CVE-2025-20333/20362/20363), drops the
+# RayInitiator GRUB bootkit + memory-resident LINE VIPER, then BLINDS the
+# appliance syslog and runs C2 over WebVPN client-authentication sessions. There
+# is no known-bad IOC on the wire — the only detectable event is (1) an
+# absence-of-signal collapse in ingested Informational (ASA-6) / Debug (ASA-7)
+# syslog volume, and (2) a WebVPN-session beacon from a single peer. Both only
+# become detectable once the raw cisco_asa_raw source is XDM-normalized. The two
+# XDM modeling rules (detections.modeling_rules[], NOT a detection_type) are the
+# substrate that makes the appliance telemetry analytics-grade.
+#
+# NON-DESTRUCTIVE: no real Cisco appliance is touched. Steps emit synthetic ASA
+# syslog into a local collector-inbox file and drop SAFE-MODE marker files that
+# stand in for the log-suppression tamper and the beacon. cisco_asa_raw is a new
+# vendor dataset this authoring wave introduces; propose adding it to the
+# validator's KNOWN_DATASETS registry.
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - nobody
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Appliance Telemetry Normalization & Absence-of-Signal Detection"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The two XDM modeling rules normalize raw cisco_asa_raw syslog into addressable
+  severity/message-id and WebVPN session fields (making an un-modeled vendor log
+  analytics-grade). The hunt XQL then surfaces the Informational/Debug syslog-
+  volume collapse (measured against the appliance's own trailing baseline) as the
+  absence-of-signal tampering indicator, the single-event WebVPN session-start BIOC
+  matches on the modeled peer, and the correlation rule supplies the beacon cadence
+  and stitches the collapse to the beacon into a single edge-appliance-compromise
+  incident. This is
+  the "detect the nation-state erasing its own logs" proof — the catch comes from
+  modeling the appliance telemetry and alerting on the shape of its absence, not
+  from any signature. Mean time from tamper to alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Emit baseline Cisco ASA syslog across severity levels and apply the XDM severity modeling rule"
+    command: |
+      COLLECTOR="${COLLECTOR_FILE:-/tmp/cortexsim-ndr-010-asa-syslog.log}"
+      : > "$COLLECTOR"
+      NOW=$(date -u +%s)
+      # Baseline window T-24h..T-1h: HIGH ASA-6 (40/hr) + ASA-7 (30/hr) volume with
+      # per-hour syslog timestamps, giving the collapse a real baseline to compare
+      # against (absence-of-signal by comparison, not by counting to zero).
+      for h in $(seq 2 24); do
+        TS=$(date -u -d "@$((NOW - h * 3600))" +'%b %d %Y %H:%M:%S')
+        for pair in "1 2" "2 2" "3 4" "4 6" "5 8" "6 40" "7 30"; do
+          set -- $pair
+          for i in $(seq 1 "$2"); do
+            printf '%s asa-fw01 %%ASA-%s-%s%03d: [CortexSim SAFE-MODE] synthetic baseline severity %s event %s\n' "$TS" "$1" "$1" "$i" "$1" "$i" >> "$COLLECTOR"
+          done
+        done
+      done
+      echo "[*] Apply MODEL-NDR-ASA-SEVERITY: parses the leading timestamp into _time and '%ASA-<sev>-<id>' into asa_severity / xdm.event.id"
+      echo "[*] Un-modeled, cisco_asa_raw is searchable but NOT analytics-grade"
+    identity: www-data
+    mitre_technique: "T1190"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "The ASA severity XDM modeling rule (normalization substrate) parses the raw '%ASA-<sev>-<id>' syslog preamble into addressable severity/message-id fields — the gating step that makes the Informational/Debug volume countable. Resolves to the card's modeling_rules[0] object."
+        ttp_ref: "TTP-2026-0106"
+        detection_id: modeling-cisco-asa-syslog-severity-and-message-id-xdm-normalization
+      - plane: NDR
+        type: XQL
+        description: "Validation query confirms cisco_asa_raw is ingesting and the modeled severity levels ASA-1 through ASA-7 populate — the healthy baseline the collapse is measured against."
+        ttp_ref: "TTP-2026-0106"
+        detection_id: xql-cisco-asa-syslog-ingestion-across-severity-levels-asa-1-to-7
+
+  - id: step-02
+    name: "Telemetry collapse — suppress Informational/Debug syslog volume (log tamper)"
+    command: |
+      echo "[CortexSim SAFE-MODE] logging-tamper: informational(ASA-6)+debug(ASA-7) syslog suppressed in the current window (T1562.006)" > /tmp/cortexsim-ndr-010-collapse.marker
+      echo "[*] In the recent window the high-volume ASA-6/ASA-7 stream drops far below its trailing baseline — an absence-of-signal collapse, not a quiet network"
+    identity: www-data
+    mitre_technique: "T1562.006"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "Hunt query compares the current window's modeled Informational (ASA-6) / Debug (ASA-7) syslog volume against the appliance's own trailing baseline and surfaces the severities whose volume has collapsed below half the baseline hourly rate — the absence-of-signal tampering indicator, mirroring the two Cortex XDR queries Unit 42 published for this campaign."
+        ttp_ref: "TTP-2026-0106"
+        detection_id: xql-cisco-asa-informational-and-debug-log-volume-collapse
+
+  - id: step-03
+    name: "Emit the WebVPN client-authentication session C2 beacon and apply the WebVPN modeling rule"
+    command: |
+      COLLECTOR="${COLLECTOR_FILE:-/tmp/cortexsim-ndr-010-asa-syslog.log}"
+      PEER="${BEACON_PEER:-198.51.100.7}"
+      NOW=$(date -u +%s)
+      # Recent window (last hour): 6 WebVPN client-auth sessions from one peer, the
+      # only residual ASA-6 traffic and far below the ~40/hr baseline from step-01.
+      for beat in $(seq 1 6); do
+        TS=$(date -u -d "@$((NOW - 300 + beat * 30))" +'%b %d %Y %H:%M:%S')
+        printf '%s asa-fw01 %%ASA-6-716001: Group <SSLVPN> User <svc-net> IP <%s> WebVPN session started\n' "$TS" "$PEER" >> "$COLLECTOR"
+        printf '%s asa-fw01 %%ASA-6-716002: Group <SSLVPN> User <svc-net> IP <%s> WebVPN session terminated\n' "$TS" "$PEER" >> "$COLLECTOR"
+      done
+      echo "[CortexSim SAFE-MODE] webvpn-c2-beacon emitted (T1071.001 / T1095)" > /tmp/cortexsim-ndr-010-beacon.marker
+      echo "[*] Apply MODEL-NDR-ASA-WEBVPN: parses 716001/716002 session messages into xdm.source.ipv4 / xdm.source.user.username"
+    identity: www-data
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "The WebVPN-session XDM modeling rule (normalization substrate) parses the 716001/716002 session syslog into addressable user/group/peer-IP fields, so the beacon BIOC can key on the modeled peer rather than raw text. Resolves to the card's modeling_rules[1] object."
+        ttp_ref: "TTP-2026-0106"
+        detection_id: modeling-cisco-asa-webvpn-client-authentication-session-xdm-normalization
+      - plane: NDR
+        type: BIOC
+        description: "A genuine single-event BIOC matches each WebVPN client-authentication session-start (716001) that carries a modeled peer IP — the LINE VIPER C2-over-WebVPN channel — keyed on the modeled xdm.event.id / xdm.source.ipv4 fields, not raw text or any known-bad payload. The per-window beacon cadence is supplied by CR-NDR-0010, not this BIOC."
+        ttp_ref: "TTP-2026-0106"
+        detection_id: bioc-cisco-asa-webvpn-client-authentication-session-from-modeled-peer-ip
+
+  - id: step-04
+    name: "Correlation stitches the syslog collapse to the WebVPN beacon into one incident"
+    command: |
+      echo "[*] CR-NDR-0010 fuses the Informational/Debug volume collapse with the WebVPN-session beacon cadence from the same appliance"
+      echo "cortexsim-ndr-010-cr-ndr-0010-edge-appliance-compromise-stitched"
+    identity: www-data
+    mitre_technique: "T1095"
+    expected_detections:
+      - plane: NDR
+        type: Correlation
+        description: "Correlation rule fuses the absence-of-signal syslog collapse (defense evasion) and the WebVPN-session C2 beacon on the same appliance host within the window into a single edge-appliance-compromise incident anchored to the appliance and the beacon peer."
+        ttp_ref: "TTP-2026-0106"
+        detection_id: CR-NDR-0010
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-ndr-010-asa-syslog.log /tmp/cortexsim-ndr-010-collapse.marker /tmp/cortexsim-ndr-010-beacon.marker"
+    - "echo '[CortexSim] SIM-NDR-010 cleanup complete'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - ndr
+  - edge-appliance
+  - cisco-asa
+  - arcanedoor
+  - line-viper
+  - telemetry-collapse
+  - absence-of-signal
+  - webvpn-c2
+  - modeling-rules
+  - xdm

@@ -1,0 +1,181 @@
+scenario_id: SIM-EDR-014
+name: "ASPX Web Shell Reflectively Loads a Fileless .NET IIS Backdoor into w3wp.exe (Phantom Taurus NET-STAR)"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It models the Phantom Taurus
+# NET-STAR fileless IIS backdoor NON-DESTRUCTIVELY on a lab host to confirm
+# Cortex raises the web-shell / reflective-load / evasion BIOCs, the command-
+# lineage and STAR-cookie-C2 validation XQLs, and the stitched correlation.
+# All offensive detail lives in the anchor card TTP-2026-0119 (self-contained,
+# ships its own cleanup). Nothing here loads a real backdoor assembly, touches a
+# database, or exfiltrates data — impact is modelled with a benign .aspx marker,
+# a representative worker command lineage, a timestomp on our own marker file,
+# and a loopback STAR-delimited cookie request.
+
+plane: EDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UC-EDR-014
+tc_ref: TC-EDR-014
+uc_name: "Fileless IIS Backdoor Detection"
+tc_name: "ASPX Web Shell to In-Memory .NET (NET-STAR)"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1505.003"
+mitre_technique_name: "Server Software Component: Web Shell"
+additional_techniques:
+  - technique: "T1620"
+    name: "Reflective Code Loading"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1027"
+    name: "Obfuscated Files or Information"
+  - technique: "T1070.006"
+    name: "Indicator Removal: Timestomp"
+  - technique: "T1562.001"
+    name: "Impair Defenses: Disable or Modify Tools"
+
+threat_report: "Unit 42 — Phantom Taurus: A New Chinese Nexus APT and its Novel NET-STAR Malware Suite"
+threat_report_url: "https://unit42.paloaltonetworks.com/phantom-taurus/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The NET-STAR fileless-IIS-backdoor seams injected by this scenario produce the
+  expected XDR BIOC / XQL detections — the .aspx web-shell write, the w3wp.exe
+  command lineage, the reflective/unbacked in-memory .NET load, the AMSI/CLR
+  co-load, the timestomp, and the STAR-delimited cookie C2 — and the correlation
+  stitches web-shell install -> reflective load -> cookie C2 into one incident.
+  This is the "catch the fileless, operator-paced backdoor no beacon-periodicity
+  rule fires on" proof: detection anchors on the behavioural seams the technique
+  cannot hide, not on a static known-bad signature. Mean time from signal emit to
+  alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Drop the OutlookEN.aspx web shell into the IIS web root"
+    command: "mkdir -p \"${WEBROOT:-/var/www/html}\"; printf '%s\\n' '<%-- CortexSim SAFE-MODE marker SIM-EDR-014 NET-STAR OutlookEN.aspx --%>' > \"${WEBROOT:-/var/www/html}/OutlookEN.aspx\"; echo cortexsim-edr-014-webshell-dropped"
+    identity: www-data
+    mitre_technique: "T1505.003"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "An .aspx web-shell artifact (OutlookEN.aspx) is written into the IIS web root by the worker/shell — the on-disk delivery artifact that seeds the fileless chain and the earliest reliable catch."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "bioc-outlooken-aspx-web-shell-written-to-iis-web-root"
+      - plane: EDR
+        type: IOC
+        description: "OutlookEN.aspx web-shell filename indicator published by Unit 42 for NET-STAR."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "ioc-filename-outlooken-aspx"
+
+  - id: step-02
+    name: "Reflective fileless .NET load + web-shell command execution under the worker"
+    command: "whoami; hostname; id; echo cortexsim-edr-014-w3wp-command-lineage-and-reflective-load"
+    identity: www-data
+    mitre_technique: "T1620"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "The IIS worker process w3wp.exe parents a command interpreter — the durable, non-fileless seam of the web shell running operator commands (run_code / executeSQLQuery / bypassPrecompiledApp)."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "bioc-iis-worker-process-w3wp-exe-spawns-a-command-interpreter"
+      - plane: EDR
+        type: BIOC
+        description: "IIServerCore is reflectively loaded into w3wp.exe from memory, so the loaded module is unbacked (no module path / unsigned) or carries the NET-STAR build name — the reflective code-loading seam."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "bioc-reflective-fileless-net-assembly-load-in-iis-worker-process"
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms child processes parented by w3wp.exe within the run window (the web-shell command lineage is observable in xdr_data)."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "xql-web-shell-command-execution-lineage-under-w3wp-exe"
+      - plane: EDR
+        type: IOC
+        description: "IIServerCore backdoor assembly hash (ServerCore.dll) published by Unit 42."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "ioc-file-sha256-eeed5530fa1cdeb69398dc058aaa01160eab15d4dcdcd6cb841240987db284dc"
+
+  - id: step-03
+    name: "In-memory .NET evasion (AMSI/CLR co-load) and timestomp the web-shell artifact"
+    command: "touch -t 202001010000.00 \"${WEBROOT:-/var/www/html}/OutlookEN.aspx\" 2>/dev/null || true; echo cortexsim-edr-014-amsi-clr-coload-and-timestomp"
+    identity: www-data
+    mitre_technique: "T1562.001"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "In-memory .NET execution co-loads the CLR (clr.dll/clrjit.dll) alongside amsi.dll inside w3wp.exe, and AssemblyExecuter V2 patches AMSI/ETW — the fingerprint of reflectively executed .NET where none belongs."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "bioc-amsi-and-clr-in-memory-execution-modules-co-loaded-in-iis-worker"
+      - plane: EDR
+        type: BIOC
+        description: "NET-STAR's changeLastModified forges the web-shell artifact's modification time to match legitimate neighbours — fires on a web-root file whose modify time predates create time or is future-dated."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "bioc-aspx-web-root-file-timestomped-via-changelastmodified"
+
+  - id: step-04
+    name: "STAR-delimited cookie C2 request to the authorised host"
+    command: "curl -s --max-time 5 -H 'Cookie: sid=R2ppcA==STARQUJD==STARUEtDUzc=' \"http://${C2_HOST:-127.0.0.1}/owa/OutlookEN.aspx\" -o /dev/null 2>/dev/null || true; echo cortexsim-edr-014-star-cookie-c2"
+    identity: www-data
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation query surfaces the operator-driven request-response C2: an HTTP request whose Cookie header carries the literal STAR delimiter inside a Base64 blob (Gzip->AES-ECB/PKCS7->Base64)."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "xql-cookie-based-star-delimited-c2-to-iis-host"
+
+  - id: step-05
+    name: "Correlation stitches the NET-STAR chain into one incident"
+    command: "echo cortexsim-edr-014-cr-edr-0014-stitched-net-star-incident"
+    identity: www-data
+    mitre_technique: "T1505.003"
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Correlation rule fuses the web-shell install, the reflective in-memory .NET load, the AMSI/CLR co-load, and the STAR-delimited cookie C2 on the same host into one NET-STAR IIS-backdoor incident anchored to the w3wp.exe process instance."
+        ttp_ref: "TTP-2026-0119"
+        detection_id: "CR-EDR-0014"
+
+cleanup:
+  commands:
+    - "rm -f \"${WEBROOT:-/var/www/html}/OutlookEN.aspx\""
+    - "echo cortexsim-edr-014-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - web-shell
+  - fileless
+  - iis
+  - w3wp
+  - net-star
+  - phantom-taurus
+  - reflective-loading
+  - endpoint-security

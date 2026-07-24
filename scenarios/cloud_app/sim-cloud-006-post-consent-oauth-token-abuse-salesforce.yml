@@ -1,0 +1,171 @@
+scenario_id: SIM-CLOUD-006
+name: "Cloud App — Post-Consent OAuth Token Abuse: Salesforce Bulk API Mass Export with Query-Job Deletion (Bling Libra / Salesloft Drift)"
+version: "1.0"
+status: active
+
+plane: CLOUD_APP
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UC-CLOUD-006
+tc_ref: TC-CLOUD-006
+uc_name: "Post-Consent OAuth Token Abuse Detection via Cortex ABIOC"
+tc_name: "Salesforce Bulk API Export-Then-Erase on a Trusted Integration Token"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1119"
+mitre_technique_name: "Automated Collection"
+additional_techniques:
+  - technique: "T1550.001"
+    name: "Use Alternate Authentication Material: Application Access Token"
+  - technique: "T1528"
+    name: "Steal Application Access Token"
+  - technique: "T1213.003"
+    name: "Data from Information Repositories"
+  - technique: "T1070.004"
+    name: "Indicator Removal: File Deletion"
+  - technique: "T1199"
+    name: "Trusted Relationship"
+
+threat_report: "Unit 42 — Threat Brief: Salesloft Drift Integration Used To Compromise Salesforce Instances (actor attribution: Scattered Lapsus$ Hunters brief)"
+threat_report_url: "https://unit42.paloaltonetworks.com/threat-brief-compromised-salesforce-instances/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Post-Consent Token-Abuse Behavioral Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the Connected App integration identity's Bulk API baseline
+  (low-volume, narrow-object, scheduled). The stolen, already-trusted OAuth token
+  then drives a high-volume export across Account/Contact/Case/Opportunity from the
+  automation user-agent, and deletes the query jobs to erase evidence. No consent,
+  MFA, or interactive login event is raised — the catch comes purely from the
+  volume/diversity/user-agent deviation and the export-then-erase sequence. Both
+  auto-tuned ABIOCs fire and the correlation rule stitches them into a single
+  post-consent-token-abuse incident within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Baseline: low-volume single-record Salesforce API read (learned integration behavior)"
+    command: |
+      curl -s --max-time 5 -A "Salesforce-Integration/1.0" \
+        "https://127.0.0.1/services/data/v61.0/sobjects/Account/describe" -o /dev/null 2>/dev/null || true
+      echo "SAFE-MODE integration baseline: object=Account rows=1 ua=Salesforce-Integration/1.0" > /tmp/sf-006-baseline.marker
+      echo cortexsim-cloud-006-integration-baseline-single-record-read
+    identity: container-runtime
+    mitre_technique: "T1550.001"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Validation query confirms the Connected App integration identity's low-volume Bulk API baseline is learned/observable (the deviation the ABIOCs fire on is measured against this)."
+        ttp_ref: "TTP-2026-0111"
+        detection_id: "xql-salesforce-integration-identity-bulk-api-baseline-learned"
+
+  - id: step-02
+    name: "Post-consent token drives high-volume Bulk API export across CRM objects"
+    command: |
+      EXFIL_UA="Python/3.11 aiohttp/3.12.15"
+      for OBJ in Account Contact Case Opportunity; do
+        curl -s --max-time 5 -A "$EXFIL_UA" -X POST \
+          "https://127.0.0.1/services/data/v61.0/jobs/query" \
+          -d "{\"operation\":\"query\",\"query\":\"SELECT Id FROM ${OBJ}\"}" -o /dev/null 2>/dev/null || true
+        echo "SAFE-MODE export marker object=${OBJ} rows=250000 ua=${EXFIL_UA}" > "/tmp/sf-006-export-${OBJ}.marker"
+      done
+      echo cortexsim-cloud-006-bulk-api-mass-export-complete
+    identity: container-runtime
+    mitre_technique: "T1119"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "A Connected App integration identity whose learned baseline is low-volume scheduled Bulk API jobs drives a high-volume export across Account/Contact/Case/Opportunity from an automation user-agent — auto-tuned ABIOC fires on the volume/object-diversity/user-agent deviation, anchored to the integration identity's causality chain. No consent, MFA, or login event exists to alert on."
+        ttp_ref: "TTP-2026-0111"
+        detection_id: "abioc-post-consent-oauth-token-high-volume-bulk-api-export-deviating-from-integration-baseline"
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Validation query surfaces the high-volume Bulk API query jobs carrying the automation exfil user-agent across the four CRM objects within the run window."
+        ttp_ref: "TTP-2026-0111"
+        detection_id: "xql-salesforce-bulk-api-mass-export-with-aiohttp-exfil-user-agent"
+      - plane: CLOUD_APP
+        type: IOC
+        description: "The automation exfiltration user-agent 'Python/3.11 aiohttp/3.12.15' (published in the cited Unit 42 Salesloft Drift threat brief) is presented by the Bulk API export client — a high-signal but corroborating indicator alongside the volume deviation."
+        ttp_ref: "TTP-2026-0111"
+        detection_id: "ioc-user-agent-python-3-11-aiohttp-3-12-15"
+
+  - id: step-03
+    name: "Export-then-erase: delete the Bulk API query jobs (anti-forensics)"
+    command: |
+      EXFIL_UA="Python/3.11 aiohttp/3.12.15"
+      for OBJ in Account Contact Case Opportunity; do
+        curl -s --max-time 5 -A "$EXFIL_UA" -X DELETE \
+          "https://127.0.0.1/services/data/v61.0/jobs/query/750SIM${OBJ}" -o /dev/null 2>/dev/null || true
+        rm -f "/tmp/sf-006-export-${OBJ}.marker"
+      done
+      echo cortexsim-cloud-006-query-job-deletion-anti-forensics-complete
+    identity: container-runtime
+    mitre_technique: "T1070.004"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "The same integration token that just ran the mass export issues deleteJob on those query jobs — an export-then-erase sequence a legitimate integration never performs. Auto-tuned ABIOC fires on the query-then-delete sequence by one token, anchored to the mass-export causality chain."
+        ttp_ref: "TTP-2026-0111"
+        detection_id: "abioc-export-then-erase-bulk-api-query-job-deletion-by-exfiltration-token"
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Hunt query surfaces the Bulk API deleteJob (query-job deletion) operations by the integration identity — the anti-forensics tell."
+        ttp_ref: "TTP-2026-0111"
+        detection_id: "xql-salesforce-bulk-api-query-job-deletion-anti-forensics-hunt"
+
+  - id: step-04
+    name: "Correlation stitches export + erase into one post-consent-token-abuse incident"
+    command: "echo cortexsim-cloud-006-cr-cloud-0006-stitched-post-consent-token-abuse-incident"
+    identity: container-runtime
+    mitre_technique: "T1550.001"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Correlation
+        description: "Correlation rule fuses the high-volume-export ABIOC and the export-then-erase deletion ABIOC on the same connected_app + integration_user into a single post-consent OAuth-token-abuse incident anchored to the compromised integration identity's causality chain (trusted token -> mass CRM export -> job deletion)."
+        ttp_ref: "TTP-2026-0111"
+        detection_id: "CR-CLOUD-0006"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/sf-006-export-*.marker /tmp/sf-006-baseline.marker"
+    - "echo cortexsim-cloud-006-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - cloud-app
+  - casb
+  - salesforce
+  - oauth
+  - bulk-api
+  - token-abuse
+  - anti-forensics
+  - bling-libra
+  - abioc

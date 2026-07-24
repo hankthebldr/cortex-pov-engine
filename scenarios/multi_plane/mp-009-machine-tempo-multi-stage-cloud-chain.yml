@@ -1,0 +1,142 @@
+scenario_id: SIM-MP-009
+name: "Machine-Tempo Multi-Stage Cloud Chain Driven by an Autonomous Agent Swarm (Zealot)"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-MP-009
+tc_ref: TC-MP-009
+uc_name: "Machine-Tempo Autonomous-Agent Cloud Attack Chain Detection"
+tc_name: "Recon -> SSRF/IMDS -> IAM Self-Escalation -> Exfil, Stitched at Machine Speed"
+
+mitre_tactic: "TA0004"
+mitre_tactic_name: "Privilege Escalation"
+mitre_technique: "T1548.005"
+mitre_technique_name: "Abuse Elevation Control Mechanism: Temporary Elevated Cloud Access"
+additional_techniques:
+  - technique: "T1580"
+    name: "Cloud Infrastructure Discovery"
+  - technique: "T1526"
+    name: "Cloud Service Discovery"
+  - technique: "T1552.005"
+    name: "Unsecured Credentials: Cloud Instance Metadata API"
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1537"
+    name: "Transfer Data to Cloud Account"
+
+threat_report: "Unit 42 — Autonomous AI Cloud Attacks (Zealot agent swarm)"
+threat_report_url: "https://unit42.paloaltonetworks.com/autonomous-ai-cloud-attacks/"
+
+# An LLM agent swarm (LangGraph supervisor + Infrastructure / Application Security /
+# Cloud Security specialist agents sharing one AttackState) compresses recon -> SSRF ->
+# instance-metadata token theft -> IAM enumeration -> storage.objectAdmin self-grant ->
+# BigQuery/bucket exfil into one machine-speed run under a single derived service-account
+# identity. No single GCP API call is a known-bad IOC; the detectable feature is the
+# sub-minute inter-stage latency and the breadth of distinct high-risk stages threaded
+# through one identity. Runs SAFE-MODE / non-destructive: the cloud stages are modelled
+# with marker files, the only real network artifact is a read-only self-request to the
+# instance metadata IP (token discarded), and nothing is created, granted, or exfiltrated.
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the per-identity cloud-API baseline (a service account touches a
+  narrow, stable set of operations at human/scheduled cadence). The injected chain drives
+  a single derived identity through recon, SSRF/IMDS token theft, a machine-speed fan-out
+  of distinct control-plane stages, and a storage.objectAdmin self-grant + export within a
+  sub-minute window. Both cloud ABIOCs and the endpoint SSRF/IMDS ABIOC fire on the
+  deviation-and-cadence signal, and the correlation rule stitches the endpoint and cloud
+  signals into one machine-tempo autonomous-agent cloud-attack incident. This is the
+  "behavioral-ML catches what a static rule misses" proof — every API call is legitimate,
+  so the catch comes from inter-stage latency and stage breadth under one identity, not a
+  signature. Mean time from the chain to the stitched incident is within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "SSRF-driven instance metadata token access on the exposed workload"
+    command: "ss -tunlp 2>/dev/null | head -n 5 || true; curl -s --max-time 2 -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token -o /dev/null || true; echo cortexsim-mp-009-ssrf-imds-token-access"
+    identity: svc-account
+    mitre_technique: "T1552.005"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "A workload process reaches the instance metadata IP (169.254.169.254) after SSRF — the endpoint-side tell of service-account token theft. Auto-tuned ABIOC fires on a metadata-service reach from a process/host whose learned baseline never contacts IMDS, anchored to the workload identity so it stitches forward to the cloud-plane stages."
+        ttp_ref: "TTP-2026-0113"
+        detection_id: "abioc-ssrf-driven-instance-metadata-token-theft-from-an-anomalous-workload-process"
+
+  - id: step-02
+    name: "Machine-speed cloud enumeration fan-out under the derived identity"
+    command: "for op in compute.instances.list compute.networks.list resourcemanager.projects.getIamPolicy bigquery.datasets.get; do echo \"SAFE-MODE ${op} $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; done; echo cortexsim-mp-009-cloud-enum-fanout"
+    identity: svc-account
+    mitre_technique: "T1526"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "A single derived service-account identity performs an abnormally broad set of distinct high-risk GCP control-plane operations within a sub-two-minute window. Auto-tuned ABIOC fires on the cadence-and-breadth deviation (many distinct stages at machine speed under one identity), not on any single benign API call."
+        ttp_ref: "TTP-2026-0113"
+        detection_id: "abioc-machine-tempo-multi-stage-cloud-attack-chain-under-a-single-derived-identity"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Validation query surfaces the derived identity performing a fan-out of distinct control-plane operations in cloud_audit_logs within the run window."
+        ttp_ref: "TTP-2026-0113"
+        detection_id: "xql-sim-mp-009-derived-identity-stage-fan-out-in-cloud-audit-logs"
+
+  - id: step-03
+    name: "Autonomous IAM self-escalation and export to a new bucket (SAFE-MODE)"
+    command: "echo \"SAFE-MODE storage.setIamPermissions roles/storage.objectAdmin $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; echo \"SAFE-MODE bigquery.tables.export -> cortexsim-marker-bucket $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; touch /tmp/cortexsim-mp-009-exfil-SAFE-MODE.marker; echo cortexsim-mp-009-self-escalation-export-safe-mode"
+    identity: svc-account
+    mitre_technique: "T1548.005"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "The derived identity grants itself roles/storage.objectAdmin (setIamPermissions) then exports the BigQuery table to a newly created bucket — the exact work-around Zealot used to defeat a data-access denial. Auto-tuned ABIOC fires on the self-grant anchored to the IMDS-minted identity's causality chain, not on a benign setIamPolicy."
+        ttp_ref: "TTP-2026-0113"
+        detection_id: "abioc-autonomous-iam-self-escalation-via-storage-objectadmin-grant-following-imds-token-theft"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Hunt query surfaces the BigQuery export and the newly created storage bucket under the derived identity in cloud_audit_logs."
+        ttp_ref: "TTP-2026-0113"
+        detection_id: "xql-sim-mp-009-bigquery-export-to-newly-created-storage-bucket"
+
+  - id: step-04
+    name: "Correlation stitches the endpoint and cloud signals into one machine-tempo incident"
+    command: "echo cortexsim-mp-009-cr-mp-0009-machine-tempo-incident-stitched"
+    identity: svc-account
+    mitre_technique: "T1537"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation rule fuses the SSRF/IMDS token-theft ABIOC, the machine-speed cross-stage fan-out ABIOC, and the storage.objectAdmin self-escalation ABIOC into a single machine-tempo autonomous-agent cloud-attack incident within a short window. The two cloud ABIOCs join on the shared service-account identity_name; the endpoint SSRF ABIOC is bridged in via the cloud asset-inventory host -> instance -> attached-service-account mapping (the IMDS-minted token is discarded and never carried in endpoint telemetry), not a shared identity field."
+        ttp_ref: "TTP-2026-0113"
+        detection_id: "CR-MP-0015"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-mp-009-cloud-stages.log /tmp/cortexsim-mp-009-exfil-SAFE-MODE.marker"
+    - "echo cortexsim-mp-009-cleanup-complete"
