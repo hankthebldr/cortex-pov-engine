@@ -98,6 +98,13 @@
         "url": "https://unit42.paloaltonetworks.com/large-scale-cloud-extortion-operation/",
         "themes": ["cloud", "extortion", "env-credential-leak", "lambda", "data-exfil"],
         "notes": "Backs SIM-CDR-017 (leaked .env credential to self-propagating Lambda escalation)."
+      },
+      {
+        "priority": "P1",
+        "title": "EDR Bypass Extortion Attempt Thwarted",
+        "url": "https://unit42.paloaltonetworks.com/edr-bypass-extortion-attempt-thwarted/",
+        "themes": ["byovd", "edr-tamper", "cobalt-strike", "rclone-exfil", "extortion"],
+        "notes": "Backs SIM-MP-012 (BYOVD sensor-tamper t0 stitched to Cobalt Strike C2 + rclone SFTP exfil, time-to-contain measured)."
       }
     ],
 
@@ -146,6 +153,27 @@
         "actor_aliases": ["Scattered Lapsus$ Hunters", "Bling Libra", "ShinyHunters"],
         "themes": ["saas", "oauth-token-abuse", "salesforce", "bulk-api", "data-exfil"],
         "notes": "Backs SIM-CLOUD-006 (post-consent OAuth token abuse — Salesloft Drift)."
+      },
+      {
+        "priority": "P0",
+        "title": "IAM Roles in the Crosshairs: Compromised Cloud Workloads Abusing AssumeRole and IMDS",
+        "url": "https://unit42.paloaltonetworks.com/iam-roles-compromised-workloads/",
+        "themes": ["aws-iam", "assumerole", "imds", "passrole", "privilege-escalation"],
+        "notes": "Backs SIM-CSPM-003 (IAM trust-policy/PassRole posture finding correlated to runtime AssumeRole+IMDS privesc)."
+      },
+      {
+        "priority": "P1",
+        "title": "Threat Actor Misuse of AzureHound for Cloud-Identity Enumeration",
+        "url": "https://unit42.paloaltonetworks.com/threat-actor-misuse-of-azurehound/",
+        "themes": ["entra-id", "azuread", "azurehound", "graph-api", "identity-enumeration", "token-theft"],
+        "notes": "Backs SIM-MP-014 (token theft → non-interactive Entra sign-in → bulk Microsoft Graph discovery stitch)."
+      },
+      {
+        "priority": "P1",
+        "title": "BadSuccessor: dMSA Privilege Escalation in Windows Server 2025 Active Directory",
+        "url": "https://unit42.paloaltonetworks.com/badsuccessor-attack-vector/",
+        "themes": ["active-directory", "dmsa", "privilege-escalation", "kerberos", "on-prem-identity"],
+        "notes": "Backs SIM-ITDR-013 (dMSA create + dual-attribute write + privileged-TGT lineage). On-prem AD identity, filed here as the nearest identity group."
       }
     ],
 
@@ -162,6 +190,13 @@
         "title": "Anatomy of an Attack: The Payroll Pirates and the Power of Social Engineering",
         "url": "https://unit42.paloaltonetworks.com/social-engineering-payroll-pirates/",
         "themes": ["payroll-redirect", "phishing", "business-email-compromise"]
+      },
+      {
+        "priority": "P0",
+        "title": "Preventing the ClickFix Attack Vector",
+        "url": "https://unit42.paloaltonetworks.com/preventing-clickfix-attack-vector/",
+        "themes": ["clickfix", "pastejacking", "runmru", "user-execution", "mshta", "lumma-stealer"],
+        "notes": "Backs SIM-EDR-016 (RunMRU→explorer.exe-parented interpreter) and SIM-EDR-017 (mshta fetch → extrac32 CAB unpack → renamed AutoIt3 loader)."
       }
     ],
 
@@ -233,6 +268,13 @@
         "url": "https://unit42.paloaltonetworks.com/ai-agent-prompt-injection/",
         "themes": ["ai-agent", "browser", "indirect-prompt-injection", "dom-hidden-payload"],
         "notes": "Backs SIM-BROWSER-006 (web-based indirect prompt injection against browsing AI agents)."
+      },
+      {
+        "priority": "P1",
+        "title": "The SOC's 72-Minute Race: AI-Driven Triage and Containment",
+        "url": "https://unit42.paloaltonetworks.com/soc-72-minute-race/",
+        "themes": ["ai-soc", "triage", "incident-scoring", "summarization", "defensive-ai"],
+        "notes": "Defensive AI-SOC narrative (AI-as-defender, not attack surface). Backs SIM-MP-015 (triage discrimination under decoy noise) and SIM-EDR-018 (AI SOC summarization accuracy & latency)."
       }
     ],
 
