@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,6 +62,45 @@ class KpiThreshold(BaseModel):
     unit: Optional[str] = None     # "seconds", "%", "count", etc.
 
 
+# ── Causality contract vocabulary (additive, back-compat) ───────────────────
+# The seven typed causality-graph edge kinds a step may declare as its pivot to
+# its parent step, and the OS/env platforms a step may run on. Kept in sync with
+# core/engine/causality_graph.py EDGE_* constants and the lint hook.
+_PIVOTS = {
+    "process_lineage",
+    "network_session",
+    "endpoint_network_stitch",
+    "shared_entity",
+    "exposure_exploit",
+    "exploit_impact",
+    "temporal",
+}
+_PLATFORMS = {"linux", "windows", "macos", "container", "k8s"}
+
+
+class CgoAnchorSchema(BaseModel):
+    """Scenario-level Causality Group Owner anchor. Drives the CGO node's
+    label + username in the causality graph, replacing the synthetic
+    'cortexsim-agent'/'root' default. Optional/back-compat."""
+    image_name: str
+    primary_username: Optional[str] = None
+
+
+class StepCausalitySchema(BaseModel):
+    """Step-level causality contract: this step's process descends from
+    ``parent_step`` via the declared ``pivot`` edge kind. The root step omits
+    this block (it links from the CGO)."""
+    parent_step: str
+    pivot: str = "process_lineage"
+
+    @field_validator("pivot")
+    @classmethod
+    def _v(cls, v: str) -> str:
+        if v not in _PIVOTS:
+            raise ValueError(f"causality.pivot must be one of {sorted(_PIVOTS)}")
+        return v
+
+
 class StepExpectedDetection(BaseModel):
     plane: str
     type: str
@@ -97,6 +136,21 @@ class StepSchema(BaseModel):
     identity: str
     mitre_technique: str
     expected_detections: list[StepExpectedDetection] = []
+    # ── Causality contract (all optional, back-compat) ──────────────────────
+    # causality: this step's lineage/pivot to an EARLIER step. Omitted on the
+    # root step (which links from the CGO). platforms: OS/env coverage for this
+    # step. platform_variants: per-OS command equivalents for cross-platform TTPs.
+    causality: Optional[StepCausalitySchema] = None
+    platforms: list[str] = Field(default_factory=list)
+    platform_variants: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("platforms")
+    @classmethod
+    def _vp(cls, v: list[str]) -> list[str]:
+        bad = [p for p in v if p not in _PLATFORMS]
+        if bad:
+            raise ValueError(f"platforms must be subset of {sorted(_PLATFORMS)}, got {bad}")
+        return v
 
 
 class ExternalToolSchema(BaseModel):
@@ -161,6 +215,10 @@ class ScenarioSchema(BaseModel):
     cleanup: Optional[CleanupSchema] = None
     tags: list[str] = []
     author: Optional[str] = None
+    # ── Causality contract (scenario-level, optional/back-compat) ───────────
+    # The Causality Group Owner anchor drives the CGO node label/username in the
+    # causality graph. Absent → the graph falls back to 'cortexsim-agent'/'root'.
+    cgo_anchor: Optional[CgoAnchorSchema] = None
     # GAP-3 / S-08 / S-10 — schema-vs-loader reconcile. The doc-schema once
     # marked `created`/`last_updated` "required", but the loader never modelled
     # them, so Pydantic silently dropped them. Model them here as optional ISO
@@ -282,6 +340,54 @@ class ScenarioSchema(BaseModel):
                     f"string or a {{technique, name}} mapping, got {type(entry).__name__}"
                 )
         return normalized
+
+    @model_validator(mode="after")
+    def _validate_causality_spine(self) -> "ScenarioSchema":
+        """Cross-check the declared step-level causality spine.
+
+        (a) every ``causality.parent_step`` must be the id of an EARLIER step
+            (index < the declaring step) — forward/self/unknown refs are errors.
+        (b) at most ONE step may omit ``causality`` (the root) once any step
+            declares it, keeping a single connected spine.
+
+        A scenario where NO step declares causality is legacy/star and passes
+        untouched.
+        """
+        step_ids = [s.id for s in self.steps]
+        index_of = {sid: i for i, sid in enumerate(step_ids)}
+
+        declared = [s for s in self.steps if s.causality is not None]
+        if not declared:
+            return self  # legacy star — no contract
+
+        for i, step in enumerate(self.steps):
+            caus = step.causality
+            if caus is None:
+                continue
+            parent = caus.parent_step
+            if parent == step.id:
+                raise ValueError(
+                    f"step '{step.id}' causality.parent_step is a self-reference"
+                )
+            if parent not in index_of:
+                raise ValueError(
+                    f"step '{step.id}' causality.parent_step references unknown "
+                    f"step '{parent}'"
+                )
+            if index_of[parent] >= i:
+                raise ValueError(
+                    f"step '{step.id}' causality.parent_step '{parent}' must be an "
+                    f"EARLIER step (forward/self references are not allowed)"
+                )
+
+        roots = [s for s in self.steps if s.causality is None]
+        if len(roots) > 1:
+            raise ValueError(
+                "a declared causality spine allows at most one root step "
+                f"(steps without causality), got {len(roots)}: "
+                f"{[s.id for s in roots]}"
+            )
+        return self
 
 
 # ---------------------------------------------------------------------------
@@ -511,5 +617,6 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "cleanup": schema.cleanup.model_dump() if schema.cleanup else None,
         "tags": schema.tags,
         "author": schema.author,
+        "cgo_anchor": schema.cgo_anchor.model_dump() if schema.cgo_anchor else None,
         "created_at": datetime.utcnow(),
     }

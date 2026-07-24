@@ -80,6 +80,7 @@ _STITCH_META_KEYS = (
     "correlation_window_seconds",
     "required_planes_in_incident",
     "causality",
+    "cgo_anchor",
 )
 
 

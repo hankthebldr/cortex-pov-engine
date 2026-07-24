@@ -422,3 +422,100 @@ def test_missing_entity_columns_keep_edges_expected(run):
     assert not any(e["kind"] == EDGE_ENDPOINT_NETWORK_STITCH for e in graph["edges"])
     lineage = [e for e in graph["edges"] if e["kind"] == EDGE_PROCESS_LINEAGE]
     assert lineage  # spine still present
+
+
+# ---------------------------------------------------------------------------
+# Causality contract: cgo_anchor + connected process_lineage spine
+# ---------------------------------------------------------------------------
+
+
+def test_cgo_anchor_labels_root(run):
+    steps = [{"id": "step-01", "name": "a", "command": "cat /etc/shadow", "identity": "root"}]
+    results = [_result(1, "step-01", control_layer="prevention")]
+    meta = {"cgo_anchor": {"image_name": "apache2", "primary_username": "www-data"}}
+    graph = build_causality_graph(run, results, steps, scenario_meta=meta)
+    cgo = next(n for n in graph["nodes"] if n["kind"] == NODE_CGO)
+    assert cgo["image_name"] == "apache2"
+    assert cgo["primary_username"] == "www-data"
+    assert cgo["label"] == "Causality Group Owner - apache2"
+
+
+def test_process_lineage_forms_connected_chain(run):
+    # Three direct-identity (root → no wrapper) steps wired step-01→02→03 by
+    # process_lineage: the spine must be a CHAIN, with only ONE cgo-sourced
+    # process_lineage edge (the root), NOT a star off the CGO.
+    steps = [
+        {"id": "step-01", "name": "s1", "command": "cat /etc/passwd", "identity": "root"},
+        {"id": "step-02", "name": "s2", "command": "cat /etc/shadow", "identity": "root",
+         "causality": {"parent_step": "step-01", "pivot": "process_lineage"}},
+        {"id": "step-03", "name": "s3", "command": "find / -name id_rsa", "identity": "root",
+         "causality": {"parent_step": "step-02", "pivot": "process_lineage"}},
+    ]
+    results = [
+        _result(1, "step-01", control_layer="prevention"),
+        _result(2, "step-02", control_layer="prevention"),
+        _result(3, "step-03", control_layer="prevention"),
+    ]
+    meta = {"cgo_anchor": {"image_name": "apache2", "primary_username": "www-data"}}
+    graph = build_causality_graph(run, results, steps, scenario_meta=meta)
+
+    lineage = [e for e in graph["edges"] if e["kind"] == EDGE_PROCESS_LINEAGE]
+    cgo_id = "cgo:run-1"
+    p1, p2, p3 = "proc:run-1:step-01", "proc:run-1:step-02", "proc:run-1:step-03"
+    pairs = {(e["source"], e["target"]) for e in lineage}
+    # exactly one process_lineage edge originates from the CGO (the root step).
+    assert sum(1 for e in lineage if e["source"] == cgo_id) == 1
+    assert (cgo_id, p1) in pairs
+    # the rest is a real parent→child chain, NOT cgo→every-step.
+    assert (p1, p2) in pairs
+    assert (p2, p3) in pairs
+    assert (cgo_id, p2) not in pairs
+    assert (cgo_id, p3) not in pairs
+
+
+def test_non_process_pivot_emits_typed_edge(run):
+    # A network_session pivot: the child still hangs off the CGO via
+    # process_lineage, PLUS a typed network_session edge parent→child.
+    steps = [
+        {"id": "step-01", "name": "s1", "command": "curl http://c2", "identity": "root"},
+        {"id": "step-02", "name": "s2", "command": "curl http://c2", "identity": "root",
+         "causality": {"parent_step": "step-01", "pivot": "network_session"}},
+    ]
+    results = [
+        _result(1, "step-01", plane="NDR", signal_type="XQL", control_layer="prevention"),
+        _result(2, "step-02", plane="NDR", signal_type="XQL", control_layer="prevention"),
+    ]
+    graph = build_causality_graph(run, results, steps)
+    cgo_id = "cgo:run-1"
+    p1, p2 = "proc:run-1:step-01", "proc:run-1:step-02"
+    lineage = {(e["source"], e["target"]) for e in graph["edges"]
+               if e["kind"] == EDGE_PROCESS_LINEAGE}
+    # child still rooted at CGO (non-process pivot does not re-parent lineage).
+    assert (cgo_id, p2) in lineage
+    # ...and the declared network_session pivot edge is present parent→child.
+    netsess = [e for e in graph["edges"]
+               if e["kind"] == EDGE_NETWORK_SESSION and e["source"] == p1 and e["target"] == p2]
+    assert len(netsess) == 1
+    assert "declared network_session pivot step-01→step-02" in netsess[0]["rationale"]
+
+
+def test_no_contract_preserves_star_and_default_cgo(run, dual_control_steps):
+    # No cgo_anchor + no causality → default CGO label + legacy star: every
+    # process node's process_lineage root is the CGO (or its wrapper), never a
+    # sibling process node.
+    results = [
+        _result(2, "step-02", control_layer="prevention", asset_ref="a"),
+        _result(3, "step-03", plane="NDR", signal_type="XQL", control_layer="prevention",
+                asset_ref="a"),
+    ]
+    graph = build_causality_graph(run, results, dual_control_steps[1:])
+    cgo = next(n for n in graph["nodes"] if n["kind"] == NODE_CGO)
+    assert cgo["image_name"] == "cortexsim-agent"
+    assert cgo["primary_username"] == "root"
+    assert cgo["label"] == "Causality Group Owner"
+    # No proc→proc process_lineage edge exists (star, not chain). www-data steps
+    # use a runuser wrapper, so lineage roots are cgo or wrap nodes only.
+    proc_ids = {n["id"] for n in graph["nodes"] if n["kind"] == NODE_PROCESS}
+    for e in graph["edges"]:
+        if e["kind"] == EDGE_PROCESS_LINEAGE:
+            assert e["source"] not in proc_ids

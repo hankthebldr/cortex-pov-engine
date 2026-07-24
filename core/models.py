@@ -60,6 +60,12 @@ class Scenario(Base):
     cleanup: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
+    # Causality contract — the scenario-level Causality Group Owner anchor
+    # ({image_name, primary_username}) that labels the CGO root node in the
+    # causality graph. Nullable JSON; dev DB is create_all + disposable so no
+    # migration. NOTE: prod needs `ALTER TABLE scenarios ADD COLUMN cgo_anchor JSON`.
+    cgo_anchor: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     author: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -94,6 +100,7 @@ class Scenario(Base):
             "cleanup": self.cleanup,
             "tags": self.tags,
             "author": self.author,
+            "cgo_anchor": self.cgo_anchor,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

@@ -403,12 +403,19 @@ def build_causality_graph(
     pid_counter = _PID_BASE
 
     # --- CGO root -----------------------------------------------------------
+    # The Causality Group Owner is the initial-access process that OWNS the
+    # chain. When the scenario declares a ``cgo_anchor`` (a realistic root such
+    # as apache2/www-data or a k8s runtime), the root node is labelled from it;
+    # otherwise it falls back to the synthetic agent shell (full back-compat).
+    cgo_anchor = meta.get("cgo_anchor") or {}
+    cgo_image = cgo_anchor.get("image_name") or "cortexsim-agent"
+    cgo_user = cgo_anchor.get("primary_username") or "root"
     nodes.append({
         "id": cgo_id,
         "kind": NODE_CGO,
-        "label": "Causality Group Owner",
-        "image_name": "cortexsim-agent",
-        "primary_username": "root",
+        "label": f"Causality Group Owner - {cgo_image}" if cgo_anchor else "Causality Group Owner",
+        "image_name": cgo_image,
+        "primary_username": cgo_user,
         "os_pid": pid_counter,
         "causality_id": causality_id,
         "step_index": -1,
@@ -439,6 +446,11 @@ def build_causality_graph(
     step_index_of: dict[Any, int] = {}
     exposure_node_by_asset: dict[str, str] = {}
     runtime_steps: list[Any] = []
+    # Scenario-authored non-process pivots (network_session / shared_entity /
+    # exposure_exploit / ...) collected during the step loop and drained into
+    # typed edges after all nodes exist. Each entry:
+    # {parent_node, child_node, pivot, parent_sid, sid}.
+    declared_pivot_edges: list[dict[str, Any]] = []
 
     for order_idx, sid in enumerate(step_order):
         group = entries_by_step[sid]
@@ -510,8 +522,34 @@ def build_causality_graph(
             step_node_id[sid] = node_id
             runtime_steps.append(sid)
 
-            # Wrapper node + process_lineage spine (cgo → wrapper → process, or
-            # cgo → process for a direct identity).
+            # Resolve this step's lineage root + any declared non-process pivot.
+            # A process_lineage step descends from its PARENT step's node (a
+            # CONNECTED chain), not from the CGO. The root step (no parent) and
+            # any step whose pivot is non-process hang off the CGO, and the
+            # declared pivot is emitted as its own typed edge (change 3).
+            # Guard: step_order follows execution order and the loader forbids
+            # forward refs, so step_node_id[parent_sid] is already populated;
+            # an absent/exposure parent falls back to cgo_id (never crashes).
+            caus = step_spec.get("causality") or {}
+            parent_sid = caus.get("parent_step")
+            pivot = caus.get("pivot") or EDGE_PROCESS_LINEAGE
+            parent_node = step_node_id.get(parent_sid) if parent_sid else None
+            if pivot == EDGE_PROCESS_LINEAGE and parent_node:
+                lineage_root = parent_node
+            else:
+                lineage_root = cgo_id
+                if parent_node and parent_sid:
+                    declared_pivot_edges.append({
+                        "parent_node": parent_node,
+                        "child_node": node_id,
+                        "pivot": pivot,
+                        "parent_sid": parent_sid,
+                        "sid": sid,
+                    })
+
+            chained = lineage_root != cgo_id
+            # Wrapper node + process_lineage spine (lineage_root → wrapper →
+            # process, or lineage_root → process for a direct identity).
             if resolved["mode"] != "direct" and resolved["wrapper"]:
                 wrap_id = f"wrap:{run_id}:{sid}"
                 nodes.append({
@@ -526,15 +564,26 @@ def build_causality_graph(
                     "step_index": idx,
                 })
                 pid_counter += 1
-                edges.append(_edge(cgo_id, wrap_id, EDGE_PROCESS_LINEAGE, STATE_EXPECTED,
-                                   f"agent shell owns impersonation wrapper '{resolved['wrapper']}'"))
+                owns_rationale = (
+                    f"{parent_sid} process owns impersonation wrapper '{resolved['wrapper']}'"
+                    if chained else
+                    f"agent shell owns impersonation wrapper '{resolved['wrapper']}'"
+                )
+                edges.append(_edge(lineage_root, wrap_id, EDGE_PROCESS_LINEAGE,
+                                   STATE_CONFIRMED if (chained and step_detected) else STATE_EXPECTED,
+                                   owns_rationale))
                 edges.append(_edge(wrap_id, node_id, EDGE_PROCESS_LINEAGE,
                                    STATE_CONFIRMED if step_detected else STATE_EXPECTED,
                                    f"{resolved['wrapper']} -l {identity} spawns {binary}"))
             else:
-                edges.append(_edge(cgo_id, node_id, EDGE_PROCESS_LINEAGE,
+                direct_rationale = (
+                    f"{parent_sid} process spawns {binary} as {identity or 'root'}"
+                    if chained else
+                    f"agent shell directly spawns {binary} as {identity or 'root'}"
+                )
+                edges.append(_edge(lineage_root, node_id, EDGE_PROCESS_LINEAGE,
                                    STATE_CONFIRMED if step_detected else STATE_EXPECTED,
-                                   f"agent shell directly spawns {binary} as {identity or 'root'}"))
+                                   direct_rationale))
 
     # --- Alert nodes (storyline entries promoted verbatim) + attach edges ---
     for e in entries:
@@ -583,6 +632,29 @@ def build_causality_graph(
         edges, run_id, meta, exposure_node_by_asset, runtime_steps, step_node_id,
         step_asset, step_observed, step_observed_at, step_index_of, window,
     )
+
+    # --- Scenario-authored non-process pivot edges --------------------------
+    # Emit the pivots the scenario declared on its steps (network_session /
+    # shared_entity / exposure_exploit / ...) so the DAG shows the intended
+    # cross-plane join even when the auto-derived entity match is absent. Both
+    # endpoints exist by now. De-dupe against any edge of the same kind already
+    # present between the same {source, target} so this complements — never
+    # double-counts — _emit_exposure_edges / _emit_evidence_edges output.
+    _existing = {(e["source"], e["target"], e["kind"]) for e in edges}
+    for dpe in declared_pivot_edges:
+        src, dst, kind = dpe["parent_node"], dpe["child_node"], dpe["pivot"]
+        if (src, dst, kind) in _existing:
+            continue
+        state = (
+            STATE_CONFIRMED
+            if (step_observed.get(dpe["parent_sid"]) and step_observed.get(dpe["sid"]))
+            else STATE_EXPECTED
+        )
+        edges.append(_edge(
+            src, dst, kind, state,
+            f"declared {kind} pivot {dpe['parent_sid']}→{dpe['sid']}",
+        ))
+        _existing.add((src, dst, kind))
 
     # --- Cross-plane evidence edges over alert nodes ------------------------
     alert_nodes = [n for n in nodes if n["kind"] == NODE_ALERT]

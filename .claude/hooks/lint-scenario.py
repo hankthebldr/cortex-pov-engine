@@ -37,6 +37,13 @@ PLANES = {
 }
 DETECTION_TYPES = {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC"}
 STATUSES = {"active", "draft", "deprecated"}
+# Causality contract vocabulary (mirrors scenario_loader._PIVOTS / _PLATFORMS
+# and causality_graph EDGE_* kinds).
+PIVOTS = {
+    "process_lineage", "network_session", "endpoint_network_stitch",
+    "shared_entity", "exposure_exploit", "exploit_impact", "temporal",
+}
+PLATFORMS = {"linux", "windows", "macos", "container", "k8s"}
 SCENARIO_ID_RE = re.compile(r"^SIM-[A-Z_]+-\d{3,}$")
 
 REQUIRED_TOP = [
@@ -146,6 +153,19 @@ def main() -> int:
         if bad:
             errors.append(f"detection_types {bad} not in {sorted(DETECTION_TYPES)}")
 
+    # ---- cgo_anchor (optional causality-contract root) ----
+    cgo_anchor = raw.get("cgo_anchor")
+    if cgo_anchor is not None:
+        if not isinstance(cgo_anchor, dict):
+            errors.append("cgo_anchor must be a mapping {image_name, primary_username}")
+        else:
+            img = cgo_anchor.get("image_name")
+            if not img or not isinstance(img, str):
+                errors.append("cgo_anchor.image_name is required and must be a non-empty string")
+            pu = cgo_anchor.get("primary_username")
+            if pu is not None and not isinstance(pu, str):
+                errors.append("cgo_anchor.primary_username must be a string")
+
     # execution_identity + default ∈ options
     ident = raw.get("execution_identity") or {}
     options = set()
@@ -163,6 +183,12 @@ def main() -> int:
 
     # steps
     steps = raw.get("steps") or []
+    # Build the id→index map (1-based) up front so causality.parent_step
+    # earlier-ref checks can run inside the per-step loop.
+    step_ids = {s.get("id") for s in steps if isinstance(s, dict)}
+    step_index = {s.get("id"): i for i, s in enumerate(steps, 1) if isinstance(s, dict)}
+    steps_declaring_causality = 0
+    steps_missing_causality = 0
     if isinstance(steps, list):
         for i, step in enumerate(steps, 1):
             if not isinstance(step, dict):
@@ -171,6 +197,73 @@ def main() -> int:
             for key in REQUIRED_STEP:
                 if key not in step or step[key] in (None, "", []):
                     errors.append(f"step[{i}] ({step.get('id', '?')}) missing: {key}")
+
+            # ---- causality contract (optional, per-step) ----
+            caus = step.get("causality")
+            if caus is None:
+                steps_missing_causality += 1
+            else:
+                steps_declaring_causality += 1
+                if not isinstance(caus, dict):
+                    errors.append(f"step[{i}] ({step.get('id','?')}) causality must be a mapping")
+                else:
+                    parent = caus.get("parent_step")
+                    if not parent or not isinstance(parent, str):
+                        errors.append(
+                            f"step[{i}] ({step.get('id','?')}) causality.parent_step "
+                            f"is required and must be a string"
+                        )
+                    else:
+                        if parent == step.get("id"):
+                            errors.append(
+                                f"step[{i}] ({step.get('id','?')}) causality.parent_step "
+                                f"is a self-reference"
+                            )
+                        elif parent not in step_ids or step_index.get(parent, 10**9) >= i:
+                            errors.append(
+                                f"step[{i}] ({step.get('id','?')}) causality.parent_step "
+                                f"references unknown/forward step '{parent}'"
+                            )
+                    pivot = caus.get("pivot")
+                    if pivot is not None and pivot not in PIVOTS:
+                        errors.append(
+                            f"step[{i}] ({step.get('id','?')}) causality.pivot '{pivot}' "
+                            f"not in {sorted(PIVOTS)}"
+                        )
+
+            # ---- platforms (optional) ----
+            platforms = step.get("platforms")
+            if platforms is not None:
+                if not isinstance(platforms, list):
+                    errors.append(f"step[{i}] ({step.get('id','?')}) platforms must be a list")
+                else:
+                    badp = [p for p in platforms if p not in PLATFORMS]
+                    if badp:
+                        errors.append(
+                            f"step[{i}] ({step.get('id','?')}) platforms {badp} not "
+                            f"subset of {sorted(PLATFORMS)}"
+                        )
+
+            # ---- platform_variants (optional) ----
+            pv = step.get("platform_variants")
+            if pv is not None:
+                if not isinstance(pv, dict):
+                    errors.append(
+                        f"step[{i}] ({step.get('id','?')}) platform_variants must be a mapping"
+                    )
+                else:
+                    declared_platforms = set(platforms) if isinstance(platforms, list) else set()
+                    for pkey in pv:
+                        if pkey not in PLATFORMS:
+                            errors.append(
+                                f"step[{i}] ({step.get('id','?')}) platform_variants key "
+                                f"'{pkey}' not in {sorted(PLATFORMS)}"
+                            )
+                        elif pkey not in declared_platforms:
+                            warnings.append(
+                                f"step[{i}] ({step.get('id','?')}) platform_variants has "
+                                f"'{pkey}' not listed in that step's platforms"
+                            )
             sid_ident = step.get("identity")
             if sid_ident and options and sid_ident not in options:
                 errors.append(
@@ -190,6 +283,23 @@ def main() -> int:
                     errors.append(
                         f"step[{i}].expected_detections[{j}] type '{dtype}' invalid"
                     )
+
+    # ---- causality spine cross-step check (mirrors loader model_validator) ----
+    # A declared spine (cgo_anchor present OR any step declares causality) allows
+    # at most one root step lacking a parent; zero-causality scenarios pass
+    # silently (legacy star).
+    has_cgo = isinstance(cgo_anchor, dict)
+    if has_cgo or steps_declaring_causality:
+        if steps_missing_causality > 1:
+            errors.append(
+                f"more than one root step in a declared causality spine "
+                f"({steps_missing_causality} steps lack causality; at most one root allowed)"
+            )
+        elif has_cgo and steps_declaring_causality == 0 and isinstance(steps, list) and len(steps) > 1:
+            warnings.append(
+                "cgo_anchor is declared but no step wires a causality.parent_step "
+                "— the chain is not connected (steps 2..n should declare causality)"
+            )
 
     # ---- cleanup shape (ERROR — loader's CleanupSchema rejects a list) ----
     cleanup = raw.get("cleanup")
