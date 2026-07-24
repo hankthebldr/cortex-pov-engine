@@ -42,16 +42,29 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
-- **Counted ground truth (verified 2026-06-17 — detection-substrate expansion):**
-  **88 loadable scenarios** across **15 detection planes** (all `status: active`,
-  0 rejected / 0 dangling refs; **550/550 detection_id slugs resolve**) · **89 TTP
-  cards** (753 resolvable catalog detection objects) · **14 EAL plugins** (added
-  `email_emitter`) · 69 tool-adapter packs · 11 AWS IaC modules. New since 2026-06-15:
-  the `detection_type` vocabulary gained **ABIOC** (6 types) and the **XDM modeling-rule
-  substrate** (`detections.modeling_rules[]`, surfaced/exported but not a detection_type);
-  CDR 8→15 (first ABIOC `SIM-CDR-009` + lab port `SIM-CDR-010..014` + XDM proof
-  `SIM-CDR-015`), ANALYTICS/multi-plane 5→6 (`SIM-MP-006`), KOI 5→6 (`SIM-KOI-006`),
-  and a new **EMAIL** plane (4 scenarios, Proofpoint TAP / M365 ingestion + stitch).
+- **Counted ground truth (verified 2026-07-23 — Unit 42 final integration):**
+  **113 loadable scenarios** across **15 detection planes** (all `status: active`,
+  0 rejected / 0 dangling refs; **683/683 detection_id slugs resolve**) · **113 TTP
+  cards** (**965 resolvable catalog detection objects**) · **14 EAL plugins** ·
+  **69 tool-adapter packs** (34 distinct adapters wired across 38 scenarios) · 11 AWS
+  IaC modules. This block corrects a documentation drift as well as adds content: the
+  2026-06-17 bullet claimed 88 scenarios / 89 cards, but disk already carried **99 / 99**
+  (undocumented interim content) before this pass. This final integration adds the 14
+  `TTP-2026-0106..0119` pairs (99 + 14 = 113) sourced from Unit 42 threat research —
+  edge-appliance zero-days (Cisco ASA/FTD `SIM-NDR-010`, Ivanti `SIM-MP-010`, PAN-OS
+  GlobalProtect `SIM-ITDR-012`), autonomous-agent / MCP / prompt-injection AI threats
+  (`SIM-KOI-007`, `SIM-MP-009`, `SIM-BROWSER-006`), AWS IAM Roles Anywhere abuse
+  (`SIM-CDR-017/018`), Salesforce OAuth token abuse (`SIM-CLOUD-006`), aged sleeper-domain
+  DGA (`SIM-TIM-003`), MDM mass-wipe (`SIM-ITDR-011`), and China-nexus staging
+  (`SIM-EDR-013/014`, `SIM-NDR-011`). Per-plane on disk: CDR=18 · EDR=14 · ITDR=12 ·
+  multi_plane=10 · NDR=11 · KOI=7 · ai_spm=6 · browser=6 · cloud_app=6 · ai_access=5 ·
+  airs=5 · asm=4 · email=4 · tim=3 · cspm=2. `detection_type` vocabulary stays six
+  (`BIOC | XQL | Analytics | Correlation | IOC | ABIOC`); XDM modeling rules remain a
+  substrate. The `make validate` gate is green (232 pass / 14 warn / 0 fail; the 14
+  WARNs are new-but-real datasets `cisco_asa_raw`, `ivanti_ics_raw`,
+  `panw_ngfw_globalprotect_raw` — advisory, not gating).
+- *Prior (verified 2026-06-17 — detection-substrate expansion): 88 scenarios (99 on disk,
+  undocumented) · 89 cards · 550/550 slugs · 14 EAL plugins · 15 planes.*
 - *Prior (verified 2026-06-15): 75 scenarios · 76 cards · 494/494 slugs · 13 EAL plugins · 14 planes.*
 - *Prior (Fable pass, 2026-06-10): 68 scenarios · 72 cards · 70-pack claim · 17 wired.*
 
