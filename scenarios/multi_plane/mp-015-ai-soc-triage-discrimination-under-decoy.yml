@@ -1,0 +1,221 @@
+scenario_id: SIM-MP-015
+name: "AI SOC Triage Discrimination Under Decoy Noise — True-Positive Elevation + False-Positive Suppression"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UCS-MP-15
+tc_ref: TC-MP-15
+uc_name: "AI Triage Discrimination — True-Positive Elevation + False-Positive Suppression"
+tc_name: "Identity-Driven Intrusion Ranked #1 While Benign Decoys Are Suppressed"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Primary technique is T1078.004 (Valid Accounts: Cloud Accounts) under the
+# Privilege Escalation tactic — the identity-driven access the Unit 42 source
+# explicitly profiles, abused to reach an elevated administrative context. The
+# scenario leads on the TA0004 (Privilege Escalation) tactic, not an initial-
+# access re-skin. (T1548 was dropped: the source names no elevation-control
+# mechanism and the modeled escalation is valid-account admin-group abuse.)
+mitre_tactic: "TA0004"
+mitre_tactic_name: "Privilege Escalation"
+mitre_technique: "T1078.004"
+mitre_technique_name: "Valid Accounts: Cloud Accounts"
+additional_techniques:
+  - technique: "T1059.001"
+    name: "Command and Scripting Interpreter: PowerShell"
+  - technique: "T1078"
+    name: "Valid Accounts"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Inside the Modern SOC: The 72-Minute Race"
+threat_report_url: "https://unit42.paloaltonetworks.com/soc-72-minute-race/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - svc-backup
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# First F7 (AI Triage & Summarization) scenario in the corpus. The KPI is the
+# AI triage layer's discrimination: rank the true positive #1 AND suppress the
+# benign-but-anomalous decoys, not merely fire a detection.
+validation_methodology: "AI Triage Discrimination & Summarization"
+methodology_family: "F7"
+primary_kpi: "Triage Automation Rate"
+threshold:
+  kpi: "Triage Automation Rate"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The AI triage layer stitches the three malicious signals (impossible-travel
+  privileged sign-in -> abnormal PowerShell chain -> rapid privilege escalation)
+  from ONE compromised principal into a single incident_id spanning the identity
+  and endpoint planes, and ranks it #1. In the same window it must deprioritize
+  and summarize the benign decoy singletons — a cron backup job (tar/rsync/gzip)
+  under an automation account, a sanctioned admin PowerShell module load, and an
+  authenticated vulnerability-scanner sweep — as benign, and must NOT merge any
+  of them into the true positive. F7 pass = malicious incident ranked top AND
+  every decoy correctly deprioritized (>= 90% of decoys suppressed across the
+  run batch).
+moat_tier: "LEAD"
+
+# ── F2-Style Stitch Fields (correlation-terminal assertion) ─────────────────
+# This scenario is correlation-terminal: the final step asserts one incident_id
+# whose causality chain spans >= 2 planes (identity + endpoint), joined on the
+# normalized principal (normalized_user) — the shared cross-plane key every
+# ABIOC emits: UPN local-part on the identity plane, domain-stripped effective
+# username on the endpoint plane. This is the field an equi-join can actually
+# match across msft_azure_ad_signin and xdr_data.
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - ITDR
+  - EDR
+stitching_key: normalized_user
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Signals 1-3 are the genuine malicious chain from ONE principal; step-04 emits
+# the benign decoys the AI must NOT merge; step-05 asserts the terminal stitch.
+# SAFE-MODE, non-destructive: no real PowerShell / cloud auth is performed —
+# steps emit telemetry marker files (RFC5737 documentation IPs) that model the
+# signals for ingestion, then cleanup removes them.
+steps:
+  - id: step-01
+    name: "Malicious signal 1/3 — impossible-travel privileged sign-in (two geographies, one window)"
+    command: |
+      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; mkdir -p "$D"
+      printf '{"event":"signin","user_principal":"%s","country":"US","source_ip":"203.0.113.10","result":"success","privileged":true}\n' "$P" > "$D/signin-us.json"
+      printf '{"event":"signin","user_principal":"%s","country":"DE","source_ip":"198.51.100.20","result":"success","privileged":true}\n' "$P" > "$D/signin-de.json"
+      echo cortexsim-mp015-impossible-travel-signin-emitted
+    identity: www-data
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "A privileged principal authenticates successfully from two geographies inside one login window — auto-tuned ABIOC fires on the deviation from the account's learned sign-in-geography baseline, anchored to the identity so the endpoint deviations can be joined to it."
+        ttp_ref: "TTP-2026-0130"
+        detection_id: "abioc-mp-015-impossible-travel-privileged-sign-in"
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms two successful privileged sign-ins for one principal across >= 2 countries within the run window (the impossible-travel deviation is observable in the sign-in dataset)."
+        ttp_ref: "TTP-2026-0130"
+        detection_id: "xql-mp-015-impossible-travel-sign-in-surfaced"
+
+  - id: step-02
+    name: "Malicious signal 2/3 — abnormal PowerShell chain from an Office parent"
+    command: |
+      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; mkdir -p "$D"
+      # SAFE-MODE: no real PowerShell on the Linux harness; emit a process-lineage
+      # marker mirroring winword.exe -> powershell.exe -enc <b64> for ingestion.
+      printf '{"event":"process","parent":"winword.exe","child":"powershell.exe","cmdline":"powershell.exe -nop -enc SQBFAFgA","user":"%s"}\n' "$P" > "$D/ps-chain.json"
+      echo cortexsim-mp015-abnormal-powershell-chain-emitted
+    identity: www-data
+    mitre_technique: "T1059.001"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "An Office/scripting parent spawns encoded/downloading PowerShell under the compromised principal — auto-tuned ABIOC fires on the abnormal parent-child lineage, not on the PowerShell binary (which is legitimate), anchored to the same principal as the sign-in."
+        ttp_ref: "TTP-2026-0130"
+        detection_id: "abioc-mp-015-abnormal-powershell-execution-chain-from-office-parent"
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms the malicious endpoint chain (PowerShell / group-membership discovery) is observable for the compromised principal within the run window."
+        ttp_ref: "TTP-2026-0130"
+        detection_id: "xql-mp-015-malicious-endpoint-chain-present-for-compromised-principal"
+
+  - id: step-03
+    name: "Malicious signal 3/3 — rapid privilege escalation within minutes of access"
+    command: |
+      P="${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}"; D=/tmp/cortexsim-mp015; mkdir -p "$D"
+      id
+      # SAFE-MODE: no real group modification on the Linux harness; emit a marker
+      # modeling the compromised valid account added to local admins (the escalation
+      # ACTION, integrity medium->high) within minutes of the impossible-travel sign-in.
+      printf '{"event":"process","parent":"cmd.exe","parent_integrity":"medium","integrity":"high","cmdline":"net localgroup administrators jdoe-admin /add","principal":"%s","effective_username":"CORP\\jdoe-admin"}\n' "$P" > "$D/privesc.json"
+      echo cortexsim-mp015-rapid-privesc-emitted
+    identity: root
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The same principal performs an escalation ACTION — added to local administrators (net localgroup ... /add / Add-LocalGroupMember) or a medium->high integrity transition — within minutes of first access. The auto-tuned ABIOC keys on the escalation action (not steady-state high-integrity/root, the admin/daemon norm), joins the endpoint event to the identity-plane sign-in on the shared normalized_user, and asserts the access -> elevation delta is <= 900s."
+        ttp_ref: "TTP-2026-0130"
+        detection_id: "abioc-mp-015-rapid-privilege-escalation-within-minutes-of-first-access"
+
+  - id: step-04
+    name: "Benign decoy singletons — cron backup, sanctioned admin PowerShell, authenticated scanner (must NOT be merged)"
+    command: |
+      D=/tmp/cortexsim-mp015; mkdir -p "$D"
+      # Decoy 1: legitimate scheduled backup job under the automation account.
+      tar -cf "$D/backup.tar" /etc/hostname 2>/dev/null || true
+      gzip -f "$D/backup.tar" 2>/dev/null || true
+      # Decoy 2: sanctioned admin PowerShell module load (benign, different principal).
+      printf '{"event":"process","parent":"explorer.exe","child":"powershell.exe","cmdline":"Import-Module ActiveDirectory","user":"admin-sanctioned@corp.local"}\n' > "$D/decoy-ps.json"
+      # Decoy 3: authenticated vulnerability-scanner sweep (sanctioned, non-privileged).
+      printf '{"event":"signin","user_principal":"svc-scanner@corp.local","country":"US","source_ip":"198.51.100.77","result":"success","privileged":false}\n' > "$D/decoy-scan.json"
+      echo cortexsim-mp015-benign-decoys-emitted
+    identity: svc-backup
+    mitre_technique: "T1078"
+    expected_detections:
+      - plane: ANALYTICS
+        type: XQL
+        description: "Discrimination metric — each benign decoy principal (svc-backup / svc-scanner / admin-sanctioned) stays its own singleton (<= 1 incident) and does NOT join the malicious multi-signal incident. This is the false-positive-suppression evidence."
+        ttp_ref: "TTP-2026-0130"
+        detection_id: "xql-mp-015-benign-decoy-singletons-not-merged"
+
+  - id: step-05
+    name: "Terminal stitch — assert one incident_id spans identity + endpoint, decoys deprioritized"
+    command: |
+      echo '[MP-015] Terminal stitch — waiting for AI triage / correlation to converge';
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-90}"
+      echo '[*] Verifier asserts CR-MP-0015 raised ONE incident_id for the compromised principal';
+      echo '[*] Expected: causality spans >= 2 planes (ITDR sign-in + EDR process), ranked #1';
+      echo '[*] Expected: svc-backup / svc-scanner / admin-sanctioned decoys NOT in that incident';
+      echo '[*] Failure modes: decoy merged into incident (FP suppression fails); < 2 planes (stitch fails); malicious incident not ranked #1 (triage fails)';
+      echo cortexsim-mp015-terminal-stitch-verified
+    identity: root
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "XSIAM correlation / AI triage fuses the three malicious ABIOCs on the compromised principal into a single identity-driven-intrusion incident spanning the identity + endpoint planes, ranks it #1, and leaves the benign decoy singletons un-merged and deprioritized."
+        ttp_ref: "TTP-2026-0130"
+        detection_id: "CR-MP-0015"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp015"
+    - "echo 'cortexsim-mp015-cleanup-complete'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - multi-plane
+  - analytics
+  - ai-triage
+  - f7
+  - true-positive-elevation
+  - false-positive-suppression
+  - identity-driven-intrusion
+  - impossible-travel
+  - privilege-escalation
+  - decoy-discrimination
+  - correlation-terminal

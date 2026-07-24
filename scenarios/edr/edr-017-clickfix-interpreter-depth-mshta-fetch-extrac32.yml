@@ -1,0 +1,213 @@
+scenario_id: SIM-EDR-017
+name: "ClickFix Interpreter-Depth Loader Chain: mshta -> extrac32 CAB Unpack -> Masqueraded Signed AutoIt3 (Lumma Stealer)"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA). It models the DEPTH of the
+# post-paste ClickFix loader chain (Unit 42, Lumma Stealer via ClearFake /
+# pastejacking) NON-DESTRUCTIVELY on a Windows lab endpoint to prove Cortex's
+# auto-tuned ABIOCs catch the causality chain — mshta remote fetch -> AV/EDR
+# discovery -> extrac32 CAB unpack -> a validly-signed AutoIt3 interpreter
+# renamed Slovenia.com running an .a3x script — where every binary is
+# legitimate, then stitch the endpoint lineage with the network stager/C2
+# egress into one Lumma-loader incident. This is the interpreter-DEPTH
+# companion to SIM-EDR-016 (the initial-access ClickFix paste). All offensive
+# detail lives in the anchor card TTP-2026-0129 (self-contained, ships its own
+# cleanup). Nothing here fetches a payload, reconstructs the payload, or
+# runs an interpreter — the genuinely-benign discovery LOLBins AND a benign
+# extrac32 CAB unpack (of a locally-authored archive) run for real telemetry;
+# the mshta fetch, copy /b reconstruction, and interpreter exec are SAFE-MODE
+# marker files.
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-EDR-017
+tc_ref: TC-EDR-017
+uc_name: "Endpoint Behavioral-ML Detection of a LOLBin Loader Chain"
+tc_name: "ClickFix Interpreter-Depth Lumma Loader (mshta -> extrac32 -> AutoIt3)"
+
+mitre_tactic: "TA0002"
+mitre_tactic_name: "Execution"
+mitre_technique: "T1059.003"
+mitre_technique_name: "Command and Scripting Interpreter: Windows Command Shell"
+additional_techniques:
+  - technique: "T1059.001"
+    name: "Command and Scripting Interpreter: PowerShell"
+  - technique: "T1204.002"
+    name: "User Execution: Malicious File"
+  - technique: "T1218.014"
+    name: "System Binary Proxy Execution: MSHTA"
+  - technique: "T1518.001"
+    name: "Software Discovery: Security Software Discovery"
+  - technique: "T1140"
+    name: "Deobfuscate/Decode Files or Information"
+  - technique: "T1036.005"
+    name: "Masquerading: Match Legitimate Name or Location"
+
+threat_report: "Unit 42 — Preventing the ClickFix Attack Vector (Lumma Stealer loader chain)"
+threat_report_url: "https://unit42.paloaltonetworks.com/preventing-clickfix-attack-vector/"
+
+execution_identity:
+  default: user
+  options:
+    - user
+    - administrator
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# F1 = Signal Injection & Detection Accuracy. The KPI this scenario exercises is
+# MTTD: the mean time from the loader-chain execution to the ABIOC/correlation
+# incident firing. The catch is behavioral — every binary in the chain is a
+# legitimate LOLBin, so detection accuracy comes from the causality chain and
+# the signed-AutoIt3 masquerade, not a known-bad signature.
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex's auto-tuned ABIOC scores the security-software-discovery burst
+  (tasklist|findstr) inside the loader lineage, the benign extrac32 /Y /E CAB
+  unpack surfaces in xdr_data, and correlation rule CR-EDR-0017 stitches that
+  real endpoint signal with the network stager-fetch / Lumma C2 egress into a
+  SINGLE incident whose causality chain spans the EDR and NDR planes — with
+  mean time from execution to alert inside the MTTD budget. The mshta remote
+  fetch and the masqueraded signed-AutoIt3 hop (Slovenia.com running an .a3x
+  script) are modelled NON-DESTRUCTIVELY with SAFE-MODE markers, so the
+  mshta-fetch loader ABIOC and the extrac32->AutoIt3 grouping ABIOC are
+  documented model-only detections a full detonation would raise — this pair
+  does not assert they fire under SAFE-MODE. Every binary that does run is
+  legitimate (tasklist, findstr, makecab, extrac32), so the proof is that
+  behavioral-ML catches the chain a static per-binary BIOC would miss.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "mshta remote fetch of the loader stager (SAFE-MODE model + egress shape)"
+    command: |
+      $s = Join-Path $env:TEMP 'cortexsim-edr-017'
+      New-Item -ItemType Directory -Force -Path $s | Out-Null
+      Set-Content -Path (Join-Path $s 'SAFE-MODE-mshta-fetch.marker') -Value 'CortexSim SIM-EDR-017 SAFE-MODE marker: models mshta.exe proxying a remote fetch of an encoded PowerShell downloader (mshta hxxps://iplogger[.]co/xxxxx =+) that hands off to a cmd.exe loader. No fetch performed and mshta is not invoked.'
+      $h = if ($env:CORTEXSIM_C2_HOST) { $env:CORTEXSIM_C2_HOST } else { '127.0.0.1' }
+      try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri ("http://{0}/party" -f $h) | Out-Null } catch {}
+      Write-Host 'cortexsim-edr-017-mshta-fetch-modelled'
+    identity: user
+    mitre_technique: "T1218.014"
+    # The mshta-fetch loader ABIOC is MODEL-ONLY (no mshta.exe is spawned under
+    # SAFE-MODE), so it is NOT asserted here — only the network egress this step
+    # actually produces (Invoke-WebRequest to the authorised host) is asserted.
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "Network-plane hunt surfaces the loader stager fetch (pub-*.r2.dev) and Lumma C2 egress (sumeriavgv[.]digital) — the modelled egress shape observable to the NGFW / NDR plane."
+        ttp_ref: "TTP-2026-0129"
+        detection_id: "xql-loader-stager-fetch-and-lumma-c2-egress-on-the-network-plane"
+
+  - id: step-02
+    name: "AV/EDR product discovery via tasklist piped to findstr (real benign LOLBins)"
+    command: |
+      cmd.exe /c "tasklist | findstr /I ""opssvc wrsa"""
+      cmd.exe /c "tasklist | findstr /I ""bdservicehost SophosHealth AvastUI AVGUI nsWscSvc ekrn"""
+      Write-Host 'cortexsim-edr-017-av-edr-discovery-probe-complete'
+    identity: user
+    mitre_technique: "T1518.001"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The loader lineage runs tasklist piped to findstr filtering on security-product process names (opssvc/wrsa/SophosHealth/AvastUI/...) — auto-tuned ABIOC fires on the security-software-discovery intent inside a loader lineage. Every command is a legitimate admin tool."
+        ttp_ref: "TTP-2026-0129"
+        detection_id: "abioc-av-and-edr-product-discovery-via-tasklist-piped-to-findstr-in-a-loader-lineage"
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms the tasklist/findstr security-product discovery command line surfaced in xdr_data within the run window."
+        ttp_ref: "TTP-2026-0129"
+        detection_id: "xql-tasklist-to-findstr-security-product-discovery-command-line"
+
+  - id: step-03
+    name: "extrac32 CAB unpack (real benign) + masqueraded signed AutoIt3 (SAFE-MODE model)"
+    command: |
+      $s = Join-Path $env:TEMP 'cortexsim-edr-017'
+      cmd.exe /c "md $s\386354" 2>$null
+      # REAL but BENIGN: author a local CAB then unpack it with extrac32 for
+      # genuine unpack telemetry (extrac32 reads the archive by header, not
+      # extension — exactly the tradecraft). No malicious archive is fetched.
+      Set-Content -Path (Join-Path $s 'benign-cab-input.txt') -Value 'CortexSim SIM-EDR-017 benign CAB payload — safe extrac32 telemetry only.'
+      Push-Location $s
+      cmd.exe /c "makecab benign-cab-input.txt Boat.pst" | Out-Null
+      cmd.exe /c "extrac32 /Y /E Boat.pst /L 386354" | Out-Null
+      Pop-Location
+      # copy /b payload reconstruction + masqueraded signed AutoIt3 stay SAFE-MODE modelled.
+      Set-Content -Path (Join-Path $s 'SAFE-MODE-masqueraded-autoit3.marker') -Value 'CortexSim SIM-EDR-017 SAFE-MODE marker: a REAL benign extrac32 /Y /E ran against a locally-authored CAB (Boat.pst); the copy /b reconstruction from concatenated fragments (Bell/Sewing/Monetary/...) and a legitimate validly-signed AutoIt3 interpreter renamed to Slovenia.com launched against a compiled .a3x script (start Slovenia.com G) are modelled only. No payload reconstructed, no interpreter run.'
+      Write-Host 'cortexsim-edr-017-extrac32-unpacked-benign-autoit3-modelled'
+    identity: user
+    mitre_technique: "T1036.005"
+    # The extrac32->masqueraded-AutoIt3 grouping ABIOC (distinct_stages >= 2) is
+    # MODEL-ONLY: SAFE-MODE runs the extrac32 unpack for real but only models the
+    # renamed signed-AutoIt3 exec, so the two-stage grouping cannot fire and is
+    # not asserted. Only the real extrac32 unpack (validation XQL) is asserted.
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms the REAL benign extrac32 unpack surfaced in xdr_data within the run window (the query's OR branch also covers the renamed signer=AutoIt, image!=autoit3.exe interpreter that a full detonation would add)."
+        ttp_ref: "TTP-2026-0129"
+        detection_id: "xql-extrac32-unpack-and-renamed-autoit3-interpreter-execution-surfaced"
+
+  - id: step-04
+    name: "Correlation stitches the loader chain into one Lumma-loader incident spanning EDR + NDR"
+    command: |
+      Write-Host '[SIM-EDR-017] Stitch verification — allow the XSIAM correlation engine to converge'
+      $w = if ($env:CORTEXSIM_STITCH_WAIT_SECONDS) { [int]$env:CORTEXSIM_STITCH_WAIT_SECONDS } else { 90 }
+      Start-Sleep -Seconds $w
+      Write-Host '[*] Expected: CR-EDR-0017 raises ONE incident whose causality chain spans EDR (LOLBin lineage) + NDR (stager/C2 egress)'
+      Write-Host 'cortexsim-edr-017-cr-edr-0017-stitched-lumma-loader-incident'
+    identity: user
+    mitre_technique: "T1059.003"
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Correlation rule fuses the real endpoint loader-lineage signal (the tasklist|findstr AV-discovery burst and the benign extrac32 CAB unpack) with the NDR stager-fetch / Lumma C2 egress on the same host into a SINGLE Lumma-loader incident spanning >= 2 planes, anchored to the modelled mshta -> cmd -> extrac32 -> renamed-AutoIt3 causality chain."
+        ttp_ref: "TTP-2026-0129"
+        detection_id: "CR-EDR-0017"
+        verification_xql: |
+          // Correlation-terminal assertion — one incident, >= 2 planes
+          dataset = xdr_data
+          | filter _time > timeago(10m)
+          | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by agent_hostname
+          | filter plane_count >= 2 and incident_count = 1
+        kpi_contribution:
+          kpi: "MTTD"
+          op: "≤"
+          value: 300
+          unit: "seconds"
+
+cleanup:
+  commands:
+    - "Remove-Item -Recurse -Force (Join-Path $env:TEMP 'cortexsim-edr-017') -ErrorAction SilentlyContinue"
+    - "Write-Host 'cortexsim-edr-017-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - clickfix
+  - lumma-stealer
+  - lolbin
+  - mshta
+  - extrac32
+  - autoit3
+  - masquerading
+  - abioc
+  - behavioral-ml
+  - cross-plane
+  - v2.0-methodology

@@ -1,0 +1,237 @@
+scenario_id: SIM-MP-013
+name: "Muddled Libra Rogue-VM Alert Storm — AI SOC Incident Grouping (7 Signals → 1 Incident)"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UCS-MP-13
+tc_ref: TC-MP-13
+uc_name: "AI SOC Analyst Incident Grouping"
+tc_name: "Seven Correlated Signals Collapse to One Correctly-Summarized Incident"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Terminal tactic emphasized for depth is TA0008 (Lateral Movement): the chain
+# carries three real lateral-movement variants — pass-the-ticket (T1550.003),
+# RDP (T1021.001), and SMB/PsExec (T1021.002) — not an initial-access re-skin.
+mitre_tactic: "TA0008"
+mitre_tactic_name: "Lateral Movement"
+mitre_technique: "T1550.003"
+mitre_technique_name: "Use Alternate Authentication Material: Pass the Ticket"
+additional_techniques:
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1564.006"
+    name: "Hide Artifacts: Run Virtual Instance"
+  - technique: "T1003.003"
+    name: "OS Credential Dumping: NTDS"
+  - technique: "T1087.002"
+    name: "Account Discovery: Domain Account"
+  - technique: "T1136.001"
+    name: "Create Account: Local Account"
+  - technique: "T1021.001"
+    name: "Remote Services: Remote Desktop Protocol"
+  - technique: "T1021.002"
+    name: "Remote Services: SMB/Windows Admin Shares"
+  - technique: "T1572"
+    name: "Protocol Tunneling"
+  - technique: "T1537"
+    name: "Transfer Data to Cloud Account"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Muddled Libra Operations Playbook (rogue-VM intrusion tradecraft)"
+threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra-ops-playbook/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+# Runs under the identity harness on a Linux jumpbox. The real intrusion is on
+# Windows/vSphere/cloud; here each step emits a NON-DESTRUCTIVE synthetic signal
+# (labelled log line + SAFE-MODE marker) so the analytics/correlation/AI-triage
+# layer has the seven signal families to group. No real VM, hive, or data moves.
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - svc-backup
+    - root
+    - nobody
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# F7 — AI Triage & Summarization. The KPI is incident consolidation: seven
+# medium/low correlated ABIOCs must collapse into exactly ONE critical incident
+# with a correct summary, not an un-grouped alert storm of seven.
+validation_methodology: "AI Triage & Incident Grouping"
+methodology_family: "F7"
+primary_kpi: "Incident Consolidation Ratio"
+threshold:
+  kpi: "Incident Consolidation Ratio"
+  op: "="
+  value: 1
+  unit: "incident"
+success_criteria: |
+  All seven medium/low ABIOC alerts from the single Muddled Libra rogue-VM
+  intrusion — rogue vSphere VM create, NTDS.dit-from-VMDK, ADRecon, gooner local
+  admin, forged Kerberos ticket, Chisel 443 tunnel, S3/Snowflake exfil — fire on
+  the same rogue host / attacker actor within the ~15h window and collapse into
+  exactly ONE critical incident (CR-MP-0013), not seven. The XSIAM AI SOC analyst
+  summary must name the domain-controller compromise (NTDS.dit copied from the
+  mounted DC VMDK) and the exfiltration channel (Chisel 443 tunnel + S3/Snowflake).
+  Ground truth = one incident; the analyst passes F7 when it produces a single
+  correctly-summarized critical incident rather than an alert storm.
+moat_tier: "MOAT"
+
+# ── F2/F7 correlation fields (informational for the AI-triage grouping) ──────
+correlation_window_seconds: 54000
+required_planes_in_incident:
+  - EDR
+  - ITDR
+  - NDR
+# Every MP-013 ABIOC projects agent_hostname as the shared endpoint entity:
+# hostname-native bodies (xdr_data / msft_windows_security / network_story) emit
+# it directly; IP-native bodies (esxi_syslog source_address, ad_audit
+# client_address, panw_ngfw_traffic_raw source_address) normalize their raw
+# identifier into it via `alter`, and XSIAM XDM endpoint entity resolution
+# reconciles hostname<->IP so CR-MP-0013 fuses the seven on one entity.
+stitching_key: agent_hostname
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Seven signal-emitting steps (one ABIOC each) + one terminal correlation step
+# asserting the single grouped incident. Order mirrors the Unit 42 timeline.
+steps:
+  - id: step-01
+    name: "Signal 1/7 — rogue vSphere VM created + local Administrator login"
+    command: "mkdir -p /tmp/cortexsim-mp013 && touch /tmp/cortexsim-mp013/new-virtual-machine.SAFE-MODE && echo 'cortexsim-mp013-signal1-rogue-vsphere-vm-created-admin-login'"
+    identity: root
+    mitre_technique: "T1078"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "A 'New Virtual Machine' is created in vSphere and logged into with a local Administrator account — Muddled Libra's rogue-VM-outside-EDR tradecraft. Medium behavioral signal in isolation."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: "abioc-mp-013-rogue-vsphere-vm-creation-with-local-administrator-login"
+
+  - id: step-02
+    name: "Signal 2/7 — NTDS.dit + SYSTEM hive copied from mounted DC VMDK (SAFE-MODE)"
+    command: "touch /tmp/cortexsim-mp013/ntds.dit.SAFE-MODE /tmp/cortexsim-mp013/result.kerb.SAFE-MODE && echo 'cortexsim-mp013-signal2-ntds-dit-copied-from-mounted-dc-vmdk-safe-mode-no-real-hive'"
+    identity: root
+    mitre_technique: "T1003.003"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "NTDS.dit + SYSTEM hive copied off a mounted (powered-down) DC VMDK and decrypted into result/result.kerb on the rogue VM — full-domain credential theft that never touches a live DC's LSASS."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: "abioc-mp-013-ntds-dit-extraction-from-mounted-domain-controller-vmdk"
+
+  - id: step-03
+    name: "Signal 3/7 — ADRecon domain enumeration burst (ComputerSPNs)"
+    command: "echo 'cortexsim-mp013-signal3-adrecon-domain-enumeration-computerspns'; ldapsearch -VV 2>/dev/null | head -1 || true"
+    identity: www-data
+    mitre_technique: "T1087.002"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "A PowerShell ADRecon run enumerates the domain (forest, trusts, SPNs via ComputerSPNs.csv) in a short LDAP-heavy burst from the rogue host."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: "abioc-mp-013-adrecon-domain-enumeration-burst"
+
+  - id: step-04
+    name: "Signal 4/7 — gooner local-admin account created (4720/4624 analog)"
+    command: "echo 'cortexsim-mp013-signal4-local-admin-account-gooner-created-4720-4624'; touch /tmp/cortexsim-mp013/gooner-account.SAFE-MODE"
+    identity: root
+    mitre_technique: "T1136.001"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "New local account 'gooner' created (Windows 4720) and immediately used for an interactive logon (4624) on the rogue host — attacker-controlled persistence. Low in isolation."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: "abioc-mp-013-rogue-local-administrator-account-creation-gooner"
+
+  - id: step-05
+    name: "Signal 5/7 — forged Kerberos ticket pass-the-ticket auth (RDP/PsExec lateral)"
+    command: "echo 'cortexsim-mp013-signal5-forged-kerberos-ticket-pass-the-ticket-rdp-psexec-lateral-safe-mode'; touch /tmp/cortexsim-mp013/result.SAFE-MODE"
+    identity: www-data
+    mitre_technique: "T1550.003"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "Kerberos tickets forged from the harvested DC credential material are used for pass-the-ticket auth, enabling RDP/PsExec lateral movement without re-entering passwords — the TA0008 depth of this chain."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: "abioc-mp-013-forged-kerberos-ticket-pass-the-ticket-authentication"
+
+  - id: step-06
+    name: "Signal 6/7 — Chisel SSH-over-HTTPS persistent tunnel on 443"
+    command: "echo 'cortexsim-mp013-signal6-chisel-ssh-over-https-persistent-tunnel-443'; curl -s --max-time 5 \"https://${STAGE_HOST:-127.0.0.1}:443/tunnel\" -o /dev/null 2>/dev/null || true"
+    identity: www-data
+    mitre_technique: "T1572"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "A Chisel SSH-over-HTTPS tunnel to an attacker-associated destination stays alive on TCP 443 for hours — protocol-on-non-standard-port persistence that blends into HTTPS."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: "abioc-mp-013-chisel-ssh-over-https-persistent-c2-tunnel"
+
+  - id: step-07
+    name: "Signal 7/7 — bulk cloud exfil attempt to S3 / Snowflake (SAFE-MODE)"
+    command: "echo 'cortexsim-mp013-signal7-bulk-cloud-exfil-s3-snowflake-safe-mode-no-real-data-moved'; touch /tmp/cortexsim-mp013/exfil-manifest.SAFE-MODE"
+    identity: www-data
+    mitre_technique: "T1537"
+    expected_detections:
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "The rogue host attempts bulk data movement to Snowflake and attacker AWS S3 buckets over 443 (S3 Browser client). Cloud upload volume is a medium behavioral signal in isolation."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: "abioc-mp-013-bulk-cloud-exfiltration-to-s3-and-snowflake"
+
+  - id: step-08
+    name: "Terminal — assert the seven ABIOCs collapse to ONE correctly-summarized incident"
+    command: |
+      echo 'cortexsim-mp013-terminal-assert-single-incident';
+      echo '[*] Expected: XSIAM AI SOC analyst GROUPS the 7 medium/low ABIOCs into ONE critical incident (CR-MP-0013), NOT seven.';
+      echo '[*] Expected summary: names the DC compromise (NTDS.dit from mounted VMDK) AND the exfil channel (Chisel 443 tunnel + S3/Snowflake).';
+      echo '[*] Failure modes: 7 separate incidents (grouping missed) → Incident Consolidation Ratio fails; summary omits DC/exfil → F7 fails.';
+      sleep "${CORTEXSIM_TRIAGE_WAIT_SECONDS:-30}"
+    identity: root
+    mitre_technique: "T1078"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "XSIAM correlation + AI grouping — the seven MP-013 ABIOCs on the same rogue host/actor within ~15h fuse into exactly ONE critical incident whose summary names the DC compromise and the exfil channel. Ground truth = one incident, not seven."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: CR-MP-0013
+      - plane: ANALYTICS
+        type: XQL
+        description: "Validation query — surfaces the grouped-evidence footprint (distinct rogue-host actions under Administrator/gooner) that the AI summary consolidates into one incident."
+        ttp_ref: "TTP-2026-0123"
+        detection_id: "xql-mp-013-seven-signal-incident-grouping-evidence"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp013"
+    - "echo 'cortexsim-mp013-cleanup-complete-safe-mode-markers-removed'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - multi-plane
+  - analytics
+  - ai-triage
+  - incident-grouping
+  - correlation
+  - muddled-libra
+  - scattered-spider
+  - rogue-vm
+  - f7-ai-triage
+  - moat

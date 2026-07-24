@@ -1,0 +1,202 @@
+scenario_id: SIM-MP-011
+name: "Phantom Taurus NET-STAR Cross-Plane Stitch — IIS Backdoor + Ntospy Cred Interception + SQL sa Exfil (One Incident)"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UCS-MP-11
+tc_ref: TC-MP-11
+uc_name: "Cross-Plane Credential-Access Incident Stitching"
+tc_name: "Phantom Taurus NET-STAR — IIS Backdoor + Ntospy + SQL sa Exfil Into One Incident"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Primary tactic is Credential Access (TA0006): the Ntospy network-provider DLL
+# harvesting logon credentials is the pivot the whole chain turns on, and the
+# stitched incident is classified credential-access.
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1556.008"
+mitre_technique_name: "Modify Authentication Process: Network Provider DLL"
+additional_techniques:
+  - technique: "T1505.003"
+    name: "Server Software Component: Web Shell"
+  - technique: "T1047"
+    name: "Windows Management Instrumentation"
+  - technique: "T1005"
+    name: "Data from Local System"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1070.006"
+    name: "Indicator Removal: Timestomp"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Phantom Taurus: A New Chinese-Nexus APT and the NET-STAR Malware Suite"
+threat_report_url: "https://unit42.paloaltonetworks.com/phantom-taurus/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+# The NET-STAR technique is Windows-native (w3wp.exe + WMI + SQL Server). The
+# pov-engine reproduces the cross-plane SIGNAL SHAPE non-destructively under the
+# Linux identity harness with marker files and no network egress — the real
+# detection logic in TTP-2026-0120 targets the Windows xdr_data telemetry.
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# F2 = Causality Stitching Validation. The KPI is the Cross-Source Correlation
+# Rate: over a batch, ≥ 80 % of runs must collapse the four orphan single-plane
+# signals into ONE incident_id spanning EDR + identity/ITDR + NDR on one host.
+validation_methodology: "Cross-Plane Causality Correlation"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  On one IIS host, the four NET-STAR stage signals — w3wp.exe in-memory backdoor
+  child (EDR), Ntospy network-provider DLL credential interception (identity/ITDR),
+  WMI-spawned SQL 'sa' CSV export (endpoint), and STAR-delimited AES/gzip HTTPS
+  egress from w3wp.exe (NDR) — stitch into a SINGLE XSIAM incident_id via
+  correlation rule CR-MP-0017. Each successful run shows:
+    - exactly one incident_id
+    - causality chain anchored to the w3wp.exe lineage
+    - planes ⊇ {EDR, ITDR, NDR}
+  Individually every stage is a low-confidence orphan alert; the stitch is the
+  proof that XSIAM assembles the credential-access incident no single-plane tool
+  reconstructs. Over a 5-run batch, ≥ 80 % must produce one stitched incident_id.
+moat_tier: "MOAT"
+
+# ── F2-Specific Fields ──────────────────────────────────────────────────────
+correlation_window_seconds: 900
+required_planes_in_incident:
+  - EDR
+  - ITDR
+  - NDR
+stitching_key: src_host
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Four NET-STAR stages on one IIS host + a terminal stitch assertion. Each step
+# is a SAFE-MODE emulation (marker files, no egress, no SQL) the Linux identity
+# harness can literally run; the deployable detection logic lives on the card.
+steps:
+  - id: step-01
+    name: "EDR — w3wp.exe IIS worker runs NET-STAR in-memory backdoor child"
+    command: |
+      WORK="${WORK_DIR:-/tmp/cortexsim-mp011}"; mkdir -p "$WORK"
+      echo '[MP-011] EDR stage: w3wp.exe -> IIServerCore in-memory backdoor spawns cmd.exe/powershell.exe (AssemblyExecuter loads .NET in memory) [SAFE-MODE marker]' \
+        | tee "$WORK/step01-iis-backdoor.marker"
+      echo '[*] Real telemetry: xdr_data process lineage w3wp.exe -> (cmd|powershell|pwsh|wmic)'
+    identity: www-data
+    mitre_technique: "T1505.003"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR BIOC — the IIS worker w3wp.exe parents a command interpreter or WMI (cmd/powershell/pwsh/wmic), the observable signature of the NET-STAR IIServerCore in-memory backdoor executing operator commands. Compiler children (csc/cvtres) are excluded as benign ASP.NET runtime compilation."
+        ttp_ref: "TTP-2026-0120"
+        detection_id: "bioc-mp-011-w3wp-iis-worker-in-memory-backdoor-child-process"
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms an anomalous w3wp.exe child process surfaced on the IIS host within the run window (the backdoor deviation is observable in xdr_data)."
+        ttp_ref: "TTP-2026-0120"
+        detection_id: "xql-mp-011-anomalous-w3wp-child-process-surfaced-on-iis-host"
+
+  - id: step-02
+    name: "Identity — Ntospy malicious network-provider DLL intercepts credentials"
+    command: |
+      WORK="${WORK_DIR:-/tmp/cortexsim-mp011}"; mkdir -p "$WORK"
+      echo '[MP-011] identity stage: Ntospy registers network-provider DLL under HKLM\CurrentControlSet\Control\NetworkProvider to intercept logon credentials [SAFE-MODE marker]' \
+        | tee "$WORK/step02-ntospy.marker"
+      echo '[*] Real telemetry: xdr_data ENUM.REGISTRY write to NetworkProvider\ProviderOrder referencing an attacker .dll'
+    identity: www-data
+    mitre_technique: "T1556.008"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "XDR/ITDR BIOC — a network-provider registry write under HKLM\\SYSTEM\\CurrentControlSet\\Control\\NetworkProvider references an attacker DLL (Ntospy), intercepting plaintext credentials at the authentication-provider layer."
+        ttp_ref: "TTP-2026-0120"
+        detection_id: "bioc-mp-011-ntospy-network-provider-dll-credential-interception"
+
+  - id: step-03
+    name: "Endpoint — WMI-spawned mssq.bat exports SQL 'sa' data to CSV"
+    command: |
+      WORK="${WORK_DIR:-/tmp/cortexsim-mp011}"; mkdir -p "$WORK"
+      echo '[MP-011] endpoint stage: WmiPrvSE (Win32_Process.Create) -> cmd -> mssq.bat -> sqlcmd -U sa filters diplomatic keywords -> export.csv [SAFE-MODE marker, no SQL]' \
+        | tee "$WORK/step03-sql-sa-csv.marker"
+      echo '[*] Real telemetry: xdr_data process lineage WmiPrvSE.exe -> (cmd|sqlcmd) with -U sa and .csv output'
+    identity: www-data
+    mitre_technique: "T1047"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR BIOC — WmiPrvSE.exe (WMI Win32_Process.Create) spawns cmd/sqlcmd running mssq.bat with an 'sa' login and CSV output, the NET-STAR database-direct exfil stage using the harvested credential."
+        ttp_ref: "TTP-2026-0120"
+        detection_id: "bioc-mp-011-wmi-spawned-sql-sa-csv-export-via-mssq-bat"
+
+  - id: step-04
+    name: "NDR — STAR-delimited AES/gzip data egresses over HTTPS from w3wp.exe"
+    command: |
+      WORK="${WORK_DIR:-/tmp/cortexsim-mp011}"; mkdir -p "$WORK"
+      printf 'AFGHANISTANSTARPAKISTANSTAR' | base64 > "$WORK/step04-star-exfil.b64"
+      echo '[MP-011] NDR stage: STAR-delimited AES-ECB/PKCS7 + gzip base64 payload staged for HTTPS POST from w3wp.exe [SAFE-MODE, no egress]'
+      echo '[*] Real telemetry: xdr_data ENUM.NETWORK tcp/443 initiated by w3wp.exe with large upload volume'
+    identity: www-data
+    mitre_technique: "T1071.001"
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "Hunt query surfaces outbound HTTPS (tcp/443) initiated by the w3wp.exe worker process — the STAR-delimited AES/gzip NET-STAR exfil channel a healthy IIS worker never opens."
+        ttp_ref: "TTP-2026-0120"
+        detection_id: "xql-mp-011-star-delimited-encrypted-https-exfil-from-w3wp"
+
+  - id: step-05
+    name: "ANALYTICS — correlation stitches the four stages into one incident"
+    command: |
+      echo '[MP-011] stitch verification: CR-MP-0017 fuses EDR (w3wp backdoor) + identity (Ntospy) + endpoint (SQL sa CSV) + NDR (STAR HTTPS egress) on one agent_hostname into ONE Phantom Taurus credential-access incident_id'
+      echo '[*] Expected: count_distinct(incident_id) = 1; causality chain anchored to w3wp.exe; planes ⊇ {EDR, ITDR, NDR}'
+      echo '[*] Failure mode: four separate orphan alerts (stitch window missed) → Cross-Source Correlation Rate fails'
+    identity: root
+    mitre_technique: "T1556.008"
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "XSIAM correlation rule CR-MP-0017 fuses the w3wp in-memory backdoor (EDR), Ntospy network-provider DLL (identity/ITDR), WMI SQL 'sa' CSV export (endpoint), and STAR-delimited HTTPS egress (NDR) on one IIS host into a single credential-access incident anchored to the w3wp.exe causality chain."
+        ttp_ref: "TTP-2026-0120"
+        detection_id: "CR-MP-0017"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp011"
+    - "echo '[CortexSim] SIM-MP-011 cleanup complete - no persistent artifacts'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-23"
+last_updated: "2026-07-23"
+tags:
+  - multi-plane
+  - stitching
+  - cross-plane-correlation
+  - credential-access
+  - phantom-taurus
+  - net-star
+  - iis-backdoor
+  - ntospy
+  - moat
+  - v2.0-methodology
