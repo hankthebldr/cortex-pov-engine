@@ -1,0 +1,399 @@
+{
+  "id": "TTP-2026-0125",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T02:49:49+00:00",
+    "updated_at": "2026-07-24T02:49:49+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "actor-muddled-libra",
+      "actor-scattered-spider",
+      "abioc",
+      "lateral-tool-transfer",
+      "t1570",
+      "psexec",
+      "tunneling",
+      "living-off-the-land",
+      "endpoint",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-CROWDSTRIKE",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Lateral Tool Transfer + Chisel Tunnel + PsExec Fan-Out (Muddled Libra Playbook) — First T1570 ABIOC (SIM-EDR-015)",
+    "summary": "An endpoint pulls an archive over HTTPS, writes and executes a never-before-seen tunneler (chisel), opens a long-lived TCP/443 tunnel, then fans out PsExec/RDP to internal peers — the Muddled Libra lateral-tool-transfer playbook. The ABIOC fires on the transfer-and-fan-out deviation from the host baseline, anchored to the download -> first-seen-tool -> peer-connection causality chain.",
+    "description": "First-party Cortex ABIOC coverage for MITRE T1570 (Lateral Tool Transfer) on the endpoint plane, modeling the operational playbook Unit 42 attributes to Muddled Libra / Scattered Spider (UNC3944). After obtaining valid local-administrator credentials on a rogue VM, the operator downloads 'goon.zip' from an attacker-controlled AWS S3 bucket, extracts and executes chisel.exe to stand up a persistent (~15h) SSH tunnel over TCP/443, creates a local 'gooner' account for interactive access, then fans out with PsExec and RDP against internal peers before offline NTDS.dit theft from powered-down domain controllers. Every tool used (chisel, PsExec, S3 Browser, ADRecon) is a legitimate admin/dual-use utility — the adversary deliberately prefers legitimate tools and existing infrastructure to blend in, so a hand-authored BIOC keyed on a specific bad hash or command string is brittle. This card exercises the Analytics Behavioral IOC (ABIOC) detector class — PANW-authored, auto-tuned behavioral-ML anchored to a learned causality chain — against that tradecraft. Two ABIOCs cover the two deviation shapes: (1) an HTTPS-fetched archive whose downloader process is the direct causality parent of a never-before-seen tunneler/remote-exec binary (the lateral-tool-transfer signal), and (2) that newly-written tool fanning out remote-service connections (SMB/445, RDP/3389, WinRM/5985) to two or more distinct internal peers, deviating from the host's learned peer-connection baseline. A validation XQL confirms the EDR process lineage; a second XQL confirms the NDR long-lived TCP/443 tunnel session in network_story; a correlation rule fuses both ABIOCs with the NDR tunnel session sharing the host's src_ip into one lateral-movement / privilege-escalation incident spanning EDR process lineage and NDR session telemetry — the F2-shaped causality stitch the DC presents as proof Cortex caught a legitimate-tool intrusion no static signature was written for.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Muddled Libra",
+        "aliases": [
+          "Scattered Spider",
+          "UNC3944",
+          "Octo Tempest"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Muddled Libra operational playbook — hypervisor abuse, lateral tool transfer, and offline DC credential theft (2024-2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2024-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1570",
+        "name": "Lateral Tool Transfer",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.001",
+        "name": "Remote Services: Remote Desktop Protocol",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.002",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.004",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Network Traffic: Network Connection Creation",
+      "File: File Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-015 — Lateral tool transfer + tunnel + remote-service fan-out for Cortex T1570 ABIOC validation (Muddled Libra playbook, SAFE-MODE markers)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the target so per-process and network telemetry reaches xdr_data, and NGFW/NDR session telemetry reaches network_story.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "A baseline window has elapsed during which the host ran only its normal software and never transferred+executed a fresh tunneler or fanned out remote-service connections, so Cortex learned the endpoint's lateral-movement baseline.",
+        "check_command": "id"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE. No real chisel/psexec binaries, no real tunnel, no real peer\n# connections. The step writes benign marker files named for the Muddled Libra\n# tooling and runs local, loopback-only actions so the lateral-tool-transfer\n# process/network shape is observable in xdr_data without any real egress.\nset -euo pipefail\nHTTPS_HOST=\"${HTTPS_HOST:-127.0.0.1}\"\nWORK=/tmp/cortexsim_edr015\nmkdir -p \"$WORK\"\n# (1) T1570 archive fetch over HTTPS (loopback; benign marker if unreachable)\ncurl -s --max-time 5 \"https://${HTTPS_HOST}/goon.zip\" -o \"$WORK/goon.zip\" 2>/dev/null || echo 'SAFE-MODE goon.zip marker' > \"$WORK/goon.zip\"\n# (2) write+execute a never-before-seen tunneler marker (chisel)\nprintf '#!/bin/sh\\necho cortexsim-edr015-chisel-tunnel-safe-marker\\n' > \"$WORK/chisel.exe\"\nchmod +x \"$WORK/chisel.exe\"; \"$WORK/chisel.exe\" || true\n# (3) remote-service fan-out marker (psexec) toward loopback peers\nprintf '#!/bin/sh\\necho cortexsim-edr015-psexec-fanout-safe-marker\\n' > \"$WORK/psexec.exe\"\nchmod +x \"$WORK/psexec.exe\"\nfor peer in 127.0.0.2 127.0.0.3; do \"$WORK/psexec.exe\" \"$peer\" || true; done\necho '[CortexSim] SIM-EDR-015 lateral-tool-transfer markers emitted (SAFE-MODE).'",
+      "input_variables": [
+        {
+          "name": "HTTPS_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised loopback/lab host the SAFE-MODE HTTPS archive fetch targets."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "A downloader process (curl) that is the direct causality parent of a never-before-seen tunneler binary named chisel.exe.",
+        "expected_value": "causality_actor_process_image_name in (\"curl\", \"curl.exe\") and action_process_image_name in (\"chisel.exe\", \"chisel\")"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "A long-lived outbound TCP/443 session standing in for the persistent SSH tunnel to attacker infrastructure.",
+        "expected_value": "dst_port = 443 and protocol = \"tcp\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "A newly-written tool (psexec.exe) fanning out remote-service connections to two or more distinct internal peers.",
+        "expected_value": "causality_actor_process_image_name in (\"psexec.exe\", \"psexec\") and action_remote_port in (445, 3389, 5985)"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim_edr015; echo '[CortexSim] SIM-EDR-015 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "996e68f2fe1c8bb091f34e9bf39fd34d95c3e21508def1f54098a1874bfb825e",
+        "context": "chisel.exe — SSH/HTTPS tunneler used to stand up the persistent TCP/443 tunnel (Unit 42 Muddled Libra ops playbook).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "078163d5c16f64caa5a14784323fd51451b8c831c73396b967b4e35e6879937b",
+        "context": "psexec.exe — remote execution / lateral movement toward internal peers (Unit 42 Muddled Libra ops playbook).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "6784e652f304bf8e43b42c29ad8dd146dd384fa9536b9c6640dfbc370c3e78de",
+        "context": "s3browser-12-6-1.exe — S3 Browser used to exfiltrate PST/data to an attacker-controlled S3 bucket (Unit 42 Muddled Libra ops playbook).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "goon.zip",
+        "context": "Staging archive pulled from an attacker-controlled AWS S3 bucket; contained Chisel (Unit 42 Muddled Libra ops playbook).",
+        "reputation_required": "suspicious"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Lateral Tool Transfer to Never-Before-Seen Tunneler over HTTPS",
+        "description": "An HTTPS downloader process (curl / certutil / powershell / s3browser) is the direct causality parent of a never-before-seen tunneler or remote-exec binary (chisel / psexec) written to disk and executed — the T1570 lateral-tool-transfer signal. Every tool is legitimate/dual-use, so a hash- or string-keyed BIOC is brittle; the ABIOC fires on the download -> first-seen-tool-execution deviation from the host's learned software baseline and anchors it to the downloader causality parent, not to any known-bad indicator. This is the corpus's first T1570 ABIOC.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"chisel.exe\", \"chisel\", \"psexec.exe\", \"psexec\")\n| filter causality_actor_process_image_name in (\"curl.exe\", \"curl\", \"certutil.exe\", \"powershell.exe\", \"s3browser-12-6-1.exe\")\n| comp count() as first_seen_tool_execs by agent_hostname, actor_effective_username, action_process_image_name\n| filter first_seen_tool_execs >= 1\n| sort desc first_seen_tool_execs\n| fields agent_hostname, actor_effective_username, action_process_image_name, first_seen_tool_execs",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1570",
+          "T1021.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned endpoint software/transfer baseline -> HTTPS downloader process (curl/certutil/powershell/s3browser) -> never-before-seen tunneler/remote-exec binary executed as its child, anchored to the downloading causality parent."
+      },
+      {
+        "name": "Anomalous Remote-Service Fan-Out from Newly-Written Tool",
+        "description": "A newly-transferred tool (chisel / psexec) opens remote-service connections (SMB/445, RDP/3389, WinRM/5985) to two or more distinct internal peers within a short window — the PsExec/RDP fan-out stage. The ABIOC fires on the peer-diversity deviation from the host's learned peer-connection baseline (a workstation rarely initiates admin-protocol connections to several servers at once) and anchors it to the tool that spawned them, catching remote-service lateral movement that reuses legitimate protocols.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_port in (445, 3389, 5985)\n| filter causality_actor_process_image_name in (\"psexec.exe\", \"psexec\", \"chisel.exe\", \"chisel\")\n| comp count_distinct(action_remote_ip) as peer_targets by agent_hostname, actor_effective_username\n| filter peer_targets >= 2\n| sort desc peer_targets\n| fields agent_hostname, actor_effective_username, peer_targets",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.001",
+          "T1021.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Never-before-seen tool (from the lateral-tool-transfer ABIOC) -> fan-out of SMB/RDP/WinRM connections to multiple distinct internal peers exceeding the host's learned peer-connection diversity, anchored to the spawning tool."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Lateral Tool Transfer Lineage Observable in xdr_data",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"chisel.exe\", \"chisel\", \"psexec.exe\", \"psexec\")\n| comp count() as tool_execs by agent_hostname, actor_effective_username, causality_actor_process_image_name\n| filter tool_execs >= 1\n| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, tool_execs",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Long-Lived TCP-443 Tunnel Session Observable in network_story",
+        "query": "dataset = network_story\n| filter _time > to_timestamp(current_time() - 3600)\n| filter dst_port = 443 and protocol = \"tcp\"\n| comp sum(duration) as tunnel_seconds, count() as sessions by src_ip, dst_ip\n| filter tunnel_seconds >= 900\n| sort desc tunnel_seconds\n| fields src_ip, dst_ip, sessions, tunnel_seconds",
+        "expected_rows_min": 0,
+        "dataset": "network_story"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Muddled Libra Lateral Tool Transfer + Tunnel + PsExec Fan-Out — Cross-Plane Causality Stitch",
+        "rule_id": "CR-EDR-0015",
+        "logic": "ABIOC(Lateral Tool Transfer to Never-Before-Seen Tunneler over HTTPS) AND ABIOC(Anomalous Remote-Service Fan-Out from Newly-Written Tool) fire on the same agent_hostname, and the NDR XQL(Long-Lived TCP-443 Tunnel Session Observable in network_story) shares that host src_ip within a 15-minute window. The three signals stitch into one lateral-movement and privilege-escalation incident_id whose causality chain spans EDR process lineage (HTTPS archive fetch -> never-before-seen chisel.exe execution -> psexec.exe peer fan-out) and NDR session telemetry (the long-lived TCP/443 tunnel) — the Muddled Libra lateral-tool-transfer playbook as a single incident rather than three unlinked alerts."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-endpoint process lineage, tool-transfer, and peer-connection diversity",
+        "validated": true,
+        "note": "Backed by ABIOC 'Lateral Tool Transfer to Never-Before-Seen Tunneler over HTTPS' and ABIOC 'Anomalous Remote-Service Fan-Out from Newly-Written Tool' on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-001",
+          "TBD-XSIAM-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Two ABIOCs fire on the lateral-tool-transfer and remote-service fan-out deviations; CR-EDR-0015 stitches them with the NDR TCP/443 tunnel session into one lateral-movement incident anchored to the download -> first-seen-tool -> peer-connection causality chain."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_process_image_name in (\"chisel.exe\", \"chisel\", \"psexec.exe\", \"psexec\") | filter causality_actor_process_image_name in (\"curl\", \"curl.exe\", \"certutil.exe\", \"powershell.exe\")"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-EDR-015",
+        "name": "Lateral Tool Transfer + Remote-Service Fan-Out Detection via Cortex ABIOC",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn an endpoint's software-transfer and peer-connection baseline and detect the Muddled Libra lateral-tool-transfer playbook — an HTTPS-fetched archive spawning a never-before-seen tunneler, a long-lived TCP/443 tunnel, and PsExec/RDP fan-out to internal peers — anchored to its causality chain, where every tool is a legitimate dual-use utility no static signature was written for.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-EDR-015A",
+            "objective": "The lateral-tool-transfer ABIOC fires when an HTTPS downloader is the causality parent of a never-before-seen tunneler/remote-exec binary.",
+            "preconditions": [
+              "EDR target with the Cortex agent installed.",
+              "Baseline window elapsed with no prior tool-transfer of a fresh tunneler."
+            ],
+            "steps": [
+              "Fetch the staging archive over HTTPS.",
+              "Write and execute the chisel tunneler marker under the downloader.",
+              "Observe ABIOC 'Lateral Tool Transfer to Never-Before-Seen Tunneler over HTTPS' fire."
+            ],
+            "success_criteria": [
+              "ABIOC `Lateral Tool Transfer to Never-Before-Seen Tunneler over HTTPS` fires within the MTTD budget.",
+              "Validation XQL `Lateral Tool Transfer Lineage Observable in xdr_data` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-EDR-015B",
+            "objective": "The remote-service fan-out ABIOC fires when the newly-written tool connects to two or more distinct internal peers over SMB/RDP/WinRM.",
+            "preconditions": [
+              "The lateral-tool-transfer step (TC-EDR-015A) has run on the same host."
+            ],
+            "steps": [
+              "Drive the psexec marker toward two or more loopback/lab peers on 445/3389/5985.",
+              "Observe ABIOC 'Anomalous Remote-Service Fan-Out from Newly-Written Tool' fire."
+            ],
+            "success_criteria": [
+              "ABIOC `Anomalous Remote-Service Fan-Out from Newly-Written Tool` fires when peer_targets >= 2."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "test_case_id": "TC-EDR-015C",
+            "objective": "The correlation rule stitches both ABIOCs with the NDR TCP/443 tunnel session into one cross-plane incident.",
+            "preconditions": [
+              "Both ABIOCs (TC-EDR-015A, TC-EDR-015B) have fired on the same host.",
+              "NDR/NGFW session telemetry is ingested into network_story."
+            ],
+            "steps": [
+              "Allow the XSIAM correlation engine to converge.",
+              "Confirm one incident_id whose causality chain spans EDR process lineage and NDR session telemetry."
+            ],
+            "success_criteria": [
+              "Correlation CR-EDR-0015 raises exactly one lateral-movement incident.",
+              "The stitched incident's causality chain includes both the EDR tool-transfer lineage and the NDR TCP/443 tunnel session (spans >= 2 planes)."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Application allow-listing (WDAC / Cortex XDR restriction profiles) so never-before-seen tunnelers and remote-exec utilities cannot execute even when downloaded.",
+      "Egress filtering that inspects TLS on TCP/443 and blocks long-lived non-web tunnels to unclassified destinations; alert on multi-hour 443 sessions.",
+      "Restrict lateral admin protocols (SMB/445, RDP/3389, WinRM/5985) between workstations and to servers via host firewall and tiered administration; require phishing-resistant MFA on the interactive access paths Muddled Libra abuses.",
+      "Protect the virtualization layer: alert on rogue VM creation, restrict who can power down or snapshot domain controllers, and encrypt VMDK-resident NTDS.dit at rest."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned per-endpoint tool-transfer and peer-connection baseline rather than hand-authoring hash/string BIOCs for individual dual-use tools.",
+      "Alert on a downloader process (curl/certutil/powershell/browser) being the causality parent of a first-seen tunneler or remote-exec binary.",
+      "Alert on a single host fanning out SMB/RDP/WinRM connections to multiple distinct internal peers within a short window.",
+      "Stitch the EDR tool-transfer lineage with the NDR long-lived TCP/443 tunnel session on shared host identity into one incident so the tunnel and the fan-out are not triaged as separate low-severity alerts."
+    ],
+    "response_playbook": "XSOAR-PB-LateralToolTransferCausalityTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Muddled Libra's Operational Playbook — Unit 42",
+      "url": "https://unit42.paloaltonetworks.com/muddled-libra-ops-playbook/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1570 — Lateral Tool Transfer",
+      "url": "https://attack.mitre.org/techniques/T1570/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1021.002 — Remote Services: SMB/Windows Admin Shares",
+      "url": "https://attack.mitre.org/techniques/T1021/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "CrowdStrike — Scattered Spider adversary profile (lateral movement and legitimate-tool tradecraft)",
+      "url": "https://www.crowdstrike.com/adversaries/scattered-spider/",
+      "publisher": "CrowdStrike",
+      "publisher_id": "SRC-CROWDSTRIKE"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

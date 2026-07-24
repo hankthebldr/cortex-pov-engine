@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1204",
+    "T1059",
+    "T1105"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(EDR-016 RunMRU Paste-Execution Seeding an Interpreter Download Cradle) AND ABIOC(EDR-016 explorer.exe-Parented Interpreter Launched with Remote-Fetch Arguments) AND (ABIOC(EDR-016 Interpreter-Spawned LOLBin Fetching a Remote Payload) OR XQL(EDR-016 Remote Payload Fetch to Latrodectus C2 Surfaced on the NGFW)) on the same agent_hostname within the paste-execution window \u2014 fuses the RunMRU download cradle, the explorer-parented interpreter with no browser or console parentage, and the remote-fetch LOLBin/NGFW egress into a single ClickFix user-execution incident spanning the EDR and NDR planes, anchored to the explorer.exe process instance.",
+      "name": "ClickFix Paste-Execution Chain \u2014 RunMRU to explorer-Parented Interpreter to LOLBin Fetch (ABIOC Causality Stitch)",
+      "rule_id": "CR-EDR-0016",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0126"
+}

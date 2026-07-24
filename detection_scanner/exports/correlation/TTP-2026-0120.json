@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1505.003",
+    "T1556.008",
+    "T1047",
+    "T1005",
+    "T1071.001",
+    "T1070.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-011 w3wp IIS Worker In-Memory Backdoor Child Process) AND BIOC(MP-011 Ntospy Network Provider DLL Credential Interception) AND (BIOC(MP-011 WMI-Spawned SQL sa CSV Export via mssq bat) OR XQL(MP-011 STAR-Delimited Encrypted HTTPS Exfil from w3wp)) within 900s on the same agent_hostname \u2014 fuses the IIS in-memory backdoor execution (EDR), the network-provider credential interception (identity/ITDR), the SQL sa CSV export (endpoint), and the STAR-delimited AES/gzip HTTPS egress (NDR) into one Phantom Taurus credential-access incident anchored to the w3wp.exe causality chain on a single IIS host.",
+      "name": "Phantom Taurus NET-STAR Credential-Access Incident \u2014 Cross-Plane Stitch",
+      "rule_id": "CR-MP-0017",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0120"
+}

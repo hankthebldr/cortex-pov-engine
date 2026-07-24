@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1537",
+    "T1578.001",
+    "T1552.005",
+    "T1530",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(CSPM-004 Unencrypted Snapshot KMS-Gap Posture Finding) AND XQL(CSPM-004 Cross-Account Snapshot Share via ModifySnapshotAttribute) AND ( ABIOC(CSPM-004 Impossible Travel by Cloud Compute Identity) OR XQL(CSPM-004 Snapshot Copy to Foreign Region) ) \u2014 fuses the CSPM encryption-gap finding (an EBS snapshot with no customer-managed KMS key) with the runtime cross-account ModifySnapshotAttribute share and the off-baseline-region compute identity. The join is two-hop: posture leg A joins to export leg B on snapshot_id (posture state carries no acting identity, so principal is NOT part of the A\u2194B key), and export leg B joins to the off-region identity leg C on principal (user_identity_arn); the external destination account_id rides along from leg B as export evidence, not as a join key. This raises one 'unencrypted asset exfiltrated via snapshot share' incident: the encryption gap made the data readable off-account and the share/copy event proves it left.",
+      "name": "Unencrypted Asset Exfiltrated via Cross-Account Snapshot Share",
+      "rule_id": "CR-CSPM-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0128"
+}

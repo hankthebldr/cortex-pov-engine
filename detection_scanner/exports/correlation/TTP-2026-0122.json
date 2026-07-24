@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1562",
+    "T1068",
+    "T1071",
+    "T1048",
+    "T1021"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Anchors t0 on BIOC(MP-012 BYOVD Vulnerable Driver Load \u2014 wnbios.sys / WN_64.sys) and BIOC(MP-012 EDR Hook Removal via disabler.exe (EDRSandBlast Fork)) for one agent_hostname, then requires XQL(MP-012 Cobalt Strike Beacon to beamofthemoon.com C2 Infrastructure) and XQL(MP-012 rclone SFTP Bulk Exfil to 82.192.88.95) to bind to the same agent_hostname and causality actor within a 3600s window opened at t0. Fires ONE incident spanning the EDR and NDR planes and carries elapsed_seconds = first_exfil - tamper_t0 (from XQL(MP-012 Tamper-to-Exfil Elapsed Time (F6 MTTR KPI))) as the F6 time-to-contain KPI: the dwell an operator got between blinding the sensor and moving data. Time-to-contain passes when the stitched incident is raised before that exfil window closes.",
+      "name": "MP-012 EDR-Blinding Race \u2014 Tamper-to-Exfil Time-to-Contain Stitch",
+      "rule_id": "CR-MP-0017",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0122"
+}

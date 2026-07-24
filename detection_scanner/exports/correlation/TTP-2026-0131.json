@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1059.001",
+    "T1567.002",
+    "T1041"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(AI-SOC-72 Valid-Account Reuse From Anomalous Endpoint Context) AND ABIOC(AI-SOC-72 Rapid Privilege Escalation After Valid-Account Compromise) AND XQL(AI-SOC-72 Exfiltration to Cloud Storage From Compromised Host) on the same agent_hostname and actor_effective_username within a 4320-second (72-minute) breakout window fuse into a single identity-to-exfiltration incident_id spanning the ENDPOINT and NDR planes. This is the one incident Cortex XSIAM AI narrates: the auto-generated summary must name valid-account initial access (T1078), the scripted privilege-escalation burst (T1059.001), and the cloud-storage exfiltration destination (T1567.002 with T1041 beacon) inside the same window the intrusion took.",
+      "name": "AI-SOC-72 Identity-to-Exfil Breakout Stitch (Narrative Source Incident)",
+      "rule_id": "CR-EDR-0018",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0131"
+}

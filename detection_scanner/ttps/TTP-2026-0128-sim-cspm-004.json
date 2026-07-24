@@ -1,0 +1,418 @@
+{
+  "id": "TTP-2026-0128",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T02:50:05+00:00",
+    "updated_at": "2026-07-24T02:50:05+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cspm",
+      "vector-data-exfiltration",
+      "snapshot-exfil",
+      "cross-account-share",
+      "kms-gap",
+      "unencrypted-at-rest",
+      "impossible-travel",
+      "industry-all",
+      "severity-high",
+      "cspm",
+      "posture-to-exfil",
+      "aws"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "data-exfil",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1800,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Unencrypted-Snapshot / KMS-Gap Posture Finding Correlated to Cross-Account Snapshot Export (T1537 / T1578.001 / T1552.005 / T1530)",
+    "summary": "An unencrypted (no-CMK) EBS snapshot flagged by CSPM is exported cross-account via ModifySnapshotAttribute/CopySnapshot by a compute identity operating outside its home region. Cortex Cloud fuses the encryption-gap finding, the export event, and the impossible-travel identity into one 'unencrypted asset exfiltrated via snapshot share' incident.",
+    "description": "A point-in-time posture scan can tell you a snapshot is unencrypted; it cannot tell you that the unencrypted snapshot just left the account. This scenario exercises Cortex Cloud's posture-to-exfil correlation, not its flat-scan capability, and is deliberately weighted to CORRELATION. Unit 42's 2025 cloud-alert-trend analysis reports the runtime signals that make this chain real: cloud snapshot exports rose 45% (peaking November), IAM API requests from outside a compute resource's home region rose 60%, IAM impossible-travel alerts rose 116%, and suspicious multi-object cloud-storage downloads rose 305% — the exact motion of an intruder who finds a readable, unencrypted snapshot and ships it off-account. The chain fuses three signals with a two-hop join: the posture finding joins the export on snapshot_id (posture state has no acting identity, so principal is not part of that hop), and the export joins the off-baseline-region identity on principal — the external destination account rides along as export evidence. Signal A is the CSPM encryption gap: an EBS snapshot whose Encrypted attribute is false or whose KmsKeyId resolves to no customer-managed key (an unencrypted-at-rest posture violation) — the gap is what makes the data readable once the snapshot is off-account, because there is no CMK the destination account lacks. Signal B is the runtime export: a ModifySnapshotAttribute call that adds an external accountId to the snapshot's createVolumePermission, plus a CopySnapshot into a foreign region — the control-plane proof the data crossed the account boundary (T1537 Transfer Data to Cloud Account, T1578.001 Create Snapshot). Signal C is behavioral: the acting compute identity is an EC2 instance role whose credentials were minted at the Instance Metadata endpoint (T1552.005) yet is now issuing API calls from a region outside the instance's learned home region — impossible travel for a cloud compute identity. An ABIOC anchors that deviation to the role's learned home-region baseline rather than to any single bad API. A CR-CSPM correlation rule fuses A+B+C into a single exfil incident: the encryption gap made the data readable off-account, and the export event proves it left. Detection is Analytics/XQL/Correlation with one behavioral ABIOC for the impossible-travel leg — posture is configuration state and export is control-plane state, so the validation queries assert the snapshot is unencrypted, that a cross-account share and foreign-region copy occurred, that the acting identity issued a snapshot-export call from a region outside its learned baseline, and that the same snapshot_id ties the posture finding to the export. This gives a DC the differentiated Cortex Cloud story: not 'you have an unencrypted snapshot' but 'this unencrypted snapshot was just exfiltrated cross-account by an off-region instance role — here is the single stitched incident.'",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Credential-abusing cloud intruders and insiders who export readable snapshots cross-account (snapshot-share exfiltration)"
+      }
+    ],
+    "campaigns": [
+      "Cross-account snapshot-share exfiltration of unencrypted cloud volumes"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1537",
+        "name": "Transfer Data to Cloud Account",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1578",
+        "subtechnique_id": "T1578.001",
+        "name": "Modify Cloud Compute Infrastructure: Create Snapshot",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.005",
+        "name": "Unsecured Credentials: Cloud Instance Metadata API",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Storage: Cloud Storage Metadata",
+      "Snapshot: Snapshot Modification",
+      "Instance: Instance Metadata",
+      "User Account: User Account Authentication"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CSPM-004 — Export an unencrypted (no-CMK) EBS snapshot cross-account and correlate the CSPM encryption-gap finding to the runtime share",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud CSPM enabled and connected (read-only) to the target AWS account, flagging the disposable snapshot as unencrypted / no-customer-managed-key.",
+        "check_command": "aws sts get-caller-identity --profile cortexsim-lab"
+      },
+      {
+        "description": "A disposable EBS snapshot exists in a known unencrypted (Encrypted=false, no CMK) state, tagged CortexSimSnapshotExfil, safe to share to an operator-owned lab account.",
+        "check_command": "aws ec2 describe-snapshots --snapshot-ids \"${DRIFT_SNAPSHOT_ID:-snap-0cortexsim0exfil0}\" --profile cortexsim-lab"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Cross-account snapshot-export exfil injection (authorized, reversible) against a\n# disposable, tagged EBS snapshot that CSPM already flags as unencrypted (no CMK).\n# SAFE-MODE: the destination account is an operator-owned lab account and the\n# createVolumePermission grant is removed by cleanup. No customer data leaves.\nset -euo pipefail\nSNAP=\"${DRIFT_SNAPSHOT_ID:-snap-0cortexsim0exfil0}\"\nDEST=\"${EXTERNAL_ACCOUNT_ID:-999988887777}\"\n# (B) share the unencrypted snapshot cross-account via ModifySnapshotAttribute\naws ec2 modify-snapshot-attribute --snapshot-id \"$SNAP\" --attribute createVolumePermission --operation-type add --user-ids \"$DEST\" --profile \"${AWS_PROFILE:-cortexsim-lab}\" || true\n# (B) copy it into a foreign region so the export crosses a region boundary too\naws ec2 copy-snapshot --source-region \"${HOME_REGION:-us-east-1}\" --source-snapshot-id \"$SNAP\" --destination-region \"${FOREIGN_REGION:-ap-southeast-1}\" --profile \"${AWS_PROFILE:-cortexsim-lab}\" || true\necho '[CortexSim] SIM-CSPM-004 cross-account snapshot export injected on the unencrypted lab snapshot'",
+      "input_variables": [
+        {
+          "name": "DRIFT_SNAPSHOT_ID",
+          "type": "string",
+          "default": "snap-0cortexsim0exfil0",
+          "description": "Disposable, unencrypted (no-CMK) lab EBS snapshot tagged CortexSimSnapshotExfil."
+        },
+        {
+          "name": "EXTERNAL_ACCOUNT_ID",
+          "type": "string",
+          "default": "999988887777",
+          "description": "Operator-owned lab AWS account the snapshot is shared to (the external createVolumePermission grantee). Not a real victim account."
+        },
+        {
+          "name": "HOME_REGION",
+          "type": "string",
+          "default": "us-east-1",
+          "description": "The snapshot's/instance's home region."
+        },
+        {
+          "name": "FOREIGN_REGION",
+          "type": "string",
+          "default": "ap-southeast-1",
+          "description": "Foreign region the CopySnapshot targets to model a cross-region export."
+        },
+        {
+          "name": "AWS_PROFILE",
+          "type": "string",
+          "default": "cortexsim-lab",
+          "description": "Named AWS CLI profile scoped to the disposable exfil-target snapshot."
+        }
+      ],
+      "timeout_seconds": 1800
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "ModifySnapshotAttribute adds an external account to the snapshot's createVolumePermission — the control-plane cross-account share.",
+        "expected_value": "event_name = \"ModifySnapshotAttribute\" and attribute_type = \"createVolumePermission\" and request_add_account_id != owner_account_id"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "The exported snapshot is flagged unencrypted / no-customer-managed-key in the posture inventory.",
+        "expected_value": "resource_type = \"aws_ebs_snapshot\" and finding_class = \"snapshot-no-customer-managed-key\" and tags contains \"CortexSimSnapshotExfil\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "aws ec2 modify-snapshot-attribute --snapshot-id \"${DRIFT_SNAPSHOT_ID:-snap-0cortexsim0exfil0}\" --attribute createVolumePermission --operation-type remove --user-ids \"${EXTERNAL_ACCOUNT_ID:-999988887777}\" --profile \"${AWS_PROFILE:-cortexsim-lab}\" || true; echo '[CortexSim] SIM-CSPM-004 cleanup complete — cross-account snapshot share revoked.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "CSPM-004 Impossible Travel by Cloud Compute Identity",
+        "description": "An EC2 instance role whose credentials were minted at the Instance Metadata endpoint issues a snapshot-export control-plane call (ModifySnapshotAttribute / CopySnapshot / CreateSnapshot) from a region that is NOT in the role's learned region baseline. Routine cross-region and global-service traffic (STS, IAM, CloudFront, Route53, cross-region S3/DynamoDB) is deliberately excluded: the ABIOC fires only when an off-baseline-region call co-occurs with a sensitive snapshot-export action by the same IMDS-minted identity — never on a bare region mismatch, which for a compute role calling global services is normal. Every individual API call is legitimate in isolation; the ABIOC fires on the rarity-plus-co-occurrence deviation from the compute identity's learned home-region baseline and anchors it to the IMDS credential lineage, catching the off-region actor behind the snapshot export that a static rule keyed on one API name would miss.",
+        "logic": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\"\n| filter user_identity_type = \"AssumedRole\" and credential_source = \"ec2-instance-metadata\"\n| filter event_name in (\"ModifySnapshotAttribute\", \"CopySnapshot\", \"CreateSnapshot\")\n| filter aws_region != instance_home_region and region_in_role_baseline = false\n| comp count() as sensitive_new_region_calls, values(event_name) as export_actions by user_identity_arn, src_ip, aws_region\n| sort desc sensitive_new_region_calls\n| fields user_identity_arn, src_ip, aws_region, export_actions, sensitive_new_region_calls",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.005"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-role region baseline (the set of regions an EC2 instance role has historically called from) -> IMDS-minted assumed-role credential -> a snapshot-export control-plane call (ModifySnapshotAttribute / CopySnapshot / CreateSnapshot) issued from a region NOT in that learned baseline, diverging from the baseline while co-occurring with a sensitive export action, anchored to the instance-metadata credential lineage."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CSPM-004 Unencrypted Snapshot KMS-Gap Posture Finding",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and resource_type = \"aws_ebs_snapshot\"\n| filter tags contains \"CortexSimSnapshotExfil\"\n| filter compliance_state = \"drifted\" and finding_class in (\"snapshot-unencrypted\", \"snapshot-no-customer-managed-key\")\n| comp count() as finding_rows by snapshot_id, finding_class\n| sort desc finding_rows\n| fields snapshot_id, finding_class, finding_rows",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-004 Cross-Account Snapshot Share via ModifySnapshotAttribute",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source = \"ec2.amazonaws.com\"\n| filter event_name = \"ModifySnapshotAttribute\" and attribute_type = \"createVolumePermission\" and operation_type = \"add\"\n| filter request_add_account_id != \"\" and request_add_account_id != owner_account_id\n| comp count() as external_shares by snapshot_id, request_add_account_id, user_identity_arn\n| filter external_shares >= 1\n| sort desc external_shares\n| fields snapshot_id, request_add_account_id, user_identity_arn, external_shares",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-004 Snapshot Copy to Foreign Region",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source = \"ec2.amazonaws.com\"\n| filter event_name in (\"CopySnapshot\", \"CreateSnapshot\")\n| filter aws_region != home_region\n| comp count() as cross_region_copies by snapshot_id, aws_region, user_identity_arn\n| filter cross_region_copies >= 1\n| sort desc cross_region_copies\n| fields snapshot_id, aws_region, user_identity_arn, cross_region_copies",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-004 Compute Identity Operating Outside Home Region",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\"\n| filter user_identity_type = \"AssumedRole\" and credential_source = \"ec2-instance-metadata\"\n| filter event_name in (\"ModifySnapshotAttribute\", \"CopySnapshot\", \"CreateSnapshot\")\n| filter aws_region != instance_home_region and region_in_role_baseline = false\n| comp count() as off_region_export_calls, values(aws_region) as new_regions by user_identity_arn, src_ip\n| sort desc off_region_export_calls\n| fields user_identity_arn, src_ip, new_regions, off_region_export_calls",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-004 Snapshot Export Coverage Reconciliation",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source = \"ec2.amazonaws.com\"\n| filter event_name in (\"ModifySnapshotAttribute\", \"CopySnapshot\", \"CreateSnapshot\")\n| filter snapshot_id != \"\"\n| comp count_distinct(event_name) as export_action_classes by snapshot_id, user_identity_arn\n| filter export_action_classes >= 1\n| sort desc export_action_classes\n| fields snapshot_id, user_identity_arn, export_action_classes",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Unencrypted Asset Exfiltrated via Cross-Account Snapshot Share",
+        "rule_id": "CR-CSPM-0004",
+        "logic": "XQL(CSPM-004 Unencrypted Snapshot KMS-Gap Posture Finding) AND XQL(CSPM-004 Cross-Account Snapshot Share via ModifySnapshotAttribute) AND ( ABIOC(CSPM-004 Impossible Travel by Cloud Compute Identity) OR XQL(CSPM-004 Snapshot Copy to Foreign Region) ) — fuses the CSPM encryption-gap finding (an EBS snapshot with no customer-managed KMS key) with the runtime cross-account ModifySnapshotAttribute share and the off-baseline-region compute identity. The join is two-hop: posture leg A joins to export leg B on snapshot_id (posture state carries no acting identity, so principal is NOT part of the A↔B key), and export leg B joins to the off-region identity leg C on principal (user_identity_arn); the external destination account_id rides along from leg B as export evidence, not as a join key. This raises one 'unencrypted asset exfiltrated via snapshot share' incident: the encryption gap made the data readable off-account and the share/copy event proves it left."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex Cloud CSPM — EBS/snapshot encryption-at-rest gap (no customer-managed KMS key) posture finding",
+        "validated": true,
+        "note": "Backed by XQL 'CSPM-004 Unencrypted Snapshot KMS-Gap Posture Finding' against cortex_cloud_posture."
+      },
+      {
+        "module": "Cortex Cloud — posture-to-runtime correlation (posture inventory joined to cloud_audit_logs snapshot-export events)",
+        "validated": true,
+        "note": "Backed by correlation CR-CSPM-0004 stitching the posture finding to the ModifySnapshotAttribute/CopySnapshot export."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — impossible-travel behavioral profiling of cloud compute identities (per-role home-region baseline)",
+        "validated": true,
+        "note": "Backed by ABIOC 'CSPM-004 Impossible Travel by Cloud Compute Identity'."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CORTEX-CLOUD-001",
+          "TBD-CORTEX-CLOUD-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter resource_type = \"aws_ebs_snapshot\" and tags contains \"CortexSimSnapshotExfil\" | filter compliance_state = \"drifted\" and finding_class = \"snapshot-no-customer-managed-key\" | comp count() as finding_rows by snapshot_id, finding_class | fields snapshot_id, finding_class, finding_rows"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CSPM-0004 stitches the unencrypted-snapshot posture finding, the cross-account ModifySnapshotAttribute share, and the off-region compute identity into one exfil incident: posture↔export joined on snapshot_id, export↔identity joined on principal (user_identity_arn), with the external destination account carried as export evidence."
+      },
+      {
+        "module": "prisma-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "TBD-PRISMA-CLOUD-001"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Prisma Cloud Compliance dashboard — EBS snapshots without a customer-managed CMK and snapshots shared to an external account, against the CIS AWS Foundations baseline."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CSPM-004",
+        "name": "Encryption-Gap Posture Finding Correlated to Cross-Account Snapshot Exfiltration",
+        "description": "Cortex Cloud detects that an unencrypted (no-CMK) EBS snapshot flagged by CSPM was exported cross-account at runtime (ModifySnapshotAttribute createVolumePermission + CopySnapshot to a foreign region) by a compute identity operating outside its home region, and stitches the encryption-gap finding, the export event, and the impossible-travel identity into a single exfiltration incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CSPM-004A",
+            "objective": "The unencrypted-snapshot posture finding and the runtime cross-account share both surface on the same snapshot within one scan cycle.",
+            "preconditions": [
+              "Cortex Cloud CSPM connected (read-only) with the disposable snapshot flagged unencrypted / no-CMK.",
+              "The snapshot is tagged CortexSimSnapshotExfil and safe to share to the operator-owned lab account."
+            ],
+            "steps": [
+              "Confirm the snapshot is flagged unencrypted (no customer-managed KMS key) in the posture inventory.",
+              "Share the snapshot cross-account via ModifySnapshotAttribute and copy it to a foreign region.",
+              "Observe the encryption-gap posture query and the cross-account-share query both return >= 1 on the same snapshot_id."
+            ],
+            "success_criteria": [
+              "XQL `CSPM-004 Unencrypted Snapshot KMS-Gap Posture Finding` returns >= 1.",
+              "XQL `CSPM-004 Cross-Account Snapshot Share via ModifySnapshotAttribute` returns >= 1 attributed to a principal.",
+              "XQL `CSPM-004 Snapshot Export Coverage Reconciliation` returns export_action_classes >= 1 on the shared snapshot_id."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-CSPM-004B",
+            "objective": "The posture finding, the export, and the off-region compute identity fuse into one exfil incident — posture↔export joined on snapshot_id, export↔identity joined on principal, destination account carried as evidence.",
+            "preconditions": [
+              "The acting identity is an EC2 instance role whose credentials were minted at the Instance Metadata endpoint.",
+              "The ModifySnapshotAttribute / CopySnapshot events are captured in cloud_audit_logs."
+            ],
+            "steps": [
+              "Issue the export API calls from a region outside the instance's home region.",
+              "Observe the impossible-travel ABIOC fire on the compute identity.",
+              "Observe CR-CSPM-0004 raise one exfil incident naming the snapshot, the principal, and the destination account."
+            ],
+            "success_criteria": [
+              "ABIOC `CSPM-004 Impossible Travel by Cloud Compute Identity` fires on the acting instance role.",
+              "Correlation CR-CSPM-0004 raises one 'unencrypted asset exfiltrated via snapshot share' incident stitching the encryption-gap finding to the cross-account export."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce EBS encryption-by-default with a customer-managed KMS key at the account level so no snapshot can exist unencrypted, and deny cross-account key grants on that CMK.",
+      "Deny ec2:ModifySnapshotAttribute (createVolumePermission add) to any external account via SCP except for a break-glass role, so an unencrypted snapshot cannot be shared off-account.",
+      "Scope EC2 instance-role permissions tightly and require IMDSv2 so metadata-minted credentials cannot be trivially harvested and replayed from off-region."
+    ],
+    "detection_engineering": [
+      "Escalate an unencrypted / no-CMK snapshot finding to an incident the moment that same snapshot_id is shared cross-account or copied to a foreign region — join the posture inventory to cloud_audit_logs on snapshot_id.",
+      "Baseline each compute identity's home region and alert on assumed-role IMDS credentials issuing API calls from a foreign region or a non-cloud ASN (impossible travel for a compute identity).",
+      "Correlate the encryption gap, the ModifySnapshotAttribute/CopySnapshot export, and the off-region principal into one incident rather than three separate posture and runtime alerts."
+    ],
+    "response_playbook": "XSOAR-PB-CloudSnapshotExfilTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — 2025 Cloud Security Alert Trends (snapshot exports +45%, off-region IAM requests +60%, impossible travel +116%, multi-object storage downloads +305%)",
+      "url": "https://unit42.paloaltonetworks.com/2025-cloud-security-alert-trends/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1537 — Transfer Data to Cloud Account",
+      "url": "https://attack.mitre.org/techniques/T1537/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1578.001 — Modify Cloud Compute Infrastructure: Create Snapshot",
+      "url": "https://attack.mitre.org/techniques/T1578/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1552.005 — Unsecured Credentials: Cloud Instance Metadata API",
+      "url": "https://attack.mitre.org/techniques/T1552/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex Cloud — Posture Management and Cloud Storage Encryption Policies",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-CLOUD/Cortex-Cloud-Posture-Security",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Promoted SIM-CSPM-004 from research-intake scaffold to active. Real CSPM encryption-gap → cross-account snapshot-export correlation grounded in Unit 42's 2025 cloud-alert-trend reporting: XQL against cortex_cloud_posture (unencrypted/no-CMK snapshot finding) and cloud_audit_logs (ModifySnapshotAttribute cross-account share, CopySnapshot to foreign region, off-home-region compute identity), one impossible-travel ABIOC anchored to the compute role's learned home-region baseline, and correlation CR-CSPM-0004 fusing posture + export + impossible-travel into one exfil incident on snapshot_id + principal + destination account. CORRELATION-emphasis, F4, DL-05."
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+title: "AzureHound Cloud-Identity Enumeration Stitch: Token Theft -> Non-Interactive Entra Sign-In -> Bulk Microsoft Graph Discovery (SIM-MP-014) \u2014 MP-014 Browser Session-Token and Cookie Theft by Non-Browser Process"
+id: ttp-2026-0124-bioc-01
+status: experimental
+description: |
+  A non-browser process reads multiple browser credential stores (saved-login and cookie/session-token databases). Infostealers such as Raccoon Stealer or Redline sweep these stores to lift session tokens later replayed against Entra ID; the browser reading its own store is normal, a non-browser process sweeping several stores in one burst is the endpoint anchor of the AzureHound chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN
+    | filter action_file_path contains "Login Data" or action_file_path contains "cookies.sqlite" or action_file_path contains "logins.json" or action_file_path contains "key4.db"
+    | filter actor_process_image_name not in ("chrome", "chromium", "google-chrome", "msedge", "firefox", "firefox-bin", "cortex-agent")
+    | comp count_distinct(action_file_path) as stores_read by agent_hostname, actor_effective_username, actor_process_image_name
+    | filter stores_read >= 2
+    | fields agent_hostname, actor_effective_username, actor_process_image_name, stores_read
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1528/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1528
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AzureHound Cloud-Identity Enumeration Stitch: Token Theft -> Non-Interactive Entra Sign-In -> Bulk Microsoft Graph Discovery (SIM-MP-014) \u2014 MP-014 AzureHound Microsoft Graph Reachability Probe"
+id: ttp-2026-0124-bioc-02
+status: experimental
+description: |
+  AzureHound issues a GET /v1.0/organization reachability probe against graph.microsoft.com before the bulk enumeration begins. Paired with the azurehound User-Agent this is an early, low-volume tell of the enumeration about to start.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter lowercase(user_agent) contains "azurehound"
+    | filter request_uri contains "/v1.0/organization" or request_uri contains "graph.microsoft.com/v1.0/organization"
+    | comp count() as probe_calls by identity_name, caller_ip, user_agent
+    | filter probe_calls >= 1
+    | fields identity_name, caller_ip, user_agent, probe_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1526/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1526
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "AzureHound Cloud-Identity Enumeration Stitch: Token Theft -> Non-Interactive Entra Sign-In -> Bulk Microsoft Graph Discovery (SIM-MP-014) \u2014 MP-014 Non-Interactive Entra Sign-In from Unusual Geo Post Token Theft"
+id: ttp-2026-0124-abioc-03
+status: experimental
+description: |
+  A non-interactive Entra ID sign-in (stolen session/refresh-token replay) lands on a user principal from a geography that deviates from that identity's learned sign-in baseline (impossible travel). The ABIOC anchors the deviation to the cloud-identity profile (non-interactive token replay diverging from the user's usual interactive, in-region sign-ins) rather than to any single bad value.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter is_interactive = false
+    | comp count() as noninteractive_signins, values(signin_activity_id) as signin_activity_ids, count_distinct(location_country) as geo_count by user_principal_name, ip_address, app_display_name
+    | filter geo_count >= 2
+    | fields user_principal_name, ip_address, app_display_name, noninteractive_signins, geo_count, signin_activity_ids
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+    - attack.t1528
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AzureHound Cloud-Identity Enumeration Stitch: Token Theft -> Non-Interactive Entra Sign-In -> Bulk Microsoft Graph Discovery (SIM-MP-014) \u2014 MP-014 AzureHound Bulk Microsoft Graph Enumeration Burst"
+id: ttp-2026-0124-abioc-04
+status: experimental
+description: |
+  A single identity drives a high-volume burst of Microsoft Graph GET enumeration (users, groups, roleManagement) carrying the azurehound User-Agent, far exceeding that identity's learned Graph read cadence. Every call is a legitimate Graph read; the ABIOC fires on the volumetric-and-cadence deviation from the identity's learned baseline, anchored to the caller identity and session.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter http_method = "GET"
+    | filter request_uri contains "graph.microsoft.com/v1.0/users" or request_uri contains "graph.microsoft.com/v1.0/groups" or request_uri contains "graph.microsoft.com/v1.0/roleManagement" or lowercase(user_agent) contains "azurehound"
+    | bin _time span = 60m
+    | comp count() as graph_calls by identity_name, user_agent, caller_ip, _time
+    | filter graph_calls > 500
+    | sort desc graph_calls
+    | fields identity_name, user_agent, caller_ip, graph_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.004
+    - attack.t1069.003
+    - attack.t1526
+    - attack.t1580
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

