@@ -91,6 +91,13 @@
         "title": "Multi-Extortion Tactics Continue to Rise",
         "url": "https://unit42.paloaltonetworks.com/multi-extortion-rise-ransomware-report/",
         "themes": ["extortion", "harassment", "ddos-as-pressure"]
+      },
+      {
+        "priority": "P0",
+        "title": "Large-Scale Cloud Extortion Operation Leverages Exposed .env Credentials",
+        "url": "https://unit42.paloaltonetworks.com/large-scale-cloud-extortion-operation/",
+        "themes": ["cloud", "extortion", "env-credential-leak", "lambda", "data-exfil"],
+        "notes": "Backs SIM-CDR-017 (leaked .env credential to self-propagating Lambda escalation)."
       }
     ],
 
@@ -124,6 +131,21 @@
         "title": "Can AI Attack the Cloud? Lessons From the Zealot Autonomous Multi-Agent System",
         "url": "https://unit42.paloaltonetworks.com/autonomous-ai-cloud-attacks/",
         "themes": ["ai-attacker", "autonomous", "cloud", "research"]
+      },
+      {
+        "priority": "P0",
+        "title": "When AWS IAM Roles Anywhere Becomes an Attacker's Anywhere",
+        "url": "https://unit42.paloaltonetworks.com/aws-roles-anywhere/",
+        "themes": ["aws-iam", "roles-anywhere", "trust-anchor", "cross-account-persistence"],
+        "notes": "Backs SIM-CDR-017 (self-propagating Lambda escalation) and SIM-CDR-018 (trust-anchor abuse)."
+      },
+      {
+        "priority": "P0",
+        "title": "Threat Brief: Compromised Salesforce Instances via Drift OAuth Tokens",
+        "url": "https://unit42.paloaltonetworks.com/threat-brief-compromised-salesforce-instances/",
+        "actor_aliases": ["Scattered Lapsus$ Hunters", "Bling Libra", "ShinyHunters"],
+        "themes": ["saas", "oauth-token-abuse", "salesforce", "bulk-api", "data-exfil"],
+        "notes": "Backs SIM-CLOUD-006 (post-consent OAuth token abuse — Salesloft Drift)."
       }
     ],
 
@@ -170,6 +192,57 @@
         "priority": "P2",
         "title": "Unit 42 Threat Bulletin — October 2025",
         "url": "https://unit42.paloaltonetworks.com/threat-bulletin/october-2025/"
+      }
+    ],
+
+    "edge_device_exploitation": [
+      {
+        "priority": "P0",
+        "title": "Zero-Day Vulnerabilities Affect Cisco ASA and FTD Software (ArcaneDoor / LINE VIPER)",
+        "url": "https://unit42.paloaltonetworks.com/zero-day-vulnerabilities-affect-cisco-software/",
+        "themes": ["edge-appliance", "cisco-asa", "ftd", "webvpn", "telemetry-collapse", "c2"],
+        "notes": "Backs SIM-NDR-010 (edge-appliance telemetry collapse + WebVPN-session C2)."
+      },
+      {
+        "priority": "P0",
+        "title": "Threat Brief: Ivanti Connect Secure CVE-2025-0282 and CVE-2025-0283",
+        "url": "https://unit42.paloaltonetworks.com/threat-brief-ivanti-cve-2025-0282-cve-2025-0283/",
+        "themes": ["edge-appliance", "ivanti-connect-secure", "pre-auth-overflow", "spawn-family", "pivot"],
+        "notes": "Backs SIM-MP-010 (Ivanti Connect Secure pre-auth IFT overflow to internal Windows pivot)."
+      },
+      {
+        "priority": "P0",
+        "title": "Active Exploitation of PAN-OS GlobalProtect CVE-2026-0257",
+        "url": "https://unit42.paloaltonetworks.com/active-exploitation-of-pan-os-cve-2026-0257/",
+        "themes": ["edge-appliance", "pan-os", "globalprotect", "auth-bypass", "client-fingerprint"],
+        "notes": "Backs SIM-ITDR-012 (GlobalProtect authentication bypass with hard-coded PoC client fingerprints)."
+      }
+    ],
+
+    "ai_agent_threats": [
+      {
+        "priority": "P0",
+        "title": "Model Context Protocol (MCP) Attack Vectors: Sampling Abuse",
+        "url": "https://unit42.paloaltonetworks.com/model-context-protocol-attack-vectors/",
+        "themes": ["mcp", "agentic", "sampling-abuse", "server-initiated-inference", "quota-theft"],
+        "notes": "Backs SIM-KOI-007 (MCP sampling abuse — server-initiated inference)."
+      },
+      {
+        "priority": "P0",
+        "title": "Web-Based Indirect Prompt Injection Against Browsing AI Agents",
+        "url": "https://unit42.paloaltonetworks.com/ai-agent-prompt-injection/",
+        "themes": ["ai-agent", "browser", "indirect-prompt-injection", "dom-hidden-payload"],
+        "notes": "Backs SIM-BROWSER-006 (web-based indirect prompt injection against browsing AI agents)."
+      }
+    ],
+
+    "dns_threat_intel": [
+      {
+        "priority": "P0",
+        "title": "Strategically Aged Domain Detection: Capture APT Attacks With DNS Traffic Trends",
+        "url": "https://unit42.paloaltonetworks.com/strategically-aged-domain-detection/",
+        "themes": ["dns", "aged-domains", "sleeper-domain", "dga", "threat-intel"],
+        "notes": "Backs SIM-TIM-003 (strategically aged sleeper-domain activation — dormancy-break burst)."
       }
     ]
   },
