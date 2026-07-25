@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { getAgents, getInfraBundles, deleteAgent, agentInstallUrl } from '../../api/client.js'
+import { getInfraBundles, deleteAgent, agentInstallUrl } from '../../api/client.js'
+import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
 // Compact relative time for last-seen ("12s" / "5m" / "3h" / "2d").
 function relTime(iso) {
@@ -18,28 +19,48 @@ function installerOS(os) {
   return /win/i.test(os || '') ? 'windows' : 'linux'
 }
 
+// Canonical agent id — MUST match EnvironmentContext's resolution
+// (`a.id || a.agent_id`) so `setAgent(id)` resolves the same record the header
+// AgentSwitcher does. Never diverge from that ordering here.
+function agentIdOf(a) {
+  return a.id || a.agent_id
+}
+
 /**
- * TargetsView — ① Targets: the unified "where does the simulation run?" hub.
+ * TargetsView — the Agents destination AND the guided-flow target picker.
  *
- * Surfaces all three execution paths the backend supports (redesign v2):
- *   • pull agents  — registered cortexsim-agent beacons (live / stale)
- *   • push bundle  — self-contained offline bundle, no agent required
- *   • iac labs     — environments provisioned via the infra generator
+ * Two responsibilities, cleanly split:
  *
- * Selecting a target lifts it to AppConsole; the Launch step (③) reads it
- * and auto-sets pull/push mode. This is the concept that makes "Launch"
- * legible — every run is "this scenario against THAT target".
+ *   1. MANAGEMENT (always) — enroll/deploy a pull beacon, prune stale agents,
+ *      surface the push-bundle path and provisioned IaC lab targets. This is
+ *      the "Agents" first-class destination.
  *
- * Props:
- *   selectedTarget  — { kind, id } | null
- *   onSelectTarget  — (target) => void
- *   onGoToLab       — () => void   (open the Environments/IaC generator)
+ *   2. ACTIVE-AGENT SELECTION (global) — the agent a card names is lifted to
+ *      the EnvironmentProvider via `setAgent`, so the always-visible header
+ *      AgentSwitcher and this surface share ONE active agent. The active agent
+ *      is no longer a launch-only local prop; it is ambient console scope read
+ *      back from `useEnvironment().agent`.
+ *
+ * When embedded in the guided "New POV run" flow, `onSelectTarget` is also
+ * provided: selecting an agent/push/iac card lifts it as the launch target
+ * (pull vs push mode is derived downstream). Selecting an agent does BOTH —
+ * sets the global active agent AND lifts the guided launch target — so the two
+ * concepts stay in sync instead of drifting.
+ *
+ * Props (all optional — the standalone Agents destination passes none):
+ *   selectedTarget  — { kind, id } | null   guided-flow launch target
+ *   onSelectTarget  — (target) => void       lift the guided launch target
+ *   onGoToLab       — () => void             open the Environments/IaC generator
  */
 
 const AGENT_STALE_MS = 60_000 // beacon considered stale after 60s of silence
 
 export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {} }) {
-  const [agents, setAgents]   = useState([])
+  // ── Global scope from the provider (agents + active agent are ambient) ─────
+  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents } = useEnvironment()
+  const activeAgentId = activeAgent ? agentIdOf(activeAgent) : null
+
+  // ── Local scope: IaC bundles are not part of the ambient env, fetched here.
   const [bundles, setBundles] = useState([])
   const [loading, setLoading] = useState(true)
   // Deploy-agent flow: pick OS → get install one-liner + downloadable installer.
@@ -54,10 +75,13 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     setBusyDelete(agentId)
     try {
       await deleteAgent(agentId)
-      setAgents((prev) => prev.filter((a) => (a.agent_id || a.id) !== agentId))
+      // The provider owns the agent list; re-pull so the header switcher and
+      // this surface both reflect the removal (its stale-pointer guard clears
+      // the active pointer + falls back if the deleted agent was active).
+      await refreshAgents()
     } catch { /* surfaced via list refresh */ }
     finally { setBusyDelete(null); setPendingDelete(null) }
-  }, [])
+  }, [refreshAgents])
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const installUrl = `${origin}/api/agents/install?os=${deployOS}&id=${encodeURIComponent(deployId || 'jumpbox-01')}`
@@ -71,20 +95,25 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     } catch { /* clipboard blocked — user can select manually */ }
   }, [oneLiner])
 
-  const refresh = useCallback(() => {
+  // ── Bundles (local) + agent liveness refresh (provider) ────────────────────
+  const refreshBundles = useCallback(() => {
     setLoading(true)
-    Promise.allSettled([getAgents(), getInfraBundles()])
-      .then(([a, b]) => {
-        setAgents(a.status === 'fulfilled' && Array.isArray(a.value) ? a.value : [])
-        const bv = b.status === 'fulfilled' ? b.value : []
-        setBundles(Array.isArray(bv) ? bv : (bv && bv.bundles) || [])
-      })
+    getInfraBundles()
+      .then((bv) => setBundles(Array.isArray(bv) ? bv : (bv && bv.bundles) || []))
+      .catch(() => setBundles([]))
       .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => { refresh() }, [refresh])
+  const refresh = useCallback(() => {
+    refreshBundles()
+    refreshAgents()
+  }, [refreshBundles, refreshAgents])
+
+  useEffect(() => { refreshBundles() }, [refreshBundles])
   useEffect(() => {
-    const t = setInterval(refresh, 10_000) // keep beacon liveness fresh
+    // Keep beacon liveness + bundle list fresh. Agents flow through the
+    // provider so a refresh here re-scopes the header switcher too.
+    const t = setInterval(refresh, 10_000)
     return () => clearInterval(t)
   }, [refresh])
 
@@ -97,17 +126,36 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     return age < AGENT_STALE_MS ? 'live' : 'stale'
   }
 
+  // Selecting an agent lifts it to global scope (setAgent) AND, in the guided
+  // flow, arms it as the launch target. One click, both concepts in sync.
+  const chooseAgent = useCallback((a) => {
+    const id = agentIdOf(a)
+    setAgent(id)
+    onSelectTarget({ kind: 'agent', id, label: a.hostname || a.host || id })
+  }, [setAgent, onSelectTarget])
+
   return (
     <div className="targets">
       <header className="view-head">
         <div>
-          <h1>Targets</h1>
+          <h1>Agents &amp; targets</h1>
           <p className="view-head__meta">
-            Choose <strong>where</strong> the simulation runs. Pull agents stream live causality into
-            Cortex; push bundles run offline on a clean host; lab environments are provisioned for you.
+            Manage where the simulation runs and pick the <strong>active agent</strong>. The active
+            agent is shared with the header switcher — switch here or there, every surface follows.
+            {tenant && (
+              <> Scoped to tenant <strong className="mono">{tenant.name || tenant.id}</strong>.</>
+            )}
           </p>
         </div>
-        <button type="button" className="btn" onClick={refresh}>↻ Refresh</button>
+        <div className="targets__head-actions">
+          <span className="targets__active" data-testid="active-agent-summary">
+            active agent:{' '}
+            {activeAgentId
+              ? <strong className="mono">{activeAgentId}</strong>
+              : <em className="targets__active--none">none</em>}
+          </span>
+          <button type="button" className="btn" onClick={refresh}>↻ Refresh</button>
+        </div>
       </header>
 
       <div className="targets__grid">
@@ -131,29 +179,39 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             </div>
           )}
           {agents.map((a) => {
-            const id = a.agent_id || a.id
+            const id = agentIdOf(a)
             const st = agentStatus(a)
             const os = a.os || a.platform || 'linux'
             const confirming = pendingDelete === id
+            const isActive = id === activeAgentId
             return (
               <div
                 key={id}
-                className={'target-card target-card--agent' + (isSel('agent', id) ? ' is-selected' : '')}
+                className={
+                  'target-card target-card--agent'
+                  + (isSel('agent', id) ? ' is-selected' : '')
+                  + (isActive ? ' is-active' : '')
+                }
               >
                 <button
                   type="button"
                   className="target-card__select"
-                  onClick={() => onSelectTarget({ kind: 'agent', id, label: id })}
+                  aria-pressed={isActive}
+                  onClick={() => chooseAgent(a)}
                 >
                   <div className="target-card__head">
                     <span className={`status-dot status-dot--${st}`} />
                     <span className="target-card__title mono">{id}</span>
+                    {isActive && <span className="target-card__pill target-card__pill--active">active</span>}
                     <span className={`target-card__pill target-card__pill--${st}`}>{st}</span>
                   </div>
                   <p className="target-card__sub">
                     {a.hostname || a.host || 'unknown host'} · {os} · seen {relTime(a.last_seen || a.last_seen_at || a.updated_at)}
                   </p>
                   {isSel('agent', id) && <span className="target-card__selected">✓ selected · pull mode</span>}
+                  {!isSel('agent', id) && isActive && (
+                    <span className="target-card__selected">✓ active agent</span>
+                  )}
                 </button>
 
                 {confirming ? (
@@ -169,6 +227,14 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   </div>
                 ) : (
                   <div className="target-card__actions">
+                    {!isActive && (
+                      <button
+                        type="button"
+                        className="card-action"
+                        onClick={() => chooseAgent(a)}
+                        title="Make this the active agent"
+                      >◉ set active</button>
+                    )}
                     <a
                       className="card-action"
                       href={agentInstallUrl({ os: installerOS(os), id })}

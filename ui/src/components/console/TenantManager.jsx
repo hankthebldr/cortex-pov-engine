@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import {
-  listXsiamTenants,
   registerXsiamTenant,
   deleteXsiamTenant,
   testXsiamTenant,
 } from '../../api/client.js'
+import { useEnvironment } from '../../context/EnvironmentContext.jsx'
+
+// Resolve the stable key a tenant is addressed by (matches EnvironmentContext).
+const tenantKey = (t) => (t && (t.name || t.id)) || null
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -398,20 +401,51 @@ function Step3({ form, saving, testResult, onSaveAndTest, onSaveOnly }) {
 
 // ── Tenant List ────────────────────────────────────────────────────────────
 
-function TenantRow({ tenant, onTest, onDelete, testing }) {
+function TenantRow({ tenant, active, onSelect, onTest, onDelete, testing }) {
   const cfg   = tenant.config || {}
+  const name  = tenantKey(tenant)
   const verAt = tenant.last_verified_at
     ? new Date(tenant.last_verified_at).toLocaleString(undefined, { hour12: false })
     : null
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: '1fr auto auto',
-      gap: 16, alignItems: 'start',
-      padding: '14px 0',
-      borderBottom: '1px solid var(--cortex-border)',
-    }}>
+    <div
+      aria-current={active ? 'true' : undefined}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'auto 1fr auto auto',
+        gap: 14, alignItems: 'start',
+        padding: '14px 12px 14px 10px',
+        borderBottom: '1px solid var(--cortex-border)',
+        borderLeft: `3px solid ${active ? 'var(--cortex-teal)' : 'transparent'}`,
+        background: active ? 'rgba(0,192,232,0.05)' : 'transparent',
+      }}
+    >
+      {/* Active selector */}
+      {active ? (
+        <span
+          aria-label="Active tenant"
+          style={{
+            alignSelf: 'center',
+            padding: '2px 8px', borderRadius: 12, fontSize: 9, fontWeight: 800,
+            fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',
+            background: 'var(--cortex-teal)', color: '#fff', whiteSpace: 'nowrap',
+          }}
+        >
+          ● ACTIVE
+        </span>
+      ) : (
+        <button
+          className="btn btn-sm btn-secondary"
+          onClick={() => onSelect(name)}
+          aria-pressed={false}
+          aria-label={`Set ${name} as active tenant`}
+          style={{ alignSelf: 'center', whiteSpace: 'nowrap' }}
+        >
+          Set active
+        </button>
+      )}
+
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <span style={{
@@ -442,7 +476,7 @@ function TenantRow({ tenant, onTest, onDelete, testing }) {
 
       <button
         className="btn btn-sm btn-secondary"
-        onClick={() => onTest(tenant.name)}
+        onClick={() => onTest(name)}
         disabled={testing}
         style={{ whiteSpace: 'nowrap' }}
       >
@@ -451,7 +485,8 @@ function TenantRow({ tenant, onTest, onDelete, testing }) {
 
       <button
         className="btn btn-sm"
-        onClick={() => onDelete(tenant.name)}
+        onClick={() => onDelete(name)}
+        aria-label={`Remove tenant ${name}`}
         style={{
           background: 'none', border: '1px solid var(--cortex-border)',
           color: 'var(--cortex-danger)', cursor: 'pointer',
@@ -489,26 +524,43 @@ function validateStep(step, form) {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function TenantManager() {
+  // ── Ambient scope from the EnvironmentProvider ──────────────────────────
+  // The tenant LIST + the ACTIVE tenant pointer live in the provider so this
+  // surface and the global header switcher share one source of truth. This
+  // surface owns MANAGEMENT (register/test/delete); SELECTION writes through
+  // to setTenant so a switch here re-scopes every surface, and vice-versa.
+  const {
+    tenants,
+    tenant: activeTenant,
+    setTenant,
+    refreshTenants,
+    loading,
+  } = useEnvironment()
+
+  const activeKey = tenantKey(activeTenant)
+
   const [step, setStep]           = useState(1)
   const [form, setForm]           = useState(EMPTY_FORM)
   const [errors, setErrors]       = useState({})
   const [saving, setSaving]       = useState(false)
   const [testResult, setTestResult] = useState(null)
 
-  const [tenants, setTenants]     = useState([])
-  const [loadError, setLoadError] = useState(null)
+  const [actionError, setActionError] = useState(null)
   const [testing, setTesting]     = useState({})   // { [name]: bool }
 
   // ── Confirmation dialog for delete ──────────────────────────────────────
   const [pendingDelete, setPendingDelete] = useState(null)
 
+  // Reload the shared list (drives both this surface and the header switcher).
   const loadTenants = useCallback(() => {
-    listXsiamTenants()
-      .then(setTenants)
-      .catch(e => setLoadError(e.message))
-  }, [])
+    const r = refreshTenants()
+    return r && typeof r.then === 'function' ? r : Promise.resolve()
+  }, [refreshTenants])
 
-  useEffect(() => { loadTenants() }, [loadTenants])
+  // ── Select / activate a tenant (shared with the header switcher) ─────────
+  const handleSelect = useCallback((name) => {
+    if (name) setTenant(name)
+  }, [setTenant])
 
   // ── Wizard field change ──────────────────────────────────────────────────
   const handleChange = useCallback((field, value) => {
@@ -531,8 +583,12 @@ export default function TenantManager() {
   }
 
   // ── Save helpers ─────────────────────────────────────────────────────────
+  // On save, if nothing is active yet, make the just-registered tenant active
+  // so a first-run install lands with a live scope without a second click.
   const doSave = async () => {
+    const savedName = form.name
     await registerXsiamTenant(form)
+    if (!activeKey && savedName) setTenant(savedName)
   }
 
   const handleSaveAndTest = async () => {
@@ -588,9 +644,12 @@ export default function TenantManager() {
     if (!pendingDelete) return
     try {
       await deleteXsiamTenant(pendingDelete)
+      // The provider's stale-pointer guard re-scopes the active tenant to the
+      // first-available entry when the active one is deleted — no action here.
+      setActionError(null)
       loadTenants()
     } catch (e) {
-      setLoadError(e.message)
+      setActionError(e.message)
     } finally {
       setPendingDelete(null)
     }
@@ -642,6 +701,17 @@ export default function TenantManager() {
           <span style={{ fontSize: 11, color: 'var(--cortex-steel)' }}>
             Register and manage XSIAM tenant connections for health & metrics
           </span>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--cortex-steel)' }}>
+          Active scope:{' '}
+          {activeTenant ? (
+            <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--cortex-teal)' }}>
+              {activeKey}
+            </strong>
+          ) : (
+            <span style={{ fontStyle: 'italic' }}>none selected</span>
+          )}
+          <span style={{ marginLeft: 6 }}>— shared with the global header switcher.</span>
         </div>
       </div>
 
@@ -705,13 +775,22 @@ export default function TenantManager() {
             </span>
           </div>
 
-          {loadError && (
+          {actionError && (
             <div style={{ fontSize: 11, color: 'var(--cortex-danger)', marginBottom: 10 }}>
-              {loadError}
+              {actionError}
             </div>
           )}
 
-          {tenants.length === 0 && !loadError && (
+          {tenants.length === 0 && loading?.tenants && (
+            <div style={{
+              padding: '24px 0', textAlign: 'center',
+              fontSize: 11, color: 'var(--cortex-steel)',
+            }}>
+              Loading tenants…
+            </div>
+          )}
+
+          {tenants.length === 0 && !loading?.tenants && (
             <div style={{
               padding: '24px 0', textAlign: 'center',
               fontSize: 11, color: 'var(--cortex-steel)',
@@ -722,15 +801,20 @@ export default function TenantManager() {
             </div>
           )}
 
-          {tenants.map(t => (
-            <TenantRow
-              key={t.name}
-              tenant={t}
-              testing={!!testing[t.name]}
-              onTest={handleTest}
-              onDelete={name => setPendingDelete(name)}
-            />
-          ))}
+          {tenants.map(t => {
+            const key = tenantKey(t)
+            return (
+              <TenantRow
+                key={key}
+                tenant={t}
+                active={key === activeKey}
+                onSelect={handleSelect}
+                testing={!!testing[key]}
+                onTest={handleTest}
+                onDelete={name => setPendingDelete(name)}
+              />
+            )
+          })}
         </div>
       </div>
     </div>
