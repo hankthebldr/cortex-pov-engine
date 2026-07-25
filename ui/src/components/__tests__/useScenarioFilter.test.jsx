@@ -67,6 +67,26 @@ describe('useScenarioFilter', () => {
     expect(result.current.applyTo(fixtures)).toHaveLength(3)
   })
 
+  it('filters by free-text query across name / id / technique / report', () => {
+    const { result } = renderHook(() => useScenarioFilter())
+    act(() => result.current.setQuery('lsass'))          // name match
+    expect(result.current.isEmpty).toBe(false)
+    expect(result.current.activeCount).toBe(1)
+    let out = result.current.applyTo(fixtures)
+    expect(out).toHaveLength(1)
+    expect(out[0].scenario_id).toBe('SIM-EDR-001')
+
+    act(() => result.current.setQuery('T1611'))          // technique match
+    expect(result.current.applyTo(fixtures).map((s) => s.scenario_id)).toEqual(['SIM-CDR-002'])
+
+    act(() => result.current.setQuery('apt29'))          // report/tag match, case-insensitive
+    expect(result.current.applyTo(fixtures)[0].scenario_id).toBe('SIM-MP-004')
+
+    act(() => result.current.clearOne('query'))
+    expect(result.current.isEmpty).toBe(true)
+    expect(result.current.applyTo(fixtures)).toHaveLength(3)
+  })
+
   it('filters by plane (single value)', () => {
     const { result } = renderHook(() => useScenarioFilter())
     act(() => result.current.setPlane('CDR'))
