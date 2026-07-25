@@ -42,6 +42,33 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-07-25 — analytics log-streamer + ABIOC/Analytics content):**
+  **161 loadable scenarios** across **15 detection planes** (all `status: active`,
+  0 rejected / 0 dangling refs; **1001/1001 detection_id slugs resolve** — GAP-4 held) ·
+  **161 TTP cards** (**1356 resolvable catalog detection objects**) · **21 EAL plugins** ·
+  85 tool-adapter packs (adapter wiring unchanged — the 14 new scenarios are
+  analytics-streamer-driven with 0 new `adapter_ref`) · 11 AWS IaC modules.
+  `make validate` is green (**328 pass / 0 warn / 0 fail**). This pass adds the 14
+  `TTP-2026-0154..0167` analytics-streamer pairs (147 + 14 = 161) and a **new analytics
+  log-streamer EAL plugin family** — spine `core/eal_simulator/analytics_emitter.py` + 7
+  net-new emitters (**14 → 21 plugins**) that POST **shape-true audit/log JSON** to an
+  operator-supplied collector so a customer validates their **Analytics / ABIOC** alerts
+  fire per data source: AWS/GCP CloudTrail + cloud storage/compute (`cloud_audit_logs`),
+  Azure Activity/Audit (`msft_azure_audit`, newly registered), Kubernetes audit
+  (`kubernetes_audit_logs`, newly registered), M365/Exchange (`msft_o365_audit`), Active
+  Directory/Windows (`msft_windows_security`), PAN-OS NGFW-EAL, and Okta/Entra IdP sign-in
+  (`okta_sso`, via the extended `idp_signin_emulator`). The cloud-audit emitters drive the
+  new CDR-plane cloud-audit scenarios (`SIM-CDR-019..026`). Content emphasis is the two
+  below-target detection types: **ABIOC + Analytics step-share rises 12.5% → 15.2%**
+  (crossing the 15% floor — ABIOC 11.6%, Analytics 3.6% of 1010 step-detections);
+  Correlation holds at 10.7%. Two datasets registered in `validate.py` KNOWN_DATASETS
+  (`msft_azure_audit`, `kubernetes_audit_logs`). Per-plane on disk now: CDR=26 · EDR=21 ·
+  ANALYTICS=20 · ITDR=20 · NDR=12 · CLOUD_APP=9 · KOI=8 · AI_SPM=7 · ASM=6 · BROWSER=6 ·
+  TIM=6 · AIRS=5 · AI_ACCESS=5 · CSPM=5 · EMAIL=5. **Known open item (false-green):** the
+  `ngfw_eal_emitter` still emits `dataset=panw_ngfw_eal_raw` + endpoint-process context
+  fields, while its card `SIM-NDR-012` queries the normalized `panw_ngfw_traffic_raw`;
+  aligning the emitter's `_DATASET` (and dropping the process fields) is a pending Build
+  task — the corpus/CI gates are green but the two disagree on the emitted dataset.
 - **Counted ground truth (verified 2026-07-24 — F5/F10 methodology-family integration):**
   **147 loadable scenarios** across **15 detection planes** (all `status: active`,
   0 rejected / 0 dangling refs; **932/932 detection_id slugs resolve** — GAP-4 held) ·
