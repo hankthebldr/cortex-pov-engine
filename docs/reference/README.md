@@ -42,12 +42,14 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
-- **Counted ground truth (verified 2026-07-24 — causality-contract final integration):**
-  **133 loadable scenarios** across **15 detection planes** (all `status: active`,
-  0 rejected / 0 dangling refs; **823/823 detection_id slugs resolve** — GAP-4 held) ·
-  **133 TTP cards** (**1156 resolvable catalog detection objects**) · **14 EAL plugins** ·
-  **69 tool-adapter packs** (34 distinct adapters wired across 40 scenarios) · 11 AWS
-  IaC modules. `make validate` is green (**272 pass / 0 warn / 0 fail**). This pass
+- **Counted ground truth (verified 2026-07-24 — Kali-toolkit final integration):**
+  **135 loadable scenarios** across **15 detection planes** (all `status: active`,
+  0 rejected / 0 dangling refs; **854/854 detection_id slugs resolve** — GAP-4 held) ·
+  **135 TTP cards** (**1184 resolvable catalog detection objects**) · **14 EAL plugins** ·
+  **84 tool-adapter packs** (45 distinct adapters wired across 42 scenarios) · 11 AWS
+  IaC modules. `make validate` is green (**276 pass / 0 warn / 0 fail**). The
+  2026-07-24 pass added a **chainable Kali toolkit** — 15 tier-4 adapters + the 2 kill-chains
+  `SIM-MP-019`/`SIM-ITDR-015`; see [`kali-toolkit.md`](kali-toolkit.md). This pass
   installs the **causality contract** — optional/additive schema fields (`cgo_anchor`
   scenario-level; per-step `causality{parent_step,pivot}`, `platforms`,
   `platform_variants`) that drive `core/engine/causality_graph.py` to build a real
@@ -113,14 +115,13 @@
 ## The eight domain references
 
 ### [`adapter-catalog.md`](adapter-catalog.md) — Tool Adapter Framework
-Exhaustive inventory of all 69 `tools/packs/*.yml` adapter packs across the 5-tier
+Exhaustive inventory of all 84 `tools/packs/*.yml` adapter packs across the 5-tier
 model (in-tree / submodule / IaC-provisioned / runtime-fetched / external-only),
-their safety classes (33 safe · 32 dual-use · 4 c2-framework), and their wiring to
-scenarios. State (2026-06-15): all 10 source submodules (incl. `TOOL-ATOMIC-RED-TEAM`)
-are provisioned and `check-adapter-sources.sh` is green; **34 of 69 adapters are now
-wired** (was 17 — the 81%-orphan finding is superseded), with ~21 low-priority tier 1-4
-candidates left to wire opportunistically and the c2/tier-5 packs reference-only by
-design.
+their safety classes, and their wiring to scenarios. State (2026-07-24): all 10 source
+submodules (incl. `TOOL-ATOMIC-RED-TEAM`) are provisioned and `check-adapter-sources.sh`
+is green; **45 of 84 adapters are now wired** across 42 scenarios, with the c2/tier-5
+packs reference-only by design. The 2026-07-24 Kali-toolkit pass added 15 tier-4
+adapters — see [`kali-toolkit.md`](kali-toolkit.md).
 
 ### [`scenario-catalog.md`](scenario-catalog.md) — Scenarios
 Canonical row-per-scenario archive of every YAML in `scenarios/` (58 loadable
