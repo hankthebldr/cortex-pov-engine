@@ -1,0 +1,435 @@
+{
+  "id": "TTP-2026-0142",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:25:21+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane",
+      "correlation",
+      "automation",
+      "response-remediation",
+      "ransomware-chain",
+      "actor-ignoble-scorpius",
+      "blacksuit",
+      "dcsync",
+      "esxi",
+      "severity-critical"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "ransomware-chain",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Ransomware Precursor Auto-Containment — BlackSuit DCSync-to-ESXi Kill Chain Fires XSOAR Auto-Containment (T1003.006 / T1053.005 / T1486)",
+    "summary": "Ignoble Scorpius (BlackSuit) chains a vished VPN credential into DCSync on a domain controller and AnyDesk/RAT scheduled-task persistence. A correlation stitches that junction into ONE incident and fires an XSOAR R&R playbook (isolate DC, disable the stolen account, block egress) so the T1486 ESXi mass-encryption is contained, not observed. Measures MTTC/automation-rate, not just MTTD.",
+    "description": "Anatomy of a BlackSuit ransomware blitz attributed to Ignoble Scorpius (Unit 42): the operator vished an employee into surrendering a legitimate VPN credential (T1078), used that foothold to run a DCSync/DRSUAPI DsGetNCChanges replication request from a non-domain-controller context against a domain controller and extract NTDS.dit hashes including a highly-privileged service account (T1003.006), then registered AnyDesk plus a custom RAT as a scheduled-task persistence mechanism on the DC to survive reboots (T1053.005). From there the actor mapped the estate with Advanced IP Scanner and moved laterally over RDP and SMBExec (T1021.001 / T1570), staged and exfiltrated over 400GB with a renamed rclone binary (T1020), ran CCleaner to wipe forensic evidence (T1070), and finally pushed the BlackSuit encryptor to hundreds of VMs across ~60 VMware ESXi hosts via an Ansible playbook, encrypting them simultaneously (T1486). This card is an ANALYTICS / F5 (Automation & Workflow) scenario: its whole thesis is that Cortex XSIAM should stitch the early DCSync + DC-persistence signals into a single 'Ransomware Precursor' incident and auto-fire an XSOAR Response & Remediation playbook AT THE JUNCTION — isolate the domain controller, disable the stolen service account, block the exfil egress ASN — so the encryption impact is pre-empted. The primary KPI is not detection latency (MTTD) but Mean-Time-To-Contain / automation-rate: the correlation must fire AND the playbook must complete before T1486 detonates. Three BIOCs cover the VPN valid-account anomaly, the DCSync-from-non-DC replication, and the DC scheduled-task persistence; one endpoint ABIOC fuses the DCSync->persistence behavioral chain on the DC; supporting validation XQL confirms the lateral movement and the renamed-rclone bulk egress; and the terminal correlation rule CR-MP-0020 raises the single precursor incident and triggers the auto-containment playbook, with a metric XQL asserting the playbook fired and closed the incident before impact.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Ignoble Scorpius",
+        "aliases": []
+      }
+    ],
+    "campaigns": [
+      "BlackSuit ransomware blitz — DCSync-to-ESXi mass-encryption intrusions (2024-2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "BlackSuit"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2024-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.006",
+        "name": "OS Credential Dumping: DCSync",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.005",
+        "name": "Scheduled Task/Job: Scheduled Task",
+        "tactic_ids": [
+          "TA0002",
+          "TA0003",
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Execution",
+          "Persistence",
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.001",
+        "name": "Remote Services: Remote Desktop Protocol",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1570",
+        "name": "Lateral Tool Transfer",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1020",
+        "name": "Automated Exfiltration",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "User Account: User Account Authentication",
+      "Active Directory: Active Directory Object Access",
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-020 — BlackSuit DCSync-to-ESXi precursor auto-containment; correlation-terminal F5 automation scenario driven by the CortexSim orchestrator (non-destructive echo simulation of the kill-chain junctions).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agents on the domain controllers and member hosts so DCSync replication, scheduled-task persistence, and lateral-movement process lineage reach xdr_data / msft_windows_security.",
+        "check_command": "systemctl status cortex-agent || sc query cyserver"
+      },
+      {
+        "description": "An XSOAR Response & Remediation playbook is wired to the 'Ransomware Precursor' correlation so the DCSync+persistence junction can auto-isolate the DC, disable the stolen account, and block egress.",
+        "check_command": "echo 'confirm XSOAR playbook Ransomware-Precursor-AutoContain is enabled and mapped to CR-MP-0020'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Non-destructive SAFE-MODE simulation of the BlackSuit precursor junctions.\n# No real DCSync, persistence, exfil, or encryption is performed; each step\n# emits a marker the orchestrator seeds Results against so the correlation +\n# XSOAR auto-containment can be exercised end-to-end.\nset -euo pipefail\nSVC=${STOLEN_SVC_ACCOUNT:-svc-backup}\nDC=${TARGET_DC:-dc01}\necho \"[CortexSim][SAFE-MODE] SIM-MP-020 precursor: DCSync-then-persistence junction on ${DC} as ${SVC}\"\necho '[CortexSim][SAFE-MODE] impact (T1486 ESXi mass-encryption) is CONTAINED by the XSOAR playbook, not executed'",
+      "input_variables": [
+        {
+          "name": "STOLEN_SVC_ACCOUNT",
+          "type": "string",
+          "default": "svc-backup",
+          "description": "The highly-privileged service account whose hash the DCSync step models stealing (the stolen key used through the rest of the chain)."
+        },
+        {
+          "name": "TARGET_DC",
+          "type": "string",
+          "default": "dc01",
+          "description": "The domain controller the DCSync + scheduled-task-persistence junction models."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "A DCSync / DRSUAPI DsGetNCChanges replication request (Windows event 4662, DS-Replication-Get-Changes) sourced from a non-domain-controller account.",
+        "expected_value": "event_id = 4662 and object_properties contains \"DS-Replication-Get-Changes\" and src_host_is_domain_controller = false"
+      },
+      {
+        "artifact_type": "scheduled-task",
+        "description": "AnyDesk / custom-RAT registered as a scheduled-task persistence mechanism on a domain controller (schtasks.exe /create), matching the source's 'configured as a scheduled task to survive reboots.'",
+        "expected_value": "agent_host_is_domain_controller = true and action_process_image_name = \"schtasks.exe\" and action_process_command_line contains \"AnyDesk\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-MP-020 SAFE-MODE cleanup complete — no persistent artifacts.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "BlackSuit VPN Valid-Account Anomalous GlobalProtect Sign-In",
+        "description": "The vished VPN credential surfaces as an anomalous but authenticated GlobalProtect gateway sign-in — a legitimate account from an unfamiliar source region or a first-seen device. No known-bad indicator; the anomaly against the account's learned sign-in geography/device is the signal (T1078 initial access).",
+        "logic": "dataset = panw_ngfw_globalprotect_raw\n| filter event_type = \"gateway-auth\" and auth_result = \"success\"\n| filter source_region_is_approved = false or device_is_first_seen = true\n| comp count() as logins by source_user, source_ip, source_region\n| filter logins >= 1\n| fields source_user, source_ip, source_region, logins",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1078"
+        ]
+      },
+      {
+        "name": "DCSync Replication Request from a Non-Domain-Controller Account",
+        "description": "A DRSUAPI DsGetNCChanges directory-replication request (Windows event 4662 carrying the DS-Replication-Get-Changes control-access right) originates from an account/host that is not a domain controller — the canonical DCSync signature Ignoble Scorpius used to extract NTDS.dit hashes including the stolen service account (T1003.006).",
+        "logic": "dataset = msft_windows_security\n| filter event_id = 4662\n| filter object_properties contains \"DS-Replication-Get-Changes\" or object_properties contains \"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2\"\n| filter src_host_is_domain_controller = false and subject_account not in (\"SYSTEM\", \"LOCAL SERVICE\")\n| comp count() as replication_requests by subject_account, src_host\n| filter replication_requests >= 1\n| fields subject_account, src_host, replication_requests",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1003.006"
+        ]
+      },
+      {
+        "name": "AnyDesk RAT Registered as a Scheduled Task for Persistence on a Domain Controller",
+        "description": "AnyDesk or a custom RAT is registered as a scheduled task (schtasks.exe /create) on a domain controller so it survives reboots — matching the source's 'configured as a scheduled task to survive reboots.' A DC is never a legitimate place for a remote-access-tool scheduled task, so the host role plus the schtasks /create + AnyDesk command line is the signal (T1053.005).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"schtasks.exe\" and action_process_command_line contains \"/create\"\n| filter action_process_command_line contains \"AnyDesk\"\n| filter agent_host_is_domain_controller = true\n| comp count() as persistence_events by agent_hostname, actor_effective_username, action_process_command_line\n| filter persistence_events >= 1\n| fields agent_hostname, actor_effective_username, action_process_command_line, persistence_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1053.005"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "DCSync-to-Persistence Behavioral Chain on a Domain Controller",
+        "description": "Cortex's behavioral-ML fuses two events that individually look administrative — a directory-replication (DCSync) read and a subsequent scheduled-task persistence write — into one causally-linked, TIME-ORDERED chain on the SAME domain controller under the SAME identity within the correlation window. The replication read MUST precede the persistence write; neither event alone fires. This is the junction the auto-containment playbook fires on: no single event is known-bad, but the DCSync-then-persist sequence on a DC is the ransomware precursor's behavioral fingerprint (T1003.006 -> T1053.005).",
+        "logic": "dataset = xdr_data\n| filter agent_host_is_domain_controller = true and event_type = ENUM.DIRECTORY_SERVICE and action_directory_service_operation = \"replication\"\n| comp min(_time) as dcsync_t0 by agent_hostname, actor_effective_username\n| join type = inner (\n    dataset = xdr_data\n    | filter agent_host_is_domain_controller = true and event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n    | filter action_process_image_name = \"schtasks.exe\" and action_process_command_line contains \"/create\" and action_process_command_line contains \"AnyDesk\"\n    | comp min(_time) as persist_t1 by agent_hostname, actor_effective_username\n  ) as persist persist.agent_hostname = agent_hostname and persist.actor_effective_username = actor_effective_username\n| alter chain_seconds = timestamp_diff(persist_t1, dcsync_t0, \"SECOND\")\n| filter chain_seconds >= 0 and chain_seconds <= 600\n| fields agent_hostname, actor_effective_username, dcsync_t0, persist_t1, chain_seconds",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1003.006",
+          "T1053.005"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Domain-controller identity performing a DCSync/DsGetNCChanges replication read -> the SAME identity subsequently writing an AnyDesk/RAT scheduled-task persistence entry on the same DC within the correlation window (replication strictly precedes persistence), anchored to the stolen service account's causality chain."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "RDP and SMBExec Lateral Movement from the Stolen Service Account",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"mstsc.exe\", \"psexesvc.exe\", \"smbexec.py\", \"wmiexec.py\", \"PSEXESVC.exe\")\n| filter actor_effective_username = \"svc-backup\"\n| comp count_distinct(agent_hostname) as hosts_touched by actor_effective_username, action_process_image_name\n| filter hosts_touched >= 2\n| fields actor_effective_username, action_process_image_name, hosts_touched",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Renamed rclone Bulk Egress from the Domain-Controller Segment",
+        "query": "dataset = pan_ngfw_traffic\n| filter app in (\"ssl\", \"webdav\", \"rclone\") and dest_is_internal = false\n| comp sum(bytes_sent) as egress_bytes, count() as sessions by source_ip, dest_ip, app\n| filter egress_bytes > 10000000000\n| sort desc egress_bytes\n| fields source_ip, dest_ip, app, egress_bytes, sessions",
+        "expected_rows_min": 0,
+        "dataset": "pan_ngfw_traffic"
+      },
+      {
+        "purpose": "metric",
+        "name": "XSOAR Response and Remediation Playbook Fired and Closed the Precursor Incident",
+        "query": "dataset = xsiam_incidents\n| filter correlation_rule_id = \"CR-MP-0020\"\n| filter playbook_name contains \"Ransomware-Precursor-AutoContain\" and playbook_status = \"completed\"\n| filter automation_actions contains \"isolate-endpoint\" and automation_actions contains \"disable-account\"\n| comp count() as remediations, min(time_to_contain_seconds) as fastest_mttc by incident_id\n| filter remediations >= 1\n| fields incident_id, remediations, fastest_mttc",
+        "expected_rows_min": 1,
+        "dataset": "xsiam_incidents"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Ransomware Precursor Auto-Containment — DCSync + Scheduled-Task-Persistence Junction Fires XSOAR R&R Playbook",
+        "rule_id": "CR-MP-0020",
+        "logic": "BIOC(DCSync Replication Request from a Non-Domain-Controller Account) AND (BIOC(AnyDesk RAT Registered as a Scheduled Task for Persistence on a Domain Controller) OR ABIOC(DCSync-to-Persistence Behavioral Chain on a Domain Controller)) on the same domain-controller host and stolen service account within 600s -> raise ONE 'Ransomware Precursor' incident at CRITICAL and trigger XSOAR playbook Ransomware-Precursor-AutoContain (isolate the DC, disable the stolen service account, block the exfil egress ASN). The playbook fires at this junction so the T1486 ESXi mass-encryption impact is CONTAINED rather than observed. F5 Response/Automation KPI: the correlation fires AND the playbook completes before impact."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — cross-source correlation of AD replication, endpoint persistence, and lateral-movement lineage into one precursor incident",
+        "validated": true,
+        "note": "Backed on this card by CR-MP-0020 plus the DCSync BIOC and the DCSync-to-Persistence ABIOC."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0020",
+          "TBD-XSIAM-CORR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter correlation_rule_id = \"CR-MP-0020\" | comp count_distinct(_product) as planes, count_distinct(incident_id) as incidents by agent_hostname | filter incidents = 1",
+        "agent_version_min": "8.4"
+      },
+      {
+        "module": "cortex-xsoar",
+        "submodule": "playbooks",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "TBD-XSOAR-RR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xsiam_incidents | filter playbook_name contains \"Ransomware-Precursor-AutoContain\" and playbook_status = \"completed\" | comp min(time_to_contain_seconds) as mttc by incident_id"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "TBD-XDR-ISOLATE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_id = 4662 | filter object_properties contains \"DS-Replication-Get-Changes\" and src_host_is_domain_controller = false | comp count() as dcsync by subject_account, src_host"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-MP-020",
+        "name": "Ransomware Precursor Auto-Containment via Cross-Source Correlation + XSOAR Response",
+        "description": "Prove that Cortex XSIAM stitches the early BlackSuit precursor signals (DCSync from a non-DC + AnyDesk/RAT scheduled-task persistence on the same DC) into a single incident and auto-fires an XSOAR Response & Remediation playbook that contains the domain controller BEFORE the Ansible-driven ESXi mass-encryption detonates. The DC measures automation-rate / MTTC, not just detection latency.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-MP-020A",
+            "objective": "The terminal correlation CR-MP-0020 raises exactly one 'Ransomware Precursor' incident and triggers the XSOAR auto-containment playbook.",
+            "preconditions": [
+              "Cortex agents on the DCs and member hosts feeding xdr_data / msft_windows_security.",
+              "XSOAR playbook Ransomware-Precursor-AutoContain enabled and mapped to CR-MP-0020."
+            ],
+            "steps": [
+              "Run the precursor junction: DCSync from a non-DC account, then AnyDesk/RAT scheduled-task persistence on the same DC under the stolen service account.",
+              "Observe the DCSync BIOC and the DCSync-to-Persistence ABIOC fire.",
+              "Observe CR-MP-0020 raise ONE precursor incident and fire the XSOAR playbook."
+            ],
+            "success_criteria": [
+              "Correlation CR-MP-0020 raises exactly one incident at CRITICAL.",
+              "The XSOAR Response & Remediation playbook is triggered from that incident."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-MP-020B",
+            "objective": "The precursor detections that feed the junction fire on the DCSync and the DC scheduled-task persistence.",
+            "preconditions": [
+              "The DCSync replication and scheduled-task-persistence junction steps executed on the target DC."
+            ],
+            "steps": [
+              "Execute the DCSync-from-non-DC replication step.",
+              "Execute the AnyDesk/RAT scheduled-task-persistence step on the same DC."
+            ],
+            "success_criteria": [
+              "BIOC `DCSync Replication Request from a Non-Domain-Controller Account` fires.",
+              "BIOC `AnyDesk RAT Registered as a Scheduled Task for Persistence on a Domain Controller` OR ABIOC `DCSync-to-Persistence Behavioral Chain on a Domain Controller` fires."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-MP-020C",
+            "objective": "The auto-containment completes before the T1486 ESXi mass-encryption — the playbook fired and closed the incident within the MTTC budget.",
+            "preconditions": [
+              "TC-MP-020A satisfied (playbook triggered)."
+            ],
+            "steps": [
+              "Let the XSOAR playbook run its DC isolate / account disable / egress block actions.",
+              "Query the automation-outcome metric."
+            ],
+            "success_criteria": [
+              "The metric XQL confirms playbook_status = completed with isolate-endpoint + disable-account actions.",
+              "time_to_contain_seconds is within the POV MTTC budget so the ESXi encryption step is contained, not observed."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce phishing-resistant MFA on all remote access (VPN/GlobalProtect) so a vished credential alone cannot grant a foothold.",
+      "Block EFSRPC and restrict DRSUAPI replication with RPC filters, and scope replication rights so only domain controllers can DsGetNCChanges (deny DCSync from non-DC accounts).",
+      "Restrict service accounts from interactive and remote logons, tier admin access, and confine administration to dedicated management VLANs.",
+      "Disable NTLM or require Extended Protection for Authentication; rotate the exposed service-account credentials on suspicion.",
+      "Retain 90+ days of logs for critical sources (DC security, endpoint, firewall) so the precursor chain is reconstructable."
+    ],
+    "detection_engineering": [
+      "Alert on DRSUAPI DsGetNCChanges (event 4662, DS-Replication-Get-Changes) from any account/host that is not a domain controller.",
+      "Alert on remote-access-tool (AnyDesk) or RAT scheduled-task persistence registered on a domain controller.",
+      "Correlate the DCSync + DC-persistence junction into one 'Ransomware Precursor' incident and wire it to an XSOAR Response & Remediation playbook that isolates the DC, disables the stolen account, and blocks the exfil egress ASN — contain at the junction, before ESXi encryption.",
+      "Hunt for renamed-rclone / high-volume outbound transfers from DC segments and RDP+SMBExec fan-out from a single service account as corroborating precursor evidence."
+    ],
+    "response_playbook": "XSOAR-PB-Ransomware-Precursor-AutoContain-v1"
+  },
+  "references": [
+    {
+      "title": "Anatomy of an Attack: BlackSuit Ransomware Blitz (Ignoble Scorpius)",
+      "url": "https://unit42.paloaltonetworks.com/anatomy-of-an-attack-blacksuit-ransomware-blitz/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1003.006 — OS Credential Dumping: DCSync",
+      "url": "https://attack.mitre.org/techniques/T1003/006/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1486 — Data Encrypted for Impact",
+      "url": "https://attack.mitre.org/techniques/T1486/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

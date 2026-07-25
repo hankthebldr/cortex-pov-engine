@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1595",
+    "T1190",
+    "T1059",
+    "T1033",
+    "T1087",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fuses four signals on the SAME host/IP within the correlation window into one exposure->RCE->discovery->exfil incident: (a) the Cortex ASM/Xpanse exposure-at-rest finding from XQL(ASM-005 Internet-Exposed WSUS Management Interface Discovered) on asm_findings (dst_port 8530/8531); (b) the runtime exploit, where ABIOC(ASM-005 WSUS Service Identity Spawns Out-of-Baseline Command Shell) and BIOC(ASM-005 WSUS Deserialization RCE Update Service Spawns Interpreter Chain) both fire on the WSUS-service cmd/powershell lineage; (c) the domain-discovery burst from XQL(ASM-005 Domain Recon Burst Under WSUS Process Lineage); and (d) the outbound collector session from XQL(ASM-005 Webhook Site Exfil Egress From WSUS Host) on panw_ngfw_traffic_raw. Joined on agent_hostname/src_ip, the rule raises a single exposure-management incident. This is the dual-control proof: exposure management flags the asset at rest, runtime catches the exploit, and only the platform draws the line between them.",
+      "name": "ASM-005 Internet-Exposed WSUS Exploited to Domain Recon to Webhook Exfil \u2014 Exposure-to-RCE Incident Stitch",
+      "rule_id": "CR-ASM-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0148"
+}

@@ -1,0 +1,400 @@
+{
+  "id": "TTP-2026-0148",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:25:51+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-asm",
+      "exposure-to-rce",
+      "cve-2025-59287",
+      "wsus",
+      "insecure-deserialization",
+      "exposure-management",
+      "correlation",
+      "causality-stitch",
+      "dual-control",
+      "severity-critical"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "ASM Exposure-to-RCE: Internet-Exposed WSUS (CVE-2025-59287) → Domain Recon → Webhook Exfil — Correlation (SIM-ASM-005)",
+    "summary": "Cortex ASM/Xpanse finds an internet-exposed WSUS interface (8530/8531) at rest; the WSUS service (wsusservice.exe / w3wp.exe) is then driven via CVE-2025-59287 deserialization to spawn cmd→powershell, run domain recon, and beacon to webhook.site. XSIAM correlation joins the ASM finding, the ABIOC/BIOC shell-spawn, the recon burst, and the NGFW exfil into ONE exposure→RCE→discovery→exfil incident.",
+    "description": "Unit 42 reports mass opportunistic exploitation of CVE-2025-59287, an unsafe-deserialization remote code execution in Windows Server Update Services (WSUS). WSUS listens on TCP 8530 (HTTP) and 8531 (HTTPS); the GetCookie() endpoint deserializes an attacker-controlled AuthorizationCookie via BinaryFormatter and the ReportingWebService deserializes via SoapFormatter, both without type restriction — a payload runs as the WSUS service. Cortex Xpanse identified roughly 5,500 internet-exposed WSUS instances, making internet reachability the decisive exposure. Post-exploitation the operator's initial payload runs domain reconnaissance (whoami, net user /domain, ipconfig /all) to map the domain and high-value accounts, then exfiltrates the collected host/domain context to an attacker-controlled webhook.site endpoint using PowerShell Invoke-WebRequest with a curl.exe fallback. The observed process lineages are wsusservice.exe → cmd.exe → cmd.exe → powershell.exe and w3wp.exe (running under the wsuspool IIS application pool) → cmd.exe → cmd.exe → powershell.exe. Affected: Windows Server 2012 through 2025 (including 23H2) with the WSUS role enabled. This card is the ASM-plane dual-control proof for that chain: it is emphatically a CORRELATION scenario (methodology family F2, Causality Stitching Validation). Cortex ASM/Xpanse supplies the exposure-at-rest half (asm_findings: a WSUS management interface reachable from the internet on 8530/8531); the Cortex XDR agent supplies the runtime half (xdr_data: an update service that never normally parents an interactive interpreter suddenly spawns cmd→powershell, then a domain-discovery burst); the NGFW supplies the exfil half (panw_ngfw_traffic_raw: outbound HTTP to webhook.site). An ABIOC anchors the WSUS-service-spawns-shell deviation to the causality chain; a hand-authored BIOC reproduces Unit 42's published hunting logic (child processes of wsusservice.exe / w3wp.exe filtering legitimate children such as svchost.exe, conhost.exe, csc.exe); validation/hunt XQL surfaces the discovery burst, the webhook.site egress, and the ASM finding; and the terminal correlation rule CR-ASM-0005 joins all four signals on the shared host/IP into a single exposure→RCE→discovery→exfil incident the DC presents as the exposure-management readout.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Unattributed opportunistic (mass-scanned WSUS)",
+        "aliases": []
+      }
+    ],
+    "campaigns": [
+      "Opportunistic mass exploitation of internet-exposed WSUS via CVE-2025-59287 (2025)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2025-10-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1595",
+        "name": "Active Scanning",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1190",
+        "name": "Exploit Public-Facing Application",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1033",
+        "name": "System Owner/User Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1087",
+        "name": "Account Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Network Traffic: Network Connection Creation",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ASM-005 — Internet-exposed WSUS (CVE-2025-59287) exposure-to-RCE-to-exfil correlation stitch for Cortex ASM + XDR + NGFW dual-control validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex ASM/Xpanse is inventorying the estate so an internet-exposed WSUS management interface (8530/8531) surfaces as an asm_findings exposure at rest.",
+        "check_command": "echo 'confirm asm_findings ingestion for the WSUS host'"
+      },
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the WSUS host so per-process and command telemetry (wsusservice.exe / w3wp.exe lineage) reaches xdr_data.",
+        "check_command": "sc query cortex-agent || systemctl status cortex-agent"
+      },
+      {
+        "description": "The WSUS host's outbound web traffic transits a Palo Alto NGFW forwarding session logs to XSIAM so the webhook.site egress lands in panw_ngfw_traffic_raw.",
+        "check_command": "echo 'confirm panw_ngfw_traffic_raw ingestion for the WSUS host src_ip'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE, non-destructive. Emits the exposure->RCE->discovery->exfil signal\n# shape without exploiting a real WSUS deserialization flaw and without\n# beaconing to attacker infrastructure. On a Windows target the per-step\n# platform_variants produce the real wsusservice/w3wp -> cmd -> powershell\n# lineage, the read-only domain-discovery burst, and an egress to an authorised\n# local collector (STAGE_HOST) that stands in for webhook.site.\nset -euo pipefail\necho '[CortexSim][SAFE-MODE] SIM-ASM-005 exposure-to-RCE correlation marker'\n",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised local collector the SAFE-MODE exfil step reaches instead of the real webhook.site indicator (no beacon to attacker infrastructure)."
+        }
+      ],
+      "timeout_seconds": 420
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "An update-service process (wsusservice.exe or w3wp.exe under the wsuspool app pool) parenting a cmd.exe -> powershell.exe interpreter chain it never spawns during normal update synchronisation.",
+        "expected_value": "causality_actor_process_image_name in (wsusservice.exe, w3wp.exe) and action_process_image_name in (cmd.exe, powershell.exe)"
+      },
+      {
+        "artifact_type": "process",
+        "description": "A domain-discovery burst (whoami, net user /domain, ipconfig /all) parented under the exploited WSUS process lineage.",
+        "expected_value": "action_process_image_name in (whoami.exe, net.exe, ipconfig.exe)"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTP session from the WSUS host to a webhook.site collector carrying the exfiltrated host/domain context.",
+        "expected_value": "dst_host contains webhook.site"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/.cortexsim-asm-005-stage; echo '[CortexSim] SIM-ASM-005 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "url",
+        "value": "http://webhook.site/22b6b8c8-2e07-4878-a681-b772e569aa6a",
+        "context": "Attacker-controlled webhook.site collector URL Unit 42 observed receiving the exfiltrated domain-reconnaissance output; published defanged as hxxp://webhook[.]site/22b6b8c8-2e07-4878-a681-b772e569aa6a in the source report, stored fanged/matchable here so a tenant indicator feed can match live NGFW/proxy telemetry.",
+        "reputation_required": "malicious"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "ASM-005 WSUS Deserialization RCE Update Service Spawns Interpreter Chain",
+        "description": "Hand-authored reproduction of Unit 42's published hunting logic for CVE-2025-59287: the WSUS service (wsusservice.exe) or the wsuspool IIS worker (w3wp.exe) spawns a command interpreter (cmd.exe / powershell.exe), filtering the legitimate children a healthy WSUS host produces (svchost.exe, conhost.exe, csc.exe). Any surviving child is the deserialization payload executing as the update service.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"wsusservice.exe\" or (actor_process_image_name = \"w3wp.exe\" and lowercase(actor_process_command_line) contains \"wsuspool\")\n| filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\")\n| filter action_process_image_name not in (\"svchost.exe\", \"conhost.exe\", \"csc.exe\", \"cscript.exe\")\n| comp count() as payload_spawns by agent_hostname, actor_process_image_name, action_process_image_name\n| filter payload_spawns >= 1\n| fields agent_hostname, actor_process_image_name, action_process_image_name, payload_spawns",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1190",
+          "T1059.003"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "ASM-005 WSUS Service Identity Spawns Out-of-Baseline Command Shell",
+        "description": "The WSUS update service identity — wsusservice.exe, or w3wp.exe running under the wsuspool application pool — whose learned Cortex behavioral profile is periodic update-synchronisation traffic and never an interactive interpreter, suddenly parents a cmd.exe/powershell.exe chain. The auto-tuned ABIOC fires on the deviation from the service identity's learned process baseline and anchors it to the causality chain (internet-exposed WSUS -> deserialization exploit -> shell), catching the CVE-2025-59287 payload without a signature for any specific command.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"wsusservice.exe\" or (causality_actor_process_image_name = \"w3wp.exe\" and causality_actor_process_command_line contains \"wsuspool\")\n| filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\")\n| comp count() as out_of_baseline_shells by agent_hostname, causality_actor_process_image_name, actor_effective_username\n| filter out_of_baseline_shells >= 1\n| fields agent_hostname, causality_actor_process_image_name, actor_effective_username, out_of_baseline_shells",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1190",
+          "T1059.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned WSUS-service baseline (periodic update synchronisation, no interactive interpreter) -> internet-exposed WSUS management interface -> deserialization RCE -> out-of-baseline cmd/powershell lineage, anchored to the WSUS service as causality group owner."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "ASM-005 Internet-Exposed WSUS Management Interface Discovered",
+        "query": "dataset = asm_findings\n| filter _time > to_timestamp(current_time() - 3600)\n| filter dst_port in (8530, 8531)\n| filter service in (\"wsus\", \"http\", \"https\") or finding_class = \"internet-exposed-management-interface\"\n| comp count_distinct(resource_id) as exposed_wsus_assets by resource_id, dst_port\n| filter exposed_wsus_assets >= 1\n| fields resource_id, dst_port, exposed_wsus_assets",
+        "expected_rows_min": 0,
+        "dataset": "asm_findings"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ASM-005 Domain Recon Burst Under WSUS Process Lineage",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"wsusservice.exe\", \"w3wp.exe\")\n| filter action_process_image_name in (\"whoami.exe\", \"net.exe\", \"net1.exe\", \"ipconfig.exe\", \"nltest.exe\")\n| comp count_distinct(action_process_image_name) as recon_tools by agent_hostname, causality_actor_process_instance_id\n| filter recon_tools >= 2\n| fields agent_hostname, causality_actor_process_instance_id, recon_tools",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "ASM-005 Webhook Site Exfil Egress From WSUS Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 900)\n| filter dst_host contains \"webhook.site\" or uri contains \"webhook.site\"\n| filter app in (\"web-browsing\", \"ssl\", \"http\")\n| comp count() as exfil_sessions by src_ip, dst_host, app\n| filter exfil_sessions >= 1\n| fields src_ip, dst_host, app, exfil_sessions",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "ASM-005 Internet-Exposed WSUS Exploited to Domain Recon to Webhook Exfil — Exposure-to-RCE Incident Stitch",
+        "rule_id": "CR-ASM-0005",
+        "logic": "Fuses four signals on the SAME host/IP within the correlation window into one exposure->RCE->discovery->exfil incident: (a) the Cortex ASM/Xpanse exposure-at-rest finding from XQL(ASM-005 Internet-Exposed WSUS Management Interface Discovered) on asm_findings (dst_port 8530/8531); (b) the runtime exploit, where ABIOC(ASM-005 WSUS Service Identity Spawns Out-of-Baseline Command Shell) and BIOC(ASM-005 WSUS Deserialization RCE Update Service Spawns Interpreter Chain) both fire on the WSUS-service cmd/powershell lineage; (c) the domain-discovery burst from XQL(ASM-005 Domain Recon Burst Under WSUS Process Lineage); and (d) the outbound collector session from XQL(ASM-005 Webhook Site Exfil Egress From WSUS Host) on panw_ngfw_traffic_raw. Joined on agent_hostname/src_ip, the rule raises a single exposure-management incident. This is the dual-control proof: exposure management flags the asset at rest, runtime catches the exploit, and only the platform draws the line between them."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Xpanse / ASM — internet-exposed-asset attribution feeding asm_findings",
+      "Cortex XSIAM Analytics — auto-tuned per-identity process-lineage behavioral profiling",
+      "Cortex XSIAM Correlation — cross-source (ASM + XDR + NGFW) incident stitching on shared host/IP"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xpanse",
+        "submodule": "asm",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "TBD-XPANSE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter dst_port in (8530, 8531) | filter service in (\"wsus\", \"http\", \"https\") | fields resource_id, dst_port, service"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001",
+          "TBD-XDR-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter actor_process_image_name in (\"wsusservice.exe\", \"w3wp.exe\") | filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\") | fields agent_hostname, actor_process_image_name, action_process_image_name, action_process_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-ASM-0005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "CR-ASM-0005 stitches the ASM exposed-WSUS finding, the WSUS-service-spawns-shell ABIOC/BIOC, the domain-recon burst, and the webhook.site NGFW egress on the shared host/IP into one exposure-to-RCE incident."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "ngfw",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NGFW-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_host contains \"webhook.site\" | fields src_ip, dst_host, app, uri"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ASM-005",
+        "name": "Exposure-to-RCE Dual-Control — Internet-Exposed WSUS Correlation (CVE-2025-59287)",
+        "description": "Prove that Cortex's exposure-management plane (ASM/Xpanse) and its runtime detection plane (XDR + NGFW) independently observe an internet-exposed WSUS exploitation chain, and that only the XSIAM correlation engine draws the line between the exposure at rest and the runtime exploit — raising a single exposure→RCE→discovery→exfil incident a DC presents in the executive readout.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ASM-005A",
+            "objective": "Cortex ASM surfaces the internet-exposed WSUS interface and XDR fires the WSUS-service-spawns-shell ABIOC and BIOC on the runtime exploit.",
+            "preconditions": [
+              "WSUS host inventoried by ASM/Xpanse with an internet-exposed 8530/8531 finding.",
+              "Cortex XDR agent installed on the WSUS host."
+            ],
+            "steps": [
+              "Confirm the asm_findings exposure at rest.",
+              "Drive the SAFE-MODE wsusservice/w3wp -> cmd -> powershell lineage.",
+              "Observe ABIOC and BIOC fire on the WSUS-service interpreter chain."
+            ],
+            "success_criteria": [
+              "ABIOC `ASM-005 WSUS Service Identity Spawns Out-of-Baseline Command Shell` fires.",
+              "BIOC `ASM-005 WSUS Deserialization RCE Update Service Spawns Interpreter Chain` fires.",
+              "The ASM exposed-WSUS finding is present on the same host."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-ASM-005B",
+            "objective": "The domain-recon burst and webhook.site egress are observed and the terminal correlation stitches all four signals into one incident.",
+            "preconditions": [
+              "WSUS host outbound traffic transits a Palo Alto NGFW forwarding to XSIAM."
+            ],
+            "steps": [
+              "Run the SAFE-MODE domain-discovery burst under the WSUS lineage.",
+              "Emit the SAFE-MODE egress to the authorised collector standing in for webhook.site.",
+              "Observe CR-ASM-0005 raise a single exposure-to-RCE incident."
+            ],
+            "success_criteria": [
+              "XQL `ASM-005 Domain Recon Burst Under WSUS Process Lineage` returns the discovery burst.",
+              "XQL `ASM-005 Webhook Site Exfil Egress From WSUS Host` returns the egress session.",
+              "Correlation `CR-ASM-0005` raises exactly one stitched exposure→RCE→discovery→exfil incident."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Remove WSUS from the internet — WSUS 8530/8531 should never be reachable from untrusted networks; restrict to management VLANs and require VPN for remote administration.",
+      "Apply Microsoft's out-of-band fix for CVE-2025-59287 and, where the WSUS role is not required, disable it or uninstall it.",
+      "Run the WSUS service under a least-privilege identity and block outbound internet egress from update-infrastructure hosts so a deserialization payload cannot beacon out."
+    ],
+    "detection_engineering": [
+      "Alert on any WSUS service identity (wsusservice.exe / w3wp.exe under wsuspool) parenting a command interpreter — a healthy WSUS host never spawns cmd.exe/powershell.exe.",
+      "Let Cortex auto-tune an ABIOC against the WSUS service's learned process baseline rather than enumerating individual post-exploit commands.",
+      "Correlate the ASM exposed-asset finding with the runtime interpreter chain, the domain-discovery burst, and the webhook.site egress on the shared host/IP so exposure and exploit surface as one incident, not four disconnected alerts."
+    ],
+    "response_playbook": "XSOAR-PB-ExposedWSUS-ExposureToRCE-Triage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Active Exploitation of Microsoft WSUS Vulnerability CVE-2025-59287",
+      "url": "https://unit42.paloaltonetworks.com/microsoft-cve-2025-59287/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1190 Exploit Public-Facing Application",
+      "url": "https://attack.mitre.org/techniques/T1190/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1567 Exfiltration Over Web Service",
+      "url": "https://attack.mitre.org/techniques/T1567/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics & Correlation detection reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

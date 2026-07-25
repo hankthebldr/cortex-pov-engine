@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1566.002",
+    "T1557",
+    "T1539",
+    "T1550.004",
+    "T1114.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(EMAIL-005 AiTM Look-Alike Click Permitted) FOLLOWED_BY XQL(EMAIL-005 Session-Cookie Replay Sign-In from New ASN) FOLLOWED_BY XQL(EMAIL-005 Compromised-Mailbox Finance-Mail Reconnaissance) \u2014 joined on user_principal within a 60-minute window. The permitted click to an AiTM look-alike domain plus the token-replay sign-in from a new ASN name the Meddler-in-the-Middle compromise; fusing them with post-compromise finance-mail reconnaissance on the same mailbox raises ONE account-takeover incident. The mailbox-access events are routine activity in isolation, so it is their co-occurrence with the AiTM click and the new-ASN token-replay sign-in on the same user_principal that classifies the takeover. The AiTM domain and the anomalous ASN attach as incident evidence.",
+      "name": "AiTM Session-Token Theft to Mailbox-Reconnaissance ATO \u2014 Cross-Source Stitch",
+      "rule_id": "CR-EMAIL-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0147"
+}

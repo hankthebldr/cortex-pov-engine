@@ -1,0 +1,369 @@
+{
+  "id": "TTP-2026-0151",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:26:09+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-asm",
+      "reconnaissance",
+      "social-engineering",
+      "help-desk",
+      "osint",
+      "vishing-precursor",
+      "correlation",
+      "actor-scattered-spider",
+      "actor-muddled-libra",
+      "unc3944",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Scattered Spider Pre-Attack OSINT + Help-Desk Profiling Stitched to External Footprint — Vishing-Precursor Recon Correlation",
+    "summary": "OSINT profiling of key personnel (ASM external footprint) and a burst of repeated low-pressure help-desk account-recovery calls are joined on one org/identity within a window; TIM attributes the pattern to Muddled Libra. The stitched recon storyline precedes and predicts the downstream MFA-reset takeover, so the recon phase itself becomes the terminal early-warning detection.",
+    "description": "Unit 42's 2025 Global IR Report (Social Engineering Edition) documents Muddled Libra / Scattered Spider (UNC3944) running a repeatable pre-attack playbook: gather detailed personal data from sources like LinkedIn to build convincing personas that pass identity verification, then make repeated low-pressure calls to the help desk, each time impersonating a locked-out employee, until a time-sensitive request prompts an MFA reset and identity takeover. The report notes the group progressed from initial access to domain-admin rights in under 40 minutes without deploying malware, so the only reliable early warning is the reconnaissance-and-profiling precursor itself. This scenario models that precursor as an ASM-plane detection-QA exercise: Cortex ASM/Xpanse (a defensive exposure-management capability) surfaces the org's own external footprint that fuels the pretext (exposed key-personnel identity data, social-media personas, and the org's externally-exposed SaaS apps / CSP tenants / federated-IdP login portal), while the IdP audit stream shows a cluster of help-desk-mediated account-recovery / MFA-reset contacts targeting those same exposed identities. No single event is a known-bad IOC — an exposed LinkedIn persona is not malware and a help-desk password reset is routine — so the detection value is entirely in the CORRELATION: an XQL surfaces the ASM footprint exposure of privileged personnel, a BIOC surfaces Cortex ASM's discovery of the org's externally-exposed federated-identity surface, an XQL and an auto-tuned ABIOC key on the anomalous help-desk account-recovery cadence against the exposed personnel, a validation XQL matches the pattern to Muddled Libra tradecraft in threat_intel, and the terminal correlation rule (CR-ASM-0006) stitches ASM footprint exposure × help-desk profiling burst × TIM attribution on one target org within a 7-day window into a single 'identity-takeover precursor' incident the DC presents as the early warning that fires BEFORE the MFA-reset takeover, not after.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Scattered Spider",
+        "aliases": [
+          "Muddled Libra",
+          "UNC3944",
+          "Octo Tempest",
+          "Scatter Swine"
+        ],
+        "mitre_group_id": "G1015"
+      }
+    ],
+    "campaigns": [
+      "Identity-driven social-engineering intrusions against enterprise help desks and federated identity (2023-2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2022-05-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1589",
+        "name": "Gather Victim Identity Information",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1593",
+        "subtechnique_id": "T1593.001",
+        "name": "Search Open Websites/Domains: Social Media",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1598",
+        "name": "Phishing for Information",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Persona: Social Media",
+      "Internet Scan: Response Content",
+      "Application Log: Application Log Content",
+      "User Account: User Account Modification"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ASM-006 — Scattered Spider pre-attack OSINT + help-desk profiling stitched to external footprint as a vishing-precursor early-warning correlation.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex ASM/Xpanse discovering the target org's external footprint and an IdP audit source (Okta/Entra) ingested into XSIAM so help-desk account-recovery events reach the analytics engine.",
+        "check_command": "echo 'ASM external footprint + IdP audit ingestion required'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: emit only the reconnaissance FOOTPRINT of the Scattered Spider\n# pre-attack playbook against an AUTHORISED target org. No real victim identity\n# data is collected and no help desk is actually contacted — the scenario steps\n# stage the ASM-footprint and IdP-recovery telemetry shapes for Cortex to stitch.\nset -euo pipefail\nORG=\"${TARGET_ORG:-acme-corp}\"\necho \"[CortexSim][SAFE-MODE] SIM-ASM-006 OSINT profiling key personnel of ${ORG} (LinkedIn-sourced personas)\"\necho \"[CortexSim][SAFE-MODE] enumerating ${ORG} SaaS apps, CSP tenants, and federated IdP login portal\"\necho \"[CortexSim][SAFE-MODE] simulating repeated low-pressure help-desk account-recovery recon calls (distinct locked-out personas)\"\necho \"[CortexSim][SAFE-MODE] CR-ASM-0006 recon storyline staged — identity-takeover-precursor early warning\"\n",
+      "input_variables": [
+        {
+          "name": "TARGET_ORG",
+          "type": "string",
+          "default": "acme-corp",
+          "description": "Authorised target organisation whose external footprint + help-desk recon footprint the scenario emits."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Cortex ASM/Xpanse findings exposing key-personnel identity data, social-media personas, and the federated-IdP login portal for the target org.",
+        "expected_value": "finding_category in (exposed_identity, federated_idp_portal, social_media_persona)"
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "A burst of help-desk-mediated account-recovery / MFA-reset events in the IdP audit stream targeting the ASM-exposed personnel within a short window.",
+        "expected_value": "eventtype in (user.account.unlock, user.mfa.factor.reset) and actor_type = help_desk_agent"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-ASM-006 cleanup complete (recon footprint only — no state changed).'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Cortex ASM Discovery of Externally-Exposed Federated-Identity and App/CSP Surface",
+        "description": "Cortex ASM/Xpanse product capability: discovery of the target org's OWN externally-exposed SaaS applications, cloud-service-provider tenants, and federated-identity login portal — the public attack surface that supplies a vishing operator the pretext material (which IdP, which help desk). This is a defensive exposure-management finding over the org's public footprint, NOT attacker-attributed enumeration: ASM independently surfaces what is externally reachable. An org exposing three or more distinct federated-identity/app services publicly is the exposure signal that feeds the identity-takeover pretext. Every discovered service is a legitimate public endpoint, so this is a behavioural/exposure BIOC, not an IOC match.",
+        "logic": "dataset = asm_findings\n| filter finding_category in (\"federated_idp_portal\", \"saas_app_discovery\", \"csp_tenant_discovery\")\n| filter exposure_state = \"externally_exposed\"\n| comp count_distinct(discovered_service) as exposed_services by target_org\n| filter exposed_services >= 3\n| sort desc exposed_services\n| fields target_org, exposed_services",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1589",
+          "T1593.001"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Anomalous Inbound Account-Recovery Cadence on Externally-Exposed Personnel",
+        "description": "An auto-tuned behavioural deviation: help-desk-mediated account-recovery / MFA-reset events cluster against identities that Cortex ASM flagged as externally exposed, at a cadence that exceeds the learned per-identity help-desk-contact baseline. Muddled Libra makes repeated low-pressure calls, each time impersonating a locked-out employee, so the tell is a burst of recovery events on exposed privileged personnel — not any single reset, which is routine. The ABIOC anchors the deviation to the identity's learned recovery baseline plus the ASM exposure flag rather than to a known-bad value.",
+        "logic": "dataset = okta_sso\n| filter eventtype in (\"user.account.unlock\", \"user.mfa.factor.reset\", \"help_desk.account_recovery\")\n| filter target_user_exposure_flag = true\n| comp count() as recovery_events by client_org, target_user, bin(_time, 30m)\n| filter recovery_events >= 2\n| sort desc recovery_events\n| fields client_org, target_user, recovery_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1598",
+          "T1589"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity help-desk account-recovery baseline (rare, self-initiated) -> a burst of help-desk-mediated recovery events on identities ASM independently flagged as externally exposed, anchored to the exposure flag and the recovery cadence deviation."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "ASM Key-Personnel External Footprint Exposure",
+        "query": "dataset = asm_findings\n| filter finding_category in (\"exposed_identity\", \"credential_exposure\", \"social_media_persona\", \"federated_idp_portal\")\n| filter asset_owner_privilege in (\"privileged\", \"executive\", \"it_admin\", \"helpdesk\")\n| comp count() as exposed_findings by target_org, asset_owner_username, finding_category\n| filter exposed_findings >= 1\n| sort desc exposed_findings\n| fields target_org, asset_owner_username, finding_category, exposed_findings",
+        "expected_rows_min": 1,
+        "dataset": "asm_findings"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Help-Desk Account-Recovery Reconnaissance Burst",
+        "query": "dataset = okta_sso\n| filter eventtype in (\"user.account.unlock\", \"user.mfa.factor.reset\", \"system.sms.send_factor_verify_message\", \"help_desk.account_recovery\")\n| filter actor_type = \"help_desk_agent\"\n| comp count() as recovery_contacts by client_org, target_user, bin(_time, 1h)\n| filter recovery_contacts >= 4\n| sort desc recovery_contacts\n| fields client_org, target_user, recovery_contacts",
+        "expected_rows_min": 1,
+        "dataset": "okta_sso"
+      },
+      {
+        "purpose": "validation",
+        "name": "TIM Attribution — Muddled Libra Recon Tradecraft Match",
+        "query": "dataset = threat_intel\n| filter indicator_type in (\"actor_ttp\", \"campaign_pattern\")\n| filter threat_actor in (\"Muddled Libra\", \"Scattered Spider\", \"UNC3944\")\n| filter ttp_fingerprint in (\"linkedin_persona_verification_bypass\", \"repeated_helpdesk_profiling\", \"mfa_reset_takeover_precursor\")\n| comp count() as attribution_hits by target_org, threat_actor\n| filter attribution_hits >= 1\n| fields target_org, threat_actor, attribution_hits",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Scattered Spider Pre-Attack Recon Storyline — ASM Footprint x Help-Desk Profiling x TIM Attribution",
+        "rule_id": "CR-ASM-0006",
+        "logic": "XQL(ASM Key-Personnel External Footprint Exposure) AND (BIOC(Cortex ASM Discovery of Externally-Exposed Federated-Identity and App/CSP Surface) OR XQL(Help-Desk Account-Recovery Reconnaissance Burst) OR ABIOC(Anomalous Inbound Account-Recovery Cadence on Externally-Exposed Personnel)) AND XQL(TIM Attribution Muddled Libra Recon Tradecraft Match) observed on the same target_org within a 7-day window — fuses the ASM external-footprint exposure of key personnel, the repeated low-pressure help-desk account-recovery reconnaissance, and the TIM Muddled Libra attribution into ONE early-warning identity-takeover-precursor incident. The stitched recon storyline precedes and predicts the downstream MFA-reset identity takeover, so the reconnaissance phase itself becomes the terminal early-warning detection that fires before the takeover, not after."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — cross-source correlation of ASM exposure findings with IdP account-recovery behaviour",
+        "validated": true,
+        "note": "Backed by CR-ASM-0006, which stitches the ASM footprint XQL, the help-desk recovery burst, and the TIM attribution into one incident."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-ASM-0006",
+          "TBD-XSIAM-ASM006-CORR"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = okta_sso | filter eventtype in (\"user.account.unlock\", \"user.mfa.factor.reset\") | filter actor_type = \"help_desk_agent\" and target_user_exposure_flag = true | comp count() as recovery_events by client_org, target_user | filter recovery_events >= 4"
+      },
+      {
+        "module": "cortex-asm",
+        "submodule": "xpanse",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "TBD-ASM-006-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter finding_category in (\"exposed_identity\", \"social_media_persona\", \"federated_idp_portal\") | filter asset_owner_privilege in (\"privileged\", \"executive\", \"it_admin\", \"helpdesk\") | comp count() as exposed_findings by target_org, asset_owner_username"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "threat-intel",
+        "coverage_tier": "investigation",
+        "rule_ids": [
+          "TBD-XSIAM-ASM006-TIM"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = threat_intel | filter threat_actor in (\"Muddled Libra\", \"Scattered Spider\", \"UNC3944\") | filter ttp_fingerprint in (\"repeated_helpdesk_profiling\", \"mfa_reset_takeover_precursor\") | comp count() as attribution_hits by target_org, threat_actor"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ASM-006",
+        "name": "Vishing-Precursor Early Warning — Recon Storyline Correlation via Cortex ASM + Analytics + TIM",
+        "description": "Cortex stitches the pre-attack reconnaissance that Muddled Libra / Scattered Spider runs before an identity takeover — external-footprint exposure of key personnel, enumeration of the federated-identity surface, and a burst of help-desk account-recovery profiling — into one early-warning incident that fires before the MFA-reset takeover, giving the SOC time to act on the recon phase itself.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ASM-006A",
+            "objective": "Cortex ASM surfaces the external-footprint exposure of key personnel and the federated-identity/app/CSP enumeration that fuels the vishing pretext.",
+            "preconditions": [
+              "Cortex ASM/Xpanse discovering the target org's external footprint."
+            ],
+            "steps": [
+              "Run the OSINT key-personnel profiling and federated-identity-surface enumeration footprint.",
+              "Observe the ASM footprint-exposure XQL and the enumeration BIOC surface the exposed personnel and services."
+            ],
+            "success_criteria": [
+              "XQL `ASM Key-Personnel External Footprint Exposure` returns the exposed privileged personnel.",
+              "BIOC `Cortex ASM Discovery of Externally-Exposed Federated-Identity and App/CSP Surface` fires on the >=3-service exposure finding."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-ASM-006B",
+            "objective": "Cortex detects the anomalous help-desk account-recovery reconnaissance burst against the exposed personnel and TIM attributes it to Muddled Libra tradecraft.",
+            "preconditions": [
+              "IdP audit source (Okta/Entra) ingested into XSIAM.",
+              "TIM feed carrying Muddled Libra / Scattered Spider TTP fingerprints."
+            ],
+            "steps": [
+              "Emit the repeated low-pressure help-desk account-recovery recon burst against the ASM-exposed identities.",
+              "Observe the recovery-burst XQL and the ABIOC fire, and the TIM attribution XQL match Muddled Libra tradecraft."
+            ],
+            "success_criteria": [
+              "XQL `Help-Desk Account-Recovery Reconnaissance Burst` fires on the multi-target recovery cluster.",
+              "ABIOC `Anomalous Inbound Account-Recovery Cadence on Externally-Exposed Personnel` fires on the cadence deviation.",
+              "XQL `TIM Attribution — Muddled Libra Recon Tradecraft Match` returns the Muddled Libra attribution."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-ASM-006C",
+            "objective": "The terminal correlation stitches the recon storyline into a single identity-takeover-precursor incident that fires before the downstream MFA-reset takeover.",
+            "preconditions": [
+              "TC-ASM-006A and TC-ASM-006B signals observed on the same target org within the correlation window."
+            ],
+            "steps": [
+              "Let the ASM footprint exposure, help-desk recovery burst, and TIM attribution land on one target org within a 7-day window.",
+              "Observe CR-ASM-0006 raise one early-warning incident."
+            ],
+            "success_criteria": [
+              "Correlation `CR-ASM-0006` raises exactly one identity-takeover-precursor incident stitching ASM footprint x help-desk profiling x TIM attribution.",
+              "The incident is raised on the reconnaissance phase, before any MFA-reset takeover event."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce strict, out-of-band identity verification for any help-desk account-recovery or MFA-reset request (callback to a manager, physical token, or verified-device check) so a LinkedIn-built persona cannot pass verification by voice alone.",
+      "Apply conditional-access policies that flag and block sessions from unrecognised devices/locations, which the Unit 42 report shows halted a Muddled Libra escalation.",
+      "Reduce the external footprint of privileged personnel (limit exposed identity data, monitor social-media persona exposure via ASM) so the pretext material is scarce.",
+      "Train help-desk staff to recognise repeated low-pressure impersonation calls and time-pressure MFA-reset requests."
+    ],
+    "detection_engineering": [
+      "Correlate ASM external-footprint exposure of privileged personnel with IdP help-desk account-recovery bursts on the same identity/org within a window — the recon storyline is the early warning, since no single event is malicious.",
+      "Let Cortex auto-tune an ABIOC on per-identity help-desk account-recovery cadence rather than hand-authoring a static threshold per user.",
+      "Enrich the correlation with TIM attribution so the recon pattern is tied to Muddled Libra / Scattered Spider tradecraft and prioritised ahead of the takeover."
+    ],
+    "response_playbook": "XSOAR-PB-VishingPrecursorReconCorrelationTriage-v1"
+  },
+  "references": [
+    {
+      "title": "2025 Unit 42 Global Incident Response Report: Social Engineering Edition",
+      "url": "https://unit42.paloaltonetworks.com/2025-unit-42-global-incident-response-report-social-engineering-edition/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1598 Phishing for Information",
+      "url": "https://attack.mitre.org/techniques/T1598/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1589 Gather Victim Identity Information",
+      "url": "https://attack.mitre.org/techniques/T1589/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — G1015 Scattered Spider",
+      "url": "https://attack.mitre.org/groups/G1015/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics correlation + ASM/Xpanse exposure reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

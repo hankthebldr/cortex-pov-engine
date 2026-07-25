@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1595.001",
+    "T1595.002",
+    "T1590",
+    "T1133"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(TIM Feed Attribution \u2014 GlobalProtect Scanning Infrastructure Match) AND BIOC(GlobalProtect Portal Probing Surge From a Single Source) share the same source_ip within a 3600s window AND the NGFW portal-probing surge precedes the first gateway-connected event on the matched exposed GlobalProtect edge asset \u2014 stitches the low-signal probe into one attributed exploit-precursor incident asserting reconnaissance preceded the CVE-2026-0257 authentication-bypass attempt.",
+      "name": "TIM-Attributed GlobalProtect Recon-to-Exploit Precursor",
+      "rule_id": "CR-TIM-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0150"
+}

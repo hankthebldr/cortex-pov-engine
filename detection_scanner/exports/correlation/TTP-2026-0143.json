@@ -1,0 +1,24 @@
+{
+  "mitre_techniques": [
+    "T1078.004",
+    "T1098",
+    "T1556.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(ITDR-016 Impossible-Travel Sign-In Deviation on Target Identity) AND ABIOC(ITDR-016 Anomalous Privilege Grant and MFA Reset on the Compromised Identity) on the same actor_effective_username within a 30-minute window -> raises a single account-takeover incident. This incident is the trigger condition bound to the XSOAR/XSIAM identity-containment playbook (auto-disable + session revoke).",
+      "name": "ITDR-016 Account-Takeover Compromise Fusion \u2014 Auto-Disable Playbook Trigger",
+      "rule_id": "CR-ITDR-0016",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "CORRELATION(ITDR-016 Account-Takeover Compromise Fusion \u2014 Auto-Disable Playbook Trigger) AND okta_sso eventType = \"user.lifecycle.suspend\" AND okta_sso eventType = \"user.session.clear\", all resolving to the same actor_effective_username -> confirms the compromise->remediation chain is ONE incident. The rule asserts the auto-disable is (a) real \u2014 both suspend and session.clear fired; (b) targeted \u2014 the remediation actor_effective_username matches the compromised identity, not a bystander; and (c) timely \u2014 remediation_ts minus the correlation alert_ts is within the response SLA (default 300s). This terminal assertion is the Remediation Success Rate / SLA-compliance KPI: proof the closed loop closed.",
+      "name": "ITDR-016 Closed-Loop Auto-Disable SLA Validation \u2014 F5 Response KPI",
+      "rule_id": "CR-ITDR-0017",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0143"
+}

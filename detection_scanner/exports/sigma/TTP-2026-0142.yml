@@ -1,0 +1,129 @@
+title: "Ransomware Precursor Auto-Containment \u2014 BlackSuit DCSync-to-ESXi Kill Chain Fires XSOAR Auto-Containment (T1003.006 / T1053.005 / T1486) \u2014 BlackSuit VPN Valid-Account Anomalous GlobalProtect Sign-In"
+id: ttp-2026-0142-bioc-01
+status: experimental
+description: |
+  The vished VPN credential surfaces as an anomalous but authenticated GlobalProtect gateway sign-in — a legitimate account from an unfamiliar source region or a first-seen device. No known-bad indicator; the anomaly against the account's learned sign-in geography/device is the signal (T1078 initial access).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_globalprotect_raw
+    | filter event_type = "gateway-auth" and auth_result = "success"
+    | filter source_region_is_approved = false or device_is_first_seen = true
+    | comp count() as logins by source_user, source_ip, source_region
+    | filter logins >= 1
+    | fields source_user, source_ip, source_region, logins
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Ransomware Precursor Auto-Containment \u2014 BlackSuit DCSync-to-ESXi Kill Chain Fires XSOAR Auto-Containment (T1003.006 / T1053.005 / T1486) \u2014 DCSync Replication Request from a Non-Domain-Controller Account"
+id: ttp-2026-0142-bioc-02
+status: experimental
+description: |
+  A DRSUAPI DsGetNCChanges directory-replication request (Windows event 4662 carrying the DS-Replication-Get-Changes control-access right) originates from an account/host that is not a domain controller — the canonical DCSync signature Ignoble Scorpius used to extract NTDS.dit hashes including the stolen service account (T1003.006).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4662
+    | filter object_properties contains "DS-Replication-Get-Changes" or object_properties contains "1131f6aa-9c07-11d1-f79f-00c04fc2dcd2"
+    | filter src_host_is_domain_controller = false and subject_account not in ("SYSTEM", "LOCAL SERVICE")
+    | comp count() as replication_requests by subject_account, src_host
+    | filter replication_requests >= 1
+    | fields subject_account, src_host, replication_requests
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.006
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Ransomware Precursor Auto-Containment \u2014 BlackSuit DCSync-to-ESXi Kill Chain Fires XSOAR Auto-Containment (T1003.006 / T1053.005 / T1486) \u2014 AnyDesk RAT Registered as a Scheduled Task for Persistence on a Domain Controller"
+id: ttp-2026-0142-bioc-03
+status: experimental
+description: |
+  AnyDesk or a custom RAT is registered as a scheduled task (schtasks.exe /create) on a domain controller so it survives reboots — matching the source's 'configured as a scheduled task to survive reboots.' A DC is never a legitimate place for a remote-access-tool scheduled task, so the host role plus the schtasks /create + AnyDesk command line is the signal (T1053.005).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "schtasks.exe" and action_process_command_line contains "/create"
+    | filter action_process_command_line contains "AnyDesk"
+    | filter agent_host_is_domain_controller = true
+    | comp count() as persistence_events by agent_hostname, actor_effective_username, action_process_command_line
+    | filter persistence_events >= 1
+    | fields agent_hostname, actor_effective_username, action_process_command_line, persistence_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Ransomware Precursor Auto-Containment \u2014 BlackSuit DCSync-to-ESXi Kill Chain Fires XSOAR Auto-Containment (T1003.006 / T1053.005 / T1486) \u2014 DCSync-to-Persistence Behavioral Chain on a Domain Controller"
+id: ttp-2026-0142-abioc-04
+status: experimental
+description: |
+  Cortex's behavioral-ML fuses two events that individually look administrative — a directory-replication (DCSync) read and a subsequent scheduled-task persistence write — into one causally-linked, TIME-ORDERED chain on the SAME domain controller under the SAME identity within the correlation window. The replication read MUST precede the persistence write; neither event alone fires. This is the junction the auto-containment playbook fires on: no single event is known-bad, but the DCSync-then-persist sequence on a DC is the ransomware precursor's behavioral fingerprint (T1003.006 -> T1053.005).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter agent_host_is_domain_controller = true and event_type = ENUM.DIRECTORY_SERVICE and action_directory_service_operation = "replication"
+    | comp min(_time) as dcsync_t0 by agent_hostname, actor_effective_username
+    | join type = inner (
+        dataset = xdr_data
+        | filter agent_host_is_domain_controller = true and event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+        | filter action_process_image_name = "schtasks.exe" and action_process_command_line contains "/create" and action_process_command_line contains "AnyDesk"
+        | comp min(_time) as persist_t1 by agent_hostname, actor_effective_username
+      ) as persist persist.agent_hostname = agent_hostname and persist.actor_effective_username = actor_effective_username
+    | alter chain_seconds = timestamp_diff(persist_t1, dcsync_t0, "SECOND")
+    | filter chain_seconds >= 0 and chain_seconds <= 600
+    | fields agent_hostname, actor_effective_username, dcsync_t0, persist_t1, chain_seconds
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.006
+    - attack.t1053.005
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical

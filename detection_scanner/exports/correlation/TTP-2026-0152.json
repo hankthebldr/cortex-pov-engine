@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1550.001",
+    "T1567",
+    "T1199",
+    "T1070"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Connected-App OAuth Token Mass-Export Deviation Triggering Auto-Revoke) AND XQL(Salesforce Query-Job Deletion Anti-Forensics by Exfiltration Token) AND XQL(SOAR Playbook OAuth Access and Refresh Token Revocation for Connected App) AND XQL(Revoked-Token Replay Returns 401 invalid_token Closed-Loop Proof) observed on the same connected_app and oauth_token_id within the run window \u2014 stitches the full closed loop trusted-token -> mass CRM export -> query-job deletion -> automated access+refresh token revocation -> revoked-token replay rejected 401 invalid_token into a SINGLE post-consent OAuth-token-abuse incident. The incident's terminal assertion is that the XSOAR auto-revoke playbook FIRED and CLOSED: the token that ran the export is verifiably dead because the subsequent replay returns 401 invalid_token, satisfying the F5 closed-loop response KPI. Forced re-authentication for affected admins is attached as corroborating remediation evidence; a benign Connected App whose token was NOT revoked is the blast-radius negative control.",
+      "name": "Connected-App OAuth Token Abuse Auto-Revoke Closed-Loop Stitch",
+      "rule_id": "CR-CLOUD-0007",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0152"
+}

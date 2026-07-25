@@ -136,6 +136,11 @@ KNOWN_DATASETS = frozenset({
     # RUNBOOK ("BIOC XQL dialects drift"), but these are real ingested products,
     # not invented sources, so they should not WARN as typos.
     "cisco_asa_raw", "ivanti_ics_raw", "panw_ngfw_globalprotect_raw",
+    # Unit 42 2026 F5 closed-loop expansion (TTP-2026-0142/0143/0152) — the
+    # XSIAM incidents store, queried to prove an XSOAR Response & Remediation
+    # playbook fired and closed a precursor incident (the correlation-terminal
+    # / SLA-measurement metric). Real first-party XSIAM dataset, not invented.
+    "xsiam_incidents",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain
