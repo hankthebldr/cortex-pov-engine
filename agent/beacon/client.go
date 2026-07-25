@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hankthebldr/cortexsim/agent/executor"
 	"github.com/hankthebldr/cortexsim/agent/identity"
 )
 
@@ -55,18 +56,55 @@ type Task struct {
 	ScenarioID      string `json:"scenario_id"`
 	Steps           []Step `json:"steps"`
 	IdentityContext string `json:"identity_context"` // launch-time username override; "" if null
-	IdentityDefault string `json:"identity_default"`  // scenario execution_identity.default
+	IdentityDefault string `json:"identity_default"` // scenario execution_identity.default
 	CreatedAt       string `json:"created_at"`
+	// CgoAnchor is the scenario's declared Causality Group Owner (a realistic
+	// initial-access process). Present only for scenarios that declare the
+	// causality contract; nil (and ignored on the wire) otherwise.
+	CgoAnchor *CgoAnchor `json:"cgo_anchor,omitempty"`
+}
+
+// CgoAnchor labels the causality-chain root so the endpoint sensor's Causality
+// View reads as a real intrusion rather than the beacon.
+type CgoAnchor struct {
+	ImageName       string `json:"image_name"`
+	PrimaryUsername string `json:"primary_username"`
+}
+
+// StepCausality declares this step's place in the causality chain (which prior
+// step it pivots from, and how). Consumed by the graph projection; its presence
+// also signals the beacon to execute the run as a connected process chain.
+type StepCausality struct {
+	ParentStep string `json:"parent_step"`
+	Pivot      string `json:"pivot"`
 }
 
 // Step is one TTP command within a Task.
 type Step struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Command        string `json:"command"`
-	Identity       string `json:"identity"` // a USERNAME string, not a mode
-	MitreTechnique string `json:"mitre_technique"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Command        string         `json:"command"`
+	Identity       string         `json:"identity"` // a USERNAME string, not a mode
+	MitreTechnique string         `json:"mitre_technique"`
+	Causality      *StepCausality `json:"causality,omitempty"`
+	Platforms      []string       `json:"platforms,omitempty"`
 	// expected_detections intentionally omitted — the server seeds Result rows.
+}
+
+// hasCausalityContract reports whether the task declares the causality contract
+// (a scenario cgo_anchor or any step causality). When true the beacon executes
+// the steps as children of one anchor shell so they form a connected causality
+// chain; when false it uses the default independent-per-step path unchanged.
+func (t *Task) hasCausalityContract() bool {
+	if t.CgoAnchor != nil {
+		return true
+	}
+	for i := range t.Steps {
+		if t.Steps[i].Causality != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // ControlState is the response from GET /api/runs/{run_id}/control.
@@ -345,6 +383,15 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		return
 	}
 
+	// Contract mode: run the steps as children of ONE anchor shell so the
+	// endpoint sensor traces a connected causality chain rooted at the CGO. The
+	// default independent-per-step path below is used for every other scenario,
+	// byte-for-byte unchanged.
+	if task.hasCausalityContract() {
+		c.executeTaskChained(ctx, task)
+		return
+	}
+
 	finalExitCode := 0
 
 	for i, step := range task.Steps {
@@ -412,6 +459,198 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		}
 	}
 
+	summary := buildSummary(task, finalExitCode)
+	if err := c.Complete(task.RunID, finalExitCode, summary); err != nil {
+		log.Printf("[beacon] complete error: %v", err)
+	}
+}
+
+// executeTaskChained runs the task through a single persistent anchor shell so
+// every step is a child of the same Causality Group Owner — a connected process
+// chain, not a star of independent `sh -c` invocations. It preserves the exact
+// observable contract of the default path: per-step /output POSTs, fail-fast on
+// the first non-zero step, pre-step and in-step abort checks, and the same
+// completion codes. If the anchor cannot be started it degrades to the default
+// per-step path rather than failing the run.
+func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
+	totalSteps := len(task.Steps)
+	cgoImage := ""
+	if task.CgoAnchor != nil {
+		cgoImage = task.CgoAnchor.ImageName
+	}
+
+	// The session lives for the whole task; a cancel of sessCtx tears the whole
+	// anchor group down (used for operator abort / agent shutdown).
+	sessCtx, sessCancel := context.WithCancel(ctx)
+	defer sessCancel()
+
+	session, err := executor.NewChainSession(sessCtx, cgoImage)
+	if err != nil {
+		log.Printf("[beacon] chain-session start failed (run_id=%s): %v — falling back to per-step execution",
+			task.RunID, err)
+		c.executeTaskPerStep(ctx, task)
+		return
+	}
+	defer session.Close()
+
+	log.Printf("[beacon] causality-chained execution run_id=%s cgo=%q steps=%d",
+		task.RunID, cgoImage, totalSteps)
+
+	finalExitCode := 0
+	for i, step := range task.Steps {
+		if state, _ := c.Control(task.RunID); state.Abort {
+			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
+			_ = c.SendOutput(task.RunID, step.ID, "--- ABORTED (operator) ---")
+			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator")
+			return
+		}
+
+		username := c.resolveStepUsername(task, &step)
+		mode, user, unknown := identity.ResolveIdentity(username)
+		if unknown {
+			log.Printf("[beacon] WARN unknown identity %q for step %s — mapping to runuser (best-effort)",
+				username, step.ID)
+		}
+		wrapped, wrapErr := identity.WrapCommand(identity.ExecutionIdentity{
+			Mode: mode, Username: user, Command: step.Command,
+		})
+		if wrapErr != nil {
+			log.Printf("[beacon] wrap error step %s run_id=%s: %v", step.ID, task.RunID, wrapErr)
+			_ = c.Complete(task.RunID, 1, fmt.Sprintf("wrap error in step %s: %v", step.ID, wrapErr))
+			return
+		}
+
+		log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s (chained)",
+			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, mode)
+
+		res, aborted, execErr := c.runChainedStep(sessCtx, sessCancel, session, task.RunID, wrapped)
+
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, res, execErr)
+		if sendErr := c.SendOutput(task.RunID, step.ID, stepOut); sendErr != nil {
+			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, sendErr)
+		}
+
+		if aborted {
+			log.Printf("[beacon] step %s terminated by operator abort (run_id=%s)", step.ID, task.RunID)
+			_ = c.Complete(task.RunID, abortExitCode,
+				fmt.Sprintf("aborted by operator — step %s terminated", step.ID))
+			return
+		}
+		if ctx.Err() != nil {
+			log.Printf("[beacon] context cancelled during task run_id=%s", task.RunID)
+			_ = c.Complete(task.RunID, abortExitCode, "agent shutdown — task interrupted")
+			return
+		}
+		if execErr != nil {
+			log.Printf("[beacon] execution error step %s run_id=%s: %v", step.ID, task.RunID, execErr)
+			_ = c.Complete(task.RunID, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr))
+			return
+		}
+
+		log.Printf("[beacon] step %s complete exit_code=%d duration=%s (chained)", step.ID, res.ExitCode, res.Duration)
+
+		if res.ExitCode != 0 {
+			finalExitCode = res.ExitCode
+			log.Printf("[beacon] step %s exited non-zero (%d) — stopping remaining steps (fail-fast)",
+				step.ID, res.ExitCode)
+			break
+		}
+	}
+
+	summary := buildSummary(task, finalExitCode)
+	if err := c.Complete(task.RunID, finalExitCode, summary); err != nil {
+		log.Printf("[beacon] complete error: %v", err)
+	}
+}
+
+// runChainedStep runs one already-wrapped command through the anchor session,
+// polling the abort control channel while it runs. On abort it cancels the whole
+// session (tearing down the anchor group) and reports the step aborted — mirror
+// of runStep's semantics for the chained path.
+func (c *BeaconClient) runChainedStep(
+	sessCtx context.Context, sessCancel context.CancelFunc,
+	session *executor.ChainSession, runID, wrapped string,
+) (identity.ExecResult, bool, error) {
+	type result struct {
+		res identity.ExecResult
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		start := time.Now()
+		stdout, stderr, code, e := session.RunStep(wrapped)
+		done <- result{
+			res: identity.ExecResult{ExitCode: code, Stdout: stdout, Stderr: stderr, Duration: time.Since(start)},
+			err: e,
+		}
+	}()
+
+	ticker := time.NewTicker(controlPollInterval)
+	defer ticker.Stop()
+
+	aborted := false
+	for {
+		select {
+		case <-sessCtx.Done():
+			r := <-done
+			return r.res, aborted, c.nonCancelErr(r.err)
+		case <-ticker.C:
+			if state, _ := c.Control(runID); state.Abort {
+				aborted = true
+				sessCancel() // tear the anchor group down
+				r := <-done
+				return r.res, true, nil
+			}
+		case r := <-done:
+			return r.res, aborted, c.nonCancelErr(r.err)
+		}
+	}
+}
+
+// executeTaskPerStep is the default independent-per-step execution path, factored
+// out so executeTaskChained can degrade to it if the anchor shell won't start.
+func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
+	totalSteps := len(task.Steps)
+	finalExitCode := 0
+	for i, step := range task.Steps {
+		if state, _ := c.Control(task.RunID); state.Abort {
+			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
+			_ = c.SendOutput(task.RunID, step.ID, "--- ABORTED (operator) ---")
+			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator")
+			return
+		}
+		username := c.resolveStepUsername(task, &step)
+		mode, user, unknown := identity.ResolveIdentity(username)
+		if unknown {
+			log.Printf("[beacon] WARN unknown identity %q for step %s — mapping to runuser (best-effort)",
+				username, step.ID)
+		}
+		log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s",
+			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, mode)
+		execID := identity.ExecutionIdentity{Mode: mode, Username: user, Command: step.Command}
+		res, aborted, execErr := c.runStep(ctx, task.RunID, execID)
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, res, execErr)
+		if err := c.SendOutput(task.RunID, step.ID, stepOut); err != nil {
+			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
+		}
+		if aborted {
+			_ = c.Complete(task.RunID, abortExitCode,
+				fmt.Sprintf("aborted by operator — step %s terminated", step.ID))
+			return
+		}
+		if ctx.Err() != nil {
+			_ = c.Complete(task.RunID, abortExitCode, "agent shutdown — task interrupted")
+			return
+		}
+		if execErr != nil {
+			_ = c.Complete(task.RunID, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr))
+			return
+		}
+		if res.ExitCode != 0 {
+			finalExitCode = res.ExitCode
+			break
+		}
+	}
 	summary := buildSummary(task, finalExitCode)
 	if err := c.Complete(task.RunID, finalExitCode, summary); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
