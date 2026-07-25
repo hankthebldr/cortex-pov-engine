@@ -239,6 +239,14 @@
   color: var(--c-pending);
   border-color: transparent;
 }
+/* ABIOC — PANW-authored behavioral-ML with a causality chain. The flagship
+   differentiator, so a distinct, slightly stronger magenta treatment. */
+.theme-console .det-chip--abioc {
+  background: rgba(236, 100, 176, 0.16);
+  color: #ec64b0;
+  border-color: rgba(236, 100, 176, 0.42);
+  font-weight: 700;
+}
 
 .theme-console .kbd {
   display: inline-flex;

@@ -69,6 +69,7 @@ const EDGE_LABEL = {
   shared_entity: 'entity',
   sequence: 'seq',
   exposure_exploit: 'exposure→exploit',
+  exploit_impact: 'exploit→impact',
 }
 
 // ── Formatting helpers ──────────────────────────────────────────────────────
