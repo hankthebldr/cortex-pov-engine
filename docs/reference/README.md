@@ -42,6 +42,31 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-07-24 — F5/F10 methodology-family integration):**
+  **147 loadable scenarios** across **15 detection planes** (all `status: active`,
+  0 rejected / 0 dangling refs; **932/932 detection_id slugs resolve** — GAP-4 held) ·
+  **147 TTP cards** (**1289 resolvable catalog detection objects**) · **14 EAL plugins** ·
+  **84 tool-adapter packs** (45 distinct adapters wired across 42 scenarios; this pass
+  wired no new adapters — the content is detection-corpus depth) · 11 AWS IaC modules.
+  `make validate` is green (**300 pass / 0 warn / 0 fail**). This pass adds the 12
+  `TTP-2026-0142..0153` pairs (135 + 12 = 147), all Unit 42-sourced, targeting the two
+  **empty methodology families** and the two shallow tactics the coverage-analyzer flagged:
+  **F5 Automation & Workflow 0→3** (`SIM-MP-020` BlackSuit ransomware-precursor
+  auto-containment, `SIM-ITDR-016` closed-loop account auto-disable, `SIM-CLOUD-007`
+  auto-revoke OAuth tokens — each terminating on an XSOAR playbook + closed-loop/SLA
+  measurement query against the newly-registered `xsiam_incidents` dataset); **F10
+  Qualitative Evidence 0→2** (`SIM-EDR-021` GentleKiller ThrottleStop.sys BYOVD EDR-kill
+  ABIOC, `SIM-ITDR-017` AD CS ESC1→PKINIT privileged-impersonation ABIOC); **Resource
+  Development (TA0042) 1→3** (`SIM-TIM-004` TLS-fingerprint infra pivot, `SIM-TIM-005`
+  rogue code-signing-cert impersonation IOC); **Reconnaissance (TA0043) 4→6** (`SIM-TIM-006`
+  edge-VPN probing surge, `SIM-ASM-006` Scattered Spider OSINT vishing precursor). Also
+  ships `SIM-EMAIL-005` (AiTM session-token theft ATO), `SIM-ASM-005` (WSUS CVE-2025-59287
+  exposure-to-RCE), and `SIM-CSPM-005` (exposed-.env code-to-cloud extortion, F9). Corpus
+  correlation share rises to the 10% floor (9.4%→10.0%); ABIOC+Analytics holds at 12.5%
+  (the new content is correlation/IOC-terminal, not ML-anchored). All 12 multi-step
+  scenarios yield a single-root, fully-connected causality graph. Per-plane on disk now:
+  EDR=21 · ANALYTICS=20 · CDR=18 · ITDR=17 · NDR=11 · KOI=8 · AI_SPM=7 · CLOUD_APP=7 ·
+  ASM=6 · BROWSER=6 · TIM=6 · AIRS=5 · AI_ACCESS=5 · CSPM=5 · EMAIL=5.
 - **Counted ground truth (verified 2026-07-24 — Kali-toolkit final integration):**
   **135 loadable scenarios** across **15 detection planes** (all `status: active`,
   0 rejected / 0 dangling refs; **854/854 detection_id slugs resolve** — GAP-4 held) ·
