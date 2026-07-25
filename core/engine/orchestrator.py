@@ -38,10 +38,15 @@ class Task:
     # last-resort username when a step carries no identity and the launch
     # supplied no identity_context (see the Phase 2 identity-resolution rule).
     identity_default: Optional[str] = None
+    # scenario.cgo_anchor — the declared Causality Group Owner. When present (with
+    # the steps' causality blocks) it signals the beacon to execute the run as a
+    # connected process chain rooted at this anchor. None for contract-less
+    # scenarios, which the beacon runs per-step exactly as before.
+    cgo_anchor: Optional[dict[str, Any]] = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "task_id": self.task_id,
             "run_id": self.run_id,
             "scenario_id": self.scenario_id,
@@ -50,6 +55,9 @@ class Task:
             "identity_default": self.identity_default,
             "created_at": self.created_at.isoformat(),
         }
+        if self.cgo_anchor:
+            payload["cgo_anchor"] = self.cgo_anchor
+        return payload
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +216,7 @@ class Orchestrator:
             steps=_resolve_adapter_placeholders(scenario.steps or []),
             identity_context=identity,
             identity_default=execution_identity.get("default"),
+            cgo_anchor=getattr(scenario, "cgo_anchor", None),
         )
         self._enqueue(target_agent_id, task)
         # Mirror the task to the durable queue so a restart can rehydrate it.
@@ -531,6 +540,7 @@ def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
             steps=payload.get("steps") or [],
             identity_context=payload.get("identity_context"),
             identity_default=payload.get("identity_default"),
+            cgo_anchor=payload.get("cgo_anchor"),
             created_at=datetime.fromisoformat(created) if created else datetime.utcnow(),
         )
     except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive
