@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   getInfraModules,
   generateInfra,
@@ -7,15 +7,33 @@ import {
   getToolAdapters,
   getScenarioInfraHints,
 } from '../../api/client.js'
+import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
 /**
- * LabView — the Lab tab.
+ * LabView — the Environments destination.
  *
- * Console-themed replacement for the legacy InfraGenerator. Drives the IaC
- * topology generator: provider/region → modules → params → generate → download.
+ * Console-themed IaC topology generator: provider/region → modules → params →
+ * generate → download. Re-homed as a first-class persistent destination (no
+ * longer a lateral tab).
+ *
+ * Ambient scope (active XSIAM tenant + active beacon/agent) is read from the
+ * EnvironmentProvider via `useEnvironment` — never prop-drilled — so a global
+ * tenant/agent switch re-scopes this surface automatically: the active tenant
+ * name seeds the bundle's project name, and the context ribbon reflects the
+ * live selection with a deep-link to Manage.
+ *
+ * Router contract (stable across destinations):
+ *   { params, setParams, onNavigate } — here `params` is destructured as
+ *   `routeParams` to avoid colliding with the local generator param state.
+ *     routeParams.modules   — comma list (or array) of module names to
+ *                             pre-select (union + transitive deps).
+ *     routeParams.scenario  — a scenario id whose infra_modules_needed /
+ *                             external_tools[] auto-fills the picker on mount.
+ *   onNavigate('tenants'|'agents') — deep-link the context-ribbon Manage links.
  *
  * Layout:
  *   ▸ view head with title + provider segmented control + region input
+ *   ▸ environment context ribbon (active tenant + agent, reflected live)
  *   ▸ module picker (grid of cards; base is locked on)
  *   ▸ parameter block (grouped: identity, sizing, lifetime)
  *   ▸ generate action row with inline last-result chip
@@ -42,7 +60,10 @@ const PROVIDERS = [
 // Required modules are managed by the generator; surface them as locked-on.
 const LOCKED_MODULES = new Set(['base'])
 
-export default function LabView({ onError = () => {} }) {
+export default function LabView({ params: routeParams = {}, onNavigate = () => {}, onError }) {
+  // Ambient scope — active tenant/agent flow in from the global provider.
+  const { tenant, agent } = useEnvironment()
+
   const [provider, setProvider]   = useState('aws')
   const [region, setRegion]       = useState(DEFAULT_REGION)
   const [modules, setModules]     = useState([])
@@ -52,6 +73,15 @@ export default function LabView({ onError = () => {} }) {
   const [loading, setLoading]     = useState(false)
   const [generating, setGenerating] = useState(false)
   const [lastBundle, setLastBundle] = useState(null)
+  const [localError, setLocalError] = useState(null)
+
+  // Error sink: surface inline (this destination is mounted without a global
+  // error toast) AND forward to onError when a parent wires one.
+  const report = useCallback((msg) => {
+    const text = msg || 'Something went wrong'
+    setLocalError(text)
+    if (onError) onError(text)
+  }, [onError])
 
   // Adapter-driven module auto-pull. The DC ticks tool adapters here
   // (only tier-3 adapters with an iac_module are useful — the catalog
@@ -67,9 +97,9 @@ export default function LabView({ onError = () => {} }) {
     setLoading(true)
     getInfraModules(provider)
       .then((d) => setModules(d.modules || []))
-      .catch((e) => onError(e.message || 'Failed to load modules'))
+      .catch((e) => report(e.message || 'Failed to load modules'))
       .finally(() => setLoading(false))
-  }, [provider, onError])
+  }, [provider, report])
 
   const refreshBundles = useCallback(() => {
     getInfraBundles()
@@ -89,6 +119,44 @@ export default function LabView({ onError = () => {} }) {
       .then((d) => setAdapters(Array.isArray(d?.adapters) ? d.adapters : []))
       .catch(() => { /* non-fatal — picker just stays empty */ })
   }, [])
+
+  // ── Ambient tenant → project-name seed ───────────────────────────────
+  // The active XSIAM tenant seeds the bundle's project name so a global
+  // tenant switch re-scopes this surface with zero clicks. We only touch
+  // the field while it's untouched (empty, or still holding the previous
+  // auto-seed) — never clobber what the operator typed.
+  const autoSeedRef = useRef('')
+  useEffect(() => {
+    const slug = tenant ? slugifyProject(tenant.name || tenant.id) : ''
+    setParams((p) => {
+      if (p.project_name === '' || p.project_name === autoSeedRef.current) {
+        autoSeedRef.current = slug
+        return { ...p, project_name: slug }
+      }
+      return p
+    })
+  }, [tenant])
+
+  // ── Route param → module pre-selection ───────────────────────────────
+  // A Library scenario deep-links here with its infra_modules_needed via
+  // ?modules=edr,cdr. Union each into the selection (with transitive deps).
+  // Idempotent: re-running after a module refresh just re-adds (no-op).
+  useEffect(() => {
+    const raw = routeParams.modules
+    if (!raw) return
+    const names = (Array.isArray(raw) ? raw : String(raw).split(','))
+      .map((s) => String(s).trim())
+      .filter(Boolean)
+    if (!names.length) return
+    setSelected((prev) => {
+      let next = new Set(prev)
+      for (const n of names) {
+        if (LOCKED_MODULES.has(n)) continue
+        if (!next.has(n)) next = resolveModuleDependencies(next, n, modules)
+      }
+      return next
+    })
+  }, [routeParams.modules, modules])
 
   // ── Module toggle (with dependency awareness) ────────────────────────
   // See resolveModuleDependencies below — the policy decision lives there.
@@ -133,13 +201,14 @@ export default function LabView({ onError = () => {} }) {
       }
       const resp = await generateInfra(body)
       setLastBundle(resp)
+      setLocalError(null)
       refreshBundles()
     } catch (e) {
-      onError(e.message || 'Generation failed')
+      report(e.message || 'Generation failed')
     } finally {
       setGenerating(false)
     }
-  }, [canGenerate, provider, region, selected, selectedAdapters, params, refreshBundles, onError])
+  }, [canGenerate, provider, region, selected, selectedAdapters, params, refreshBundles, report])
 
   const handleDownload = useCallback(async (bundleId) => {
     try {
@@ -153,9 +222,51 @@ export default function LabView({ onError = () => {} }) {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch (e) {
-      onError(e.message || 'Download failed')
+      report(e.message || 'Download failed')
     }
-  }, [onError])
+  }, [report])
+
+  // ── Apply a resolved infra-hint to the picker state ──────────────────
+  // Shared by the manual ScenarioHintRow AND the ?scenario= route-param
+  // auto-fill below. Merges suggested_modules into the module selection
+  // and ticks every declared adapter_ref (unresolved refs surface as a
+  // warning in the picker). Idempotent — re-applying the same hint is a
+  // no-op against a Set.
+  const applyHint = useCallback((hint) => {
+    if (!hint) return
+    if (Array.isArray(hint.suggested_modules)) {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        for (const m of hint.suggested_modules) next.add(m)
+        return next
+      })
+    }
+    if (Array.isArray(hint.adapter_refs)) {
+      setSelectedAdapters((prev) => {
+        const next = new Set(prev)
+        for (const r of hint.adapter_refs) next.add(r)
+        return next
+      })
+    }
+  }, [])
+
+  // ── Route param → scenario auto-fill ─────────────────────────────────
+  // A Library scenario can deep-link here with ?scenario=SIM-EDR-001; on
+  // mount we resolve its infra-hints and pre-fill the module + adapter
+  // pickers so the operator lands on a ready-to-generate bundle. Guarded
+  // so it fires once per distinct scenario id. Non-fatal on failure — the
+  // operator can still pick modules by hand.
+  const appliedScenarioRef = useRef('')
+  useEffect(() => {
+    const sid = routeParams.scenario ? String(routeParams.scenario).trim() : ''
+    if (!sid || sid === appliedScenarioRef.current) return
+    appliedScenarioRef.current = sid
+    let cancelled = false
+    getScenarioInfraHints(sid)
+      .then((hint) => { if (!cancelled) applyHint(hint) })
+      .catch(() => { /* non-fatal — manual pick still works */ })
+    return () => { cancelled = true }
+  }, [routeParams.scenario, applyHint])
 
   return (
     <div className="lab">
@@ -176,6 +287,71 @@ export default function LabView({ onError = () => {} }) {
           </button>
         </div>
       </div>
+
+      {/* ── Environment context ribbon ─────────────────────────────── */}
+      {/* Active tenant + agent flow in from the global EnvironmentProvider.
+          A global switch re-scopes this surface with no clicks (the tenant
+          also seeds the bundle project name). Manage deep-links jump to the
+          Tenants / Agents destinations via the router. */}
+      <div
+        className="lab__ribbon"
+        data-testid="env-ribbon"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 10,
+          alignItems: 'center',
+          padding: '8px 12px',
+          marginBottom: 14,
+          border: '1px solid var(--c-hairline, rgba(255,255,255,0.08))',
+          borderRadius: 4,
+          background: 'var(--c-surface-raised, rgba(255,255,255,0.03))',
+        }}
+      >
+        <ScopeChip
+          label="Tenant"
+          value={tenant ? (tenant.name || tenant.id) : null}
+          onManage={() => onNavigate('tenants')}
+        />
+        <ScopeChip
+          label="Agent"
+          value={agent ? (agent.id || agent.agent_id) : null}
+          detail={agent ? agent.status : null}
+          onManage={() => onNavigate('agents')}
+        />
+      </div>
+
+      {/* ── Inline error (destination is mounted w/o a global toast) ── */}
+      {localError && (
+        <div
+          className="lab__error mono"
+          role="alert"
+          data-testid="lab-error"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '8px 12px',
+            marginBottom: 14,
+            fontSize: 12,
+            color: 'var(--c-missed, #f2777a)',
+            border: '1px solid var(--c-missed, #f2777a)',
+            borderRadius: 4,
+            background: 'rgba(242,119,122,0.08)',
+          }}
+        >
+          <span aria-hidden="true">! </span>{localError}
+          <button
+            type="button"
+            className="btn"
+            style={{ marginLeft: 10, height: 22 }}
+            onClick={() => setLocalError(null)}
+            aria-label="Dismiss error"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── Provider + Region ─────────────────────────────────────── */}
       <div className="lab__row">
@@ -236,26 +412,8 @@ export default function LabView({ onError = () => {} }) {
       {/* ── Hint from scenario (auto-fill modules + adapter chips) ───── */}
       <ScenarioHintRow
         modules={modules}
-        onApplyHint={(hint) => {
-          // Merge suggested_modules into the module picker selection
-          if (Array.isArray(hint.suggested_modules)) {
-            setSelected((prev) => {
-              const next = new Set(prev)
-              for (const m of hint.suggested_modules) next.add(m)
-              return next
-            })
-          }
-          // Tick every adapter_ref the scenario declared (resolved or not —
-          // unresolved refs surface as a warning row in the picker itself)
-          if (Array.isArray(hint.adapter_refs)) {
-            setSelectedAdapters((prev) => {
-              const next = new Set(prev)
-              for (const r of hint.adapter_refs) next.add(r)
-              return next
-            })
-          }
-        }}
-        onError={onError}
+        onApplyHint={applyHint}
+        onError={report}
       />
 
       {/* ── Adapter auto-pull (tier-3 only — adapters that ship via IaC) ─ */}
@@ -389,6 +547,59 @@ export default function LabView({ onError = () => {} }) {
 }
 
 /* ─── Subcomponents ────────────────────────────────────────────────── */
+
+/**
+ * ScopeChip — one entry in the environment context ribbon. Renders the
+ * active tenant or agent from ambient scope with a Manage deep-link. When
+ * nothing is selected it shows a muted "none" state so the operator knows
+ * the global switcher hasn't been pointed yet.
+ */
+function ScopeChip({ label, value, detail, onManage }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+      <span
+        className="mono"
+        style={{
+          fontSize: 10,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          color: 'var(--c-text-muted, #6B7E8E)',
+        }}
+      >
+        {label}
+      </span>
+      {value ? (
+        <span className="mono" style={{ color: 'var(--cortex-teal, #00C0E8)', fontWeight: 600 }}>
+          {value}
+          {detail && (
+            <span style={{ marginLeft: 4, color: 'var(--c-text-muted, #6B7E8E)', fontWeight: 400 }}>
+              · {detail}
+            </span>
+          )}
+        </span>
+      ) : (
+        <span className="mono" style={{ color: 'var(--c-text-muted, #6B7E8E)', fontStyle: 'italic' }}>
+          none
+        </span>
+      )}
+      <button
+        type="button"
+        className="linklike"
+        onClick={onManage}
+        style={{
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          fontSize: 11,
+          color: 'var(--cortex-teal, #00C0E8)',
+          cursor: 'pointer',
+        }}
+      >
+        Manage…
+      </button>
+    </span>
+  )
+}
 
 function ModuleCard({ module, checked, locked, onToggle }) {
   const deps = module.dependencies || []
@@ -704,6 +915,29 @@ function AdapterAutoPullPicker({
       ))}
     </div>
   )
+}
+
+/* ─── Project-name slug ────────────────────────────────────────────── */
+
+/**
+ * slugifyProject — derive a valid bundle project name from a tenant name.
+ *
+ * The generator validator is ``^[a-z][a-z0-9-]{1,30}$`` (must start with a
+ * letter, 2–31 chars, lowercase + hyphens). We lowercase, replace any run of
+ * non-alphanumerics with a single hyphen, drop leading non-letters, trim
+ * trailing hyphens, and clamp to 31 chars. Returns ``''`` when nothing usable
+ * survives so the caller leaves the field empty (generate stays disabled and
+ * the operator types their own) rather than seeding an invalid value.
+ */
+export function slugifyProject(raw) {
+  let s = String(raw || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')   // any non-alnum run → single hyphen
+    .replace(/-+/g, '-')           // collapse repeats
+    .replace(/^[^a-z]+/, '')       // must start with a letter
+    .slice(0, 31)                  // clamp to max length
+    .replace(/-+$/, '')            // no trailing hyphen after the clamp
+  return s
 }
 
 /* ─── Dependency resolution ────────────────────────────────────────── */
