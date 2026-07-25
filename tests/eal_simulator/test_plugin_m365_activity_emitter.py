@@ -266,12 +266,24 @@ class TestPluginRun:
             monkeypatch, event_pattern="mailbox_enumeration_by_app", burst_count=4,
         )
         bodies = _bodies(stub)
-        assert len(bodies) == 4
         for b in bodies:
             assert b["Operation"] == "MailItemsAccessed"
             assert b["RecordType"] == 50
             assert b["AppId"]
             assert b.get("mailbox_enumeration_marker") is True
+
+    def test_mailbox_enumeration_touches_5plus_distinct_mailboxes(self, monkeypatch):
+        # The analytic gates on count_distinct(ObjectId) by AppId >= 5, so the
+        # enumeration must span >= 5 DISTINCT mailboxes under ONE app — the
+        # emitted stream must satisfy that breadth gate (not a single mailbox).
+        state, stub = self._run_with_stub(
+            monkeypatch, event_pattern="mailbox_enumeration_by_app", burst_count=4,
+        )
+        bodies = _bodies(stub)
+        distinct_mailboxes = {b["ObjectId"] for b in bodies}
+        assert len(distinct_mailboxes) >= 5, distinct_mailboxes
+        # all attributed to the SAME enumerating app (the count_distinct group key)
+        assert len({b["AppId"] for b in bodies}) == 1
 
     def test_sharepoint_enumeration_emits_search_and_page(self, monkeypatch):
         state, stub = self._run_with_stub(

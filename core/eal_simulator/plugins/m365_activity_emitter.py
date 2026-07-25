@@ -348,24 +348,33 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
             return events
 
         if pattern == "mailbox_enumeration_by_app":
-            # MailItemsAccessed bind-burst attributed to an OAuth (Azure AD)
-            # application — the mailbox-enumeration-by-app analytic.
-            for _ in range(params.burst_count):
+            # MailItemsAccessed bind-burst attributed to ONE OAuth (Azure AD)
+            # application binding across MANY DISTINCT mailboxes — the
+            # mailbox-enumeration-by-app analytic gates on
+            # `count_distinct(ObjectId) by AppId,... >= 5`, so the enumeration
+            # must touch >= 5 distinct mailboxes under the same app (the breadth
+            # is the signal). Fan out distinct mailbox UPNs in the target domain.
+            domain = user.split("@", 1)[1] if "@" in user else "example.com"
+            n_mailboxes = max(params.burst_count, 6)
+            mailboxes = [user] + [
+                f"enum-target-{i:02d}@{domain}" for i in range(1, n_mailboxes)
+            ]
+            for mbx in mailboxes:
                 events.append(_m365_audit_event(
                     activity=_MAIL_ITEMS_ACCESSED,
                     marker=marker,
                     sim_run_id=sim_run_id,
-                    user_id=user,
-                    object_id=user,
+                    user_id=mbx,
+                    object_id=mbx,
                     extra={
-                        "MailboxOwnerUPN": user,
+                        "MailboxOwnerUPN": mbx,
                         "AppId": _CANARY_APP_ID,
                         "ClientAppId": _CANARY_APP_ID,
                         "ClientInfoString": f"Client=OAuthApp;AppId={_CANARY_APP_ID}",
                         "AppName": _CANARY_APP_NAME,
                         "LogonType": 0,
                         "MailAccessType": "Bind",
-                        "OperationCount": params.burst_count,
+                        "OperationCount": len(mailboxes),
                     },
                 ))
             return events
