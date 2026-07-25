@@ -391,6 +391,19 @@
           "privilege-escalation"
         ],
         "notes": "Feeds SIM-ITDR-017 — SAN-mismatch enrollment to PKINIT privileged auth ABIOC."
+      },
+      {
+        "priority": "P2",
+        "title": "Kubernetes Privilege Escalation: Container Escape to Cluster Admin",
+        "url": "https://unit42.paloaltonetworks.com/kubernetes-privilege-escalation/",
+        "themes": [
+          "cloud",
+          "kubernetes",
+          "container-escape",
+          "privilege-escalation",
+          "service-account"
+        ],
+        "notes": "Feeds TTP-2026-0162/SIM-CDR-025 (unusual pod exec) — analytics log-streamer k8s_audit_emitter ABIOC/Analytics cards over kubernetes_audit_logs."
       }
     ],
     "social_engineering": [
