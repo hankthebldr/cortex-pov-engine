@@ -1,0 +1,191 @@
+scenario_id: SIM-CDR-024
+name: "CDR — Compute Activity in a Dormant Cloud Region (Cryptomining)"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Analytics
+  - Correlation
+
+uc_ref: UC-CDR-024
+tc_ref: TC-CDR-024A
+uc_name: "Cloud cryptomining — dormant-region compute + mining-shaped heavy allocation"
+tc_name: "Dormant-region compute launch and GPU-instance burst raise both ABIOCs and stitch into one incident"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1535"
+mitre_technique_name: "Unused/Unsupported Cloud Regions"
+additional_techniques:
+  - technique: "T1496"
+    name: "Resource Hijacking"
+  - technique: "T1578.002"
+    name: "Modify Cloud Compute Infrastructure: Create Cloud Instance"
+
+threat_report: "Cortex XSIAM Analytics Alert Reference by data source — Cloud Storage & Compute (Compute Activity in a Dormant Cloud Region / Cryptomining)"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source"
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+validation_methodology: "Cloud Analytics Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic AWS CloudTrail RunInstances records emitted by this scenario
+  produce the two expected Cortex XSIAM Cloud Storage & Compute ML analytics
+  alerts — "Compute activity in dormant cloud region" and "Suspicious heavy
+  allocation of compute resources - possible mining activity" — and the
+  correlation engine stitches them into one cloud cryptomining incident.
+  Detection Accuracy is the share of injected events that raise the expected
+  alert (target ≥ 90%).
+moat_tier: "LEAD"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# Cloud-audit analytics scenario, NOT an endpoint process-causality chain:
+# detections key on the cloud_audit_logs (CloudTrail) record shape, not a
+# process tree. There is deliberately NO cgo_anchor — the only endpoint process
+# is the cloud_storage_compute_emitter EAL plugin (our tooling/beacon), which
+# the contract forbids as a CGO, and cloud_audit_logs carries no
+# causality_actor_process_* fields to anchor. The connected graph forms on the
+# shared CLOUD PRINCIPAL / ACCOUNT (userIdentity.arn + recipientAccountId): the
+# same canary principal launches the dormant-region instance (step-01) and the
+# mining-shaped GPU burst (step-02), so they stitch via shared_entity into ONE
+# cryptomining incident; step-03 confirms landing (temporal). step-01 is the
+# root.
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Emit a dormant-region compute launch (CloudTrail RunInstances shape)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/cloud/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/sim-cdr-024-dormant.yml <<YML
+      campaign_id: CMP-CDR-024
+      name: "CDR — dormant-region compute activity"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud-compute, dormant-region, cryptomining]
+      steps:
+        - step_id: dormant-region
+          plugin: cloud_storage_compute_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: dormant_region_activity
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-024-dormant.yml --live
+    identity: svc-account
+    mitre_technique: "T1535"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: CDR
+        type: Analytics
+        description: "CDR — RunInstances in a region dormant for the baseline window raises the dormant-region analytics alert"
+        ttp_ref: "TTP-2026-0159"
+        detection_id: xql-compute-activity-in-dormant-cloud-region
+
+  - id: step-02
+    name: "Emit a mining-shaped burst of large GPU instances (heavy compute allocation)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/cloud/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/sim-cdr-024-heavy.yml <<YML
+      campaign_id: CMP-CDR-024
+      name: "CDR — mining-shaped heavy compute allocation"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: heavy-allocation
+          plugin: cloud_storage_compute_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: heavy_compute_allocation
+            iterations: 1
+            burst_count: 10
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-024-heavy.yml --live
+    identity: svc-account
+    mitre_technique: "T1496"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "CDR — burst of large GPU instance types raises the mining-shaped heavy-allocation ML analytics alert"
+        ttp_ref: "TTP-2026-0159"
+        detection_id: abioc-suspicious-heavy-allocation-of-compute-resources-possible-mining-activity
+      - plane: CDR
+        type: Correlation
+        description: "CDR — dormant-region landing and mining-shaped GPU burst on the same principal stitch into one cryptomining incident"
+        ttp_ref: "TTP-2026-0159"
+        detection_id: CR-CDR-0024
+
+  - id: step-03
+    name: "Confirm the emitted RunInstances records landed in cloud_audit_logs"
+    command: |
+      echo 'Run this validation XQL in Cortex XSIAM to confirm the emitted RunInstances landed:'
+      echo 'dataset = cloud_audit_logs | filter eventName = "RunInstances" and eventSource = "ec2.amazonaws.com" | filter dormant_region_marker = true or heavy_compute_allocation_marker = true | comp count() as observed_records by awsRegion, instance_type'
+    identity: svc-account
+    mitre_technique: "T1496"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: temporal
+    expected_detections:
+      - plane: CDR
+        type: XQL
+        description: "CDR — validation query confirms the synthetic dormant-region + heavy-allocation RunInstances records are observable in cloud_audit_logs within the run window"
+        ttp_ref: "TTP-2026-0159"
+        detection_id: xql-dormant-region-and-heavy-allocation-runinstances-landing-check
+
+cleanup:
+  commands:
+    - "rm -f /tmp/sim-cdr-024-dormant.yml /tmp/sim-cdr-024-heavy.yml"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - cdr
+  - cloud-compute
+  - dormant-region
+  - cryptomining
+  - resource-hijacking
+  - abioc
+  - analytics
+  - eal-plugin

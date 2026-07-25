@@ -27,16 +27,22 @@ threat_report: "Cortex XSIAM Analytics Alert Reference by data source — Azure 
 threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source"
 
 # ── Causality contract ──────────────────────────────────────────────────────
-# The Azure Audit Log + O365 records are streamed by the azure_audit_emitter EAL
-# plugin, a python3 process running inside the container runtime (the Causality
-# Group Owner — the contract forbids the synthetic beacon as CGO, and the
-# msft_azure_audit / msft_o365_audit datasets carry no process-causality fields
-# to anchor). step-01 (conditional-access weakening) is the root and links from
-# that CGO session; step-02 (external inbox-rule creation) is the SAME initiating
-# identity's next persistence action, so it threads on shared_entity; step-03
-# (validation + correlation) fuses both legs on that identity → shared_entity,
+# Two log-streamers drive this chain, each a python3 process running inside the
+# container runtime (the Causality Group Owner — the contract forbids the
+# synthetic beacon as CGO, and the msft_azure_audit / msft_o365_audit datasets
+# carry no process-causality fields to anchor). step-01 (conditional-access
+# weakening) is the root, emitted by azure_audit_emitter into msft_azure_audit
+# and links from that CGO session; step-02 (external inbox-rule creation) is the
+# same persistence campaign's next action, emitted by m365_activity_emitter into
+# msft_o365_audit (the Exchange-backed New-InboxRule the "Azure mailbox rule
+# creation" analytic keys on), so it threads on shared_entity; step-03
+# (validation + correlation) fuses both persistence legs → shared_entity,
 # mirroring how CR-ITDR-0019 stitches the CA weakening and the mail rule into one
-# Azure identity-persistence incident.
+# Azure identity-persistence incident within the persistence window. The two
+# legs land in different datasets with different identity fields (the CA record
+# carries identity.claims.appid; the inbox-rule record carries UserId), so the
+# correlation stitches on temporal co-occurrence within the campaign window
+# rather than on a single shared identity-field value.
 cgo_anchor:
   image_name: "python3"
   primary_username: "container-runtime"
@@ -71,9 +77,10 @@ success_criteria: |
   creation' fires on the external auto-forwarding inbox rule. The two auto-tuned
   ABIOCs fire on the deviation from the learned per-admin CA-change and
   per-mailbox inbox-rule baselines, and correlation CR-ITDR-0019 stitches both
-  legs into a single Azure identity-persistence incident on the shared
-  initiating identity. Detection Accuracy is the share of injected persistence
-  legs that raise the expected alert (target ≥ 90%).
+  legs (the CA change in msft_azure_audit and the inbox rule in msft_o365_audit)
+  into a single Azure identity-persistence incident on temporal co-occurrence
+  within the persistence window. Detection Accuracy is the share of injected
+  persistence legs that raise the expected alert (target ≥ 90%).
 moat_tier: "LEAD"
 
 external_tools:
@@ -103,8 +110,7 @@ steps:
           plugin: azure_audit_emitter
           params:
             collector_url: "$COLLECTOR_URL"
-            event_pattern: conditional_access_change
-            target_user: "$TARGET_USER"
+            event_pattern: conditional_access_policy_change
             iterations: 1
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/itdr-019.yml --live
@@ -141,10 +147,10 @@ steps:
       tags: [itdr, azure, mailbox-rule, forwarding, persistence]
       steps:
         - step_id: step-01
-          plugin: azure_audit_emitter
+          plugin: m365_activity_emitter
           params:
             collector_url: "$COLLECTOR_URL"
-            event_pattern: mailbox_rule_create
+            event_pattern: mailbox_rule_creation
             target_user: "$TARGET_USER"
             iterations: 1
       YML

@@ -1,0 +1,220 @@
+scenario_id: SIM-CDR-019
+name: "AWS S3 Mass-Object Exfiltration by a Suspicious Identity — Cortex ABIOC"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA) for bulk cloud-storage theft.
+# Cortex XSIAM / Cortex Cloud learns each identity's per-bucket S3 object-access
+# baseline from the CloudTrail audit stream (cloud_audit_logs, S3 data events on).
+# This scenario STREAMS shape-true CloudTrail S3 data-event records to an
+# operator-supplied HTTP collector via the cloud_audit_emitter analytics
+# log-streamer EAL plugin (provider=aws, event_pattern storage_object_download):
+# a high-volume burst of s3:GetObject calls on one bucket, all from a single
+# suspicious identity + anomalous source IP. Two auto-tuned ABIOCs — named for
+# the exact XSIAM analytics alerts they exercise — fire on the mass-download
+# deviation; a correlation rule stitches them into one mass-object-exfiltration
+# incident. No real AWS object is read or moved; every record is synthetic JSON
+# shaped like a CloudTrail S3 data event.
+
+plane: CDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-CDR-019
+tc_ref: TC-CDR-019A
+uc_name: "AWS S3 Mass-Object Exfiltration Detection via Cortex ABIOC"
+tc_name: "Suspicious-Identity S3 GetObject Download Fan-Out Fires Both ABIOCs + Stitch"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1530"
+mitre_technique_name: "Data from Cloud Storage"
+
+threat_report: "Cortex XSIAM Analytics Alert Reference by data source — AWS Audit Log (CloudTrail)"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Validates Cortex Analytics Behavioral IOCs (ABIOC) — PANW's auto-tuned,
+# causality-anchored behavioral-ML detection type — on the cloud/CDR plane.
+# Cortex learns each identity's per-bucket S3 object-access baseline, then a
+# controlled mass-download burst drives a behavioral detection no static rule
+# was authored for. Signal Injection & Detection Accuracy family (F1).
+validation_methodology: "Cloud Behavioral Anomaly Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned each identity's per-bucket S3 object-access baseline (a
+  narrow, steady read of a known object set). The streamed CloudTrail S3
+  data-event burst — a high-volume s3:GetObject read burst on one bucket from a
+  single suspicious identity — deviates from that learned baseline; both
+  auto-tuned ABIOCs fire and the correlation rule stitches them into one S3
+  mass-object-exfiltration incident within the MTTD budget. This is the
+  "behavioral-ML catches what a static BIOC misses" proof: every s3:GetObject is
+  a legitimate call, so the catch comes from the mass-download deviation and its
+  causality chain (one identity -> high-volume GetObject read burst on one bucket
+  from a new source), not a known-bad signature.
+moat_tier: "LEAD"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is a cloud-audit-log analytics scenario, NOT an endpoint process-causality
+# chain: detections key on the cloud_audit_logs CloudTrail S3-data-event shape,
+# not on a process tree. There is deliberately NO cgo_anchor — the only endpoint
+# process is the cloud_audit_emitter EAL plugin (our tooling/beacon), which the
+# causality contract forbids as a CGO, and CloudTrail records carry no
+# causality_actor_process_* fields to anchor. The connected graph forms on the
+# shared SUSPICIOUS IDENTITY + BUCKET: the same identity bulk-reads objects
+# (GetObject burst) from the same bucket across steps, so the ABIOCs stitch via
+# shared_entity into ONE mass-object-exfiltration signal rather than hanging off
+# the beacon. step-01 is the emit root.
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Stream the CloudTrail S3 GetObject mass-download burst (suspicious identity, one bucket)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/cdr-019-s3-exfil.yml <<YML
+      campaign_id: CMP-CDR-019
+      name: "CDR — AWS S3 mass-object exfiltration by a suspicious identity"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, aws, s3, mass-object-exfil, abioc]
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: storage_object_download
+            burst_count: 60
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cdr-019-s3-exfil.yml --live
+    identity: container-runtime
+    mitre_technique: "T1530"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "A single identity whose learned per-bucket object-access baseline is a narrow read of a known object set suddenly issues a high-volume s3:GetObject read burst on one bucket — the auto-tuned ABIOC fires on the mass-download deviation, anchored to the suspicious-identity causality chain. No single s3:GetObject is a known-bad IOC."
+        ttp_ref: "TTP-2026-0154"
+        detection_id: abioc-suspicious-identity-downloaded-multiple-objects-from-a-bucket
+      - plane: CDR
+        type: XQL
+        description: "Validation query confirms the streamed CloudTrail S3 read events (GetObject) landed in cloud_audit_logs for the identity + bucket within the run window."
+        ttp_ref: "TTP-2026-0154"
+        detection_id: xql-sim-cdr-019-s3-getobject-burst-surfaced-in-cloud-audit-log
+
+  - id: step-02
+    name: "Confirm the generic cloud-storage mass-read alert fires on the same identity + bucket"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/cdr-019-s3-exfil-confirm.yml <<YML
+      campaign_id: CMP-CDR-019
+      name: "CDR — AWS S3 mass-object exfiltration (confirm cloud-storage mass-read)"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: cloud_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: storage_object_download
+            burst_count: 60
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cdr-019-s3-exfil-confirm.yml --live
+    identity: container-runtime
+    mitre_technique: "T1530"
+    platforms: ["linux", "container"]
+    causality:
+      # Same suspicious identity, same bucket as step-01. CloudTrail carries no
+      # process-actor fields — the two mass-download ABIOCs anchor on the shared
+      # identity_name / bucket_name entity, so the edge is a shared_entity join
+      # (same identity + bucket, no observed process fork), not a process fork.
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "The identity issues an anomalously high volume of s3:GetObject reads on the bucket far above its learned per-bucket access volume — the auto-tuned ABIOC fires on the read-volume deviation, anchored to the high-volume download burst on the same bucket."
+        ttp_ref: "TTP-2026-0154"
+        detection_id: abioc-an-identity-performed-a-suspicious-download-of-multiple-cloud-storage-objects
+      - plane: CDR
+        type: XQL
+        description: "Validation query surfaces the per-identity s3:GetObject read-burst volume on the bucket, confirming the mass-download shape is observable in cloud_audit_logs."
+        ttp_ref: "TTP-2026-0154"
+        detection_id: xql-sim-cdr-019-suspicious-identity-download-fan-out-by-bucket
+
+  - id: step-03
+    name: "Correlation stitches the two mass-download ABIOCs into one exfiltration incident"
+    command: |
+      echo '[CDR-019] Chain validation — two mass-download ABIOCs on the same suspicious identity + bucket'
+      echo '[*] XSIAM correlation CR-CDR-0019 should fuse the two ABIOC deviations into one S3 mass-object-exfiltration incident'
+    identity: container-runtime
+    mitre_technique: "T1530"
+    platforms: ["linux", "container"]
+    causality:
+      # Correlation terminal — CR-CDR-0019 fuses the two mass-download ABIOCs on
+      # the SAME suspicious identity + bucket into one S3 mass-object-exfiltration
+      # incident. The join is the shared identity + bucket the two ABIOCs share,
+      # so the edge is shared_entity.
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation rule CR-CDR-0019 fuses the bucket mass-download ABIOC and the cloud-storage mass-read ABIOC on the same identity + bucket into a single S3 mass-object-exfiltration incident anchored to the suspicious-identity causality chain."
+        ttp_ref: "TTP-2026-0154"
+        detection_id: CR-CDR-0019
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cdr-019-s3-exfil.yml /tmp/cdr-019-s3-exfil-confirm.yml"
+    - "echo '[CortexSim] SIM-CDR-019 cleanup complete — synthetic CloudTrail records only; no real AWS object was read or moved.'"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - cdr
+  - cloud
+  - aws
+  - s3
+  - abioc
+  - behavioral-analytics
+  - data-exfiltration
+  - eal-plugin

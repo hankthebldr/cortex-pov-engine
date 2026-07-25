@@ -1,0 +1,211 @@
+scenario_id: SIM-ITDR-018
+name: "ITDR — Azure Service-Principal Token Abuse from an Unknown Tenant (remote token use · unknown-tenant access · unusual resource access)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - ABIOC
+  - Analytics
+  - XQL
+  - Correlation
+
+uc_ref: UC-ITDR-018
+tc_ref: TC-ITDR-018A
+uc_name: "Azure Service-Principal Token Abuse from an Unknown Tenant via Cortex ITDR Analytics"
+tc_name: "Stolen SP token replay fires the three Azure Audit Log analytics alerts and stitches one identity-owned incident"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1528"
+mitre_technique_name: "Steal Application Access Token"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+
+threat_report: "Azure Service-Principal Token Abuse from an Unknown Tenant"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# Identity-plane scenario: the azure_audit_emitter streamer runs inside the
+# container runtime, so the Causality Group Owner is the containerd-shim that
+# owns the emitter session (not a synthetic beacon). The detection is pure
+# Azure Audit Log analytics — the meaningful pivot is the SAME service
+# principal (identity.claims.appid) appearing across the three alert
+# shapes. step-02 stitches to step-01 on the shared service-principal identity;
+# step-03 stitches to step-02 on the same identity, mirroring how correlation
+# CR-ITDR-0018 fuses the three analytics alerts for one workload identity.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "svc-account"
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Identity Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Azure Audit Log service-principal control-plane records emitted by
+  this scenario produce the three expected Cortex ITDR analytics alerts and one
+  stitched incident. Detection Accuracy is the share of injected identity events
+  that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Replay the stolen service-principal application access token from off-baseline infrastructure"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/azure/audit}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-018.yml <<YML
+      campaign_id: CMP-ITDR-018
+      name: "ITDR — Azure SP token remote usage"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [itdr, azure, service-principal, token-abuse]
+      steps:
+        - step_id: step-01
+          plugin: azure_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: service_principal_token_remote_use
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-018.yml --live
+    identity: svc-account
+    mitre_technique: "T1528"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — 'Remote usage of an Azure Service Principal token': app-only SP token (identity.claims idtyp=app / appidacr=2) replayed non-interactively from off-baseline infrastructure (callerIpAddress absent from the SP's learned calling baseline)"
+        ttp_ref: "TTP-2026-0160"
+        detection_id: xql-itdr-018-remote-usage-of-an-azure-service-principal-token-from-off-baseline-infrastructure
+
+  - id: step-02
+    name: "Emit the denied cross-tenant control-plane access from an unknown/foreign home tenant"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/azure/audit}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-018-unknown-tenant.yml <<YML
+      campaign_id: CMP-ITDR-018
+      name: "ITDR — Azure app access from unknown tenant"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: azure_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: unknown_tenant_app_access
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-018-unknown-tenant.yml --live
+    identity: svc-account
+    mitre_technique: "T1078.004"
+    # Same abused service principal as step-01 — stitched on the shared identity,
+    # not a process fork; the join CR-ITDR-0018 keys on.
+    causality:
+      parent_step: "step-01"
+      pivot: "shared_entity"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "ITDR — 'Attempted Azure application access from unknown tenant': denied cross-tenant SP control-plane access where the requesting identity.claims tenantid is a foreign/unknown tenant reaching the customer top-level tenantId (resultType=Failure)"
+        ttp_ref: "TTP-2026-0160"
+        detection_id: xql-itdr-018-attempted-azure-application-access-from-an-unknown-home-tenant
+
+  - id: step-03
+    name: "Drive the same service principal to unusual resource access, then confirm the events landed"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/azure/audit}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/itdr-018-resource.yml <<YML
+      campaign_id: CMP-ITDR-018
+      name: "ITDR — Azure unusual resource access"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: azure_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: unusual_app_resource_access
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-018-resource.yml --live
+    identity: svc-account
+    mitre_technique: "T1078.004"
+    causality:
+      parent_step: "step-02"
+      pivot: "shared_entity"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "ITDR — 'Unusual resource access by Azure application': the same SP (identity.claims.appid) fans out across resourceId values absent from its learned resource-access profile"
+        ttp_ref: "TTP-2026-0160"
+        detection_id: abioc-itdr-018-unusual-resource-access-by-an-azure-application-deviating-from-learned-baseline
+      - plane: ITDR
+        type: XQL
+        description: "ITDR — validation: confirms the emitted Azure Audit Log service-principal control-plane records landed in msft_azure_audit within the run window"
+        ttp_ref: "TTP-2026-0160"
+        detection_id: xql-itdr-018-validate-azure-service-principal-token-events-landed
+      - plane: ITDR
+        type: Correlation
+        description: "ITDR — CR-ITDR-0018 stitches the three Azure Audit Log analytics alerts on the shared identity.claims.appid into one identity-owned incident"
+        ttp_ref: "TTP-2026-0160"
+        detection_id: CR-ITDR-0018
+
+cleanup:
+  commands:
+    - "rm -f /tmp/itdr-018.yml /tmp/itdr-018-unknown-tenant.yml /tmp/itdr-018-resource.yml"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - itdr
+  - azure
+  - entra-id
+  - service-principal
+  - token-abuse
+  - cross-tenant
+  - unknown-tenant
+  - abioc
+  - analytics
+  - eal-plugin

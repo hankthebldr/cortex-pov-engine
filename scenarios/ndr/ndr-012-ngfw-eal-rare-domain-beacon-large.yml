@@ -1,0 +1,219 @@
+scenario_id: SIM-NDR-012
+name: "NGFW EAL Rare-Domain Beacon then Large/Massive HTTPS Upload Exfil (Cortex Network Analytics / ABIOC)"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-NDR-012
+tc_ref: TC-NDR-012
+uc_name: "NGFW EAL Network Behavioral-ML Detection"
+tc_name: "Rare-Domain Recurring Beacon then Large/Massive HTTPS Upload Exfil"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1071.001"
+mitre_technique_name: "Application Layer Protocol: Web Protocols"
+additional_techniques:
+  - technique: "T1048"
+    name: "Exfiltration Over Alternative Protocol"
+  - technique: "T1567"
+    name: "Exfiltration Over Web Service"
+
+threat_report: "Cortex XSIAM — Network Security Analytics / ABIOC Alert Reference (NGFW EAL rare-domain beacon and large/massive HTTPS upload alerts by data source)"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The ngfw_eal_emitter analytics log-streamer runs inside the container runtime,
+# so the Causality Group Owner is the containerd-shim/container-runtime that owns
+# the emitter session (not the synthetic beacon). The detection is pure NGFW EAL
+# network analytics — the meaningful pivot is not a process fork but the SAME
+# source host (src) appearing across the recurring beacon
+# and the subsequent upload. step-02 continues step-01's egress on that same
+# source host (shared_entity); step-03 stitches to step-02 on the same source
+# host (shared_entity), mirroring how CR-NDR-0012 fuses the recurring-beacon and
+# massive-upload ABIOCs into one beacon-then-exfil incident.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Network Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex Network Security Analytics has learned the source host's NGFW EAL egress
+  baseline (which destinations it talks to, at what cadence, with what outbound-byte
+  profile). The injected recurring rare-domain HTTPS beacon and the large-then-massive
+  HTTPS upload deviate from that learned baseline; the auto-tuned NGFW EAL Analytics /
+  ABIOCs fire (destination rarity, recurring cadence, outbound-byte-volume anomaly) and
+  the correlation rule stitches them into a single beacon-then-exfil incident. This is
+  the "behavioral-ML catches what a static IOC misses" proof: every destination is
+  legitimate-looking and rotates, so the catch comes from the deviation on the
+  source host (src) and rare destination domain, not a known-bad domain or IP. Mean time from
+  beacon to alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+# The ngfw_eal_emitter analytics log-streamer POSTs shape-true panw_ngfw_traffic_raw
+# records to the operator collector. It is C2-shaped (T1071.001), so the campaign
+# carries c2_authorized: true alongside simulation_authorized.
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Emit a recurring rare-domain HTTPS beacon into panw_ngfw_traffic_raw"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/ndr-012-beacon.yml <<YML
+      campaign_id: CMP-NDR-012
+      name: "NGFW EAL — rare-domain recurring beacon"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [ndr, ngfw-eal, rare-domain-beacon]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/ndr-012-beacon.yml --live
+      echo cortexsim-ndr-012-recurring-rare-domain-beacon-emitted
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    # Root of the causality spine — links from the CGO (containerd-shim).
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "A source host produces a tight recurring burst of small HTTPS (ssl/443) sessions to a domain that is rare across the fleet — the auto-tuned NGFW EAL ABIOC fires on the recurring-cadence-plus-destination-rarity deviation from the learned host egress baseline, anchored to the source host (src) and rare destination domain. No destination is a known-bad IOC."
+        ttp_ref: "TTP-2026-0167"
+        detection_id: "abioc-ngfw-eal-abnormal-recurring-communications-to-a-rare-domain"
+      - plane: NDR
+        type: XQL
+        description: "Validation query confirms the recurring rare-domain beacon records landed in panw_ngfw_traffic_raw within the run window (recurring_sessions high, avg_bytes small)."
+        ttp_ref: "TTP-2026-0167"
+        detection_id: "xql-ngfw-eal-recurring-rare-domain-beacon-landed-in-panw-ngfw-traffic-raw"
+
+  - id: step-02
+    name: "Large then massive HTTPS upload to a rare storage/mail domain (same source host)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/ndr-012-upload.yml <<YML
+      campaign_id: CMP-NDR-012
+      name: "NGFW EAL — large then massive HTTPS upload exfil"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: large_upload_https
+            iterations: 1
+        - step_id: step-02
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: massive_upload_rare_domain
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/ndr-012-upload.yml --live
+      echo cortexsim-ndr-012-large-and-massive-https-upload-emitted
+    identity: container-runtime
+    mitre_technique: "T1048"
+    # Same source host (src) as step-01, continued egress from the
+    # recurring beacon into the exfil upload (no fork) → shared_entity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "Large Upload (HTTPS) behavioral-ML alert — a single ssl/443 session whose bytes_sent is anomalously large versus the host's learned outbound-volume baseline; the statistical ABIOC fires on the outbound-byte-volume deviation, the first exfil stage after the rare-domain beacon."
+        ttp_ref: "TTP-2026-0167"
+        detection_id: "abioc-ngfw-eal-large-upload-https-to-a-rare-domain"
+      - plane: NDR
+        type: ABIOC
+        description: "Massive upload to a rare storage or mail domain behavioral-ML alert — a subsequent massive bytes_sent to a fleet-rare object-store/mail domain from the same source host; the ABIOC fires on the massive-outbound-volume-to-a-rare-domain deviation, the exfil terminal of the beacon-then-exfil chain."
+        ttp_ref: "TTP-2026-0167"
+        detection_id: "abioc-ngfw-eal-massive-upload-to-a-rare-storage-or-mail-domain"
+      - plane: NDR
+        type: XQL
+        description: "Validation query confirms the large and massive HTTPS upload records landed in panw_ngfw_traffic_raw within the run window (peak/total bytes_sent above the large-upload threshold)."
+        ttp_ref: "TTP-2026-0167"
+        detection_id: "xql-ngfw-eal-large-and-massive-https-upload-landed-in-panw-ngfw-traffic-raw"
+
+  - id: step-03
+    name: "Correlation stitches the rare-domain beacon and massive upload into one incident"
+    command: "echo cortexsim-ndr-012-cr-ndr-0012-stitched-beacon-then-exfil-incident"
+    identity: container-runtime
+    mitre_technique: "T1567"
+    # Correlation fuses the recurring-beacon and massive-upload ABIOCs for the
+    # same source host into one beacon-then-exfil incident → shared_entity.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: NDR
+        type: Correlation
+        description: "Correlation rule fuses the recurring rare-domain beacon ABIOC and the massive-upload ABIOC for the same source host into a single beacon-then-exfil incident anchored to the shared source host (src) and rare destination domains."
+        ttp_ref: "TTP-2026-0167"
+        detection_id: "CR-NDR-0012"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/ndr-012-beacon.yml /tmp/ndr-012-upload.yml"
+    - "echo cortexsim-ndr-012-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - ndr
+  - ngfw-eal
+  - abioc
+  - analytics
+  - rare-domain-beacon
+  - https-exfil
+  - eal-plugin
