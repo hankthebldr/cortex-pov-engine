@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import LabView, { resolveModuleDependencies } from '../console/LabView.jsx'
+import LabView, { resolveModuleDependencies, slugifyProject } from '../console/LabView.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
 
 const adapterFixtures = {
@@ -126,6 +126,92 @@ describe('resolveModuleDependencies', () => {
     const next = resolveModuleDependencies(new Set(), 'whatever', undefined)
     expect(next.has('whatever')).toBe(true)
     expect(next.size).toBe(1)
+  })
+})
+
+describe('slugifyProject', () => {
+  it('lowercases and hyphenates a tenant display name', () => {
+    expect(slugifyProject('Acme POV 2026')).toBe('acme-pov-2026')
+  })
+
+  it('collapses runs of non-alphanumerics into a single hyphen', () => {
+    expect(slugifyProject('Acme   ///  Corp')).toBe('acme-corp')
+  })
+
+  it('drops leading non-letters so the result starts with a letter (validator)', () => {
+    // validator is ^[a-z][a-z0-9-]{1,30}$ — a leading digit/hyphen is illegal.
+    expect(slugifyProject('123-acme')).toBe('acme')
+    expect(slugifyProject('-acme')).toBe('acme')
+  })
+
+  it('clamps to 31 chars and trims any trailing hyphen left by the clamp', () => {
+    const out = slugifyProject('a'.repeat(40))
+    expect(out.length).toBe(31)
+    expect(out.endsWith('-')).toBe(false)
+  })
+
+  it('returns empty string when nothing usable survives (leaves field blank)', () => {
+    expect(slugifyProject('')).toBe('')
+    expect(slugifyProject('12345')).toBe('')
+    expect(slugifyProject(null)).toBe('')
+  })
+})
+
+describe('<LabView /> environment context ribbon', () => {
+  const baseRoutes = {
+    'GET /api/infra/modules':  moduleFixtures,
+    'GET /api/infra/bundles':  { bundles: [], total: 0 },
+    'GET /api/tools/adapters': { adapters: [], total: 0 },
+  }
+
+  it('renders the ribbon with muted "none" scope outside a provider', async () => {
+    installRoutes(baseRoutes)
+    render(<LabView />)
+    const ribbon = await screen.findByTestId('env-ribbon')
+    expect(ribbon).toBeInTheDocument()
+    // DEFAULT_ENV (no provider) yields null tenant + agent → both show "none".
+    expect(ribbon.textContent).toMatch(/Tenant/i)
+    expect(ribbon.textContent).toMatch(/Agent/i)
+    expect(screen.getAllByText(/none/i).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('deep-links the tenant Manage… link via onNavigate("tenants")', async () => {
+    installRoutes(baseRoutes)
+    const onNavigate = vi.fn()
+    render(<LabView onNavigate={onNavigate} />)
+    const ribbon = await screen.findByTestId('env-ribbon')
+    const manageLinks = ribbon.querySelectorAll('button')
+    // Two Manage… links: [0] tenants, [1] agents.
+    fireEvent.click(manageLinks[0])
+    expect(onNavigate).toHaveBeenCalledWith('tenants')
+    fireEvent.click(manageLinks[1])
+    expect(onNavigate).toHaveBeenCalledWith('agents')
+  })
+
+  it('does not render an inline error banner on a clean render', async () => {
+    installRoutes(baseRoutes)
+    render(<LabView />)
+    await screen.findByTestId('env-ribbon')
+    expect(screen.queryByTestId('lab-error')).not.toBeInTheDocument()
+  })
+})
+
+describe('<LabView /> route-param module pre-selection', () => {
+  it('pre-checks a module named in ?modules= (union + transitive deps)', async () => {
+    installRoutes({
+      'GET /api/infra/modules':  moduleFixtures,
+      'GET /api/infra/bundles':  { bundles: [], total: 0 },
+      'GET /api/tools/adapters': { adapters: [], total: 0 },
+    })
+    // cdr → [base, tim]; deep-linking ?modules=cdr should tick cdr + its deps.
+    const { container } = render(<LabView params={{ modules: 'cdr' }} />)
+    await screen.findByText(/edr target count/i)
+    await waitFor(() => {
+      const cards = container.querySelectorAll('.lab-module')
+      const cdrCard = Array.from(cards).find((c) => c.textContent.includes('cdr'))
+      expect(cdrCard).toBeTruthy()
+      expect(cdrCard.querySelector('input[type="checkbox"]').checked).toBe(true)
+    })
   })
 })
 
