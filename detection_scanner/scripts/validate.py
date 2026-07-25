@@ -141,6 +141,18 @@ KNOWN_DATASETS = frozenset({
     # playbook fired and closed a precursor incident (the correlation-terminal
     # / SLA-measurement metric). Real first-party XSIAM dataset, not invented.
     "xsiam_incidents",
+    # Analytics log-streamer EAL family (TTP-2026-0154..0167) — real XSIAM
+    # ingestion datasets for the analytics/ABIOC streamer cards:
+    #   msft_azure_audit      — Azure Activity / Audit Log (control-plane), the
+    #                           source azure_audit_emitter POSTs and the Azure
+    #                           Conditional-Access / service-principal ABIOC +
+    #                           Analytics alerts key on (TTP-2026-0160/0161).
+    #   kubernetes_audit_logs — Kubernetes audit source (audit.k8s.io/v1), the
+    #                           source k8s_audit_emitter POSTs and the pod-exec /
+    #                           service-account ABIOC + Analytics alerts key on
+    #                           (TTP-2026-0162/0163). Live-tenant string to be
+    #                           confirmed against a real Kubernetes-audit ingest.
+    "msft_azure_audit", "kubernetes_audit_logs",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain
