@@ -1,0 +1,268 @@
+scenario_id: SIM-ITDR-017
+name: "AD CS ESC1 Certificate-Template Abuse — SAN-Mismatch Enrollment to PKINIT Privileged Auth (Cortex Identity ABIOC)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - ABIOC
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-ITDR-017
+tc_ref: TC-ITDR-017
+uc_name: "AD CS ESC1 SAN-Mismatch to PKINIT Privileged Authentication Detection"
+tc_name: "ESC1 Issuance-to-PKINIT Impersonation Chain Stitch (Qualitative Evidence)"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Technique-centric AD CS abuse (ransomware-affiliate tradecraft). The anchor is
+# Steal or Forge Authentication Certificates (T1649); the issued cert is used as
+# alternate authentication material (T1550) to act as a privileged domain account
+# (T1078.002). Recon is domain account/object discovery (T1087.002); the optional
+# shadow-credential write modifies the authentication process (T1556); the issued
+# PFX is credentials-in-a-file (T1552.001).
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1649"
+mitre_technique_name: "Steal or Forge Authentication Certificates"
+additional_techniques:
+  - technique: "T1550"
+    name: "Use Alternate Authentication Material"
+  - technique: "T1078.002"
+    name: "Valid Accounts: Domain Accounts"
+  - technique: "T1556"
+    name: "Modify Authentication Process"
+  - technique: "T1087.002"
+    name: "Account Discovery: Domain Account"
+  - technique: "T1552.001"
+    name: "Unsecured Credentials: Credentials In Files"
+
+threat_report: "Unit 42 — Active Directory Certificate Services Exploitation (AD CS ESC1)"
+threat_report_url: "https://unit42.paloaltonetworks.com/active-directory-certificate-services-exploitation/"
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The ESC1 chain is OWNED by the requesting domain identity's operator session —
+# the Certipy (python3) process the low-privileged account runs to enumerate
+# templates, request the SAN-mismatch certificate, and drive PKINIT. That
+# session is the chain root. The downstream AD-side records (4886/4887 CA
+# issuance, 4768/4769 Kerberos, 5136 directory change) are audit events, not
+# process forks, so steps 2..n thread on the SHARED requesting/impersonated
+# identity (shared_entity) and the issue->auth timing (temporal), producing the
+# identity-owned lineage an F10 evidence demo needs. On Windows the same
+# tradecraft runs through Certify.exe + Rubeus (platform_variants).
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "svc-account"
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# methodology_family F10 (Qualitative Evidence): the value is the rich, citable
+# forensic trail — certificate serials, template names, the impersonated UPN, and
+# the exact 4886 -> 4887 -> 4768 -> 4769 -> 5136 Windows Security event records —
+# that the terminal correlation fuses into ONE identity-owned incident a POV
+# report can screenshot as end-to-end proof. Primary KPI is causality-chain
+# completeness: the stitched incident must span the full ESC1 storyline.
+validation_methodology: "Identity Signal Injection & Qualitative Evidence"
+methodology_family: "F10"
+primary_kpi: "Causality Chain Completeness"
+threshold:
+  kpi: "Causality Chain Completeness"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  Cortex Identity Analytics has learned that the requesting identity never
+  enrolls certificates whose Subject Alternative Name is a different, privileged
+  principal. The injected ESC1 chain — LDAP template reconnaissance, an
+  enrollee-supplied-SAN certificate request (4886), a CA issuance with
+  requester != subject (4887), a PKINIT TGT as the impersonated Domain-Admin-
+  equivalent (4768) and service tickets as the target (4769), and an optional
+  msDS-KeyCredentialLink shadow-credential write (5136) — deviates from that
+  baseline. The deterministic BIOCs catch the SAN-mismatch enrollment and
+  issuance with citable certificate serials; the auto-tuned terminal ABIOC fires
+  on the issuance-to-PKINIT lineage; and correlation CR-ITDR-0017 fuses recon ->
+  SAN-mismatch issuance -> PKINIT privileged authentication -> optional shadow
+  credential into a SINGLE ITDR incident whose causality graph is rooted on the
+  requesting identity and spans the full ESC1 storyline. This is the
+  "behavioral-ML plus evidence-grade correlation catches AD CS abuse no static
+  rule was written for" proof: certificate enrollment is a legitimate operation,
+  so the catch comes from the requester-to-subject mismatch and the issuance-to-
+  PKINIT lineage, not a known-bad signature.
+moat_tier: "LEAD"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# NON-DESTRUCTIVE: no certificate is actually enrolled and Active Directory is
+# not mutated. SAFE-MODE marker files stand in for each stage of the ESC1 chain
+# so the run is observable under the identity harness on the jumpbox. On a
+# sanctioned AD CS lab (infra module `itdr`) the real stages are performed by
+# Certipy (find / req / auth) and pyWhisker; the detection logic on card
+# TTP-2026-0145 keys on the resulting Windows Security events.
+steps:
+  - id: step-01
+    name: "AD CS template / CA LDAP reconnaissance (Certipy find — Security 1644/30)"
+    command: "mkdir -p /tmp/cortexsim-itdr-017 && echo '[SIM-ITDR-017] SAFE-MODE 1644/30: Certipy find would enumerate pKICertificateTemplate, PKI-Enrollment-Service and msDS-KeyCredentialLink over LDAP' | tee /tmp/cortexsim-itdr-017/1644-adcs-ldap-recon.marker; echo cortexsim-itdr-017-adcs-ldap-recon"
+    identity: svc-account
+    mitre_technique: "T1087.002"
+    # Root step — links from the python3 (Certipy) CGO session run by the
+    # low-privileged requesting identity. AD CS abuse tooling runs from Linux;
+    # on Windows the same recon is Certify.exe find /vulnerable.
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Certify.exe find /vulnerable"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "LDAP server/client search (Security 1644/30) whose filter references pKICertificateTemplate / PKI-Enrollment-Service / msDS-KeyCredentialLink from an account that does not normally administer certificates — the AD CS reconnaissance that precedes an ESC1 request."
+        ttp_ref: "TTP-2026-0145"
+        detection_id: "bioc-itdr-017-ad-cs-certificate-template-ldap-reconnaissance"
+
+  - id: step-02
+    name: "ESC1 certificate request with attacker-chosen SAN (Certipy req — Security 4886)"
+    command: "echo '[SIM-ITDR-017] SAFE-MODE 4886: Certipy req would enroll against the ESC1 template (CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT) supplying upn=administrator@corp.local in the SAN' | tee /tmp/cortexsim-itdr-017/4886-esc1-san-request.marker; echo cortexsim-itdr-017-esc1-san-request"
+    identity: svc-account
+    mitre_technique: "T1649"
+    # Same requesting identity / operator session as the recon — the ESC1 request
+    # is issued by the account whose LDAP recon ran in step-01. No process fork
+    # (CA-side audit event), so the pivot is shared_entity on the requesting
+    # domain identity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Certify.exe request /ca:CORP-CA /template:VulnUserTemplate /altname:administrator"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "Certificate request (Security 4886) on a CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT template where the requester supplies a SAN UPN differing from their own account — the ESC1 enrollment choosing the identity the certificate will authenticate as."
+        ttp_ref: "TTP-2026-0145"
+        detection_id: "bioc-itdr-017-esc1-certificate-request-with-enrollee-supplied-san"
+
+  - id: step-03
+    name: "CA issues certificate with requester != subject SAN mismatch (Security 4887)"
+    command: "printf '[SIM-ITDR-017] SAFE-MODE 4887: CA issues certificate serial=1a2b3c4d requester=svc-account subject/SAN=administrator@corp.local (requester!=subject)\\n' | tee /tmp/cortexsim-itdr-017/4887-san-mismatch-issuance.marker; echo cortexsim-itdr-017-san-mismatch-issuance"
+    identity: svc-account
+    mitre_technique: "T1649"
+    # The issuance (4887) follows the request (4886) at the CA within seconds —
+    # temporal pivot on the issue-after-request timing; same certificate request
+    # context, evidenced by the shared certificate serial and requester.
+    causality:
+      parent_step: step-02
+      pivot: temporal
+    platforms: ["linux", "windows"]
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "Deterministic, evidence-grade ESC1 signature — Security 4887 records the CA issuing a certificate whose Requester does not equal the Subject / SAN. The certificate serial number and template are the citable forensic artifacts for the POV report."
+        ttp_ref: "TTP-2026-0145"
+        detection_id: "bioc-itdr-017-certificate-issued-with-requester-subject-san-mismatch"
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms a requester-to-subject SAN-mismatch issuance (4887) is observable in the run window, surfacing the certificate serial number."
+        ttp_ref: "TTP-2026-0145"
+        detection_id: "xql-itdr-017-validate-san-mismatch-certificate-issuance"
+
+  - id: step-04
+    name: "PKINIT TGT + service tickets as the impersonated Domain Admin (Security 4768/4769)"
+    command: "echo '[SIM-ITDR-017] SAFE-MODE 4768/4769: Certipy auth / PKINITtools would use the issued PFX for PKINIT to obtain a TGT (pre-auth type 16) as administrator@corp.local, then request service tickets as the target' | tee /tmp/cortexsim-itdr-017/4768-pkinit-privileged-auth.marker; echo cortexsim-itdr-017-pkinit-privileged-auth"
+    identity: svc-account
+    mitre_technique: "T1550"
+    # The PKINIT authentication (4768) follows the SAN-mismatch issuance within a
+    # short window and authenticates AS the impersonated principal named in the
+    # SAN — temporal pivot on the issue->auth timing, the privilege-inheritance
+    # moment the terminal ABIOC anchors on.
+    causality:
+      parent_step: step-03
+      pivot: temporal
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Certipy auth -pfx cert.pfx -dc-ip dc.corp.local"
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "Terminal behavioral catch — an identity whose learned baseline never enrolls privileged-SAN certificates produces a requester-to-subject SAN-mismatch issuance (4887) immediately followed by a PKINIT TGT (4768, pre-auth type 16) authenticating as the SAN principal. The auto-tuned ABIOC fires on the issuance-to-PKINIT lineage, anchored on the impersonated identity, surfacing the issued certificate serials and impersonated UPN as evidence. Every certificate operation is legitimate; the catch is the lineage."
+        ttp_ref: "TTP-2026-0145"
+        detection_id: "abioc-itdr-017-esc1-issuance-to-pkinit-privileged-impersonation-chain"
+      - plane: ITDR
+        type: XQL
+        description: "Hunt query surfaces the PKINIT TGT and service-ticket requests (4768/4769, pre-auth type 16) that follow the anomalous certificate issuance — the privileged-auth signals the correlation rule fuses with the SAN-mismatch lineage."
+        ttp_ref: "TTP-2026-0145"
+        detection_id: "xql-itdr-017-hunt-pkinit-authentication-following-anomalous-certificate-issuance"
+
+  - id: step-05
+    name: "Optional shadow-credential write to target msDS-KeyCredentialLink (Security 5136)"
+    command: "echo '[SIM-ITDR-017] SAFE-MODE 5136: pyWhisker would write a key credential to the target account msDS-KeyCredentialLink for durable passwordless PKINIT re-entry' | tee /tmp/cortexsim-itdr-017/5136-shadow-credential-write.marker; echo cortexsim-itdr-017-shadow-credential-write"
+    identity: svc-account
+    mitre_technique: "T1556"
+    # Persistence extension by the same requesting identity — the shadow-cred
+    # write reuses the ESC1-gained access on the same identity context; no process
+    # fork (directory-change audit), so the pivot is shared_entity.
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "Whisker.exe add /target:targetuser"
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "Directory Service Changes event 5136 modifying msDS-KeyCredentialLink on a target object by a non-administrative subject — a shadow-credential write granting durable, passwordless PKINIT re-entry that extends the ESC1 compromise."
+        ttp_ref: "TTP-2026-0145"
+        detection_id: "bioc-itdr-017-shadow-credential-write-to-msds-keycredentiallink"
+
+  - id: step-06
+    name: "Correlation-terminal — assert one stitched ITDR ESC1 incident with citable evidence"
+    command: "echo '[SIM-ITDR-017] Polling XSIAM for the single stitched ESC1 incident'; sleep \"${CORTEXSIM_STITCH_WAIT_SECONDS:-60}\"; echo '[*] CR-ITDR-0017 should fuse LDAP recon + 4886/4887 SAN-mismatch issuance (requester=svc-account) with the 4768 PKINIT as administrator@corp.local (joined on impersonated principal) and the optional 5136 shadow credential into ONE incident_id carrying the certificate serials, template and impersonated UPN'; echo cortexsim-itdr-017-cr-itdr-0017-single-incident-stitched"
+    identity: svc-account
+    mitre_technique: "T1078.002"
+    # Terminal stitch — fuses the recon + SAN-mismatch issuance (steps 01-03, one
+    # requesting identity) with the PKINIT privileged auth (step-04, joined on the
+    # impersonated principal) and the optional shadow-cred write (step-05) into one
+    # incident; shared_entity is the join semantics.
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
+    platforms: ["linux", "windows"]
+    expected_detections:
+      - plane: ITDR
+        type: Correlation
+        description: "Terminal stitch — CR-ITDR-0017 fuses the AD CS LDAP recon and the requester-to-subject SAN-mismatch issuance (4886/4887, one requesting identity) with the PKINIT privileged authentication (4768/4769, joined on the impersonated principal named in the SAN) and the optional msDS-KeyCredentialLink shadow-credential write (5136) into a SINGLE ITDR credential-access / privilege-escalation incident. The incident causality chain is rooted on the requesting identity and carries the citable forensic evidence — certificate serials, template names, the impersonated UPN, and the exact Windows Security event records — that evidences the ESC1 storyline end to end."
+        ttp_ref: "TTP-2026-0145"
+        detection_id: "CR-ITDR-0017"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-itdr-017"
+    - "echo cortexsim-itdr-017-cleanup-complete"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - itdr
+  - active-directory
+  - active-directory-certificate-services
+  - adcs-esc1
+  - san-mismatch
+  - pkinit
+  - shadow-credentials
+  - abioc
+  - correlation-terminal
+  - qualitative-evidence

@@ -1,0 +1,226 @@
+scenario_id: SIM-EMAIL-005
+name: "EMAIL — AiTM Session-Token Theft to Mailbox-Reconnaissance Account Takeover (Meddler-in-the-Middle)"
+version: "1.0"
+status: active
+
+plane: EMAIL
+detection_types:
+  - XQL
+  - Correlation
+
+uc_ref: UC-EMAIL-005
+tc_ref: TC-EMAIL-005C
+uc_name: "AiTM Session-Token Theft to Account-Takeover — Cross-Source Correlation"
+tc_name: "AiTM Click + New-ASN Token-Replay Sign-In + Mailbox-Reconnaissance Stitch Into One ATO Incident"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1557"
+mitre_technique_name: "Adversary-in-the-Middle"
+additional_techniques:
+  - technique: "T1566.002"
+    name: "Phishing: Spearphishing Link"
+  - technique: "T1539"
+    name: "Steal Web Session Cookie"
+  - technique: "T1550.004"
+    name: "Use Alternate Authentication Material: Web Session Cookie"
+  - technique: "T1114.002"
+    name: "Email Collection: Remote Email Collection"
+
+threat_report: "Unit 42 — Meddler-in-the-Middle Phishing Attacks Explained"
+threat_report_url: "https://unit42.paloaltonetworks.com/meddler-phishing-attacks/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Cross-Source Causality Stitching Validation"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Meddler-in-the-Middle account-takeover chain lands its three legs
+  in their source datasets: an AiTM permitted click (proofpoint_tap_raw), a
+  token-replay sign-in whose MFA is satisfied by a token claim from a new ASN
+  (msft_azure_ad_signin), and post-compromise finance-mail reconnaissance on the
+  compromised mailbox (msft_o365). The terminal correlation CR-EMAIL-0005 fuses
+  all three on the single join key user_principal into ONE account-takeover
+  incident. The mailbox-access events are routine activity in isolation; the
+  proof is that co-occurrence with the AiTM click and the new-ASN token-replay
+  sign-in on the same identity is what raises the incident. Cross-Source
+  Correlation Rate is the share of injected ATO chains whose three legs land in
+  one incident (target ≥ 90%).
+moat_tier: "LEAD"
+
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - EMAIL
+  - ITDR
+stitching_key: user_principal
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# On the CortexSim runner the EAL emits (email_emitter, idp_signin_emulator) and
+# the inline audit POSTs are python3/curl processes owned by the EAL-simulator
+# container runtime — that containerd-shim is the Causality Group Owner, not the
+# synthetic AiTM operator. The chain threads on the SHARED identity: step-01 (the
+# AiTM click) is the single root; step-02 (the token-replay sign-in) joins on the
+# same user_principal (shared_entity); step-03 (the post-compromise finance-mail
+# reconnaissance on the mailbox) joins the same identity again; step-04 (the
+# terminal correlation) fuses them into one incident. All non-root steps declare a
+# shared_entity pivot on user_principal so the graph is connected, not a star.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "AiTM permitted click to the look-alike Microsoft 365 login (Proofpoint TAP shape)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/email-005-click.yml <<YML
+      campaign_id: CMP-EMAIL-005
+      name: "EMAIL — AiTM look-alike permitted click"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [email, proofpoint, aitm, meddler-in-the-middle]
+      steps:
+        - step_id: step-01
+          plugin: email_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: proofpoint
+            event_pattern: phishing_link
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/email-005-click.yml --live
+    identity: container-runtime
+    mitre_technique: "T1566.002"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "EMAIL — a permitted click to an AiTM look-alike domain for the target mailbox in the Proofpoint TAP feed."
+        ttp_ref: "TTP-2026-0147"
+        detection_id: xql-email-005-aitm-look-alike-click-permitted
+
+  - id: step-02
+    name: "Session-cookie replay sign-in from a new ASN (Entra ID sign-in shape)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/email-005-replay.yml <<YML
+      campaign_id: CMP-EMAIL-005
+      name: "IDENTITY — token-replay sign-in from new ASN"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [identity, entra, token-replay]
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: microsoft
+            event_pattern: token_replay
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/email-005-replay.yml --live
+    identity: container-runtime
+    mitre_technique: "T1550.004"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "IDENTITY — a successful Entra sign-in whose MFA is satisfied by a token claim (no interactive prompt) from an ASN outside the mailbox owner's baseline, on the same user_principal that clicked the AiTM lure."
+        ttp_ref: "TTP-2026-0147"
+        detection_id: xql-email-005-session-cookie-replay-sign-in-from-new-asn
+
+  - id: step-03
+    name: "Post-compromise: finance-mail reconnaissance on the compromised mailbox (Microsoft 365 audit shape)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}"
+      # SAFE-MODE: synthetic Microsoft 365 mailbox-audit record POSTed to the
+      # authorized lab collector. No real Exchange object is touched. Models the
+      # source's post-compromise behavior: the operator logs on to the mailbox and
+      # searches finance-related mail for payment-fraud opportunities (Unit 42).
+      curl -s --max-time 10 -X POST "$COLLECTOR_URL" \
+        -H 'Content-Type: application/json' \
+        -d '{"workload":"Exchange","operation":"MailItemsAccessed","user_id":"ada.lovelace@cortexsim-canary.invalid","folder":"Inbox","search_terms":"invoice payment wire","cortexsim_marker":"SIM-EMAIL-005"}' || true
+      echo cortexsim-email-005-mailbox-recon-emitted
+    identity: container-runtime
+    mitre_technique: "T1114.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "COLLECTION — post-compromise mailbox access (MailItemsAccessed) where the operator searches finance-related mail for payment fraud, on the same user_principal."
+        ttp_ref: "TTP-2026-0147"
+        detection_id: xql-email-005-compromised-mailbox-finance-mail-reconnaissance
+
+  - id: step-04
+    name: "Terminal correlation: fuse the four legs into one account-takeover incident on user_principal"
+    command: "echo cortexsim-email-005-cr-email-0005-stitched-account-takeover-incident"
+    identity: container-runtime
+    mitre_technique: "T1557"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: EMAIL
+        type: Correlation
+        description: "EMAIL — CR-EMAIL-0005 fuses the AiTM permitted click, the new-ASN token-replay sign-in, and the post-compromise finance-mail reconnaissance on the same user_principal into a single account-takeover incident. Co-occurrence, not any single leg, names the takeover."
+        ttp_ref: "TTP-2026-0147"
+        detection_id: CR-EMAIL-0005
+
+cleanup:
+  commands:
+    - "rm -f /tmp/email-005-click.yml /tmp/email-005-replay.yml"
+    - "echo cortexsim-email-005-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - email
+  - aitm
+  - meddler-in-the-middle
+  - session-token-theft
+  - account-takeover
+  - proofpoint
+  - entra-id
+  - correlation-terminal
+  - eal-plugin

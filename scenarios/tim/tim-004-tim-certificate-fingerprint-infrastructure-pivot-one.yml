@@ -1,0 +1,197 @@
+scenario_id: SIM-TIM-004
+name: "TIM — Certificate-Fingerprint Infrastructure Pivot (One Self-Signed TLS Thumbprint Unmasks the Cluster)"
+version: "1.0"
+status: active
+
+plane: TIM
+detection_types:
+  - IOC
+  - XQL
+  - BIOC
+  - Correlation
+
+uc_ref: UC-TIM-004
+tc_ref: TC-TIM-004
+uc_name: "Certificate-Fingerprint Infrastructure-Cluster Pivot"
+tc_name: "One Self-Signed TLS Thumbprint Unmasks the Adversary Cluster"
+
+mitre_tactic: "TA0042"
+mitre_tactic_name: "Resource Development"
+mitre_technique: "T1587.003"
+mitre_technique_name: "Develop Capabilities: Digital Certificates"
+additional_techniques:
+  - technique: "T1583.001"
+    name: "Acquire Infrastructure: Domains"
+  - technique: "T1608.003"
+    name: "Stage Capabilities: Install Digital Certificate"
+  - technique: "T1583.006"
+    name: "Acquire Infrastructure: Web Services"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+
+threat_report: "Unit 42 — Discovering Malicious Infrastructure with Graph Neural Networks (certificate-fingerprint pivoting)"
+threat_report_url: "https://unit42.paloaltonetworks.com/graph-neural-networks/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "PaloAltoNetworks/mocktaxii"
+
+infra_modules_needed:
+  - base
+  - tim
+  - ndr
+
+external_tools: []
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# Defender-vantage TIM scenario. The pivot ANCHOR is the shared self-signed
+# certificate fingerprint (tls_cert_fingerprint_sha1), not any single domain/IP.
+# The estate host's outbound-reaching process is the openssl handshake harness
+# (the Causality Group Owner XDR/NGFW attributes the TLS sessions to). One
+# operator session runs on one host: feed pre-flight (root) → co-fingerprinted
+# handshake → cluster fan-out → correlation terminal, each SHARING the same cert
+# fingerprint entity (shared_entity). The feed match + multi-domain fingerprint
+# fan-out then stitch on that shared cert into one Resource-Development
+# infrastructure-cluster incident (CR-TIM-0004, correlation_window_seconds: 300).
+cgo_anchor:
+  image_name: "openssl"
+  primary_username: "container-runtime"
+
+steps:
+  - id: step-01
+    name: "Confirm mocktaxii armed the self-signed certificate fingerprint indicator into threat_intel"
+    command: |
+      curl -sf "http://localhost:9000/taxii2/" -H 'Accept: application/taxii+json;version=2.1' | jq -e '.api_roots | length >= 1'
+      echo '[CortexSim][SAFE-MODE] SIM-TIM-004 certificate-fingerprint indicator armed (pivot key = tls_cert_fingerprint_sha1 = 07eee6e893766e8bcc4a711abfdf201ee2920799)'
+    identity: container-runtime
+    mitre_technique: "T1587.003"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "Pre-flight: the mocktaxii self-signed certificate fingerprint indicator (Trident Ursa cert 07eee6e893766e8bcc4a711abfdf201ee2920799) is ingested into the XSIAM threat_intel dataset"
+        ttp_ref: "TTP-2026-0146"
+        detection_id: xql-sim-tim-004-cert-fingerprint-indicator-ingested
+
+  - id: step-02
+    name: "Estate host TLS handshake to a host presenting the armed self-signed cert — fire the cert-fingerprint IOC match + NGFW self-signed-cert BIOC"
+    command: |
+      ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
+      echo "[CortexSim][SAFE-MODE] handshake to lab host tu-node-a.${ZONE} presenting the armed self-signed certificate"
+      echo | timeout 5 openssl s_client -connect "tu-node-a.${ZONE}:443" -servername "tu-node-a.${ZONE}" 2>/dev/null \
+        | openssl x509 -noout -fingerprint -sha1 2>/dev/null || true
+      echo 'cortexsim-tim-004-first-armed-cert-handshake-observed'
+    identity: container-runtime
+    mitre_technique: "T1608.003"
+    platforms: ["linux", "container", "windows"]
+    platform_variants:
+      windows: '$h="tu-node-a.cortexsim-tim.internal"; try { $c=[Net.Sockets.TcpClient]::new($h,443); $s=[Net.Security.SslStream]::new($c.GetStream(),$false,({$true})); $s.AuthenticateAsClient($h); $s.RemoteCertificate.GetCertHashString() } catch { $_ }'
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: IOC
+        description: "TIM IOC match — the server certificate fingerprint on the handshake matches the planted Trident Ursa self-signed cert indicator (07eee6e893766e8bcc4a711abfdf201ee2920799) from the mocktaxii feed"
+        ttp_ref: "TTP-2026-0146"
+        detection_id: ioc-file-sha1-07eee6e893766e8bcc4a711abfdf201ee2920799
+      - plane: NDR
+        type: BIOC
+        description: "NGFW EAL — estate TLS handshake to a host presenting the feed-armed self-signed certificate; the cert fingerprint is captured for the fan-out roll-up"
+        ttp_ref: "TTP-2026-0146"
+        detection_id: bioc-sim-tim-004-estate-handshake-to-a-tim-armed-self-signed-certificate
+
+  - id: step-03
+    name: "Cluster fan-out — roll up every co-fingerprinted IP the estate touched under the one shared certificate"
+    command: |
+      ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
+      for host in "tu-node-b.${ZONE}" "tu-node-c.${ZONE}"; do
+        echo "[CortexSim][SAFE-MODE] handshake to lab host ${host} presenting the same armed self-signed certificate"
+        echo | timeout 5 openssl s_client -connect "${host}:443" -servername "${host}" 2>/dev/null \
+          | openssl x509 -noout -fingerprint -sha1 2>/dev/null || true
+      done
+      echo 'cortexsim-tim-004-cert-fingerprint-fanout-across-ips-enumerated'
+    identity: container-runtime
+    mitre_technique: "T1583.001"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "Fingerprint fan-out — the one armed self-signed cert fingerprint groups >= 2 distinct destination IPs, rolling up the co-fingerprinted hosts under a single certificate"
+        ttp_ref: "TTP-2026-0146"
+        detection_id: xql-sim-tim-004-shared-self-signed-cert-fingerprint-fan-out-across-ips
+
+  - id: step-04
+    name: "Correlation terminal — stitch feed match + fingerprint fan-out into ONE Resource-Development infrastructure-cluster incident"
+    command: "echo cortexsim-tim-004-cr-tim-0004-stitched-cert-fingerprint-cluster-incident"
+    identity: container-runtime
+    mitre_technique: "T1587.003"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Stitch — TIM feed match joined to the multi-domain/multi-IP fingerprint fan-out on the shared tls_cert_fingerprint_sha1 within 300s into one Resource-Development adversary-infrastructure-cluster incident scoped to the shared certificate"
+        ttp_ref: "TTP-2026-0146"
+        detection_id: CR-TIM-0004
+      - plane: ANALYTICS
+        type: XQL
+        description: "Stitch validation — feed match joined to the estate TLS handshakes on the shared certificate fingerprint, rolling up the cluster members the estate touched"
+        ttp_ref: "TTP-2026-0146"
+        detection_id: xql-sim-tim-004-feed-match-stitched-to-tls-handshake-on-cert-fingerprint
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-TIM-004 cleanup complete — read-only handshakes, no artifacts written'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - tim
+  - threat-intel
+  - resource-development
+  - certificate-fingerprint-pivot
+  - self-signed-tls
+  - infrastructure-clustering
+  - correlation
+
+validation_methodology: "Certificate-Fingerprint Pivot + Causality Graph Stitching"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  mocktaxii arms the source-documented self-signed TLS certificate fingerprint
+  (07eee6e893766e8bcc4a711abfdf201ee2920799 — a Trident Ursa cert reused across
+  multiple IPs, the pivot key) into threat_intel. An estate host handshake to a
+  host presenting that certificate raises a TIM certificate-fingerprint IOC match
+  and the NGFW self-signed-cert BIOC; the fingerprint fan-out then groups >= 2
+  distinct IPs under the one certificate, and the correlation rule stitches the
+  self-signed-cert BIOC to the fan-out on the shared tls_cert_fingerprint_sha1
+  (gated on the feed-presence of the indicator) into a single Resource-Development
+  infrastructure incident within 300s — one indicator rolls up the reused-cert
+  hosts.
+moat_tier: "LEAD"
+correlation_window_seconds: 300
+required_planes_in_incident:
+  - TIM
+  - NDR
+stitching_key: tls_cert_fingerprint_sha1

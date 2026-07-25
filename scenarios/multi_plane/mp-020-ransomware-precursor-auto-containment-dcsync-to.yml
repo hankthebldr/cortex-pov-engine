@@ -1,0 +1,261 @@
+scenario_id: SIM-MP-020
+name: "Ransomware Precursor Auto-Containment — BlackSuit DCSync-to-ESXi Kill Chain Fires an XSOAR Response & Remediation Playbook Before Encryption"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+# ANALYTICS — a multi-plane correlation scenario. Its thesis is F5 Automation &
+# Workflow: XSIAM stitches the EARLY BlackSuit precursor signals (DCSync from a
+# non-DC + AnyDesk/RAT scheduled-task persistence on the SAME domain controller) into
+# ONE "Ransomware Precursor" incident and auto-fires an XSOAR Response &
+# Remediation playbook AT THE JUNCTION — isolate the DC, disable the stolen
+# service account, block the exfil egress — so the T1486 ESXi mass-encryption
+# impact is CONTAINED, not merely observed. The KPI is MTTC / automation-rate.
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-MP-020
+tc_ref: TC-MP-020
+uc_name: "Ransomware Precursor Auto-Containment via Cross-Source Correlation + XSOAR Response"
+tc_name: "DCSync + DC-Persistence Junction Fires the Auto-Containment Playbook Before ESXi Encryption"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Kill-chain arc: T1078 vished VPN cred (Initial Access) -> T1003.006 DCSync
+# (Credential Access, the pivot) -> T1053.005 DC scheduled-task persistence
+# (Persistence) -> T1021.001/T1570 RDP/SMBExec lateral -> T1020 renamed-rclone
+# exfil -> T1486 ESXi mass-encryption (Impact, pre-empted by the playbook).
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1003.006"
+mitre_technique_name: "OS Credential Dumping: DCSync"
+additional_techniques:
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1053.005"
+    name: "Scheduled Task/Job: Scheduled Task"
+  - technique: "T1021.001"
+    name: "Remote Services: Remote Desktop Protocol"
+  - technique: "T1570"
+    name: "Lateral Tool Transfer"
+  - technique: "T1020"
+    name: "Automated Exfiltration"
+  - technique: "T1486"
+    name: "Data Encrypted for Impact"
+
+threat_report: "Unit 42 — Anatomy of an Attack: BlackSuit Ransomware Blitz (Ignoble Scorpius)"
+threat_report_url: "https://unit42.paloaltonetworks.com/anatomy-of-an-attack-blacksuit-ransomware-blitz/"
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# F5 Automation & Workflow. The primary KPI is Mean-Time-To-Contain: the
+# correlation must fire AND the XSOAR playbook must complete (DC isolate +
+# account disable + egress block) BEFORE the T1486 encryption step — automation
+# closes the incident, a human does not.
+validation_methodology: "Correlation-Driven Auto-Containment (Response & Remediation)"
+methodology_family: "F5"
+primary_kpi: "MTTC"
+threshold:
+  kpi: "MTTC"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex XSIAM stitches the DCSync-from-a-non-DC signal (step-02) and the
+  AnyDesk/RAT scheduled-task persistence on the SAME domain controller (step-03) into
+  a SINGLE "Ransomware Precursor" incident via CR-MP-0020, and that incident
+  auto-fires the XSOAR Response & Remediation playbook
+  Ransomware-Precursor-AutoContain. The playbook isolates the DC, disables the
+  stolen service account, and blocks the exfil egress ASN AT THE JUNCTION — so
+  the T1486 ESXi mass-encryption impact (step-06) is CONTAINED rather than
+  observed. This is the "automation beats the encryptor" proof: the win is not
+  detection latency (MTTD) but Mean-Time-To-Contain / automation-rate — the
+  correlation fires and the playbook completes within the MTTC budget, and the
+  impact step never detonates.
+moat_tier: "MOAT"
+
+# ── F5 Correlation / Auto-Containment Fields ────────────────────────────────
+# The join is the domain controller + the stolen service account: both the
+# DCSync read and the scheduled-task-persistence write land on the SAME DC host under
+# the SAME identity. required_planes_in_incident mixes the identity/AD signal
+# (ITDR) with the endpoint persistence (EDR) so the precursor incident cannot
+# "complete" — and the playbook cannot fire — unless both contributed.
+correlation_window_seconds: 600
+required_planes_in_incident:
+  - ITDR
+  - EDR
+stitching_key: dc_host
+response_automation:
+  playbook: "Ransomware-Precursor-AutoContain"
+  fires_on: CR-MP-0020
+  actions:
+    - isolate-endpoint
+    - disable-account
+    - block-egress-asn
+  pre_empts_step: step-06
+
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# The stolen service account operating in the domain controller's lsass/ntds
+# context OWNS the chain in XDR's causality view. cgo image is the DC's
+# lsass/ntds credential context; primary_username is the stolen key service
+# account carried through the whole chain.
+cgo_anchor:
+  image_name: "lsass.exe"
+  primary_username: "svc-backup"
+
+external_tools: []
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Single-root causality spine (SAFE-MODE, non-destructive echo simulation). The
+# root is the vished VPN credential (step-01). Every later step declares a
+# causality.parent_step so the chain yields ONE connected graph. No real DCSync,
+# persistence, exfil, or encryption is performed.
+steps:
+  - id: step-01
+    name: "Initial access — vished VPN credential authenticates (T1078)"
+    command: "echo 'cortexsim-mp-020 SAFE-MODE: vished VPN credential valid-account sign-in (T1078) — root of the precursor chain'"
+    identity: svc-account
+    mitre_technique: "T1078"
+    platforms: ["windows"]
+    expected_detections:
+      - plane: ANALYTICS
+        type: BIOC
+        description: "The vished VPN credential surfaces as an anomalous but authenticated GlobalProtect sign-in (legitimate account, unfamiliar region / first-seen device) — T1078 initial access, the root of the precursor chain."
+        ttp_ref: "TTP-2026-0142"
+        detection_id: "bioc-blacksuit-vpn-valid-account-anomalous-globalprotect-sign-in"
+
+  - id: step-02
+    name: "DCSync credential theft on the domain controller (T1003.006)"
+    command: "echo 'cortexsim-mp-020 SAFE-MODE: DCSync / DsGetNCChanges replication request from a non-DC account against dc01 — extracts NTDS.dit hashes incl. svc-backup (T1003.006)'"
+    identity: svc-account
+    mitre_technique: "T1003.006"
+    platforms: ["windows"]
+    # DCSync executes with the stolen VPN foothold; it shares the DC host +
+    # stolen service account with the rest of the chain (shared_entity pivot).
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: BIOC
+        description: "A DRSUAPI DsGetNCChanges replication request (Windows 4662, DS-Replication-Get-Changes) from a non-domain-controller account — the canonical DCSync signature that harvested NTDS.dit hashes including the stolen service account."
+        ttp_ref: "TTP-2026-0142"
+        detection_id: "bioc-dcsync-replication-request-from-a-non-domain-controller-account"
+
+  - id: step-03
+    name: "AnyDesk / RAT scheduled-task persistence on the domain controller (T1053.005)"
+    command: "echo 'cortexsim-mp-020 SAFE-MODE: AnyDesk + custom RAT registered as a scheduled task (schtasks /create) on dc01 to survive reboots (T1053.005) — the DCSync+persistence JUNCTION'"
+    identity: svc-account
+    mitre_technique: "T1053.005"
+    platforms: ["windows"]
+    # The persistence write forks from the DCSync activity on the SAME DC
+    # (process_lineage). This is the junction the auto-containment fires on.
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    expected_detections:
+      - plane: ANALYTICS
+        type: BIOC
+        description: "AnyDesk / custom-RAT registered as a scheduled task (schtasks.exe /create) on a domain controller to survive reboots — a DC is never a legitimate place for a RAT scheduled task, so host-role + schtasks /create + AnyDesk command line is the signal (T1053.005)."
+        ttp_ref: "TTP-2026-0142"
+        detection_id: "bioc-anydesk-rat-registered-as-a-scheduled-task-for-persistence-on-a-domain-controller"
+      - plane: ANALYTICS
+        type: ABIOC
+        description: "Behavioral-ML fuses the directory-replication (DCSync) read and the SUBSEQUENT scheduled-task-persistence write into one time-ordered, causally-linked chain on the same DC under the same identity within the correlation window (replication strictly precedes persistence) — the ransomware precursor's behavioral fingerprint the playbook fires on (T1003.006 -> T1053.005)."
+        ttp_ref: "TTP-2026-0142"
+        detection_id: "abioc-dcsync-to-persistence-behavioral-chain-on-a-domain-controller"
+
+  - id: step-04
+    name: "RDP + SMBExec lateral movement from the stolen service account (T1021.001 / T1570)"
+    command: "echo 'cortexsim-mp-020 SAFE-MODE: Advanced IP Scanner recon + RDP/SMBExec lateral from svc-backup across the estate (T1021.001, T1570)'"
+    identity: svc-account
+    mitre_technique: "T1021.001"
+    platforms: ["windows"]
+    # Lateral movement opens network sessions to further hosts using the stolen
+    # account (network_session pivot).
+    causality:
+      parent_step: step-03
+      pivot: network_session
+    expected_detections:
+      - plane: ANALYTICS
+        type: XQL
+        description: "Validation — RDP (mstsc) + SMBExec/PsExec fan-out from the stolen service account touching multiple hosts (corroborating precursor lateral movement, T1021.001 / T1570)."
+        ttp_ref: "TTP-2026-0142"
+        detection_id: "xql-rdp-and-smbexec-lateral-movement-from-the-stolen-service-account"
+
+  - id: step-05
+    name: "Renamed-rclone bulk exfiltration (~400GB) (T1020)"
+    command: "echo 'cortexsim-mp-020 SAFE-MODE: renamed rclone binary performs ~400GB outbound transfer to external storage (T1020) — CCleaner anti-forensics follows'"
+    identity: svc-account
+    mitre_technique: "T1020"
+    platforms: ["windows"]
+    # The exfil ties the endpoint (renamed-rclone process) to the network egress
+    # session (endpoint_network_stitch pivot).
+    causality:
+      parent_step: step-04
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: ANALYTICS
+        type: XQL
+        description: "Validation — high-volume (>10GB) outbound transfer over ssl/webdav/rclone from the DC segment to an external destination (renamed-rclone bulk egress, T1020)."
+        ttp_ref: "TTP-2026-0142"
+        detection_id: "xql-renamed-rclone-bulk-egress-from-the-domain-controller-segment"
+
+  - id: step-06
+    name: "IMPACT PRE-EMPTED — auto-containment fires before the ESXi mass-encryption (T1486)"
+    command: "echo 'cortexsim-mp-020 SAFE-MODE: CR-MP-0020 raises ONE Ransomware Precursor incident at the DCSync+persistence junction; XSOAR Ransomware-Precursor-AutoContain isolates dc01, disables svc-backup, blocks egress ASN — the Ansible fan-out encrypting ~60 ESXi hosts (T1486) is CONTAINED, not executed'"
+    identity: svc-account
+    mitre_technique: "T1486"
+    platforms: ["linux", "windows"]
+    # Terminal step: the T1486 ESXi encryption is the impact the playbook
+    # pre-empts (exploit_impact pivot). The correlation + automation-metric
+    # detections assert the playbook fired and closed before impact.
+    causality:
+      parent_step: step-05
+      pivot: exploit_impact
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Terminal — CR-MP-0020 stitches the DCSync BIOC + the DC scheduled-task-persistence BIOC/ABIOC on the same DC host and stolen account into ONE Ransomware Precursor incident and triggers the XSOAR Response & Remediation playbook that contains the DC before T1486 encryption."
+        ttp_ref: "TTP-2026-0142"
+        detection_id: "CR-MP-0020"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Automation KPI (metric) — confirms the XSOAR Ransomware-Precursor-AutoContain playbook fired and completed (isolate-endpoint + disable-account) and closed the incident within the MTTC budget, so the ESXi mass-encryption never detonated."
+        ttp_ref: "TTP-2026-0142"
+        detection_id: "xql-xsoar-response-and-remediation-playbook-fired-and-closed-the-precursor-incident"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "echo 'cortexsim-mp-020 SAFE-MODE cleanup complete — no persistent artifacts, no real DCSync/persistence/exfil/encryption performed'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - multi-plane
+  - correlation
+  - automation
+  - response-remediation
+  - ransomware-chain
+  - blacksuit
+  - ignoble-scorpius
+  - dcsync
+  - auto-containment
+  - f5
+  - moat
+  - v2.0-methodology

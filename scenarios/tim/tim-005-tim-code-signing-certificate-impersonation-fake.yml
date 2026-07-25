@@ -1,0 +1,150 @@
+scenario_id: SIM-TIM-005
+name: "TIM Rogue Authenticode Code-Signing Certificate IOC — Vidar+XMRig Malvertising Loader"
+version: "1.0"
+status: active
+
+plane: TIM
+detection_types:
+  - IOC
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-TIM-005
+tc_ref: TC-TIM-005
+uc_name: "Threat Intel Management — Rogue Code-Signing Certificate IOC Match + C2 Stitch"
+tc_name: "Rogue Authenticode Thumbprint Match on Signed-Binary Execution Stitched to Vidar C2"
+
+mitre_tactic: "TA0042"
+mitre_tactic_name: "Resource Development"
+mitre_technique: "T1587.002"
+mitre_technique_name: "Develop Capabilities: Code Signing Certificates"
+additional_techniques:
+  - technique: "T1036.001"
+    name: "Masquerading: Invalid Code Signature"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+
+threat_report: "Unit 42 — Vidar Stealer & XMRig Miner Malvertising Campaign Analysis"
+threat_report_url: "https://unit42.paloaltonetworks.com/vidar-stealer-xmrig-miner-campaign-analysis/"
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Threat Intel Signal Injection & IOC Match Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  XSIAM TIM arms the fabricated Authenticode thumbprint (ab92f731...a284), its
+  serial, and the four Vidar C2 IPs as indicators. When the rogue-signed loader
+  executes, the rogue-signer BIOC fires on the untrusted-chain thumbprint
+  independent of the loader filename (so subject rotation JustWatch->BleacherReport
+  does not evade it); the outbound C2 session matches a feed IOC on the NGFW; and
+  correlation CR-TIM-0005 stitches the rogue-signer execution match to the C2
+  session into one malvertising-loader incident anchored to the certificate the
+  operator developed. The shared-thumbprint pivot enumerates every co-signed
+  loader sample — one indicator unmasks the whole campaign.
+moat_tier: "LEAD"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The rogue-signed loader (MicrosoftUpdate.exe) OWNS the causality chain in XDR's
+# causality view (the Causality Group Owner). step-01 is the TIM feed-match root
+# (the rogue cert thumbprint armed as an indicator); step-02 is the signed-binary
+# execution that shares the signer entity with the feed match (shared_entity);
+# step-03 is the outbound C2 session forked from that execution
+# (endpoint_network_stitch); step-04 fuses the rogue-signer match and the C2
+# session on the same host (temporal).
+cgo_anchor:
+  image_name: "MicrosoftUpdate.exe"
+  primary_username: "svc-account"
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Arm/confirm the rogue code-signing cert + Vidar C2 IOCs in the TIM feed"
+    command: "echo '[SAFE-MODE] cortexsim-tim-005 arming rogue Authenticode thumbprint ab92f731ab20774dfdb95664ee41a2fbafe2a284 + serial 2f7ef0157d17625c098691cef1ff7d63 + C2 IPs 136.243.203.109,136.243.203.111,138.199.246.13,116.203.243.208 (no live egress)' || true"
+    identity: svc-account
+    mitre_technique: "T1587.002"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: TIM
+        type: IOC
+        description: "The primary Vidar HTTPS exfil C2 IP is armed as a feed indicator — the atomic IOC the outbound session will match."
+        ttp_ref: "TTP-2026-0149"
+        detection_id: "ioc-ipv4-136-243-203-109"
+      - plane: TIM
+        type: XQL
+        description: "Pre-flight query confirms the rogue cert thumbprint/serial and the four C2 IPs are ingested into the threat_intel dataset and armed for matching."
+        ttp_ref: "TTP-2026-0149"
+        detection_id: "xql-tim-pre-flight-rogue-code-signing-cert-iocs-ingested-into-threat-intel"
+
+  - id: step-02
+    name: "Signed-binary execution: the rogue-signed loader runs, carrying the fabricated thumbprint"
+    command: "echo '[SAFE-MODE] cortexsim-tim-005 rogue-signer execution marker: MicrosoftUpdate.exe signed by rogue cert CN=justwatch.com issuer=WR3 (CA:TRUE, chain untrusted)' || true"
+    identity: svc-account
+    mitre_technique: "T1036.001"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: BIOC
+        description: "The rogue-signer match: a process executes carrying the fabricated Authenticode thumbprint/serial/issuer with an untrusted-chain status, firing on the developed certificate capability independent of the loader filename."
+        ttp_ref: "TTP-2026-0149"
+        detection_id: "bioc-tim-rogue-authenticode-code-signing-certificate-match-on-signed-binary-execution"
+      - plane: TIM
+        type: XQL
+        description: "Thumbprint pivot enumerates every distinct signed loader sample and affected host sharing the rogue cert — one indicator unmasks the campaign."
+        ttp_ref: "TTP-2026-0149"
+        detection_id: "xql-tim-pivot-distinct-signed-loaders-sharing-the-rogue-signer"
+
+  - id: step-03
+    name: "Outbound C2 session to the Vidar exfil IP on 443 (telemetry marker)"
+    command: "echo '[SAFE-MODE] cortexsim-tim-005 outbound C2 session marker to 136.243.203.109:443 (Vidar exfil) — destination NOT contacted; telemetry-only' || true"
+    identity: svc-account
+    mitre_technique: "T1071.001"
+    platforms: ["windows", "linux"]
+    causality:
+      parent_step: step-02
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "The outbound HTTPS session to a feed-listed Vidar C2 IP on port 443 raises an IOC match on the NGFW — the network leg of the campaign."
+        ttp_ref: "TTP-2026-0149"
+        detection_id: "xql-tim-ioc-match-outbound-c2-session-to-vidar-exfil-ip"
+
+  - id: step-04
+    name: "Correlation stitches the rogue-signer match and the C2 session into one incident"
+    command: "echo '[SAFE-MODE] cortexsim-tim-005 correlation CR-TIM-0005 stitch marker: rogue-signer execution match + Vidar C2 session -> one malvertising-loader incident' || true"
+    identity: svc-account
+    mitre_technique: "T1071.001"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-03
+      pivot: temporal
+    expected_detections:
+      - plane: TIM
+        type: Correlation
+        description: "Correlation rule fuses the rogue-signer execution BIOC and the Vidar C2-session XQL on the same host into a single malvertising-loader incident anchored to the fabricated code-signing certificate."
+        ttp_ref: "TTP-2026-0149"
+        detection_id: "CR-TIM-0005"
+
+cleanup:
+  commands:
+    - "echo 'cortexsim-tim-005 cleanup complete — telemetry-marker simulation, no persistent artifacts'"
