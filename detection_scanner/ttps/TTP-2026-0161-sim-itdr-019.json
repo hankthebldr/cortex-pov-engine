@@ -48,8 +48,8 @@
   },
   "identity": {
     "name": "Azure Conditional-Access & Mailbox-Rule Persistence (SIM-ITDR-019)",
-    "summary": "An identity actor weakens the Entra ID conditional-access posture (adds/updates/deletes a CA policy) then plants a covert inbox-rule that auto-forwards mail externally. azure_audit_emitter streams shape-true Azure Audit Log + O365 records into the operator collector so XSIAM's rule-based Analytics alerts and the ABIOCs fire on the persistence chain.",
-    "description": "Validates the XSIAM 'Azure Audit Log' data-source Analytics alerts 'Azure conditional access policy creation or modification' and 'Azure mailbox rule creation'. The technique models a common cloud-identity persistence chain (T1556 Modify Authentication Process → T1114.003 Email Forwarding Rule): an attacker who has obtained a privileged/service-principal identity relaxes the conditional-access enforcement that would otherwise block their session, then establishes covert collection via an external auto-forwarding inbox rule. The card ships the two Analytics alerts as rule-based XQL bodies plus two auto-tuned ABIOCs (deviation from the learned per-admin CA-change / per-mailbox inbox-rule baseline) and a correlation rule that stitches the CA weakening and the mail-rule creation into a single Azure identity-persistence incident on the shared initiating identity.",
+    "summary": "An identity actor weakens the Entra ID conditional-access posture (adds/updates/deletes a CA policy) then plants a covert inbox-rule that auto-forwards mail externally. azure_audit_emitter streams the CA-policy record (msft_azure_audit) and m365_activity_emitter the Exchange New-InboxRule (msft_o365_audit), so XSIAM Analytics alerts and ABIOCs fire on the two-stage persistence chain.",
+    "description": "Validates the XSIAM 'Azure Audit Log' data-source Analytics alerts 'Azure conditional access policy creation or modification' and 'Azure mailbox rule creation'. The technique models a common cloud-identity persistence chain (T1556 Modify Authentication Process → T1114.003 Email Forwarding Rule): an attacker who has obtained a privileged/service-principal identity relaxes the conditional-access enforcement that would otherwise block their session, then establishes covert collection via an external auto-forwarding inbox rule. The card ships the two Analytics alerts as rule-based XQL bodies plus two auto-tuned ABIOCs (deviation from the learned per-admin CA-change / per-mailbox inbox-rule baseline) and a correlation rule that stitches the CA weakening (msft_azure_audit) and the mail-rule creation (msft_o365_audit) into a single Azure identity-persistence incident on temporal co-occurrence within the persistence window.",
     "severity": "high",
     "confidence": "high"
   },
@@ -98,7 +98,7 @@
   "execution": {
     "target_platform": "azure",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-ITDR-019 — azure_audit_emitter drives the Azure Audit Log + O365 audit emission for the CA-policy and inbox-rule persistence legs.",
+    "framework_reference_id": "SIM-ITDR-019 — azure_audit_emitter (event_pattern conditional_access_policy_change) drives the Azure Activity Log CA-policy leg into msft_azure_audit; m365_activity_emitter (event_pattern mailbox_rule_creation) drives the Exchange New-InboxRule leg into msft_o365_audit.",
     "privilege_required": "cloud-iam-admin",
     "prerequisites": [
       {
@@ -128,8 +128,8 @@
     "expected_artifacts": [
       {
         "artifact_type": "cloud-api-call",
-        "description": "Azure Audit Log record for an Add/Update/Delete conditional access policy operation attributed to the initiating identity.",
-        "expected_value": "activityDisplayName = Update conditional access policy"
+        "description": "Azure Activity Log record (msft_azure_audit) for a conditional-access policy write operation attributed to the initiating app identity (identity.claims.appid).",
+        "expected_value": "operationName = MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE"
       },
       {
         "artifact_type": "mailbox-rule",
@@ -149,45 +149,45 @@
       {
         "name": "Conditional-access policy weakened off the learned admin-change baseline",
         "description": "Auto-tuned ABIOC — an identity or service principal whose learned baseline is a low, stable cadence of conditional-access changes suddenly updates or deletes CA policies (relaxing MFA / device-compliance / location enforcement). Fires on the deviation from the per-actor CA-change baseline, anchored to the identity causality chain rather than any single known-bad operation.",
-        "logic": "dataset = msft_azure_audit\n| filter loggedByService = \"Conditional Access\" and activityDisplayName in (\"Update conditional access policy\", \"Delete conditional access policy\")\n| alter actor = initiatedBy_user_userPrincipalName, actor_app = initiatedBy_app_displayName, policy = targetResources_displayName\n| comp count() as policy_changes by actor, actor_app, policy\n| filter policy_changes >= 1\n| fields actor, actor_app, policy, policy_changes",
+        "logic": "dataset = msft_azure_audit\n| filter operationName = \"MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE\" and category = \"Administrative\"\n| filter _time > to_timestamp(current_time() - 3600)\n| alter actor_app = identity -> claims -> appid, actor_oid = identity -> claims -> objectidentifier\n| comp count() as ca_changes_now, earliest(_time) as first_change by actor_app, actor_oid\n| join type=left (dataset = msft_azure_audit | filter operationName = \"MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE\" and category = \"Administrative\" | filter _time < to_timestamp(current_time() - 3600) | alter actor_app = identity -> claims -> appid | comp count() as learned_ca_change_cadence by actor_app) as baseline baseline.actor_app = actor_app\n| alter learned_ca_change_cadence = coalesce(learned_ca_change_cadence, 0)\n| filter ca_changes_now >= 1 and learned_ca_change_cadence = 0\n| fields actor_app, actor_oid, ca_changes_now, learned_ca_change_cadence, first_change",
         "severity": "high",
         "mitre_technique_ids": [
           "T1556"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "The learned per-identity conditional-access change baseline (which admins/service principals normally modify CA policy, at what cadence); the ABIOC anchors its deviation to the initiating identity's audit chain."
+        "causality_anchor": "The learned per-application/service-principal conditional-access change baseline (which app identities normally issue MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE, at what cadence); the ABIOC anchors its deviation to the initiating app identity (identity.claims.appid) in the Azure Activity Log audit chain."
       },
       {
         "name": "External mailbox forwarding rule off the learned inbox-rule baseline",
-        "description": "Auto-tuned ABIOC — a mailbox that has never (or rarely) created client-side inbox rules suddenly creates a rule that forwards or redirects mail to an external recipient. Fires on the deviation from the per-mailbox inbox-rule baseline, anchored to the identity that follows the conditional-access weakening in the same persistence chain.",
-        "logic": "dataset = msft_o365_audit\n| filter Operation in (\"New-InboxRule\", \"Set-InboxRule\")\n| alter mailbox = UserId, rule_name = RuleName, forward_to = ForwardTo, redirect_to = RedirectTo\n| filter forward_to != null or redirect_to != null\n| comp count() as external_forward_rules by mailbox, rule_name, forward_to, redirect_to\n| filter external_forward_rules >= 1\n| fields mailbox, rule_name, forward_to, redirect_to, external_forward_rules",
+        "description": "Auto-tuned ABIOC — a mailbox that has never (or rarely) created client-side inbox rules suddenly creates a New-InboxRule/Set-InboxRule (the external ForwardTo target is carried in the rule's Parameters array). Fires on the first-seen deviation from the per-mailbox inbox-rule baseline, part of the same persistence campaign as the preceding conditional-access weakening.",
+        "logic": "dataset = msft_o365_audit\n| filter Operation in (\"New-InboxRule\", \"Set-InboxRule\")\n| filter _time > to_timestamp(current_time() - 3600)\n| alter mailbox = UserId, rule_name = RuleName\n| comp count() as inbox_rules_now, earliest(_time) as first_rule by mailbox, rule_name\n| join type=left (dataset = msft_o365_audit | filter Operation in (\"New-InboxRule\", \"Set-InboxRule\") | filter _time < to_timestamp(current_time() - 3600) | alter mailbox = UserId | comp count() as learned_inbox_rule_cadence by mailbox) as baseline baseline.mailbox = mailbox\n| alter learned_inbox_rule_cadence = coalesce(learned_inbox_rule_cadence, 0)\n| filter inbox_rules_now >= 1 and learned_inbox_rule_cadence = 0\n| fields mailbox, rule_name, inbox_rules_now, learned_inbox_rule_cadence, first_rule",
         "severity": "high",
         "mitre_technique_ids": [
           "T1114.003"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "The learned per-mailbox inbox-rule baseline (whether this mailbox normally auto-forwards externally); anchored to the same initiating identity as the preceding conditional-access change."
+        "causality_anchor": "The learned per-mailbox inbox-rule baseline (whether this mailbox normally creates client-side inbox rules); fires on the first-seen rule creation for a mailbox with no prior rule-creation history, correlated to the preceding conditional-access change within the persistence campaign window."
       }
     ],
     "xql_queries": [
       {
         "purpose": "hunt",
         "name": "Azure conditional access policy creation or modification",
-        "query": "dataset = msft_azure_audit\n| filter category = \"Policy\" and loggedByService = \"Conditional Access\"\n| filter activityDisplayName in (\"Add conditional access policy\", \"Update conditional access policy\", \"Delete conditional access policy\")\n| alter actor = initiatedBy_user_userPrincipalName, actor_app = initiatedBy_app_displayName, policy = targetResources_displayName\n| comp count() as change_count by actor, actor_app, policy, activityDisplayName\n| filter change_count >= 1\n| fields actor, actor_app, policy, activityDisplayName, change_count",
+        "query": "dataset = msft_azure_audit\n| filter operationName = \"MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE\" and category = \"Administrative\"\n| alter actor_app = identity -> claims -> appid, actor_oid = identity -> claims -> objectidentifier, caller_ip = callerIpAddress\n| comp count() as change_count, values(operationName) as operations by actor_app, actor_oid, caller_ip\n| filter change_count >= 1\n| fields actor_app, actor_oid, caller_ip, operations, change_count",
         "expected_rows_min": 1,
         "dataset": "msft_azure_audit"
       },
       {
         "purpose": "hunt",
         "name": "Azure mailbox rule creation",
-        "query": "dataset = msft_o365_audit\n| filter Operation in (\"New-InboxRule\", \"Set-InboxRule\", \"New-TransportRule\")\n| alter mailbox = UserId, rule_name = RuleName, forward_to = ForwardTo, redirect_to = RedirectTo\n| filter forward_to != null or redirect_to != null or DeleteMessage = \"True\"\n| comp count() as rule_events by mailbox, rule_name, Operation, forward_to, redirect_to\n| filter rule_events >= 1\n| fields mailbox, rule_name, Operation, forward_to, redirect_to, rule_events",
+        "query": "dataset = msft_o365_audit\n| filter Operation in (\"New-InboxRule\", \"Set-InboxRule\")\n| alter mailbox = UserId, rule_name = RuleName, rule_object = ObjectId\n| comp count() as rule_events, values(Operation) as operations by mailbox, rule_name, rule_object\n| filter rule_events >= 1\n| fields mailbox, rule_name, rule_object, operations, rule_events",
         "expected_rows_min": 1,
         "dataset": "msft_o365_audit"
       },
       {
         "purpose": "validation",
         "name": "Azure Audit Log persistence signals landed in datasets",
-        "query": "dataset = msft_azure_audit\n| filter _time > to_timestamp(current_time() - 900) and loggedByService = \"Conditional Access\"\n| alter signal = \"ca_policy_change\"\n| fields signal, _time\n| union (dataset = msft_o365_audit | filter _time > to_timestamp(current_time() - 900) and Operation in (\"New-InboxRule\", \"Set-InboxRule\") | alter signal = \"inbox_rule_create\" | fields signal, _time)\n| comp count() as observed_events by signal\n| filter observed_events >= 1\n| fields signal, observed_events",
+        "query": "dataset = msft_azure_audit\n| filter _time > to_timestamp(current_time() - 900) and operationName = \"MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE\"\n| alter signal = \"ca_policy_change\"\n| fields signal, _time\n| union (dataset = msft_o365_audit | filter _time > to_timestamp(current_time() - 900) and Operation in (\"New-InboxRule\", \"Set-InboxRule\") | alter signal = \"inbox_rule_create\" | fields signal, _time)\n| comp count() as observed_events by signal\n| filter observed_events >= 1\n| fields signal, observed_events",
         "expected_rows_min": 1,
         "dataset": "msft_azure_audit"
       }
@@ -196,7 +196,7 @@
       {
         "name": "Azure Identity Persistence — CA policy weakening then covert mail rule",
         "rule_id": "CR-ITDR-0019",
-        "logic": "Fires when analytics `Azure conditional access policy creation or modification` (or abioc `Conditional-access policy weakened off the learned admin-change baseline`) and analytics `Azure mailbox rule creation` (or abioc `External mailbox forwarding rule off the learned inbox-rule baseline`) both fire for the same initiating identity within a 30-minute window. Stitches the two legs into one two-stage Azure identity-persistence incident: the actor first relaxes conditional-access enforcement, then plants a covert external mail-forwarding rule for collection."
+        "logic": "Fires when analytics `Azure conditional access policy creation or modification` (or abioc `Conditional-access policy weakened off the learned admin-change baseline`) on msft_azure_audit and analytics `Azure mailbox rule creation` (or abioc `External mailbox forwarding rule off the learned inbox-rule baseline`) on msft_o365_audit both fire within a 30-minute persistence window. The two legs land in different datasets with different identity fields (the CA record carries identity.claims.appid; the inbox-rule record carries UserId), so the rule stitches on temporal co-occurrence within the campaign window rather than a single shared identity-field value, raising one two-stage Azure identity-persistence incident: the actor first relaxes conditional-access enforcement, then plants a covert external mail-forwarding rule for collection."
       }
     ],
     "analytics_modules": [
@@ -222,14 +222,14 @@
           "CR-ITDR-0019"
         ],
         "license_required": "advanced",
-        "evidence_query": "dataset = msft_azure_audit | filter loggedByService = \"Conditional Access\" and activityDisplayName contains \"conditional access policy\" | fields _time, initiatedBy_user_userPrincipalName, activityDisplayName, targetResources_displayName"
+        "evidence_query": "dataset = msft_azure_audit | filter operationName = \"MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE\" and category = \"Administrative\" | alter actor_app = identity -> claims -> appid, caller_ip = callerIpAddress | fields _time, actor_app, caller_ip, operationName, category"
       }
     ],
     "use_cases": [
       {
         "use_case_id": "UC-ITDR-019",
         "name": "Azure identity persistence — conditional-access weakening and covert mailbox forwarding",
-        "description": "POV use case proving the Azure Audit Log Analytics alerts and their auto-tuned ABIOCs fire on a two-stage Entra ID / M365 persistence chain, and that XSIAM correlation stitches both legs into a single incident on the shared initiating identity.",
+        "description": "POV use case proving the Azure Audit Log Analytics alerts and their auto-tuned ABIOCs fire on a two-stage Entra ID / M365 persistence chain, and that XSIAM correlation stitches both legs into a single incident on temporal co-occurrence within the persistence window.",
         "test_cases": [
           {
             "test_case_id": "TC-ITDR-019A",
@@ -253,7 +253,7 @@
             "objective": "The 'Azure mailbox rule creation' Analytics alert (and the external-forwarding ABIOC) fire on an external auto-forwarding inbox rule, and correlation CR-ITDR-0019 stitches both legs into one incident.",
             "preconditions": [
               "The Microsoft 365 audit source is ingesting into msft_o365_audit.",
-              "The conditional-access weakening from TC-ITDR-019A occurred on the same identity within the correlation window."
+              "The conditional-access weakening from TC-ITDR-019A occurred within the correlation window (same persistence campaign)."
             ],
             "steps": [
               "Run azure_audit_emitter to stream a New-InboxRule with an external ForwardTo target.",
@@ -280,7 +280,7 @@
     "detection_engineering": [
       "Baseline which identities and service principals normally modify conditional-access policy and at what cadence; alert on off-baseline CA update/delete operations.",
       "Alert on any inbox rule creation whose ForwardTo/RedirectTo target is an external domain, especially when it closely follows a conditional-access change by the same identity.",
-      "Correlate the CA-weakening and mailbox-rule legs on the shared initiating identity within a short window to raise a single high-confidence persistence incident."
+      "Correlate the CA-weakening and mailbox-rule legs within a short persistence window to raise a single high-confidence persistence incident."
     ]
   },
   "references": [

@@ -1,0 +1,31 @@
+title: "Azure Service-Principal Token Abuse from an Unknown Tenant (Identity-Owned ITDR Causality Chain) \u2014 ITDR-018 Unusual Resource Access By An Azure Application Deviating From Learned Baseline"
+id: ttp-2026-0160-abioc-01
+status: experimental
+description: |
+  ABIOC 'Unusual resource access by Azure application'. Once its token is replayed, the same service principal fans out across many resourceId values it has never touched. The ABIOC anchors on the SP's learned resource-access profile (the small, stable set of resourceId values the application normally calls) and fires on the DEVIATION — a burst across distinct resources beyond that baseline — not on any single resource being sensitive. This is the impact tail of the chain, bound back to the same identity.claims.appid the remote-token-use analytics alert surfaced.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_audit
+    | alter token_idtyp = json_extract_scalar(identity, "$.claims.idtyp"), app_id = json_extract_scalar(identity, "$.claims.appid")
+    | filter token_idtyp = "app"
+    | filter operationName = "MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION"
+    | comp count() as access_events, count_distinct(resourceId) as distinct_resources, values(resourceId) as resources by app_id
+    | filter distinct_resources >= 3
+    | sort desc distinct_resources
+    | fields app_id, resources, distinct_resources, access_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

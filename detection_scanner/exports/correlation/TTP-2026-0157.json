@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1537",
+    "T1078.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ANALYTICS(GCP Service Account Impersonation Attempt) AND ABIOC(BigQuery Table or Query Results Exfiltrated to a Foreign Project) on the same caller principal (protoPayload.authenticationInfo.principalEmail) within the run window \u2014 fuses the borrowed-identity mint (target_service_account) and the foreign-project BigQuery export (destination_project_id, foreign_project=true) into one cross-project data-exfil incident anchored to the shared caller principal (caller identity -> impersonated service account -> BigQuery job to a foreign project).",
+      "name": "Foreign-Project BigQuery Exfil via Impersonated Service Account \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-CDR-0022",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0157"
+}

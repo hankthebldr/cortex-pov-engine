@@ -1,0 +1,62 @@
+title: "GCP BigQuery Foreign-Project Exfil via Impersonated Service Account \u2014 Cortex ABIOC (T1537 / T1078.004) \u2014 GCP Service Account Impersonation Attempt"
+id: ttp-2026-0157-abioc-01
+status: experimental
+description: |
+  A caller principal mints short-lived credentials for a service account by calling iamcredentials.googleapis.com GenerateAccessToken, impersonating a service account that neither this caller nor its learned peer group has a history of impersonating. Every call is a legitimate IAM operation; this Cortex Analytics alert fires on the new caller-to-service-account impersonation edge — the deviation from the learned impersonation graph — anchored to the iamcredentials call rather than to any known-bad method name. The cloud_audit_emitter GCP builder emits only GenerateAccessToken for this preset (the impersonated principal is carried in the top-level target_service_account shape hint), so the logic keys on that single fully-qualified methodName rather than a leaf-name list.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter protoPayload.serviceName = "iamcredentials.googleapis.com"
+    | filter protoPayload.methodName = "google.iam.credentials.v1.IAMCredentials.GenerateAccessToken"
+    | comp count() as impersonation_calls by protoPayload.authenticationInfo.principalEmail, target_service_account, protoPayload.requestMetadata.callerIp
+    | filter impersonation_calls >= 1
+    | sort desc impersonation_calls
+    | fields protoPayload.authenticationInfo.principalEmail, target_service_account, protoPayload.requestMetadata.callerIp, impersonation_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: gcp
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "GCP BigQuery Foreign-Project Exfil via Impersonated Service Account \u2014 Cortex ABIOC (T1537 / T1078.004) \u2014 BigQuery Table or Query Results Exfiltrated to a Foreign Project"
+id: ttp-2026-0157-abioc-02
+status: experimental
+description: |
+  A BigQuery job (query-results write / extract) run by a caller writes its output to a destination project that diverges from the account's learned set of destination projects — the shape of data exfiltration to a project outside the organization boundary. The individual InsertJob call is legitimate; the ABIOC fires on the foreign-destination-project deviation from the identity's learned BigQuery behavior. The cloud_audit_emitter GCP builder tags the exfil record with the foreign_project=true shape hint and the foreign destination_project_id, so the logic keys on that emitted deviation flag and destination project rather than an unemitted resource-vs-destination inequality.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter protoPayload.serviceName = "bigquery.googleapis.com"
+    | filter protoPayload.methodName = "google.cloud.bigquery.v2.JobService.InsertJob"
+    | filter foreign_project = true
+    | comp count() as foreign_project_jobs by protoPayload.authenticationInfo.principalEmail, destination_project_id
+    | filter foreign_project_jobs >= 1
+    | sort desc foreign_project_jobs
+    | fields protoPayload.authenticationInfo.principalEmail, destination_project_id, foreign_project_jobs
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1537/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1537
+logsource:
+  product: gcp
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

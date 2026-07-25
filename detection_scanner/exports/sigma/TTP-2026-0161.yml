@@ -1,0 +1,65 @@
+title: "Azure Conditional-Access & Mailbox-Rule Persistence (SIM-ITDR-019) \u2014 Conditional-access policy weakened off the learned admin-change baseline"
+id: ttp-2026-0161-abioc-01
+status: experimental
+description: |
+  Auto-tuned ABIOC — an identity or service principal whose learned baseline is a low, stable cadence of conditional-access changes suddenly updates or deletes CA policies (relaxing MFA / device-compliance / location enforcement). Fires on the deviation from the per-actor CA-change baseline, anchored to the identity causality chain rather than any single known-bad operation.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_audit
+    | filter operationName = "MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE" and category = "Administrative"
+    | filter _time > to_timestamp(current_time() - 3600)
+    | alter actor_app = identity -> claims -> appid, actor_oid = identity -> claims -> objectidentifier
+    | comp count() as ca_changes_now, earliest(_time) as first_change by actor_app, actor_oid
+    | join type=left (dataset = msft_azure_audit | filter operationName = "MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE" and category = "Administrative" | filter _time < to_timestamp(current_time() - 3600) | alter actor_app = identity -> claims -> appid | comp count() as learned_ca_change_cadence by actor_app) as baseline baseline.actor_app = actor_app
+    | alter learned_ca_change_cadence = coalesce(learned_ca_change_cadence, 0)
+    | filter ca_changes_now >= 1 and learned_ca_change_cadence = 0
+    | fields actor_app, actor_oid, ca_changes_now, learned_ca_change_cadence, first_change
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1556/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1556
+logsource:
+  product: azure
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Azure Conditional-Access & Mailbox-Rule Persistence (SIM-ITDR-019) \u2014 External mailbox forwarding rule off the learned inbox-rule baseline"
+id: ttp-2026-0161-abioc-02
+status: experimental
+description: |
+  Auto-tuned ABIOC — a mailbox that has never (or rarely) created client-side inbox rules suddenly creates a New-InboxRule/Set-InboxRule (the external ForwardTo target is carried in the rule's Parameters array). Fires on the first-seen deviation from the per-mailbox inbox-rule baseline, part of the same persistence campaign as the preceding conditional-access weakening.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_o365_audit
+    | filter Operation in ("New-InboxRule", "Set-InboxRule")
+    | filter _time > to_timestamp(current_time() - 3600)
+    | alter mailbox = UserId, rule_name = RuleName
+    | comp count() as inbox_rules_now, earliest(_time) as first_rule by mailbox, rule_name
+    | join type=left (dataset = msft_o365_audit | filter Operation in ("New-InboxRule", "Set-InboxRule") | filter _time < to_timestamp(current_time() - 3600) | alter mailbox = UserId | comp count() as learned_inbox_rule_cadence by mailbox) as baseline baseline.mailbox = mailbox
+    | alter learned_inbox_rule_cadence = coalesce(learned_inbox_rule_cadence, 0)
+    | filter inbox_rules_now >= 1 and learned_inbox_rule_cadence = 0
+    | fields mailbox, rule_name, inbox_rules_now, learned_inbox_rule_cadence, first_rule
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1114/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1114.003
+logsource:
+  product: azure
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

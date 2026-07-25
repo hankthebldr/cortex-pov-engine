@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1555",
+    "T1528"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when abioc `Suspicious secrets dump activity` and abioc `AWS SSM parameters retrieval` both observe the same user_identity_arn and source_ip_address within a 15-minute window, stitching the Secrets Manager dump and the SSM Parameter Store retrieval into one credential-harvesting incident (raises incident severity above either ABIOC alone).",
+      "name": "SIM-CDR-020 \u2014 credential & secret harvesting behavioral chain",
+      "rule_id": "CR-CDR-0020",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0155"
+}

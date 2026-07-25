@@ -1,0 +1,309 @@
+{
+  "id": "TTP-2026-0160",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T15:31:23+00:00",
+    "updated_at": "2026-07-25T15:31:23+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-cloud-token-abuse",
+      "azure",
+      "entra-id",
+      "service-principal",
+      "application-access-token",
+      "cross-tenant",
+      "unknown-tenant",
+      "azure-audit-log",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "causality-chain",
+      "identity",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Azure Service-Principal Token Abuse from an Unknown Tenant (Identity-Owned ITDR Causality Chain)",
+    "summary": "A stolen Azure/Entra service-principal access token is replayed from off-baseline infrastructure, used to reach the tenant from an unknown/foreign home tenant, and driven to resources the app never touched. Cortex ITDR Analytics fires the three Azure Audit Log alerts on the deviation from the SP's learned baseline and stitches them into one identity-owned incident.",
+    "description": "Azure/Entra ID service principals (the identity backing an app registration or enterprise application) authenticate non-interactively with an application access token minted for the app; every control-plane action they take lands in the Azure Audit Log (the Azure Activity Log / Azure Monitor control-plane feed), which Cortex XSIAM normalises to the msft_azure_audit dataset. An operator who steals such a token — from a leaked client secret/certificate, a compromised CI pipeline, or a consent-phished multi-tenant app — can wield the workload identity from anywhere, because a service principal has no MFA, no device, and no human sign-in cadence to anchor to. In the emitted Activity Log records the app-only-token indicator is the identity.claims pair idtyp='app' + appidacr='2', the calling infrastructure is callerIpAddress, the requesting home tenant is the identity.claims tenantid (compared against the top-level resource tenantId), and the target is operationName / resourceId. This card exercises Cortex ITDR / XSIAM Identity Analytics on that Azure Audit Log control-plane telemetry rather than on any single blockable call, reproducing the three named Azure Audit Log analytics alerts as one causality chain: (1) 'Remote usage of an Azure Service Principal token' — an Analytics alert that fires when an app-only token (idtyp='app'/appidacr='2') is used non-interactively from off-baseline infrastructure (callerIpAddress in the documentation range the emitter replays from); (2) 'Attempted Azure application access from unknown tenant' — an Analytics alert that catches a cross-tenant control-plane access where the identity.claims tenantid is a foreign/unknown home tenant reaching the customer's resource tenantId and the attempt is denied (resultType='Failure'), the signature of a stolen multi-tenant-app token replayed from the attacker's own tenant; (3) 'Unusual resource access by Azure application' — an ABIOC that anchors on the SP's learned resource-access profile (the small, stable set of resourceId values the application normally calls) and fires when the same service principal fans out across resources it has never accessed. The correlation rule fuses all three on the SHARED app id (identity.claims.appid) into a single identity-owned ITDR incident — remote token replay -> unknown-tenant access -> unusual resource access — exactly how XSIAM folds the storyline together for the DC. A validation XQL confirms the emitted Azure Audit Log events landed in msft_azure_audit within the run window. NON-DESTRUCTIVE: the azure_audit_emitter EAL plugin POSTs shape-true synthetic Azure Activity Log records to an operator-supplied collector already wired into Cortex as an Azure Audit Log source; no real Entra tenant is touched and no real token is minted.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1528",
+        "name": "Steal Application Access Token",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Logon Session: Logon Session Creation",
+      "User Account: User Account Authentication",
+      "Cloud Service: Cloud Service Enumeration"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ITDR-018 — Azure service-principal token abuse from an unknown tenant, driving the azure_audit_emitter streamer for Cortex ITDR Analytics / ABIOC validation.",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "An operator-supplied HTTP collector already wired into Cortex ITDR / XSIAM as an Azure Audit Log source so synthetic service-principal Activity Log records reach msft_azure_audit.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe azure_audit_emitter"
+      },
+      {
+        "description": "A baseline window has elapsed during which the target service principal signed in only from its normal source IPs/ASNs, its own home tenant, and accessed only its normal resource set, so Cortex learned the per-SP behavioural profile.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe azure_audit_emitter"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE: no real Entra/Azure tenant is touched and no real token is\n# minted. The azure_audit_emitter EAL plugin POSTs shape-true Azure Activity\n# Log control-plane records to an operator-supplied collector already wired into\n# Cortex as an Azure Audit Log source (msft_azure_audit). Three event shapes are\n# emitted for ONE synthetic service principal (the plugin stamps a fixed canary\n# identity.claims.appid / objectidentifier on every record) so the analytics\n# fire on the deviation from its learned baseline:\n#   1. application access token replayed from off-baseline infrastructure\n#   2. cross-tenant control-plane access denied from an unknown/foreign home tenant\n#   3. the same SP fanning out across resources absent from its learned profile\nset -euo pipefail\necho \"[CortexSim] SIM-ITDR-018 streaming Azure Audit Log SP-token-abuse records to ${COLLECTOR_URL}\"\npython3 -m scripts.eal_simulator.cli run /tmp/itdr-018.yml --live || true\n",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "string",
+          "default": "https://collector.cortexsim-canary.invalid/azure/audit",
+          "description": "Authorised in-customer log collector wired into Cortex as an Azure Audit Log source that receives the synthetic Azure Activity Log records (normalised to msft_azure_audit). This is the only operator-supplied input the azure_audit_emitter plugin consumes; the abused service-principal identity is a fixed canary (identity.claims.appid 22222222-...) the plugin stamps on every emitted record."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "A non-interactive Azure Activity Log control-plane action by an app-only service-principal token replayed from off-baseline infrastructure (the RFC 5737 documentation-range caller IP the emitter uses).",
+        "expected_value": "identity.claims.idtyp = \"app\" and identity.claims.appidacr = \"2\" and callerIpAddress = \"203.0.113.201\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "A denied cross-tenant control-plane access where the requesting identity.claims tenantid is a foreign/unknown home tenant reaching the customer's resource tenantId.",
+        "expected_value": "identity.claims.tenantid != tenantId and resultType = \"Failure\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "The same service principal (identity.claims.appid) fanning out across many resourceId values absent from its learned resource-access profile.",
+        "expected_value": "identity.claims.idtyp = \"app\" and count_distinct(resourceId) >= 3"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/itdr-018.yml; echo '[CortexSim] SIM-ITDR-018 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "ITDR-018 Unusual Resource Access By An Azure Application Deviating From Learned Baseline",
+        "description": "ABIOC 'Unusual resource access by Azure application'. Once its token is replayed, the same service principal fans out across many resourceId values it has never touched. The ABIOC anchors on the SP's learned resource-access profile (the small, stable set of resourceId values the application normally calls) and fires on the DEVIATION — a burst across distinct resources beyond that baseline — not on any single resource being sensitive. This is the impact tail of the chain, bound back to the same identity.claims.appid the remote-token-use analytics alert surfaced.",
+        "logic": "dataset = msft_azure_audit\n| alter token_idtyp = json_extract_scalar(identity, \"$.claims.idtyp\"), app_id = json_extract_scalar(identity, \"$.claims.appid\")\n| filter token_idtyp = \"app\"\n| filter operationName = \"MICROSOFT.STORAGE/STORAGEACCOUNTS/LISTKEYS/ACTION\"\n| comp count() as access_events, count_distinct(resourceId) as distinct_resources, values(resourceId) as resources by app_id\n| filter distinct_resources >= 3\n| sort desc distinct_resources\n| fields app_id, resources, distinct_resources, access_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-service-principal resource-access profile (stable resourceId set) -> the same identity.claims.appid fanning out across resources absent from that profile (distinct_resources beyond the learned baseline); the impact tail bound to the abused workload identity."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "ITDR-018 Remote Usage Of An Azure Service Principal Token From Off-Baseline Infrastructure",
+        "query": "dataset = msft_azure_audit\n| alter token_idtyp = json_extract_scalar(identity, \"$.claims.idtyp\"), token_acr = json_extract_scalar(identity, \"$.claims.appidacr\"), app_id = json_extract_scalar(identity, \"$.claims.appid\")\n| filter token_idtyp = \"app\" and token_acr = \"2\"\n| filter callerIpAddress in (\"203.0.113.201\")\n| comp count() as token_uses, count_distinct(callerIpAddress) as source_ip_count, values(callerIpAddress) as source_ips, values(operationName) as operations by app_id\n| filter token_uses >= 1\n| fields app_id, source_ips, source_ip_count, operations, token_uses",
+        "expected_rows_min": 1,
+        "dataset": "msft_azure_audit"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ITDR-018 Attempted Azure Application Access From An Unknown Home Tenant",
+        "query": "dataset = msft_azure_audit\n| alter token_idtyp = json_extract_scalar(identity, \"$.claims.idtyp\"), app_id = json_extract_scalar(identity, \"$.claims.appid\"), home_tenant = json_extract_scalar(identity, \"$.claims['http://schemas.microsoft.com/identity/claims/tenantid']\")\n| filter token_idtyp = \"app\"\n| filter home_tenant != tenantId and resultType = \"Failure\"\n| comp count() as cross_tenant_attempts, values(home_tenant) as source_tenants, values(operationName) as denied_operations by app_id, tenantId\n| filter cross_tenant_attempts >= 1\n| fields app_id, tenantId, source_tenants, denied_operations, cross_tenant_attempts",
+        "expected_rows_min": 1,
+        "dataset": "msft_azure_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-018 Validate Azure Service Principal Token Events Landed",
+        "query": "dataset = msft_azure_audit\n| filter _time > to_timestamp(current_time() - 900)\n| alter token_idtyp = json_extract_scalar(identity, \"$.claims.idtyp\"), app_id = json_extract_scalar(identity, \"$.claims.appid\")\n| filter token_idtyp = \"app\"\n| comp count() as sp_audit_events, values(operationName) as operations by app_id, callerIpAddress\n| filter sp_audit_events >= 1\n| fields app_id, callerIpAddress, operations, sp_audit_events",
+        "expected_rows_min": 1,
+        "dataset": "msft_azure_audit"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "ITDR-018 Azure Service-Principal Token-Abuse Identity-Owned Incident Stitch",
+        "rule_id": "CR-ITDR-0018",
+        "logic": "Analytics(\"ITDR-018 Remote Usage Of An Azure Service Principal Token From Off-Baseline Infrastructure\") AND Analytics(\"ITDR-018 Attempted Azure Application Access From An Unknown Home Tenant\") AND ABIOC(\"ITDR-018 Unusual Resource Access By An Azure Application Deviating From Learned Baseline\") joined on the SHARED app id carried in identity.claims.appid within 900 seconds. The remote token replay, the unknown-tenant cross-tenant access, and the unusual resource-access burst all carry the same abused service-principal app id, so the three Azure Audit Log analytics alerts fuse into a single identity-owned ITDR incident whose causality anchor is identity.claims.appid — remote token replay -> unknown-tenant access -> unusual resource access — presented to the DC as end-to-end evidence of the stolen service-principal-token storyline."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Identity Analytics — Azure Audit Log control-plane service-principal token use, cross-tenant access, and resource-access baselines",
+        "validated": true,
+        "note": "Backed by the two remote-token / unknown-tenant Analytics queries and the unusual-resource-access ABIOC on this card, stitched by CR-ITDR-0018 on the shared identity.claims.appid."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "identity-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-ITDR-0018"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_azure_audit | alter token_idtyp = json_extract_scalar(identity, \"$.claims.idtyp\"), app_id = json_extract_scalar(identity, \"$.claims.appid\"), home_tenant = json_extract_scalar(identity, \"$.claims['http://schemas.microsoft.com/identity/claims/tenantid']\") | filter token_idtyp = \"app\" | filter home_tenant != tenantId and resultType = \"Failure\" | comp count() as cross_tenant_attempts by app_id, tenantId | filter cross_tenant_attempts >= 1"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ITDR-018",
+        "name": "Azure Service-Principal Token Abuse from an Unknown Tenant via Cortex ITDR Analytics",
+        "description": "Cortex Identity Analytics learns a service principal's sign-in source, home tenant, and resource-access baseline, then detects a stolen application-access-token replay — remote token usage from off-baseline infrastructure, cross-tenant access from an unknown home tenant, and unusual resource access — and stitches the three Azure Audit Log analytics alerts into a single identity-owned ITDR incident anchored on the abused app id (identity.claims.appid).",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ITDR-018A",
+            "objective": "The remote-token-use Analytics alert and the unusual-resource-access ABIOC fire on the SP whose control-plane calling baseline is stable.",
+            "preconditions": [
+              "Azure Audit Log control-plane telemetry ingested (msft_azure_audit).",
+              "Baseline window elapsed so Cortex learned the SP's caller-IP and resource-access profile."
+            ],
+            "steps": [
+              "azure_audit_emitter replays the application access token from off-baseline infrastructure.",
+              "azure_audit_emitter drives the same SP to fan out across resources absent from its learned profile.",
+              "Observe both detections fire keyed on the shared identity.claims.appid."
+            ],
+            "success_criteria": [
+              "Analytics 'ITDR-018 Remote Usage Of An Azure Service Principal Token From Off-Baseline Infrastructure' fires.",
+              "ABIOC 'ITDR-018 Unusual Resource Access By An Azure Application Deviating From Learned Baseline' fires."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-ITDR-018B",
+            "objective": "The rule-based Analytics alert catches the cross-tenant access from an unknown home tenant.",
+            "preconditions": [
+              "Activity Log telemetry exposes identity.claims tenantid, the top-level resource tenantId, and resultType."
+            ],
+            "steps": [
+              "azure_audit_emitter emits a denied cross-tenant control-plane access from the unknown/foreign home tenant.",
+              "Observe the unknown-tenant analytics query return the cross-tenant attempt."
+            ],
+            "success_criteria": [
+              "Analytics 'ITDR-018 Attempted Azure Application Access From An Unknown Home Tenant' returns the denied cross-tenant access."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "test_case_id": "TC-ITDR-018C",
+            "objective": "The correlation fuses the three analytics alerts into one identity-owned incident anchored on the abused service principal.",
+            "preconditions": [
+              "The two remote-token / unknown-tenant Analytics alerts and the unusual-resource-access ABIOC have fired within the correlation window."
+            ],
+            "steps": [
+              "Let the XSIAM correlation engine converge over the 900s window.",
+              "Confirm a single stitched incident_id keyed on identity.claims.appid."
+            ],
+            "success_criteria": [
+              "Correlation CR-ITDR-0018 raises exactly one identity-owned ITDR incident spanning remote token use -> unknown-tenant access -> unusual resource access.",
+              "The incident causality chain identifies the abused app id (identity.claims.appid)."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Prefer workload-identity federation / managed identities over long-lived client secrets and certificates; where secrets are unavoidable, rotate them frequently and store them in a vault rather than in code or CI variables.",
+      "Scope multi-tenant app registrations tightly and enforce cross-tenant access settings (Entra External Identities / cross-tenant access policies) so a stolen multi-tenant-app token cannot reach the tenant's resources from a foreign home tenant.",
+      "Apply least-privilege application permissions and Conditional Access for workload identities, and alert on app-only-token control-plane calls (identity.claims.idtyp='app') from caller IPs outside the app's expected infrastructure."
+    ],
+    "detection_engineering": [
+      "Let Cortex Identity Analytics auto-tune per-service-principal Azure Audit Log calling-source (callerIpAddress), home-tenant, and resource-access baselines, then alert on the DEVIATION — a token replayed from off-baseline infrastructure or fanning out across new resources — rather than on any single API call.",
+      "Alert on cross-tenant control-plane access where the requesting identity.claims tenantid is a foreign/unknown tenant reaching the customer's top-level tenantId and the attempt is denied (resultType='Failure').",
+      "Correlate the abused identity.claims.appid across the remote-token-use, unknown-tenant, and unusual-resource-access signals to raise a single identity-owned incident evidencing the full stolen-token storyline."
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM Analytics Alert Reference by data source — Azure Audit Log (remote usage of an Azure Service Principal token · attempted Azure application access from unknown tenant · unusual resource access by Azure application)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1528 — Steal Application Access Token",
+      "url": "https://attack.mitre.org/techniques/T1528/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

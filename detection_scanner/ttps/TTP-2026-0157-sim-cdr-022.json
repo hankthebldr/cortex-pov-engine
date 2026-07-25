@@ -1,0 +1,316 @@
+{
+  "id": "TTP-2026-0157",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T15:31:10+00:00",
+    "updated_at": "2026-07-25T15:31:10+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-behavioral-anomaly",
+      "industry-all",
+      "severity-high",
+      "cloud",
+      "gcp",
+      "bigquery",
+      "service-account-impersonation",
+      "data-exfil",
+      "abioc",
+      "analytics-behavioral-ioc"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "gcp"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "GCP BigQuery Foreign-Project Exfil via Impersonated Service Account — Cortex ABIOC (T1537 / T1078.004)",
+    "summary": "A caller mints short-lived tokens for a privileged BigQuery service account it has never impersonated (iamcredentials GenerateAccessToken), then exports query results to a project outside the org — the GCP audit-log shape of foreign-project exfiltration. An Analytics impersonation alert and a foreign-project-exfil ABIOC fire on the deviations; a correlation stitches them on the caller principal.",
+    "description": "This card exercises Cortex XSIAM's cloud Analytics Behavioral IOCs (ABIOCs) on the GCP Cloud Audit Log data source (both the Data Access and Admin Activity streams normalise to the cloud_audit_logs dataset). The technique is the credential-abuse-to-exfiltration chain Unit 42 documents against GCP: an over-permissioned caller (a compromised user or workload identity holding roles/iam.serviceAccountTokenCreator) impersonates a privileged BigQuery service account by calling iamcredentials.googleapis.com GenerateAccessToken, then uses the borrowed identity to run a BigQuery job whose destination — an extract to a bucket, a copy table, or a query results table — lands in a project outside the organization boundary. No single API call is a known-bad IOC: GenerateAccessToken and BigQuery InsertJob are legitimate calls made constantly in a healthy GCP estate, which is exactly why a hand-authored BIOC keyed on a method name would drown in false positives. The two detections that ARE the named XSIAM cloud-audit alerts — 'GCP service account impersonation attempt' (an Analytics alert) and 'BigQuery table or query results exfiltrated to a foreign project' (an auto-tuned ABIOC) — fire on the DEVIATION from learned behavior and anchor it to a causality chain. The impersonation Analytics alert fires when a caller principal impersonates a service account it (and its peer group) has no learned history of impersonating, anchored to the iamcredentials GenerateAccessToken call. The exfil ABIOC fires when a BigQuery job writes results to a foreign destination project that diverges from the caller's learned set of destination projects, anchored to the borrowed-identity session. Two validation XQL queries confirm the emitted GCP audit records landed in cloud_audit_logs; a correlation rule fuses the impersonation Analytics alert and the foreign-project-exfil ABIOC on the shared caller principal into a single foreign-project-exfil incident the DC presents as proof that Cortex behavioral analytics caught a data-theft chain built entirely from legitimate cloud API calls. The scenario drives the shape-true logs into an operator-supplied collector via the cloud_audit_emitter analytics streamer (provider=gcp) — no real GCP tenant is touched and no real data leaves.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Cloud intruders abusing stolen or over-permissioned GCP identities for cross-project data theft"
+      }
+    ],
+    "campaigns": [
+      "GCP credential abuse — impersonate a privileged service account then exfiltrate BigQuery data to an attacker-controlled foreign project (2023-2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1537",
+        "name": "Transfer Data to Cloud Account",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Modification",
+      "User Account: User Account Authentication",
+      "Cloud Storage: Cloud Storage Access"
+    ]
+  },
+  "execution": {
+    "target_platform": "gcp",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-022 — GCP BigQuery foreign-project exfil via impersonated service account (cloud_audit_emitter provider=gcp) for Cortex ABIOC validation",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM / Cortex Cloud CDR ingesting the GCP Cloud Audit Logs (Data Access + Admin Activity) into cloud_audit_logs so per-identity impersonation and BigQuery job activity is profiled.",
+        "check_command": "gcloud logging read 'protoPayload.serviceName=\"iamcredentials.googleapis.com\"' --limit 1"
+      },
+      {
+        "description": "A baseline window has elapsed so Cortex learned each service account's normal impersonation callers and its normal set of BigQuery destination projects.",
+        "check_command": "gcloud auth list --filter=status:ACTIVE --format='value(account)'"
+      },
+      {
+        "description": "An operator-supplied HTTP collector (XSIAM Broker VM / log forwarder) is wired into XSIAM as a GCP audit source and reachable from the jumpbox.",
+        "check_command": "test -n \"${COLLECTOR_URL:-}\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No real GCP mutation and no real data movement. Drive the cloud_audit_emitter\n# analytics streamer (provider=gcp) to POST shape-true GCP Cloud Audit Log\n# records into the operator collector: first a service-account impersonation\n# burst (iamcredentials GenerateAccessToken), then a BigQuery job whose results\n# are exported to a foreign project.\nset -euo pipefail\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/cloud/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/cdr-022-gcp-impersonation.yml <<YML\ncampaign_id: CMP-CDR-022\nname: \"CDR-022 — GCP service-account impersonation\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"${COLLECTOR_HOST}\"\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: cloud_audit_emitter\n    params:\n      collector_url: \"${COLLECTOR_URL}\"\n      provider: gcp\n      event_pattern: service_account_impersonation\n      iterations: 1\nYML\ncat > /tmp/cdr-022-gcp-bq-exfil.yml <<YML\ncampaign_id: CMP-CDR-022\nname: \"CDR-022 — GCP BigQuery foreign-project exfil\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"${COLLECTOR_HOST}\"\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: cloud_audit_emitter\n    params:\n      collector_url: \"${COLLECTOR_URL}\"\n      provider: gcp\n      event_pattern: bigquery_exfiltration\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/cdr-022-gcp-impersonation.yml --live\npython3 -m scripts.eal_simulator.cli run /tmp/cdr-022-gcp-bq-exfil.yml --live\n",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "url",
+          "default": "https://collector.cortexsim-canary.invalid/cloud/events",
+          "description": "Operator-supplied HTTP collector the shape-true GCP audit records are POSTed to (XSIAM Broker VM / log forwarder wired into XSIAM as a GCP source)."
+        },
+        {
+          "name": "COLLECTOR_HOST",
+          "type": "string",
+          "default": "collector.cortexsim-canary.invalid",
+          "description": "Collector hostname added to the EAL campaign target_allowlist."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "GCP Cloud Audit Log records for iamcredentials GenerateAccessToken from a caller principal impersonating a BigQuery service account it has no learned history of impersonating.",
+        "expected_value": "protoPayload.serviceName = \"iamcredentials.googleapis.com\" and protoPayload.methodName = \"google.iam.credentials.v1.IAMCredentials.GenerateAccessToken\" with target_service_account new for this protoPayload.authenticationInfo.principalEmail"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "GCP Cloud Audit Log records for a BigQuery job whose results export lands in a foreign project outside the account's learned destination-project set.",
+        "expected_value": "protoPayload.serviceName = \"bigquery.googleapis.com\" and protoPayload.methodName = \"google.cloud.bigquery.v2.JobService.InsertJob\" and foreign_project = true (destination_project_id = \"attacker-project-999\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cdr-022-gcp-impersonation.yml /tmp/cdr-022-gcp-bq-exfil.yml; echo '[CortexSim] SIM-CDR-022 cleanup complete — synthetic GCP audit records only; no real tenant touched.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "GCP Service Account Impersonation Attempt",
+        "description": "A caller principal mints short-lived credentials for a service account by calling iamcredentials.googleapis.com GenerateAccessToken, impersonating a service account that neither this caller nor its learned peer group has a history of impersonating. Every call is a legitimate IAM operation; this Cortex Analytics alert fires on the new caller-to-service-account impersonation edge — the deviation from the learned impersonation graph — anchored to the iamcredentials call rather than to any known-bad method name. The cloud_audit_emitter GCP builder emits only GenerateAccessToken for this preset (the impersonated principal is carried in the top-level target_service_account shape hint), so the logic keys on that single fully-qualified methodName rather than a leaf-name list.",
+        "logic": "dataset = cloud_audit_logs\n| filter protoPayload.serviceName = \"iamcredentials.googleapis.com\"\n| filter protoPayload.methodName = \"google.iam.credentials.v1.IAMCredentials.GenerateAccessToken\"\n| comp count() as impersonation_calls by protoPayload.authenticationInfo.principalEmail, target_service_account, protoPayload.requestMetadata.callerIp\n| filter impersonation_calls >= 1\n| sort desc impersonation_calls\n| fields protoPayload.authenticationInfo.principalEmail, target_service_account, protoPayload.requestMetadata.callerIp, impersonation_calls",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Learned per-caller and per-peer-group service-account impersonation graph -> a caller principal (protoPayload.authenticationInfo.principalEmail) issues an iamcredentials GenerateAccessToken for a target_service_account new to its learned impersonation set, anchored to the impersonation call and its protoPayload.requestMetadata.callerIp."
+      },
+      {
+        "name": "BigQuery Table or Query Results Exfiltrated to a Foreign Project",
+        "description": "A BigQuery job (query-results write / extract) run by a caller writes its output to a destination project that diverges from the account's learned set of destination projects — the shape of data exfiltration to a project outside the organization boundary. The individual InsertJob call is legitimate; the ABIOC fires on the foreign-destination-project deviation from the identity's learned BigQuery behavior. The cloud_audit_emitter GCP builder tags the exfil record with the foreign_project=true shape hint and the foreign destination_project_id, so the logic keys on that emitted deviation flag and destination project rather than an unemitted resource-vs-destination inequality.",
+        "logic": "dataset = cloud_audit_logs\n| filter protoPayload.serviceName = \"bigquery.googleapis.com\"\n| filter protoPayload.methodName = \"google.cloud.bigquery.v2.JobService.InsertJob\"\n| filter foreign_project = true\n| comp count() as foreign_project_jobs by protoPayload.authenticationInfo.principalEmail, destination_project_id\n| filter foreign_project_jobs >= 1\n| sort desc foreign_project_jobs\n| fields protoPayload.authenticationInfo.principalEmail, destination_project_id, foreign_project_jobs",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1537"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-caller BigQuery destination-project set -> a BigQuery InsertJob writes results to a foreign project (foreign_project=true, destination_project_id outside the learned set), anchored to the caller principal (protoPayload.authenticationInfo.principalEmail) that submitted the job."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CDR-022 Service Account Impersonation Events Landed in Cloud Audit Log",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 900)\n| filter protoPayload.serviceName = \"iamcredentials.googleapis.com\"\n| filter protoPayload.methodName = \"google.iam.credentials.v1.IAMCredentials.GenerateAccessToken\"\n| comp count() as impersonation_events by protoPayload.authenticationInfo.principalEmail, target_service_account\n| filter impersonation_events >= 1\n| fields protoPayload.authenticationInfo.principalEmail, target_service_account, impersonation_events",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CDR-022 BigQuery Foreign-Project Export Landed in Cloud Audit Log",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 900)\n| filter protoPayload.serviceName = \"bigquery.googleapis.com\"\n| filter protoPayload.methodName = \"google.cloud.bigquery.v2.JobService.InsertJob\"\n| filter foreign_project = true\n| comp count() as foreign_project_jobs by protoPayload.authenticationInfo.principalEmail, destination_project_id\n| filter foreign_project_jobs >= 1\n| fields protoPayload.authenticationInfo.principalEmail, destination_project_id, foreign_project_jobs",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Foreign-Project BigQuery Exfil via Impersonated Service Account — ABIOC Causality Stitch",
+        "rule_id": "CR-CDR-0022",
+        "logic": "ANALYTICS(GCP Service Account Impersonation Attempt) AND ABIOC(BigQuery Table or Query Results Exfiltrated to a Foreign Project) on the same caller principal (protoPayload.authenticationInfo.principalEmail) within the run window — fuses the borrowed-identity mint (target_service_account) and the foreign-project BigQuery export (destination_project_id, foreign_project=true) into one cross-project data-exfil incident anchored to the shared caller principal (caller identity -> impersonated service account -> BigQuery job to a foreign project)."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — GCP service account impersonation attempt",
+        "validated": true,
+        "note": "Backed by the logic-bearing ABIOC 'GCP Service Account Impersonation Attempt' on this card."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — BigQuery table or query results exfiltrated to a foreign project",
+        "validated": true,
+        "note": "Backed by the logic-bearing ABIOC 'BigQuery Table or Query Results Exfiltrated to a Foreign Project' on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-ABIOC-CDR-0022-SA-IMPERSONATION",
+          "XSIAM-ABIOC-CDR-0022-BQ-FOREIGN-PROJECT-EXFIL"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter protoPayload.serviceName in (\"iamcredentials.googleapis.com\", \"bigquery.googleapis.com\") | fields protoPayload.authenticationInfo.principalEmail, protoPayload.serviceName, protoPayload.methodName, target_service_account, destination_project_id"
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-GCP-FOREIGN-PROJECT-EXFIL"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter protoPayload.serviceName = \"bigquery.googleapis.com\" | filter foreign_project = true | fields protoPayload.authenticationInfo.principalEmail, destination_project_id, foreign_project"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-CDR-022",
+        "name": "GCP BigQuery Foreign-Project Exfil via Impersonated Service Account — Cortex ABIOC Validation",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn each service account's impersonation callers and BigQuery destination-project set, and detect a credential-abuse-to-exfiltration chain anchored to the impersonation causality chain — where every underlying GCP API call is legitimate and no static rule was written for it.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-CDR-022A",
+            "objective": "The impersonation and foreign-project-exfil ABIOCs both fire on the injected GCP audit records and the correlation stitches them into one incident.",
+            "preconditions": [
+              "Cortex XSIAM / Cortex Cloud CDR ingesting the GCP Cloud Audit Logs into cloud_audit_logs.",
+              "Baseline window elapsed so per-SA impersonation callers and BigQuery destination projects are learned.",
+              "Operator collector reachable and wired into XSIAM as a GCP audit source."
+            ],
+            "steps": [
+              "Let the per-service-account baseline window elapse.",
+              "Emit a service-account impersonation burst (iamcredentials GenerateAccessToken) via cloud_audit_emitter provider=gcp.",
+              "Emit a BigQuery job whose results export to a foreign project via cloud_audit_emitter provider=gcp.",
+              "Observe both ABIOCs fire and CR-CDR-0022 raise one foreign-project-exfil incident."
+            ],
+            "success_criteria": [
+              "ABIOC `GCP Service Account Impersonation Attempt` fires.",
+              "ABIOC `BigQuery Table or Query Results Exfiltrated to a Foreign Project` fires.",
+              "Correlation CR-CDR-0022 raises one stitched foreign-project-exfil incident anchored to the impersonated service account."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scope roles/iam.serviceAccountTokenCreator narrowly and prefer per-resource IAM conditions so a compromised identity cannot impersonate privileged BigQuery service accounts.",
+      "Enforce a VPC Service Controls perimeter around BigQuery so query results and extracts cannot be written to projects outside the organization boundary.",
+      "Constrain BigQuery job destinations with organization policy (resource-location and allowed-projects constraints) and disable cross-project copy/extract for privileged datasets."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned per-caller service-account impersonation graph rather than hand-authoring static rules on GenerateAccessToken.",
+      "Alert on a BigQuery job whose destination project diverges from the service account's learned destination-project set.",
+      "Stitch the impersonation and foreign-project-export ABIOCs on the shared impersonated service-account principal into one exfil incident."
+    ],
+    "response_playbook": "XSOAR-PB-GCPServiceAccountImpersonationExfilTriage-v1"
+  },
+  "references": [
+    {
+      "title": "IAM Your Defense Against Cloud Threats: The Latest Unit 42 Cloud Threat Research",
+      "url": "https://unit42.paloaltonetworks.com/iam-cloud-threat-research/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1537 — Transfer Data to Cloud Account",
+      "url": "https://attack.mitre.org/techniques/T1537/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics Alert Reference (cloud audit behavioral detections)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

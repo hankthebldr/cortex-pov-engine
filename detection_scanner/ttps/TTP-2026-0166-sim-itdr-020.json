@@ -1,0 +1,343 @@
+{
+  "id": "TTP-2026-0166",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T15:31:53+00:00",
+    "updated_at": "2026-07-25T15:31:53+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-kerberoast",
+      "identity",
+      "active-directory",
+      "kerberos",
+      "weak-service-ticket",
+      "rc4-hmac",
+      "pass-the-hash",
+      "ntlm",
+      "lateral-movement",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-PANW-TECHDOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash — Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002)",
+    "summary": "An attacker with a foothold account requests a burst of Kerberos service tickets (4769) downgraded to RC4-HMAC (0x17) to crack offline, then replays the recovered secret as an NTLM Pass-the-Hash logon (4624) to move laterally. Each event is valid; Cortex ABIOCs fire on the deviation from the identity's learned ticket and auth baseline and stitch the roast and Pass-the-Hash into one incident.",
+    "description": "This scenario exercises the Cortex Active-Directory Analytics / Behavioral IOC (ABIOC) detector class on the IDENTITY (ITDR) plane against the signature Kerberoast-to-Pass-the-Hash chain. Kerberoasting (T1558.003) abuses the fact that any authenticated domain principal can request a Kerberos service ticket (TGS) for any account that has a Service Principal Name — the ticket is encrypted with the service account's password-derived key, so an attacker who downgrades the request to legacy RC4-HMAC (TicketEncryptionType 0x17) can crack the ticket offline and recover the service account's credential without ever touching the target host. Once the account secret (or its NT hash) is recovered, the operator authenticates with Use Alternate Authentication Material: Pass the Hash (T1550.002) — an NTLM network logon (4624, LogonType 3, NtLmSsp) that presents the hash directly with no interactive password entry and no preceding Kerberos exchange — to move laterally. A hand-authored BIOC keyed on a specific bad host or account would miss this: every 4769 ticket request and every 4624 logon is a legitimate, valid authentication event, which is exactly the point. Cortex learns each account's service-ticket-encryption profile and authentication baseline; the auto-tuned ABIOC fires on the deviation — an anomalous burst of weakly-encrypted (RC4) service tickets across many distinct SPNs from an identity whose learned baseline is AES-only human-cadence auth, immediately followed by an out-of-baseline NTLM network logon — and anchors it to the requesting-identity causality chain (foothold auth -> weak-ticket roast burst -> NTLM Pass-the-Hash lateral logon). Three named Cortex Active-Directory analytics alerts are the detections: 'A user received multiple weakly encrypted service tickets' and 'A user requested multiple service tickets' (the roast burst) and 'A user authenticated with weak NTLM to multiple hosts' (the lateral logon); a validation XQL confirms the emitted Windows Security telemetry landed and a correlation rule stitches the weak-ticket ABIOC and the weak-NTLM logon ABIOC on the same identity into a single ticket-abuse incident the DC presents as proof that Cortex's behavioral analytics caught a credential-abuse chain no static rule was written for. The synthetic Windows Security Event Log records (4769 / 4624, msft_windows_security dataset) are emitted by the ad_windows_emitter analytics log-streamer EAL plugin to an operator-supplied collector already wired into Cortex XSIAM — no real domain controller is touched, no real Kerberos ticket is forged, and no real credential-access tradecraft runs.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Scattered Spider",
+        "aliases": [
+          "Muddled Libra",
+          "UNC3944",
+          "Octo Tempest"
+        ]
+      },
+      {
+        "name": "FIN7",
+        "aliases": []
+      }
+    ],
+    "campaigns": [
+      "Enterprise Active-Directory intrusions abusing Kerberoasting for offline credential recovery and NTLM Pass-the-Hash for lateral movement (2023-2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1558",
+        "subtechnique_id": "T1558.003",
+        "name": "Steal or Forge Kerberos Tickets: Kerberoasting",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "subtechnique_id": "T1550.002",
+        "name": "Use Alternate Authentication Material: Pass the Hash",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Active Directory: Active Directory Credential Request",
+      "Logon Session: Logon Session Creation",
+      "User Account: User Account Authentication"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ITDR-020 — Kerberoast weak-ticket burst followed by Pass-the-Hash for Cortex Active-Directory ABIOC validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "An HTTP collector already wired into Cortex XSIAM as a Windows Security Event Log source so the synthetic 4769 / 4624 records reach msft_windows_security.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe ad_windows_emitter"
+      },
+      {
+        "description": "A baseline window has elapsed during which the target account requested only AES service tickets at a human cadence so Cortex learned the per-identity service-ticket and authentication profile.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe ad_windows_emitter"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No known-bad payloads and no real domain controller. Drive the AD/Windows\n# analytics streamer to emit a weakly-encrypted (RC4) Kerberos service-ticket\n# burst then an NTLM Pass-the-Hash network logon, and let the deviation from\n# the account's learned baseline speak for itself.\nset -euo pipefail\npython3 -m scripts.eal_simulator.cli run /tmp/sim-itdr-020-roast.yml --live || true\npython3 -m scripts.eal_simulator.cli run /tmp/sim-itdr-020-pth.yml --live || true",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "string",
+          "default": "https://collector.cortexsim-canary.invalid/logs/v1/event",
+          "description": "Authorised in-customer log collector wired into Cortex XSIAM that receives the synthetic Windows Security Event Log records."
+        }
+      ],
+      "timeout_seconds": 420
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "A burst of 4769 Kerberos service-ticket (TGS) requests for the same account, encrypted with RC4-HMAC (TicketEncryptionType 0x17) across many distinct Service Principal Names.",
+        "expected_value": "event_id = 4769 and ticket_encryption_type = \"0x17\" and count_distinct(service_name) >= 5"
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "An NTLM network logon (4624, LogonType 3, LogonProcessName NtLmSsp) for the same account with no preceding Kerberos exchange — the Pass-the-Hash lateral-movement shape.",
+        "expected_value": "event_id = 4624 and logon_type = 3 and authentication_package_name = \"NTLM\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sim-itdr-020-roast.yml /tmp/sim-itdr-020-pth.yml; echo '[CortexSim] SIM-ITDR-020 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "A user received multiple weakly encrypted service tickets",
+        "description": "A single account receives an unusual burst of Kerberos service tickets (4769) encrypted with legacy RC4-HMAC (TicketEncryptionType 0x17) across many distinct Service Principal Names, deviating from the AES-only service-ticket-encryption baseline Cortex learned for the identity. Every ticket request is a valid, well-formed Kerberos operation and no single 4769 is a known-bad IOC; the auto-tuned ABIOC fires on the weak-encryption-ticket-burst deviation from the account's learned baseline — the offline-crackable roast material — anchored to the requesting-identity causality chain rather than to any static indicator.",
+        "logic": "dataset = msft_windows_security\n| filter event_id = 4769\n| filter ticket_encryption_type = \"0x17\"\n| alter principal_name = arrayindex(split(target_user_name, \"@\"), 0)\n| comp count() as weak_ticket_count, count_distinct(service_name) as distinct_services, values(service_name) as services, min(_time) as first_seen, max(_time) as last_seen by principal_name\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter weak_ticket_count >= 5 and distinct_services >= 3\n| fields principal_name, weak_ticket_count, distinct_services, services, window_minutes, first_seen, last_seen",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1558.003"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity service-ticket-encryption baseline (AES-only, human cadence) -> a burst of RC4-HMAC (0x17) service tickets across many SPNs for the same account, anchored to the requesting identity as the root of the roast-to-Pass-the-Hash chain."
+      },
+      {
+        "name": "A user requested multiple service tickets",
+        "description": "The same account requests Kerberos service tickets (4769) across an anomalously large set of distinct Service Principal Names in a short window — the enumeration-and-request volume of a Kerberoasting sweep — exceeding the low, human-cadence service-ticket request rate Cortex learned for the identity. The alert fires on ticket-request VOLUME (independent of encryption strength) via a statistical deviation from the learned baseline, anchored to the same requesting identity as the weak-ticket burst.",
+        "logic": "dataset = msft_windows_security\n| filter event_id = 4769\n| alter principal_name = arrayindex(split(target_user_name, \"@\"), 0)\n| comp count() as ticket_requests, count_distinct(service_name) as distinct_services, min(_time) as first_seen, max(_time) as last_seen by principal_name\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter distinct_services >= 5 and ticket_requests >= 8 and window_minutes <= 30\n| fields principal_name, ticket_requests, distinct_services, window_minutes, first_seen, last_seen",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1558.003"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Learned per-identity service-ticket request rate (few SPNs, human cadence) -> a high-volume 4769 request burst across many distinct SPNs by the same account, anchored to the requesting identity that drove the weak-ticket roast."
+      },
+      {
+        "name": "A user authenticated with weak NTLM to multiple hosts",
+        "description": "An account authenticates with legacy NTLM over an NTLM (type 3) network logon through the NtLmSsp logon process — presenting a password-derived secret directly, with no preceding Kerberos exchange — the Pass-the-Hash (T1550.002) lateral-movement shape — against an account whose learned authentication baseline is Kerberos interactive logon. Each NTLM logon is technically valid and benign in isolation; the auto-tuned ABIOC fires on the out-of-baseline weak-NTLM network authentication deviation, aggregating the distinct target hosts reached, anchored to the roasted identity whose service-ticket material was harvested moments earlier.",
+        "logic": "dataset = msft_windows_security\n| filter event_id = 4624\n| filter logon_type = 3\n| filter authentication_package_name = \"NTLM\"\n| filter logon_process_name contains \"NtLmSsp\"\n| alter principal_name = arrayindex(split(target_user_name, \"@\"), 0)\n| comp count() as ntlm_network_logons, count_distinct(host_name) as target_hosts, values(host_name) as hosts, min(_time) as first_seen, max(_time) as last_seen by principal_name\n| filter ntlm_network_logons >= 1\n| fields principal_name, ntlm_network_logons, target_hosts, hosts, first_seen, last_seen",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1550.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Weak-ticket roast burst on the identity -> an NTLM (NtLmSsp) network logon by the same account that deviates from its learned Kerberos-interactive authentication baseline, anchored to the roasted identity as the lateral-movement stage of one credential-abuse chain."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SIM-ITDR-020 Windows Security Kerberos and NTLM Logon Events Landed",
+        "query": "dataset = msft_windows_security\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_id in (4769, 4624)\n| comp count() as security_events, count_distinct(event_id) as distinct_event_ids, values(event_id) as event_ids by host_name\n| filter security_events >= 1\n| fields host_name, security_events, distinct_event_ids, event_ids",
+        "expected_rows_min": 1,
+        "dataset": "msft_windows_security"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Kerberoast-to-Pass-the-Hash Ticket-Abuse Chain — ABIOC Causality Stitch",
+        "rule_id": "CR-ITDR-0009",
+        "logic": "ABIOC(A user received multiple weakly encrypted service tickets) AND ABIOC(A user authenticated with weak NTLM to multiple hosts) on the same principal_name (the realm-stripped sAMAccountName) within a 60-minute window — fuses the weakly-encrypted service-ticket roast burst and the subsequent NTLM Pass-the-Hash network logon on the same identity into a single credential-abuse incident anchored to the requesting-identity causality chain (foothold auth, weak-ticket roast, NTLM lateral logon)."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-identity Kerberos service-ticket encryption, service-ticket request volume, and authentication-package baseline"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-ABIOC-ITDR-0020-WEAK-SERVICE-TICKETS",
+          "XSIAM-ABIOC-ITDR-0020-SERVICE-TICKET-VOLUME",
+          "XSIAM-ABIOC-ITDR-0020-WEAK-NTLM-MULTI-HOST"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Two ABIOCs fire on the per-identity Kerberos ticket + NTLM logon behavioral deviation; CR-ITDR-0009 stitches the weak-ticket roast and the Pass-the-Hash into one credential-abuse incident anchored to the requesting identity."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "itdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "ITDR-KERBEROAST-WEAK-TICKET",
+          "ITDR-WEAK-NTLM-NETWORK-LOGON"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_windows_security | filter event_id = 4769 and ticket_encryption_type = \"0x17\" | comp count_distinct(service_name) as distinct_services by target_user_name | filter distinct_services >= 3"
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ITDR-020",
+        "name": "Kerberoast-to-Pass-the-Hash Credential-Abuse Detection via Cortex ABIOC",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn each account's Kerberos service-ticket-encryption profile, service-ticket request volume and authentication-package baseline, and detect a Kerberoast weak-ticket burst followed by an NTLM Pass-the-Hash lateral logon — anchored to the requesting-identity causality chain — where no static rule was written for the individually-valid ticket requests and logons.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ITDR-020A",
+            "objective": "Cortex learns the account's service-ticket / authentication baseline and an injected RC4 weak-ticket roast burst fires both Kerberoast ABIOCs.",
+            "preconditions": [
+              "Collector wired into Cortex XSIAM as a Windows Security Event Log source.",
+              "Baseline window elapsed with the account requesting only AES service tickets at a human cadence."
+            ],
+            "steps": [
+              "Let the service-ticket baseline window elapse.",
+              "Emit a burst of RC4 (0x17) 4769 service-ticket requests across many SPNs for the account.",
+              "Observe 'A user received multiple weakly encrypted service tickets' and 'A user requested multiple service tickets' fire."
+            ],
+            "success_criteria": [
+              "ABIOC `A user received multiple weakly encrypted service tickets` fires.",
+              "ABIOC `A user requested multiple service tickets` fires.",
+              "Validation XQL confirms the 4769 records landed in msft_windows_security."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-ITDR-020B",
+            "objective": "The subsequent NTLM Pass-the-Hash logon fires the Pass-the-Hash ABIOC and the correlation stitches the chain into one incident.",
+            "preconditions": [
+              "TC-ITDR-020A executed so the roast burst is present for the identity."
+            ],
+            "steps": [
+              "Emit an NTLM (NtLmSsp) 4624 network logon (LogonType 3) for the same account.",
+              "Observe 'Possible Pass-the-Hash' fire.",
+              "Observe CR-ITDR-0009 raise one stitched Kerberoast-to-Pass-the-Hash incident."
+            ],
+            "success_criteria": [
+              "ABIOC `Possible Pass-the-Hash` fires.",
+              "Correlation CR-ITDR-0009 raises one stitched credential-abuse incident anchored to the requesting identity."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Disable RC4-HMAC for Kerberos and enforce AES encryption on all service accounts so downgraded, offline-crackable service tickets cannot be minted.",
+      "Use group Managed Service Accounts (gMSA) or long random passwords for accounts with a Service Principal Name so recovered ticket material is not crackable, and restrict which principals hold an SPN.",
+      "Disable NTLM where feasible and enforce SMB signing / channel binding so a recovered hash cannot be replayed as an NTLM network logon."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned per-identity service-ticket-encryption, request-volume and authentication-package baseline rather than hand-authoring static account or host rules.",
+      "Alert on a burst of RC4-HMAC (0x17) 4769 service tickets across many distinct SPNs for one account, and on a high-volume 4769 request sweep independent of encryption strength.",
+      "Alert on an out-of-baseline NTLM (NtLmSsp) 4624 network logon and stitch it to a preceding weak-ticket roast on the same identity into one credential-abuse incident."
+    ],
+    "response_playbook": "XSOAR-PB-KerberoastPassTheHashCredentialAbuseTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XDR/XSIAM — Analytics Alert Reference (by Alert name): Active-Directory Kerberos and NTLM behavioral alerts",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-Analytics-Alert-Reference-by-Alert-name",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "Cortex Analytics Alert Reference — 'A user received multiple weakly encrypted service tickets'",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-Analytics-Alert-Reference-by-Alert-name/A-user-received-multiple-weakly-encrypted-service-tickets",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex Analytics Alert Reference — 'A user requested multiple service tickets'",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-Analytics-Alert-Reference-by-Alert-name/A-user-requested-multiple-service-tickets",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex Analytics Alert Reference — 'A user authenticated with weak NTLM to multiple hosts'",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-Analytics-Alert-Reference-by-Alert-name/A-user-authenticated-with-weak-NTLM-to-multiple-hosts",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "MITRE ATT&CK T1558.003 — Steal or Forge Kerberos Tickets: Kerberoasting",
+      "url": "https://attack.mitre.org/techniques/T1558/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1550.002 — Use Alternate Authentication Material: Pass the Hash",
+      "url": "https://attack.mitre.org/techniques/T1550/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}
