@@ -4,8 +4,7 @@ import OperationsView from '../components/console/OperationsView.jsx'
 import ConsoleRail from '../components/console/ConsoleRail.jsx'
 import LaunchView from '../components/console/LaunchView.jsx'
 import TargetsView from '../components/console/TargetsView.jsx'
-import InflightView from '../components/console/InflightView.jsx'
-import EvidenceView from '../components/console/EvidenceView.jsx'
+import RunDetailView from '../components/console/RunDetailView.jsx'
 import MultiRunCompare from '../components/console/MultiRunCompare.jsx'
 import CoverageView from '../components/console/CoverageView.jsx'
 import TtpBrowserView from '../components/console/TtpBrowserView.jsx'
@@ -13,8 +12,6 @@ import ToolAdapterCatalog from '../components/console/ToolAdapterCatalog.jsx'
 import LabView from '../components/console/LabView.jsx'
 import TenantManager from '../components/console/TenantManager.jsx'
 import EalConsole from '../components/EalConsole.jsx'
-import DetectionStoryline from '../components/DetectionStoryline.jsx'
-import CausalityGraph from '../components/CausalityGraph.jsx'
 
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
@@ -156,15 +153,8 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
 // ─── Runs & Proof surface ────────────────────────────────────────────────────
 // Run history list → single Run Detail surface keyed by runId with
 // Live / Evidence / Storyline / Causality SUB-tabs (collapses the four former
-// top-level tabs). Multi-run compare via ?compare=1.
-const RUN_SUBTABS = [
-  { id: 'live',      label: 'Live'      },
-  { id: 'evidence',  label: 'Evidence'  },
-  { id: 'storyline', label: 'Storyline' },
-  { id: 'causality', label: 'Causality' },
-]
-
-function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
+// top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
+function RunsSurface({ params = {}, setParams = () => {} }) {
   const { runs, activeRun } = useEnvironment()
   const runId = params.run || null
   const subTab = params.tab || 'live'
@@ -187,7 +177,7 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {} 
     )
   }
 
-  if (!selected) {
+  if (!runId) {
     return (
       <div className="runs-surface">
         <div className="view-head">
@@ -202,74 +192,16 @@ function RunsSurface({ params = {}, setParams = () => {}, onNavigate = () => {} 
     )
   }
 
-  const runDescriptor = {
-    runId,
-    scenarioId: selected.scenario_id,
-    status: selected.status,
-  }
-  const isThisActive = activeRun && activeRun.runId === runId
-
   return (
-    <div className="runs-surface">
-      <div className="view-head">
-        <div>
-          <h1 className="mono">{runDescriptor.scenarioId || runId}</h1>
-          <div className="view-head__meta">
-            run <span className="mono">{runId}</span> · <span className="mono">{selected.status}</span>
-          </div>
-        </div>
-        <button className="btn" onClick={() => setParams({ run: null, tab: null }, { replace: true })}>← All runs</button>
-      </div>
-
-      <div className="lab__segmented" role="tablist" aria-label="Run detail views" style={{ marginBottom: 12 }}>
-        {RUN_SUBTABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={subTab === t.id}
-            className={subTab === t.id ? 'is-active' : ''}
-            onClick={() => setParams({ tab: t.id })}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="view" key={subTab}>
-        {subTab === 'live' && (
-          <InflightView
-            activeRun={isThisActive ? activeRun : null}
-            lastRun={isThisActive ? null : runDescriptor}
-            onError={() => {}}
-          />
-        )}
-        {subTab === 'evidence' && (
-          <EvidenceView
-            activeRun={isThisActive ? activeRun : null}
-            lastRun={isThisActive ? null : runDescriptor}
-            pinnedRun={runDescriptor}
-            onError={() => {}}
-          />
-        )}
-        {subTab === 'storyline' && (
-          <DetectionStoryline
-            runId={runId}
-            scenarioId={runDescriptor.scenarioId}
-            onOpenEvidence={() => setParams({ tab: 'evidence' })}
-            onError={() => {}}
-          />
-        )}
-        {subTab === 'causality' && (
-          <CausalityGraph
-            runId={runId}
-            scenarioId={runDescriptor.scenarioId}
-            onOpenEvidence={() => setParams({ tab: 'evidence' })}
-            onError={() => {}}
-          />
-        )}
-      </div>
-    </div>
+    <RunDetailView
+      runId={runId}
+      run={selected}
+      activeRun={activeRun}
+      subTab={subTab}
+      onSubTab={(tab) => setParams({ tab })}
+      onBack={() => setParams({ run: null, tab: null }, { replace: true })}
+      onError={() => {}}
+    />
   )
 }
 
