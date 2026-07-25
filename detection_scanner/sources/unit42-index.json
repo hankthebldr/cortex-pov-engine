@@ -189,6 +189,31 @@
           "hypervisor-encryption"
         ],
         "notes": "Backs TTP-2026-0132 (SIM-EDR-019) — vCenter-to-ESXi hypervisor ransomware."
+      },
+      {
+        "priority": "P0",
+        "title": "The Gentlemen Ransomware: BYOVD EDR-Kill via ThrottleStop.sys",
+        "url": "https://unit42.paloaltonetworks.com/the-gentlemen-ransomware/",
+        "themes": [
+          "ransomware-chain",
+          "byovd",
+          "edr-evasion",
+          "endpoint"
+        ],
+        "notes": "Feeds SIM-EDR-021 — signed-vulnerable-driver EDR-kill behavioral ABIOC."
+      },
+      {
+        "priority": "P1",
+        "title": "Vidar Stealer + XMRig Miner Malvertising Campaign Analysis",
+        "url": "https://unit42.paloaltonetworks.com/vidar-stealer-xmrig-miner-campaign-analysis/",
+        "themes": [
+          "infostealer",
+          "cryptomining",
+          "malvertising",
+          "code-signing-abuse",
+          "resource-development"
+        ],
+        "notes": "Feeds SIM-TIM-005 — fake/rogue Authenticode code-signing thumbprint IOC (T1587.002)."
       }
     ],
     "cloud_identity": [
@@ -353,6 +378,19 @@
           "container-escape"
         ],
         "notes": "Backs TTP-2026-0136 (SIM-MP-017) — pod RCE to cloud control-plane via IMDS."
+      },
+      {
+        "priority": "P0",
+        "title": "Active Directory Certificate Services Exploitation (ESC1)",
+        "url": "https://unit42.paloaltonetworks.com/active-directory-certificate-services-exploitation/",
+        "themes": [
+          "identity",
+          "ad-cs",
+          "esc1",
+          "pkinit",
+          "privilege-escalation"
+        ],
+        "notes": "Feeds SIM-ITDR-017 — SAN-mismatch enrollment to PKINIT privileged auth ABIOC."
       }
     ],
     "social_engineering": [
@@ -391,6 +429,19 @@
           "lumma-stealer"
         ],
         "notes": "Backs SIM-EDR-016 (RunMRU→explorer.exe-parented interpreter) and SIM-EDR-017 (mshta fetch → extrac32 CAB unpack → renamed AutoIt3 loader)."
+      },
+      {
+        "priority": "P0",
+        "title": "Meddler-in-the-Middle (AiTM) Phishing Attacks",
+        "url": "https://unit42.paloaltonetworks.com/meddler-phishing-attacks/",
+        "themes": [
+          "phishing",
+          "aitm",
+          "session-token-theft",
+          "ato",
+          "email"
+        ],
+        "notes": "Feeds SIM-EMAIL-005 — AiTM session-token theft to mailbox-rule + device-registration ATO."
       }
     ],
     "supply_chain": [
@@ -484,6 +535,19 @@
           "lateral-movement"
         ],
         "notes": "Backs TTP-2026-0135 (SIM-EDR-020) — web shell to in-memory credential theft + FRP tunnel."
+      },
+      {
+        "priority": "P0",
+        "title": "Microsoft WSUS Deserialization RCE (CVE-2025-59287)",
+        "url": "https://unit42.paloaltonetworks.com/microsoft-cve-2025-59287/",
+        "themes": [
+          "rce",
+          "deserialization",
+          "wsus",
+          "exposure-to-rce",
+          "asm"
+        ],
+        "notes": "Feeds SIM-ASM-005 — internet-exposed WSUS exposure-to-RCE to domain recon to webhook exfil."
       }
     ],
     "ai_agent_threats": [
@@ -551,6 +615,18 @@
           "threat-intel"
         ],
         "notes": "Backs SIM-TIM-003 (strategically aged sleeper-domain activation — dormancy-break burst)."
+      },
+      {
+        "priority": "P1",
+        "title": "Graph Neural Networks for Adversary Infrastructure Clustering",
+        "url": "https://unit42.paloaltonetworks.com/graph-neural-networks/",
+        "themes": [
+          "threat-intel",
+          "infrastructure-pivot",
+          "tls-fingerprint",
+          "clustering"
+        ],
+        "notes": "Feeds SIM-TIM-004 — self-signed TLS thumbprint infrastructure-pivot IOC cluster."
       }
     ]
   },
