@@ -1,0 +1,56 @@
+adapter_id: TOOL-ENUM4LINUX-NG
+name: enum4linux-ng
+version: "1.3.4"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/cddmp/enum4linux-ng
+  license: GPL-3.0
+  attribution: Patrick Sesseler (cddmp)
+
+cortex_signal:
+  planes:
+    - ITDR
+    - NDR
+  expected_techniques:
+    - T1087      # Account Discovery
+    - T1087.002  # Account Discovery: Domain Account
+    - T1135      # Network Share Discovery
+
+safety_class: safe
+
+install:
+  # Tier 4 (runtime-fetched): ships in Kali as `enum4linux-ng`; pip is the
+  # portable fallback. It is a read-only SMB/AD enumerator (a rewrite of the
+  # classic enum4linux) — no exploitation, hence safety_class: safe.
+  runtime_install_command: "command -v enum4linux-ng >/dev/null 2>&1 || (apt-get install -y enum4linux-ng 2>/dev/null || pip3 install --no-input enum4linux-ng)"
+  binary: enum4linux-ng
+
+invoke:
+  target_platform: linux
+  # Native CLI: `enum4linux-ng -A <target>` runs the full enumeration sweep.
+  # Substituted verbatim (NO WRAPPER CODE). Targets ONLY the ITDR AD lab DC.
+  run_template: "{binary} {flags} {target}"
+  default_args:
+    flags: "-A"
+    target: "127.0.0.1"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-enum4linux-*.json /tmp/cortexsim-enum4linux-*.yaml 2>/dev/null || true"
+
+ttp_refs: []
+
+equivalents: []
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - smb-enumeration
+  - ad-recon
+  - discovery
+  - runtime-fetched

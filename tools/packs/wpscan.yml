@@ -1,0 +1,48 @@
+adapter_id: TOOL-WPSCAN
+name: "WPScan"
+version: "3.8.28"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/wpscanteam/wpscan
+  license: "WPScan Public Source License"
+  attribution: "WPScan Team (Automattic)"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595  # Active Scanning
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v wpscan >/dev/null 2>&1 || (apt-get install -y wpscan 2>/dev/null || gem install wpscan)"
+  binary: "wpscan"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} --url {url} --enumerate {enumerate} --random-user-agent"
+  default_args:
+    url: "http://127.0.0.1"
+    enumerate: "vp,u"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-wpscan-*.json 2>/dev/null || true"
+    - "rm -rf ~/.wpscan/cache/* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents:
+  - TOOL-WHATWEB
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - web-app
+  - wordpress
+  - enumeration

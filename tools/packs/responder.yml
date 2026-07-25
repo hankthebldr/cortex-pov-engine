@@ -1,0 +1,53 @@
+adapter_id: TOOL-RESPONDER
+name: "Responder"
+version: "3.1.5.0"
+
+tier: 4
+category: identity-credential
+
+upstream:
+  repo: https://github.com/lgandx/Responder
+  license: "GPL-3.0"
+  attribution: "Laurent Gaffie (SpiderLabs / Trustwave)"
+
+cortex_signal:
+  planes:
+    - ITDR
+    - NDR
+  expected_techniques:
+    - T1557       # Adversary-in-the-Middle
+    - T1557.001   # LLMNR/NBT-NS Poisoning and SMB Relay
+
+safety_class: dual-use-lab-only
+
+install:
+  # Tier 4 (runtime-fetched): apt-provided on Kali/Debian; idempotent guard.
+  runtime_install_command: "command -v responder >/dev/null 2>&1 || apt-get install -y responder"
+  binary: responder
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -I {interface} {flags}"
+  default_args:
+    interface: "eth0"
+    # -A = passive analyze mode: observe LLMNR/NBT-NS/mDNS without poisoning
+    # responses. SAFE-MODE default keeps the lab lookalike non-destructive.
+    flags: "-A"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-responder-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents:
+  - TOOL-IMPACKET
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - identity-credential
+  - runtime-fetched
+  - llmnr-poisoning
+  - dual-use

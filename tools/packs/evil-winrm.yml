@@ -1,0 +1,56 @@
+adapter_id: TOOL-EVIL-WINRM
+name: "Evil-WinRM"
+version: "3.5"
+
+tier: 4
+category: identity-credential
+
+upstream:
+  repo: https://github.com/Hackplayers/evil-winrm
+  license: "LGPL-3.0-or-later"
+  attribution: "CyberVaca (Hackplayers)"
+
+cortex_signal:
+  planes:
+    - ITDR
+    - EDR
+  expected_techniques:
+    - T1021.006  # Remote Services: Windows Remote Management
+
+safety_class: dual-use-lab-only
+
+install:
+  # Tier 4 (runtime-fetched): ships as a Ruby gem; installs the `evil-winrm`
+  # console script on PATH at dispatch. Idempotent guard.
+  runtime_install_command: "command -v evil-winrm >/dev/null 2>&1 || gem install evil-winrm"
+  binary: evil-winrm
+
+invoke:
+  # Runs on the linux attacker host and opens a WinRM (5985/5986) shell into
+  # the lab Windows target — mirrors the impacket adapter's linux-attacker /
+  # windows-target shape. Native CLI only; no wrapper.
+  target_platform: linux
+  run_template: "{binary} -i {target} -u {user} -p {password}"
+  default_args:
+    target: "10.0.0.10"
+    user: "svc-winrm"
+    password: "LabPassw0rd!"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "pkill -f 'evil-winrm -i' 2>/dev/null || true"
+    - "rm -rf /tmp/cortexsim-evil-winrm-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents:
+  - TOOL-IMPACKET  # identity-credential lateral-movement equivalent
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - identity-credential
+  - lateral-movement
+  - winrm
+  - runtime-fetched

@@ -1,0 +1,59 @@
+adapter_id: TOOL-HYDRA
+name: THC-Hydra
+version: "9.5"
+
+tier: 4
+category: identity-credential
+
+upstream:
+  repo: https://github.com/vanhauser-thc/thc-hydra
+  license: AGPL-3.0
+  attribution: van Hauser / THC (with David Maciejak)
+
+cortex_signal:
+  planes:
+    - ITDR
+    - NDR
+  expected_techniques:
+    - T1110      # Brute Force
+    - T1110.001  # Brute Force: Password Guessing
+
+safety_class: dual-use-lab-only
+
+install:
+  # Tier 4 (runtime-fetched): hydra ships in the Kali/Debian repos as `hydra`.
+  runtime_install_command: "command -v hydra >/dev/null 2>&1 || (apt-get install -y hydra 2>/dev/null || apt-get install -y hydra-gtk)"
+  binary: hydra
+
+invoke:
+  target_platform: linux
+  # Native THC-Hydra CLI: `hydra [options] <target> <service>`. The engine
+  # substitutes verbatim (NO WRAPPER CODE). Points ONLY at lab targets
+  # (gocortexbrokenbank / DVWA / the asm IaC exposed host) — never arbitrary
+  # hosts. `-f` stops on first valid pair; `-t` bounds parallel tasks so the
+  # online guessing burst stays controlled and NDR-visible.
+  run_template: "{binary} {flags} {target} {service}"
+  default_args:
+    flags: "-L /tmp/cortexsim-hydra/users.txt -P /tmp/cortexsim-hydra/pass.txt -t 4 -f"
+    target: "127.0.0.1"
+    service: "ssh"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f ./hydra.restore 2>/dev/null || true"
+    - "rm -rf /tmp/cortexsim-hydra 2>/dev/null || true"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-NETEXEC
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - brute-force
+  - online-cracking
+  - identity-credential
+  - runtime-fetched

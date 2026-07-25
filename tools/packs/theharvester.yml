@@ -1,0 +1,47 @@
+adapter_id: TOOL-THEHARVESTER
+name: theHarvester
+version: "4.6.0"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/laramies/theHarvester
+  license: GPL-2.0-or-later
+  attribution: Christian Martorella (laramies)
+
+cortex_signal:
+  planes:
+    - NDR
+    - ITDR
+  expected_techniques:
+    - T1589  # Gather Victim Identity Information
+    - T1590  # Gather Victim Network Information
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v theHarvester >/dev/null 2>&1 || (apt-get install -y theharvester 2>/dev/null || pipx install theHarvester)"
+  binary: theHarvester
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -d {domain} -b {sources} -l {limit} {flags}"
+  default_args:
+    domain: "example.com"
+    sources: "crtsh,dnsdumpster,otx,hackertarget"
+    limit: "200"
+    flags: "-f /tmp/cortexsim-theharvester"
+  identity_required: nobody
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-theharvester.json /tmp/cortexsim-theharvester.xml"
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - osint
+  - reconnaissance
+  - attack-surface

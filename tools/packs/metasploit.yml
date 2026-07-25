@@ -1,0 +1,57 @@
+adapter_id: TOOL-METASPLOIT
+name: "Metasploit Framework"
+version: "6.4"
+
+tier: 4
+category: adversary-simulation
+
+upstream:
+  repo: https://github.com/rapid7/metasploit-framework
+  license: "BSD-3-Clause"
+  attribution: "Rapid7 / H.D. Moore and the Metasploit contributors"
+
+cortex_signal:
+  planes:
+    - EDR
+    - NDR
+  expected_techniques:
+    - T1210   # Exploitation of Remote Services
+    - T1059   # Command and Scripting Interpreter
+
+# Exploitation framework only — NOT registered as a new C2 (Sliver/Empire/Havoc
+# already cover that class). Kept dual-use-lab-only; push bundles must NOT
+# auto-stage it, and scenarios that invoke it set consent.simulation_authorized.
+safety_class: dual-use-lab-only
+
+install:
+  # Tier 4 (runtime-fetched): metasploit-framework is apt-provided on Kali.
+  runtime_install_command: "command -v msfconsole >/dev/null 2>&1 || apt-get install -y metasploit-framework"
+  binary: msfconsole
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {flags}"
+  default_args:
+    # Non-interactive resource run against the lab target only. Default is a
+    # benign auxiliary version scan (no exploit payload) so the SAFE-MODE
+    # default produces exploitation-shaped signal without impact; scenarios
+    # override {flags} with a lab-scoped RHOSTS.
+    flags: "-q -x \"use auxiliary/scanner/smb/smb_version; set RHOSTS 127.0.0.1; run; exit -y\""
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-msf-*.rc 2>/dev/null || true"
+    - "rm -rf /tmp/cortexsim-metasploit-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents: []
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - adversary-simulation
+  - runtime-fetched
+  - exploitation
+  - dual-use

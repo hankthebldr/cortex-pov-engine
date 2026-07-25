@@ -1,0 +1,50 @@
+adapter_id: TOOL-FFUF
+name: "ffuf"
+version: "2.1.0"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/ffuf/ffuf
+  license: "MIT"
+  attribution: "Joona Hoikkala (@joohoi)"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595  # Active Scanning
+    - T1190  # Exploit Public-Facing Application
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "command -v ffuf >/dev/null 2>&1 || (apt-get install -y ffuf 2>/dev/null || go install github.com/ffuf/ffuf/v2@latest)"
+  binary: "ffuf"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -u {url} -w {wordlist} -mc {match_codes}"
+  default_args:
+    url: "http://127.0.0.1/FUZZ"
+    wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+    match_codes: "200,204,301,302,307,401,403"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-ffuf-*.json 2>/dev/null || true"
+
+ttp_refs: []
+equivalents:
+  - TOOL-FEROXBUSTER
+  - TOOL-GOBUSTER
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - web-app
+  - fuzzer
+  - content-discovery

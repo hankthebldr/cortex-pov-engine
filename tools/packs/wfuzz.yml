@@ -1,0 +1,49 @@
+adapter_id: TOOL-WFUZZ
+name: "Wfuzz"
+version: "3.1.0"
+
+tier: 4
+category: web-app
+
+upstream:
+  repo: https://github.com/xmendez/wfuzz
+  license: "GPL-2.0"
+  attribution: "Xavier Mendez (@xmendez)"
+
+cortex_signal:
+  planes:
+    - NDR
+  expected_techniques:
+    - T1595  # Active Scanning
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "command -v wfuzz >/dev/null 2>&1 || (apt-get install -y wfuzz 2>/dev/null || pip install wfuzz)"
+  binary: "wfuzz"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -w {wordlist} --hc {hide_codes} {url}"
+  default_args:
+    wordlist: "/usr/share/seclists/Discovery/Web-Content/common.txt"
+    hide_codes: "404"
+    url: "http://127.0.0.1/FUZZ"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-wfuzz-*.json 2>/dev/null || true"
+
+ttp_refs: []
+equivalents:
+  - TOOL-FFUF
+  - TOOL-FEROXBUSTER
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - web-app
+  - fuzzer
+  - content-discovery
