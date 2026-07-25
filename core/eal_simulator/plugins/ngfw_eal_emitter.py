@@ -1,6 +1,10 @@
 """
 ngfw_eal_emitter — analytics log-streamer for the Firewall / NGFW Enhanced
-Application (EAL) Logs data source (PAN-OS NGFW -> ``panw_ngfw_eal_raw``).
+Application (EAL) Logs data source. PAN-OS NGFW EAL traffic normalises into the
+``panw_ngfw_traffic_raw`` dataset discriminated by ``log_source_type = "eal"`` —
+the SAME dataset + discriminator the NGFW analytics cards query, so the emitted
+stream actually fires the detection (previously mis-keyed to panw_ngfw_eal_raw,
+which no card queries).
 
 Built on the ``analytics_emitter`` spine. It POSTs shape-true PAN-OS NGFW
 Enhanced-Application-Log traffic records to an operator-supplied collector so a
@@ -67,7 +71,9 @@ logger = logging.getLogger("cortexsim.eal.plugins.ngfw_eal_emitter")
 
 
 # The XSIAM dataset the PAN-OS NGFW Enhanced Application Logs normalise to.
-_DATASET = "panw_ngfw_eal_raw"
+# EAL records land in the normalized traffic dataset, discriminated by
+# log_source_type="eal" (which is how the NGFW analytics cards query them).
+_DATASET = "panw_ngfw_traffic_raw"
 
 # Synthetic, non-resolving identifiers. The reserved .invalid TLD and the
 # RFC 5737 documentation IP ranges guarantee nothing here touches a real host
@@ -298,7 +304,7 @@ class NgfwEalEmitter(AnalyticsLogEmitter):
         version = "1.0.0"
         description = (
             "Emits shape-true PAN-OS NGFW Enhanced Application Log (EAL) traffic "
-            "records (panw_ngfw_eal_raw dataset) into an operator-supplied "
+            "records (panw_ngfw_traffic_raw, log_source_type=eal) into an operator-supplied "
             "collector so Cortex XSIAM exercises its NGFW Analytics / ABIOC "
             "detections (abnormal/recurring communication to a rare domain, "
             "large & massive HTTPS uploads, rare-process SSH to an uncommon "

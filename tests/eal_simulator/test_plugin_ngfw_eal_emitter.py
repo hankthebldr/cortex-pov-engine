@@ -190,11 +190,14 @@ class TestParamValidation:
         assert p.compress is False
         assert p.batch is False
 
-    def test_dataset_is_panw_ngfw_eal_raw(self):
+    def test_dataset_matches_the_card_query_dataset(self):
+        # EAL traffic normalises into panw_ngfw_traffic_raw (discriminated by
+        # log_source_type="eal") — the SAME dataset the NGFW analytics cards
+        # query, so the emitted stream fires the detection.
         p = NgfwEalEmitterParams.model_validate({
             "collector_url": _DEFAULT_COLLECTOR,
         })
-        assert p.dataset == "panw_ngfw_eal_raw"
+        assert p.dataset == "panw_ngfw_traffic_raw"
 
     def test_auth_token_is_secret_and_not_reprd(self):
         p = NgfwEalEmitterParams.model_validate({
