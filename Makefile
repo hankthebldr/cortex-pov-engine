@@ -71,7 +71,7 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-adapters ## Detection corpus + adapter source gates
+validate: validate-detection check-adapters check-streamer ## Detection corpus + adapter source + streamer-fidelity gates
 
 validate-detection: ## validate.py (0 fail) + export-determinism gate (CI 'detection' job)
 	python3 detection_scanner/scripts/validate.py --quiet
@@ -80,6 +80,9 @@ validate-detection: ## validate.py (0 fail) + export-determinism gate (CI 'detec
 
 check-adapters: ## tier-2 adapter source preflight (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
+
+check-streamer: ## analytics-streamer emitter↔card dataset reconcile (fails on a dataset mismatch)
+	python3 scripts/check-streamer-fidelity.py
 
 coverage: ## detection coverage-quality report (WARN-only, exit 0)
 	python3 detection_scanner/scripts/coverage_report.py
