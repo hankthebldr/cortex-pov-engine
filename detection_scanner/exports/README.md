@@ -139,4 +139,6 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0137` | TeamPCP Weaponized-Scanner Supply Chain — CI Runner /proc Memory Scrape to Cloud-Cred Theft to K8s DaemonSet Cluster-Brick | [sigma](sigma/TTP-2026-0137.yml), [xql](xql/TTP-2026-0137.xql), [correlation](correlation/TTP-2026-0137.json) |
 | `TTP-2026-0138` | Shai-Hulud Self-Replicating npm Worm — preinstall TruffleHog Scrape → npm-Token Republish → Self-Hosted-Runner Persistence | [sigma](sigma/TTP-2026-0138.yml), [xql](xql/TTP-2026-0138.xql), [correlation](correlation/TTP-2026-0138.json) |
 | `TTP-2026-0139` | GCP Vertex AI Double Agent — Deployed Reasoning-Engine Steals P4SA Token for Cross-Project GCS Read + Image Exfil | [sigma](sigma/TTP-2026-0139.yml), [xql](xql/TTP-2026-0139.xql), [correlation](correlation/TTP-2026-0139.json) |
+| `TTP-2026-0140` | Kali External-to-Internal Kill-Chain — Recon to Web Exploit to Credential Access to Lateral Movement (Chained Causality) | [sigma](sigma/TTP-2026-0140.yml), [xql](xql/TTP-2026-0140.xql), [correlation](correlation/TTP-2026-0140.json) |
+| `TTP-2026-0141` | Internal AD Kill-Chain: Poisoning → Offline Crack → Credential Validation → WinRM Lateral (SIM-ITDR-015) | [sigma](sigma/TTP-2026-0141.yml), [xql](xql/TTP-2026-0141.xql), [correlation](correlation/TTP-2026-0141.json) |
 

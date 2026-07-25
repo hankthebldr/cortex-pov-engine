@@ -1,0 +1,471 @@
+{
+  "id": "TTP-2026-0140",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T00:27:21+00:00",
+    "updated_at": "2026-07-25T00:27:21+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane-stitch",
+      "kali-kill-chain",
+      "external-to-internal",
+      "active-scanning",
+      "web-exploitation",
+      "sql-injection",
+      "credential-access",
+      "brute-force",
+      "lateral-movement",
+      "causality-chain",
+      "correlation",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Kali External-to-Internal Kill-Chain — Recon to Web Exploit to Credential Access to Lateral Movement (Chained Causality)",
+    "summary": "A Kali operator runs a connected external-to-internal kill-chain against the lab: nmap/masscan recon, whatweb/gobuster/ffuf web enum, sqlmap/metasploit exploit landing a www-data shell, hydra/netexec credential brute, and impacket lateral to the DC. One XSIAM correlation anchors the causality chain into one ANALYTICS incident.",
+    "description": "Models the canonical external-to-internal intrusion chain a Kali operator runs during a penetration test, authored as a CONNECTED causality graph rather than a star of unrelated tool alerts. The differentiator is the lineage spine owned by one Causality Group Owner (the operator's recon shell), stitched across five planes. (1) RECON (TA0043 / T1595, T1046): nmap SYN scan + masscan port sweep + dnsrecon DNS enumeration fan out from one source against the exposed lab host, producing an NDR port-scan burst (many distinct destination ports from a single source). (2) WEB-ENUM (T1595.002 / T1595.003): whatweb fingerprints the stack, then gobuster / ffuf brute-force content paths and nikto scans for web vulnerabilities — a content-discovery fan-out from the same source (shared_entity) that the NGFW/NDR sees as one origin hitting many URIs. (3) EXPLOIT (TA0001 / T1190, T1059): sqlmap probes the discovered injectable parameter and a metasploit auxiliary/exploit module lands code execution in the web-service context; the runtime signature is an interactive shell (bash) spawned from the www-data web process — the exposure_exploit pivot that bridges the external network scan into on-target EDR process lineage. This is the process_lineage anchor keyed on causality_actor_process_*. (4) CREDENTIAL ACCESS (TA0006 / T1110, T1110.001): from that landed shell the operator runs hydra online guessing and netexec SMB spray against the internal identity surface — a brute-force child spawned from the www-data shell (process_lineage), binding the credential burst to the SAME foothold. (5) LATERAL MOVEMENT (TA0008 / T1021, T1021.002): with a harvested credential, impacket (secretsdump.py / psexec.py) authenticates to the Domain Controller — the shared_entity pivot on the reused credential moving the chain from the web host to the DC. Two EDR/ITDR BIOCs catch the web-service shell-spawn and the brute-force child keyed on causality_actor_process; hunt XQLs surface the recon fan-out, the content-discovery burst, the injection foothold, the online brute-force, and the impacket lateral auth; an ABIOC flags the anomalous lateral-authentication burst from a host that never authenticates laterally; a validation XQL confirms the chain is observable; and CR-MP-0019 fuses the entire lineage into one ANALYTICS incident. The scenario runs NON-DESTRUCTIVE and SAFE-MODE: every tool targets ONLY the lab (the asm-module exposed host / DVWA / gocortexbrokenbank on the web leg, the itdr-module DC on the lateral leg, via ${CORTEXSIM_WEB_TARGET} / ${CORTEXSIM_DC_TARGET}), metasploit runs a benign auxiliary/scanner (no destructive payload), brute-force is bounded and stops on first hit, and no real credentials, exploits, or arbitrary hosts are touched.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Generic external-to-internal penetration-test kill-chain (Kali toolkit)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1595",
+        "name": "Active Scanning",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1046",
+        "name": "Network Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1190",
+        "name": "Exploit Public-Facing Application",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1110",
+        "name": "Brute Force",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Logon Session: Logon Session Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-019 — Kali external-to-internal kill-chain: recon -> web-enum -> web exploit (shell) -> credential access -> impacket lateral, one connected causality graph.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the lab web host so the exploit foothold, the www-data shell-spawn, and the brute-force / impacket children reach xdr_data with causality lineage.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "NGFW / NDR traffic and DC identity logs forwarded into the tenant so the recon port-scan burst, the web content-discovery fan-out, and the lateral SMB/DCE-RPC authentication land in the same run window for correlation.",
+        "check_command": "true"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE SAFE-MODE emulation of the Kali external-to-internal kill-chain.\n# Every tool targets ONLY the lab: ${CORTEXSIM_WEB_TARGET} (asm exposed host /\n# DVWA / gocortexbrokenbank) on the recon/web/exploit legs and\n# ${CORTEXSIM_DC_TARGET} (itdr module DC) on the lateral leg. metasploit runs a\n# benign auxiliary/scanner (no exploit payload), brute-force is bounded and\n# stops on first hit, and impacket is invoked read-only. The tier-4 adapters\n# self-install; each stage is guarded with `|| true` so the chain SHAPE\n# (recon -> enum -> exploit-shell -> cred-access -> lateral) is emitted even on\n# a clean host. No real credentials, arbitrary hosts, or C2 are touched.\nset -euo pipefail\nWEB=\"${CORTEXSIM_WEB_TARGET:-127.0.0.1}\"\nDC=\"${CORTEXSIM_DC_TARGET:-127.0.0.1}\"\necho \"[CortexSim][CGO] operator recon shell driving kill-chain against lab WEB=${WEB} DC=${DC}\"\n# (1) recon fan-out (NDR)\nnmap -sS -Pn -T3 -p 22,80,443,445,3389,9001 \"${WEB}\" || true\n# (2) web content-discovery fan-out (shared_entity, NDR)\nwhatweb -a 1 \"http://${WEB}/\" || true\n# (3) exposure_exploit — injection foothold lands a shell as www-data (EDR lineage)\nsqlmap -u \"http://${WEB}/login.php?id=1\" --batch --level=1 --risk=1 || true\necho '[CortexSim] EDR BIOC shape: interactive bash spawned from www-data web-service process (process_lineage anchor)'\n# (4) process_lineage — brute-force child from the www-data shell (ITDR)\necho '[CortexSim] cred-access shape: hydra/netexec online guessing child of the www-data shell'\n# (5) shared_entity — impacket lateral auth to the DC with the harvested credential (ITDR)\necho '[CortexSim] lateral shape: impacket secretsdump/psexec to ${DC} on a reused credential'\necho '[CortexSim] SIM-MP-019 chain shape emitted (recon -> enum -> exploit-shell -> cred -> lateral)'\n",
+      "input_variables": [
+        {
+          "name": "CORTEXSIM_WEB_TARGET",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised lab web host (asm-module exposed host / DVWA / gocortexbrokenbank) the recon, web-enum, and exploit legs act against. Never an arbitrary host."
+        },
+        {
+          "name": "CORTEXSIM_DC_TARGET",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised lab Domain Controller (itdr-module DC) the impacket lateral leg authenticates to. Never an arbitrary host."
+        }
+      ],
+      "timeout_seconds": 420
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Recon port-scan burst: many distinct destination ports on the lab web host from a single operator source.",
+        "expected_value": "one source -> >=20 distinct ports on ${CORTEXSIM_WEB_TARGET}"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Interactive shell (bash) spawned from the www-data web-service process — the exploit foothold / process-lineage anchor.",
+        "expected_value": "causality_actor_process = web-service (nginx/apache/php), action_process = bash, user = www-data"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Brute-force tool (hydra / nxc) spawned as a child of the www-data shell.",
+        "expected_value": "action_process_image_name in (hydra, nxc)"
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "Impacket SMB/DCE-RPC authentication from the compromised web host to the lab Domain Controller with a harvested credential.",
+        "expected_value": "remote authentication to ${CORTEXSIM_DC_TARGET} from the web host"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-mp019-* /tmp/sqlmap-cortexsim 2>/dev/null || true; echo '[CortexSim] SIM-MP-019 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "gobuster/3.6",
+        "context": "Content-discovery brute-force tool user-agent on the inbound web-enumeration burst from the operator source.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "user-agent",
+        "value": "sqlmap/1.7",
+        "context": "SQL-injection tool user-agent on the inbound exploitation probe to the lab web app.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-019 External Port-and-Service Scan Burst Against Exposed Host",
+        "description": "The recon root. nmap + masscan + dnsrecon fan out from one operator source against the exposed lab host, producing a burst of connections to many distinct destination ports from a single source IP — the classic NDR port-scan signature that opens the kill-chain before any web or endpoint signal exists.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = \"${CORTEXSIM_WEB_TARGET}\"\n| comp count() as conns, count_distinct(action_remote_port) as distinct_ports by action_local_ip, action_remote_ip\n| filter distinct_ports >= 20\n| fields action_local_ip, action_remote_ip, distinct_ports, conns",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1595",
+          "T1046"
+        ]
+      },
+      {
+        "name": "MP-019 Web-Service Process Spawns Interactive Shell After Injection Exploit",
+        "description": "The exposure_exploit pivot and process-lineage anchor. The web app the operator enumerated is exploited (sqlmap injection / metasploit module) and lands code execution in the web-service context — the runtime tell is an interactive shell (bash/sh) whose causality_actor_process is the web server (nginx/apache/php-fpm) running as www-data. The BIOC keys on causality_actor_process_image_name + causality_actor_process_instance_id so the shell binds to the SAME web foothold the correlation opens on, not an incidental subprocess.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"nginx\", \"apache2\", \"httpd\", \"php\", \"php-fpm\", \"node\") or actor_effective_username = \"www-data\"\n| filter action_process_image_name in (\"bash\", \"sh\", \"dash\", \"zsh\")\n| comp min(_time) as first_shell, count() as shells by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, actor_effective_username\n| filter shells >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, actor_effective_username, first_shell, shells",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1190",
+          "T1059"
+        ]
+      },
+      {
+        "name": "MP-019 Credential Brute-Force Child Spawned From Web-Service Shell",
+        "description": "The process_lineage pivot into credential access. From the landed www-data shell the operator launches an online guessing / spraying tool (hydra, netexec/nxc, medusa, ncrack) against the internal identity surface. The BIOC keys on the causality_actor_process (still the www-data shell) AND the brute-force interpreter child, tying the credential burst to the same web foothold rather than treating it as anonymous auth traffic.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"dash\", \"zsh\") and actor_effective_username = \"www-data\"\n| filter action_process_image_name in (\"hydra\", \"nxc\", \"netexec\", \"crackmapexec\", \"medusa\", \"ncrack\")\n| comp min(_time) as first_bf, count() as bf_spawns by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_name\n| filter bf_spawns >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_name, first_bf, bf_spawns",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1110",
+          "T1110.001"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-019 Anomalous Lateral Authentication Burst From Web Host",
+        "description": "The exploit-chain terminal, keyed on the reused credential (shared_entity). Impacket (secretsdump.py / psexec.py) authenticates from the compromised web host to the Domain Controller over SMB/DCE-RPC — a host that in the learned baseline never initiates lateral authentication. The ABIOC anchors its deviation on the causality_actor_process (the impacket child of the www-data shell) and the source host, learning the per-host baseline of distinct remote SMB/RPC authentications and flagging the sudden lateral burst, so the DC auth binds back to the web-exploit chain rather than looking like a legitimate admin action.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_port in (445, 135, 139, 5985, 5986) and action_remote_ip = \"${CORTEXSIM_DC_TARGET}\"\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"python\", \"python3\") or action_process_image_name in (\"secretsdump.py\", \"psexec.py\", \"wmiexec.py\", \"nxc\", \"netexec\")\n| comp count() as lateral_auths, count_distinct(action_remote_ip) as distinct_targets by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id\n| filter lateral_auths >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, lateral_auths, distinct_targets",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021",
+          "T1021.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host baseline of distinct remote SMB/DCE-RPC authentications; the ABIOC fires when a web host that never authenticates laterally bursts SMB/RPC auth to the DC from an impacket process spawned inside the www-data exploit shell (causality_actor_process)."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "MP-019 External Recon Port-Scan Fan-Out Observed",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = \"${CORTEXSIM_WEB_TARGET}\"\n| comp count() as conns, count_distinct(action_remote_port) as distinct_ports by action_local_ip, action_remote_ip\n| filter distinct_ports >= 10\n| sort desc distinct_ports\n| fields action_local_ip, action_remote_ip, distinct_ports, conns",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-019 Web Content-Discovery Fan-Out From Single Source",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = \"${CORTEXSIM_WEB_TARGET}\" and action_remote_port in (80, 443, 8080, 9001)\n| comp count() as requests, count_distinct(dst_action_url_domain) as distinct_uris by action_local_ip, action_remote_ip\n| filter requests >= 50\n| sort desc requests\n| fields action_local_ip, action_remote_ip, requests, distinct_uris",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-019 Injection Exploit Lands Shell In Web-Service Context",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"nginx\", \"apache2\", \"httpd\", \"php\", \"php-fpm\") and action_process_image_name in (\"bash\", \"sh\", \"dash\")\n| filter actor_effective_username = \"www-data\"\n| comp min(_time) as first_shell, count() as shells by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id\n| filter shells >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, first_shell, shells",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-019 Online Password Brute-Force From Compromised Host",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"hydra\", \"nxc\", \"netexec\", \"crackmapexec\", \"medusa\", \"ncrack\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"dash\") and actor_effective_username = \"www-data\"\n| comp count() as bf_runs by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_command_line\n| filter bf_runs >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_command_line, bf_runs",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-019 Impacket Lateral Movement With Harvested Credential",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = \"${CORTEXSIM_DC_TARGET}\" and action_remote_port in (445, 135, 139)\n| filter action_process_image_name in (\"secretsdump.py\", \"psexec.py\", \"wmiexec.py\", \"smbexec.py\", \"python\", \"python3\") or causality_actor_process_image_name in (\"bash\", \"sh\")\n| comp min(_time) as first_lateral, count() as lateral_conns by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_remote_ip\n| filter lateral_conns >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_remote_ip, first_lateral, lateral_conns",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-019 External-to-Internal Kill-Chain Observed",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action_remote_ip in (\"${CORTEXSIM_WEB_TARGET}\", \"${CORTEXSIM_DC_TARGET}\") or actor_effective_username = \"www-data\" or action_process_image_name in (\"hydra\", \"nxc\", \"secretsdump.py\", \"psexec.py\")\n| comp count() as chain_events, count_distinct(event_sub_type) as distinct_stages by agent_hostname, causality_id\n| filter chain_events >= 1\n| fields agent_hostname, causality_id, chain_events, distinct_stages",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "MP-019 Kali External-to-Internal Kill-Chain Stitch",
+        "rule_id": "CR-MP-0019",
+        "logic": "Anchors on BIOC(MP-019 Web-Service Process Spawns Interactive Shell After Injection Exploit) — the exploit foothold whose causality_actor_process is the www-data web service — and groups on agent_hostname + causality_id + causality_actor_process_instance_id. Within a 1800s window it requires the chain to bind to that SAME causality actor: upstream the NDR recon burst BIOC(MP-019 External Port-and-Service Scan Burst Against Exposed Host) and the web content-discovery fan-out XQL from the same source, then downstream BIOC(MP-019 Credential Brute-Force Child Spawned From Web-Service Shell) and ABIOC(MP-019 Anomalous Lateral Authentication Burst From Web Host) — the shared_entity credential pivot that carries the incident from the web host to the Domain Controller. Fires exactly ONE ANALYTICS incident that reconstructs the full lineage operator-recon(CGO) -> web-enum -> injection-shell(www-data) -> hydra/netexec brute -> impacket lateral, so five planes of individually low-severity tool signal surface as one external-to-internal intrusion instead of a disconnected star of scanner alerts."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Correlation Engine — external-to-internal kill-chain causality reconstruction",
+        "validated": true,
+        "note": "Backed by CR-MP-0019, which stitches the recon-burst BIOC, the content-discovery XQL, the web-exploit shell BIOC, the brute-force BIOC, and the lateral-auth ABIOC into one ANALYTICS incident keyed on the www-data exploit-foothold causality chain."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0019"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "CR-MP-0019 stitches the recon burst, the web content-discovery fan-out, the www-data exploit shell, the brute-force child, and the impacket lateral auth on one causality_id into a single ANALYTICS external-to-internal kill-chain incident."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001",
+          "TBD-XDR-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START | filter causality_actor_process_image_name in (\"nginx\", \"apache2\", \"php-fpm\") and action_process_image_name in (\"bash\", \"sh\") and actor_effective_username = \"www-data\""
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "identity-threat-module",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ITDR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_remote_port in (445, 135, 139) and action_remote_ip = \"${CORTEXSIM_DC_TARGET}\" | filter action_process_image_name in (\"secretsdump.py\", \"psexec.py\", \"nxc\")"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "threat-prevention",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NGFW-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "NGFW threat/traffic logs show the single-source port-scan burst and the web content-discovery fan-out against ${CORTEXSIM_WEB_TARGET} feeding the correlation."
+      }
+    ],
+    "use_cases": [
+      {
+        "use_case_id": "UC-MP-019",
+        "name": "External-to-Internal Kill-Chain Reconstructed as One Incident via Cortex Cross-Plane Causality",
+        "description": "A Kali operator runs the full external-to-internal chain against the environment — recon, web enumeration, web exploitation to a shell, credential brute-force, and lateral movement to the DC. Each individual tool alert is low-fidelity noise a SOC drowns in, but Cortex anchors the causality on the web-exploit foothold and stitches five planes (NDR, web, EDR, ITDR, ANALYTICS) into ONE incident that tells the whole intrusion story from first scan to DC compromise.",
+        "test_cases": [
+          {
+            "test_case_id": "TC-MP-019A",
+            "objective": "The recon port-scan burst, the web content-discovery fan-out, and the injection-to-shell foothold on the lab web host stitch into one incident keyed on the www-data exploit-foothold CGO.",
+            "preconditions": [
+              "Lab web host (asm-module exposed host / DVWA / gocortexbrokenbank) with the Cortex XDR agent installed.",
+              "NGFW / NDR traffic forwarded into the tenant.",
+              "consent.simulation_authorized = true (the chain runs dual-use-lab-only adapters)."
+            ],
+            "steps": [
+              "Run the recon leg (nmap/masscan/dnsrecon) against ${CORTEXSIM_WEB_TARGET}.",
+              "Run the web-enum leg (whatweb/gobuster/nikto/ffuf) from the same source.",
+              "Run the exploit leg (sqlmap/metasploit) and observe the www-data shell-spawn.",
+              "Confirm the recon BIOC, the content-discovery XQL, and the web-exploit shell BIOC bind to the same causality chain."
+            ],
+            "success_criteria": [
+              "BIOC `MP-019 External Port-and-Service Scan Burst Against Exposed Host` fires on the single-source port fan-out.",
+              "BIOC `MP-019 Web-Service Process Spawns Interactive Shell After Injection Exploit` fires and anchors the www-data foothold.",
+              "XQL `MP-019 Web Content-Discovery Fan-Out From Single Source` returns the enumeration burst."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "test_case_id": "TC-MP-019B",
+            "objective": "The credential brute-force and the impacket lateral authentication bind to the web foothold and carry the incident into the ITDR / ANALYTICS planes.",
+            "preconditions": [
+              "TC-MP-019A produced a stitched web-foothold incident.",
+              "Lab Domain Controller (itdr module) reachable at ${CORTEXSIM_DC_TARGET} with identity logs forwarded."
+            ],
+            "steps": [
+              "From the www-data shell run the credential-access leg (hydra/netexec).",
+              "Run the impacket lateral leg (secretsdump.py/psexec.py) against ${CORTEXSIM_DC_TARGET}.",
+              "Observe the brute-force BIOC and the lateral-auth ABIOC fire and join the incident."
+            ],
+            "success_criteria": [
+              "BIOC `MP-019 Credential Brute-Force Child Spawned From Web-Service Shell` binds to the same causality_actor_process_instance_id.",
+              "ABIOC `MP-019 Anomalous Lateral Authentication Burst From Web Host` fires on the SMB/RPC auth to the DC.",
+              "The incident's planes cover the endpoint, identity, and analytics layers."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "test_case_id": "TC-MP-019C",
+            "objective": "The correlation raises exactly one external-to-internal kill-chain incident and the validation XQL confirms observability.",
+            "preconditions": [
+              "TC-MP-019B extended the incident to the DC."
+            ],
+            "steps": [
+              "Run the validation XQL for the run window.",
+              "Confirm CR-MP-0019 raised exactly one stitched incident."
+            ],
+            "success_criteria": [
+              "XQL `MP-019 External-to-Internal Kill-Chain Observed` returns at least one row for the run window.",
+              "Correlation `CR-MP-0019` raises exactly one incident reconstructing recon -> enum -> exploit-shell -> cred -> lateral."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Reduce the external attack surface: close unnecessary exposed ports and put the web app behind an NGFW / WAF so the recon burst and content-discovery fan-out are throttled and logged before an exploit is possible.",
+      "Fix the exploitable web weakness (parameterized queries / input validation) and run the web service as a least-privilege account with no shell, so an injection cannot land an interactive shell.",
+      "Segment the web tier from the identity tier so a compromised www-data host cannot reach the Domain Controller over SMB/DCE-RPC; enforce least-privilege service accounts and deny lateral admin protocols from DMZ hosts.",
+      "Enforce strong/lockout password policy and MFA so hydra/netexec online guessing fails, and monitor for authentication bursts from non-admin hosts.",
+      "Rotate any credential that could have transited the web host and scope service credentials so a single harvested secret cannot authenticate to the DC."
+    ],
+    "detection_engineering": [
+      "Anchor the correlation on the causality_actor_process of the web-exploit shell (the CGO), not on the recon or the lateral auth, so the whole chain reconstructs from the initial foothold.",
+      "Treat a single source hitting many distinct ports, then many URIs on the same host, as the earliest high-signal recon pivot even before an exploit fires.",
+      "Alert on any web-service process (nginx/apache/php-fpm) spawning an interactive shell, then that shell spawning a brute-force tool — the child-spawn lineage is the tell that separates exploitation from normal web activity.",
+      "Correlate impacket-style SMB/DCE-RPC authentication from a web/DMZ host back to the same causality chain rather than as an independent identity event."
+    ],
+    "response_playbook": "XSOAR-PB-ExternalToInternalKillChainContainment-v1"
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK — Enterprise Matrix (external-to-internal intrusion chain: Reconnaissance to Lateral Movement)",
+      "url": "https://attack.mitre.org/matrices/enterprise/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1190 — Exploit Public-Facing Application",
+      "url": "https://attack.mitre.org/techniques/T1190/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Correlation Rules and cross-plane analytics reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}
