@@ -1,0 +1,212 @@
+scenario_id: SIM-ITDR-019
+name: "ITDR — Azure Conditional-Access Weakening then Covert Mailbox-Rule Persistence"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - Analytics
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UC-ITDR-019
+tc_ref: TC-ITDR-019
+uc_name: "Azure Identity Persistence — Conditional-Access Weakening & Covert Mailbox Forwarding"
+tc_name: "CA policy modified then external inbox rule planted by the same identity"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1556"
+mitre_technique_name: "Modify Authentication Process"
+additional_techniques:
+  - technique: "T1114.003"
+    name: "Email Collection: Email Forwarding Rule"
+
+threat_report: "Cortex XSIAM Analytics Alert Reference by data source — Azure Audit Log"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The Azure Audit Log + O365 records are streamed by the azure_audit_emitter EAL
+# plugin, a python3 process running inside the container runtime (the Causality
+# Group Owner — the contract forbids the synthetic beacon as CGO, and the
+# msft_azure_audit / msft_o365_audit datasets carry no process-causality fields
+# to anchor). step-01 (conditional-access weakening) is the root and links from
+# that CGO session; step-02 (external inbox-rule creation) is the SAME initiating
+# identity's next persistence action, so it threads on shared_entity; step-03
+# (validation + correlation) fuses both legs on that identity → shared_entity,
+# mirroring how CR-ITDR-0019 stitches the CA weakening and the mail rule into one
+# Azure identity-persistence incident.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "container-runtime"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Identity Analytics Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Azure Audit Log and Microsoft 365 audit records emitted by
+  azure_audit_emitter produce the expected Cortex XSIAM 'Azure Audit Log'
+  data-source Analytics alerts: 'Azure conditional access policy creation or
+  modification' fires on the CA-policy weakening and 'Azure mailbox rule
+  creation' fires on the external auto-forwarding inbox rule. The two auto-tuned
+  ABIOCs fire on the deviation from the learned per-admin CA-change and
+  per-mailbox inbox-rule baselines, and correlation CR-ITDR-0019 stitches both
+  legs into a single Azure identity-persistence incident on the shared
+  initiating identity. Detection Accuracy is the share of injected persistence
+  legs that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Weaken conditional-access posture (emit Azure Audit Log CA-policy change)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/azure/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      : "${TARGET_USER:=svc-automation@cortexsim-canary.invalid}"
+      cat > /tmp/itdr-019.yml <<YML
+      campaign_id: CMP-ITDR-019
+      name: "ITDR — Azure conditional-access policy weakening"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [itdr, azure, conditional-access, persistence]
+      steps:
+        - step_id: step-01
+          plugin: azure_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: conditional_access_change
+            target_user: "$TARGET_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-019.yml --live
+    identity: container-runtime
+    mitre_technique: "T1556"
+    # Root of the causality spine — links from the CGO (python3 emitter session).
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "Rule-based Analytics alert 'Azure conditional access policy creation or modification' fires when a CA policy is added/updated/deleted in the Azure Audit Log (msft_azure_audit)."
+        ttp_ref: "TTP-2026-0161"
+        detection_id: xql-azure-conditional-access-policy-creation-or-modification
+      - plane: ITDR
+        type: ABIOC
+        description: "Auto-tuned ABIOC fires on the deviation from the learned per-identity conditional-access change baseline — a policy relaxed/deleted by an actor who rarely modifies CA policy."
+        ttp_ref: "TTP-2026-0161"
+        detection_id: abioc-conditional-access-policy-weakened-off-the-learned-admin-change-baseline
+
+  - id: step-02
+    name: "Plant covert external mailbox forwarding rule (emit O365 inbox-rule creation)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/azure/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      : "${TARGET_USER:=svc-automation@cortexsim-canary.invalid}"
+      cat > /tmp/itdr-019-rule.yml <<YML
+      campaign_id: CMP-ITDR-019
+      name: "ITDR — Azure external inbox-rule persistence"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [itdr, azure, mailbox-rule, forwarding, persistence]
+      steps:
+        - step_id: step-01
+          plugin: azure_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: mailbox_rule_create
+            target_user: "$TARGET_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/itdr-019-rule.yml --live
+    identity: container-runtime
+    mitre_technique: "T1114.003"
+    # Same initiating identity's next persistence action (no process fork between
+    # two audit-log events) → shared_entity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "Rule-based Analytics alert 'Azure mailbox rule creation' fires when a New-InboxRule/Set-InboxRule with an external ForwardTo/RedirectTo target lands in the O365 audit (msft_o365_audit)."
+        ttp_ref: "TTP-2026-0161"
+        detection_id: xql-azure-mailbox-rule-creation
+      - plane: ITDR
+        type: ABIOC
+        description: "Auto-tuned ABIOC fires on the deviation from the learned per-mailbox inbox-rule baseline — a mailbox that never auto-forwards externally suddenly creates an external forwarding rule."
+        ttp_ref: "TTP-2026-0161"
+        detection_id: abioc-external-mailbox-forwarding-rule-off-the-learned-inbox-rule-baseline
+
+  - id: step-03
+    name: "Validate the emitted logs landed and correlation stitches both legs"
+    command: "echo cortexsim-itdr-019-validate-and-correlate-azure-identity-persistence"
+    identity: container-runtime
+    mitre_technique: "T1556"
+    # Correlation fuses both persistence legs on the same identity → shared_entity.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms both persistence signals (CA-policy change in msft_azure_audit, inbox-rule creation in msft_o365_audit) landed within the run window."
+        ttp_ref: "TTP-2026-0161"
+        detection_id: xql-azure-audit-log-persistence-signals-landed-in-datasets
+      - plane: ITDR
+        type: Correlation
+        description: "Correlation rule fuses the CA-weakening leg and the covert mailbox-rule leg on the same initiating identity into a single Azure identity-persistence incident."
+        ttp_ref: "TTP-2026-0161"
+        detection_id: CR-ITDR-0019
+
+cleanup:
+  commands:
+    - "rm -f /tmp/itdr-019.yml /tmp/itdr-019-rule.yml"
+    - "echo cortexsim-itdr-019-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - itdr
+  - azure
+  - entra-id
+  - conditional-access
+  - mailbox-rule
+  - forwarding
+  - persistence
+  - analytics
+  - abioc
+  - eal-plugin
