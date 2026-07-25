@@ -14,6 +14,7 @@ import { installRoutes } from '../../test/mockFetch.js'
 import AppShell from '../console/AppShell.jsx'
 import ConsoleHeader from '../console/ConsoleHeader.jsx'
 import ConsoleRail from '../console/ConsoleRail.jsx'
+import DestinationNav from '../console/DestinationNav.jsx'
 import CommandStrip from '../console/CommandStrip.jsx'
 import CommandPalette from '../console/CommandPalette.jsx'
 import TelemetryStrip from '../console/TelemetryStrip.jsx'
@@ -27,13 +28,46 @@ import EvidenceView from '../console/EvidenceView.jsx'
 import CoverageView from '../console/CoverageView.jsx'
 
 describe('console-view smoke renders', () => {
-  it('AppShell mounts with empty data + no active run', () => {
+  it('AppShell mounts the destination-nav shell with empty data + no active run', () => {
+    const groups = [
+      { label: 'Operate', items: [
+        { id: 'library', label: 'Library', icon: '▤', badge: '135' },
+        { id: 'runs',    label: 'Runs & Proof', icon: '◈' },
+      ] },
+    ]
     render(
-      <AppShell activeTab="operations" planes={[]} pinned={[]} paletteItems={[]}>
+      <AppShell destination="library" navGroups={groups} paletteItems={[]}>
         <div data-testid="content">child</div>
       </AppShell>
     )
     expect(screen.getByTestId('content')).toBeInTheDocument()
+    // Persistent destination nav is present (not a linear stepper).
+    expect(screen.getByRole('navigation', { name: /console destinations/i })).toBeInTheDocument()
+    expect(screen.getByTestId('dest-button-library')).toBeInTheDocument()
+    expect(screen.getByTestId('dest-button-runs')).toBeInTheDocument()
+    // Skip link preserved for keyboard users.
+    expect(screen.getByText(/skip to workspace/i)).toBeInTheDocument()
+  })
+
+  it('DestinationNav renders grouped destinations + marks the active one', () => {
+    const groups = [
+      { label: 'Operate', items: [{ id: 'library', label: 'Library', icon: '▤' }] },
+      { label: 'Manage',  items: [{ id: 'tenants', label: 'Tenants', icon: '⬡' }] },
+    ]
+    let navigated = null
+    render(
+      <DestinationNav
+        groups={groups}
+        active="library"
+        onNavigate={(id) => { navigated = id }}
+      />
+    )
+    expect(screen.getByText('Operate')).toBeInTheDocument()
+    expect(screen.getByText('Manage')).toBeInTheDocument()
+    const lib = screen.getByTestId('dest-button-library')
+    expect(lib).toHaveAttribute('aria-current', 'page')
+    screen.getByTestId('dest-button-tenants').click()
+    expect(navigated).toBe('tenants')
   })
 
   it('ConsoleHeader renders brand + env pill + ⌘K trigger', () => {

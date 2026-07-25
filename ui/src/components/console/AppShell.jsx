@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import ConsoleHeader from './ConsoleHeader.jsx'
 import TelemetryStrip from './TelemetryStrip.jsx'
-import ConsoleRail from './ConsoleRail.jsx'
-import ConsoleStepper from './ConsoleStepper.jsx'
+import DestinationNav from './DestinationNav.jsx'
 import CommandStrip from './CommandStrip.jsx'
 import CommandPalette from './CommandPalette.jsx'
 import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverlay.jsx'
@@ -10,55 +9,31 @@ import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverl
 /**
  * AppShell — Mission Ops Console layout wrapper.
  *
- * Provides the 4-region shell (header · telemetry · workspace · command strip)
- * with tabs for Operations / In-Flight / Evidence / Lab / Coverage.
+ * Provides the 4-region shell (global context bar · telemetry · workspace ·
+ * command strip). The primary nav is the PERSISTENT DestinationNav sidebar —
+ * every destination is one click away at any time (the linear ConsoleStepper +
+ * More▾ overflow are gone). The active tenant/agent live in the global bar's
+ * switchers, not as destinations.
  *
  * Props:
- *   activeTab           — controlled tab id
- *   onTabChange         — (tabId) => void
- *   activeRun           — { scenarioId, step, totalSteps, elapsed, detected, total, nextStep }
- *   health              — { hostname, version, sensors: { xdr, cdr, ndr } }
- *   planes              — array of { code, name, count, isActive } for the rail
- *   onSelectPlane       — (planeCode) => void
- *   pinned              — [{ id, name }]
- *   onSelectPinned      — (scenarioId) => void
- *   onUnpinScenario     — (scenarioId) => void
- *   onAbortRun          — () => void
- *   tabBadges           — { operations: '19', inflight: 'LIVE', evidence: '4/12' }
- *   paletteItems        — items for ⌘K — see CommandPalette
- *   ticker              — string rendered in bottom strip
- *   onExportPOV         — () => void  triggered by ⌘E from anywhere
- *   children            — tab content (rendered in the main workspace area)
+ *   destination   — current destination id (was activeTab)
+ *   onNavigate    — (destinationId, params?) => void (was onTabChange)
+ *   navGroups     — [{ label, items: [{ id, label, icon, badge }] }] for the nav
+ *   activeRun     — { scenarioId, step, totalSteps, elapsed, ... } | null
+ *   health        — { hostname, version, sensors, tenantHealth }
+ *   onAbortRun    — () => void
+ *   paletteItems  — items for ⌘K
+ *   ticker        — string for the bottom strip
+ *   onExportPOV   — () => void  triggered by ⌘E from anywhere
+ *   children      — the mounted destination surface
  */
-// Guided POV-workflow steps (redesign v2). `id`s map to AppConsole tab ids;
-// labels reframe them into the DC's journey. See docs/design/console-redesign-v2.md.
-const STEPS = [
-  { id: 'targets',    label: 'Targets'  },
-  { id: 'operations', label: 'Library'  },
-  { id: 'launch',     label: 'Launch'   },
-  { id: 'inflight',   label: 'Live'     },
-  { id: 'evidence',   label: 'Evidence' },
-]
-const MORE_ITEMS = [
-  { id: 'storyline', label: 'Storyline'       },
-  { id: 'graph',     label: 'Causality'       },
-  { id: 'coverage', label: 'ATT&CK Coverage' },
-  { id: 'lab',      label: 'Environments'    },
-  { id: 'tenants',  label: 'Tenants'         },
-]
-
 export default function AppShell({
-  activeTab = 'operations',
-  onTabChange = () => {},
+  destination = 'library',
+  onNavigate = () => {},
+  navGroups = [],
   activeRun = null,
   health = {},
-  planes = [],
-  onSelectPlane = () => {},
-  pinned = [],
-  onSelectPinned = () => {},
-  onUnpinScenario = null,
   onAbortRun = () => {},
-  tabBadges = {},
   paletteItems = [],
   ticker = '',
   onExportPOV = null,
@@ -78,8 +53,6 @@ export default function AppShell({
     })
   }, [])
   // Theater mode — projector-friendly view for sales briefings.
-  // Persisted to localStorage so the DC can pin it for the duration of
-  // a meeting and not lose it across an accidental reload.
   const [theaterMode, setTheaterMode] = useState(() => {
     try { return window.localStorage.getItem('cortexsim.theaterMode') === 'true' } catch { return false }
   })
@@ -94,14 +67,13 @@ export default function AppShell({
   // First-run help overlay — appears once per browser, then suppressed.
   useEffect(() => {
     if (shouldShowOnFirstRun()) {
-      // Defer so it doesn't race with the initial render's keyboard handlers.
       const t = setTimeout(() => setHelpOpen(true), 400)
       return () => clearTimeout(t)
     }
     return undefined
   }, [])
 
-  // Global ⌘K / ⌘/ / Ctrl+K / Ctrl+/ handler
+  // Global ⌘K / ⌘/ / ⌘E handlers (preserved from the stepper shell).
   useEffect(() => {
     const handler = (e) => {
       const key = e.key ? e.key.toLowerCase() : ''
@@ -113,9 +85,6 @@ export default function AppShell({
         e.preventDefault()
         setHelpOpen((v) => !v)
       } else if (mod && key === 'e' && !e.shiftKey) {
-        // ⌘E — global POV report export (preempts the browser's "view page
-        // source" / Firefox print-preview default; only when we have an
-        // export handler wired)
         if (onExportPOV) {
           e.preventDefault()
           onExportPOV()
@@ -139,15 +108,17 @@ export default function AppShell({
 
   return (
     <div className={`${themeClass} ${shellClass}`}>
-      {/* Skip link — keyboard users land here on Tab; jumps past header/rail
-          to the main workspace. Invisible until focused. */}
+      {/* Skip link — keyboard users land here on Tab; jumps past bar/nav to the
+          main workspace. Invisible until focused. */}
       <a href="#cortexsim-main" className="skip-link">
         Skip to workspace
       </a>
 
       <ConsoleHeader
         health={health}
+        activeRun={activeRun}
         onOpenPalette={() => setPaletteOpen(true)}
+        onNavigate={onNavigate}
         theaterMode={theaterMode}
         onToggleTheater={toggleTheater}
       />
@@ -157,25 +128,16 @@ export default function AppShell({
       )}
 
       <div className={'workspace' + (railCollapsed ? ' workspace--rail-collapsed' : '')}>
-        <ConsoleRail
-          planes={planes}
-          pinned={pinned}
-          onSelectPlane={onSelectPlane}
-          onSelectPinned={onSelectPinned}
-          onUnpin={onUnpinScenario}
+        <DestinationNav
+          groups={navGroups}
+          active={destination}
+          onNavigate={onNavigate}
           collapsed={railCollapsed}
           onToggleCollapse={toggleRail}
         />
 
         <main className="main" id="cortexsim-main" aria-label="CortexSim workspace">
-          <ConsoleStepper
-            steps={STEPS.map((s) => ({ ...s, badge: tabBadges[s.id] }))}
-            moreItems={MORE_ITEMS}
-            activeTab={activeTab}
-            onTabChange={onTabChange}
-          />
-
-          <div className="view" key={activeTab}>
+          <div className="view" key={destination}>
             {children}
           </div>
         </main>
