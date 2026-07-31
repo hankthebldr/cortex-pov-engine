@@ -23,10 +23,15 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UC-EDR-016
-tc_ref: TC-EDR-016
-uc_name: "ClickFix Pastejacking User-Execution Detection"
-tc_name: "RunMRU-to-explorer.exe-Parented Interpreter Chain (Cortex ABIOC)"
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+  - TC-CITH-04
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Depth on Execution (TA0002): real User-Execution + interpreter variants, not

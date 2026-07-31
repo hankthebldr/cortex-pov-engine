@@ -8,10 +8,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-MP-06
-tc_ref: TC-MP-06
-uc_name: "NGFW-to-Endpoint Container Causality Stitching"
-tc_name: "Causality Graph Stitching — NGFW Session ↔ Container Process (5-tuple + container_id)"
+uc_ref: UCS-NDR-01
+tc_ref: TC-NDR-01
+tc_refs:
+  - TC-NDR-01
+  - TC-CDR-02
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate causality graph stitching correlates network events with endpoint process telemetry"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"

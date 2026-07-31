@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-KOI-01
-tc_ref: TC-KOI-01
-uc_name: "MCP Supply-Chain Typosquat Detection"
-tc_name: "Claude Desktop Pulls 'anthroopic-calculator' (typo) MCP Manifest"
+uc_ref: UCS-SCA-01
+tc_ref: TC-SCA-01
+tc_refs:
+  - TC-SCA-01
+  - TC-AGTX-11
+pov_scenario_id: POV-SC-012
+uc_name: "Software Composition Analysis"
+tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

@@ -12,10 +12,14 @@ detection_types:
   - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-uc_ref: UC-MP-014
-tc_ref: TC-MP-014
-uc_name: "AzureHound Cloud-Identity Enumeration — Cross-Plane Causality Stitch"
-tc_name: "Token Theft + Non-Interactive Entra Sign-In + Bulk Graph Discovery Stitch"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-ITDR-03
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # DL-04 — this chain's depth is on TA0006 (Credential Access): the initiating

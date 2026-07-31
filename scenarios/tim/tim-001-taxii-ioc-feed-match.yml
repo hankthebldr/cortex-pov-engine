@@ -10,10 +10,15 @@ detection_types:
   - BIOC
   - Correlation
 
-uc_ref: UCS-TIM-01
-tc_ref: TC-TIM-01
-uc_name: "Threat Intel Management — TAXII Feed IOC Matching"
-tc_name: "TAXII-Fed C2 Indicator Match Stitched to Outbound NDR Session"
+uc_ref: UCS-TH-01
+tc_ref: TC-TH-02
+tc_refs:
+  - TC-TH-02
+  - TC-TIM-02
+  - TC-XTI-03
+pov_scenario_id: POV-SC-005
+uc_name: "Threat Hunting"
+tc_name: "Demonstrate automated hunting via scheduled correlation searches with IOC feeds"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"

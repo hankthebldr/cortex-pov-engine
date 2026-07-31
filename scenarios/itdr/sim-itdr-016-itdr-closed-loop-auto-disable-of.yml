@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-ITDR-016
-tc_ref: TC-ITDR-016
-uc_name: "Closed-Loop Auto-Disable of a Compromised Account"
-tc_name: "Impossible-Travel + Privilege Anomaly -> Playbook Suspend + Session Revoke (SLA-validated)"
+uc_ref: UCS-IR-03
+tc_ref: TC-IR-07
+tc_refs:
+  - TC-IR-07
+  - TC-ITDR-02
+  - TC-SOAR-02
+pov_scenario_id: POV-SC-005
+uc_name: "Incident Response"
+tc_name: "Demonstrate automated eradication and recovery playbook execution end-to-end"
 
 # Primary technique is the compromise-chain entry (valid stolen cloud
 # credentials), NOT an offensive Impact tag. This is a DEFENSIVE closed-loop

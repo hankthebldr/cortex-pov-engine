@@ -7,10 +7,14 @@ plane: CDR
 detection_types:
   - BIOC
 
-uc_ref: UCS-CDR-04
-tc_ref: TC-CDR-04
-uc_name: "Kubernetes Lateral Movement Detection"
-tc_name: "kubectl Abuse and CronJob Persistence"
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+tc_refs:
+  - TC-CDR-01
+  - TC-IR-04
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0008"
 mitre_tactic_name: "Lateral Movement"

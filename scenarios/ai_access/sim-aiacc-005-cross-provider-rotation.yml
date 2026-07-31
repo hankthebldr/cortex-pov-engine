@@ -7,10 +7,11 @@ plane: AI_ACCESS
 detection_types:
   - XQL
 
-uc_ref: UCS-AIACC-05
-tc_ref: TC-AIACC-05
-uc_name: "Cross-Provider Behaviour Stitching"
-tc_name: "Single User Rotates Across Three AI Providers in <5 min"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"

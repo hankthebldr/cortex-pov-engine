@@ -18,10 +18,16 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UCS-EDR-06
-tc_ref: TC-EDR-06
-uc_name: "Endpoint Credential Theft Detection (LSASS)"
-tc_name: "Windows LSASS Memory Dump via LOLBin"
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+  - TC-EDR-05
+  - TC-ITDR-01
+  - TC-CITH-03
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

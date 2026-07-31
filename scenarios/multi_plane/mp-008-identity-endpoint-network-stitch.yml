@@ -16,10 +16,14 @@ detection_types:
   - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-uc_ref: UCS-MP-08
-tc_ref: TC-MP-08
-uc_name: "Cross-Plane Incident Stitching"
-tc_name: "Identity → Endpoint → Network Hands-on-Keyboard Campaign Correlation"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-CITH-07
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Kill-chain arc: TA0001 Initial Access (T1078 Valid Accounts, social-engineered

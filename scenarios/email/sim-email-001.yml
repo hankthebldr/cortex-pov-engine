@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UC-EMAIL-001
-tc_ref: TC-EMAIL-001A
-uc_name: "Phishing Credential-Link Detection"
-tc_name: "Blocked Phishing Message + Permitted Click For One Recipient Raises Credential-Phishing Alert"
+uc_ref: UCS-AES-01
+tc_ref: TC-AES-01
+tc_refs:
+  - TC-AES-01
+  - TC-AES-06
+pov_scenario_id: POV-SC-001
+uc_name: "Advanced Email Security"
+tc_name: "Validate AI-driven phishing detection identifies credential harvesting, brand impersonation, and zero-day phishing URLs across email platforms"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

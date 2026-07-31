@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-CDR-025
-tc_ref: TC-CDR-025
-uc_name: "Kubernetes audit — unusual pod exec and service-account API abuse"
-tc_name: "Interactive pod exec then out-of-baseline service-account RBAC-write"
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+tc_refs:
+  - TC-CDR-01
+  - TC-CITH-04
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0002"
 mitre_tactic_name: "Execution"

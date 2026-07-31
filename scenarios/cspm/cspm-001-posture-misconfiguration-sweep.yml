@@ -12,10 +12,15 @@ detection_types:
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
 # Maps to the Cortex Use Case Index Master v2.0 Cloud/Posture family:
 #   Cloud Posture Management → TC-CSPM-01 (MOAT tier — F4 Posture & Compliance).
-uc_ref: UCS-CSPM-01
-tc_ref: TC-CSPM-01
-uc_name: "Cloud Security Posture Management"
-tc_name: "Misconfiguration Detection & Compliance Scoring"
+uc_ref: UCS-CSPM-02
+tc_ref: TC-CSPM-02
+tc_refs:
+  - TC-CSPM-02
+  - TC-CSPM-01
+  - TC-CSPM-04
+pov_scenario_id: POV-SC-007
+uc_name: "Cloud Security Posture Management (CSPM)"
+tc_name: "Validate Security Policy Enforcement — OOTB policies (CIS, NIST, SOC2) evaluate correctly against target resources"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # CSPM findings are pre-attack posture, mapped to the techniques the

@@ -18,10 +18,15 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UCS-EDR-08
-tc_ref: TC-EDR-08
-uc_name: "Ransomware Impact Detection (Linux Host)"
-tc_name: "Host File Mass-Encryption + Recovery Inhibition"
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-04
+tc_refs:
+  - TC-EDR-04
+  - TC-EDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Demonstrate auto-containment triggers on confirmed malware execution"
 
 mitre_tactic: "TA0040"
 mitre_tactic_name: "Impact"

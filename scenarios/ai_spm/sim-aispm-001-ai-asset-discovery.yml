@@ -10,10 +10,11 @@ detection_types:
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
 # Maps directly to Cortex Use Case Index Master v2.0:
 #   SecOps + Cloud TC Index → TC-AISPM-01 (MOAT tier)
-uc_ref: UCS-AISPM-01
-tc_ref: TC-AISPM-01
+uc_ref: UCS-AISP-01
+tc_ref: TC-AISP-01
+pov_scenario_id: POV-SC-003
 uc_name: "AI Security Posture Management"
-tc_name: "AI Asset Discovery & Inventory"
+tc_name: "Validate AI Asset Discovery & Inventory — AI/ML resources (SageMaker endpoints, Bedrock models, Vertex AI, OpenAI integrations) discovered across multi-cloud"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # AI/ML doesn't have a first-class MITRE technique yet; closest analog is

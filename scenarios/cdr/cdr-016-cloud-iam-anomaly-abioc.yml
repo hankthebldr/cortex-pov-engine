@@ -21,10 +21,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CDR-16
-tc_ref: TC-CDR-16
-uc_name: "Cloud Workload IAM Usage Anomaly Detection via Cortex ABIOC"
-tc_name: "Workload-Role Baseline + Call-Rate and New-Action Deviation Detection"
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-CITH-04
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

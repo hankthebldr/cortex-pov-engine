@@ -10,10 +10,14 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UCS-CDR-13
-tc_ref: TC-CDR-13
-uc_name: "Insecure Deployment Runtime Detonation Detection"
-tc_name: "Busybox ELF Retrieval + Malware Hash IOC Match"
+uc_ref: UCS-CITH-02
+tc_ref: TC-CITH-02
+tc_refs:
+  - TC-CITH-02
+  - TC-CDR-01
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate Cloud Malware Detection & Response — Known and unknown malware detected on cloud workloads via static analysis, behavioral detection, and WildFire…"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"

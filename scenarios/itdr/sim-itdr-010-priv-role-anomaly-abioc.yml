@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-ITDR-10
-tc_ref: TC-ITDR-10
-uc_name: "Identity Behavioral-ML Detection"
-tc_name: "Rogue Privileged Role / Consent Grant on a Directory-Sync Account"
+uc_ref: UCS-ITDR-02
+tc_ref: TC-ITDR-03
+tc_refs:
+  - TC-ITDR-03
+  - TC-CITH-04
+pov_scenario_id: POV-SC-001
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate CIE syncs and correlates AD, Azure AD, and cloud IdPs"
 
 mitre_tactic: "TA0004"
 mitre_tactic_name: "Privilege Escalation"

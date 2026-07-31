@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-CDR-10
-tc_ref: TC-CDR-10
-uc_name: "XDM Normalization Substrate Proof for Container Telemetry"
-tc_name: "Raw Container Telemetry to Modeled Field to BIOC Chain"
+uc_ref: UCS-BYOML-01
+tc_ref: TC-BYOML-02
+tc_refs:
+  - TC-BYOML-02
+  - TC-TH-03
+pov_scenario_id: POV-SC-027
+uc_name: "Advanced Analytics & BYOML"
+tc_name: "Demonstrate datamodel customization for industry-specific correlation rules"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"

@@ -9,10 +9,16 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CDR-07
-tc_ref: TC-CDR-07
-uc_name: "Container & Kubernetes Posture and Supply-Chain Assurance"
-tc_name: "Cluster Posture Sweep and Discovery-Activity Detection"
+uc_ref: UCS-CDR-02
+tc_ref: TC-CDR-03
+tc_refs:
+  - TC-CDR-03
+  - TC-CVM-01
+  - TC-SSCAN-01
+  - TC-IACS-01
+pov_scenario_id: POV-SC-055
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate CSPM policy scanning detects misconfigurations across multi-cloud accounts"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

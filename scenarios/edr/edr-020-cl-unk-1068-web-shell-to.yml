@@ -10,10 +10,16 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-EDR-020
-tc_ref: TC-EDR-020
-uc_name: "Web-Shell-Owned Living-off-the-Land Credential Theft Reconstructed as One Causality Incident"
-tc_name: "w3wp.exe web shell owns SAM-hive theft, python.exe side-load Mimikatz, certutil staging and FRP tunnel"
+uc_ref: UCS-WAAS-04
+tc_ref: TC-WAAS-04
+tc_refs:
+  - TC-WAAS-04
+  - TC-EDR-03
+  - TC-ITDR-01
+  - TC-EDR-05
+pov_scenario_id: POV-SC-002
+uc_name: "Web API & Application Security"
+tc_name: "Validate Agent-Based Threat Detection (Runtime) — Cortex Agent detects web application attacks at runtime (in-process)"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

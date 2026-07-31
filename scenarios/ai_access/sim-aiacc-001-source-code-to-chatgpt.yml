@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-AIACC-01
-tc_ref: TC-AIACC-01
-uc_name: "Shadow-AI Source Code Disclosure"
-tc_name: "Multi-File Source Code Paste to OpenAI ChatGPT API"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-DLP-01
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"

@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-MP-017
-tc_ref: TC-MP-017
-uc_name: "React2Shell Pod-RCE to Cloud Control-Plane Pivot Detection"
-tc_name: "RSC RCE -> SAT Token Theft -> K8s Secret Enum -> Node IAM Role Theft -> Cloud Reuse, Stitched"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-CDR-02
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

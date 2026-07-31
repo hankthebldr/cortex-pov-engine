@@ -7,10 +7,14 @@ plane: CLOUD_APP
 detection_types:
   - XQL
 
-uc_ref: UCS-CAPP-05
-tc_ref: TC-CAPP-05
-uc_name: "OAuth Baseline / False-Positive Validation"
-tc_name: "openid+email+profile Grant Should NOT Trigger Risky-Scope Alerts"
+uc_ref: UCS-CITH-11
+tc_ref: TC-CITH-11
+tc_refs:
+  - TC-CITH-11
+  - TC-DLP-04
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate Detection Rule Accuracy — false positive rate <5% on production-representative test data"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

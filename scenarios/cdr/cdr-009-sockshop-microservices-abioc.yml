@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CDR-09
-tc_ref: TC-CDR-09
-uc_name: "Microservices Behavioral Anomaly Detection via Cortex ABIOC"
-tc_name: "Sock-Shop Baseline + Behavioral Deviation Detection"
+uc_ref: UCS-CITH-04
+tc_ref: TC-CITH-04
+tc_refs:
+  - TC-CITH-04
+  - TC-CDR-01
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate AI Runtime Security Analytics — AI-powered runtime analytics detect anomalous cloud workload behavior without signature dependency"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

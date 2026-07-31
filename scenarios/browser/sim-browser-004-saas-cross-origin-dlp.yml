@@ -8,10 +8,14 @@ detection_types:
   - Analytics
   - BIOC
 
-uc_ref: UCS-BROWSER-04
-tc_ref: TC-BROWSER-04
-uc_name: "Cross-SaaS Data Movement Detection"
-tc_name: "User Copies from Sanctioned CRM, Pastes Into Personal Webmail"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-DLP-01
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"

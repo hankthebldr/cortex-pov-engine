@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - IOC
 
-uc_ref: UCS-NDR-06
-tc_ref: TC-NDR-06
-uc_name: "FTP App-ID + Cleartext Credential Detection"
-tc_name: "Outbound FTP USER/PASS + Data Egress via STOR"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-03
+tc_refs:
+  - TC-NDR-03
+  - TC-NDR-04
+  - TC-DLP-01
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate network analytics engine filters traffic noise via EAL"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"

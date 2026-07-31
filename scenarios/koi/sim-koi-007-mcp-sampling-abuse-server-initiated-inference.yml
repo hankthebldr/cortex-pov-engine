@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-KOI-007
-tc_ref: TC-KOI-007
-uc_name: "MCP Sampling Abuse Detection via Behavioral Analytics"
-tc_name: "Quota Theft and Covert Tool Invocation from a Malicious MCP Server"
+uc_ref: UCS-AGTX-06
+tc_ref: TC-AGTX-11
+tc_refs:
+  - TC-AGTX-11
+  - TC-AGTX-07
+pov_scenario_id: POV-SC-068
+uc_name: "Agentic Automation (AgentiX)"
+tc_name: "Validate Model Context Protocol (MCP) support enables AgentiX to integrate with custom and third-party AI tools without custom code"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"

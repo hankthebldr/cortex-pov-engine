@@ -10,10 +10,14 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UCS-ASM-01
-tc_ref: TC-ASM-01
-uc_name: "Attack Surface Discovery & Enumeration via Cortex ASM"
-tc_name: "Exposed Multi-Service Host + Public S3 Website Discovery"
+uc_ref: UCS-ASM-03
+tc_ref: TC-ASM-05
+tc_refs:
+  - TC-ASM-05
+  - TC-ASM-06
+pov_scenario_id: POV-SC-003
+uc_name: "Attack Surface & Exposure Management"
+tc_name: "Validate External Attack Surface Discovery — discovery covers all registered IP ranges and domains"
 
 mitre_tactic: "TA0043"
 mitre_tactic_name: "Reconnaissance"

@@ -8,10 +8,11 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UC-EMAIL-002
-tc_ref: TC-EMAIL-002A
-uc_name: "Malicious Attachment Detection"
-tc_name: "Blocked Malware-Attachment Burst For One Recipient Raises Malware-Attachment Alert"
+uc_ref: UCS-AES-03
+tc_ref: TC-AES-05
+pov_scenario_id: POV-SC-063
+uc_name: "Advanced Email Security"
+tc_name: "Validate detection of malicious attachments including macro-laden documents, encrypted archives with malware, and embedded exploit payloads"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

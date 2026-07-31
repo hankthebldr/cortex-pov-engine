@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-KOI-08
-tc_ref: TC-KOI-08
-uc_name: "Self-Replicating npm Worm — Install-Hook Credential Theft & Self-Hosted-Runner Persistence"
-tc_name: "npm preinstall hook scrapes secrets, exfils, republishes to sibling packages, and registers a self-hosted runner"
+uc_ref: UCS-SCA-01
+tc_ref: TC-SCA-01
+tc_refs:
+  - TC-SCA-01
+  - TC-SSCAN-01
+pov_scenario_id: POV-SC-012
+uc_name: "Software Composition Analysis"
+tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

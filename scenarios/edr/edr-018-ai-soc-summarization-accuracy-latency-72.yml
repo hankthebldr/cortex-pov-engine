@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-EDR-018
-tc_ref: TC-EDR-018
-uc_name: "AI SOC Narrative Reconstruction & Triage Latency"
-tc_name: "72-Minute Identity-to-Exfil Summarization Race"
+uc_ref: UCS-IR-06
+tc_ref: TC-IR-12
+tc_refs:
+  - TC-IR-12
+  - TC-IR-05
+  - TC-CITH-07
+pov_scenario_id: POV-SC-018
+uc_name: "Incident Response"
+tc_name: "Demonstrate incident synthesis generates executive summary from correlated alert data"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Headline tactic is TA0010 (Exfiltration) with two real exfil variants

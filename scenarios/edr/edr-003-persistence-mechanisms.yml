@@ -9,9 +9,13 @@ detection_types:
   - XQL
 
 uc_ref: UCS-EDR-03
-tc_ref: TC-EDR-03
-uc_name: "Persistence Mechanism Detection"
-tc_name: "Linux Persistence Installation"
+tc_ref: TC-EDR-05
+tc_refs:
+  - TC-EDR-05
+  - TC-CITH-03
+pov_scenario_id: POV-SC-045
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate causality graph provides full process chain and causality owner attribution"
 
 mitre_tactic: "TA0003"
 mitre_tactic_name: "Persistence"

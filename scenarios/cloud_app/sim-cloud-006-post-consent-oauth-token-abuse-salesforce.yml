@@ -10,10 +10,14 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UC-CLOUD-006
-tc_ref: TC-CLOUD-006
-uc_name: "Post-Consent OAuth Token Abuse Detection via Cortex ABIOC"
-tc_name: "Salesforce Bulk API Export-Then-Erase on a Trusted Integration Token"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-DSPM-04
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0009"
 mitre_tactic_name: "Collection"

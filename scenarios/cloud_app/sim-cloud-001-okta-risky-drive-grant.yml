@@ -16,10 +16,14 @@ detection_types:
 # Adding a dangling IOC ref would violate the "only reference detection_ids
 # that RESOLVE" rule, so this gap is left tracked-but-open until the card lands.
 
-uc_ref: UCS-CAPP-01
-tc_ref: TC-CAPP-01
-uc_name: "Risky OAuth Scope Grant Detection"
-tc_name: "Okta — User Grants Drive-Wide Scope to Untrusted App"
+uc_ref: UCS-ITDR-02
+tc_ref: TC-ITDR-03
+tc_refs:
+  - TC-ITDR-03
+  - TC-DLP-11
+pov_scenario_id: POV-SC-001
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate CIE syncs and correlates AD, Azure AD, and cloud IdPs"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

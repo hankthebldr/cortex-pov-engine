@@ -12,10 +12,15 @@ detection_types:
   - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-uc_ref: UC-MP-018
-tc_ref: TC-MP-018
-uc_name: "CI/CD Supply-Chain Compromise to Kubernetes Cluster-Brick via Cortex Cross-Plane Causality"
-tc_name: "Weaponized trivy/kics action -> /proc-mem scrape -> IMDS theft -> k8s secrets -> privileged DaemonSet -> recursive wipe"
+uc_ref: UCS-SCA-01
+tc_ref: TC-SCA-01
+tc_refs:
+  - TC-SCA-01
+  - TC-IR-05
+  - TC-SSCAN-01
+pov_scenario_id: POV-SC-012
+uc_name: "Software Composition Analysis"
+tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 mitre_tactic: "TA0001"

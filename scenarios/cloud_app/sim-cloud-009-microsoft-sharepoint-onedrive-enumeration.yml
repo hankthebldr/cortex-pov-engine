@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-CLOUD-009
-tc_ref: TC-CLOUD-009A
-uc_name: "Microsoft 365 cloud-repository enumeration detection"
-tc_name: "SharePoint + OneDrive enumeration sweep (cloud service discovery)"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-DSPM-04
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

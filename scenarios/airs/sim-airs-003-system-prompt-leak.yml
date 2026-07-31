@@ -8,10 +8,11 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-AIRS-03
-tc_ref: TC-AIRS-03
-uc_name: "OWASP LLM07 — System Prompt Leakage"
-tc_name: "Prompt-Stealer Probes Force Disclosure of Hidden System Prompt"
+uc_ref: UCS-AIRS-04
+tc_ref: TC-AIRS-07
+pov_scenario_id: POV-SC-033
+uc_name: "AI Runtime Security (Prisma AIRS)"
+tc_name: "Validate real-time detection and blocking of prompt injection, jailbreak attempts, and malicious agent behaviors in production AI systems"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

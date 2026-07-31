@@ -7,10 +7,11 @@ plane: AI_SPM
 detection_types:
   - XQL
 
-uc_ref: UCS-AISPM-01
-tc_ref: TC-AISPM-06
+uc_ref: UCS-AISP-06
+tc_ref: TC-AISP-06
+pov_scenario_id: POV-SC-004
 uc_name: "AI Security Posture Management"
-tc_name: "AI Security Dashboard & Posture"
+tc_name: "Validate AI Security Dashboard & Posture — AI-SPM dashboard shows aggregate AI security posture across all discovered AI assets"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

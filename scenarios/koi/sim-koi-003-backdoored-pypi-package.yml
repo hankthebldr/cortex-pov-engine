@@ -8,10 +8,11 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-KOI-03
-tc_ref: TC-KOI-03
-uc_name: "Language-Package Supply-Chain Compromise"
-tc_name: "Typosquat 'mcp-server-helpers' Package with Post-Install Hook"
+uc_ref: UCS-SCA-01
+tc_ref: TC-SCA-01
+pov_scenario_id: POV-SC-012
+uc_name: "Software Composition Analysis"
+tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

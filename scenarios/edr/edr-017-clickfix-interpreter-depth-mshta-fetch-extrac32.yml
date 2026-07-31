@@ -25,10 +25,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-EDR-017
-tc_ref: TC-EDR-017
-uc_name: "Endpoint Behavioral-ML Detection of a LOLBin Loader Chain"
-tc_name: "ClickFix Interpreter-Depth Lumma Loader (mshta -> extrac32 -> AutoIt3)"
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+  - TC-CITH-04
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
 
 mitre_tactic: "TA0002"
 mitre_tactic_name: "Execution"

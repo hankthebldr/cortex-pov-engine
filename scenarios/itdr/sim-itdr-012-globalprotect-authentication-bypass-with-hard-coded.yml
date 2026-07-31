@@ -10,10 +10,11 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UC-ITDR-012
-tc_ref: TC-ITDR-012
-uc_name: "GlobalProtect Authentication-Bypass Detection (PAN-OS CVE-2026-0257)"
-tc_name: "Bypassed VPN Session Fingerprinting and Session-Without-Auth Correlation"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

@@ -7,10 +7,11 @@ plane: AI_SPM
 detection_types:
   - XQL
 
-uc_ref: UCS-AISPM-01
-tc_ref: TC-AISPM-05
+uc_ref: UCS-AISP-05
+tc_ref: TC-AISP-05
+pov_scenario_id: POV-SC-004
 uc_name: "AI Security Posture Management"
-tc_name: "AI Sensitive Data Classification"
+tc_name: "Validate AI Sensitive Data Classification — Training data stores scanned for sensitive data (PII/PHI/PCI in training sets)"
 
 mitre_tactic: "TA0009"
 mitre_tactic_name: "Collection"

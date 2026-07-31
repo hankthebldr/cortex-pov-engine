@@ -10,10 +10,14 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UCS-ASM-03
-tc_ref: TC-ASM-03
-uc_name: "Pre-Intrusion Reconnaissance Detection via Cortex ASM"
-tc_name: "Open-Source Subdomain / Cert / Identity Harvesting"
+uc_ref: UCS-ASM-01
+tc_ref: TC-ASM-01
+tc_refs:
+  - TC-ASM-01
+  - TC-ASM-05
+pov_scenario_id: POV-SC-025
+uc_name: "Attack Surface & Exposure Management"
+tc_name: "Validate XPANSE asset inventory feeds unmanaged asset data into XSIAM incident context"
 
 mitre_tactic: "TA0043"
 mitre_tactic_name: "Reconnaissance"

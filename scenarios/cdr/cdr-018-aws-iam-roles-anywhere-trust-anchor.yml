@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-CDR-018
-tc_ref: TC-CDR-018
-uc_name: "IAM Roles Anywhere Trust-Anchor Abuse — CSPM-to-Runtime Persistence Detection"
-tc_name: "Certificate-Backed Persistence via Unconditioned Trust Policy"
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-CDR-01
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
 
 mitre_tactic: "TA0003"
 mitre_tactic_name: "Persistence"

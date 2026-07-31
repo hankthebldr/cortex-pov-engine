@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-TIM-005
-tc_ref: TC-TIM-005
-uc_name: "Threat Intel Management — Rogue Code-Signing Certificate IOC Match + C2 Stitch"
-tc_name: "Rogue Authenticode Thumbprint Match on Signed-Binary Execution Stitched to Vidar C2"
+uc_ref: UCS-XTI-04
+tc_ref: TC-XTI-07
+tc_refs:
+  - TC-XTI-07
+  - TC-TH-06
+pov_scenario_id: POV-SC-079
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate automatic attribution and campaign context attaches to a live case"
 
 mitre_tactic: "TA0042"
 mitre_tactic_name: "Resource Development"

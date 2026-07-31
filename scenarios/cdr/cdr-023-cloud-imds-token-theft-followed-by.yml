@@ -10,10 +10,14 @@ detection_types:
   - Analytics
   - Correlation
 
-uc_ref: UC-CDR-023
-tc_ref: TC-CDR-023A
-uc_name: "Cloud instance-credential theft and remote reuse"
-tc_name: "IMDS-sourced EC2 role token used off-instance raises ABIOC + Analytics and stitches to one incident"
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-CITH-04
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

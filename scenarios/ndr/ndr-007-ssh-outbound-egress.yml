@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - IOC
 
-uc_ref: UCS-NDR-07
-tc_ref: TC-NDR-07
-uc_name: "SSH Outbound App-ID + Banner Anomaly Detection"
-tc_name: "Outbound SSH-2.0 Banner + KEXINIT from Non-Admin Endpoint"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-03
+tc_refs:
+  - TC-NDR-03
+  - TC-NDR-04
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate network analytics engine filters traffic noise via EAL"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"

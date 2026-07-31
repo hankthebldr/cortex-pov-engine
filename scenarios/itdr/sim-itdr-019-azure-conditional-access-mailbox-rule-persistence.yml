@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-ITDR-019
-tc_ref: TC-ITDR-019
-uc_name: "Azure Identity Persistence — Conditional-Access Weakening & Covert Mailbox Forwarding"
-tc_name: "CA policy modified then external inbox rule planted by the same identity"
+uc_ref: UCS-ITDR-02
+tc_ref: TC-ITDR-03
+tc_refs:
+  - TC-ITDR-03
+  - TC-AES-07
+pov_scenario_id: POV-SC-001
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate CIE syncs and correlates AD, Azure AD, and cloud IdPs"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

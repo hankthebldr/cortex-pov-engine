@@ -11,10 +11,14 @@ detection_types:
   - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-uc_ref: UC-MP-012
-tc_ref: TC-MP-012
-uc_name: "Tamper-to-Exfil Time-to-Contain via Cortex Cross-Plane Correlation (F6)"
-tc_name: "BYOVD Sensor-Tamper t0 Stitched to Cobalt Strike C2 + rclone SFTP Exfil"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-CITH-07
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 mitre_tactic: "TA0005"

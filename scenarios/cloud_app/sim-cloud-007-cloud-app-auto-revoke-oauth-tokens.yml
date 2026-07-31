@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-CLOUD-007
-tc_ref: TC-CLOUD-007
-uc_name: "Auto-Revoke OAuth Tokens on Connected-App Abuse — Closed-Loop Response Validation"
-tc_name: "Salesforce Bulk Export -> Playbook Token Revoke -> Revoked-Token Replay Returns 401"
+uc_ref: UCS-IR-03
+tc_ref: TC-IR-07
+tc_refs:
+  - TC-IR-07
+  - TC-SOAR-02
+  - TC-DLP-11
+pov_scenario_id: POV-SC-005
+uc_name: "Incident Response"
+tc_name: "Demonstrate automated eradication and recovery playbook execution end-to-end"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"

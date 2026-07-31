@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-BROWSER-006
-tc_ref: TC-BROWSER-006
-uc_name: "Web-Based Indirect Prompt Injection Against a Browsing AI Agent"
-tc_name: "DOM-Hidden Payload Drives an Unattended Cross-Origin Action"
+uc_ref: UCS-AIRS-04
+tc_ref: TC-AIRS-07
+tc_refs:
+  - TC-AIRS-07
+  - TC-AGTX-07
+pov_scenario_id: POV-SC-033
+uc_name: "AI Runtime Security (Prisma AIRS)"
+tc_name: "Validate real-time detection and blocking of prompt injection, jailbreak attempts, and malicious agent behaviors in production AI systems"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

@@ -22,10 +22,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-CDR-019
-tc_ref: TC-CDR-019A
-uc_name: "AWS S3 Mass-Object Exfiltration Detection via Cortex ABIOC"
-tc_name: "Suspicious-Identity S3 GetObject Download Fan-Out Fires Both ABIOCs + Stitch"
+uc_ref: UCS-DSPM-04
+tc_ref: TC-DSPM-04
+tc_refs:
+  - TC-DSPM-04
+  - TC-CITH-04
+pov_scenario_id: POV-SC-002
+uc_name: "Data Security Posture Management (DSPM)"
+tc_name: "Validate Data Detection & Response (DDR) — Anomalous data access patterns detected in near-real-time"
 
 mitre_tactic: "TA0009"
 mitre_tactic_name: "Collection"

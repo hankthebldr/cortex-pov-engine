@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-KOI-02
-tc_ref: TC-KOI-02
-uc_name: "MCP Tool Response Content Inspection"
-tc_name: "JSON-RPC tool-call Result Carries Hidden Instruction-Injection"
+uc_ref: UCS-AIRS-04
+tc_ref: TC-AIRS-07
+tc_refs:
+  - TC-AIRS-07
+  - TC-AGTX-11
+pov_scenario_id: POV-SC-033
+uc_name: "AI Runtime Security (Prisma AIRS)"
+tc_name: "Validate real-time detection and blocking of prompt injection, jailbreak attempts, and malicious agent behaviors in production AI systems"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

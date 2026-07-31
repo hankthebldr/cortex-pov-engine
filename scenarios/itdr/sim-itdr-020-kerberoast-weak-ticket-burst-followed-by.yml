@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-ITDR-020
-tc_ref: TC-ITDR-020
-uc_name: "Kerberoast-to-Pass-the-Hash Credential-Abuse Detection via Cortex ABIOC"
-tc_name: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-IR-04
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

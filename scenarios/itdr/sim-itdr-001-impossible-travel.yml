@@ -17,9 +17,10 @@ detection_types:
 # so this gap is intentionally left tracked-but-open until the card IOC lands.
 
 uc_ref: UCS-ITDR-01
-tc_ref: TC-ITDR-01
-uc_name: "Geo-Anomaly Sign-In Detection"
-tc_name: "Two Successful Sign-Ins From Geographically Impossible Locations Within 5 min"
+tc_ref: TC-ITDR-02
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Demonstrate impossible traveler detection based on login frequency and geo-analysis"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

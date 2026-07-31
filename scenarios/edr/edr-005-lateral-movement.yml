@@ -8,10 +8,15 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-EDR-05
-tc_ref: TC-EDR-05
-uc_name: "Lateral Movement Detection"
-tc_name: "SSH-Based Lateral Movement and Network Tunneling"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-04
+tc_refs:
+  - TC-IR-04
+  - TC-EDR-05
+  - TC-CITH-03
+pov_scenario_id: POV-SC-039
+uc_name: "Incident Response"
+tc_name: "Validate analytics detection rules trigger on simulated lateral movement patterns"
 
 mitre_tactic: "TA0008"
 mitre_tactic_name: "Lateral Movement"

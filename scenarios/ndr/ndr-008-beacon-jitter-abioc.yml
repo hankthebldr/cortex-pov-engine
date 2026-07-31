@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-NDR-08
-tc_ref: TC-NDR-08
-uc_name: "Network Behavioral-ML Detection"
-tc_name: "Low-and-Slow Jittered C2 Beacon on a Learned Host Egress Baseline"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-04
+tc_refs:
+  - TC-NDR-04
+  - TC-CITH-04
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Demonstrate behavioral analytics thresholds for malicious egress and data exfil detection"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"

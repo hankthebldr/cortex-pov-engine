@@ -7,10 +7,14 @@ plane: CDR
 detection_types:
   - BIOC
 
-uc_ref: UCS-CDR-02
-tc_ref: TC-CDR-02
-uc_name: "Cryptomining Activity Detection"
-tc_name: "XMRig Deployment and Execution"
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+tc_refs:
+  - TC-CDR-01
+  - TC-CITH-02
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0040"
 mitre_tactic_name: "Impact"

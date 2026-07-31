@@ -11,10 +11,15 @@ detection_types:
   - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-uc_ref: UCS-MP-15
-tc_ref: TC-MP-15
-uc_name: "AI Triage Discrimination — True-Positive Elevation + False-Positive Suppression"
-tc_name: "Identity-Driven Intrusion Ranked #1 While Benign Decoys Are Suppressed"
+uc_ref: UCS-IR-01
+tc_ref: TC-IR-01
+tc_refs:
+  - TC-IR-01
+  - TC-CITH-11
+  - TC-IR-03
+pov_scenario_id: POV-SC-006
+uc_name: "Incident Response"
+tc_name: "Validate auto-triage reduces manual alert review by >60% using smart scoring and grouping"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Primary technique is T1078.004 (Valid Accounts: Cloud Accounts) under the

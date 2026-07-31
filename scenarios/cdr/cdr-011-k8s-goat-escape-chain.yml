@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CDR-11
-tc_ref: TC-CDR-11
-uc_name: "Kubernetes Container Escape Chain Detection"
-tc_name: "DIND/nsenter/Host-Path Escape + Host-Process Activity"
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+tc_refs:
+  - TC-CDR-01
+  - TC-CITH-03
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0004"
 mitre_tactic_name: "Privilege Escalation"

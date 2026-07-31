@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-NDR-04
-tc_ref: TC-NDR-04
-uc_name: "Lateral Reconnaissance Detection via NGFW EAL"
-tc_name: "Host Sweeping Across SMB/RPC Ports"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-03
+tc_refs:
+  - TC-NDR-03
+  - TC-IR-04
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate network analytics engine filters traffic noise via EAL"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

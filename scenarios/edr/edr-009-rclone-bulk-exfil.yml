@@ -21,10 +21,15 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UCS-EDR-09
-tc_ref: TC-EDR-09
-uc_name: "Double-Extortion Defense — Pre-Encryption Exfiltration Detection"
-tc_name: "Rclone-Pattern Tool Execution + Large Egress to Non-Corporate Cloud Storage"
+uc_ref: UCS-DLP-01
+tc_ref: TC-DLP-01
+tc_refs:
+  - TC-DLP-01
+  - TC-EDR-05
+  - TC-CITH-03
+pov_scenario_id: POV-SC-059
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP detects sensitive data (PII/PCI/PHI) exfiltration attempts across email, web upload, and USB channels in real time"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"

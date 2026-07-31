@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-ITDR-11
-tc_ref: TC-ITDR-11
-uc_name: "Identity Behavioral-ML Detection"
-tc_name: "Identity-Weaponized MDM Mass Device Wipe via Compromised Intune Admin"
+uc_ref: UCS-ITDR-03
+tc_ref: TC-ITDR-05
+tc_refs:
+  - TC-ITDR-05
+  - TC-CITH-04
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate host/user risk scoring aggregates identity signals over time"
 
 mitre_tactic: "TA0040"
 mitre_tactic_name: "Impact"

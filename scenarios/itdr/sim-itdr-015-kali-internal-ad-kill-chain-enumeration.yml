@@ -11,10 +11,15 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UC-ITDR-015
-tc_ref: TC-ITDR-015
-uc_name: "Internal AD Kill-Chain Detection — Poisoning to Offline Crack to WinRM Lateral Movement"
-tc_name: "Connected enum4linux-ng/smbmap → Responder → john/hashcat → netexec → evil-winrm Chain Against the itdr Lab"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-ITDR-03
+  - TC-IR-04
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

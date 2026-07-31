@@ -19,10 +19,14 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UCS-CDR-06
-tc_ref: TC-CDR-06
-uc_name: "Persistence Mechanism Detection (Node systemd)"
-tc_name: "systemd Service Unit + Self-Healing Cron Watchdog"
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+tc_refs:
+  - TC-CDR-01
+  - TC-EDR-05
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0003"
 mitre_tactic_name: "Persistence"

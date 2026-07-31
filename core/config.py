@@ -38,11 +38,12 @@ class Settings(BaseSettings):
     # snapshot logs S-10/S-11/S-12 as a WARNING and still loads. When true, the
     # same conditions reject the scenario at boot.
     #
-    # It ships false because the crosswalk that re-keys the corpus onto v2.2 is
-    # authored incrementally — flipping this before the crosswalk is complete
-    # would fail most of the corpus at boot and make the engine unusable. Flip
-    # it once `docs/uc_tc_mapping/crosswalk-v2.2.csv` covers every scenario.
-    CORTEXSIM_STRICT_REFS: bool = False
+    # Flipped true at the Phase 1 DoD: `docs/uc_tc_mapping/crosswalk-v2.2.csv`
+    # now covers all 161 scenarios and the corpus boots with zero
+    # S-10/S-11/S-12/S-15. Keeping it on is what stops the join rotting again —
+    # a new scenario with an unresolvable ref fails at boot instead of silently
+    # inflating the coverage number. Set false to load a corpus mid-re-key.
+    CORTEXSIM_STRICT_REFS: bool = True
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

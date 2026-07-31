@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-CDR-021
-tc_ref: TC-CDR-021
-uc_name: "Cloud reconnaissance — IAM & S3 enumeration sequence detection"
-tc_name: "IAM enumeration burst then S3 bucket enumeration sweep by one AWS principal"
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-CITH-04
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

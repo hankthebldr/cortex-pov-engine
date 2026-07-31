@@ -12,10 +12,14 @@ detection_types:
 # Cortex Use Case Index Master v2.0 Cloud/Posture family:
 #   Cloud Posture Management → TC-CSPM-02 (MOAT tier — F4 Posture & Compliance),
 #   the drift-detection-and-correlation companion to TC-CSPM-01 (flat scan).
-uc_ref: UCS-CSPM-02
-tc_ref: TC-CSPM-02
-uc_name: "Cloud Security Posture Management"
-tc_name: "Configuration Drift Detection & Runtime Correlation"
+uc_ref: UCS-CSPM-04
+tc_ref: TC-CSPM-04
+tc_refs:
+  - TC-CSPM-04
+  - TC-CSPM-03
+pov_scenario_id: POV-SC-096
+uc_name: "Cloud Security Posture Management (CSPM)"
+tc_name: "Validate Posture Assessment & Management — Posture assessment covers all connected resources across CSPM, CWPP, CIEM, and DSPM modules"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Drift narrative: guardrails are weakened (Impair Defenses / Disable Cloud

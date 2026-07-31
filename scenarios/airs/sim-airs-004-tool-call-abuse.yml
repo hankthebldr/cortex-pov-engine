@@ -9,9 +9,13 @@ detection_types:
   - XQL
 
 uc_ref: UCS-AIRS-04
-tc_ref: TC-AIRS-04
-uc_name: "OWASP LLM06 — Excessive Agency"
-tc_name: "Adversarial Prompt Triggers Unsafe Tool Invocation by Agentic LLM"
+tc_ref: TC-AIRS-08
+tc_refs:
+  - TC-AIRS-08
+  - TC-AGTX-07
+pov_scenario_id: POV-SC-033
+uc_name: "AI Runtime Security (Prisma AIRS)"
+tc_name: "Demonstrate AI runtime monitoring detects anomalous model behavior indicating compromise or drift from expected operational parameters"
 
 mitre_tactic: "TA0002"
 mitre_tactic_name: "Execution"

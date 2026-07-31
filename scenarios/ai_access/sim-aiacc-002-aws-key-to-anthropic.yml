@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - IOC
 
-uc_ref: UCS-AIACC-02
-tc_ref: TC-AIACC-02
-uc_name: "Cloud Credential Disclosure to External LLM"
-tc_name: "AWS Access Key in Prompt Body to api.anthropic.com"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-SSCAN-01
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-EDR-015
-tc_ref: TC-EDR-015
-uc_name: "Lateral Tool Transfer + Remote-Service Fan-Out Detection via Cortex ABIOC"
-tc_name: "Muddled Libra Chisel-Tunnel + PsExec Fan-Out Cross-Plane Stitch"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-04
+tc_refs:
+  - TC-IR-04
+  - TC-CITH-04
+  - TC-EDR-05
+pov_scenario_id: POV-SC-039
+uc_name: "Incident Response"
+tc_name: "Validate analytics detection rules trigger on simulated lateral movement patterns"
 
 mitre_tactic: "TA0008"
 mitre_tactic_name: "Lateral Movement"

@@ -10,10 +10,14 @@ detection_types:
   - BIOC
   - Correlation
 
-uc_ref: UCS-TIM-02
-tc_ref: TC-TIM-02
-uc_name: "Threat Intel Management — Resource-Development Detection"
-tc_name: "Adversary Infrastructure Staging Surfaced From Threat-Intel Feeds"
+uc_ref: UCS-XTI-04
+tc_ref: TC-XTI-07
+tc_refs:
+  - TC-XTI-07
+  - TC-TH-06
+pov_scenario_id: POV-SC-079
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate automatic attribution and campaign context attaches to a live case"
 
 mitre_tactic: "TA0042"
 mitre_tactic_name: "Resource Development"

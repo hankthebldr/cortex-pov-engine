@@ -8,10 +8,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-EMAIL-005
-tc_ref: TC-EMAIL-005C
-uc_name: "AiTM Session-Token Theft to Account-Takeover — Cross-Source Correlation"
-tc_name: "AiTM Click + New-ASN Token-Replay Sign-In + Mailbox-Reconnaissance Stitch Into One ATO Incident"
+uc_ref: UCS-AES-01
+tc_ref: TC-AES-02
+tc_refs:
+  - TC-AES-02
+  - TC-ITDR-02
+pov_scenario_id: POV-SC-001
+uc_name: "Advanced Email Security"
+tc_name: "Demonstrate cross-signal correlation links phishing emails to downstream credential compromise and lateral movement indicators"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

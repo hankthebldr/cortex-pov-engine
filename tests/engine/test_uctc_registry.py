@@ -200,6 +200,7 @@ def test_s15_dangling_evidence_ref_warns_then_rejects(loaded_singleton, monkeypa
     from engine.scenario_loader import _check_uctc_refs  # noqa: PLC0415
 
     s = _schema(tc_refs=["TC-NOPE-99"])
+    monkeypatch.setattr(settings, "CORTEXSIM_STRICT_REFS", False)
     with caplog.at_level(logging.WARNING):
         assert _check_uctc_refs(s, "test.yml") is None
     assert "S-15" in caplog.text
@@ -349,11 +350,13 @@ def test_loader_accepts_valid_ref(loaded_singleton):
     assert _check_uctc_refs(_schema(), "test.yml") is None
 
 
-def test_loader_warns_on_dangling_ref_by_default(loaded_singleton, caplog):
-    """Default mode: a broken ref is loud but does not block boot — the
-    crosswalk lands incrementally and 123 of 161 scenarios dangle today."""
+def test_loader_warns_on_dangling_ref_when_not_strict(loaded_singleton, monkeypatch, caplog):
+    """Non-strict mode: a broken ref is loud but does not block boot. That is
+    the mode a corpus mid-re-key runs in."""
+    from config import settings  # noqa: PLC0415
     from engine.scenario_loader import _check_uctc_refs  # noqa: PLC0415
 
+    monkeypatch.setattr(settings, "CORTEXSIM_STRICT_REFS", False)
     with caplog.at_level(logging.WARNING):
         err = _check_uctc_refs(_schema(tc_ref="TC-NOPE-99"), "test.yml")
     assert err is None

@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-CLOUD-008
-tc_ref: TC-CLOUD-008
-uc_name: "Microsoft 365 App-Driven Mailbox Enumeration and Storage Exfiltration"
-tc_name: "M365 — App Mailbox Enumeration Then Bulk OneDrive/SharePoint Exfiltration"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-AES-07
+  - TC-DSPM-04
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"

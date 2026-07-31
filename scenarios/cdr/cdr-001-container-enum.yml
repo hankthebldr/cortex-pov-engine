@@ -9,8 +9,12 @@ detection_types:
 
 uc_ref: UCS-CDR-01
 tc_ref: TC-CDR-01
-uc_name: "Container Runtime Threat Detection"
-tc_name: "Container Enumeration and Discovery"
+tc_refs:
+  - TC-CDR-01
+  - TC-CITH-03
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

@@ -9,10 +9,14 @@ detection_types:
   - BIOC
   - IOC
 
-uc_ref: UCS-BROWSER-03
-tc_ref: TC-BROWSER-03
-uc_name: "Managed-Browser Extension Risk Policy"
-tc_name: "Sideloaded .crx with Overbroad Permissions Triggers Block"
+uc_ref: UCS-SCA-01
+tc_ref: TC-SCA-01
+tc_refs:
+  - TC-SCA-01
+  - TC-DLP-11
+pov_scenario_id: POV-SC-012
+uc_name: "Software Composition Analysis"
+tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
 
 mitre_tactic: "TA0003"
 mitre_tactic_name: "Persistence"

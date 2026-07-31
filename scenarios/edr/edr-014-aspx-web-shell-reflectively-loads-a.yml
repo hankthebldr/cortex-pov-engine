@@ -20,10 +20,15 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UC-EDR-014
-tc_ref: TC-EDR-014
-uc_name: "Fileless IIS Backdoor Detection"
-tc_name: "ASPX Web Shell to In-Memory .NET (NET-STAR)"
+uc_ref: UCS-WAAS-04
+tc_ref: TC-WAAS-04
+tc_refs:
+  - TC-WAAS-04
+  - TC-EDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-002
+uc_name: "Web API & Application Security"
+tc_name: "Validate Agent-Based Threat Detection (Runtime) — Cortex Agent detects web application attacks at runtime (in-process)"
 
 mitre_tactic: "TA0003"
 mitre_tactic_name: "Persistence"

@@ -9,10 +9,14 @@ detection_types:
   - BIOC
   - Correlation
 
-uc_ref: UC-NDR-010
-tc_ref: TC-NDR-010
-uc_name: "Edge-Appliance Telemetry Collapse and WebVPN C2 Detection via XDM Normalization"
-tc_name: "Absence-of-Signal Collapse Stitched to a WebVPN-Session C2 Beacon"
+uc_ref: UCS-NDR-01
+tc_ref: TC-NDR-02
+tc_refs:
+  - TC-NDR-02
+  - TC-NDR-04
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Demonstrate SOC-specific network story context enriched with endpoint causality"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"

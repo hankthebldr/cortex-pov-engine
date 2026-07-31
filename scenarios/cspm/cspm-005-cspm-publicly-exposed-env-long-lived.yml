@@ -14,10 +14,15 @@ detection_types:
 #   Code-to-Cloud Traceability → TC-CSPM-05 (LEAD tier — F9), the exposure-to-
 #   runtime-to-impact correlation companion to the flat-scan (TC-CSPM-01) and
 #   drift (TC-CSPM-02) posture stories.
-uc_ref: UC-CSPM-005
-tc_ref: TC-CSPM-005
-uc_name: "Code-to-Cloud Traceability — Exposed Secret to Cloud Extortion"
-tc_name: "Exposed IAM Key Fused to Stolen-Key S3 Mass-Export + Ransom"
+uc_ref: UCS-SSCAN-03
+tc_ref: TC-SSCAN-01
+tc_refs:
+  - TC-SSCAN-01
+  - TC-ASPM-01
+  - TC-ERV-05
+pov_scenario_id: POV-SC-002
+uc_name: "Secrets Security"
+tc_name: "Validate Secret Detection Accuracy — Planted secrets detected in code, configuration, and IaC files with accurate type classification"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Code-to-cloud extortion chain: a long-lived key exposed in a public .env

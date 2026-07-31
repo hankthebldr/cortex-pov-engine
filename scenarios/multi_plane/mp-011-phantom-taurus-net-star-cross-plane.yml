@@ -11,10 +11,14 @@ detection_types:
   - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-uc_ref: UCS-MP-11
-tc_ref: TC-MP-11
-uc_name: "Cross-Plane Credential-Access Incident Stitching"
-tc_name: "Phantom Taurus NET-STAR — IIS Backdoor + Ntospy + SQL sa Exfil Into One Incident"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-WAAS-04
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Primary tactic is Credential Access (TA0006): the Ntospy network-provider DLL

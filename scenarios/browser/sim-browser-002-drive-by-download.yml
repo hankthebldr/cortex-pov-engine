@@ -8,10 +8,14 @@ detection_types:
   - Analytics
   - BIOC
 
-uc_ref: UCS-BROWSER-02
-tc_ref: TC-BROWSER-02
-uc_name: "Browser-Initiated Malware Download"
-tc_name: "Auto-Download Triggered by Phishing Landing Page"
+uc_ref: UCS-AES-03
+tc_ref: TC-AES-06
+tc_refs:
+  - TC-AES-06
+  - TC-DLP-01
+pov_scenario_id: POV-SC-064
+uc_name: "Advanced Email Security"
+tc_name: "Demonstrate link-based payload detection identifies malicious URLs, drive-by downloads, and delayed weaponization (links that become malicious post-delivery)"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

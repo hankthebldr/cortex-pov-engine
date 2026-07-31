@@ -20,10 +20,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-ITDR-08
-tc_ref: TC-ITDR-08
-uc_name: "Identity-Driven Initial Access Defense"
-tc_name: "Help-Desk-Assisted MFA Reset → Factor Enrollment → New-Device Sign-In Account Takeover"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-ITDR-05
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

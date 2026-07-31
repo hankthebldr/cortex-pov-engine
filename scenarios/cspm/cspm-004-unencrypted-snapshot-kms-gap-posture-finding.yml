@@ -13,10 +13,14 @@ detection_types:
 # Cortex Use Case Index Master v2.0 Cloud/Posture family:
 #   Cloud Posture Management → TC-CSPM-04 (MOAT tier — F4 Posture & Compliance),
 #   the posture-to-exfil-correlation companion to the drift story (TC-CSPM-02).
-uc_ref: UCS-CSPM-04
-tc_ref: TC-CSPM-04
-uc_name: "Cloud Security Posture Management"
-tc_name: "Encryption-Gap Finding Correlated to Cross-Account Snapshot Exfiltration"
+uc_ref: UCS-CSPM-02
+tc_ref: TC-CSPM-02
+tc_refs:
+  - TC-CSPM-02
+  - TC-DSPM-03
+pov_scenario_id: POV-SC-007
+uc_name: "Cloud Security Posture Management (CSPM)"
+tc_name: "Validate Security Policy Enforcement — OOTB policies (CIS, NIST, SOC2) evaluate correctly against target resources"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Exfil narrative: an unencrypted (no-CMK) snapshot is transferred to an external

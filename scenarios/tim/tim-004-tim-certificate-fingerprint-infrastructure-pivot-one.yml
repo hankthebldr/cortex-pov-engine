@@ -10,10 +10,14 @@ detection_types:
   - BIOC
   - Correlation
 
-uc_ref: UC-TIM-004
-tc_ref: TC-TIM-004
-uc_name: "Certificate-Fingerprint Infrastructure-Cluster Pivot"
-tc_name: "One Self-Signed TLS Thumbprint Unmasks the Adversary Cluster"
+uc_ref: UCS-XTI-04
+tc_ref: TC-XTI-07
+tc_refs:
+  - TC-XTI-07
+  - TC-XTI-02
+pov_scenario_id: POV-SC-079
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate automatic attribution and campaign context attaches to a live case"
 
 mitre_tactic: "TA0042"
 mitre_tactic_name: "Resource Development"

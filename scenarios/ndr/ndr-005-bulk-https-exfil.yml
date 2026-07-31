@@ -9,10 +9,14 @@ detection_types:
   - BIOC
   - Correlation
 
-uc_ref: UCS-NDR-05
-tc_ref: TC-NDR-05
-uc_name: "Anomalous Outbound Bytes Detection"
-tc_name: "Multi-Gigabyte HTTPS Upload Exceeding Host Baseline"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-04
+tc_refs:
+  - TC-NDR-04
+  - TC-DLP-01
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Demonstrate behavioral analytics thresholds for malicious egress and data exfil detection"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"

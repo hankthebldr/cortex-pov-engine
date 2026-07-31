@@ -8,10 +8,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CSPM-03
-tc_ref: TC-CSPM-03
-uc_name: "Cloud Security Posture Management"
-tc_name: "IAM Exposure-to-Impact Correlation (Trust-Policy / PassRole)"
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-CIEM-01
+  - TC-CSPM-02
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Depth on TA0004 Privilege Escalation: the exposed role is assumed (T1078.004),

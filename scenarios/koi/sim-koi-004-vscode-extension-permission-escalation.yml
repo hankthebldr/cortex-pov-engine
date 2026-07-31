@@ -8,10 +8,11 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-KOI-04
-tc_ref: TC-KOI-04
-uc_name: "Developer-Tool Extension Risk"
-tc_name: "VS Code Extension Requests Workspace + Network + Auth Permissions"
+uc_ref: UCS-SCA-01
+tc_ref: TC-SCA-01
+pov_scenario_id: POV-SC-012
+uc_name: "Software Composition Analysis"
+tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
 
 # S-16 — remapped off T1176 ("Browser Extensions"). A malicious VS Code
 # extension distributed via the marketplace is a software-supply-chain

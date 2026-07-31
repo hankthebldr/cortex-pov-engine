@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-ITDR-017
-tc_ref: TC-ITDR-017
-uc_name: "AD CS ESC1 SAN-Mismatch to PKINIT Privileged Authentication Detection"
-tc_name: "ESC1 Issuance-to-PKINIT Impersonation Chain Stitch (Qualitative Evidence)"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-ITDR-03
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Technique-centric AD CS abuse (ransomware-affiliate tradecraft). The anchor is

@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-EDR-10
-tc_ref: TC-EDR-10
-uc_name: "Endpoint Behavioral-ML Detection"
-tc_name: "Hands-on-Keyboard Intrusion on an Automation Account"
+uc_ref: UCS-CITH-04
+tc_ref: TC-CITH-04
+tc_refs:
+  - TC-CITH-04
+  - TC-EDR-05
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate AI Runtime Security Analytics — AI-powered runtime analytics detect anomalous cloud workload behavior without signature dependency"
 
 mitre_tactic: "TA0002"
 mitre_tactic_name: "Execution"

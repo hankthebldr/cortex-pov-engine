@@ -10,10 +10,14 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UC-MP-010
-tc_ref: TC-MP-010
-uc_name: "Appliance-to-Endpoint Stitch via XDM Modeling"
-tc_name: "Ivanti Pre-Auth IF-T Overflow to Internal Windows Pivot"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-WAAS-03
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

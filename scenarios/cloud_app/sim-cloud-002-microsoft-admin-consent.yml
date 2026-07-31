@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-CAPP-02
-tc_ref: TC-CAPP-02
-uc_name: "Admin-Consent OAuth Abuse"
-tc_name: "Microsoft 365 — App Requests Directory.ReadWrite.All Without Consent"
+uc_ref: UCS-ITDR-02
+tc_ref: TC-ITDR-03
+tc_refs:
+  - TC-ITDR-03
+  - TC-DLP-11
+pov_scenario_id: POV-SC-001
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate CIE syncs and correlates AD, Azure AD, and cloud IdPs"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

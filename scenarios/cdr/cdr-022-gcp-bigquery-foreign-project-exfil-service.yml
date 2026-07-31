@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-CDR-022
-tc_ref: TC-CDR-022A
-uc_name: "GCP BigQuery Foreign-Project Exfil via Impersonated Service Account — Cortex ABIOC Validation"
-tc_name: "Impersonation + Foreign-Project-Exfil ABIOCs Fire and Correlate on the Impersonated Service Account"
+uc_ref: UCS-DSPM-04
+tc_ref: TC-DSPM-04
+tc_refs:
+  - TC-DSPM-04
+  - TC-CITH-04
+pov_scenario_id: POV-SC-002
+uc_name: "Data Security Posture Management (DSPM)"
+tc_name: "Validate Data Detection & Response (DDR) — Anomalous data access patterns detected in near-real-time"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"

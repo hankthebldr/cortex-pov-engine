@@ -19,10 +19,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CDR-08
-tc_ref: TC-CDR-08
-uc_name: "Leaked Cloud Credentials → Data Exfiltration Defense"
-tc_name: "IAM Access Key Discovery Burst + S3 Bulk-Read Exfiltration"
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-DSPM-04
+  - TC-CDR-02
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"

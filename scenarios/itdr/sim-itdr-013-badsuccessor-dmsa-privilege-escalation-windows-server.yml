@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-ITDR-013
-tc_ref: TC-ITDR-013
-uc_name: "Identity Privilege-Escalation Detection (Active Directory)"
-tc_name: "BadSuccessor dMSA Create-and-Modify Lineage Stitch"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-ITDR-03
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # DL-04: depth on TA0004 Privilege Escalation — real dMSA technique variants,

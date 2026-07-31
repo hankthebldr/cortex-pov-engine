@@ -11,10 +11,15 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UC-ASM-005
-tc_ref: TC-ASM-005
-uc_name: "Exposure-to-RCE Dual-Control — Internet-Exposed WSUS Correlation (CVE-2025-59287)"
-tc_name: "ASM exposed-WSUS finding stitched with the runtime exploit, domain recon, and webhook.site exfil"
+uc_ref: UCS-CVM-03
+tc_ref: TC-CVM-03
+tc_refs:
+  - TC-CVM-03
+  - TC-WAAS-03
+  - TC-ASM-07
+pov_scenario_id: POV-SC-035
+uc_name: "Vulnerability Management"
+tc_name: "Demonstrate Internet Exposure Correlation — Internet-facing vulnerable assets identified by correlating vulnerability findings with Xpanse external exposure data"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

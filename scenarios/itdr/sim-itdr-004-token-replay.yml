@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-ITDR-04
-tc_ref: TC-ITDR-04
-uc_name: "Stolen Session-Token Detection"
-tc_name: "Same Session Token Used From Two Distinct Geos / Browsers Within 5 min"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-02
+tc_refs:
+  - TC-ITDR-02
+  - TC-ITDR-01
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Demonstrate impossible traveler detection based on login frequency and geo-analysis"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

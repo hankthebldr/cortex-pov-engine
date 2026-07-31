@@ -7,10 +7,11 @@ plane: AIRS
 detection_types:
   - XQL
 
-uc_ref: UCS-AIRS-05
-tc_ref: TC-AIRS-05
-uc_name: "OWASP LLM10 — Unbounded Consumption"
-tc_name: "Repeated High-Token Requests Exhaust Cost / Latency Budget"
+uc_ref: UCS-AIRS-04
+tc_ref: TC-AIRS-08
+pov_scenario_id: POV-SC-033
+uc_name: "AI Runtime Security (Prisma AIRS)"
+tc_name: "Demonstrate AI runtime monitoring detects anomalous model behavior indicating compromise or drift from expected operational parameters"
 
 mitre_tactic: "TA0040"
 mitre_tactic_name: "Impact"

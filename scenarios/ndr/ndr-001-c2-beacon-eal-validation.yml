@@ -8,10 +8,15 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-NDR-01
-tc_ref: TC-NDR-01
-uc_name: "NGFW Enhanced Application Log Validation"
-tc_name: "Periodic HTTP Beacon Detection via EAL Analytics"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-03
+tc_refs:
+  - TC-NDR-03
+  - TC-NDR-01
+  - TC-NDR-04
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate network analytics engine filters traffic noise via EAL"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"

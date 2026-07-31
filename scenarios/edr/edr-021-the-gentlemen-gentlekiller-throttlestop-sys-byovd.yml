@@ -10,10 +10,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-EDR-021
-tc_ref: TC-EDR-021A
-uc_name: "BYOVD EDR-Kill Behavioral Detection and Court-Ready Forensic Evidence via Cortex ABIOC"
-tc_name: "GentleKiller ThrottleStop.sys BYOVD Chain Caught by ABIOC and Stitched into One Incident"
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+  - TC-CITH-04
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"

@@ -11,10 +11,15 @@ detection_types:
   - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-uc_ref: UCS-MP-13
-tc_ref: TC-MP-13
-uc_name: "AI SOC Analyst Incident Grouping"
-tc_name: "Seven Correlated Signals Collapse to One Correctly-Summarized Incident"
+uc_ref: UCS-IR-01
+tc_ref: TC-IR-02
+tc_refs:
+  - TC-IR-02
+  - TC-IR-13
+  - TC-CITH-07
+pov_scenario_id: POV-SC-006
+uc_name: "Incident Response"
+tc_name: "Demonstrate issue grouping consolidates related alerts into unified incidents"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Terminal tactic emphasized for depth is TA0008 (Lateral Movement): the chain

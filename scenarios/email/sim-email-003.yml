@@ -9,10 +9,11 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-EMAIL-003
-tc_ref: TC-EMAIL-003A
-uc_name: "BEC / Executive Impersonation Detection"
-tc_name: "Impostor-Classified Executive Display-Name Spoof Raises BEC Alert And Stitches To Identity"
+uc_ref: UCS-AES-02
+tc_ref: TC-AES-03
+pov_scenario_id: POV-SC-028
+uc_name: "Advanced Email Security"
+tc_name: "Validate BEC detection identifies executive impersonation, vendor invoice fraud, and payment redirect attempts using behavioral and content analysis"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"

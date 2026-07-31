@@ -7,10 +7,11 @@ plane: AI_SPM
 detection_types:
   - XQL
 
-uc_ref: UCS-AISPM-01
-tc_ref: TC-AISPM-02
+uc_ref: UCS-AISP-02
+tc_ref: TC-AISP-02
+pov_scenario_id: POV-SC-004
 uc_name: "AI Security Posture Management"
-tc_name: "AI Model Security Assessment"
+tc_name: "Validate AI Model Security Assessment — AI models assessed for security risks: data poisoning vectors, model extraction exposure, prompt injection surfaces"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

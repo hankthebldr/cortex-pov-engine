@@ -17,10 +17,14 @@ detection_types:
 # master-sheet row remains TC-IR-05 ("Demonstrate correlation-based detections
 # across endpoint + network + identity telemetry" — MOAT tier across
 # CrowdStrike/MSFT/S1); that linkage is preserved in the `tc-ir-05` tag below.
-uc_ref: UCS-MP-05
-tc_ref: TC-MP-05
-uc_name: "Cross-Plane Incident Stitching"
-tc_name: "Correlation-Based Detections Across EDR + NDR + ITDR (master-sheet TC-IR-05)"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-IR-13
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 mitre_tactic: "TA0008"

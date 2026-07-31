@@ -7,10 +7,11 @@ plane: AI_SPM
 detection_types:
   - XQL
 
-uc_ref: UCS-AISPM-01
-tc_ref: TC-AISPM-03
+uc_ref: UCS-AISP-03
+tc_ref: TC-AISP-03
+pov_scenario_id: POV-SC-004
 uc_name: "AI Security Posture Management"
-tc_name: "AI Ecosystem & Supply Chain Risk"
+tc_name: "Validate AI Ecosystem & Supply Chain Risk — Third-party AI model dependencies and plugins inventoried"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"

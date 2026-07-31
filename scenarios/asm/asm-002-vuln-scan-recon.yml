@@ -10,10 +10,14 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UCS-ASM-02
-tc_ref: TC-ASM-02
-uc_name: "Perimeter Reconnaissance Detection via Cortex ASM"
-tc_name: "Active Vulnerability Scanning Against an Exposed Asset"
+uc_ref: UCS-ASM-04
+tc_ref: TC-ASM-06
+tc_refs:
+  - TC-ASM-06
+  - TC-CVM-03
+pov_scenario_id: POV-SC-105
+uc_name: "Attack Surface & Exposure Management"
+tc_name: "Validate Service & Port Identification — Running services and open ports correctly identified with version detection"
 
 mitre_tactic: "TA0043"
 mitre_tactic_name: "Reconnaissance"

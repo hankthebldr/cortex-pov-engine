@@ -11,10 +11,15 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UC-MP-019
-tc_ref: TC-MP-019
-uc_name: "External-to-Internal Kill-Chain Reconstructed as One Incident via Cortex Cross-Plane Causality"
-tc_name: "Kali Recon → Web Enum → Web Exploit (Shell) → Credential Brute → Impacket Lateral, Stitched Into One Incident"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-WAAS-03
+  - TC-IR-04
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Kill-chain arc: TA0043 Reconnaissance (T1595 active scanning) → TA0007 Discovery

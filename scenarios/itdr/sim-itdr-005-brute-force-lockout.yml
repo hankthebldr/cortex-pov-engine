@@ -8,10 +8,11 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-ITDR-05
-tc_ref: TC-ITDR-05
-uc_name: "Account-Lockout State Transition"
-tc_name: "Repeated Failed Sign-Ins Trigger Lockout, Lockout Event Logged"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"

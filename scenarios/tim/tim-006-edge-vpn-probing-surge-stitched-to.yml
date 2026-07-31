@@ -10,10 +10,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-TIM-006
-tc_ref: TC-TIM-006
-uc_name: "TIM-Attributed Edge-VPN Recon-to-Exploit Precursor Correlation"
-tc_name: "GlobalProtect Portal Probing Surge Stitched to a TIM Scanning-Infra Feed"
+uc_ref: UCS-XTI-04
+tc_ref: TC-XTI-07
+tc_refs:
+  - TC-XTI-07
+  - TC-XTI-03
+pov_scenario_id: POV-SC-079
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate automatic attribution and campaign context attaches to a live case"
 
 mitre_tactic: "TA0043"
 mitre_tactic_name: "Reconnaissance"

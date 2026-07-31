@@ -18,10 +18,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-MP-020
-tc_ref: TC-MP-020
-uc_name: "Ransomware Precursor Auto-Containment via Cross-Source Correlation + XSOAR Response"
-tc_name: "DCSync + DC-Persistence Junction Fires the Auto-Containment Playbook Before ESXi Encryption"
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-04
+tc_refs:
+  - TC-EDR-04
+  - TC-IR-07
+  - TC-SOAR-02
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Demonstrate auto-containment triggers on confirmed malware execution"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # Kill-chain arc: T1078 vished VPN cred (Initial Access) -> T1003.006 DCSync

@@ -9,9 +9,13 @@ detection_types:
   - XQL
 
 uc_ref: UCS-NDR-02
-tc_ref: TC-NDR-02
-uc_name: "DNS Anomaly Detection via NGFW EAL"
-tc_name: "High-Entropy Subdomain Burst Detection"
+tc_ref: TC-NDR-03
+tc_refs:
+  - TC-NDR-03
+  - TC-NDR-04
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate network analytics engine filters traffic noise via EAL"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"

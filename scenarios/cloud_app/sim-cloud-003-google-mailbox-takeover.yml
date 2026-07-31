@@ -8,10 +8,15 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-CAPP-03
-tc_ref: TC-CAPP-03
-uc_name: "Mailbox Takeover via OAuth"
-tc_name: "Google — App Requests https://mail.google.com/ Plus Long-Lived Token"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-AES-07
+  - TC-ITDR-03
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0009"
 mitre_tactic_name: "Collection"

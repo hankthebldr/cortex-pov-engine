@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UC-TIM-003
-tc_ref: TC-TIM-003
-uc_name: "Strategically Aged Sleeper-Domain Activation Detection via Behavioral DNS Analytics"
-tc_name: "Dormancy-Break DNS Burst + DGA Subdomain Fan-Out on an Aged C2 Apex"
+uc_ref: UCS-XTI-03
+tc_ref: TC-XTI-05
+tc_refs:
+  - TC-XTI-05
+  - TC-XTI-07
+pov_scenario_id: POV-SC-077
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate retro-hunt automatically sweeps historical telemetry when new intel lands"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"
