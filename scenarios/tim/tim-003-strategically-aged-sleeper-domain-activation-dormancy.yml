@@ -14,6 +14,7 @@ tc_ref: TC-XTI-05
 tc_refs:
   - TC-XTI-05
   - TC-XTI-07
+  - TC-TH-01
 pov_scenario_id: POV-SC-077
 uc_name: "Extended Threat Intelligence (XTI)"
 tc_name: "Validate retro-hunt automatically sweeps historical telemetry when new intel lands"

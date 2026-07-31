@@ -14,7 +14,6 @@ tc_ref: TC-ITDR-02
 tc_refs:
   - TC-ITDR-02
   - TC-ITDR-05
-  - TC-CITH-04
 pov_scenario_id: POV-SC-011
 uc_name: "Identity Threat Detection & Response"
 tc_name: "Demonstrate impossible traveler detection based on login frequency and geo-analysis"

@@ -4,8 +4,13 @@ Both halves of the join are exercised against real data: the registry singleton
 is loaded from the committed v2.2 snapshot, and the scenario catalog is seeded
 from ``crosswalk-v2.2.csv`` — the same 161 ``tc_refs`` sets the loader writes to
 the DB at boot. That is what makes the coverage assertions meaningful: a made-up
-fixture would confirm the arithmetic but not the ground truth (81 of 266, 62 of
+fixture would confirm the arithmetic but not the ground truth (84 of 266, 65 of
 107) this surface exists to report.
+
+These counts MOVE whenever the crosswalk moves. That is deliberate — they are the
+tripwire on coverage drift, and they caught the alignment corrections that took
+evidenced from 81 to 84. When a crosswalk change is intentional, re-run
+``python3 scripts/uctc_crosswalk_v2.2.py --report`` and update them here.
 """
 from __future__ import annotations
 
@@ -101,9 +106,9 @@ def test_summary_reports_the_index_totals(client, seeded):
 
 def test_summary_reports_the_evidence_ground_truth(client, seeded):
     ev = client.get("/api/uctc/summary").json()["evidence"]
-    assert ev["evidenced"] == 81
+    assert ev["evidenced"] == 84
     assert ev["detection_backable"] == 107
-    assert ev["evidenced_detection_backable"] == 62
+    assert ev["evidenced_detection_backable"] == 65
     # Over half the detection-backable surface carries no measurable threshold,
     # so the verifier can never return a pass for it.
     assert ev["unscoreable"] == 57
@@ -364,8 +369,8 @@ def test_unknown_test_case_is_a_structured_404(client, seeded):
 def test_coverage_totals_match_the_summary(client, seeded):
     cov = client.get("/api/uctc/coverage").json()
     summ = client.get("/api/uctc/summary").json()["evidence"]
-    assert cov["totals"]["evidenced"] == summ["evidenced"] == 81
-    assert cov["totals"]["evidenced_detection_backable"] == 62
+    assert cov["totals"]["evidenced"] == summ["evidenced"] == 84
+    assert cov["totals"]["evidenced_detection_backable"] == 65
 
 
 def test_coverage_by_use_case_puts_the_worst_gap_first(client, seeded):
@@ -397,7 +402,7 @@ def test_coverage_by_plane_is_scenario_derived(client, seeded):
 
 def test_gaps_default_to_the_actionable_detection_classes(client, seeded):
     body = client.get("/api/uctc/gaps").json()
-    assert body["total"] == 45
+    assert body["total"] == 42
     assert all(g["evidence"]["evidenced"] is False for g in body["gaps"])
     assert {g["validation_class"] for g in body["gaps"]} <= {"DET", "HNT"}
     assert body["scope"]["validation_class"] == "DET,HNT"
@@ -439,7 +444,7 @@ def test_payloads_report_engine_usage_and_the_split_flag(client, seeded):
     body = client.get("/api/uctc/payloads").json()
     assert body["total"] == 140
     in_use = client.get("/api/uctc/payloads?in_use=true").json()
-    assert in_use["total"] == 29
+    assert in_use["total"] == 30
     assert all(p["scenario_count"] > 0 for p in in_use["payloads"])
     sc1 = next(p for p in body["payloads"] if p["pov_scenario_id"] == "POV-SC-001")
     assert sc1["needs_split"] is True

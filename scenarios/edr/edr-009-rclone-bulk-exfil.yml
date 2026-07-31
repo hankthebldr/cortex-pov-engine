@@ -26,7 +26,6 @@ tc_ref: TC-DLP-01
 tc_refs:
   - TC-DLP-01
   - TC-EDR-05
-  - TC-CITH-03
 pov_scenario_id: POV-SC-059
 uc_name: "Data Loss Prevention (DLP)"
 tc_name: "Validate DLP detects sensitive data (PII/PCI/PHI) exfiltration attempts across email, web upload, and USB channels in real time"

@@ -13,7 +13,6 @@ uc_ref: UCS-EDR-02
 tc_ref: TC-EDR-03
 tc_refs:
   - TC-EDR-03
-  - TC-CITH-04
   - TC-EDR-05
 pov_scenario_id: POV-SC-021
 uc_name: "Endpoint Detection & Response"

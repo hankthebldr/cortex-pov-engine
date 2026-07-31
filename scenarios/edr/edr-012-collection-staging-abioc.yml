@@ -9,15 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CITH-04
-tc_ref: TC-CITH-04
+uc_ref: UCS-DLP-03
+tc_ref: TC-DLP-05
 tc_refs:
-  - TC-CITH-04
   - TC-DLP-05
   - TC-EDR-05
-pov_scenario_id: POV-SC-002
-uc_name: "Accelerated Investigations & Threat Hunting"
-tc_name: "Validate AI Runtime Security Analytics — AI-powered runtime analytics detect anomalous cloud workload behavior without signature dependency"
+pov_scenario_id: POV-SC-060
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate behavioral analytics detect anomalous data access patterns indicative of insider threat pre-exfiltration"
 
 mitre_tactic: "TA0009"
 mitre_tactic_name: "Collection"

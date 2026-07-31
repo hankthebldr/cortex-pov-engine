@@ -47,41 +47,51 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
 
     # ── EDR ────────────────────────────────────────────────────────────────
     # Every endpoint scenario carries the causality contract, so TC-EDR-05
-    # (full process chain + causality-owner attribution) and TC-CITH-03 (BIOC
-    # alerts carry full causality context) are the plane's spine.
-    "SIM-EDR-001": (["TC-EDR-03", "TC-EDR-05", "TC-CITH-03"], REMAP,
+    # (full process chain + causality-owner attribution) is the plane's spine,
+    # with TC-EDR-03 (multi-method behavioral detection) where the scenario
+    # defeats the static layer.
+    #
+    # TC-CITH-03/04 are deliberately ABSENT here. Their titles read
+    # plane-agnostic ("Behavioral IOC Detection", "AI Runtime Security
+    # Analytics") but the index rows are cloud-workload-scoped: products =
+    # Cortex Cloud, dataset = cloud_audit_logs · container_events. Because
+    # required_addons is unioned over every tc_ref, binding them here made 23
+    # non-cloud scenarios demand Cortex Cloud + Cloud Runtime — a POV-scoping
+    # error that would have quoted the wrong SKUs. Keep them on CDR/AI_SPM/
+    # CLOUD_APP rows only.
+    "SIM-EDR-001": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "Credential dumping via a behavioral chain — multi-method detection plus CGO attribution."),
-    "SIM-EDR-002": (["TC-EDR-03", "TC-EDR-05", "TC-CITH-03"], REMAP,
+    "SIM-EDR-002": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "Reverse-shell callback detected behaviorally with the spawning chain intact."),
-    "SIM-EDR-003": (["TC-EDR-05", "TC-CITH-03"], REMAP,
+    "SIM-EDR-003": (["TC-EDR-05"], REMAP,
         "Cron/systemd persistence is proven by the process lineage, not by a malware verdict."),
-    "SIM-EDR-004": (["TC-EDR-05", "TC-CITH-03"], REMAP,
+    "SIM-EDR-004": (["TC-EDR-05"], REMAP,
         "Log tampering and timestomping are only visible as causality-anchored BIOC events."),
-    "SIM-EDR-005": (["TC-IR-04", "TC-EDR-05", "TC-CITH-03"], REMAP,
+    "SIM-EDR-005": (["TC-IR-04", "TC-EDR-05"], REMAP,
         "SSH abuse and internal recon is the canonical simulated lateral-movement pattern."),
-    "SIM-EDR-006": (["TC-EDR-03", "TC-EDR-05", "TC-ITDR-01", "TC-CITH-03"], REMAP,
+    "SIM-EDR-006": (["TC-EDR-03", "TC-EDR-05", "TC-ITDR-01"], REMAP,
         "comsvcs.dll LSASS dump is living-off-the-land credential abuse with a LOLBin chain."),
     "SIM-EDR-007": (["TC-EDR-04", "TC-EDR-03", "TC-EDR-05"], REMAP,
         "ESXi inhibit-recovery is the auto-containment trigger case on confirmed destructive execution."),
     "SIM-EDR-008": (["TC-EDR-04", "TC-EDR-03", "TC-EDR-05"], REMAP,
         "Host mass-encryption — containment must fire before the impact stage completes."),
-    "SIM-EDR-009": (["TC-DLP-01", "TC-EDR-05", "TC-CITH-03"], REMAP,
+    "SIM-EDR-009": (["TC-DLP-01", "TC-EDR-05"], REMAP,
         "Rclone bulk egress is sensitive-data exfiltration observed on the endpoint channel."),
-    "SIM-EDR-010": (["TC-CITH-04", "TC-EDR-05"], REMAP,
+    "SIM-EDR-010": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "Hands-on-keyboard ABIOC — anomalous behavior on a learned automation-account baseline."),
-    "SIM-EDR-011": (["TC-CITH-04", "TC-EDR-04", "TC-EDR-05"], REMAP,
+    "SIM-EDR-011": (["TC-EDR-04", "TC-EDR-05"], REMAP,
         "Pre-encryption file-I/O anomaly is the earliest containment signal for ransomware."),
-    "SIM-EDR-012": (["TC-CITH-04", "TC-DLP-05", "TC-EDR-05"], REMAP,
+    "SIM-EDR-012": (["TC-DLP-05", "TC-EDR-05"], REMAP,
         "Collection/staging anomaly on a service process — behavioral analytics over data access."),
-    "SIM-EDR-013": (["TC-EDR-03", "TC-CITH-04", "TC-EDR-05"], REMAP,
+    "SIM-EDR-013": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "Fileless UUID-shellcode staging defeats static analysis; the behavioral method must carry it."),
     "SIM-EDR-014": (["TC-WAAS-04", "TC-EDR-03", "TC-EDR-05"], REMAP,
         "ASPX web shell loading a .NET backdoor into w3wp is agent-based runtime web-app detection."),
-    "SIM-EDR-015": (["TC-IR-04", "TC-CITH-04", "TC-EDR-05"], REMAP,
+    "SIM-EDR-015": (["TC-IR-04", "TC-EDR-05"], REMAP,
         "Chisel tunnel plus PsExec fan-out is lateral movement with a tool-transfer precursor."),
-    "SIM-EDR-016": (["TC-EDR-03", "TC-CITH-04", "TC-EDR-05"], REMAP,
+    "SIM-EDR-016": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "ClickFix pastejacking — user-executed interpreter chain parented by explorer.exe."),
-    "SIM-EDR-017": (["TC-EDR-03", "TC-CITH-04", "TC-EDR-05"], REMAP,
+    "SIM-EDR-017": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "mshta to extrac32 CAB unpack — interpreter depth is the behavioral discriminator."),
     "SIM-EDR-018": (["TC-IR-12", "TC-IR-05", "TC-CITH-07"], REMAP,
         "Measures AI SOC narrative synthesis over a 72-minute identity-to-exfil incident."),
@@ -89,7 +99,7 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Akira vCenter-to-ESXi — cross-surface chain terminating in containment-worthy impact."),
     "SIM-EDR-020": (["TC-WAAS-04", "TC-EDR-03", "TC-ITDR-01", "TC-EDR-05"], REMAP,
         "Web shell to in-memory Mimikatz — runtime web-app compromise into credential access."),
-    "SIM-EDR-021": (["TC-EDR-03", "TC-CITH-04", "TC-EDR-05"], REMAP,
+    "SIM-EDR-021": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "BYOVD EDR-kill — the driver-load anomaly must be caught before the sensor goes blind."),
 
     # ── CDR ────────────────────────────────────────────────────────────────
@@ -125,14 +135,20 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "XDM modeling-rule substrate proof — datamodel normalization is exactly the BYOML datamodel-customization case."),
     "SIM-CDR-016": (["TC-CIEM-03", "TC-CITH-04"], REMAP,
         "Cloud workload IAM usage anomaly against a learned entitlement baseline."),
-    "SIM-CDR-017": (["TC-SSCAN-01", "TC-CIEM-03", "TC-CDR-02"], REMAP,
-        "Leaked .env credential into self-propagating Lambda extortion — secret exposure to entitlement abuse."),
+    "SIM-CDR-017": (["TC-CIEM-03", "TC-CDR-02", "TC-SSCAN-01"], REMAP,
+        "Leaked .env credential into self-propagating Lambda extortion. The runtime "
+        "entitlement abuse is the claim; the planted secret is the precondition, so "
+        "TC-SSCAN-01 rides as secondary rather than driving the binding."
+),
     "SIM-CDR-018": (["TC-CIEM-03", "TC-CDR-01"], REMAP,
         "IAM Roles Anywhere trust-anchor abuse for certificate-backed persistence."),
     "SIM-CDR-019": (["TC-DSPM-04", "TC-CITH-04"], REMAP,
         "S3 mass-object exfiltration by a suspicious identity — the canonical DDR case."),
-    "SIM-CDR-020": (["TC-SSCAN-01", "TC-CIEM-03", "TC-CITH-04"], REMAP,
-        "CloudTrail secret-harvesting chain across Secrets Manager and SSM."),
+    "SIM-CDR-020": (["TC-CITH-04", "TC-CIEM-03"], REMAP,
+        "CloudTrail secret-harvesting chain across Secrets Manager and SSM. Runtime "
+        "API behavior, not file scanning — TC-SSCAN-01 scores planted secrets in "
+        "code/config/IaC and this scenario plants none."
+),
     "SIM-CDR-021": (["TC-CIEM-03", "TC-CITH-04"], REMAP,
         "IAM and S3 enumeration burst — reconnaissance over the cloud control plane."),
     "SIM-CDR-022": (["TC-DSPM-04", "TC-CITH-04"], REMAP,
@@ -143,8 +159,10 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Compute in a dormant region is a pure baseline-deviation signal."),
     "SIM-CDR-025": (["TC-CDR-01", "TC-CITH-04"], REMAP,
         "Unusual pod exec plus unusual service-account API call from Kubernetes audit."),
-    "SIM-CDR-026": (["TC-SSCAN-01", "TC-CDR-01", "TC-CITH-04"], REMAP,
-        "First-time Kubernetes secret enumeration and access."),
+    "SIM-CDR-026": (["TC-CDR-01", "TC-CITH-04"], REMAP,
+        "First-time Kubernetes secret enumeration and access, observed in the audit "
+        "log. Runtime access to secrets, not static scanning of files."
+),
 
     # ── NDR ────────────────────────────────────────────────────────────────
     # TC-NDR-03 is the EAL case specifically — these scenarios exist to prove
@@ -163,13 +181,13 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "FTP cleartext egress carrying credentials — App-ID plus data-channel exposure."),
     "SIM-NDR-007": (["TC-NDR-03", "TC-NDR-04"], REMAP,
         "SSH outbound with an atypical client banner — App-ID against a tunnel."),
-    "SIM-NDR-008": (["TC-NDR-04", "TC-CITH-04"], REMAP,
+    "SIM-NDR-008": (["TC-NDR-04"], REMAP,
         "Low-and-slow jittered beacon only resolves against a learned host-egress baseline."),
-    "SIM-NDR-009": (["TC-NDR-04", "TC-CITH-04"], REMAP,
+    "SIM-NDR-009": (["TC-NDR-04"], REMAP,
         "DNS-tunnel anomaly against a learned per-host DNS baseline."),
     "SIM-NDR-010": (["TC-NDR-02", "TC-NDR-04"], REMAP,
         "Edge-appliance telemetry collapse plus WebVPN C2 — the network story needs endpoint context to read."),
-    "SIM-NDR-011": (["TC-NDR-04", "TC-CITH-04"], REMAP,
+    "SIM-NDR-011": (["TC-NDR-04"], REMAP,
         "Telegram Bot API as allowlisted-SaaS C2 — behavioral, since the destination is reputable."),
     "SIM-NDR-012": (["TC-NDR-03", "TC-NDR-04", "TC-DLP-01"], REMAP,
         "NGFW EAL rare-domain beacon escalating to a massive HTTPS upload."),
@@ -191,11 +209,11 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "AD privilege-escalation chain from LSASS through DACL abuse to Kerberos."),
     "SIM-ITDR-008": (["TC-ITDR-01", "TC-ITDR-05"], REMAP,
         "Help-desk MFA reset via voice impersonation — social engineering surfaced as identity risk."),
-    "SIM-ITDR-009": (["TC-ITDR-02", "TC-ITDR-05", "TC-CITH-04"], REMAP,
+    "SIM-ITDR-009": (["TC-ITDR-02", "TC-ITDR-05"], REMAP,
         "Sign-in account takeover against a learned identity baseline."),
-    "SIM-ITDR-010": (["TC-ITDR-03", "TC-CITH-04"], REMAP,
+    "SIM-ITDR-010": (["TC-ITDR-03", "TC-ITDR-05"], REMAP,
         "Anomalous privileged-role and consent grant on a directory-sync account."),
-    "SIM-ITDR-011": (["TC-ITDR-05", "TC-CITH-04"], REMAP,
+    "SIM-ITDR-011": (["TC-ITDR-05"], REMAP,
         "Compromised Intune admin issuing a mass device wipe — identity-weaponized impact."),
     "SIM-ITDR-012": (["TC-ITDR-01"], REMAP,
         "GlobalProtect authentication bypass — a session established without authentication."),
@@ -209,7 +227,7 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Closed-loop auto-disable — the eradication-and-recovery playbook executing end to end."),
     "SIM-ITDR-017": (["TC-ITDR-01", "TC-ITDR-03"], REMAP,
         "AD CS ESC1 template abuse — SAN-mismatch enrollment into PKINIT."),
-    "SIM-ITDR-018": (["TC-ITDR-03", "TC-CITH-04"], REMAP,
+    "SIM-ITDR-018": (["TC-ITDR-03", "TC-ITDR-05"], REMAP,
         "Azure service-principal token abuse from an unknown tenant."),
     "SIM-ITDR-019": (["TC-ITDR-03", "TC-AES-07"], REMAP,
         "Conditional-access weakening followed by covert mailbox-rule persistence — identity control drift into mail exfil."),
@@ -235,7 +253,7 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Staged exposure to runtime exploit to impact — the dual-control causality proof."),
     "SIM-MP-008": (["TC-IR-05", "TC-CITH-07"], REMAP,
         "Identity to endpoint to network hands-on-keyboard campaign."),
-    "SIM-MP-009": (["TC-IR-05", "TC-CITH-04"], REMAP,
+    "SIM-MP-009": (["TC-IR-05"], REMAP,
         "Machine-tempo cloud chain driven by an autonomous agent swarm."),
     "SIM-MP-010": (["TC-IR-05", "TC-WAAS-03"], REMAP,
         "Ivanti pre-auth overflow pivoting to an internal Windows host."),
@@ -247,14 +265,20 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Seven signals collapsing to one incident — the alert-stitching noise-reduction case exactly."),
     "SIM-MP-014": (["TC-IR-05", "TC-ITDR-03"], REMAP,
         "AzureHound cloud-identity enumeration after token theft."),
-    "SIM-MP-015": (["TC-IR-01", "TC-CITH-11", "TC-IR-03"], REMAP,
-        "Triage discrimination under decoy noise — true-positive elevation measured against false-positive rate."),
+    "SIM-MP-015": (["TC-IR-01", "TC-CITH-11", "TC-IR-03", "TC-TH-05"], REMAP,
+        "Triage discrimination under decoy noise — true-positive elevation measured "
+        "against false-positive rate, which is exactly the smart-scoring "
+        "FP-reduction case (TC-TH-05)."
+),
     "SIM-MP-016": (["TC-ITDR-03", "TC-IR-05"], REMAP,
         "Okta admin takeover into a rogue federated IdP and cross-cloud resource access."),
     "SIM-MP-017": (["TC-IR-05", "TC-CDR-02"], REMAP,
         "React2Shell pod RCE pivoting to the cloud control plane."),
-    "SIM-MP-018": (["TC-SCA-01", "TC-IR-05", "TC-SSCAN-01"], REMAP,
-        "TeamPCP supply chain — CI runner memory scrape into cloud credentials."),
+    "SIM-MP-018": (["TC-IR-05", "TC-SSCAN-01"], REMAP,
+        "TeamPCP supply chain — CI runner /proc memory scrape into cloud "
+        "credentials. The proof is the cross-plane correlation; there is no "
+        "dependency CVE here, so TC-SCA-01 does not apply."
+),
     "SIM-MP-019": (["TC-IR-05", "TC-WAAS-03", "TC-IR-04"], REMAP,
         "Kali external-to-internal kill chain across recon, exploit, credential access, and lateral movement."),
     "SIM-MP-020": (["TC-EDR-04", "TC-IR-07", "TC-SOAR-02"], REMAP,
@@ -330,18 +354,25 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Exposed .env to stolen-key S3 mass export — the code-to-cloud traceability chain end to end."),
 
     # ── TIM ────────────────────────────────────────────────────────────────
-    "SIM-TIM-001": (["TC-TH-02", "TC-TIM-02", "TC-XTI-03"], REMAP,
-        "TAXII feed match stitched to an outbound session, then pushed to the EDL."),
+    "SIM-TIM-001": (["TC-TH-02", "TC-TIM-02", "TC-XTI-03", "TC-NDR-06"], REMAP,
+        "TAXII feed match stitched to an outbound session, then pushed to the EDL — "
+        "which is also the EDL policy-management and enforcement case (TC-NDR-06)."
+),
     "SIM-TIM-002": (["TC-XTI-07", "TC-TH-06"], REMAP,
         "Adversary infrastructure staging — attribution and campaign context on a live case."),
-    "SIM-TIM-003": (["TC-XTI-05", "TC-XTI-07"], REMAP,
-        "Sleeper-domain activation — the retro-hunt sweep when new intel lands."),
+    "SIM-TIM-003": (["TC-XTI-05", "TC-XTI-07", "TC-TH-01"], REMAP,
+        "Sleeper-domain activation — the retro-hunt sweep when new intel lands, "
+        "which is hypothesis-driven XQL hunting over historical telemetry "
+        "(TC-TH-01)."
+),
     "SIM-TIM-004": (["TC-XTI-07", "TC-XTI-02"], REMAP,
         "TLS-thumbprint infrastructure pivot with confidence scoring to suppress low-fidelity intel."),
     "SIM-TIM-005": (["TC-XTI-07", "TC-TH-06"], REMAP,
         "Rogue Authenticode code-signing certificate as a campaign IOC."),
-    "SIM-TIM-006": (["TC-XTI-07", "TC-XTI-03"], REMAP,
-        "Edge-VPN probing surge attributed to a scanning-infrastructure feed."),
+    "SIM-TIM-006": (["TC-XTI-07", "TC-XTI-03", "TC-NDR-06"], REMAP,
+        "Edge-VPN probing surge attributed to a scanning-infrastructure feed, then "
+        "enforced at the edge via the EDL."
+),
 
     # ── CLOUD_APP ──────────────────────────────────────────────────────────
     # OAuth-grant governance binds to UC-ITDR (the IdP surface, correct SKU)
@@ -355,8 +386,10 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Google full-mailbox scope with offline token replay risk."),
     "SIM-CLOUD-004": (["TC-ITDR-03", "TC-DLP-11"], REMAP,
         "Cross-provider OAuth grant rotation across Okta, Microsoft, and Google."),
-    "SIM-CLOUD-005": (["TC-CITH-11", "TC-DLP-04"], REMAP,
-        "The benign-OAuth control run — it exists to measure false-positive rate, which is what TC-CITH-11 scores."),
+    "SIM-CLOUD-005": (["TC-CITH-11", "TC-DLP-04", "TC-TH-05"], REMAP,
+        "The benign-OAuth control run exists to measure false-positive rate — the "
+        "same measurement TC-TH-05 scores for smart-scoring hunt results."
+),
     "SIM-CLOUD-006": (["TC-DLP-11", "TC-DSPM-04"], REMAP,
         "Post-consent token abuse driving a Salesforce Bulk API mass export."),
     "SIM-CLOUD-007": (["TC-IR-07", "TC-SOAR-02", "TC-DLP-11"], REMAP,

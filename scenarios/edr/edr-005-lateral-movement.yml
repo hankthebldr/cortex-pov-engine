@@ -13,7 +13,6 @@ tc_ref: TC-IR-04
 tc_refs:
   - TC-IR-04
   - TC-EDR-05
-  - TC-CITH-03
 pov_scenario_id: POV-SC-039
 uc_name: "Incident Response"
 tc_name: "Validate analytics detection rules trigger on simulated lateral movement patterns"

@@ -16,6 +16,7 @@ tc_refs:
   - TC-TH-02
   - TC-TIM-02
   - TC-XTI-03
+  - TC-NDR-06
 pov_scenario_id: POV-SC-005
 uc_name: "Threat Hunting"
 tc_name: "Demonstrate automated hunting via scheduled correlation searches with IOC feeds"

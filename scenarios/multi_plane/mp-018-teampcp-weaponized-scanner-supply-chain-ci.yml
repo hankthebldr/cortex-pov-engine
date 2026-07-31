@@ -12,15 +12,14 @@ detection_types:
   - Correlation
 
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
-uc_ref: UCS-SCA-01
-tc_ref: TC-SCA-01
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
 tc_refs:
-  - TC-SCA-01
   - TC-IR-05
   - TC-SSCAN-01
-pov_scenario_id: POV-SC-012
-uc_name: "Software Composition Analysis"
-tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 mitre_tactic: "TA0001"

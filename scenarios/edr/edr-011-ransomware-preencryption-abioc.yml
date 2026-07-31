@@ -17,15 +17,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CITH-04
-tc_ref: TC-CITH-04
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-04
 tc_refs:
-  - TC-CITH-04
   - TC-EDR-04
   - TC-EDR-05
-pov_scenario_id: POV-SC-002
-uc_name: "Accelerated Investigations & Threat Hunting"
-tc_name: "Validate AI Runtime Security Analytics — AI-powered runtime analytics detect anomalous cloud workload behavior without signature dependency"
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Demonstrate auto-containment triggers on confirmed malware execution"
 
 mitre_tactic: "TA0040"
 mitre_tactic_name: "Impact"

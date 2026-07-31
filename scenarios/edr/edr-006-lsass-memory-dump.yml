@@ -24,7 +24,6 @@ tc_refs:
   - TC-EDR-03
   - TC-EDR-05
   - TC-ITDR-01
-  - TC-CITH-03
 pov_scenario_id: POV-SC-021
 uc_name: "Endpoint Detection & Response"
 tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"

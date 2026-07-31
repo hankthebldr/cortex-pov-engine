@@ -15,6 +15,7 @@ tc_ref: TC-XTI-07
 tc_refs:
   - TC-XTI-07
   - TC-XTI-03
+  - TC-NDR-06
 pov_scenario_id: POV-SC-079
 uc_name: "Extended Threat Intelligence (XTI)"
 tc_name: "Validate automatic attribution and campaign context attaches to a live case"

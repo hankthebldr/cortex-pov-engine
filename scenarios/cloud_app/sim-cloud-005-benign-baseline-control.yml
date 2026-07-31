@@ -12,6 +12,7 @@ tc_ref: TC-CITH-11
 tc_refs:
   - TC-CITH-11
   - TC-DLP-04
+  - TC-TH-05
 pov_scenario_id: POV-SC-002
 uc_name: "Accelerated Investigations & Threat Hunting"
 tc_name: "Validate Detection Rule Accuracy — false positive rate <5% on production-representative test data"

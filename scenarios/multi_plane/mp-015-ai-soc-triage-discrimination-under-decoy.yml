@@ -17,6 +17,7 @@ tc_refs:
   - TC-IR-01
   - TC-CITH-11
   - TC-IR-03
+  - TC-TH-05
 pov_scenario_id: POV-SC-006
 uc_name: "Incident Response"
 tc_name: "Validate auto-triage reduces manual alert review by >60% using smart scoring and grouping"
