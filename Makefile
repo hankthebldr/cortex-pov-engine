@@ -21,7 +21,7 @@ COMPOSE     ?= docker compose
 SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up down build test test-backend test-agent test-ui validate \
-        validate-detection check-adapters coverage coverage-strict ci clean
+        validate-detection check-refs check-adapters coverage coverage-strict ci clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -71,12 +71,18 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-adapters check-streamer ## Detection corpus + adapter source + streamer-fidelity gates
+validate: validate-detection check-refs check-adapters check-streamer ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity gates
 
 validate-detection: ## validate.py (0 fail) + export-determinism gate (CI 'detection' job)
 	python3 detection_scanner/scripts/validate.py --quiet
 	python3 detection_scanner/scripts/export_artifacts.py
 	git diff --exit-code detection_scanner/exports/
+
+check-refs: ## every scenario through the REAL loader under CORTEXSIM_STRICT_REFS
+	docker run --rm -v "$(CURDIR):/repo" -w /repo -e CORTEXSIM_BASE_DIR=/repo \
+	  -e CORTEXSIM_ENV=development -e PYTHONPATH=/repo/core $(IMAGE) \
+	  sh -c "pip install --no-cache-dir -q pytest pytest-asyncio httpx && \
+	         pytest tests/engine/test_corpus_refs_strict.py -q"
 
 unscoreable-report: ## regenerate docs/uc_tc_mapping/unscoreable-tcs.md from the index snapshot
 	python3 scripts/report_unscoreable_tcs.py

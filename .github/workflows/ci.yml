@@ -152,6 +152,35 @@ jobs:
         run: git diff --exit-code detection_scanner/exports/
 
   # ---------------------------------------------------------------------------
+  # refs — the UC/TC enforcement path, run against the REAL corpus.
+  #
+  # Every other UC/TC test exercises the machinery on synthetic refs. Without
+  # this job a scenario re-keyed to a dangling test case ships green: the loader
+  # would reject it at boot, but nothing in CI would ever watch that happen.
+  # ---------------------------------------------------------------------------
+  refs:
+    name: refs (UC/TC strict validation over the corpus)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install loader deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r core/requirements.txt pytest pytest-asyncio
+      - name: Every scenario resolves under CORTEXSIM_STRICT_REFS
+        # A failure here names the scenario that would refuse to load in
+        # production. Fix the ref (or the crosswalk), never the gate.
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+          CORTEXSIM_ENV: development
+          PYTHONPATH: ${{ github.workspace }}/core
+        run: pytest tests/engine/test_corpus_refs_strict.py -q
+
+  # ---------------------------------------------------------------------------
   # adapters — tool-adapter source preflight.
   # ---------------------------------------------------------------------------
   adapters:
