@@ -1,5 +1,22 @@
 # Detection Coverage & MITRE ATT&CK Map — Reference
 
+> ## ⚠ SUPERSEDED — historical snapshot
+>
+> This document froze the detection surface at **63 cards / 58 scenarios**
+> (`2026-06-07`, commit `b7eebc5`). The corpus is now **161 cards / 161 scenarios
+> across 15 planes**. Every count, table, and gap ID below is a point-in-time
+> record and must not be cited as current state.
+>
+> **Current authoritative sources:**
+> - Inventory — [`scenario-catalog.md`](scenario-catalog.md)
+> - Counted ground truth — [`README.md`](README.md)
+> - Live coverage analysis — `make coverage` (`detection_scanner/scripts/coverage_report.py`)
+> - UC/TC join + index gaps — [`../uc_tc_mapping/README.md`](../uc_tc_mapping/README.md)
+>
+> Kept because its Section 5 gap analysis is the provenance for several closed
+> GAP items. Read it as history.
+
+
 > **Scope.** This document is the canonical, exhaustive inventory of CortexSim's detection
 > surface as of `2026-06-07` (branch `main`, commit `b7eebc5`). It cross-reads two parallel
 > corpora that together constitute "what we can detect":
