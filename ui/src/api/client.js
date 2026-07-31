@@ -563,6 +563,154 @@ export async function reloadTtpCatalog() {
   return request('/api/ttps/_reload', { method: 'POST' })
 }
 
+// ─── UC / TC Index ───────────────────────────────────────────────────────────
+//
+// Read-only browser over the FY27 v2.2 master Use-Case / Test-Case index
+// (docs/uc_tc_mapping/_v2.2-source/), joined to the engine's own evidence
+// (Scenario.tc_refs → Run.tc_verdict). See core/api/uctc.py.
+//
+// Every response carries the envelope { index_loaded, index_version, … }.
+// When the snapshot is missing from a deploy the API returns 200 with
+// ``index_loaded: false`` and empty collections — callers MUST render that
+// as a degraded state, never as "0 test cases".
+//
+// All list helpers return the RAW wrapper object (like getTtps), not a bare
+// array, so the envelope survives to the surface.
+
+/** Build a querystring from a filter bag, dropping empty values. */
+function _qs(filters = {}) {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== '') qs.append(k, String(v))
+  }
+  const s = qs.toString()
+  return s ? `?${s}` : ''
+}
+
+/**
+ * GET /api/uctc/summary
+ *
+ * Header numbers in one call — index totals, per-validation-class /
+ * tier / priority / sheet breakdowns, and the evidence rollup.
+ *
+ * @returns {Promise<{index_loaded: boolean, index_version: ?string,
+ *                    totals: Object, by_validation_class: Object,
+ *                    by_tier: Object, by_priority: Object,
+ *                    by_sheet: Object, evidence: Object}>}
+ */
+export async function getUcTcSummary() {
+  return request('/api/uctc/summary')
+}
+
+/**
+ * GET /api/uctc/use-cases
+ *
+ * The 49 use cases with per-UC counts + coverage percentages.
+ *
+ * @param {Object} [filters]
+ * @param {string} [filters.sheet]            'SecOps' | 'Cloud'
+ * @param {string} [filters.subdomain]        FY27 subdomain
+ * @param {string} [filters.evidenced]        'all' | 'yes' | 'no' | 'partial'
+ * @param {boolean} [filters.include_inactive]
+ * @returns {Promise<{use_cases: Array<Object>, total: number}>}
+ */
+export async function getUcTcUseCases(filters = {}) {
+  return request(`/api/uctc/use-cases${_qs(filters)}`)
+}
+
+/**
+ * GET /api/uctc/use-cases/:uc_id
+ *
+ * One use case + its UCS groups + every child test case (TCSummary).
+ *
+ * @param {string} ucId  e.g. 'UC-EDR'
+ */
+export async function getUcTcUseCase(ucId) {
+  return request(`/api/uctc/use-cases/${encodeURIComponent(ucId)}`)
+}
+
+/**
+ * GET /api/uctc/test-cases
+ *
+ * The main table — all 266 TCSummary rows. Filters compose with logical
+ * AND server-side; unknown values quietly return an empty list. There is
+ * no pagination: the surface fetches once and filters client-side.
+ *
+ * @param {Object} [filters]
+ * @param {string}  [filters.uc_id]
+ * @param {string}  [filters.ucs_id]
+ * @param {string}  [filters.validation_class]  comma-list, e.g. 'DET,HNT'
+ * @param {string}  [filters.tier]
+ * @param {string}  [filters.priority]
+ * @param {string}  [filters.sheet]
+ * @param {string}  [filters.pov_scenario_id]
+ * @param {boolean} [filters.evidenced]
+ * @param {boolean} [filters.scoreable]
+ * @param {string}  [filters.plane]            implies evidenced
+ * @param {boolean} [filters.include_inactive]
+ * @returns {Promise<{test_cases: Array<Object>, total: number, index_total: number}>}
+ */
+export async function getUcTcTestCases(filters = {}) {
+  return request(`/api/uctc/test-cases${_qs(filters)}`)
+}
+
+/**
+ * GET /api/uctc/test-cases/:tc_id
+ *
+ * Full test-case detail — measurement contract, entitlements, parent UC +
+ * UCS siblings, POV payload, the scenarios that evidence it, and the run
+ * verdict rollup. This is the endpoint that turns "mapped" into "proven".
+ *
+ * @param {string} tcId  e.g. 'TC-EDR-03'
+ */
+export async function getUcTcTestCase(tcId) {
+  return request(`/api/uctc/test-cases/${encodeURIComponent(tcId)}`)
+}
+
+/**
+ * GET /api/uctc/coverage
+ *
+ * Every rollup in one payload — by use case (sorted worst-first), by
+ * plane, by validation class, by tier, by priority, by sheet.
+ *
+ * @param {Object} [opts]
+ * @param {boolean} [opts.include_inactive]
+ */
+export async function getUcTcCoverage(opts = {}) {
+  return request(`/api/uctc/coverage${_qs(opts)}`)
+}
+
+/**
+ * GET /api/uctc/gaps
+ *
+ * The UNEVIDENCED test cases — the gap is the point of the surface.
+ * Defaults to the actionable DET/HNT slice.
+ *
+ * @param {Object} [filters]
+ * @param {string}  [filters.validation_class]     default 'DET,HNT'
+ * @param {string}  [filters.priority]
+ * @param {string}  [filters.uc_id]
+ * @param {boolean} [filters.include_unscoreable]  default true
+ * @param {boolean} [filters.include_inactive]
+ * @returns {Promise<{gaps: Array<Object>, total: number,
+ *                    by_use_case: Array, by_priority: Object, scope: Object}>}
+ */
+export async function getUcTcGaps(filters = {}) {
+  return request(`/api/uctc/gaps${_qs(filters)}`)
+}
+
+/**
+ * GET /api/uctc/by-scenario/:scenario_id
+ *
+ * Forward view for a Library-inspector deep link — the test cases one
+ * engine scenario claims to evidence, plus its derived entitlements.
+ *
+ * @param {string} scenarioId  e.g. 'SIM-EDR-001'
+ */
+export async function getUcTcByScenario(scenarioId) {
+  return request(`/api/uctc/by-scenario/${encodeURIComponent(scenarioId)}`)
+}
+
 // ─── EAL Traffic Simulator ───────────────────────────────────────────────────
 //
 // API surface for the plugin-based EAL simulator (core/eal_simulator/).

@@ -1,0 +1,415 @@
+/* ============================================================
+   UcTcIndexView — the in-product FY27 UC / TC master-index browser.
+
+   Composes the existing console chrome (.adapter-registry,
+   .lab__segmented, .competitive__detail, .coverage__summary-bar,
+   .stack-coverage__stat) and only adds what the dense two-pane
+   table needs. Cortex console design tokens only (--c-*, with
+   --cortex-* fallbacks for the legacy theme). Plain CSS, no deps.
+   ============================================================ */
+
+.uctc {
+  --uctc-rail: 280px;
+}
+
+/* ── mode bar ─────────────────────────────────────────────── */
+
+.uctc__modebar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.uctc__modebar-meta {
+  font-size: 10px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+  letter-spacing: 0.04em;
+}
+
+.uctc__link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--c-signal, var(--cortex-teal, #00C0E8));
+  text-decoration: none;
+}
+.uctc__link:hover { text-decoration: underline; }
+.uctc__link:focus-visible {
+  outline: 1px solid var(--c-action, var(--cortex-teal, #00C0E8));
+  outline-offset: 2px;
+}
+
+.uctc__muted { color: var(--c-text-muted, var(--cortex-steel, #6B7E8E)); }
+
+/* ── two-pane split ───────────────────────────────────────── */
+
+.uctc__split {
+  display: grid;
+  grid-template-columns: var(--uctc-rail) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .uctc__split { grid-template-columns: minmax(0, 1fr); }
+}
+
+.uctc__main { min-width: 0; }
+
+/* ── UC rail ──────────────────────────────────────────────── */
+
+.uctc__rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Sticky: the TC table is ~8500px tall at 266 rows, so a static rail would
+     scroll away and leave a 280px dead column beside the whole table. */
+  position: sticky;
+  top: 0;
+  max-height: 78vh;
+  overflow-y: auto;
+  padding-right: 4px;
+  border-right: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+}
+
+/* Declared after the base rule so the narrow-viewport cap actually applies —
+   equal specificity means source order decides. */
+@media (max-width: 1100px) {
+  .uctc__rail { position: static; max-height: 240px; }
+}
+
+.uctc__rail-group { display: flex; flex-direction: column; gap: 4px; }
+
+.uctc__rail-group-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+  padding: 2px 4px;
+}
+
+.uctc__rail-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--c-text, var(--cortex-navy, #003366));
+  cursor: pointer;
+}
+
+.uctc__rail-item:hover {
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.03));
+  border-color: var(--c-hairline, rgba(255, 255, 255, 0.08));
+}
+
+.uctc__rail-item.is-active {
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.05));
+  border-color: var(--c-action, var(--cortex-teal, #00C0E8));
+}
+
+.uctc__rail-item:focus-visible {
+  outline: 1px solid var(--c-action, var(--cortex-teal, #00C0E8));
+  outline-offset: 1px;
+}
+
+.uctc__rail-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.uctc__rail-id { font-size: 11px; }
+
+.uctc__rail-count {
+  font-size: 10px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__rail-name {
+  font-size: 11px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+  line-height: 1.3;
+  margin: 2px 0 4px;
+}
+
+/* Three class selectors: these must beat `.theme-console .coverage__summary-bar`
+   (height 6px / margin-bottom 24px), which otherwise wins on specificity and
+   adds 24px of dead space under every one of the 49 rail items. */
+.theme-console .uctc .uctc__rail-bar { height: 4px; margin-bottom: 0; }
+
+/* ── table ────────────────────────────────────────────────── */
+
+.uctc__tablemeta {
+  font-size: 10px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+}
+
+.uctc__tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+}
+
+.uctc__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: var(--c-text, var(--cortex-navy, #003366));
+}
+
+.uctc__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+  background: var(--c-surface, rgba(0, 0, 0, 0.2));
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--c-hairline-strong, rgba(255, 255, 255, 0.16));
+  white-space: nowrap;
+}
+
+.uctc__table tbody td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.06));
+  vertical-align: top;
+}
+
+.uctc__table--compact tbody td { padding: 4px 8px; }
+
+.uctc__table-row { cursor: pointer; }
+.uctc__table-row:hover { background: var(--c-surface-raised, rgba(255, 255, 255, 0.03)); }
+.uctc__table-row.is-active {
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.06));
+  box-shadow: inset 2px 0 0 var(--c-action, var(--cortex-teal, #00C0E8));
+}
+
+.uctc__table-groupheader th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.03));
+  border-bottom: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+}
+
+.uctc__idbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  color: var(--c-signal, var(--cortex-teal, #00C0E8));
+  cursor: pointer;
+  white-space: nowrap;
+}
+.uctc__idbtn:hover { text-decoration: underline; }
+.uctc__idbtn:focus-visible {
+  outline: 1px solid var(--c-action, var(--cortex-teal, #00C0E8));
+  outline-offset: 2px;
+}
+
+.uctc__cell-title {
+  /* Budgeted so the Evidence column — the whole point of the table — still fits
+     inside the wrap at a 1600px viewport instead of being clipped off the right
+     edge and requiring a horizontal scroll to read. */
+  max-width: 288px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uctc__cell-kpi {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__cell-evidence { white-space: nowrap; font-size: 11px; }
+
+/* ── chips ────────────────────────────────────────────────── */
+
+/* All of these ride on the shared `.chip` base, which is authored as
+   `.theme-console .chip` and sets colour + border. A single-class rule loses to
+   it, so every modifier below is scoped three-deep to actually take effect. */
+.uctc__chip { font-size: 10px; }
+
+.theme-console .uctc .uctc__chip-qual {
+  font-size: 10px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+  font-style: italic;
+}
+
+.theme-console .uctc .uctc__chip-split {
+  font-size: 10px;
+  color: var(--c-pending, var(--cortex-warning, #F5A524));
+  border: 1px solid var(--c-pending, var(--cortex-warning, #F5A524));
+  border-radius: 3px;
+  padding: 0 5px;
+}
+
+.theme-console .uctc .uctc__chip-delta {
+  font-size: 10px;
+  margin-left: 6px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+}
+
+/* ── detail drawer ────────────────────────────────────────── */
+
+.uctc__detail { margin-top: 20px; }
+
+.uctc__detail-subtitle {
+  font-size: 12px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+  margin-top: 4px;
+  max-width: 720px;
+}
+
+.uctc__detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.uctc__detail-prose {
+  font-family: var(--font-narrative, inherit);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+  max-width: 760px;
+  margin: 8px 0 0;
+}
+
+.uctc__banner {
+  margin: 12px 0;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-pending, var(--cortex-warning, #F5A524));
+  border: 1px solid var(--c-pending, var(--cortex-warning, #F5A524));
+  border-radius: 4px;
+  background: rgba(245, 165, 36, 0.08);
+}
+
+.uctc__chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+/* ── coverage mode ────────────────────────────────────────── */
+
+.uctc__coverage { display: flex; flex-direction: column; gap: 4px; }
+
+.uctc__coverage-hint {
+  font-size: 10px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+  margin-bottom: 8px;
+}
+
+.uctc__covrow {
+  display: grid;
+  grid-template-columns: 92px minmax(120px, 220px) minmax(0, 1fr) 150px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--c-text, var(--cortex-navy, #003366));
+  font-size: 11px;
+  cursor: pointer;
+}
+.uctc__covrow:hover {
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.03));
+  border-color: var(--c-hairline, rgba(255, 255, 255, 0.08));
+}
+.uctc__covrow:focus-visible {
+  outline: 1px solid var(--c-action, var(--cortex-teal, #00C0E8));
+  outline-offset: 1px;
+}
+
+.uctc__covrow-id { font-size: 11px; }
+
+.uctc__covrow-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+}
+
+/* Same specificity guard as .uctc__rail-bar — a stray 24px margin-bottom would
+   push the bar off the vertical centre of every coverage row. */
+.theme-console .uctc .uctc__covrow-bar { height: 8px; margin-bottom: 0; }
+
+.uctc__covrow-num {
+  font-size: 10px;
+  text-align: right;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__rollup { margin-top: 20px; }
+
+/* ── gaps mode ────────────────────────────────────────────── */
+
+.uctc__gaps { display: flex; flex-direction: column; gap: 12px; }
+
+.uctc__gaps-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.uctc__gaps-headline {
+  font-size: 14px;
+  color: var(--c-text, var(--cortex-navy, #003366));
+}
+
+.uctc__gaps-headline .mono {
+  font-size: 20px;
+  color: var(--c-pending, var(--cortex-warning, #F5A524));
+}
+
+.uctc__gaps-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.uctc__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+  cursor: pointer;
+}

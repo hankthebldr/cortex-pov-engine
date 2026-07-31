@@ -9,6 +9,7 @@ import MultiRunCompare from '../components/console/MultiRunCompare.jsx'
 import CoverageView from '../components/console/CoverageView.jsx'
 import TtpBrowserView from '../components/console/TtpBrowserView.jsx'
 import ToolAdapterCatalog from '../components/console/ToolAdapterCatalog.jsx'
+import UcTcIndexView from '../components/console/UcTcIndexView.jsx'
 import LabView from '../components/console/LabView.jsx'
 import TenantManager from '../components/console/TenantManager.jsx'
 import EalConsole from '../components/EalConsole.jsx'
@@ -258,6 +259,10 @@ function RunList({ runs = [], onOpen = () => {} }) {
 function CoverageSurface() { return <CoverageView /> }
 function TtpsSurface({ params = {} }) { return <TtpBrowserView initialTtpId={params.ttp || null} /> }
 function AdaptersSurface() { return <ToolAdapterCatalog /> }
+// Deep-linkable: #/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03
+function UcTcSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
+  return <UcTcIndexView params={params} setParams={setParams} onNavigate={onNavigate} />
+}
 function EalSurface() { return <EalConsole /> }
 function EnvironmentsSurface() { return <LabView /> }
 function AgentsSurface() { return <TargetsView /> }
@@ -269,6 +274,7 @@ export const DESTINATIONS = [
   { id: 'runs',         label: 'Runs & Proof',  group: 'Operate',        icon: '◈', Component: RunsSurface,         badge: 'live' },
   { id: 'coverage',     label: 'Coverage',      group: 'Analyze',        icon: '▦', Component: CoverageSurface },
   { id: 'ttps',         label: 'TTP Cards',     group: 'Analyze',        icon: '◆', Component: TtpsSurface },
+  { id: 'uctc',         label: 'UC / TC Index', group: 'Analyze',        icon: '≣', Component: UcTcSurface },
   { id: 'adapters',     label: 'Tool Adapters', group: 'Analyze',        icon: '⚙', Component: AdaptersSurface },
   { id: 'eal',          label: 'Traffic / EAL', group: 'Traffic',        icon: '∿', Component: EalSurface },
   { id: 'environments', label: 'Environments',  group: 'Infrastructure', icon: '☁', Component: EnvironmentsSurface },
