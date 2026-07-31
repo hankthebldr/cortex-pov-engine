@@ -39,6 +39,13 @@ COPY infra/     /app/infra/
 # scenario with a ttp_ref/adapter_ref logs an "unresolved card" warning.
 COPY detection_scanner/ /app/detection_scanner/
 COPY tools/             /app/tools/
+# FY27 UC/TC master-index snapshot. uctc_registry reads
+# <base>/docs/uc_tc_mapping/_v2.2-source at boot; without it the registry loads
+# empty, CORTEXSIM_STRICT_REFS silently degrades to advisory (S-10..S-16 stop
+# rejecting), /api/uctc and /api/pov serve index_loaded:false, and the UC/TC
+# console renders permanently degraded. Only this subtree ships — the rest of
+# docs/ is prose and is deliberately left out of the image.
+COPY docs/uc_tc_mapping/ /app/docs/uc_tc_mapping/
 
 # Drop the built React UI into the location SimCore mounts as StaticFiles (see core/main.py).
 COPY --from=ui-builder /ui/dist/ /app/core/static/
