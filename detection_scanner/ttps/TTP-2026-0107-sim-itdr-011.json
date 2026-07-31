@@ -262,14 +262,14 @@
         "evidence_query": "Playbook XSOAR-PB-IdentityWeaponizedMassDeviceWipeContainment-v1 triggers on CR-ITDR-0011: disable the compromised admin identity, revoke its sessions/tokens, freeze pending Intune device actions, and open a P1 destruction incident with the wiped-device inventory attached."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-011",
+        "threat_scenario_id": "TS-ITDR-011",
         "name": "Identity-Weaponized MDM Mass Device Wipe Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn an Intune/Global admin's config-and-read device-management baseline and detect a tenant-scale RemoteWipe/FactoryReset broadcast — and the first-ever destructive device action — issued by that compromised identity, anchored to its phished-admin causality chain, where no endpoint sensor sees the destruction and no static rule was written for the legitimate Intune device-management APIs involved. A correlation rule stitches the deviations into one incident and an XSOAR playbook contains the identity.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-011A",
+            "threat_step_id": "TS-ITDR-011A",
             "objective": "Cortex learns the admin device-action baseline and an injected tenant-scale RemoteWipe/FactoryReset burst fires the bulk-wipe ABIOC and surfaces the burst in the estate.",
             "preconditions": [
               "XSIAM ingesting Entra ID + Intune device-management audit logs into msft_azure_ad_signin.",
@@ -287,7 +287,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ITDR-011B",
+            "threat_step_id": "TS-ITDR-011B",
             "objective": "The first-seen ABIOC fires on the destructive device action and the correlation rule stitches the deviations, correlated with the preceding risky sign-in, into one incident an XSOAR playbook contains.",
             "preconditions": [
               "The admin identity's learned history contains no prior destructive device actions.",

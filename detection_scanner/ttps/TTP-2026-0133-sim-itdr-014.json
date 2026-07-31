@@ -300,14 +300,14 @@
         "evidence_query": "dataset = xdr_data | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START | filter causality_actor_process_image_name = \"roadtx\" | filter action_process_image_name in (\"python3\", \"roadrecon\")"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-014",
+        "threat_scenario_id": "TS-ITDR-014",
         "name": "ROADtools/roadtx Entra Token-Abuse Detection via Cortex ITDR / XDR Identity Analytics",
         "description": "Cortex Identity Analytics learns that an identity signs in only interactively and never registers devices or drives Microsoft Graph programmatically, then detects the ROADtools chain — programmatic sign-in, rogue DRS device registration, PRT-backed MFA-bypass token minting, roadtx-owned roadrecon process lineage, and a bulk Graph enumeration burst — and stitches all five signals into a single identity-owned ITDR incident anchored on the rogue device id + PRT.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-014A",
+            "threat_step_id": "TS-ITDR-014A",
             "objective": "The behavioral ABIOCs fire on the anomalous programmatic sign-in and the rogue device registration lineage from an interactive-only identity.",
             "preconditions": [
               "Entra ID sign-in + Azure AD audit logs ingested (msft_azure_ad_signin / msft_o365_audit).",
@@ -325,7 +325,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-ITDR-014B",
+            "threat_step_id": "TS-ITDR-014B",
             "objective": "The correlation rule fuses the cloud-identity abuse and the roadtx-owned endpoint lineage into one identity-owned incident anchored on the rogue device id + PRT.",
             "preconditions": [
               "Both ABIOCs from TC-ITDR-014A have fired.",
@@ -343,7 +343,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-ITDR-014C",
+            "threat_step_id": "TS-ITDR-014C",
             "objective": "The deterministic BIOC catches the PRT-backed silent token minting with MFA satisfied by the refresh token.",
             "preconditions": [
               "Entra sign-in telemetry exposes incoming_token_type and the MFA auth-method detail."

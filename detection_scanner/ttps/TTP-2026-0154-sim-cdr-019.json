@@ -210,14 +210,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter eventSource = \"s3.amazonaws.com\" and eventName = \"GetObject\" | comp count() as object_downloads by userIdentityArn, bucket_name | filter object_downloads >= 50"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-019",
+        "threat_scenario_id": "TS-CDR-019",
         "name": "AWS S3 Mass-Object Exfiltration Detection via Cortex ABIOC",
         "description": "Cortex auto-tuned Analytics Behavioral IOCs learn each identity's per-bucket S3 object-access baseline and detect bulk cloud-storage theft — a suspicious identity issuing a high-volume s3:GetObject read burst on a bucket — anchored to the suspicious-identity mass-download causality chain, where no static rule was written for the legitimate GetObject calls involved.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-019A",
+            "threat_step_id": "TS-CDR-019A",
             "objective": "Cortex learns the per-identity S3 object-access baseline and an injected mass-download burst fires both ABIOCs and the correlation.",
             "preconditions": [
               "Cortex Cloud / CDR ingesting the AWS CloudTrail audit stream with S3 data events enabled.",

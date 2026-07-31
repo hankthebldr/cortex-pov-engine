@@ -218,14 +218,14 @@
         "evidence_query": "Correlation CR-EMAIL-0001 stitches the email phishing-link signal to the recipient's endpoint follow-on into one account-compromise incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EMAIL-001",
+        "threat_scenario_id": "TS-EMAIL-001",
         "name": "Phishing Credential-Link Detection",
         "description": "Detect a credential-harvest phishing URL delivered to or clicked by a recipient across both Proofpoint TAP and Microsoft 365 email log shapes, stitched to the endpoint follow-on.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EMAIL-001A",
+            "threat_step_id": "TS-EMAIL-001A",
             "objective": "A blocked phishing message plus a permitted click for one recipient raises a credential-phishing alert.",
             "preconditions": [
               "Cortex XSIAM ingesting proofpoint_tap_raw and msft_o365 datasets.",
@@ -243,7 +243,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-EMAIL-001B",
+            "threat_step_id": "TS-EMAIL-001B",
             "objective": "The email phishing signal stitches to the recipient endpoint follow-on.",
             "success_criteria": [
               "Correlation `CR-EMAIL-0001` groups the email phishing-link signal with the recipient endpoint follow-on under one incident."

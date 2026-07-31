@@ -345,14 +345,14 @@
         "evidence_query": "dataset = xdr_data | filter agent_hostname = \"<target>\" | filter event_type in (ENUM.REGISTRY, ENUM.LOAD_IMAGE, ENUM.PROCESS) | sort asc _time | fields _time, event_type, action_module_path, action_process_image_name, action_process_image_command_line"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-021",
+        "threat_scenario_id": "TS-EDR-021",
         "name": "BYOVD EDR-Kill Behavioral Detection and Court-Ready Forensic Evidence via Cortex ABIOC",
         "description": "The Gentlemen defeat the signature layer by loading a signed but vulnerable driver, so the catch has to be behavioral: Cortex's auto-tuned ABIOCs fire on the anomalous driver-load-to-telemetry-loss deviation and the post-tamper hands-on-keyboard burst, and the correlation rule assembles a single incident whose ordered evidence graph the DC exports as the POV's citable forensic packet.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-021A",
+            "threat_step_id": "TS-EDR-021A",
             "objective": "The terminal ABIOC and the correlation rule fire on the full BYOVD EDR-kill chain and produce one stitched incident.",
             "preconditions": [
               "Windows EDR target with the Cortex agent installed.",
@@ -369,7 +369,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-EDR-021B",
+            "threat_step_id": "TS-EDR-021B",
             "objective": "The driver-service-creation and shadow-copy-deletion BIOCs produce citable forensic evidence a POV report can show.",
             "preconditions": [
               "Windows EDR target with the Cortex agent installed."
@@ -385,7 +385,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-EDR-021C",
+            "threat_step_id": "TS-EDR-021C",
             "objective": "The post-tamper burst ABIOC and the _gentlemen scheduled-task hunt surface the hands-on-keyboard activity on the blinded host.",
             "preconditions": [
               "Windows EDR target with the Cortex agent installed."

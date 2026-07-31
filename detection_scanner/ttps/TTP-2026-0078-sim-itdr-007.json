@@ -374,14 +374,14 @@
         "evidence_query": "Playbook: isolate the host, revoke the foothold account, revert the malicious DACL ACE, rotate the machine account and any exposed service-account credentials, and hunt for RBCD edits."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IDENT-078",
+        "threat_scenario_id": "TS-IDENT-078",
         "name": "Active Directory Privilege Escalation & Token Manipulation",
         "description": "Detect the post-compromise local-to-domain escalation chain — LSASS credential dumping, privileged DACL abuse, Kerberos relay, SeImpersonate escalation, and access-token theft — on a domain workstation and group it into one Privilege Escalation incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IDENT-078A",
+            "threat_step_id": "TS-IDENT-078A",
             "objective": "Each escalation step fires its expected Cortex ITDR/XDR detection during SIM-ITDR-007.",
             "preconditions": [
               "Cortex ITDR + XDR connected to the AD domain and the domain-joined workstation.",
@@ -401,7 +401,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-IDENT-078B",
+            "threat_step_id": "TS-IDENT-078B",
             "objective": "The escalation steps stitch into one Privilege Escalation incident.",
             "success_criteria": [
               "Correlation `CR-ITDR-0007` groups the chain from one host into a single incident.",

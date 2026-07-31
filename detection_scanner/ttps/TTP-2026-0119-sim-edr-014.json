@@ -393,14 +393,14 @@
         "evidence_query": "In the NGFW/ATP threat log, filter HTTP sessions to the IIS host whose Cookie header carries the literal 'STAR' delimiter inside a Base64 blob (Gzip -> AES-ECB/PKCS7 -> Base64 encoded C2) — the operator-driven request-response channel that carries no beacon periodicity."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-014",
+        "threat_scenario_id": "TS-EDR-014",
         "name": "Fileless IIS Backdoor Detection — ASPX Web Shell to In-Memory .NET (NET-STAR)",
         "description": "Prove Cortex catches a fileless IIS backdoor that no beacon-periodicity or single known-bad-command rule fires on: an ASPX web shell reflectively loads IIServerCore into w3wp.exe and runs an operator-paced, STAR-delimited cookie C2. Detection anchors on the behavioural seams the technique cannot hide — the web-shell file write, w3wp.exe command lineage, reflective/unbacked module loads, AMSI/CLR co-load, timestomping, and STAR cookie traffic — stitched into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-014A",
+            "threat_step_id": "TS-EDR-014A",
             "objective": "The OutlookEN.aspx web-shell drop and the w3wp.exe command lineage raise the two web-shell BIOCs and the validation XQL.",
             "preconditions": [
               "IIS host with the Cortex agent installed.",
@@ -419,7 +419,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-EDR-014B",
+            "threat_step_id": "TS-EDR-014B",
             "objective": "The reflective in-memory .NET load and AMSI/CLR co-load raise the fileless-execution BIOCs.",
             "preconditions": [
               "IIS host with the Cortex agent installed and module-load telemetry flowing to xdr_data."
@@ -435,7 +435,7 @@
             "expected_score_weight": 0.35
           },
           {
-            "test_case_id": "TC-EDR-014C",
+            "threat_step_id": "TS-EDR-014C",
             "objective": "The STAR-delimited cookie C2 is surfaced and the correlation stitches the chain into one incident.",
             "preconditions": [
               "Network telemetry (network_story) flowing so the cookie C2 request is observable."

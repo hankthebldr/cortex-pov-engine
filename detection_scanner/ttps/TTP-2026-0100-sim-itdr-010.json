@@ -239,14 +239,14 @@
         "evidence_query": "dataset = msft_azure_ad_signin | filter category = \"RoleManagement\" | filter initiating_user_principal_name = \"svc-backup@cortexsim-canary.invalid\""
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-010",
+        "threat_scenario_id": "TS-ITDR-010",
         "name": "Rogue Privileged Role / Consent Grant Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a directory-sync / identity-automation account's read-and-sync governance baseline and detect anomalous privileged role assignments and high-risk OAuth consent grants by that account, anchored to its causality chain, where no static rule was written for the legitimate Entra ID APIs involved.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-010A",
+            "threat_step_id": "TS-ITDR-010A",
             "objective": "Cortex learns the sync-account governance baseline and an injected role/consent deviation fires both ABIOCs.",
             "preconditions": [
               "XSIAM ingesting Entra ID audit logs into msft_azure_ad_signin.",

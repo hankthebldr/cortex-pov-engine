@@ -274,14 +274,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter principal_email contains \"gcp-sa-aiplatform-re.iam.gserviceaccount.com\" | filter resource_project != caller_project | fields _time, principal_email, method_name, resource_project, resource_name"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-AISPM-007",
+        "threat_scenario_id": "TS-AISPM-007",
         "name": "Vertex AI Double Agent — P4SA Token Theft and Cross-Project Exfil",
         "description": "A deployed reasoning-engine agent harvests the P4SA service-agent token from the metadata service and uses it to read Cloud Storage across the project boundary and pull the private reasoning-engine image; Cortex stitches the in-cluster and cloud-plane signal into one incident keyed on the agent causality actor and the P4SA identity.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-AISPM-007A",
+            "threat_step_id": "TS-AISPM-007A",
             "objective": "The recursive-IMDS P4SA harvest is attributed to the reasoning-engine agent container and stitched to the cross-project GCS read and private image pull in one incident.",
             "preconditions": [
               "Cortex agent in the reasoning-engine container; cloud_audit_logs ingested.",

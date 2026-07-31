@@ -48,9 +48,9 @@
     }
   },
   "identity": {
-    "name": "Cross-Plane Correlation MOAT \u2014 EDR + NDR + ITDR Stitch Into One Incident (T1078 / T1071.001 / T1110.003)",
-    "summary": "Three coordinated signals from one src_host within a \u00b130s window \u2014 an outbound HTTP beacon (NDR), an interactive bash spawned under the www-data service identity (EDR), and a Kerberos pre-auth failure burst against seeded AD service accounts (ITDR) \u2014 must stitch into a single XSIAM incident whose causality chain spans all three planes. The flagship Cortex MOAT scenario: detection lives less in\u2026",
-    "description": "Real enterprise breaches rarely surface on a single telemetry plane: an operator beacons out (network), pivots a service-account shell on the host (endpoint), and probes Active Directory or the IdP (identity) \u2014 each leg looking benign in isolation. The competitive moat for XSIAM is cross-plane causality: stitching those independent signals from the same source into ONE incident so the SOC sees a coherent story instead of three low-severity alerts in three consoles. This card encodes the three per-plane anchor detections \u2014 an NDR beacon to a known IOC domain on panw_ngfw_traffic_raw, an EDR interactive-bash-from-www-data BIOC on xdr_data ENUM.PROCESS, and an ITDR Kerberos pre-auth failure burst on ad_audit / okta_sso / msft_azure_ad_signin \u2014 and then the correlation rule that fuses them. The stitch validation query groups by the source host and asserts count_distinct(_product) across planes resolves to a single incident_id with a causality chain of length >= 5 inside the \u00b130s correlation window. Detection success is measured as the Cross-Source Correlation Rate: over a batch of runs, the proportion that produce one stitched incident spanning {EDR, NDR, ITDR}.",
+    "name": "Cross-Plane Correlation MOAT — EDR + NDR + ITDR Stitch Into One Incident (T1078 / T1071.001 / T1110.003)",
+    "summary": "Three coordinated signals from one src_host within a ±30s window — an outbound HTTP beacon (NDR), an interactive bash spawned under the www-data service identity (EDR), and a Kerberos pre-auth failure burst against seeded AD service accounts (ITDR) — must stitch into a single XSIAM incident whose causality chain spans all three planes. The flagship Cortex MOAT scenario: detection lives less in…",
+    "description": "Real enterprise breaches rarely surface on a single telemetry plane: an operator beacons out (network), pivots a service-account shell on the host (endpoint), and probes Active Directory or the IdP (identity) — each leg looking benign in isolation. The competitive moat for XSIAM is cross-plane causality: stitching those independent signals from the same source into ONE incident so the SOC sees a coherent story instead of three low-severity alerts in three consoles. This card encodes the three per-plane anchor detections — an NDR beacon to a known IOC domain on panw_ngfw_traffic_raw, an EDR interactive-bash-from-www-data BIOC on xdr_data ENUM.PROCESS, and an ITDR Kerberos pre-auth failure burst on ad_audit / okta_sso / msft_azure_ad_signin — and then the correlation rule that fuses them. The stitch validation query groups by the source host and asserts count_distinct(_product) across planes resolves to a single incident_id with a causality chain of length >= 5 inside the ±30s correlation window. Detection success is measured as the Cross-Source Correlation Rate: over a batch of runs, the proportion that produce one stitched incident spanning {EDR, NDR, ITDR}.",
     "severity": "high",
     "confidence": "high"
   },
@@ -123,7 +123,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "TC-IR-05 \u2014 CortexSim cross-plane stitch (NDR beacon + EDR service-account shell + ITDR Kerberos pre-auth burst from one src_host)",
+    "framework_reference_id": "TC-IR-05 — CortexSim cross-plane stitch (NDR beacon + EDR service-account shell + ITDR Kerberos pre-auth burst from one src_host)",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -136,7 +136,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Three coordinated signals from one src_host within the \u00b130s correlation window.\n# NDR leg \u2014 outbound HTTP beacon to a known IOC domain.\nfor i in 1 2 3 4 5; do\n  curl -sSL -m 10 -A 'Mozilla/5.0 (compatible; CortexSimMP005/1.0)' \"http://testmynids.org/uid/index.html?signal=ndr&iter=$i\" -o /dev/null || true\n  sleep 2\ndone\n# EDR leg \u2014 interactive bash under the www-data service identity.\nbash -c 'id; whoami; uname -a; curl --version' 2>&1 | head -20\n# ITDR leg \u2014 Kerberos pre-auth failure burst against seeded service accounts.\nITDR_REALM=${CORTEXSIM_ITDR_REALM:-CORP.LOCAL}\nfor svc in svc-sql svc-backup svc-webapp svc-jenkins svc-monitor; do\n  echo \"Wrong-Password!\" | timeout 5 kinit \"${svc}@${ITDR_REALM}\" 2>&1 | head -2 || true\n  sleep 1\ndone",
+      "code": "# Three coordinated signals from one src_host within the ±30s correlation window.\n# NDR leg — outbound HTTP beacon to a known IOC domain.\nfor i in 1 2 3 4 5; do\n  curl -sSL -m 10 -A 'Mozilla/5.0 (compatible; CortexSimMP005/1.0)' \"http://testmynids.org/uid/index.html?signal=ndr&iter=$i\" -o /dev/null || true\n  sleep 2\ndone\n# EDR leg — interactive bash under the www-data service identity.\nbash -c 'id; whoami; uname -a; curl --version' 2>&1 | head -20\n# ITDR leg — Kerberos pre-auth failure burst against seeded service accounts.\nITDR_REALM=${CORTEXSIM_ITDR_REALM:-CORP.LOCAL}\nfor svc in svc-sql svc-backup svc-webapp svc-jenkins svc-monitor; do\n  echo \"Wrong-Password!\" | timeout 5 kinit \"${svc}@${ITDR_REALM}\" 2>&1 | head -2 || true\n  sleep 1\ndone",
       "input_variables": [],
       "timeout_seconds": 240
     },
@@ -167,7 +167,7 @@
     "biocs": [
       {
         "name": "MP-005 Interactive Bash From www-data Service Context",
-        "description": "XDR BIOC \u2014 interactive bash from www-data service context (process lineage anchor). The endpoint leg of the cross-plane stitch: an interactive shell under a non-login web service identity anchors the process lineage that the correlation rule joins to the network and identity signals.",
+        "description": "XDR BIOC — interactive bash from www-data service context (process lineage anchor). The endpoint leg of the cross-plane stitch: an interactive shell under a non-login web service identity anchors the process lineage that the correlation rule joins to the network and identity signals.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"httpd\", \"php-fpm\")\n| comp count() as proc_count by agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, causality_id\n| filter proc_count >= 1\n| fields agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, causality_id, proc_count",
         "severity": "high",
         "mitre_technique_ids": [
@@ -177,7 +177,7 @@
       },
       {
         "name": "MP-005 NGFW Outbound HTTP Beacon To Known IOC Domain",
-        "description": "NDR BIOC \u2014 outbound HTTP beacon from the src_host to a known IOC domain (testmynids.org). The network leg of the cross-plane stitch, joined to the endpoint lineage by source host/IP.",
+        "description": "NDR BIOC — outbound HTTP beacon from the src_host to a known IOC domain (testmynids.org). The network leg of the cross-plane stitch, joined to the endpoint lineage by source host/IP.",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"web-browsing\", \"ssl\", \"http\") or dst_port in (80, 443)\n| filter dst_host = \"testmynids.org\"\n| comp count() as beacon_hits by src_ip, dst_host\n| filter beacon_hits >= 5\n| fields src_ip, dst_host, beacon_hits",
         "severity": "high",
         "mitre_technique_ids": [
@@ -186,7 +186,7 @@
       },
       {
         "name": "MP-005 Identity Kerberos PreAuth Failure Burst From One Client",
-        "description": "ITDR BIOC \u2014 Kerberos pre-auth (4768) failure burst against multiple seeded service accounts from one client_ip, with an IdP sign-in fallback across okta_sso / msft_azure_ad_signin. The identity leg of the cross-plane stitch, joined by source host/IP.",
+        "description": "ITDR BIOC — Kerberos pre-auth (4768) failure burst against multiple seeded service accounts from one client_ip, with an IdP sign-in fallback across okta_sso / msft_azure_ad_signin. The identity leg of the cross-plane stitch, joined by source host/IP.",
         "logic": "dataset = ad_audit\n| filter event_id = 4768\n| filter result_code != \"0x0\"\n| comp count_distinct(target_user_name) as targeted_users, count() as failures by client_ip\n| filter targeted_users >= 3\n| fields client_ip, targeted_users, failures",
         "severity": "high",
         "mitre_technique_ids": [
@@ -227,14 +227,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Cross-Plane Stitch \u2014 EDR Plus NDR Plus ITDR From One Source Host",
+        "name": "Cross-Plane Stitch — EDR Plus NDR Plus ITDR From One Source Host",
         "rule_id": "CR-MP-0010",
         "logic": "(BIOC(MP-005 Interactive Bash From www-data Service Context) AND (BIOC(MP-005 NGFW Outbound HTTP Beacon To Known IOC Domain) OR BIOC(MP-005 Identity Kerberos PreAuth Failure Burst From One Client))) WITHIN 30s GROUP BY src_host HAVING count_distinct(_product) >= 2"
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Correlation Engine \u2014 Cross-Plane Causality (EDR + NDR + ITDR)",
-      "Cortex XSIAM Analytics \u2014 Multi-Source Incident Stitching by Source Host"
+      "Cortex XSIAM Correlation Engine — Cross-Plane Causality (EDR + NDR + ITDR)",
+      "Cortex XSIAM Analytics — Multi-Source Incident Stitching by Source Host"
     ]
   },
   "panw_mapping": {
@@ -271,14 +271,14 @@
         "evidence_query": "preset = xdr_data | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by action_local_ip | filter plane_count >= 2 and incident_count = 1"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IR-060",
-        "name": "Cross-Plane Correlation MOAT \u2014 EDR + NDR + ITDR Stitch",
+        "threat_scenario_id": "TS-IR-060",
+        "name": "Cross-Plane Correlation MOAT — EDR + NDR + ITDR Stitch",
         "description": "Validate that three coordinated signals from one src_host stitch into a single XSIAM incident whose causality chain spans the endpoint, network and identity planes.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IR-060A",
+            "threat_step_id": "TS-IR-060A",
             "objective": "Each per-plane anchor detection fires from its respective telemetry source.",
             "preconditions": [
               "EDR, NDR and ITDR modules all reporting into the same XSIAM tenant from the same src_host.",
@@ -296,8 +296,8 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-IR-060B",
-            "objective": "The three planes stitch into a single incident within the \u00b130s window.",
+            "threat_step_id": "TS-IR-060B",
+            "objective": "The three planes stitch into a single incident within the ±30s window.",
             "success_criteria": [
               "XQL `MP-005 Cross-Plane Stitch Single Incident Spanning Multiple Products` returns >= 1 row with plane_count >= 2 and incident_count = 1.",
               "Correlation `CR-MP-0010` raises one cross-plane incident spanning {EDR, NDR, ITDR} with mttd <= 60s."
@@ -317,7 +317,7 @@
     "detection_engineering": [
       "Author per-plane anchor detections (endpoint shell, network beacon, identity pre-auth burst) keyed to a common source identifier.",
       "Build a correlation rule that joins the planes within a tight window and asserts count_distinct(_product) >= 2 under one incident.",
-      "Track the Cross-Source Correlation Rate over a run batch \u2014 flaky stitching is a real-world failure mode worth catching."
+      "Track the Cross-Source Correlation Rate over a run batch — flaky stitching is a real-world failure mode worth catching."
     ],
     "response_playbook": "XSOAR-PB-CrossPlaneIncidentResponse-v1"
   },
@@ -330,7 +330,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1078 \u2014 Valid Accounts",
+      "title": "MITRE ATT&CK T1078 — Valid Accounts",
       "url": "https://attack.mitre.org/techniques/T1078/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

@@ -115,13 +115,28 @@ def test_catalog_handles_missing_dir(tmp_path):
     assert cat.all_entries() == []
 
 
-def test_score_weights_aggregated_per_use_case(catalog):
-    """expected_score_weight sums are surfaced per use_case_id."""
+def test_score_weights_aggregated_per_threat_scenario(catalog):
+    """expected_score_weight sums are surfaced per threat_scenario_id.
+
+    Keys carry the TS- prefix since Phase 1d: these are card-local threat
+    narratives, not the master-index UC namespace they used to shadow.
+    """
     entry = catalog.get_entry("TTP-2026-0002")
     assert entry is not None
-    assert "UC-RANSOM-002" in entry.score_weights
+    assert "TS-RANSOM-002" in entry.score_weights
     # The TTP-2026-0002 entry weights sum to 0.6 + 0.2 + 0.2 = 1.0.
-    assert abs(entry.score_weights["UC-RANSOM-002"] - 1.0) < 1e-6
+    assert abs(entry.score_weights["TS-RANSOM-002"] - 1.0) < 1e-6
+
+
+def test_no_card_shadows_the_master_uc_namespace(catalog):
+    """The regression guard for Phase 1d: a card-local threat id must never
+    look like a master-index UC/TC ref again, or the two namespaces re-collide."""
+    for entry in catalog.all_entries():
+        for key in entry.score_weights:
+            assert key.startswith("TS-"), (
+                f"{entry.ttp_ref} carries threat id {key!r} — card-local ids "
+                f"must use the TS- prefix, not UC-/TC-"
+            )
 
 
 def test_scenario_bridge_round_trip():

@@ -339,14 +339,14 @@
         "evidence_query": "preset = xdr_data | filter action_process_image_name in (\"esxcli\", \"vmkfstools\") | fields agent_hostname, causality_actor_process_instance_id, action_process_image_command_line"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-019",
+        "threat_scenario_id": "TS-EDR-019",
         "name": "Detect the Akira vCenter-to-ESXi hypervisor kill chain as one incident",
         "description": "Prove Cortex stitches the vCenter-initiated ESXi shell, the offline VMDK credential theft, the syslog blinding, the mass guest power-off, and the Akira_v2 encryption into a single causality-owned incident — including the offline credential theft that endpoint-only tooling misses.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-019A",
+            "threat_step_id": "TS-EDR-019A",
             "objective": "The ESXi process lineage (shell -> DC power-off -> VMDK clone -> mass power-off) is owned by the vCenter-initiated CGO, not the beacon.",
             "preconditions": [
               "Cortex agent installed on the ESXi/Linux target."
@@ -361,7 +361,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-EDR-019B",
+            "threat_step_id": "TS-EDR-019B",
             "objective": "The offline VMDK credential-theft pivot is detected via the cloned-disk shared entity despite no endpoint dump on the real DC.",
             "preconditions": [
               "Cortex agent on the attacker VM reading the cloned VMDK."
@@ -376,7 +376,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-EDR-019C",
+            "threat_step_id": "TS-EDR-019C",
             "objective": "The full chain auto-promotes to one P1 incident.",
             "preconditions": [
               "All simulation steps executed within the correlation window."

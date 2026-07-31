@@ -214,14 +214,14 @@
         "evidence_query": "dataset = msft_azure_audit | alter token_idtyp = json_extract_scalar(identity, \"$.claims.idtyp\"), app_id = json_extract_scalar(identity, \"$.claims.appid\"), home_tenant = json_extract_scalar(identity, \"$.claims['http://schemas.microsoft.com/identity/claims/tenantid']\") | filter token_idtyp = \"app\" | filter home_tenant != tenantId and resultType = \"Failure\" | comp count() as cross_tenant_attempts by app_id, tenantId | filter cross_tenant_attempts >= 1"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-018",
+        "threat_scenario_id": "TS-ITDR-018",
         "name": "Azure Service-Principal Token Abuse from an Unknown Tenant via Cortex ITDR Analytics",
         "description": "Cortex Identity Analytics learns a service principal's sign-in source, home tenant, and resource-access baseline, then detects a stolen application-access-token replay — remote token usage from off-baseline infrastructure, cross-tenant access from an unknown home tenant, and unusual resource access — and stitches the three Azure Audit Log analytics alerts into a single identity-owned ITDR incident anchored on the abused app id (identity.claims.appid).",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-018A",
+            "threat_step_id": "TS-ITDR-018A",
             "objective": "The remote-token-use Analytics alert and the unusual-resource-access ABIOC fire on the SP whose control-plane calling baseline is stable.",
             "preconditions": [
               "Azure Audit Log control-plane telemetry ingested (msft_azure_audit).",
@@ -239,7 +239,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-ITDR-018B",
+            "threat_step_id": "TS-ITDR-018B",
             "objective": "The rule-based Analytics alert catches the cross-tenant access from an unknown home tenant.",
             "preconditions": [
               "Activity Log telemetry exposes identity.claims tenantid, the top-level resource tenantId, and resultType."
@@ -254,7 +254,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-ITDR-018C",
+            "threat_step_id": "TS-ITDR-018C",
             "objective": "The correlation fuses the three analytics alerts into one identity-owned incident anchored on the abused service principal.",
             "preconditions": [
               "The two remote-token / unknown-tenant Analytics alerts and the unusual-resource-access ABIOC have fired within the correlation window."

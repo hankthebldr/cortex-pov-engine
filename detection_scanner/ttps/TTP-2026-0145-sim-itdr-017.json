@@ -305,14 +305,14 @@
         "evidence_query": "dataset = msft_windows_security | filter event_id in (4768, 4769) | filter pre_authentication_type = \"16\" | comp count() as pkinit_events by host_name, target_user_name, event_id"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-017",
+        "threat_scenario_id": "TS-ITDR-017",
         "name": "AD CS ESC1 SAN-Mismatch Enrollment to PKINIT Privileged Authentication Detection via Cortex ITDR / XDR Identity Analytics",
         "description": "Cortex Identity Analytics learns that a domain identity never enrolls certificates naming a different, privileged principal, then detects the ESC1 issuance-to-PKINIT lineage and stitches the LDAP reconnaissance, the requester-to-subject SAN-mismatch issuance, the privileged PKINIT authentication, and an optional shadow-credential write into a single ITDR incident — proving domain-compromise-in-progress detection on an AD CS misconfiguration with citable, evidence-grade forensic artifacts (certificate serials, template names, the impersonated UPN, and the exact Windows Security event records).",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-017A",
+            "threat_step_id": "TS-ITDR-017A",
             "objective": "The deterministic BIOCs catch the ESC1 enrollment and issuance with a requester-to-subject SAN mismatch, producing citable forensic evidence.",
             "preconditions": [
               "AD CS CA with an ESC1-misconfigured template and Certification Services auditing enabled.",
@@ -330,7 +330,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-ITDR-017B",
+            "threat_step_id": "TS-ITDR-017B",
             "objective": "The auto-tuned terminal ABIOC fires on the issuance-to-PKINIT lineage — a SAN-mismatch issuance immediately followed by PKINIT authentication as the impersonated principal.",
             "preconditions": [
               "Baseline window elapsed so the acting identity's profile never enrolls privileged-SAN certificates.",
@@ -347,7 +347,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-ITDR-017C",
+            "threat_step_id": "TS-ITDR-017C",
             "objective": "The correlation rule fuses the full ESC1 chain into one ITDR incident whose causality graph is rooted on the requesting domain identity.",
             "preconditions": [
               "The BIOCs from TC-ITDR-017A and the ABIOC from TC-ITDR-017B have fired.",

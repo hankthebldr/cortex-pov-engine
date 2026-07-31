@@ -194,14 +194,14 @@
         "evidence_query": "dataset = msft_o365_audit | filter Workload in (\"SharePoint\", \"OneDrive\") | filter Operation in (\"SearchQueryPerformed\", \"PageViewed\", \"FileAccessed\") | comp count() as events, count_distinct(ObjectId) as distinct_objects by UserId, ClientIP, Workload | sort desc events"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-009",
+        "threat_scenario_id": "TS-CLOUD-009",
         "name": "Microsoft 365 cloud-repository enumeration detection",
         "description": "Validate that Cortex XSIAM's ML analytics for the Microsoft 365 SharePoint Online and OneDrive for Business workloads raise the SharePoint and OneDrive enumeration alerts when an identity enumerates the accessible cloud repositories (Discovery — Cloud Service Discovery), and that the two bursts stitch into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-009A",
+            "threat_step_id": "TS-CLOUD-009A",
             "objective": "The SharePoint enumeration ABIOC fires on a search/page sweep across a site.",
             "preconditions": [
               "Collector registered in XSIAM as an msft_o365_audit source."
@@ -216,7 +216,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CLOUD-009B",
+            "threat_step_id": "TS-CLOUD-009B",
             "objective": "The OneDrive enumeration ABIOC fires on a rapid file-access sweep.",
             "preconditions": [
               "Collector registered in XSIAM as an msft_o365_audit source."
@@ -231,7 +231,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CLOUD-009C",
+            "threat_step_id": "TS-CLOUD-009C",
             "objective": "The two enumeration bursts stitch into one cloud-repository enumeration discovery incident.",
             "preconditions": [
               "Both enumeration ABIOCs fired for the same UserId + ClientIP."

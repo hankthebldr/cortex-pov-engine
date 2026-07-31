@@ -275,14 +275,14 @@
         "evidence_query": "XSOAR incident layout renders the XSIAM-AI narrative summary; verify the summary field names initial access, privilege escalation, and the exfil destination within the 72-minute SLA."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-018",
+        "threat_scenario_id": "TS-EDR-018",
         "name": "AI SOC Narrative Reconstruction & Triage Latency Under the 72-Minute Breakout Window",
         "description": "Cortex XSIAM AI stitches an identity-driven, multi-plane intrusion into one incident and auto-generates a narrative summary that a sequential, human-paced SOC could not assemble before the attacker finishes exfiltrating. The DC proves both accuracy (all three phases + the exfil destination named) and latency (produced inside the 72-minute window).",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-018A",
+            "threat_step_id": "TS-EDR-018A",
             "objective": "The multi-plane signals stitch into one incident_id and Cortex XSIAM AI generates a complete, correct narrative naming all three phases and the exfil destination inside the 72-minute window.",
             "preconditions": [
               "EDR target with the Cortex Linux agent installed and NGFW/network telemetry ingested.",
@@ -301,7 +301,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-EDR-018B",
+            "threat_step_id": "TS-EDR-018B",
             "objective": "The breakout-window timing metric confirms the whole chain compressed inside 72 minutes so the latency KPI is measured, not assumed.",
             "preconditions": [
               "TC-EDR-018A executed on the same target."

@@ -329,14 +329,14 @@
         "evidence_query": "dataset = panw_ngfw_threat_raw | filter category = \"command-and-control\" | filter dst_host = \"api.telegram.org\" | comp count() as c2_hits by src_ip, dst_host, threat_name"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-NDR-011",
+        "threat_scenario_id": "TS-NDR-011",
         "name": "Allowlisted-SaaS C2 Detection via Cortex Network ABIOC — Telegram Bot API (LampoRAT)",
         "description": "Cortex's auto-tuned Network Analytics Behavioral IOCs learn a workload's SaaS-egress baseline and detect LampoRAT's Telegram Bot API C2 by the new-SaaS-destination poll/exfil shape and the concurrent avp.exe->cmd.exe masquerade dispatch, anchored to the host causality chain, where reputation and IOC matching are structurally blind because api.telegram.org is a globally allowlisted SaaS endpoint.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-NDR-011A",
+            "threat_step_id": "TS-NDR-011A",
             "objective": "Cortex learns the workload SaaS-egress baseline and the injected Telegram Bot API poll/exfil shape fires the network C2 ABIOC.",
             "preconditions": [
               "NGFW inline with EAL forwarding to XSIAM (panw_ngfw_traffic_raw populated).",
@@ -355,7 +355,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-NDR-011B",
+            "threat_step_id": "TS-NDR-011B",
             "objective": "The avp.exe->cmd.exe masquerade dispatch fires the endpoint ABIOC and the correlation stitches both deviations into one incident.",
             "preconditions": [
               "Cortex XDR agent installed on the same host (xdr_data populated).",

@@ -413,17 +413,17 @@ def build_card(*, ttp_id: str, plane_info: dict, title: str, url: str,
                     ),
                 }
             ],
-            "use_cases": [
+            "threat_scenarios": [
                 {
-                    "use_case_id": f"UC-{token}-{nnn}",
+                    "threat_scenario_id": f"TS-{token}-{nnn}",
                     "name": f"{sid} — research-intake scaffold use case",
                     "description": (
                         "Scaffolded POV use case; replace with the real customer "
                         "narrative the DC runs for this technique."
                     ),
-                    "test_cases": [
+                    "threat_steps": [
                         {
-                            "test_case_id": f"TC-{token}-{nnn}A",
+                            "threat_step_id": f"TS-{token}-{nnn}A",
                             "objective": (
                                 "The scaffolded detection fires when the real "
                                 "technique from the research is executed."

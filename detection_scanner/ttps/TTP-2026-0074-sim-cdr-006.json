@@ -283,14 +283,14 @@
         "evidence_query": "Playbook: disable+remove the unit, reload the daemon, strip the cron watchdog, and confirm the unit does not re-appear."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-SUPPLY-074",
+        "threat_scenario_id": "TS-SUPPLY-074",
         "name": "Persistence Mechanism Detection — Node systemd + Cron Watchdog",
         "description": "Detect and evict a self-healing node persistence foothold (systemd service unit + cron-reload watchdog) — a focused systemd-centric variant distinct from the broad multi-mechanism EDR card.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-SUPPLY-074A",
+            "threat_step_id": "TS-SUPPLY-074A",
             "objective": "The unit write, the daemon-reload/enable sequence, and the cron watchdog each fire their Cortex BIOC.",
             "preconditions": [
               "Cortex Cloud runtime defender or Cortex XDR Linux agent >= 8.4.0 reporting on the node.",
@@ -308,7 +308,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-SUPPLY-074B",
+            "threat_step_id": "TS-SUPPLY-074B",
             "objective": "The persistence behaviours stitch into one incident.",
             "success_criteria": [
               "Correlation `CR-CDR-0006` groups the behaviours on one node into a single persistence incident.",

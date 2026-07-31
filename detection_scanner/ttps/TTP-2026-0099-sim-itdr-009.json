@@ -245,14 +245,14 @@
         "evidence_query": "dataset = okta_sso | filter auth_outcome = \"SUCCESS\" | comp count_distinct(src_asn) as distinct_asns by actor_effective_username | filter distinct_asns >= 2"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-009",
+        "threat_scenario_id": "TS-ITDR-009",
         "name": "Sign-In Behavioral Anomaly Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a user's sign-in baseline (ASN set, geography, auth cadence) and detect a valid-credential account takeover — auth-velocity spike, new ASN and impossible travel — anchored to its causality chain, where no static rule was written for the benign-looking individual sign-ins.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-009A",
+            "threat_step_id": "TS-ITDR-009A",
             "objective": "Cortex learns the target user's sign-in baseline and an injected off-baseline deviation fires both ABIOCs.",
             "preconditions": [
               "Collector wired into Cortex ITDR as a third-party IdP source.",

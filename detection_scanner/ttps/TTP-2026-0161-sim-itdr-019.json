@@ -225,14 +225,14 @@
         "evidence_query": "dataset = msft_azure_audit | filter operationName = \"MICROSOFT.AADIAM/CONDITIONALACCESS/POLICIES/WRITE\" and category = \"Administrative\" | alter actor_app = identity -> claims -> appid, caller_ip = callerIpAddress | fields _time, actor_app, caller_ip, operationName, category"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-019",
+        "threat_scenario_id": "TS-ITDR-019",
         "name": "Azure identity persistence — conditional-access weakening and covert mailbox forwarding",
         "description": "POV use case proving the Azure Audit Log Analytics alerts and their auto-tuned ABIOCs fire on a two-stage Entra ID / M365 persistence chain, and that XSIAM correlation stitches both legs into a single incident on temporal co-occurrence within the persistence window.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-019A",
+            "threat_step_id": "TS-ITDR-019A",
             "objective": "The 'Azure conditional access policy creation or modification' Analytics alert (and the CA-weakening ABIOC) fire when a CA policy is updated/deleted off the learned admin-change baseline.",
             "preconditions": [
               "The Azure Audit Log source is ingesting into msft_azure_audit.",
@@ -249,7 +249,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ITDR-019B",
+            "threat_step_id": "TS-ITDR-019B",
             "objective": "The 'Azure mailbox rule creation' Analytics alert (and the external-forwarding ABIOC) fire on an external auto-forwarding inbox rule, and correlation CR-ITDR-0019 stitches both legs into one incident.",
             "preconditions": [
               "The Microsoft 365 audit source is ingesting into msft_o365_audit.",

@@ -344,14 +344,14 @@
         "evidence_query": "Correlation CR-KOI-0008 fuses the detached-child, credential-harvest, exfil, self-replication, and runner-registration signals into one Shai-Hulud incident on shared causality_id."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-SUPPLY-008",
+        "threat_scenario_id": "TS-SUPPLY-008",
         "name": "Self-Replicating npm Worm — Install-Hook Credential Theft & Self-Hosted-Runner Persistence",
         "description": "Detect a self-replicating npm supply-chain worm end to end: a preinstall lifecycle hook spawns a detached node child that scrapes developer/CI credentials, exfils them, republishes to sibling packages with a stolen token, and registers the host as a self-hosted GitHub Actions runner — stitched into one causality-aware incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-SUPPLY-008A",
+            "threat_step_id": "TS-SUPPLY-008A",
             "objective": "The detached install-hook child and TruffleHog-style credential scrape fire and are attributed to the node CGO causality chain.",
             "preconditions": [
               "Developer/CI host with the Cortex agent installed and node/npm present."
@@ -368,7 +368,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-SUPPLY-008B",
+            "threat_step_id": "TS-SUPPLY-008B",
             "objective": "The exfil, self-replication, and runner-registration stages fire and correlate into one incident.",
             "preconditions": [
               "TC-SUPPLY-008A executed within the correlation window."

@@ -304,14 +304,14 @@
         "evidence_query": "Playbook: enrich the scanning source IP, confirm whether the probed paths exist, and open an exposure-management ticket prioritising any 200-response sensitive path."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ASM-071",
+        "threat_scenario_id": "TS-ASM-071",
         "name": "Perimeter Reconnaissance Detection — Active Vulnerability Scanning",
         "description": "Validate that Cortex detects inbound application-layer vulnerability scanning against a perimeter asset, attributes the scanning source, and correlates it with the asset's known exposures.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ASM-071A",
+            "threat_step_id": "TS-ASM-071A",
             "objective": "The inbound vulnerability-scan burst fires its NGFW/Network-Security BIOC and is confirmed in telemetry.",
             "preconditions": [
               "infra/modules/aws/asm bundle applied with a reachable public IP serving HTTP/HTTPS.",
@@ -330,7 +330,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ASM-071B",
+            "threat_step_id": "TS-ASM-071B",
             "objective": "The scan is attributed to a source and correlated with the asset's exposures into one incident.",
             "steps": [
               "Inspect Cortex ASM/Xpanse for the active-scan observation on the exposed asset.",

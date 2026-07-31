@@ -343,14 +343,14 @@
         "evidence_query": "dataset = xdr_data | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD | filter action_module_name = \"python20.dll\" | filter causality_actor_process_image_name = \"w3wp.exe\""
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-020",
+        "threat_scenario_id": "TS-EDR-020",
         "name": "Web-Shell-Owned Living-off-the-Land Credential Theft Reconstructed as One Causality Incident",
         "description": "Prove that Cortex XDR reconstructs the process causality of a web-shell intrusion — SAM-hive theft, a signed-binary DLL side-load running in-memory Mimikatz, certutil fileless staging, and an FRP reverse tunnel — as a single w3wp.exe-owned incident, where each stage is a legitimate LOLBin that only becomes malicious in the context of its causality chain.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-020A",
+            "threat_step_id": "TS-EDR-020A",
             "objective": "The web-shell code execution, SAM-hive theft, python.exe side-load in-memory credential theft, certutil staging, and FRP tunnel all resolve to one causality_actor_process_instance_id and stitch into a single incident.",
             "preconditions": [
               "Windows IIS target with the Cortex agent installed and module-load + registry telemetry enabled.",
@@ -369,7 +369,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-EDR-020B",
+            "threat_step_id": "TS-EDR-020B",
             "objective": "The FRP reverse-tunnel endpoint process is stitched to its outbound network session under the same web-shell causality, proving the endpoint↔network pivot.",
             "preconditions": [
               "TC-EDR-020A executed on the same target with NGFW / network telemetry ingested."

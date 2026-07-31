@@ -319,14 +319,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter cloud_service = \"salesforce\" and api_type = \"Bulk\" and operation = \"deleteJob\" | comp count() as deleted_jobs by connected_app, integration_user"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-006",
+        "threat_scenario_id": "TS-CLOUD-006",
         "name": "Post-Consent OAuth Token Abuse Detection via Cortex ABIOC (Salesforce Bulk API)",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn each Connected App integration identity's Bulk API export baseline and detect post-consent token abuse — high-volume multi-object CRM export followed by export-then-erase query-job deletion — anchored to the integration identity's causality chain, where no consent, MFA, or login event was raised to alert on.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-006A",
+            "threat_step_id": "TS-CLOUD-006A",
             "objective": "The high-volume Bulk API export deviates from the learned integration baseline and fires the export-deviation ABIOC.",
             "preconditions": [
               "Salesforce Event Monitoring ingested into XSIAM.",
@@ -344,7 +344,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CLOUD-006B",
+            "threat_step_id": "TS-CLOUD-006B",
             "objective": "The query-job deletion following the mass export fires the export-then-erase ABIOC.",
             "preconditions": [
               "The export-deviation step (TC-CLOUD-006A) has run for the same integration token."
@@ -360,7 +360,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CLOUD-006C",
+            "threat_step_id": "TS-CLOUD-006C",
             "objective": "Correlation stitches the export and erase ABIOCs into one post-consent-token-abuse incident.",
             "preconditions": [
               "Both ABIOCs fired for the same connected_app + integration_user within the correlation window."

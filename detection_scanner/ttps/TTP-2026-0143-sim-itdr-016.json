@@ -274,14 +274,14 @@
         "evidence_query": "dataset = okta_sso | filter eventType in (\"user.lifecycle.suspend\", \"user.session.clear\") | comp earliest(_time) as remediation_start, latest(_time) as remediation_end, count_distinct(eventType) as remediation_actions by actor_effective_username | filter remediation_actions >= 2"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-016",
+        "threat_scenario_id": "TS-ITDR-016",
         "name": "Closed-Loop Auto-Disable of a Compromised Account — Response/SLA Validation",
         "description": "Cortex ITDR correlates a two-signal identity compromise (impossible travel + anomalous privilege grant / MFA reset) into a single account-takeover incident that triggers an XSOAR/XSIAM containment playbook; the playbook suspends the account and revokes all sessions, and the terminal correlation validates the closed loop fired against the right identity within the response SLA. The DC measures Remediation Success Rate / SLA compliance, proving the auto-disable is real, targeted and timely — not merely an alert.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-016A",
+            "threat_step_id": "TS-ITDR-016A",
             "objective": "The two-signal compromise raises the account-takeover incident (CR-ITDR-0016) and triggers the identity-containment playbook.",
             "preconditions": [
               "Okta collector wired into Cortex ITDR.",
@@ -301,7 +301,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ITDR-016B",
+            "threat_step_id": "TS-ITDR-016B",
             "objective": "The containment playbook closes the loop: it disables the compromised account and revokes its sessions, and the remediation-confirmation events land in okta_sso.",
             "preconditions": [
               "CR-ITDR-0016 has raised the account-takeover incident and triggered the playbook."
@@ -317,7 +317,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-ITDR-016C",
+            "threat_step_id": "TS-ITDR-016C",
             "objective": "The terminal correlation validates the closed loop resolved to one incident and the auto-disable fired within the response SLA (the F5 Remediation Success Rate / SLA-compliance KPI).",
             "preconditions": [
               "The remediation-confirmation events are present for the target identity."

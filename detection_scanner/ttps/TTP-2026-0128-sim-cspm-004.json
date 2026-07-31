@@ -314,14 +314,14 @@
         "evidence_query": "Prisma Cloud Compliance dashboard — EBS snapshots without a customer-managed CMK and snapshots shared to an external account, against the CIS AWS Foundations baseline."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CSPM-004",
+        "threat_scenario_id": "TS-CSPM-004",
         "name": "Encryption-Gap Posture Finding Correlated to Cross-Account Snapshot Exfiltration",
         "description": "Cortex Cloud detects that an unencrypted (no-CMK) EBS snapshot flagged by CSPM was exported cross-account at runtime (ModifySnapshotAttribute createVolumePermission + CopySnapshot to a foreign region) by a compute identity operating outside its home region, and stitches the encryption-gap finding, the export event, and the impossible-travel identity into a single exfiltration incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CSPM-004A",
+            "threat_step_id": "TS-CSPM-004A",
             "objective": "The unencrypted-snapshot posture finding and the runtime cross-account share both surface on the same snapshot within one scan cycle.",
             "preconditions": [
               "Cortex Cloud CSPM connected (read-only) with the disposable snapshot flagged unencrypted / no-CMK.",
@@ -340,7 +340,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-CSPM-004B",
+            "threat_step_id": "TS-CSPM-004B",
             "objective": "The posture finding, the export, and the off-region compute identity fuse into one exfil incident — posture↔export joined on snapshot_id, export↔identity joined on principal, destination account carried as evidence.",
             "preconditions": [
               "The acting identity is an EC2 instance role whose credentials were minted at the Instance Metadata endpoint.",

@@ -46,7 +46,7 @@
     }
   },
   "identity": {
-    "name": "Linux Persistence \u2014 Cron, Systemd, Backdoor User and SSH Keys (T1053.003)",
+    "name": "Linux Persistence — Cron, Systemd, Backdoor User and SSH Keys (T1053.003)",
     "summary": "An operator establishes multiple persistence footholds on a Linux host: a cron entry pointing at a hidden beacon, a systemd unit with Restart=always, a backdoor account added to the sudo group, an SSH authorized_keys plant, and a shell-profile login trigger. Cortex XDR for Linux detects each mechanism via file-write and process BIOCs and stitches them into one persistence incident.",
     "description": "After gaining root on a Linux host, threat actors such as TeamTNT layer several persistence mechanisms so a single cleanup does not evict them. This scenario reproduces five Linux persistence techniques: a malicious cron job referencing a hidden binary, a systemd service unit with Restart=always and a /tmp ExecStart, a backdoor local account added to the sudo group, an SSH key plant into authorized_keys, and a shell-profile (.bashrc/.profile) login trigger with nohup. The detection approach combines process telemetry (crontab, useradd, ssh-keygen, systemctl) with file-write telemetry into the persistence-relevant paths (/etc/cron*, /etc/systemd/system, ~/.ssh/authorized_keys, shell init files). Each mechanism maps to a dedicated Cortex XDR BIOC; an analytics layer recognizes automated, non-interactive provisioning; and a correlation rule fuses any combination of these footholds into one persistence incident so the SOC sees the full picture rather than five disconnected alerts.",
     "severity": "high",
@@ -139,7 +139,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1053.003 / T1543.002 / T1136.001 / T1098.004 \u2014 Linux persistence atomic tests",
+    "framework_reference_id": "T1053.003 / T1543.002 / T1136.001 / T1098.004 — Linux persistence atomic tests",
     "privilege_required": "root",
     "prerequisites": [
       {
@@ -193,7 +193,7 @@
     "biocs": [
       {
         "name": "EDR-003 Cron Job Creation With Suspicious Command Path",
-        "description": "Cron job creation with suspicious command path \u2014 persistence mechanism via scheduled task. crontab installs an entry, or a cron file is written referencing a hidden/temp binary.",
+        "description": "Cron job creation with suspicious command path — persistence mechanism via scheduled task. crontab installs an entry, or a cron file is written referencing a hidden/temp binary.",
         "logic": "preset = xdr_data\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = \"crontab\") or (event_type = ENUM.FILE and action_file_path contains_any (\"/etc/cron\", \"/var/spool/cron\"))\n| filter action_process_image_command_line contains_any (\"/tmp/\", \"/dev/shm/\", \"/.\", \"curl\", \"wget\") or action_file_path contains \"cron\"",
         "severity": "high",
         "mitre_technique_ids": [
@@ -202,7 +202,7 @@
       },
       {
         "name": "EDR-003 Systemd Unit With Suspicious ExecStart",
-        "description": "Systemd service unit creation with suspicious ExecStart path \u2014 persistence via system service. A .service file is written with Restart=always and an ExecStart in /tmp or /dev/shm.",
+        "description": "Systemd service unit creation with suspicious ExecStart path — persistence via system service. A .service file is written with Restart=always and an ExecStart in /tmp or /dev/shm.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains \".service\"\n| filter action_file_path contains_any (\"/etc/systemd/system\", \"/usr/lib/systemd/system\", \"/.config/systemd\", \"/tmp/\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -211,7 +211,7 @@
       },
       {
         "name": "EDR-003 Local Account Created With Sudo Group",
-        "description": "Local account creation with sudo group membership \u2014 backdoor account for persistent access. useradd/usermod adds an account to sudo/wheel/admin.",
+        "description": "Local account creation with sudo group membership — backdoor account for persistent access. useradd/usermod adds an account to sudo/wheel/admin.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"useradd\", \"usermod\", \"adduser\")\n| filter action_process_image_command_line contains_any (\"sudo\", \"wheel\", \"admin\", \"root\")",
         "severity": "critical",
         "mitre_technique_ids": [
@@ -220,7 +220,7 @@
       },
       {
         "name": "EDR-003 SSH Key Generation Then Authorized Keys Write",
-        "description": "SSH key generation followed by authorized_keys write \u2014 key-based persistence installation. ssh-keygen runs and an authorized_keys file is written.",
+        "description": "SSH key generation followed by authorized_keys write — key-based persistence installation. ssh-keygen runs and an authorized_keys file is written.",
         "logic": "preset = xdr_data\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = \"ssh-keygen\") or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE) and action_file_path contains \"authorized_keys\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -229,7 +229,7 @@
       },
       {
         "name": "EDR-003 Shell Profile Modified With Background Execution",
-        "description": "Shell profile modification with nohup background execution \u2014 login-triggered persistence. A shell init file is written containing nohup/disown background launch.",
+        "description": "Shell profile modification with nohup background execution — login-triggered persistence. A shell init file is written containing nohup/disown background launch.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)\n| filter action_file_path contains_any (\".bashrc\", \".bash_profile\", \".profile\", \"/etc/profile\", \".zshrc\")\n| filter actor_process_image_name in (\"bash\", \"sh\", \"echo\", \"tee\", \"cat\", \"vi\", \"vim\", \"sed\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -282,8 +282,8 @@
       }
     ],
     "analytics_modules": [
-      "Cortex XDR Analytics \u2014 New persistence mechanism on host",
-      "Cortex XDR Analytics \u2014 Rare local account creation"
+      "Cortex XDR Analytics — New persistence mechanism on host",
+      "Cortex XDR Analytics — Rare local account creation"
     ]
   },
   "panw_mapping": {
@@ -322,14 +322,14 @@
         "evidence_query": "Playbook removes the cron entry, disables/deletes the unit, deletes the backdoor user, strips planted keys and reverts shell init files."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-RANSOM-034",
-        "name": "Persistence Mechanism Detection \u2014 Linux",
+        "threat_scenario_id": "TS-RANSOM-034",
+        "name": "Persistence Mechanism Detection — Linux",
         "description": "Detect and evict layered Linux persistence (cron, systemd, backdoor user, SSH keys, shell profile) installed after compromise.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-RANSOM-034A",
+            "threat_step_id": "TS-RANSOM-034A",
             "objective": "Each persistence mechanism fires its corresponding Cortex XDR BIOC.",
             "preconditions": [
               "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
@@ -347,7 +347,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-RANSOM-034B",
+            "threat_step_id": "TS-RANSOM-034B",
             "objective": "Layered persistence stitches into one incident.",
             "success_criteria": [
               "Correlation `CR-EDR-0003` groups the mechanisms on one host into a single persistence incident.",
@@ -382,7 +382,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1053.003 \u2014 Cron",
+      "title": "MITRE ATT&CK T1053.003 — Cron",
       "url": "https://attack.mitre.org/techniques/T1053/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

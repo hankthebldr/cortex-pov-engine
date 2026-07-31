@@ -308,14 +308,14 @@
         "evidence_query": "Three ABIOCs fire on the ClickFix paste-execution seams; CR-EDR-0016 stitches them and the NGFW payload egress into one user-execution incident spanning EDR + NDR."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-016",
+        "threat_scenario_id": "TS-EDR-016",
         "name": "ClickFix Pastejacking User-Execution Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs detect ClickFix paste-execution by its causality seams — a RunMRU download cradle, an explorer.exe-parented interpreter with no browser or console ancestry, and an interpreter-spawned LOLBin remote fetch — and stitch them with the NGFW payload egress into one user-execution incident, where no static rule was written for the legitimate binaries and polymorphic command content involved.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-016A",
+            "threat_step_id": "TS-EDR-016A",
             "objective": "The explorer.exe-parented interpreter with remote-fetch arguments fires its ABIOC and the process lineage is confirmed in xdr_data.",
             "preconditions": [
               "EDR target with the Cortex agent installed.",
@@ -333,7 +333,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-EDR-016B",
+            "threat_step_id": "TS-EDR-016B",
             "objective": "The RunMRU download cradle and the interpreter-spawned LOLBin remote fetch each fire their ABIOC.",
             "preconditions": [
               "EDR target with the Cortex agent installed.",
@@ -351,7 +351,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-EDR-016C",
+            "threat_step_id": "TS-EDR-016C",
             "objective": "The correlation rule stitches the ABIOCs and the NGFW payload egress into one ClickFix user-execution incident spanning EDR + NDR.",
             "preconditions": [
               "EDR + NDR telemetry ingested for the same host.",

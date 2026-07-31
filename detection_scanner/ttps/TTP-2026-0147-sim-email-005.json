@@ -293,14 +293,14 @@
         "evidence_query": "On CR-EMAIL-0005 the ATO playbook revokes the user's sessions, forces a phishing-resistant MFA re-registration, and hunts the compromised mailbox for finance-mail access from the anomalous session."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EMAIL-005",
+        "threat_scenario_id": "TS-EMAIL-005",
         "name": "AiTM Session-Token Theft to Account-Takeover — Cross-Source Correlation",
         "description": "Prove Cortex XSIAM fuses the low-signal legs of a Meddler-in-the-Middle account takeover — an AiTM permitted click, a token-replay sign-in from a new ASN, and post-compromise finance-mail reconnaissance on the mailbox — into a single incident keyed on user_principal, where each leg alone would not raise an actionable alert.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EMAIL-005A",
+            "threat_step_id": "TS-EMAIL-005A",
             "objective": "The AiTM permitted click and the token-replay sign-in are each observable in their source datasets.",
             "preconditions": [
               "Cortex XSIAM ingesting proofpoint_tap_raw and msft_azure_ad_signin datasets.",
@@ -317,7 +317,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-EMAIL-005B",
+            "threat_step_id": "TS-EMAIL-005B",
             "objective": "The post-compromise finance-mail reconnaissance leg is observable in the Microsoft 365 audit.",
             "preconditions": [
               "Cortex XSIAM ingesting the msft_o365 unified/Entra audit dataset."
@@ -332,7 +332,7 @@
             "expected_score_weight": 0.25
           },
           {
-            "test_case_id": "TC-EMAIL-005C",
+            "threat_step_id": "TS-EMAIL-005C",
             "objective": "All three legs stitch into one account-takeover incident on user_principal.",
             "preconditions": [
               "All three EMAIL-005 XQL legs return rows for the same user_principal within the window."

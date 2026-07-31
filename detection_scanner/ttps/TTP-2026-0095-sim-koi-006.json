@@ -233,14 +233,14 @@
         "evidence_query": "Correlation CR-KOI-0006 fuses the poisoned tool-result content hit with the agent's follow-on credential-file read into one runtime-injection incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-SUPPLY-095",
+        "threat_scenario_id": "TS-SUPPLY-095",
         "name": "MCP Runtime Tool-Response Content Inspection",
         "description": "Detect indirect prompt injection delivered through an MCP tool RESULT at runtime (the connect-time↔runtime trust gap), across runtime content inspection, NGFW result-body inspection, and XSIAM correlation, and stitch into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-SUPPLY-095A",
+            "threat_step_id": "TS-SUPPLY-095A",
             "objective": "Runtime content inspection flags the injection inside the MCP tools/call result body.",
             "preconditions": [
               "cortex-malicious-agentic-pack content present.",
@@ -257,7 +257,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-SUPPLY-095B",
+            "threat_step_id": "TS-SUPPLY-095B",
             "objective": "The runtime result injection and the follow-on credential access stitch into one incident.",
             "success_criteria": [
               "XQL `KOI-006 agent process consumed poisoned tool result` returns >= 1 row.",

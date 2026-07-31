@@ -404,14 +404,14 @@
         "evidence_query": "Both browsing-agent ABIOCs fire on the IDPI deviation and CR-BROWSER-0006 stitches them with the IDPI/payment egress into one indirect-prompt-injection incident anchored to the agent's page-load -> hidden-ingest -> no-gesture causality chain."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-BROWSER-006",
+        "threat_scenario_id": "TS-BROWSER-006",
         "name": "Web-Based Indirect Prompt Injection Against a Browsing AI Agent",
         "description": "Cortex behavioral analytics and Advanced DNS Security catch a browsing AI agent hijacked by DOM-hidden instructions on an attacker page: the agent performs an unattended cross-origin payment/OAuth action and a browser-parented shell attempt, anchored to the page-load-to-hidden-ingest-to-no-gesture causality chain, where no static rule was written for the legitimate agent binaries involved.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-BROWSER-006A",
+            "threat_step_id": "TS-BROWSER-006A",
             "objective": "The browsing agent's off-manifest cross-origin action to a sensitive (payment/OAuth) origin — reached right after it ingests hidden DOM content — fires ABIOC A and is surfaced by the validation XQL.",
             "preconditions": [
               "Browser/EDR target with the Cortex agent (and Prisma Browser telemetry where available).",
@@ -429,7 +429,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-BROWSER-006B",
+            "threat_step_id": "TS-BROWSER-006B",
             "objective": "The browsing-agent process parenting an OS shell (the injected backend-command lineage) fires ABIOC B.",
             "preconditions": [
               "EDR target with the Cortex Linux agent installed.",
@@ -447,7 +447,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-BROWSER-006C",
+            "threat_step_id": "TS-BROWSER-006C",
             "objective": "Correlation stitches the browser deviations and the IDPI/payment egress into one incident; Advanced DNS Security flags the domain resolutions.",
             "preconditions": [
               "Both ABIOCs available and DNS telemetry (pan_dns) reaching the tenant.",

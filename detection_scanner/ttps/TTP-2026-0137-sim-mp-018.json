@@ -400,14 +400,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter cloud_provider = \"kubernetes\" and event_operation = \"create\" and resource_type = \"daemonsets\" | filter request_body contains \"\\\"privileged\\\":true\""
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-018",
+        "threat_scenario_id": "TS-MP-018",
         "name": "CI/CD Supply-Chain Compromise to Kubernetes Cluster-Brick via Cortex Cross-Plane Causality",
         "description": "A trusted CI security scanner is weaponized in the supply chain and, in one unbroken causality chain, scrapes runner memory, steals cloud IAM credentials from the metadata service, enumerates Kubernetes secrets, and deploys a privileged DaemonSet that wipes the cluster. Each individual signal is low-fidelity — a signed scanner ran, a process read /proc, an API token listed secrets — but Cortex anchors the causality on the scanner action and stitches the ANALYTICS and CDR planes into one incident that reconstructs the whole cluster-brick intrusion.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-018A",
+            "threat_step_id": "TS-MP-018A",
             "objective": "The weaponized-scanner child-spawn, the /proc-mem scrape, and the IMDS credential theft on one CI runner stitch into a single incident keyed on the scanner-action CGO.",
             "preconditions": [
               "CI runner with the Cortex XDR agent installed.",
@@ -427,7 +427,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-MP-018B",
+            "threat_step_id": "TS-MP-018B",
             "objective": "The Kubernetes secrets enumeration and the privileged DaemonSet apply pivot the incident from ANALYTICS into the CDR plane.",
             "preconditions": [
               "TC-MP-018A produced a stitched incident on the runner."
@@ -445,7 +445,7 @@
             "expected_score_weight": 0.35
           },
           {
-            "test_case_id": "TC-MP-018C",
+            "threat_step_id": "TS-MP-018C",
             "objective": "The recursive destructive wipe closes the chain and the correlation raises exactly one cluster-brick incident.",
             "preconditions": [
               "TC-MP-018B extended the incident into the CDR plane."

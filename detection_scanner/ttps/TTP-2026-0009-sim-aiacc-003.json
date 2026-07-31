@@ -214,14 +214,14 @@
         "evidence_query": "Correlation CR-AIACC-0003 groups the per-user rate, NGFW session count and unsanctioned-provider signals into one anomalous-usage incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-INSIDER-009",
+        "threat_scenario_id": "TS-INSIDER-009",
         "name": "Anomalous AI Provider Usage Volume",
         "description": "Detect a single user bursting prompts at an unsanctioned AI provider above their rolling baseline and confirm the baseline restores after cool-off.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-INSIDER-009A",
+            "threat_step_id": "TS-INSIDER-009A",
             "objective": "A 30-request burst to Gemini fires the per-user volume-anomaly rule.",
             "preconditions": [
               "Cortex AI Access Security inline with per-user volume baselining enabled.",
@@ -238,7 +238,7 @@
             "expected_score_weight": 0.7
           },
           {
-            "test_case_id": "TC-INSIDER-009B",
+            "threat_step_id": "TS-INSIDER-009B",
             "objective": "After cool-off, a single request stays below baseline and produces no alert.",
             "success_criteria": [
               "XQL `AIACC-003 Post Cooloff Single Gemini Request Below Baseline` returns >= 1 row.",

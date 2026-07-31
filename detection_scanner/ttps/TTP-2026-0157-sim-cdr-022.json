@@ -242,14 +242,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter protoPayload.serviceName = \"bigquery.googleapis.com\" | filter foreign_project = true | fields protoPayload.authenticationInfo.principalEmail, destination_project_id, foreign_project"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-022",
+        "threat_scenario_id": "TS-CDR-022",
         "name": "GCP BigQuery Foreign-Project Exfil via Impersonated Service Account — Cortex ABIOC Validation",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn each service account's impersonation callers and BigQuery destination-project set, and detect a credential-abuse-to-exfiltration chain anchored to the impersonation causality chain — where every underlying GCP API call is legitimate and no static rule was written for it.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-022A",
+            "threat_step_id": "TS-CDR-022A",
             "objective": "The impersonation and foreign-project-exfil ABIOCs both fire on the injected GCP audit records and the correlation stitches them into one incident.",
             "preconditions": [
               "Cortex XSIAM / Cortex Cloud CDR ingesting the GCP Cloud Audit Logs into cloud_audit_logs.",

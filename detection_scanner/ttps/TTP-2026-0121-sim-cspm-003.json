@@ -306,14 +306,14 @@
         "evidence_query": "Prisma Cloud IAM Security — over-permissive role findings (wildcard trust principal, unrestricted iam:PassRole) on CortexSim-tagged roles against the CIS AWS Foundations and AWS IAM best-practice policies."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CSPM-003",
+        "threat_scenario_id": "TS-CSPM-003",
         "name": "IAM Exposure-to-Impact Correlation — Posture Finding Stitched to the Runtime Privilege-Escalation Chain",
         "description": "Cortex Cloud CSPM surfaces an over-permissive IAM role (wildcard trust principal or unrestricted iam:PassRole) and correlates that posture finding with the runtime AssumeRole -> IMDS credential retrieval -> AttachRolePolicy(AdministratorAccess) escalation and the KMS+S3 impact that followed, presenting the whole posture-to-impact chain as one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CSPM-003A",
+            "threat_step_id": "TS-CSPM-003A",
             "objective": "Cortex Cloud CSPM flags the exposed IAM role and the runtime chain that exploits it is observable in cloud_audit_logs.",
             "preconditions": [
               "Cortex Cloud CSPM connected (read-only) with IAM posture evaluation on.",
@@ -332,7 +332,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-CSPM-003B",
+            "threat_step_id": "TS-CSPM-003B",
             "objective": "The impact under the newly-privileged assumed-role session is observed and the full chain reconciles.",
             "preconditions": [
               "KMS Decrypt and bulk S3 GetObject run under the assumed-role session on the disposable secrets bucket."
@@ -348,7 +348,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-CSPM-003C",
+            "threat_step_id": "TS-CSPM-003C",
             "objective": "Correlation fuses the posture finding, the runtime escalation, and the impact into one posture-to-impact incident.",
             "preconditions": [
               "Signals A, B, and C are all observed within the correlation window on the same exposed role ARN."

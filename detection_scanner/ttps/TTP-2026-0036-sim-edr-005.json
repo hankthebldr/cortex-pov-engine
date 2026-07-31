@@ -45,9 +45,9 @@
     }
   },
   "identity": {
-    "name": "Linux Lateral Movement \u2014 SSH Abuse, Tunneling and Internal Recon (T1021.004)",
+    "name": "Linux Lateral Movement — SSH Abuse, Tunneling and Internal Recon (T1021.004)",
     "summary": "A web service account runs internal recon (interfaces, routes, ARP), port-scans via bash /dev/tcp, attempts batch-mode SSH, builds SSH local-forward and SOCKS tunnels, then enumerates DNS and host files. Cortex XDR for Linux detects the scanning, SSH abuse and tunneling via command-line BIOCs and stitches the chain into one lateral-movement incident.",
-    "description": "Once on a Linux host, attackers map the internal network and reuse SSH to spread. Unit 42's Linux threat landscape reporting highlights SSH abuse and tunneling as the dominant lateral-movement pattern on servers. This scenario reproduces the full chain from a non-interactive service account: network reconnaissance with ip addr/route/neigh, a bash /dev/tcp port sweep across common service ports, batch-mode SSH (BatchMode=yes, StrictHostKeyChecking=no) to discovered hosts, SSH tunneling with -L local forward and -D SOCKS proxy, and remote-system discovery via /etc/hosts, resolv.conf and DNS lookups. The detection approach is command-line behavioral analysis: the /dev/tcp sweep, batch-mode SSH, and tunnel flags each map to a Cortex XDR BIOC, while analytics layers recognize a service account performing host/network discovery and automated SSH. A correlation rule fuses the recon, scan, SSH and tunnel activity into a single lateral-movement incident \u2014 all connections in the lab target localhost so the simulation is safe.",
+    "description": "Once on a Linux host, attackers map the internal network and reuse SSH to spread. Unit 42's Linux threat landscape reporting highlights SSH abuse and tunneling as the dominant lateral-movement pattern on servers. This scenario reproduces the full chain from a non-interactive service account: network reconnaissance with ip addr/route/neigh, a bash /dev/tcp port sweep across common service ports, batch-mode SSH (BatchMode=yes, StrictHostKeyChecking=no) to discovered hosts, SSH tunneling with -L local forward and -D SOCKS proxy, and remote-system discovery via /etc/hosts, resolv.conf and DNS lookups. The detection approach is command-line behavioral analysis: the /dev/tcp sweep, batch-mode SSH, and tunnel flags each map to a Cortex XDR BIOC, while analytics layers recognize a service account performing host/network discovery and automated SSH. A correlation rule fuses the recon, scan, SSH and tunnel activity into a single lateral-movement incident — all connections in the lab target localhost so the simulation is safe.",
     "severity": "high",
     "confidence": "high"
   },
@@ -125,7 +125,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1021.004 / T1046 / T1572 \u2014 Linux SSH lateral-movement and tunneling atomic tests",
+    "framework_reference_id": "T1021.004 / T1046 / T1572 — Linux SSH lateral-movement and tunneling atomic tests",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -184,7 +184,7 @@
     "biocs": [
       {
         "name": "EDR-005 Port Scan Via Bash devtcp",
-        "description": "Port scanning via bash /dev/tcp \u2014 network service discovery from web service account. A bash loop probes multiple ports through /dev/tcp.",
+        "description": "Port scanning via bash /dev/tcp — network service discovery from web service account. A bash loop probes multiple ports through /dev/tcp.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter action_process_image_command_line contains \"/dev/tcp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"postgres\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"httpd\", \"nginx\", \"php-fpm\", \"tomcat\", \"java\", \"node\", \"uwsgi\", \"gunicorn\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -193,7 +193,7 @@
       },
       {
         "name": "EDR-005 Batch Mode SSH From Service Account",
-        "description": "SSH connection attempt from service account \u2014 lateral movement via remote service. ssh runs with BatchMode=yes and StrictHostKeyChecking=no under a service identity.",
+        "description": "SSH connection attempt from service account — lateral movement via remote service. ssh runs with BatchMode=yes and StrictHostKeyChecking=no under a service identity.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\"BatchMode=yes\", \"StrictHostKeyChecking=no\")\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"postgres\", \"apache\", \"nginx\")\n| filter causality_actor_process_image_name in (\"apache2\", \"httpd\", \"nginx\", \"php-fpm\", \"tomcat\", \"java\", \"node\", \"uwsgi\", \"gunicorn\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -202,7 +202,7 @@
       },
       {
         "name": "EDR-005 SSH Tunnel Creation With Forward Flags",
-        "description": "SSH tunnel creation (-L/-D flags) \u2014 protocol tunneling for covert channel establishment. ssh is invoked with -L local forward, -D SOCKS, or -R remote forward.",
+        "description": "SSH tunnel creation (-L/-D flags) — protocol tunneling for covert channel establishment. ssh is invoked with -L local forward, -D SOCKS, or -R remote forward.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"ssh\"\n| filter action_process_image_command_line contains_any (\" -L \", \" -D \", \" -R \", \" -w \")\n| filter action_process_image_command_line contains \" -N\"",
         "severity": "high",
         "mitre_technique_ids": [
@@ -249,14 +249,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Linux Lateral Movement Chain \u2014 Recon, Scan, SSH, Tunnel",
+        "name": "Linux Lateral Movement Chain — Recon, Scan, SSH, Tunnel",
         "rule_id": "CR-EDR-0005",
         "logic": "BIOC(EDR-005 Port Scan Via Bash devtcp) OR BIOC(EDR-005 Batch Mode SSH From Service Account) OR BIOC(EDR-005 SSH Tunnel Creation With Forward Flags) STITCH BY agent_hostname, causality_actor_process_instance_id, actor_effective_username WITHIN 900s"
       }
     ],
     "analytics_modules": [
-      "Cortex XDR Analytics \u2014 Service account performing internal network discovery",
-      "Cortex XDR Analytics \u2014 Automated SSH lateral movement"
+      "Cortex XDR Analytics — Service account performing internal network discovery",
+      "Cortex XDR Analytics — Automated SSH lateral movement"
     ]
   },
   "panw_mapping": {
@@ -294,14 +294,14 @@
         "evidence_query": "Playbook isolates the source host, kills SSH tunnels and revokes the service account's SSH keys."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-RANSOM-036",
-        "name": "Lateral Movement Detection \u2014 Linux SSH and Tunneling",
+        "threat_scenario_id": "TS-RANSOM-036",
+        "name": "Lateral Movement Detection — Linux SSH and Tunneling",
         "description": "Detect internal recon, /dev/tcp port scanning, batch-mode SSH abuse and SSH tunneling from a service account and stitch them into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-RANSOM-036A",
+            "threat_step_id": "TS-RANSOM-036A",
             "objective": "The scan, SSH and tunnel behaviors fire their corresponding Cortex XDR BIOCs.",
             "preconditions": [
               "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
@@ -319,7 +319,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-RANSOM-036B",
+            "threat_step_id": "TS-RANSOM-036B",
             "objective": "Lateral-movement chain stitches into one incident.",
             "success_criteria": [
               "Correlation `CR-EDR-0005` groups recon, scan, SSH and tunnel activity on one host into a single incident.",
@@ -354,7 +354,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1021.004 \u2014 SSH",
+      "title": "MITRE ATT&CK T1021.004 — SSH",
       "url": "https://attack.mitre.org/techniques/T1021/004/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

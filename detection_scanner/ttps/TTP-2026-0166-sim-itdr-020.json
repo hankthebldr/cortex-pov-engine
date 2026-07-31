@@ -242,14 +242,14 @@
         "evidence_query": "dataset = msft_windows_security | filter event_id = 4769 and ticket_encryption_type = \"0x17\" | comp count_distinct(service_name) as distinct_services by target_user_name | filter distinct_services >= 3"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-020",
+        "threat_scenario_id": "TS-ITDR-020",
         "name": "Kerberoast-to-Pass-the-Hash Credential-Abuse Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn each account's Kerberos service-ticket-encryption profile, service-ticket request volume and authentication-package baseline, and detect a Kerberoast weak-ticket burst followed by an NTLM Pass-the-Hash lateral logon — anchored to the requesting-identity causality chain — where no static rule was written for the individually-valid ticket requests and logons.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-020A",
+            "threat_step_id": "TS-ITDR-020A",
             "objective": "Cortex learns the account's service-ticket / authentication baseline and an injected RC4 weak-ticket roast burst fires both Kerberoast ABIOCs.",
             "preconditions": [
               "Collector wired into Cortex XSIAM as a Windows Security Event Log source.",
@@ -268,7 +268,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ITDR-020B",
+            "threat_step_id": "TS-ITDR-020B",
             "objective": "The subsequent NTLM Pass-the-Hash logon fires the Pass-the-Hash ABIOC and the correlation stitches the chain into one incident.",
             "preconditions": [
               "TC-ITDR-020A executed so the roast burst is present for the identity."

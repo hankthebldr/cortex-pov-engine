@@ -228,14 +228,14 @@
         "evidence_query": "Correlation CR-AIACC-0004 fuses the jailbreak classifier hit with the DLP-circumvention policy-violation BIOC into one jailbreak-attempt incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-INSIDER-010",
+        "threat_scenario_id": "TS-INSIDER-010",
         "name": "Jailbreak Prompt Content Classification",
         "description": "Detect DAN-style jailbreak prompts that request DLP circumvention and confirm the detector fires consistently across providers.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-INSIDER-010A",
+            "threat_step_id": "TS-INSIDER-010A",
             "objective": "A jailbreak POST to OpenAI fires the content classifier and the DLP-circumvention policy BIOC.",
             "preconditions": [
               "Cortex AI Access Security inline with TLS decrypt and jailbreak classifier enabled.",
@@ -252,7 +252,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-INSIDER-010B",
+            "threat_step_id": "TS-INSIDER-010B",
             "objective": "The jailbreak fingerprint is detected consistently across OpenAI and Anthropic.",
             "success_criteria": [
               "XQL `AIACC-004 Jailbreak Detection Consistent Across Providers` returns >= 2 rows.",

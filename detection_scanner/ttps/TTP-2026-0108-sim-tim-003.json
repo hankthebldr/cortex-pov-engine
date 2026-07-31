@@ -321,14 +321,14 @@
         "evidence_query": "Two ABIOCs fire on the per-apex DNS behavioral deviation (dormancy-break burst + DGA fan-out); CR-TIM-0003 stitches them on the same apex_domain into one strategically-aged-sleeper-domain-activation incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-TIM-003",
+        "threat_scenario_id": "TS-TIM-003",
         "name": "Strategically Aged Sleeper-Domain Activation Detection via Behavioral DNS Analytics",
         "description": "Cortex Advanced DNS Security and XSIAM analytics detect an aged, reputation-clean C2 apex waking from dormancy — a same-day traffic burst into the top-5% band plus a fan-out of never-before-seen DGA subdomains — where a newly-registered-domain block sees nothing because the domain is years old.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-TIM-003A",
+            "threat_step_id": "TS-TIM-003A",
             "objective": "The dormancy-break traffic burst on a strategically aged apex is detected as a behavioral deviation from the apex's learned volume baseline.",
             "preconditions": [
               "DNS telemetry (pan_dns / Advanced DNS Security) onboarded to the tenant.",
@@ -345,7 +345,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-TIM-003B",
+            "threat_step_id": "TS-TIM-003B",
             "objective": "The never-before-seen DGA subdomain fan-out under the activated apex is detected as exceeding the apex's learned subdomain diversity.",
             "preconditions": [
               "DNS telemetry onboarded.",
@@ -362,7 +362,7 @@
             "expected_score_weight": 0.35
           },
           {
-            "test_case_id": "TC-TIM-003C",
+            "threat_step_id": "TS-TIM-003C",
             "objective": "The two behavioral deviations stitch into a single sleeper-domain-activation incident on the same apex.",
             "preconditions": [
               "Both ABIOCs from TC-TIM-003A and TC-TIM-003B have fired on the same apex within the activation window."

@@ -237,14 +237,14 @@
         "evidence_query": "Correlation CR-CDR-0010 fuses the chroot host-escape BIOC and the in-container mass-encrypt-rate XQL into one container-ransomware incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-010",
+        "threat_scenario_id": "TS-CLOUD-010",
         "name": "Container-Native Ransomware Detection",
         "description": "Cortex Cloud CDR + XSIAM detect a container escaping to the host filesystem and detonating an encryption sweep — covering both the escape primitive and the ransomware impact distinct from host-only EDR ransomware.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-010A",
+            "threat_step_id": "TS-CLOUD-010A",
             "objective": "The container-to-host escape (mountinfo read + chroot) is detected.",
             "preconditions": [
               "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",
@@ -261,7 +261,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-CLOUD-010B",
+            "threat_step_id": "TS-CLOUD-010B",
             "objective": "The in-container encrypt sweep is detected and stitched to the escape.",
             "preconditions": [
               "Cortex agent ingestion active so the bounded encrypt loop's file events reach xdr_data."

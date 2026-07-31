@@ -208,14 +208,14 @@
         "evidence_query": "dataset = kubernetes_audit_logs | filter pod_exec_marker = true or unusual_sa_api_call_marker = true | fields _time, user_username, verb, objectRef_resource, objectRef_subresource, objectRef_name, sourceIPs"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-025",
+        "threat_scenario_id": "TS-CDR-025",
         "name": "Kubernetes audit — unusual pod exec and service-account API abuse",
         "description": "Validate that Cortex XSIAM's Kubernetes-audit behavioral analytics detect an interactive exec into a running pod and a follow-on out-of-baseline service-account RBAC-write, and stitch them into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-025A",
+            "threat_step_id": "TS-CDR-025A",
             "objective": "An interactive create pods/exec by an out-of-baseline principal raises the unusual-pod-exec ABIOC.",
             "preconditions": [
               "Kubernetes audit logging forwarded into kubernetes_audit_logs.",
@@ -231,7 +231,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-CDR-025B",
+            "threat_step_id": "TS-CDR-025B",
             "objective": "A service-account RBAC-write it never performs in baseline raises the unusual-SA-API-call ABIOC and the correlation stitches both alerts.",
             "preconditions": [
               "The unusual-pod-exec ABIOC has already fired for the same run."

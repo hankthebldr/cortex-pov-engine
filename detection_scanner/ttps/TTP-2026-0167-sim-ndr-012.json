@@ -263,14 +263,14 @@
         "evidence_query": "Playbook: enrich destination reputation, block the rare domain and non-standard egress at NGFW, throttle/deny the massive upload, isolate the beaconing source host, open DFIR ticket."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-NDR-012",
+        "threat_scenario_id": "TS-NDR-012",
         "name": "NGFW EAL Rare-Domain Beacon then Large/Massive HTTPS Upload Exfil via Cortex Network Analytics / ABIOC",
         "description": "Cortex's auto-tuned NGFW EAL Network Analytics / ABIOCs learn a host's egress baseline and detect a recurring rare-domain HTTPS beacon and the large-then-massive HTTPS upload that follows by their destination rarity (fleet-wide source prevalence), recurring cadence and outbound-byte-volume deviation, anchored to the source host (src) and rare destination domain, after infrastructure rotation defeats any static IOC.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-NDR-012A",
+            "threat_step_id": "TS-NDR-012A",
             "objective": "The recurring rare-domain HTTPS beacon fires the Abnormal Recurring Communications to a Rare Domain ABIOC and its validation XQL surfaces the landed panw_ngfw_traffic_raw records.",
             "preconditions": [
               "Operator collector wired into XSIAM as the PAN-OS NGFW EAL source (panw_ngfw_traffic_raw populated).",
@@ -288,7 +288,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-NDR-012B",
+            "threat_step_id": "TS-NDR-012B",
             "objective": "The large HTTPS upload fires the Large Upload (HTTPS) ABIOC on the outbound-byte-volume deviation.",
             "preconditions": [
               "Recurring beacon (TC-NDR-012A) already established the rare-domain callback pattern."
@@ -304,7 +304,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-NDR-012C",
+            "threat_step_id": "TS-NDR-012C",
             "objective": "The massive upload fires the Massive upload to a rare storage or mail domain ABIOC and the correlation stitches the beacon-then-exfil chain into one incident.",
             "preconditions": [
               "Large upload (TC-NDR-012B) already demonstrated the outbound-volume deviation."

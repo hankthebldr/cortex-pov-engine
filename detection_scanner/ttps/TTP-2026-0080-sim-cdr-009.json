@@ -242,14 +242,14 @@
         "evidence_query": "dataset = xdr_data | filter actor_process_image_name in (\"sh\", \"bash\") | filter action_process_image_name in (\"curl\", \"nc\", \"nmap\")"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-009",
+        "threat_scenario_id": "TS-CLOUD-009",
         "name": "Microservices Behavioral Anomaly Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a microservices workload's east-west and per-container process baseline and detect a novel behavioral deviation no static rule was written for, anchored to its causality chain.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-009A",
+            "threat_step_id": "TS-CLOUD-009A",
             "objective": "Cortex learns the Sock-Shop baseline and an injected behavioral deviation fires both ABIOCs.",
             "preconditions": [
               "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",

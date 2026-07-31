@@ -263,14 +263,14 @@
         "evidence_query": "dataset = xdr_data | filter action_process_image_name in (\"powershell.exe\", \"pwsh.exe\") | filter actor_process_image_name in (\"winword.exe\", \"excel.exe\", \"wscript.exe\")"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-015",
+        "threat_scenario_id": "TS-MP-015",
         "name": "AI SOC Triage Discrimination — True-Positive Elevation + False-Positive Suppression",
         "description": "Prove Cortex XSIAM's AI triage stitches and elevates a genuine identity-driven intrusion above realistic decoy noise while suppressing the benign-but-anomalous alerts, cutting analyst hours versus a flat queue where every anomaly looks equally urgent.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-015A",
+            "threat_step_id": "TS-MP-015A",
             "objective": "The three malicious signals stitch into one incident that the AI triage layer ranks #1 (true-positive elevation).",
             "preconditions": [
               "XSIAM ingesting identity sign-in + endpoint process telemetry.",
@@ -290,7 +290,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-MP-015B",
+            "threat_step_id": "TS-MP-015B",
             "objective": "The benign decoys are NOT merged into the malicious incident and are deprioritized as benign (false-positive suppression).",
             "preconditions": [
               "The malicious chain from TC-MP-015A is present in the same window.",
@@ -308,7 +308,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-MP-015C",
+            "threat_step_id": "TS-MP-015C",
             "objective": "The impossible-travel and privilege-escalation timing fall inside the correlation window, proving the causality chain (access -> elevation) is bounded.",
             "preconditions": [
               "Sign-in and process telemetry carry usable timestamps."

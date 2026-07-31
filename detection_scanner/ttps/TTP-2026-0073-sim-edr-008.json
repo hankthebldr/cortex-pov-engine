@@ -287,14 +287,14 @@
         "evidence_query": "Playbook: isolate the host, kill the encryptor process tree, and trigger recovery from off-host backups."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-RANSOM-073",
+        "threat_scenario_id": "TS-RANSOM-073",
         "name": "Ransomware Impact Detection — Linux Host File Encryption",
         "description": "Detect and stitch a Linux-host file mass-encryption + recovery-inhibition chain (a second, host-level detection variant of T1486 distinct from the ESXi card).",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-RANSOM-073A",
+            "threat_step_id": "TS-RANSOM-073A",
             "objective": "Mass file-rewrite, ransom-note, and recovery-inhibition each fire their Cortex XDR BIOC.",
             "preconditions": [
               "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
@@ -312,7 +312,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-RANSOM-073B",
+            "threat_step_id": "TS-RANSOM-073B",
             "objective": "The encryption stages stitch into one Impact incident.",
             "success_criteria": [
               "Correlation `CR-EDR-0008` groups the stages from one host into a single critical incident.",

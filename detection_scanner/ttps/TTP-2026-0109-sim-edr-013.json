@@ -287,14 +287,14 @@
         "evidence_query": "WildFire > Submissions: detonate the side-loaded loader DLL; the verdict flags the UUID-string shellcode idiom (UuidFromStringA -> executable heap -> EnumSystemLocalesA callback). Pivot from the malware verdict into the XDR causality chain for the host process."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-013",
+        "threat_scenario_id": "TS-EDR-013",
         "name": "Fileless UUID-String Shellcode Staging Detection via Cortex Behavioral Analytics",
         "description": "Prove that Cortex catches a fileless loader that reassembles shellcode from UUID strings and executes it through a Win32 enumeration callback — a chain that produces none of the classic RWX-allocation / thread-creation / injection primitives a static BIOC keys on. The catch comes from the auto-tuned ABIOCs anchoring the deviation to the signed-host-binary causality chain, with WildFire independently condemning the loader.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-013A",
+            "threat_step_id": "TS-EDR-013A",
             "objective": "The DLL side-loading delivery stage is detected as a behavioral deviation from the signed application's learned module-load baseline.",
             "preconditions": [
               "Windows endpoint with the Cortex agent installed and a learned per-application module-load baseline.",
@@ -312,7 +312,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-EDR-013B",
+            "threat_step_id": "TS-EDR-013B",
             "objective": "The fileless enum-callback execution from an unbacked private heap is detected without any RWX allocation, thread creation, or injection signal.",
             "preconditions": [
               "Windows endpoint with Behavioral Threat Protection / in-memory protection enabled so unbacked-execution telemetry reaches xdr_data."
@@ -329,7 +329,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-EDR-013C",
+            "threat_step_id": "TS-EDR-013C",
             "objective": "The two behavioral deviations are stitched into a single UUID-string-staging intrusion incident.",
             "preconditions": [
               "Both ABIOCs have fired on the same host + causality process within the correlation window."

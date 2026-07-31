@@ -331,14 +331,14 @@
         "evidence_query": "Three ABIOCs fire on the ClickFix loader lineage; CR-EDR-0017 stitches the endpoint chain with the NDR stager-fetch / Lumma C2 egress into one Lumma-loader incident spanning EDR + NDR."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-017",
+        "threat_scenario_id": "TS-EDR-017",
         "name": "ClickFix Interpreter-Depth Loader Chain Detection via Cortex ABIOC + Cross-Plane Stitch",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs catch the post-paste ClickFix loader chain — mshta fetch, AV/EDR discovery, extrac32 CAB unpack, and a masqueraded signed AutoIt3 interpreter running an .a3x script — by scoring the causality chain rather than any single legitimate binary, and a correlation rule stitches the endpoint lineage with the network stager/C2 egress into a single Lumma-loader incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-017A",
+            "threat_step_id": "TS-EDR-017A",
             "objective": "The real LOLBin telemetry the SAFE-MODE run produces (the tasklist|findstr AV-discovery burst and the benign extrac32 CAB unpack) is surfaced and stitched, while the masqueraded-AutoIt3 grouping ABIOC + full causality chain are documented as the model-only detections a destructive detonation would raise.",
             "preconditions": [
               "Windows EDR target with the Cortex agent installed.",
@@ -357,7 +357,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-EDR-017B",
+            "threat_step_id": "TS-EDR-017B",
             "objective": "The AV/EDR discovery probe inside the loader lineage fires its ABIOC.",
             "preconditions": [
               "Windows EDR target with the Cortex agent installed."
@@ -372,7 +372,7 @@
             "expected_score_weight": 0.25
           },
           {
-            "test_case_id": "TC-EDR-017C",
+            "threat_step_id": "TS-EDR-017C",
             "objective": "The mshta remote-fetch loader hand-off is modelled and the network stager / Lumma C2 egress it produces is surfaced on the NDR plane.",
             "preconditions": [
               "Windows EDR target with the Cortex agent installed.",

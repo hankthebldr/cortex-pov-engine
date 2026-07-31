@@ -252,14 +252,14 @@
         "evidence_query": "Correlation CR-AIRS-0003 fuses a prompt-stealer request with a system-prompt or secret leak into one LLM07 incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-AIRS-014",
+        "threat_scenario_id": "TS-AIRS-014",
         "name": "OWASP LLM07 — System Prompt Leakage",
         "description": "Detect prompt-stealer probes against a deployed LLM and confirm whether the hidden system prompt or an embedded secret leaked in response.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-AIRS-014A",
+            "threat_step_id": "TS-AIRS-014A",
             "objective": "AIRS classifies the prompt-stealer family and fires the system-prompt and secret leak BIOCs.",
             "preconditions": [
               "cortex-vulnerable-llm serving --vuln llm07 with a seeded system prompt on port 8089.",
@@ -277,7 +277,7 @@
             "expected_score_weight": 0.7
           },
           {
-            "test_case_id": "TC-AIRS-014B",
+            "threat_step_id": "TS-AIRS-014B",
             "objective": "Prompt-stealer request and leak response stitch into a single LLM07 incident.",
             "success_criteria": [
               "Correlation `CR-AIRS-0003` groups the request classification and the leak into one incident."

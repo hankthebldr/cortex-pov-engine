@@ -48,8 +48,8 @@
   },
   "identity": {
     "name": "Kubernetes Lateral Movement via Stolen Service-Account Token (T1021)",
-    "summary": "A compromised pod harvests its mounted service-account token, queries the Kubernetes API server directly for namespaces, copies the token to /tmp, then uses kubectl with the stolen token to enumerate pods cluster-wide, exec into an adjacent pod, and deploy a malicious CronJob for persistence. Cortex Cloud detects the in-pod token use and kubectl abuse via runtime BIOCs, while cloud_audit_logs (\u2026",
-    "description": "Once an attacker controls one pod, the mounted service-account token is the pivot to the rest of the cluster. Unit 42's research on Kubernetes targeting documents adversaries reading /var/run/secrets/kubernetes.io/serviceaccount/token, calling the API server, and abusing over-permissive RBAC to enumerate, exec, and persist across namespaces. This scenario reproduces that chain from a compromised pod: it reads the namespace and token, curls the API server for the namespace list, copies the token to /tmp staging, downloads kubectl and runs get pods --all-namespaces with the stolen token, performs kubectl exec into an adjacent pod, and applies a malicious CronJob. The detection approach spans two data planes: container-runtime telemetry (xdr_data with container context) catches the in-pod token read, the kubectl binary download, and the kubectl exec/apply invocations, while the Kubernetes API audit log (cloud_audit_logs) catches the corresponding anomalous verbs \u2014 list namespaces, list pods across all namespaces, create on the exec subresource, and create cronjobs \u2014 attributed to a workload service account. A correlation rule fuses both planes into a single high-severity Lateral Movement incident, demonstrating XSIAM's runtime + control-plane stitching.",
+    "summary": "A compromised pod harvests its mounted service-account token, queries the Kubernetes API server directly for namespaces, copies the token to /tmp, then uses kubectl with the stolen token to enumerate pods cluster-wide, exec into an adjacent pod, and deploy a malicious CronJob for persistence. Cortex Cloud detects the in-pod token use and kubectl abuse via runtime BIOCs, while cloud_audit_logs (…",
+    "description": "Once an attacker controls one pod, the mounted service-account token is the pivot to the rest of the cluster. Unit 42's research on Kubernetes targeting documents adversaries reading /var/run/secrets/kubernetes.io/serviceaccount/token, calling the API server, and abusing over-permissive RBAC to enumerate, exec, and persist across namespaces. This scenario reproduces that chain from a compromised pod: it reads the namespace and token, curls the API server for the namespace list, copies the token to /tmp staging, downloads kubectl and runs get pods --all-namespaces with the stolen token, performs kubectl exec into an adjacent pod, and applies a malicious CronJob. The detection approach spans two data planes: container-runtime telemetry (xdr_data with container context) catches the in-pod token read, the kubectl binary download, and the kubectl exec/apply invocations, while the Kubernetes API audit log (cloud_audit_logs) catches the corresponding anomalous verbs — list namespaces, list pods across all namespaces, create on the exec subresource, and create cronjobs — attributed to a workload service account. A correlation rule fuses both planes into a single high-severity Lateral Movement incident, demonstrating XSIAM's runtime + control-plane stitching.",
     "severity": "high",
     "confidence": "high"
   },
@@ -121,7 +121,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1021 \u2014 Kubernetes lateral movement via stolen service-account token, kubectl exec, and CronJob persistence.",
+    "framework_reference_id": "T1021 — Kubernetes lateral movement via stolen service-account token, kubectl exec, and CronJob persistence.",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -129,12 +129,12 @@
         "check_command": "kubectl version --client 2>/dev/null; systemctl is-active cortex-agent"
       },
       {
-        "description": "Lab environment matching scenario SIM-CDR-004 \u2014 a pod with a mounted service-account token and over-permissive RBAC for safe lateral-movement validation."
+        "description": "Lab environment matching scenario SIM-CDR-004 — a pod with a mounted service-account token and over-permissive RBAC for safe lateral-movement validation."
       }
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Kubernetes lateral movement via stolen SA token \u2014 lab cluster only.\nTOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token); cp /var/run/secrets/kubernetes.io/serviceaccount/token /tmp/stolen_sa_token\ncurl -sSk --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H \"Authorization: Bearer $TOKEN\" https://kubernetes.default.svc/api/v1/namespaces\nkubectl --server=https://kubernetes.default.svc --token=\"$TOKEN\" --insecure-skip-tls-verify get pods --all-namespaces\nkubectl --server=https://kubernetes.default.svc --token=\"$TOKEN\" --insecure-skip-tls-verify exec -n default <pod> -- id\nkubectl --server=https://kubernetes.default.svc --token=\"$TOKEN\" --insecure-skip-tls-verify apply -f /tmp/cortexsim-cronjob.yaml",
+      "code": "# Kubernetes lateral movement via stolen SA token — lab cluster only.\nTOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token); cp /var/run/secrets/kubernetes.io/serviceaccount/token /tmp/stolen_sa_token\ncurl -sSk --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H \"Authorization: Bearer $TOKEN\" https://kubernetes.default.svc/api/v1/namespaces\nkubectl --server=https://kubernetes.default.svc --token=\"$TOKEN\" --insecure-skip-tls-verify get pods --all-namespaces\nkubectl --server=https://kubernetes.default.svc --token=\"$TOKEN\" --insecure-skip-tls-verify exec -n default <pod> -- id\nkubectl --server=https://kubernetes.default.svc --token=\"$TOKEN\" --insecure-skip-tls-verify apply -f /tmp/cortexsim-cronjob.yaml",
       "input_variables": [],
       "timeout_seconds": 150
     },
@@ -179,7 +179,7 @@
       },
       {
         "name": "CDR-004 Service Account Token Used For API Discovery Audit",
-        "description": "Service account token used for API server discovery \u2014 anomalous cluster enumeration behavior. The Kubernetes audit log records a workload service account listing namespaces or cluster resources.",
+        "description": "Service account token used for API server discovery — anomalous cluster enumeration behavior. The Kubernetes audit log records a workload service account listing namespaces or cluster resources.",
         "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"kubernetes\" or log_source = \"k8s_audit\"\n| filter verb in (\"list\", \"get\")\n| filter objectRef_resource in (\"namespaces\", \"nodes\")\n| filter user_username contains \"system:serviceaccount\"",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -188,7 +188,7 @@
       },
       {
         "name": "CDR-004 Service Account Token Read And Copied In Pod",
-        "description": "Service account token read and copied \u2014 Kubernetes credential theft from mounted secret volume. A pod process reads the projected token and copies it elsewhere on disk.",
+        "description": "Service account token read and copied — Kubernetes credential theft from mounted secret volume. A pod process reads the projected token and copies it elsewhere on disk.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"containerd-shim\", \"runc\", \"bash\", \"sh\")\n| filter actor_process_image_name in (\"cat\", \"cp\", \"bash\", \"sh\")\n| filter action_process_image_command_line contains \"serviceaccount/token\"",
         "severity": "high",
         "mitre_technique_ids": [
@@ -197,7 +197,7 @@
       },
       {
         "name": "CDR-004 Service Account Token Staged To Tmp In Pod",
-        "description": "Sensitive Kubernetes credential file access pattern \u2014 token exfiltration to /tmp staging directory. The mounted token is copied to a /tmp staging path for later reuse.",
+        "description": "Sensitive Kubernetes credential file access pattern — token exfiltration to /tmp staging directory. The mounted token is copied to a /tmp staging path for later reuse.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type = ENUM.FILE_CREATE\n| filter container_id != null\n| filter action_file_path contains \"/tmp/\"\n| filter action_file_path contains_any (\"token\", \"sa_token\", \"stolen\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -206,7 +206,7 @@
       },
       {
         "name": "CDR-004 kubectl All Namespaces Enumeration From Pod",
-        "description": "kubectl --all-namespaces enumeration from within pod \u2014 cross-namespace discovery using stolen token. kubectl is run inside a container with --all-namespaces to map workloads cluster-wide.",
+        "description": "kubectl --all-namespaces enumeration from within pod — cross-namespace discovery using stolen token. kubectl is run inside a container with --all-namespaces to map workloads cluster-wide.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"kubectl\"\n| filter action_process_image_command_line contains \"get pods\"\n| filter action_process_image_command_line contains_any (\"--all-namespaces\", \"-A\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -215,7 +215,7 @@
       },
       {
         "name": "CDR-004 Cluster Wide Pod Discovery Audit Anomaly",
-        "description": "Cluster-wide pod discovery via kubectl in container \u2014 lateral movement reconnaissance pattern. The Kubernetes audit log records a list pods request scoped to all namespaces by a workload identity.",
+        "description": "Cluster-wide pod discovery via kubectl in container — lateral movement reconnaissance pattern. The Kubernetes audit log records a list pods request scoped to all namespaces by a workload identity.",
         "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"kubernetes\" or log_source = \"k8s_audit\"\n| filter verb = \"list\"\n| filter objectRef_resource = \"pods\"\n| filter objectRef_namespace = null or objectRef_namespace = \"\"\n| filter user_username contains \"system:serviceaccount\"",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -224,7 +224,7 @@
       },
       {
         "name": "CDR-004 kubectl Exec Into Adjacent Pod Lateral Movement",
-        "description": "kubectl exec into pod in different namespace \u2014 lateral movement via Kubernetes API (high fidelity CDR BIOC). kubectl exec is invoked from inside one container to run a command in another pod.",
+        "description": "kubectl exec into pod in different namespace — lateral movement via Kubernetes API (high fidelity CDR BIOC). kubectl exec is invoked from inside one container to run a command in another pod.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"containerd-shim\", \"runc\", \"bash\", \"sh\")\n| filter actor_process_image_name = \"kubectl\"\n| filter action_process_image_command_line contains \"exec\"\n| filter action_process_image_command_line contains_any (\"-n \", \"--namespace\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -233,7 +233,7 @@
       },
       {
         "name": "CDR-004 Pod Exec Subresource Create Audit Anomaly",
-        "description": "Cross-namespace pod exec from compromised container \u2014 Kubernetes lateral movement chain detected. The Kubernetes audit log records a create on the pods/exec subresource by a workload service account.",
+        "description": "Cross-namespace pod exec from compromised container — Kubernetes lateral movement chain detected. The Kubernetes audit log records a create on the pods/exec subresource by a workload service account.",
         "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"kubernetes\" or log_source = \"k8s_audit\"\n| filter verb = \"create\"\n| filter objectRef_resource = \"pods\"\n| filter objectRef_subresource = \"exec\"\n| filter user_username contains \"system:serviceaccount\"",
         "severity": "high",
         "mitre_technique_ids": [
@@ -242,7 +242,7 @@
       },
       {
         "name": "CDR-004 Malicious CronJob Creation Via kubectl From Pod",
-        "description": "Kubernetes CronJob creation via kubectl \u2014 scheduled task persistence mechanism in cluster. kubectl apply creates a CronJob resource from inside a compromised pod.",
+        "description": "Kubernetes CronJob creation via kubectl — scheduled task persistence mechanism in cluster. kubectl apply creates a CronJob resource from inside a compromised pod.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"containerd-shim\", \"runc\", \"bash\", \"sh\")\n| filter actor_process_image_name = \"kubectl\"\n| filter action_process_image_command_line contains_any (\"apply\", \"create\")\n| filter action_process_image_command_line contains_any (\"cronjob\", \".yaml\", \"-f \")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -251,7 +251,7 @@
       },
       {
         "name": "CDR-004 CronJob Resource Create Audit Anomaly",
-        "description": "CronJob creation anomaly \u2014 new batch workload created from compromised pod context, cross-namespace pattern. The Kubernetes audit log records a create on cronjobs by a workload service account.",
+        "description": "CronJob creation anomaly — new batch workload created from compromised pod context, cross-namespace pattern. The Kubernetes audit log records a create on cronjobs by a workload service account.",
         "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"kubernetes\" or log_source = \"k8s_audit\"\n| filter verb = \"create\"\n| filter objectRef_resource = \"cronjobs\"\n| filter user_username contains \"system:serviceaccount\"",
         "severity": "high",
         "mitre_technique_ids": [
@@ -284,14 +284,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Kubernetes Lateral Movement Chain \u2014 Runtime And Audit",
+        "name": "Kubernetes Lateral Movement Chain — Runtime And Audit",
         "rule_id": "CR-CDR-0004",
         "logic": "BIOC(CDR-004 Service Account Token Read And Copied In Pod) OR BIOC(CDR-004 kubectl All Namespaces Enumeration From Pod) OR BIOC(CDR-004 Cluster Wide Pod Discovery Audit Anomaly) OR BIOC(CDR-004 kubectl Exec Into Adjacent Pod Lateral Movement) OR BIOC(CDR-004 Pod Exec Subresource Create Audit Anomaly) OR BIOC(CDR-004 Malicious CronJob Creation Via kubectl From Pod) OR BIOC(CDR-004 CronJob Resource Create Audit Anomaly) GROUPED BY container_id, causality_id, user_username WITHIN 300s"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud \u2014 Kubernetes audit anomaly (service account performing cross-namespace verbs)",
-      "Cortex XDR Analytics \u2014 In-pod kubectl exec / token theft behavioral cluster"
+      "Cortex Cloud — Kubernetes audit anomaly (service account performing cross-namespace verbs)",
+      "Cortex XDR Analytics — In-pod kubectl exec / token theft behavioral cluster"
     ]
   },
   "panw_mapping": {
@@ -330,14 +330,14 @@
         "evidence_query": "Correlation CR-CDR-0004 fuses in-pod token theft and kubectl abuse (runtime) with the matching list/exec/create verbs (K8s audit) into a single Lateral Movement incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-025",
-        "name": "Kubernetes Lateral Movement Detection \u2014 Stolen Token",
-        "description": "Detect and stitch the stolen-token lateral-movement chain (token theft \u2192 API enumeration \u2192 cross-namespace exec \u2192 CronJob persistence) across runtime and K8s audit planes.",
-        "test_cases": [
+        "threat_scenario_id": "TS-CLOUD-025",
+        "name": "Kubernetes Lateral Movement Detection — Stolen Token",
+        "description": "Detect and stitch the stolen-token lateral-movement chain (token theft → API enumeration → cross-namespace exec → CronJob persistence) across runtime and K8s audit planes.",
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-025A",
+            "threat_step_id": "TS-CLOUD-025A",
             "objective": "kubectl exec and the K8s audit exec/create verbs fire their Cortex detections.",
             "preconditions": [
               "Cortex Cloud ingesting Kubernetes API audit logs.",
@@ -356,7 +356,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUD-025B",
+            "threat_step_id": "TS-CLOUD-025B",
             "objective": "Runtime and audit signals stitch into one Lateral Movement incident.",
             "success_criteria": [
               "Correlation `CR-CDR-0004` groups the runtime and audit stages into one incident.",
@@ -391,7 +391,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1021 \u2014 Remote Services",
+      "title": "MITRE ATT&CK T1021 — Remote Services",
       "url": "https://attack.mitre.org/techniques/T1021/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

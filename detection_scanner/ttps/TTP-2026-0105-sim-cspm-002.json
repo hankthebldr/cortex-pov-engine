@@ -281,14 +281,14 @@
         "evidence_query": "Prisma Cloud Compliance dashboard — drift events on CortexSim-tagged resources against the CIS AWS Foundations baseline."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CSPM-002",
+        "threat_scenario_id": "TS-CSPM-002",
         "name": "Cloud Posture Drift Detection & Runtime Correlation",
         "description": "Cortex Cloud CSPM detects when a previously-compliant resource drifts out of baseline (public-access-block removed, CloudTrail logging disabled) and correlates each drift finding with the control-plane action that caused it and any post-drift exploitation, surfacing the whole drift chain as one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CSPM-002A",
+            "threat_step_id": "TS-CSPM-002A",
             "objective": "An injected, reversible drift regresses a compliant resource to drifted and both drift classes surface within one scan cycle.",
             "preconditions": [
               "Cortex Cloud CSPM connected (read-only) with drift tracking enabled.",
@@ -307,7 +307,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CSPM-002B",
+            "threat_step_id": "TS-CSPM-002B",
             "objective": "Each drift finding is correlated to the CloudTrail control-plane action that caused it (and post-drift access) into one incident.",
             "preconditions": [
               "The drift-causing API calls (DeletePublicAccessBlock / StopLogging) are captured in cloud_audit_logs before the trail goes dark."

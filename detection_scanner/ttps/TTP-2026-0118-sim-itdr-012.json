@@ -314,14 +314,14 @@
         "evidence_query": "dataset = panw_ngfw_globalprotect_raw | filter event_id = \"gateway-connected\" and status = \"success\" | filter preceding_auth_event = \"NONE\" | fields _time, public_ip, machine_name, endpoint_mac, source_user, preceding_auth_event"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-012",
+        "threat_scenario_id": "TS-ITDR-012",
         "name": "GlobalProtect Authentication-Bypass Detection (PAN-OS CVE-2026-0257)",
         "description": "Prove that Cortex detects a GlobalProtect VPN session established via the CVE-2026-0257 authentication bypass — both by fingerprinting the public PoC's placeholder client attributes and, durably, by correlating a gateway-connected success with the absence of any preceding authentication event.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-012A",
+            "threat_step_id": "TS-ITDR-012A",
             "objective": "The placeholder-fingerprint BIOC and the durable no-preceding-authentication behavioral BIOC both fire on the emitted gateway-connected session.",
             "preconditions": [
               "GlobalProtect logs are ingested into the XSIAM tenant (panw_ngfw_globalprotect_raw).",
@@ -339,7 +339,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-ITDR-012B",
+            "threat_step_id": "TS-ITDR-012B",
             "objective": "A gateway-connected session from the published CVE-2026-0257 exploitation infrastructure fires the IP-infrastructure BIOC and matches a published IOC.",
             "preconditions": [
               "The nine published exploitation IPs are loaded as Cortex IOCs.",
@@ -356,7 +356,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-ITDR-012C",
+            "threat_step_id": "TS-ITDR-012C",
             "objective": "The durable correlation rule raises a single authentication-bypass incident from a gateway-connected success with no preceding authentication event.",
             "preconditions": [
               "Both synthetic gateway-connected sessions have been emitted with preceding_auth_event = NONE."

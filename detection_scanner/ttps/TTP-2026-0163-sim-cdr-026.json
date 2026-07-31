@@ -181,14 +181,14 @@
         "evidence_query": "dataset = kubernetes_audit_logs | filter objectRef_resource = \"secrets\" and verb in (\"get\", \"list\", \"watch\") | comp count() as n by user_username, verb | fields user_username, verb, n"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-026",
+        "threat_scenario_id": "TS-CDR-026",
         "name": "First-time Kubernetes secret enumeration & access",
         "description": "Validate that XSIAM's ML Kubernetes-audit analytics detect an out-of-baseline service account enumerating and reading secrets — the container-API credential-theft precursor to cluster lateral movement.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-026A",
+            "threat_step_id": "TS-CDR-026A",
             "objective": "First-time secret enumeration by an out-of-baseline service account raises the first-seen Analytics alert.",
             "preconditions": [
               "A collector wired into XSIAM as the kubernetes_audit_logs source."
@@ -203,7 +203,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-CDR-026B",
+            "threat_step_id": "TS-CDR-026B",
             "objective": "The subsequent secret read raises the unusual-access Analytics alert and the correlation stitches both into one incident.",
             "preconditions": [
               "TC-CDR-026A enumeration observed for the same service account."

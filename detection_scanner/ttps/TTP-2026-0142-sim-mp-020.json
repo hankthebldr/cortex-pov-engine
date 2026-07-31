@@ -335,14 +335,14 @@
         "evidence_query": "dataset = xdr_data | filter event_id = 4662 | filter object_properties contains \"DS-Replication-Get-Changes\" and src_host_is_domain_controller = false | comp count() as dcsync by subject_account, src_host"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-020",
+        "threat_scenario_id": "TS-MP-020",
         "name": "Ransomware Precursor Auto-Containment via Cross-Source Correlation + XSOAR Response",
         "description": "Prove that Cortex XSIAM stitches the early BlackSuit precursor signals (DCSync from a non-DC + AnyDesk/RAT scheduled-task persistence on the same DC) into a single incident and auto-fires an XSOAR Response & Remediation playbook that contains the domain controller BEFORE the Ansible-driven ESXi mass-encryption detonates. The DC measures automation-rate / MTTC, not just detection latency.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-020A",
+            "threat_step_id": "TS-MP-020A",
             "objective": "The terminal correlation CR-MP-0020 raises exactly one 'Ransomware Precursor' incident and triggers the XSOAR auto-containment playbook.",
             "preconditions": [
               "Cortex agents on the DCs and member hosts feeding xdr_data / msft_windows_security.",
@@ -360,7 +360,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-MP-020B",
+            "threat_step_id": "TS-MP-020B",
             "objective": "The precursor detections that feed the junction fire on the DCSync and the DC scheduled-task persistence.",
             "preconditions": [
               "The DCSync replication and scheduled-task-persistence junction steps executed on the target DC."
@@ -376,7 +376,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-MP-020C",
+            "threat_step_id": "TS-MP-020C",
             "objective": "The auto-containment completes before the T1486 ESXi mass-encryption — the playbook fired and closed the incident within the MTTC budget.",
             "preconditions": [
               "TC-MP-020A satisfied (playbook triggered)."

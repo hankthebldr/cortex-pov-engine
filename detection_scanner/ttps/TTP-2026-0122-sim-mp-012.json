@@ -352,14 +352,14 @@
         "evidence_query": "dataset = pan_ngfw_traffic | filter dst_host in (\"beamofthemoon.com\", \"mail.beamofthemoon.com\", \"store.beamofthemoon.com\") or dst_ip = \"82.192.88.95\""
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-012",
+        "threat_scenario_id": "TS-MP-012",
         "name": "Tamper-to-Exfil Time-to-Contain via Cortex Cross-Plane Correlation (F6)",
         "description": "When an operator blinds EDR with a signed vulnerable driver and moves fast to beacon and exfiltrate, no single plane's alert conveys the urgency. Cortex fixes a t0 on the sensor-tamper, stitches the C2 beacon and bulk SFTP egress from the same host into one incident, and reports the elapsed tamper-to-exfil time — the number that proves whether the SOC would have contained the host before data left it.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-012A",
+            "threat_step_id": "TS-MP-012A",
             "objective": "The BYOVD sensor-tamper t0, the Cobalt Strike beacon, and the rclone SFTP egress on one host stitch into a single time-to-contain incident.",
             "preconditions": [
               "Target with the Cortex XDR agent installed.",
@@ -379,7 +379,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-MP-012B",
+            "threat_step_id": "TS-MP-012B",
             "objective": "The stitched incident reports a non-zero elapsed tamper-to-exfil time (the F6 MTTR / time-to-contain KPI).",
             "preconditions": [
               "TC-MP-012A produced a single stitched incident."
@@ -395,7 +395,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-MP-012C",
+            "threat_step_id": "TS-MP-012C",
             "objective": "The BYOVD driver load is detected on its own signed-driver merit (t0 observability).",
             "preconditions": [
               "Target with the Cortex XDR agent installed."

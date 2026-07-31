@@ -318,14 +318,14 @@
         "evidence_query": "dataset = panw_ngfw_globalprotect_raw | filter request_path in (\"/global-protect/prelogin.esp\", \"/ssl-vpn/prelogin.esp\") | comp count() as portal_probes by source_ip | filter portal_probes >= 50"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-TIM-006",
+        "threat_scenario_id": "TS-TIM-006",
         "name": "TIM-Attributed Edge-VPN Recon-to-Exploit Precursor Correlation",
         "description": "Cortex fuses a Threat Intel Management feed hit (source IP flagged as CVE-2026-0257 GlobalProtect scanning infrastructure), the NGFW GlobalProtect portal-probing surge from that same source, and the Cortex ASM exposed-portal edge-asset inventory into one attributed exploit-precursor incident — turning a low-signal probe into an actionable, pre-exploit alert the SOC can act on before a VPN session is established.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-TIM-006A",
+            "threat_step_id": "TS-TIM-006A",
             "objective": "The correlation raises one attributed exploit-precursor incident when the TIM feed match and the GlobalProtect portal-probing surge share a source IP within the window.",
             "preconditions": [
               "TIM feed carries the CVE-2026-0257 GlobalProtect scanning-infrastructure indicators.",
@@ -344,7 +344,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-TIM-006B",
+            "threat_step_id": "TS-TIM-006B",
             "objective": "The probe-to-session ratio anomaly surfaces the wide-sweep/low-connect shape of the reconnaissance.",
             "preconditions": [
               "GlobalProtect portal telemetry is ingested (panw_ngfw_globalprotect_raw)."
@@ -359,7 +359,7 @@
             "expected_score_weight": 0.25
           },
           {
-            "test_case_id": "TC-TIM-006C",
+            "threat_step_id": "TS-TIM-006C",
             "objective": "The matched edge asset is the org's exposed GlobalProtect portal in the Cortex ASM inventory.",
             "preconditions": [
               "Cortex ASM has discovered the internet-exposed GlobalProtect portal."

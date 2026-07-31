@@ -310,14 +310,14 @@
         "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_host contains \"webhook.site\" | fields src_ip, dst_host, app, uri"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ASM-005",
+        "threat_scenario_id": "TS-ASM-005",
         "name": "Exposure-to-RCE Dual-Control — Internet-Exposed WSUS Correlation (CVE-2025-59287)",
         "description": "Prove that Cortex's exposure-management plane (ASM/Xpanse) and its runtime detection plane (XDR + NGFW) independently observe an internet-exposed WSUS exploitation chain, and that only the XSIAM correlation engine draws the line between the exposure at rest and the runtime exploit — raising a single exposure→RCE→discovery→exfil incident a DC presents in the executive readout.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ASM-005A",
+            "threat_step_id": "TS-ASM-005A",
             "objective": "Cortex ASM surfaces the internet-exposed WSUS interface and XDR fires the WSUS-service-spawns-shell ABIOC and BIOC on the runtime exploit.",
             "preconditions": [
               "WSUS host inventoried by ASM/Xpanse with an internet-exposed 8530/8531 finding.",
@@ -336,7 +336,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ASM-005B",
+            "threat_step_id": "TS-ASM-005B",
             "objective": "The domain-recon burst and webhook.site egress are observed and the terminal correlation stitches all four signals into one incident.",
             "preconditions": [
               "WSUS host outbound traffic transits a Palo Alto NGFW forwarding to XSIAM."

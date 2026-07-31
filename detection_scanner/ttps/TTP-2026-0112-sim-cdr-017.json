@@ -404,14 +404,14 @@
         "evidence_query": "Two ABIOCs fire on the leaked-key self-escalation and the denied-EC2-then-Lambda pivot; CR-CDR-0017 stitches them (plus the cross-region Lambda fan-out and SES recon burst) into one extortion incident anchored to the access key."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-017",
+        "threat_scenario_id": "TS-CDR-017",
         "name": "Leaked Cloud Credential Self-Propagating Lambda Extortion — Behavioral Detection via Cortex CDR / ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a cloud access key's non-administrator usage baseline and detect the leaked-key self-escalation to AdministratorAccess and the denied-EC2-then-Lambda victim-funded compute pivot, anchored to the key's causality chain, where no static rule was written for the legitimate AWS API calls involved.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-017A",
+            "threat_step_id": "TS-CDR-017A",
             "objective": "The leaked-key self-escalation (CreateRole -> AttachRolePolicy AdministratorAccess) fires the IAM self-escalation ABIOC.",
             "preconditions": [
               "Cortex Cloud / CDR ingesting AWS CloudTrail into cloud_audit_logs.",
@@ -428,7 +428,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CDR-017B",
+            "threat_step_id": "TS-CDR-017B",
             "objective": "The denied-EC2-then-cross-region-Lambda pivot fires the compute-abuse ABIOC and the validation XQL returns the fan-out.",
             "preconditions": [
               "The lab key is denied on ec2:RunInstances (scoped IAM policy).",
@@ -445,7 +445,7 @@
             "expected_score_weight": 0.35
           },
           {
-            "test_case_id": "TC-CDR-017C",
+            "threat_step_id": "TS-CDR-017C",
             "objective": "The correlation rule stitches the two ABIOCs into a single extortion incident.",
             "preconditions": [
               "Both ABIOCs have fired on the same access_key_id within the correlation window."

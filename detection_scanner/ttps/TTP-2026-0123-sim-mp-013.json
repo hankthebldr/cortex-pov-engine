@@ -442,14 +442,14 @@
         "evidence_query": "XSOAR playbook groups the seven correlated ABIOC alerts under the single CR-MP-0013 incident, enriches the rogue-VM host and the tool hashes, and drives one analyst review instead of seven."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-013",
+        "threat_scenario_id": "TS-MP-013",
         "name": "AI SOC Analyst Incident Grouping — Seven Signals to One Incident",
         "description": "Cortex XSIAM's AI SOC analyst consolidates seven medium/low correlated behavioral alerts from a single Muddled Libra rogue-VM intrusion into one correctly-summarized critical incident, proving the analytics/AI-triage depth a signature-per-alert SOC cannot reach (F7).",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-013A",
+            "threat_step_id": "TS-MP-013A",
             "objective": "The seven MP-013 ABIOCs fire and CR-MP-0013 groups them into exactly ONE critical incident on the rogue host, not seven separate alerts.",
             "preconditions": [
               "XSIAM AI SOC / incident-grouping enabled.",
@@ -468,7 +468,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-MP-013B",
+            "threat_step_id": "TS-MP-013B",
             "objective": "The AI SOC analyst summary correctly names the domain-controller compromise and the exfiltration channel.",
             "preconditions": [
               "TC-MP-013A produced a single grouped incident."
@@ -484,7 +484,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-MP-013C",
+            "threat_step_id": "TS-MP-013C",
             "objective": "No alert-storm fan-out — the seven signals do not produce seven separate incidents, and triage-to-single-incident lands within the response-timing budget.",
             "preconditions": [
               "TC-MP-013A executed."

@@ -223,14 +223,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter eventSource in (\"iam.amazonaws.com\", \"s3.amazonaws.com\") | filter eventName contains \"List\" or eventName contains \"GetBucket\" or eventName contains \"GetAccountAuthorizationDetails\" | comp count_distinct(eventName) as distinct_enum_calls by userIdentity.arn | filter distinct_enum_calls >= 4 | fields userIdentity.arn, distinct_enum_calls"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-021",
+        "threat_scenario_id": "TS-CDR-021",
         "name": "Cloud reconnaissance — IAM & S3 enumeration sequence detection",
         "description": "Validate that Cortex XSIAM cloud-audit Analytics catches a discovery-stage enumeration sequence (IAM trust mapping followed by S3 exposure mapping) from a single AWS principal, and that the ABIOC + correlation fuse the two Analytics alerts into one cloud-reconnaissance incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-021A",
+            "threat_step_id": "TS-CDR-021A",
             "objective": "The IAM and S3 enumeration Analytics alerts fire and the correlation rule stitches them into one incident when the emitter drives a CloudTrail enumeration sequence.",
             "preconditions": [
               "An operator-supplied HTTP collector is wired into XSIAM as the CloudTrail source (cloud_audit_logs).",

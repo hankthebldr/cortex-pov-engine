@@ -249,14 +249,14 @@
         "evidence_query": "Correlation CR-AIRS-0001 fuses a request-side injection-classifier hit with a response-side system-prompt leak into one LLM01 incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-AIRS-012",
+        "threat_scenario_id": "TS-AIRS-012",
         "name": "OWASP LLM01 — Direct Prompt Injection",
         "description": "Detect direct prompt-injection attempts (including encoded variants) against a deployed LLM and confirm whether the model leaked hidden context in response.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-AIRS-012A",
+            "threat_step_id": "TS-AIRS-012A",
             "objective": "AIRS classifies the injection on the request side and fires the leak BIOC on the response side.",
             "preconditions": [
               "cortex-vulnerable-llm serving --vuln llm01 on port 8089.",
@@ -274,7 +274,7 @@
             "expected_score_weight": 0.7
           },
           {
-            "test_case_id": "TC-AIRS-012B",
+            "threat_step_id": "TS-AIRS-012B",
             "objective": "Request and response detections stitch into a single LLM01 incident.",
             "success_criteria": [
               "Correlation `CR-AIRS-0001` groups the request-side and response-side hits into one incident."

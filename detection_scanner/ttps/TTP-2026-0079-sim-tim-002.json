@@ -307,14 +307,14 @@
         "evidence_query": "Playbook: enrich the matched Resource-Development indicator from TIM (domain age, registrar, feed provenance), pre-emptively block the look-alike domain + C2 IP at NGFW/DNS, sweep the estate for the staged-payload hash, open a DFIR ticket with the feed provenance."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-TIM-002",
+        "threat_scenario_id": "TS-TIM-002",
         "name": "Threat Intel Management — Resource-Development (Adversary Infrastructure Staging) Detection",
         "description": "Validate that XSIAM TIM ingests the mocktaxii Resource-Development indicator set (newly-registered look-alike domains, staged-payload SHA-256, provisioned C2 IP), raises an IOC match when a lab host resolves/fetches from the staged infrastructure, and stitches the feed-match to the DNS resolution and NGFW session into a single Resource-Development incident before any payload detonates.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-TIM-002A",
+            "threat_step_id": "TS-TIM-002A",
             "objective": "The subscribed mocktaxii Resource-Development feed is ingested and an IOC match fires on the resolution/fetch of the staged look-alike infrastructure.",
             "preconditions": [
               "tim IaC module deployed (mocktaxii :9000, fake C2 :8000, Route53 IOC zone with payload-delivery / dga-1a2b3c subdomains).",
@@ -334,7 +334,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-TIM-002B",
+            "threat_step_id": "TS-TIM-002B",
             "objective": "The Resource-Development feed match stitches to the DNS resolution and NDR session into a single incident, surfacing adversary infrastructure staging from the defender vantage.",
             "success_criteria": [
               "Correlation `CR-TIM-0002` groups the IOC feed match, the DNS resolution, and the NGFW session on src_host into one incident_id.",

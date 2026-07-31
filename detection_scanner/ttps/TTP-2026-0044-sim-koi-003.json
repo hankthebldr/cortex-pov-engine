@@ -47,7 +47,7 @@
   },
   "identity": {
     "name": "Backdoored PyPI Package With Import-Time Subprocess (T1195.002)",
-    "summary": "An agent's tooling pulls 'mcp-server-helpers' \u2014 a typosquat of canonical 'mcp-server-helper' \u2014 whose __init__.py runs a post-install/import-time side effect: it spawns subprocess.run on a python one-liner that reads ~/.aws/credentials and POSTs them to C2 (gated on CORTEXSIM_C2_URL). Cortex Cloud SCA flags the typosquat name and post-install hook, NGFW catches the fetch from a non-canonical PyP\u2026",
+    "summary": "An agent's tooling pulls 'mcp-server-helpers' — a typosquat of canonical 'mcp-server-helper' — whose __init__.py runs a post-install/import-time side effect: it spawns subprocess.run on a python one-liner that reads ~/.aws/credentials and POSTs them to C2 (gated on CORTEXSIM_C2_URL). Cortex Cloud SCA flags the typosquat name and post-install hook, NGFW catches the fetch from a non-canonical PyP…",
     "description": "Language-package supply-chain compromise is the most prolific agentic attack vector: an agent that auto-installs a Python helper inherits arbitrary code execution at import time. The mcp-server-helpers package in cortex-malicious-agentic-pack is a typosquat of canonical 'mcp-server-helper'; its package __init__.py calls _post_install_beacon() at module load, which invokes subprocess.run on a python one-liner reading ~/.aws/credentials and exfiltrating via urllib to C2. The side effect is gated on CORTEXSIM_C2_URL so static scanners still flag the *shape* of import-time subprocess + credential read without any real traffic. Detection is layered: (1) Cortex Cloud SCA / SAST flags the import-time subprocess.run and the typosquatted name + unverified publisher; (2) the agentic_egress EAL plugin drives the package fetch over HTTPS with a pip/python-requests User-Agent against a non-canonical PyPI mirror, which NGFW and URL filtering flag as typosquat-of-pypi.org; (3) Cortex XDR's endpoint telemetry catches the python interpreter spawning an unexpected child subprocess immediately after a pip install. A correlation rule fuses the SCA finding and the runtime child-spawn into one agentic-supply-chain incident.",
     "severity": "high",
     "confidence": "high"
@@ -109,7 +109,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1195.002 \u2014 Backdoored PyPI package with import-time subprocess (CortexSim cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo)",
+    "framework_reference_id": "T1195.002 — Backdoored PyPI package with import-time subprocess (CortexSim cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo)",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -122,7 +122,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# step-1: static scan of the backdoored package source (safe \u2014 read only).\nls -la sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/\ncat sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/pyproject.toml | head -20\ngrep -n 'subprocess\\|exec\\|eval\\|requests\\|urllib' \\\n  sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/src/*.py || true\n# step-2: fetch the package over HTTPS via the agentic_egress EAL plugin (canary mirror only).\npython3 -m scripts.eal_simulator.cli run /tmp/koi-003.yml --live",
+      "code": "# step-1: static scan of the backdoored package source (safe — read only).\nls -la sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/\ncat sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/pyproject.toml | head -20\ngrep -n 'subprocess\\|exec\\|eval\\|requests\\|urllib' \\\n  sources/cortex-malicious-agentic-pack/pypi/mcp-server-helpers-typo/src/*.py || true\n# step-2: fetch the package over HTTPS via the agentic_egress EAL plugin (canary mirror only).\npython3 -m scripts.eal_simulator.cli run /tmp/koi-003.yml --live",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -159,7 +159,7 @@
     "biocs": [
       {
         "name": "KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook",
-        "description": "Code scan \u2014 package __init__.py contains subprocess.run on import (post-install hook pattern). A python interpreter spawns a child process immediately on package import \u2014 the import-time subprocess shape a SAST/EDR control must flag.",
+        "description": "Code scan — package __init__.py contains subprocess.run on import (post-install hook pattern). A python interpreter spawns a child process immediately on package import — the import-time subprocess shape a SAST/EDR control must flag.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"python\", \"python3\", \"pip\", \"pip3\")\n| filter actor_process_image_name in (\"python\", \"python3\")\n| filter action_process_image_command_line contains_any (\".aws/credentials\", \"urllib.request\", \"urlopen\", \"-c\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -170,7 +170,7 @@
       },
       {
         "name": "KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint",
-        "description": "Cortex Cloud SCA \u2014 SBOM correlates package digest with known-bad fingerprint. The SCA/SBOM scan surfaces the typosquat package by name in the build toolchain command line, matching a known-bad fingerprint.",
+        "description": "Cortex Cloud SCA — SBOM correlates package digest with known-bad fingerprint. The SCA/SBOM scan surfaces the typosquat package by name in the build toolchain command line, matching a known-bad fingerprint.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"pip\", \"pip3\", \"python\", \"python3\", \"twistcli\", \"cortexcloud\", \"syft\")\n| filter action_process_image_command_line contains \"mcp-server-helpers\"",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -210,14 +210,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Agentic Supply Chain \u2014 Backdoored PyPI Package Post-Install Hook",
+        "name": "Agentic Supply Chain — Backdoored PyPI Package Post-Install Hook",
         "rule_id": "CR-KOI-0003",
         "logic": "BIOC(KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook) OR BIOC(KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint) OR XQL(KOI-003 Outbound HTTPS To Non Canonical PyPI Mirror With Pip User Agent) — stitched by shared agent_hostname + causality_id so the runtime import-time child-spawn, the SCA/SBOM fingerprint finding, and the NGFW mirror fetch (endpoint_network_stitch) collapse into ONE agentic-supply-chain incident"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud SCA \u2014 typosquat + post-install hook + SBOM fingerprint scanner",
-      "Cortex XDR Analytics \u2014 python interpreter spawning child subprocess at package import"
+      "Cortex Cloud SCA — typosquat + post-install hook + SBOM fingerprint scanner",
+      "Cortex XDR Analytics — python interpreter spawning child subprocess at package import"
     ]
   },
   "panw_mapping": {
@@ -255,14 +255,14 @@
         "evidence_query": "Correlation CR-KOI-0003 fuses the SCA finding with the runtime import-time child-spawn into one agentic-supply-chain incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-SUPPLY-044",
+        "threat_scenario_id": "TS-SUPPLY-044",
         "name": "Language-Package Supply-Chain Compromise",
         "description": "Detect a typosquatted PyPI package with an import-time post-install hook across static (Cortex Cloud SCA) and runtime (XDR/NGFW) telemetry, and stitch into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-SUPPLY-044A",
+            "threat_step_id": "TS-SUPPLY-044A",
             "objective": "Cortex Cloud SCA flags the typosquat name + post-install hook.",
             "preconditions": [
               "cortex-malicious-agentic-pack content present.",
@@ -280,7 +280,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-SUPPLY-044B",
+            "threat_step_id": "TS-SUPPLY-044B",
             "objective": "Runtime import-time child-spawn + fetch stitch into one incident.",
             "success_criteria": [
               "BIOC `KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook` fires.",
@@ -308,14 +308,14 @@
   },
   "references": [
     {
-      "title": "Unit 42 \u2014 PyPI Typosquatting in AI Agent Tooling",
+      "title": "Unit 42 — PyPI Typosquatting in AI Agent Tooling",
       "url": "https://unit42.paloaltonetworks.com/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1195.002 \u2014 Compromise Software Supply Chain",
+      "title": "MITRE ATT&CK T1195.002 — Compromise Software Supply Chain",
       "url": "https://attack.mitre.org/techniques/T1195/002/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

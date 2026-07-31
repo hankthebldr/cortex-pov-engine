@@ -211,14 +211,14 @@
         "evidence_query": "dataset = msft_o365_audit | filter Operation in (\"MailItemsAccessed\", \"FileDownloaded\", \"FileSyncDownloadedFull\") | comp count() as ops, count_distinct(Operation) as op_types by UserId, ClientIP, AppId"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-008",
+        "threat_scenario_id": "TS-CLOUD-008",
         "name": "Microsoft 365 App-Driven Mailbox Enumeration and Storage Exfiltration",
         "description": "Proves Cortex XSIAM fires its two Microsoft 365 data-plane behavioral analytics alerts — mailbox enumeration by an Azure application, and storage-services exfiltration — on the unified audit log (msft_o365_audit), and stitches them on the shared identity into one collection-to-exfiltration incident, all driven by shape-true synthetic audit records with no real tenant touched.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-008A",
+            "threat_step_id": "TS-CLOUD-008A",
             "objective": "The mailbox-enumeration-by-app Analytics alert fires on a high-fan-out MailItemsAccessed Bind sweep across many mailboxes attributed to one Azure AD application.",
             "preconditions": [
               "An HTTP log collector wired into XSIAM as a Microsoft 365 unified-audit source (msft_o365_audit)."
@@ -235,7 +235,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CLOUD-008B",
+            "threat_step_id": "TS-CLOUD-008B",
             "objective": "The storage-services-exfiltration Analytics alert fires on a bulk OneDrive/SharePoint FileDownloaded / FileSyncDownloadedFull burst.",
             "preconditions": [
               "TC-CLOUD-008A collector in place."
@@ -252,7 +252,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CLOUD-008C",
+            "threat_step_id": "TS-CLOUD-008C",
             "objective": "The correlation stitches the enumeration and exfiltration Analytics alerts on the shared identity into one incident.",
             "preconditions": [
               "TC-CLOUD-008A and TC-CLOUD-008B completed in the same run window on the same UserId / ClientIP."

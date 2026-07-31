@@ -224,14 +224,14 @@
         "evidence_query": "Correlation CR-AIACC-0005 stitches the three per-provider sessions on the single user identity into one cross-provider-rotation incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-INSIDER-011",
+        "threat_scenario_id": "TS-INSIDER-011",
         "name": "Cross-Provider Behaviour Stitching",
         "description": "Detect a single user rotating content across all three AI providers within five minutes to evade per-provider policy and stitch the sessions into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-INSIDER-011A",
+            "threat_step_id": "TS-INSIDER-011A",
             "objective": "Hitting all three providers within five minutes fires the provider-hopping alert.",
             "preconditions": [
               "Cortex AI Access Security inline across all three provider FQDNs.",
@@ -248,7 +248,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-INSIDER-011B",
+            "threat_step_id": "TS-INSIDER-011B",
             "objective": "XSIAM stitches the three provider sessions on the user identity into one incident.",
             "success_criteria": [
               "XQL `AIACC-005 XSIAM Stitch Single User Three Provider Sessions` returns >= 1 row.",

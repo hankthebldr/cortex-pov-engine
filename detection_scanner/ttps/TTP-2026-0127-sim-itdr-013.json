@@ -268,14 +268,14 @@
         "evidence_query": "dataset = msft_windows_security | filter event_id = 4662 | filter properties contains \"0feb936f-47b3-49f2-9386-1dedc2c23765\" | filter access_mask = \"0x20\""
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-013",
+        "threat_scenario_id": "TS-ITDR-013",
         "name": "BadSuccessor dMSA Privilege Escalation Detection via Cortex ITDR / XDR Identity Analytics",
         "description": "Cortex Identity Analytics learns that an identity never provisions managed-service accounts, then detects the BadSuccessor create-and-modify dMSA lineage and stitches it with the privileged-TGT mint and inherited-privilege logon into a single ITDR privilege-escalation incident — proving domain-compromise-in-progress detection on a Windows Server 2025 technique with no vendor patch.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-013A",
+            "threat_step_id": "TS-ITDR-013A",
             "objective": "Both ABIOCs fire on the anomalous create-and-modify dMSA lineage from a non-privileged identity.",
             "preconditions": [
               "Windows Server 2025 lab with dMSA support and Directory Service Changes auditing enabled.",
@@ -293,7 +293,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-ITDR-013B",
+            "threat_step_id": "TS-ITDR-013B",
             "objective": "The correlation rule fuses the lineage with the privileged TGT and inherited-privilege logon into one ITDR incident.",
             "preconditions": [
               "Both ABIOCs from TC-ITDR-013A have fired.",
@@ -311,7 +311,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-ITDR-013C",
+            "threat_step_id": "TS-ITDR-013C",
             "objective": "The deterministic BIOC catches the dMSA attribute write via the 4662 Write-Property audit signature.",
             "preconditions": [
               "Object-access auditing enabled on the domain naming context."

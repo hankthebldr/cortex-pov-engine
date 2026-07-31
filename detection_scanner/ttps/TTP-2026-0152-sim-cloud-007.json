@@ -250,14 +250,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter event_type = \"OAuthToken\" and action_source = \"cortex-xsoar-playbook\" and operation in (\"revokeAccessToken\", \"revokeRefreshToken\") | comp count_distinct(token_type) as revoked_types by connected_app, oauth_token_id"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-007",
+        "threat_scenario_id": "TS-CLOUD-007",
         "name": "Auto-Revoke OAuth Tokens on Connected-App Abuse — Closed-Loop Response Validation",
         "description": "Proves Cortex does not merely detect the Salesloft-Drift-style Connected-App token abuse but that an XSOAR playbook automatically revokes the access + refresh token and forces re-auth, and that the revoke is verifiable: a replay with the stale token returns 401 invalid_token. The correlation asserts the whole chain is one incident and the token is dead — the F5 Automation & Workflow closed-loop KPI.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-007A",
+            "threat_step_id": "TS-CLOUD-007A",
             "objective": "On the mass-export behavioral anomaly, the XSOAR auto-revoke playbook fires and revokes BOTH the access and refresh token for the offending Connected App.",
             "preconditions": [
               "SaaS/CASB collector ingesting Salesforce event monitoring into cloud_audit_logs.",
@@ -276,7 +276,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-CLOUD-007B",
+            "threat_step_id": "TS-CLOUD-007B",
             "objective": "The revoke is verifiable end-to-end: a replay call carrying the revoked token returns 401 invalid_token and CR-CLOUD-0007 raises one closed-loop incident.",
             "preconditions": [
               "TC-CLOUD-007A completed (token revoked by the playbook)."
@@ -293,7 +293,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-CLOUD-007C",
+            "threat_step_id": "TS-CLOUD-007C",
             "objective": "Blast-radius negative control: a benign Connected App's tokens are NOT revoked and its calls continue to succeed.",
             "preconditions": [
               "A second, benign Connected App with normal low-volume Bulk API activity."

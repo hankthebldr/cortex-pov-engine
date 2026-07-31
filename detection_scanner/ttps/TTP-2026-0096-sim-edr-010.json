@@ -238,14 +238,14 @@
         "evidence_query": "dataset = xdr_data | filter actor_effective_username = \"svc-backup\" | filter action_process_image_name in (\"bash\", \"sh\")"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EDR-010",
+        "threat_scenario_id": "TS-EDR-010",
         "name": "Hands-on-Keyboard Behavioral Anomaly Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a service account's non-interactive automation baseline and detect interactive hands-on-keyboard use of that account, anchored to its causality chain, where no static rule was written for the legitimate binaries involved.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EDR-010A",
+            "threat_step_id": "TS-EDR-010A",
             "objective": "Cortex learns the svc-backup automation baseline and an injected interactive deviation fires both ABIOCs.",
             "preconditions": [
               "EDR target with the Cortex Linux agent installed.",

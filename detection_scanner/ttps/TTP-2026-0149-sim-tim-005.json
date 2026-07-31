@@ -312,14 +312,14 @@
         "evidence_query": "Playbook: enrich the rogue thumbprint from TIM, block the cert thumbprint/serial and C2 IPs, isolate hosts that executed the rogue-signed loader, and pivot on the shared thumbprint to scope every co-signed sample."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-TIM-005",
+        "threat_scenario_id": "TS-TIM-005",
         "name": "Threat Intel Management — Rogue Code-Signing Certificate IOC Match + C2 Stitch",
         "description": "Validate that XSIAM TIM arms the fabricated Authenticode thumbprint / serial and the Vidar C2 IPs, raises the rogue-signer match on signed-binary execution, matches the outbound C2 session on the NGFW, and stitches the two into a single malvertising-loader incident anchored to the certificate the operator developed (Resource Development, T1587.002).",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-TIM-005A",
+            "threat_step_id": "TS-TIM-005A",
             "objective": "The rogue code-signing cert + C2 IOCs are armed in TIM and the rogue-signer match fires on signed-binary execution.",
             "preconditions": [
               "XSIAM TIM feed armed with the rogue thumbprint / serial and the four Vidar C2 IPs.",
@@ -337,7 +337,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-TIM-005B",
+            "threat_step_id": "TS-TIM-005B",
             "objective": "The outbound C2 session matches a feed IOC and the correlation rule stitches the rogue-signer match to the C2 session into one incident.",
             "preconditions": [
               "NGFW forwarding session telemetry into panw_ngfw_traffic_raw."

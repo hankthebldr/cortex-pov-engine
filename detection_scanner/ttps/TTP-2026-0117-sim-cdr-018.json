@@ -324,14 +324,14 @@
         "evidence_query": "Playbook: on Roles Anywhere abuse — disable/delete the offending trust anchor, revoke the profile, snapshot the CloudTrail rolesanywhere window, and require an aws:SourceArn + x509Subject/CN condition on the role trust policy."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-018",
+        "threat_scenario_id": "TS-CDR-018",
         "name": "IAM Roles Anywhere Trust-Anchor Abuse — CSPM-to-Runtime Persistence Detection",
         "description": "Prove that Cortex ties an IAM Roles Anywhere posture misconfiguration (unconditioned trust policy) to its runtime exploitation (certificate-minted STS sessions) and stitches trust-anchor registration to credential minting into a single certificate-backed-persistence incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-018A",
+            "threat_step_id": "TS-CDR-018A",
             "objective": "Posture surfaces the unconditioned Roles Anywhere trust policy as a finding.",
             "preconditions": [
               "Lab IAM role with a trust policy trusting rolesanywhere.amazonaws.com and no Condition block.",
@@ -348,7 +348,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-CDR-018B",
+            "threat_step_id": "TS-CDR-018B",
             "objective": "Runtime BIOCs fire on the trust-anchor write and the CreateSession minting.",
             "preconditions": [
               "CloudTrail rolesanywhere management events forwarding to cloud_audit_logs."
@@ -366,7 +366,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CDR-018C",
+            "threat_step_id": "TS-CDR-018C",
             "objective": "Correlation stitches the persistence chain and the CSPM-to-runtime pivot into one incident.",
             "success_criteria": [
               "Correlation `CR-CDR-0018` links the trust-anchor registration to the first certificate-minted session within 60 minutes.",

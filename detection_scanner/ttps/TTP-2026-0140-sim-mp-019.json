@@ -365,14 +365,14 @@
         "evidence_query": "NGFW threat/traffic logs show the single-source port-scan burst and the web content-discovery fan-out against ${CORTEXSIM_WEB_TARGET} feeding the correlation."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-019",
+        "threat_scenario_id": "TS-MP-019",
         "name": "External-to-Internal Kill-Chain Reconstructed as One Incident via Cortex Cross-Plane Causality",
         "description": "A Kali operator runs the full external-to-internal chain against the environment — recon, web enumeration, web exploitation to a shell, credential brute-force, and lateral movement to the DC. Each individual tool alert is low-fidelity noise a SOC drowns in, but Cortex anchors the causality on the web-exploit foothold and stitches five planes (NDR, web, EDR, ITDR, ANALYTICS) into ONE incident that tells the whole intrusion story from first scan to DC compromise.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-019A",
+            "threat_step_id": "TS-MP-019A",
             "objective": "The recon port-scan burst, the web content-discovery fan-out, and the injection-to-shell foothold on the lab web host stitch into one incident keyed on the www-data exploit-foothold CGO.",
             "preconditions": [
               "Lab web host (asm-module exposed host / DVWA / gocortexbrokenbank) with the Cortex XDR agent installed.",
@@ -393,7 +393,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-MP-019B",
+            "threat_step_id": "TS-MP-019B",
             "objective": "The credential brute-force and the impacket lateral authentication bind to the web foothold and carry the incident into the ITDR / ANALYTICS planes.",
             "preconditions": [
               "TC-MP-019A produced a stitched web-foothold incident.",
@@ -412,7 +412,7 @@
             "expected_score_weight": 0.35
           },
           {
-            "test_case_id": "TC-MP-019C",
+            "threat_step_id": "TS-MP-019C",
             "objective": "The correlation raises exactly one external-to-internal kill-chain incident and the validation XQL confirms observability.",
             "preconditions": [
               "TC-MP-019B extended the incident to the DC."

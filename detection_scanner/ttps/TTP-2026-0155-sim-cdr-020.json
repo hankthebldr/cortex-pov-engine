@@ -198,14 +198,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter cloud_provider = \"AWS\" | filter event_source in (\"secretsmanager.amazonaws.com\", \"ssm.amazonaws.com\") | filter event_name in (\"GetSecretValue\", \"BatchGetSecretValue\", \"GetParameter\", \"GetParameters\", \"GetParametersByPath\") | comp count() as credential_reads by user_identity_arn, source_ip_address | sort desc credential_reads"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-020",
+        "threat_scenario_id": "TS-CDR-020",
         "name": "SIM-CDR-020 — AWS credential & secret harvesting behavioral chain",
         "description": "Validate that Cortex XSIAM cloud-audit analytics flag a single identity bulk-reading Secrets Manager secrets and SSM parameters, and that a correlation stitches the two behaviors into one credential-harvesting incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-020A",
+            "threat_step_id": "TS-CDR-020A",
             "objective": "The 'Suspicious secrets dump activity' ABIOC fires on a bulk Secrets Manager read burst by one identity.",
             "preconditions": [
               "Collector wired into XSIAM as the AWS CloudTrail (cloud_audit_logs) source.",
@@ -221,7 +221,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CDR-020B",
+            "threat_step_id": "TS-CDR-020B",
             "objective": "The 'AWS SSM parameters retrieval' ABIOC fires on a bulk SSM parameter retrieval burst by the same identity.",
             "preconditions": [
               "Collector wired into XSIAM as the AWS CloudTrail (cloud_audit_logs) source."
@@ -236,7 +236,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CDR-020C",
+            "threat_step_id": "TS-CDR-020C",
             "objective": "Correlation CR-CDR-0020 stitches both behaviors into one incident and the validation query confirms the CloudTrail records landed.",
             "preconditions": [
               "Both ABIOCs fired for the same identity within the correlation window."

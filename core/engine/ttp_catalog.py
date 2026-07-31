@@ -74,7 +74,7 @@ class TtpEntry:
     status: str
     safety_class: Optional[str]
     destructive: bool
-    score_weights: dict[str, float]   # use_case_id -> sum of expected_score_weight
+    score_weights: dict[str, float]   # threat_scenario_id -> sum of expected_score_weight
     detections: list[DetectionCard]
     panw_products: list[str]
 
@@ -328,14 +328,14 @@ def _parse_entry(raw: dict[str, Any]) -> Optional[TtpEntry]:
             products.append(p["module"])
 
     score_weights: dict[str, float] = {}
-    for uc in panw_mapping.get("use_cases") or []:
+    for uc in panw_mapping.get("threat_scenarios") or []:
         if not isinstance(uc, dict):
             continue
-        uc_id = uc.get("use_case_id")
+        uc_id = uc.get("threat_scenario_id")
         if not isinstance(uc_id, str):
             continue
         total = 0.0
-        for tc in uc.get("test_cases") or []:
+        for tc in uc.get("threat_steps") or []:
             if not isinstance(tc, dict):
                 continue
             w = tc.get("expected_score_weight")

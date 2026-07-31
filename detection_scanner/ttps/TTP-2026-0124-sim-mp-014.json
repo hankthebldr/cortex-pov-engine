@@ -362,14 +362,14 @@
         "evidence_query": "dataset = xdr_data | filter action_file_path contains \"Login Data\" or action_file_path contains \"cookies.sqlite\" | comp count_distinct(action_file_path) as stores_read by agent_hostname, actor_effective_username, actor_process_image_name | filter stores_read >= 2"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-014",
+        "threat_scenario_id": "TS-MP-014",
         "name": "AzureHound Cloud-Identity Enumeration — Cross-Plane Causality Stitch",
         "description": "Prove that Cortex stitches an endpoint token-theft signal, an anomalous non-interactive Entra ID sign-in, and an AzureHound-user-agent Microsoft Graph enumeration burst into one escalation incident on a shared session identity — the cross-plane causality a single-plane tool sees only as three disconnected low-fidelity alerts.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-014A",
+            "threat_step_id": "TS-MP-014A",
             "objective": "The endpoint token-theft BIOC and the anomalous non-interactive Entra sign-in ABIOC both fire on the same identity.",
             "preconditions": [
               "Jumpbox with the Cortex agent installed.",
@@ -387,7 +387,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-MP-014B",
+            "threat_step_id": "TS-MP-014B",
             "objective": "The AzureHound Graph enumeration burst is detected by volume and by the azurehound User-Agent.",
             "preconditions": [
               "Microsoft Graph activity logging enabled and ingesting into cloud_audit_logs."
@@ -403,7 +403,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-MP-014C",
+            "threat_step_id": "TS-MP-014C",
             "objective": "The three signals stitch into a single incident whose causality chain spans at least two planes.",
             "preconditions": [
               "All three plane telemetry sources ingesting; correlation window >= 30 minutes."

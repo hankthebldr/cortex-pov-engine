@@ -179,14 +179,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter eventName = \"RunInstances\" and eventSource = \"ec2.amazonaws.com\" | comp count() as launches by userIdentity.arn, awsRegion, instance_type | sort desc launches"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-024",
+        "threat_scenario_id": "TS-CDR-024",
         "name": "Cloud cryptomining — dormant-region compute + mining-shaped heavy allocation",
         "description": "Validate that Cortex XSIAM raises the two Cloud Storage & Compute ML analytics alerts when an adversary stands up compute in a never-used region and bursts a fleet of large GPU instances, and that the correlation engine stitches them into a single cryptomining incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-024A",
+            "threat_step_id": "TS-CDR-024A",
             "objective": "The 'Compute activity in dormant cloud region' Analytics alert fires when the streamer emits a RunInstances record in a region dormant for the baseline window.",
             "preconditions": [
               "cloud_audit_logs (CloudTrail) source wired into XSIAM with the ML analytics content enabled.",
@@ -202,7 +202,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CDR-024B",
+            "threat_step_id": "TS-CDR-024B",
             "objective": "The 'Suspicious heavy allocation of compute resources' ABIOC fires on the GPU-instance burst and the correlation stitches the dormant-region Analytics alert and the heavy-allocation ABIOC into one incident.",
             "preconditions": [
               "TC-CDR-024A telemetry present in the run window."

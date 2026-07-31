@@ -339,14 +339,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter user_identity_type = \"AssumedRole\" | filter event_name in (\"GetCallerIdentity\", \"ListBuckets\", \"GetSecretValue\") | comp count_distinct(event_name) as distinct_ops by user_identity_arn, source_ip_address"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-017",
+        "threat_scenario_id": "TS-MP-017",
         "name": "React2Shell Pod-RCE to Cloud Control-Plane Pivot Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn the per-container process-lineage baseline and the per-role cloud-API baseline, then detect a React2Shell chain (CVE-2025-55182) that turns an internet-facing pod into a cloud-control-plane breach — RSC deserialization RCE, service-account-token theft, in-cluster secret enumeration, node-IAM-role theft, and cloud reuse — and correlate the container and cloud signals into one incident, where no static rule was written for the individually-benign steps.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-017A",
+            "threat_step_id": "TS-MP-017A",
             "objective": "The RSC deserialization RCE and service-account-token theft fire the endpoint causality ABIOCs and surface in the validation XQL.",
             "preconditions": [
               "Cortex agent on the Kubernetes node emitting process/file telemetry with the pod causality chain to xdr_data.",
@@ -365,7 +365,7 @@
             "expected_score_weight": 0.35
           },
           {
-            "test_case_id": "TC-MP-017B",
+            "threat_step_id": "TS-MP-017B",
             "objective": "The in-cluster secret enumeration and the node-IAM-role theft fire ABIOC-3 and ABIOC-4 in the same pod lineage.",
             "preconditions": [
               "Cortex agent on the node emitting network telemetry from the pod to xdr_data."
@@ -382,7 +382,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-MP-017C",
+            "threat_step_id": "TS-MP-017C",
             "objective": "The stolen node IAM role's cloud reuse fires ABIOC-5 and correlation CR-MP-0017 stitches the container and cloud signals into one incident.",
             "preconditions": [
               "AWS CloudTrail ingested into the Cortex tenant so control-plane calls land in cloud_audit_logs.",

@@ -331,14 +331,14 @@
         "evidence_query": "NGFW Threat log: (threat category = code-execution) and (destination has-role 'Cisco ASA VPN web server') — surfaces IPS hits for the CVE-2025-20333 / CVE-2025-20362 / CVE-2025-20363 VPN web-server exploitation attempts blocked in front of the appliance."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-NDR-010",
+        "threat_scenario_id": "TS-NDR-010",
         "name": "Edge-Appliance Telemetry Collapse and WebVPN C2 Detection via XDM Normalization",
         "description": "A DC proves Cortex detects a nation-state living in a Cisco ASA/FTD edge appliance — where the actor actively suppresses its own logs — not by signature but by XDM-normalizing the raw appliance syslog, alerting on the absence-of-signal collapse in Informational/Debug volume, and stitching it to a WebVPN client-authentication session beacon.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-NDR-010A",
+            "threat_step_id": "TS-NDR-010A",
             "objective": "The two XDM modeling rules normalize raw cisco_asa_raw syslog into addressable severity/message-id and WebVPN session fields, making the source analytics-grade.",
             "preconditions": [
               "Cortex XSIAM ingesting Cisco ASA/FTD syslog into cisco_asa_raw.",
@@ -355,7 +355,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-NDR-010B",
+            "threat_step_id": "TS-NDR-010B",
             "objective": "The Informational/Debug syslog-volume collapse (the absence-of-signal tampering indicator) is detected on the modeled telemetry.",
             "preconditions": [
               "A learned baseline of Informational (ASA-6) and Debug (ASA-7) volume exists.",
@@ -372,7 +372,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-NDR-010C",
+            "threat_step_id": "TS-NDR-010C",
             "objective": "The WebVPN-session C2 beacon BIOC fires and the correlation stitches the collapse to the beacon into one incident.",
             "preconditions": [
               "The WebVPN modeling rule is applied.",

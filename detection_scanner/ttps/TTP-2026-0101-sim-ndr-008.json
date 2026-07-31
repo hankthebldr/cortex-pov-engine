@@ -238,14 +238,14 @@
         "evidence_query": "Playbook: enrich destination reputation, block URL/host and non-standard port at NGFW, isolate the beaconing source host, open DFIR ticket."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-NDR-008",
+        "threat_scenario_id": "TS-NDR-008",
         "name": "Low-and-Slow C2 Beacon Behavioral Anomaly Detection via Cortex Network ABIOC",
         "description": "Cortex's auto-tuned Network Analytics Behavioral IOCs learn a host's egress baseline and detect a jittered low-and-slow beacon by its periodicity, small stable payload, destination rarity and non-standard port deviation, anchored to the host egress causality chain, after infrastructure rotation defeats any static IOC.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-NDR-008A",
+            "threat_step_id": "TS-NDR-008A",
             "objective": "Cortex learns the host egress baseline and an injected low-and-slow jittered beacon fires both ABIOCs.",
             "preconditions": [
               "NGFW inline with EAL forwarding to XSIAM (panw_ngfw_traffic_raw populated).",

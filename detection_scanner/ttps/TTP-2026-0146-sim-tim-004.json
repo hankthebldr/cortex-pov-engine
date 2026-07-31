@@ -331,14 +331,14 @@
         "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app = \"ssl\" | filter tls_cert_fingerprint_sha1 = \"07eee6e893766e8bcc4a711abfdf201ee2920799\" | fields src_host, dst_ip, dst_host, tls_cert_self_signed, tls_cert_fingerprint_sha1"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-TIM-004",
+        "threat_scenario_id": "TS-TIM-004",
         "name": "Certificate-Fingerprint Infrastructure-Cluster Pivot on the TIM Plane",
         "description": "Cortex TIM arms the source-documented self-signed TLS certificate fingerprint (a Trident Ursa cert reused across multiple IPs) as the pivot indicator; a matching estate handshake raises an IOC hit and the fingerprint fan-out rolls up every co-fingerprinted IP into one Resource-Development adversary-infrastructure incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-TIM-004A",
+            "threat_step_id": "TS-TIM-004A",
             "objective": "The TIM-armed self-signed certificate fingerprint plus an estate handshake to a host presenting that certificate raises the certificate-fingerprint IOC match and the estate-handshake BIOC.",
             "preconditions": [
               "mocktaxii armed the self-signed certificate fingerprint (07eee6e893766e8bcc4a711abfdf201ee2920799) into threat_intel.",
@@ -356,7 +356,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-TIM-004B",
+            "threat_step_id": "TS-TIM-004B",
             "objective": "The armed certificate fingerprint fans out across >= 2 distinct destination IPs, rolling up the co-fingerprinted hosts.",
             "preconditions": [
               "Estate handshakes to multiple lab hosts presenting the armed self-signed certificate recorded in panw_ngfw_traffic_raw."
@@ -371,7 +371,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-TIM-004C",
+            "threat_step_id": "TS-TIM-004C",
             "objective": "The correlation rule fuses the feed match and the fingerprint fan-out into one Resource-Development infrastructure-cluster incident scoped to the shared certificate.",
             "preconditions": [
               "The feed match and fan-out both observed on the shared tls_cert_fingerprint_sha1 within the correlation window."

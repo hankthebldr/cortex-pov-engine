@@ -306,14 +306,14 @@
         "evidence_query": "dataset = xdr_data | filter actor_process_image_name in (\"kubectl\", \"find\", \"gitleaks\") | filter action_process_image_command_line contains \"exec\" or action_file_path ~= \".*(\\\\.pem|\\\\.key|token|credentials)$\""
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-007",
+        "threat_scenario_id": "TS-CLOUD-007",
         "name": "Container & Kubernetes Posture and Supply-Chain Assurance",
         "description": "Cortex Cloud CDR + XSIAM surface every supply-chain and cluster-hardening finding produced by a posture sweep, and detect the runtime discovery/credential-access shape the scan activity generates — proving coverage of both the static posture state and the compromise shape of a cluster attack.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-007A",
+            "threat_step_id": "TS-CLOUD-007A",
             "objective": "Every sweep finding (Trivy image+IaC, kube-bench CIS, Kubescape NSA/CISA, gitleaks secrets, Cloudsplaining IAM) surfaces in cortex_cloud_posture for full coverage.",
             "preconditions": [
               "Cortex Cloud CDR connected (read-only) to the EKS cluster and AWS account.",
@@ -333,7 +333,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUD-007B",
+            "threat_step_id": "TS-CLOUD-007B",
             "objective": "The scan activity is detected as runtime discovery/credential-access (posture-to-runtime stitch).",
             "preconditions": [
               "Cortex XDR agent / XSIAM ingestion active on the jumpbox and node so exec + IAM + file-read telemetry is captured."

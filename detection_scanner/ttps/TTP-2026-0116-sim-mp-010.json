@@ -417,14 +417,14 @@
         "evidence_query": "dataset = ivanti_ics_raw | filter message contains \"Invalid IFT packet received from unauthenticated client\" | alter src_ip = source_address | union (dataset = xdr_data | filter action_process_image_command_line contains \"DcomSrv\" | alter src_ip = agent_hostname) | fields src_ip, _time"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-010",
+        "threat_scenario_id": "TS-MP-010",
         "name": "Appliance-to-Endpoint Stitch via XDM Modeling — Ivanti Pre-Auth to Internal Windows Pivot",
         "description": "A DC proves that normalizing raw VPN-appliance telemetry into XDM is what lets Cortex stitch a pre-auth appliance compromise to the first internal Windows host — the cross-plane chain a single-plane EDR cannot produce. Modeling rules make the Ivanti IF-T tell addressable; endpoint BIOCs catch the SPAWN-family persistence; a correlation rule fuses them.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-010A",
+            "threat_step_id": "TS-MP-010A",
             "objective": "The XDM modeling rules normalize raw Ivanti appliance telemetry and the validation XQL surfaces the pre-auth IF-T exploitation tell with an anonymization-infrastructure source IP.",
             "preconditions": [
               "Ivanti Connect Secure appliance forwarding syslog/debug telemetry to XSIAM as ivanti_ics_raw.",
@@ -442,7 +442,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-MP-010B",
+            "threat_step_id": "TS-MP-010B",
             "objective": "The internal-Windows persistence BIOCs fire on the pivot host for the SPAWN-family DcomSrv service, /mail scheduled task, and LSASS dump.",
             "preconditions": [
               "Cortex agent installed on the internal Windows pivot host.",
@@ -461,7 +461,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-MP-010C",
+            "threat_step_id": "TS-MP-010C",
             "objective": "The correlation rule stitches the modeled appliance-plane tell to the endpoint-plane persistence into one incident — the EDR-only-can't-do-this proof.",
             "preconditions": [
               "TC-MP-010A and TC-MP-010B observables present within the correlation window."

@@ -67,10 +67,18 @@
       "Operation Diplomatic Specter — espionage against foreign-affairs ministries, embassies, and telecoms (2023-2026)"
     ],
     "malware_families": [
-      { "name": "NET-STAR" },
-      { "name": "IIServerCore" },
-      { "name": "AssemblyExecuter" },
-      { "name": "Ntospy" }
+      {
+        "name": "NET-STAR"
+      },
+      {
+        "name": "IIServerCore"
+      },
+      {
+        "name": "AssemblyExecuter"
+      },
+      {
+        "name": "Ntospy"
+      }
     ],
     "industries_targeted": [
       "government",
@@ -332,14 +340,14 @@
         "evidence_query": "dataset = xdr_data | filter actor_process_image_name = \"w3wp.exe\" | filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\", \"wmic.exe\")"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-011",
+        "threat_scenario_id": "TS-MP-011",
         "name": "Cross-Plane Credential-Access Incident Stitching — Phantom Taurus NET-STAR",
         "description": "Prove that XSIAM's correlation engine assembles the four low-confidence, single-plane NET-STAR signals on one IIS host — in-memory backdoor (EDR), Ntospy credential interception (identity), SQL 'sa' CSV export (endpoint), and STAR-delimited HTTPS exfil (NDR) — into one credential-access incident that no single-plane tool reconstructs, and measure the cross-source correlation rate.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-011A",
+            "threat_step_id": "TS-MP-011A",
             "objective": "The four NET-STAR stage signals from one IIS host stitch into a single incident_id spanning EDR + identity + NDR within the correlation window.",
             "preconditions": [
               "IIS host with the Cortex XDR/XSIAM agent installed.",
@@ -358,7 +366,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-MP-011B",
+            "threat_step_id": "TS-MP-011B",
             "objective": "Each stage stands alone as an evidenced detection so the DC can show the pre-correlation orphan alerts.",
             "preconditions": [
               "Same host and tenant as TC-MP-011A."
@@ -374,7 +382,7 @@
             "expected_score_weight": 0.25
           },
           {
-            "test_case_id": "TC-MP-011C",
+            "threat_step_id": "TS-MP-011C",
             "objective": "The NET-STAR DLL SHA256 IOCs match on file/module telemetry when the samples are present.",
             "preconditions": [
               "Cortex XDR agent hashing loaded modules on the IIS host."

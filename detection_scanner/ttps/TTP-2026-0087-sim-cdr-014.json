@@ -257,14 +257,14 @@
         "evidence_query": "dataset = xdr_data | filter actor_container_info != null | filter actor_process_image_name in (\"sh\", \"bash\") | filter action_process_image_name in (\"uname\", \"curl\", \"tar\", \"id\")"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-014",
+        "threat_scenario_id": "TS-CLOUD-014",
         "name": "Multi-Stage In-Cluster TTP Chain Detection via Cortex ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs detect a multi-stage in-cluster TTP chain as one deviating causality story from a baselined container, rather than as nine disconnected static rules.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-014A",
+            "threat_step_id": "TS-CLOUD-014A",
             "objective": "The multi-stage chain fires both ABIOCs and stitches into one incident.",
             "preconditions": [
               "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",

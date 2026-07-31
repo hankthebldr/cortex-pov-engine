@@ -46,9 +46,9 @@
     }
   },
   "identity": {
-    "name": "Linux Credential Dumping \u2014 /etc/shadow and Mimipenguin (T1003.008)",
+    "name": "Linux Credential Dumping — /etc/shadow and Mimipenguin (T1003.008)",
     "summary": "A compromised low-privilege service account enumerates shell users from /etc/passwd, reads /etc/shadow, sweeps home dirs for SSH keys, scrapes /proc/<pid>/environ for in-memory secrets, then runs Mimipenguin to recover cleartext credentials. Cortex XDR for Linux detects each stage via file/process BIOCs plus a stitched credential-harvesting correlation.",
-    "description": "Linux post-exploitation credential theft is the pivot from a web-app foothold to broader access. In Unit 42's reporting on the Rocke group, operators harvested credentials and SSH keys from compromised Linux hosts to move laterally and disable cloud security agents. This scenario reproduces the canonical Linux credential-dumping chain \u2014 passwd/shadow access, filesystem key sweeps, /proc memory scraping, and the Mimipenguin LOLscript \u2014 entirely against a single lab host. The detection approach leans on Cortex XDR's Linux file and process telemetry: BIOCs flag a non-root service account touching /etc/shadow and SSH private keys, an analytics module clusters the rapid file-access sequence, and an IOC + correlation rule tie the Mimipenguin download-and-execute to the preceding recon as one credential-access incident.",
+    "description": "Linux post-exploitation credential theft is the pivot from a web-app foothold to broader access. In Unit 42's reporting on the Rocke group, operators harvested credentials and SSH keys from compromised Linux hosts to move laterally and disable cloud security agents. This scenario reproduces the canonical Linux credential-dumping chain — passwd/shadow access, filesystem key sweeps, /proc memory scraping, and the Mimipenguin LOLscript — entirely against a single lab host. The detection approach leans on Cortex XDR's Linux file and process telemetry: BIOCs flag a non-root service account touching /etc/shadow and SSH private keys, an analytics module clusters the rapid file-access sequence, and an IOC + correlation rule tie the Mimipenguin download-and-execute to the preceding recon as one credential-access incident.",
     "severity": "high",
     "confidence": "high"
   },
@@ -131,7 +131,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1003.008 \u2014 Atomic Test #1 (Access /etc/shadow) and T1552.001 credential-file sweep",
+    "framework_reference_id": "T1003.008 — Atomic Test #1 (Access /etc/shadow) and T1552.001 credential-file sweep",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -208,7 +208,7 @@
     "biocs": [
       {
         "name": "EDR-001 Shadow File Read by Non-Root Service Account",
-        "description": "Credential file access \u2014 /etc/shadow read attempt from non-root service account (www-data). A process not owned by root opens /etc/shadow, the Linux hashed-credential store.",
+        "description": "Credential file access — /etc/shadow read attempt from non-root service account (www-data). A process not owned by root opens /etc/shadow, the Linux hashed-credential store.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter action_file_path = \"/etc/shadow\"\n| filter actor_effective_username not in (\"root\")\n| filter actor_process_image_name in (\"cat\", \"unshadow\", \"head\", \"less\", \"more\", \"dd\", \"cp\", \"awk\", \"python3\", \"perl\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -217,7 +217,7 @@
       },
       {
         "name": "EDR-001 Broad Credential File Sweep Across Home Directories",
-        "description": "Broad credential file search across home directories \u2014 SSH key and history file harvesting. A find process enumerates id_rsa/id_ed25519/.bash_history/.pgpass/.my.cnf across /home and /root.",
+        "description": "Broad credential file search across home directories — SSH key and history file harvesting. A find process enumerates id_rsa/id_ed25519/.bash_history/.pgpass/.my.cnf across /home and /root.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"find\"\n| filter action_process_image_command_line contains_any (\"id_rsa\", \"id_ed25519\", \".bash_history\", \".pgpass\", \".my.cnf\", \".pem\", \".key\")\n| filter actor_effective_username not in (\"root\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -226,7 +226,7 @@
       },
       {
         "name": "EDR-001 Process Memory Scrape via proc environ",
-        "description": "Process memory reading via /proc \u2014 credential extraction from service process memory spaces. strings/cat reads /proc/<pid>/environ or /proc/<pid>/maps of another service process.",
+        "description": "Process memory reading via /proc — credential extraction from service process memory spaces. strings/cat reads /proc/<pid>/environ or /proc/<pid>/maps of another service process.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter action_file_path ~= \"/proc/[0-9]+/(environ|maps|mem)\"\n| filter actor_process_image_name in (\"strings\", \"cat\", \"dd\", \"grep\", \"head\", \"python3\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -235,7 +235,7 @@
       },
       {
         "name": "EDR-001 Mimipenguin Credential Dumper Execution",
-        "description": "Mimipenguin execution \u2014 known credential dumping tool signature detected by XDR Agent. bash runs mimipenguin.sh, or a process reads /proc memory immediately after a curl-to-bash fetch.",
+        "description": "Mimipenguin execution — known credential dumping tool signature detected by XDR Agent. bash runs mimipenguin.sh, or a process reads /proc memory immediately after a curl-to-bash fetch.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"mimipenguin\"\n| filter actor_process_image_name in (\"bash\", \"sh\", \"curl\")",
         "severity": "critical",
         "mitre_technique_ids": [
@@ -282,14 +282,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Linux Credential Harvesting Chain \u2014 passwd/shadow + key sweep + Mimipenguin",
+        "name": "Linux Credential Harvesting Chain — passwd/shadow + key sweep + Mimipenguin",
         "rule_id": "CR-EDR-0001",
         "logic": "BIOC(EDR-001 Shadow File Read by Non-Root Service Account) OR BIOC(EDR-001 Broad Credential File Sweep Across Home Directories) OR BIOC(EDR-001 Process Memory Scrape via proc environ) OR BIOC(EDR-001 Mimipenguin Credential Dumper Execution)"
       }
     ],
     "analytics_modules": [
-      "Cortex XDR Analytics \u2014 Unusual sensitive file access by service account",
-      "Cortex XDR Analytics BIOC \u2014 Credential access tool execution cluster"
+      "Cortex XDR Analytics — Unusual sensitive file access by service account",
+      "Cortex XDR Analytics BIOC — Credential access tool execution cluster"
     ]
   },
   "panw_mapping": {
@@ -327,14 +327,14 @@
         "evidence_query": "Playbook isolates host, rotates exposed SSH keys and service-account credentials, opens DFIR ticket."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-RANSOM-032",
-        "name": "Endpoint Credential Theft Detection \u2014 Linux",
+        "threat_scenario_id": "TS-RANSOM-032",
+        "name": "Endpoint Credential Theft Detection — Linux",
         "description": "Detect Linux credential harvesting (passwd/shadow access, SSH key sweeps, /proc scraping, Mimipenguin) by a non-root service account before it enables lateral movement.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-RANSOM-032A",
+            "threat_step_id": "TS-RANSOM-032A",
             "objective": "Cortex XDR BIOCs fire on shadow access and the credential-file sweep from www-data.",
             "preconditions": [
               "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
@@ -352,7 +352,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-RANSOM-032B",
+            "threat_step_id": "TS-RANSOM-032B",
             "objective": "Mimipenguin download-and-execute is detected and stitched with prior recon.",
             "success_criteria": [
               "BIOC `EDR-001 Mimipenguin Credential Dumper Execution` fires.",
@@ -388,7 +388,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1003.008 \u2014 /etc/passwd and /etc/shadow",
+      "title": "MITRE ATT&CK T1003.008 — /etc/passwd and /etc/shadow",
       "url": "https://attack.mitre.org/techniques/T1003/008/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

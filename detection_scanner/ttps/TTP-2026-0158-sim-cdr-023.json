@@ -183,14 +183,14 @@
         "evidence_query": "dataset = cloud_audit_logs | filter cloud_provider = \"AWS\" and instance_id = \"i-0abcd1234ef567890\" | comp count() as calls, values(source_ip) as source_ips, values(event_name) as actions by instance_id | fields instance_id, source_ips, actions, calls"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CDR-023",
+        "threat_scenario_id": "TS-CDR-023",
         "name": "Cloud instance-credential theft and remote reuse",
         "description": "Validate that Cortex XSIAM detects an EC2 instance-profile credential harvested from IMDS and then exercised from off-instance infrastructure, and stitches the on-instance fetch to the remote reuse under one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CDR-023A",
+            "threat_step_id": "TS-CDR-023A",
             "objective": "The IMDS-to-remote-use ABIOC fires when an instance role session's IMDS-sourced credential is used from an off-instance IP.",
             "preconditions": [
               "Collector wired to the cloud_audit_logs dataset and on the target_allowlist."
@@ -206,7 +206,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CDR-023B",
+            "threat_step_id": "TS-CDR-023B",
             "objective": "The EC2-token Analytics alert fires and the correlation stitches both signals into one incident.",
             "preconditions": [
               "TC-CDR-023A executed within the correlation window."

@@ -203,14 +203,14 @@
         "evidence_query": "Correlation CR-EMAIL-0003 fuses the BEC impersonation lure with the recipient's identity follow-on into one BEC incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EMAIL-003",
+        "threat_scenario_id": "TS-EMAIL-003",
         "name": "BEC / Executive Impersonation Detection",
         "description": "Detect an executive display-name spoof from an external sender across both Proofpoint TAP and Microsoft 365 email log shapes, stitched to the recipient identity follow-on.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EMAIL-003A",
+            "threat_step_id": "TS-EMAIL-003A",
             "objective": "An impostor-classified message with an executive display-name spoof raises a BEC alert.",
             "preconditions": [
               "Cortex XSIAM ingesting proofpoint_tap_raw and msft_o365 datasets.",
@@ -226,7 +226,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-EMAIL-003B",
+            "threat_step_id": "TS-EMAIL-003B",
             "objective": "The BEC lure stitches to the recipient identity follow-on.",
             "success_criteria": [
               "Correlation `CR-EMAIL-0003` groups the impersonation lure with the recipient identity follow-on under one incident."

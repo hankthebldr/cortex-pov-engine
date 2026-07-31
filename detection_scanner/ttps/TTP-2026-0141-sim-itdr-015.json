@@ -404,14 +404,14 @@
         "evidence_query": "Correlation CR-ITDR-0015 stitches the poisoning capture, offline crack, credential validation, and WinRM lateral landing from one source_ip / recon-shell CGO into a single incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ITDR-015",
+        "threat_scenario_id": "TS-ITDR-015",
         "name": "Internal AD Kill-Chain Detection — Poisoning to Offline Crack to WinRM Lateral Movement",
         "description": "Cortex detects each stage of a connected internal AD compromise (enumeration, LLMNR/NBT-NS poisoning + NetNTLMv2 capture, offline crack, credential validation, WinRM lateral movement) and correlates them into one incident tied to a single attacker foothold.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ITDR-015A",
+            "threat_step_id": "TS-ITDR-015A",
             "objective": "Cortex detects the LLMNR/NBT-NS poisoning and NetNTLMv2 capture and flags the offline crack whose causality roots in the recon-shell CGO.",
             "preconditions": [
               "itdr IaC lab applied (DC + workstations, seeded lab account).",
@@ -430,7 +430,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ITDR-015B",
+            "threat_step_id": "TS-ITDR-015B",
             "objective": "Cortex detects the cracked-credential validation and the WinRM lateral landing and correlates the full chain into one incident.",
             "preconditions": [
               "Preceding stages executed so a cracked lab credential is available."

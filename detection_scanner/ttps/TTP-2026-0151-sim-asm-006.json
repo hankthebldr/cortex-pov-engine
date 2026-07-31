@@ -259,14 +259,14 @@
         "evidence_query": "dataset = threat_intel | filter threat_actor in (\"Muddled Libra\", \"Scattered Spider\", \"UNC3944\") | filter ttp_fingerprint in (\"repeated_helpdesk_profiling\", \"mfa_reset_takeover_precursor\") | comp count() as attribution_hits by target_org, threat_actor"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ASM-006",
+        "threat_scenario_id": "TS-ASM-006",
         "name": "Vishing-Precursor Early Warning — Recon Storyline Correlation via Cortex ASM + Analytics + TIM",
         "description": "Cortex stitches the pre-attack reconnaissance that Muddled Libra / Scattered Spider runs before an identity takeover — external-footprint exposure of key personnel, enumeration of the federated-identity surface, and a burst of help-desk account-recovery profiling — into one early-warning incident that fires before the MFA-reset takeover, giving the SOC time to act on the recon phase itself.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ASM-006A",
+            "threat_step_id": "TS-ASM-006A",
             "objective": "Cortex ASM surfaces the external-footprint exposure of key personnel and the federated-identity/app/CSP enumeration that fuels the vishing pretext.",
             "preconditions": [
               "Cortex ASM/Xpanse discovering the target org's external footprint."
@@ -282,7 +282,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-ASM-006B",
+            "threat_step_id": "TS-ASM-006B",
             "objective": "Cortex detects the anomalous help-desk account-recovery reconnaissance burst against the exposed personnel and TIM attributes it to Muddled Libra tradecraft.",
             "preconditions": [
               "IdP audit source (Okta/Entra) ingested into XSIAM.",
@@ -300,7 +300,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-ASM-006C",
+            "threat_step_id": "TS-ASM-006C",
             "objective": "The terminal correlation stitches the recon storyline into a single identity-takeover-precursor incident that fires before the downstream MFA-reset takeover.",
             "preconditions": [
               "TC-ASM-006A and TC-ASM-006B signals observed on the same target org within the correlation window."

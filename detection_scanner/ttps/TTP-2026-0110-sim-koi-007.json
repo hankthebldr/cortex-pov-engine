@@ -286,14 +286,14 @@
         "evidence_query": "dataset = xdr_data | filter action_file_name = \"tmp.txt\" and action_file_path contains \"/tmp/\" | filter actor_process_image_name in (\"node\", \"npx\", \"python3\", \"code\")"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-KOI-007",
+        "threat_scenario_id": "TS-KOI-007",
         "name": "MCP Sampling Abuse Detection via Behavioral Analytics",
         "description": "Cortex detects a malicious MCP server abusing sampling/createMessage — quota theft and covert tool invocation — from the behavioral residue (unattended writeFile with no user interaction, and a token-consumption anomaly against the host's learned inference baseline) rather than from the model's output text, which the attacker controls.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-KOI-007A",
+            "threat_step_id": "TS-KOI-007A",
             "objective": "A server-initiated covert writeFile creates tmp.txt in a temp directory with no user interaction, firing both the signature BIOC and the unattended-tool-invocation ABIOC.",
             "preconditions": [
               "MCP host with the Cortex agent installed.",
@@ -312,7 +312,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-KOI-007B",
+            "threat_step_id": "TS-KOI-007B",
             "objective": "A server-initiated inference burst exceeds the host's learned sampling cadence, firing the quota-theft ABIOC.",
             "preconditions": [
               "MCP host with the Cortex agent installed and network telemetry reaching network_story.",
@@ -330,7 +330,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-KOI-007C",
+            "threat_step_id": "TS-KOI-007C",
             "objective": "The two ABIOCs are stitched into a single MCP-sampling-abuse incident.",
             "preconditions": [
               "Both ABIOCs have fired on the same host and account within the correlation window."

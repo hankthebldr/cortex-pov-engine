@@ -74,13 +74,13 @@ def main():
                 for tid in t.get("tactic_ids", [])
             }),
             "panw_modules": sorted({p["module"] for p in d["panw_mapping"]["products"]}),
-            "use_cases": [
+            "threat_scenarios": [
                 {
-                    "use_case_id": uc["use_case_id"],
+                    "threat_scenario_id": uc["threat_scenario_id"],
                     "name": uc["name"],
-                    "test_case_ids": [tc["test_case_id"] for tc in uc.get("test_cases", [])]
+                    "threat_step_ids": [tc["threat_step_id"] for tc in uc.get("threat_steps", [])]
                 }
-                for uc in d["panw_mapping"].get("use_cases", [])
+                for uc in d["panw_mapping"].get("threat_scenarios", [])
             ],
             "source_refs": d["metadata"].get("source_refs", []),
             "tags": d["metadata"].get("tags", []),

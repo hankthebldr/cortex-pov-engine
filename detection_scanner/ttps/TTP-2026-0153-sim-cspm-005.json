@@ -337,14 +337,14 @@
         "evidence_query": "Correlation CR-CSPM-0005 fuses the exposed-key posture finding, the stolen-key runtime abuse, and the S3 mass-export + ransom into one code-to-cloud extortion incident on the shared accessKeyId/principal."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CSPM-005",
+        "threat_scenario_id": "TS-CSPM-005",
         "name": "Code-to-Cloud Traceability — Exposed Secret to Cloud Extortion",
         "description": "Cortex Cloud detects a publicly exposed long-lived IAM access key (code-to-cloud) and traces that same key through off-baseline runtime abuse (recon + AdministratorAccess role escalation) into S3 mass-export and a ransom note, fusing the whole chain into one incident joined on the accessKeyId and principal.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CSPM-005A",
+            "threat_step_id": "TS-CSPM-005A",
             "objective": "The exposed long-lived key surfaces as a code-to-cloud posture finding and the same key's off-baseline recon + AdministratorAccess role escalation are detected in cloud_audit_logs.",
             "preconditions": [
               "Cortex Cloud posture + runtime connected read-only to the lab account.",
@@ -363,7 +363,7 @@
             "expected_score_weight": 0.4
           },
           {
-            "test_case_id": "TC-CSPM-005B",
+            "threat_step_id": "TS-CSPM-005B",
             "objective": "The stolen key's S3 mass-export + delete and the ransom-note write into the emptied bucket are detected as impact.",
             "preconditions": [
               "The disposable seeded bucket carries objects that can be mass-read, deleted, and ransom-noted, then restored by cleanup."
@@ -380,7 +380,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-CSPM-005C",
+            "threat_step_id": "TS-CSPM-005C",
             "objective": "Correlation CR-CSPM-0005 fuses the exposure, runtime abuse, and S3 ransom into a single code-to-cloud extortion incident joined on the shared accessKeyId/principal.",
             "preconditions": [
               "Legs A, B, and C are all observable within the correlation window."

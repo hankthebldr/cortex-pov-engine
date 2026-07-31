@@ -45,9 +45,9 @@
     }
   },
   "identity": {
-    "name": "AI Sensitive-Data Classification \u2014 PII/PHI/PCI In Training Sets (T1530)",
-    "summary": "Cortex Cloud DSPM + AI-SPM cross-scan classifies a planted training-data S3 bucket, flags at least three regulated data classes (PII, PHI, PCI) from SSN / credit-card / medical-record-number canaries, traces data lineage from bucket to the SageMaker training job, and raises governance violation AI-GOV-001. The scenario validates the data-class count, the lineage edge, and the governance violati\u2026",
-    "description": "Regulated data leaking into AI training sets is the headline risk for finance, healthcare, and insurance POVs: a model trained on un-scoped PII/PHI/PCI inherits compliance obligations and can be coaxed to regurgitate that data. AI Security Posture Management answers it by cross-scanning data stores with DSPM and linking the regulated data to the AI workloads that consume it. This scenario plants a training-data bucket seeded with canary patterns \u2014 SSN 000-00-000X, credit-card 4111-1111-1111-111X, and medical-record-number MRN-CORTEXSIM-00X \u2014 and validates that Cortex Cloud detects at least three distinct regulated data classes, traces the lineage edge from the bucket to the SageMaker training-job manifest, and raises governance violation AI-GOV-001 (regulated_data_in_training_set), all within 900 seconds. Detection is posture-oriented: validation queries assert the data-class count from DSPM findings, the AI data-lineage edge from inventory, and the governance violation by finding_type. A correlation rule fuses the three signals into one AI data-governance incident.",
+    "name": "AI Sensitive-Data Classification — PII/PHI/PCI In Training Sets (T1530)",
+    "summary": "Cortex Cloud DSPM + AI-SPM cross-scan classifies a planted training-data S3 bucket, flags at least three regulated data classes (PII, PHI, PCI) from SSN / credit-card / medical-record-number canaries, traces data lineage from bucket to the SageMaker training job, and raises governance violation AI-GOV-001. The scenario validates the data-class count, the lineage edge, and the governance violati…",
+    "description": "Regulated data leaking into AI training sets is the headline risk for finance, healthcare, and insurance POVs: a model trained on un-scoped PII/PHI/PCI inherits compliance obligations and can be coaxed to regurgitate that data. AI Security Posture Management answers it by cross-scanning data stores with DSPM and linking the regulated data to the AI workloads that consume it. This scenario plants a training-data bucket seeded with canary patterns — SSN 000-00-000X, credit-card 4111-1111-1111-111X, and medical-record-number MRN-CORTEXSIM-00X — and validates that Cortex Cloud detects at least three distinct regulated data classes, traces the lineage edge from the bucket to the SageMaker training-job manifest, and raises governance violation AI-GOV-001 (regulated_data_in_training_set), all within 900 seconds. Detection is posture-oriented: validation queries assert the data-class count from DSPM findings, the AI data-lineage edge from inventory, and the governance violation by finding_type. A correlation rule fuses the three signals into one AI data-governance incident.",
     "severity": "high",
     "confidence": "high"
   },
@@ -95,7 +95,7 @@
   "execution": {
     "target_platform": "aws",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-AISPM-005 \u2014 Cortex Cloud DSPM + AI-SPM cross-scan + sensitive-data/lineage/governance probe",
+    "framework_reference_id": "SIM-AISPM-005 — Cortex Cloud DSPM + AI-SPM cross-scan + sensitive-data/lineage/governance probe",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -108,7 +108,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Posture validation \u2014 probe DSPM sensitive-data classes + AI lineage + AI-GOV-001.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/dspm/data_stores?name=aispm-training-data\" | jq '[.data_stores[0].sensitive_data_classes[]?] | length'",
+      "code": "# Posture validation — probe DSPM sensitive-data classes + AI lineage + AI-GOV-001.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/dspm/data_stores?name=aispm-training-data\" | jq '[.data_stores[0].sensitive_data_classes[]?] | length'",
       "input_variables": [],
       "timeout_seconds": 1200
     },
@@ -176,14 +176,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "AI Data Governance \u2014 Regulated Data In Training Set With Lineage",
+        "name": "AI Data Governance — Regulated Data In Training Set With Lineage",
         "rule_id": "CR-AISPM-0005",
         "logic": "XQL(AISPM-005 DSPM Three Regulated Data Classes In Training Bucket) AND XQL(AISPM-005 Data Lineage Edge Bucket To Training Job) AND XQL(AISPM-005 Governance Violation Regulated Data In Training Set)"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud DSPM \u2014 Regulated-data classification of AI training stores",
-      "Cortex Cloud AI-SPM \u2014 Data lineage and AI governance violation detection"
+      "Cortex Cloud DSPM — Regulated-data classification of AI training stores",
+      "Cortex Cloud AI-SPM — Data lineage and AI governance violation detection"
     ]
   },
   "panw_mapping": {
@@ -221,14 +221,14 @@
         "evidence_query": "Correlation CR-AISPM-0005 fuses regulated-data classification, AI lineage edge, and AI-GOV-001 into one data-governance incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-AISPM-005",
+        "threat_scenario_id": "TS-AISPM-005",
         "name": "AI Sensitive-Data Classification",
         "description": "Classify regulated data in AI training stores, trace lineage to models, and raise governance violations.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-AISP-005A",
+            "threat_step_id": "TS-AISP-005A",
             "objective": "Three regulated data classes, a lineage edge, and AI-GOV-001 surface within 900s.",
             "preconditions": [
               "Cortex Cloud DSPM + AI-SPM enabled.",
@@ -264,14 +264,14 @@
   },
   "references": [
     {
-      "title": "Unit42 \u2014 Regulated Data Leakage in AI Training Pipelines",
+      "title": "Unit42 — Regulated Data Leakage in AI Training Pipelines",
       "url": "https://unit42.paloaltonetworks.com/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1530 \u2014 Data from Cloud Storage Object",
+      "title": "MITRE ATT&CK T1530 — Data from Cloud Storage Object",
       "url": "https://attack.mitre.org/techniques/T1530/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

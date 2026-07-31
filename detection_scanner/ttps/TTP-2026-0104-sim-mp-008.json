@@ -260,14 +260,14 @@
         "evidence_query": "dataset = xdr_data | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by agent_hostname | filter plane_count >= 3 and incident_count = 1"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-008",
+        "threat_scenario_id": "TS-MP-008",
         "name": "Identity-to-Endpoint-to-Network Hands-on-Keyboard Campaign Correlation",
         "description": "XSIAM stitches an anomalous IdP sign-in, a hands-on-keyboard endpoint behavioral deviation, and attacker-controlled network egress from one compromised identity into a single causality-linked incident that point tools would only surface as three disconnected low-severity alerts.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-008A",
+            "threat_step_id": "TS-MP-008A",
             "objective": "The three staged signals from one identity/host stitch into a single incident spanning ITDR + EDR + NDR within the correlation window.",
             "preconditions": [
               "XSIAM ingesting okta_sso, xdr_data, and panw_ngfw_traffic_raw for the target estate.",

@@ -39,8 +39,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 ID_PATTERN          = re.compile(r"^TTP-\d{4}-\d{4}$")
 TECHNIQUE_PATTERN   = re.compile(r"^T\d{4}(\.\d{3})?$")
-UC_PATTERN          = re.compile(r"^UC-[A-Z0-9]+-\d{3}$")
-TC_PATTERN          = re.compile(r"^TC-[A-Z0-9]+-\d{3}[A-Z]?$")
+TS_PATTERN          = re.compile(r"^TS-[A-Z0-9]+-\d{3}$")
+TS_STEP_PATTERN     = re.compile(r"^TS-[A-Z0-9]+-\d{3}[A-Z]?$")
 SOURCE_ID_PATTERN   = re.compile(r"^SRC-[A-Z0-9-]+$")
 
 
@@ -430,15 +430,15 @@ def main():
                 report.err(rel, f"subtechnique {sid} not under technique {tid}")
 
         # 4h. Use case / test case IDs + weight sums
-        for uc in d.get("panw_mapping", {}).get("use_cases", []):
-            uc_id = uc.get("use_case_id", "")
-            if not UC_PATTERN.match(uc_id):
-                report.err(rel, f"use_case_id {uc_id!r} does not match {UC_PATTERN.pattern}")
+        for uc in d.get("panw_mapping", {}).get("threat_scenarios", []):
+            uc_id = uc.get("threat_scenario_id", "")
+            if not TS_PATTERN.match(uc_id):
+                report.err(rel, f"threat_scenario_id {uc_id!r} does not match {TS_PATTERN.pattern}")
             weight_sum = 0.0
-            for tc in uc.get("test_cases", []):
-                tc_id = tc.get("test_case_id", "")
-                if not TC_PATTERN.match(tc_id):
-                    report.err(rel, f"test_case_id {tc_id!r} does not match {TC_PATTERN.pattern}")
+            for tc in uc.get("threat_steps", []):
+                tc_id = tc.get("threat_step_id", "")
+                if not TS_STEP_PATTERN.match(tc_id):
+                    report.err(rel, f"threat_step_id {tc_id!r} does not match {TS_STEP_PATTERN.pattern}")
                 weight_sum += float(tc.get("expected_score_weight", 0.0))
             if weight_sum > 1.0001:
                 report.err(rel, f"use case {uc_id} weights sum to {weight_sum:.3f} > 1.0")
