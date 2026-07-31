@@ -33,6 +33,17 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
     CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
 
+    # UC/TC foreign-key strictness. When false (the default for one release),
+    # a scenario whose uc_ref/tc_ref does not resolve against the master index
+    # snapshot logs S-10/S-11/S-12 as a WARNING and still loads. When true, the
+    # same conditions reject the scenario at boot.
+    #
+    # It ships false because the crosswalk that re-keys the corpus onto v2.2 is
+    # authored incrementally — flipping this before the crosswalk is complete
+    # would fail most of the corpus at boot and make the engine unusable. Flip
+    # it once `docs/uc_tc_mapping/crosswalk-v2.2.csv` covers every scenario.
+    CORTEXSIM_STRICT_REFS: bool = False
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

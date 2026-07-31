@@ -115,6 +115,17 @@ async def lifespan(app: FastAPI):
     adapters_loaded = adapter_catalog.load(packs_dir)
     logger.info("Tool adapter catalog ready: %d adapter(s)", adapters_loaded)
 
+    # 2c. Load the master UC/TC index snapshot BEFORE scenarios so the loader
+    #     can validate uc_ref / tc_ref as a real foreign key (S-10..S-14).
+    #     Missing snapshot → empty registry → validation degrades to advisory.
+    from engine.uctc_registry import registry as uctc_registry, default_index_dir  # noqa: PLC0415
+    index_dir = default_index_dir(settings.CORTEXSIM_BASE_DIR)
+    tcs_loaded = uctc_registry.load(index_dir)
+    logger.info(
+        "UC/TC registry ready: %d test case(s) (v%s, strict_refs=%s)",
+        tcs_loaded, uctc_registry.version or "?", settings.CORTEXSIM_STRICT_REFS,
+    )
+
     async with _db_context() as db:
         loaded = await load_scenarios(scenarios_dir, db)
     logger.info("Scenarios loaded: %d scenario(s)", len(loaded))
@@ -360,6 +371,18 @@ async def _component_health() -> dict:
         components["adapter_catalog"] = {"status": "ok", "count": adapter_catalog.count()}
     except Exception as exc:  # noqa: BLE001
         components["adapter_catalog"] = {"status": "error", "detail": str(exc)}
+
+    # Master UC/TC index snapshot.
+    try:
+        from engine.uctc_registry import registry as uctc_registry  # noqa: PLC0415
+
+        components["uctc_registry"] = {
+            "status": "ok" if uctc_registry.loaded else "degraded",
+            "count": len(uctc_registry.all_test_cases()),
+            "version": uctc_registry.version or None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        components["uctc_registry"] = {"status": "error", "detail": str(exc)}
 
     # EAL simulator plugin registry.
     try:

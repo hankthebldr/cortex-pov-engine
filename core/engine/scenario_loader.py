@@ -472,6 +472,16 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
         # (S-09), too-thin step lists (S-01), and detection-less steps (S-02).
         _warn_scenario_hygiene(schema, filepath)
 
+        # UC/TC foreign-key validation against the master index snapshot
+        # (S-10..S-14). Warns by default; rejects only under
+        # CORTEXSIM_STRICT_REFS, so an incomplete crosswalk cannot brick boot.
+        ref_error = _check_uctc_refs(schema, filepath)
+        if ref_error:
+            msg = f"REJECTED {filepath}: {ref_error}"
+            logger.error(msg)
+            errors.append(msg)
+            continue
+
         # Upsert: check if the scenario_id already exists
         result = await db.execute(
             select(Scenario).where(Scenario.scenario_id == schema.scenario_id)
@@ -504,6 +514,76 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
         logger.info("Scenario load complete: %d scenarios loaded.", len(loaded_ids))
 
     return loaded_ids
+
+
+def _check_uctc_refs(schema: "ScenarioSchema", filepath: str) -> Optional[str]:
+    """Validate ``uc_ref`` / ``tc_ref`` as a foreign key into the master UC/TC
+    index, and flag positioning drift against the same row.
+
+    Emits five codes:
+
+    ``S-10`` ``tc_ref`` not in the index                        — ERROR
+    ``S-11`` ``uc_ref`` is neither a known UCS group nor UC      — ERROR
+    ``S-12`` ``tc_ref`` resolves but its parent ≠ ``uc_ref``     — ERROR
+    ``S-13`` ``moat_tier`` disagrees with the index tier         — WARNING
+    ``S-14`` the TC's ``validation_class`` is POS/PLT/AUT, i.e.
+             an assertion the index does not expect a detection
+             scenario to satisfy                                 — WARNING
+
+    Returns a rejection reason when ``CORTEXSIM_STRICT_REFS`` is on and an
+    S-10/S-11/S-12 fired; otherwise ``None`` (the scenario still loads and the
+    condition is logged). The registry degrades to ``unverified`` when the
+    snapshot is absent, so a stripped deployment never rejects on this path.
+    """
+    from config import settings  # noqa: PLC0415
+    from engine.uctc_registry import registry  # noqa: PLC0415
+
+    verdict = registry.validate_ref(schema.uc_ref, schema.tc_ref)
+    strict = bool(getattr(settings, "CORTEXSIM_STRICT_REFS", False))
+
+    if verdict.is_error:
+        code = {
+            "dangling_tc": "S-10",
+            "dangling_uc": "S-11",
+            "fk_mismatch": "S-12",
+        }[verdict.status]
+        detail = (
+            f"{code} scenario={schema.scenario_id} uc_ref={schema.uc_ref} "
+            f"tc_ref={schema.tc_ref}: {verdict.detail} (from {filepath})"
+        )
+        if strict:
+            return detail
+        logger.warning("%s [advisory — CORTEXSIM_STRICT_REFS is off]", detail)
+        return None
+
+    tc = verdict.test_case
+    if tc is None:  # unverified — no snapshot loaded
+        return None
+
+    # S-13: the scenario's positioning claim vs the index's. The index wins;
+    # a scenario claiming MOAT against a PARITY test case oversells the demo.
+    if schema.moat_tier and tc.differentiation_tier and \
+            schema.moat_tier != tc.differentiation_tier:
+        logger.warning(
+            "S-13 scenario=%s declares moat_tier=%s but index tc=%s carries "
+            "differentiation_tier=%s (from %s)",
+            schema.scenario_id, schema.moat_tier, tc.tc_id,
+            tc.differentiation_tier, filepath,
+        )
+
+    # S-14: the index classifies this TC as a posture/platform/automation
+    # assertion, not a detection. A detection scenario bound to it will never
+    # produce the signal the TC is scored on.
+    if tc.validation_class in ("POS", "PLT", "AUT"):
+        logger.warning(
+            "S-14 scenario=%s binds tc=%s whose validation_class=%s — the "
+            "index expects a %s assertion here, not a detection scenario "
+            "(from %s)",
+            schema.scenario_id, tc.tc_id, tc.validation_class,
+            tc.validation_class, filepath,
+        )
+
+    return None
 
 
 def _warn_dangling_ttp_refs(schema: "ScenarioSchema", filepath: str) -> None:
