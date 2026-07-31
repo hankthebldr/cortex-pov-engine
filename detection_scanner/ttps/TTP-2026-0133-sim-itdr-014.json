@@ -328,7 +328,7 @@
             "threat_step_id": "TS-ITDR-014B",
             "objective": "The correlation rule fuses the cloud-identity abuse and the roadtx-owned endpoint lineage into one identity-owned incident anchored on the rogue device id + PRT.",
             "preconditions": [
-              "Both ABIOCs from TC-ITDR-014A have fired.",
+              "Both ABIOCs from TS-ITDR-014A have fired.",
               "PRT silent-token, roadrecon process-lineage, and Graph enumeration events are ingested within the correlation window."
             ],
             "steps": [

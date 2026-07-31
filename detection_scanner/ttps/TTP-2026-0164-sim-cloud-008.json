@@ -238,7 +238,7 @@
             "threat_step_id": "TS-CLOUD-008B",
             "objective": "The storage-services-exfiltration Analytics alert fires on a bulk OneDrive/SharePoint FileDownloaded / FileSyncDownloadedFull burst.",
             "preconditions": [
-              "TC-CLOUD-008A collector in place."
+              "TS-CLOUD-008A collector in place."
             ],
             "steps": [
               "Drive the m365_activity_emitter storage_exfiltration pattern into the collector.",
@@ -255,7 +255,7 @@
             "threat_step_id": "TS-CLOUD-008C",
             "objective": "The correlation stitches the enumeration and exfiltration Analytics alerts on the shared identity into one incident.",
             "preconditions": [
-              "TC-CLOUD-008A and TC-CLOUD-008B completed in the same run window on the same UserId / ClientIP."
+              "TS-CLOUD-008A and TS-CLOUD-008B completed in the same run window on the same UserId / ClientIP."
             ],
             "steps": [
               "Run both emitter patterns for the same target_user against the same collector.",

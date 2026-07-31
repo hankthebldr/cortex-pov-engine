@@ -206,7 +206,7 @@
             "threat_step_id": "TS-CDR-026B",
             "objective": "The subsequent secret read raises the unusual-access Analytics alert and the correlation stitches both into one incident.",
             "preconditions": [
-              "TC-CDR-026A enumeration observed for the same service account."
+              "TS-CDR-026A enumeration observed for the same service account."
             ],
             "steps": [
               "Run the k8s_audit_emitter secret_access preset for the same identity.",

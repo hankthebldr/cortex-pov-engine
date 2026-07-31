@@ -279,7 +279,7 @@
             "threat_step_id": "TS-CLOUD-007B",
             "objective": "The revoke is verifiable end-to-end: a replay call carrying the revoked token returns 401 invalid_token and CR-CLOUD-0007 raises one closed-loop incident.",
             "preconditions": [
-              "TC-CLOUD-007A completed (token revoked by the playbook)."
+              "TS-CLOUD-007A completed (token revoked by the playbook)."
             ],
             "steps": [
               "Replay a Bulk API call with the revoked Connected-App token.",

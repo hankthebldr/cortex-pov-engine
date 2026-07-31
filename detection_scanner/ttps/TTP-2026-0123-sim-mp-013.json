@@ -471,7 +471,7 @@
             "threat_step_id": "TS-MP-013B",
             "objective": "The AI SOC analyst summary correctly names the domain-controller compromise and the exfiltration channel.",
             "preconditions": [
-              "TC-MP-013A produced a single grouped incident."
+              "TS-MP-013A produced a single grouped incident."
             ],
             "steps": [
               "Read the AI-generated incident summary.",
@@ -487,7 +487,7 @@
             "threat_step_id": "TS-MP-013C",
             "objective": "No alert-storm fan-out — the seven signals do not produce seven separate incidents, and triage-to-single-incident lands within the response-timing budget.",
             "preconditions": [
-              "TC-MP-013A executed."
+              "TS-MP-013A executed."
             ],
             "steps": [
               "Count incidents created from the seven ABIOCs.",

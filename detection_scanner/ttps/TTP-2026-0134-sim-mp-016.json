@@ -388,7 +388,7 @@
             "threat_step_id": "TS-MP-016C",
             "objective": "The correlation rule fuses every leg into ONE cross-cloud incident spanning the ITDR and Cloud App planes, keyed on the shared identity.",
             "preconditions": [
-              "The signals from TC-MP-016A and TC-MP-016B are present inside the correlation window."
+              "The signals from TS-MP-016A and TS-MP-016B are present inside the correlation window."
             ],
             "steps": [
               "Run CR-MP-0016 over the run window.",

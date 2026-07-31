@@ -396,7 +396,7 @@
             "threat_step_id": "TS-MP-019B",
             "objective": "The credential brute-force and the impacket lateral authentication bind to the web foothold and carry the incident into the ITDR / ANALYTICS planes.",
             "preconditions": [
-              "TC-MP-019A produced a stitched web-foothold incident.",
+              "TS-MP-019A produced a stitched web-foothold incident.",
               "Lab Domain Controller (itdr module) reachable at ${CORTEXSIM_DC_TARGET} with identity logs forwarded."
             ],
             "steps": [
@@ -415,7 +415,7 @@
             "threat_step_id": "TS-MP-019C",
             "objective": "The correlation raises exactly one external-to-internal kill-chain incident and the validation XQL confirms observability.",
             "preconditions": [
-              "TC-MP-019B extended the incident to the DC."
+              "TS-MP-019B extended the incident to the DC."
             ],
             "steps": [
               "Run the validation XQL for the run window.",

@@ -379,7 +379,7 @@
             "threat_step_id": "TS-MP-020C",
             "objective": "The auto-containment completes before the T1486 ESXi mass-encryption — the playbook fired and closed the incident within the MTTC budget.",
             "preconditions": [
-              "TC-MP-020A satisfied (playbook triggered)."
+              "TS-MP-020A satisfied (playbook triggered)."
             ],
             "steps": [
               "Let the XSOAR playbook run its DC isolate / account disable / egress block actions.",

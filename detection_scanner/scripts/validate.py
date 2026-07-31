@@ -41,6 +41,8 @@ ID_PATTERN          = re.compile(r"^TTP-\d{4}-\d{4}$")
 TECHNIQUE_PATTERN   = re.compile(r"^T\d{4}(\.\d{3})?$")
 TS_PATTERN          = re.compile(r"^TS-[A-Z0-9]+-\d{3}$")
 TS_STEP_PATTERN     = re.compile(r"^TS-[A-Z0-9]+-\d{3}[A-Z]?$")
+# A card-local id written with the master-index prefix, anywhere in prose.
+_STALE_NS_TOKEN     = re.compile(r"\b(?:UCS?|TC)-[A-Z0-9]+-\d{3}[A-Z]?\b")
 SOURCE_ID_PATTERN   = re.compile(r"^SRC-[A-Z0-9-]+$")
 
 
@@ -439,6 +441,21 @@ def main():
                 tc_id = tc.get("threat_step_id", "")
                 if not TS_STEP_PATTERN.match(tc_id):
                     report.err(rel, f"threat_step_id {tc_id!r} does not match {TS_STEP_PATTERN.pattern}")
+                # The id fields were re-prefixed TS-* when namespace C was
+                # demoted, but the PROSE that cross-references sibling steps was
+                # not — 42 stale `TC-<X>-NNNA` tokens survived across 28 cards
+                # and read as master-index refs to anyone skimming a card. The
+                # index namespace is docs/uc_tc_mapping/, never a card.
+                for field in ("objective", "preconditions", "steps", "success_criteria"):
+                    val = tc.get(field)
+                    for text in ([val] if isinstance(val, str) else (val or [])):
+                        for stale in _STALE_NS_TOKEN.findall(text or ""):
+                            report.err(
+                                rel,
+                                f"threat step {tc_id} {field} contains {stale!r} — "
+                                f"card-local ids use the TS- prefix; UC-/TC- is "
+                                f"the master index namespace",
+                            )
                 weight_sum += float(tc.get("expected_score_weight", 0.0))
             if weight_sum > 1.0001:
                 report.err(rel, f"use case {uc_id} weights sum to {weight_sum:.3f} > 1.0")

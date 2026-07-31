@@ -349,7 +349,7 @@
             "objective": "The never-before-seen DGA subdomain fan-out under the activated apex is detected as exceeding the apex's learned subdomain diversity.",
             "preconditions": [
               "DNS telemetry onboarded.",
-              "The apex activation from TC-TIM-003A has occurred."
+              "The apex activation from TS-TIM-003A has occurred."
             ],
             "steps": [
               "Emit a fan-out of distinct high-entropy DGA subdomains under the activated apex.",
@@ -365,7 +365,7 @@
             "threat_step_id": "TS-TIM-003C",
             "objective": "The two behavioral deviations stitch into a single sleeper-domain-activation incident on the same apex.",
             "preconditions": [
-              "Both ABIOCs from TC-TIM-003A and TC-TIM-003B have fired on the same apex within the activation window."
+              "Both ABIOCs from TS-TIM-003A and TS-TIM-003B have fired on the same apex within the activation window."
             ],
             "steps": [
               "Let the correlation window elapse.",

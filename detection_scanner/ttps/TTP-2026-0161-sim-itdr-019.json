@@ -253,7 +253,7 @@
             "objective": "The 'Azure mailbox rule creation' Analytics alert (and the external-forwarding ABIOC) fire on an external auto-forwarding inbox rule, and correlation CR-ITDR-0019 stitches both legs into one incident.",
             "preconditions": [
               "The Microsoft 365 audit source is ingesting into msft_o365_audit.",
-              "The conditional-access weakening from TC-ITDR-019A occurred within the correlation window (same persistence campaign)."
+              "The conditional-access weakening from TS-ITDR-019A occurred within the correlation window (same persistence campaign)."
             ],
             "steps": [
               "Run azure_audit_emitter to stream a New-InboxRule with an external ForwardTo target.",

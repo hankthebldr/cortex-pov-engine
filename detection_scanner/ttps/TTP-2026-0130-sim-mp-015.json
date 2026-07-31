@@ -293,7 +293,7 @@
             "threat_step_id": "TS-MP-015B",
             "objective": "The benign decoys are NOT merged into the malicious incident and are deprioritized as benign (false-positive suppression).",
             "preconditions": [
-              "The malicious chain from TC-MP-015A is present in the same window.",
+              "The malicious chain from TS-MP-015A is present in the same window.",
               "Cron backup, sanctioned admin PowerShell, and authenticated scanner decoys emitted."
             ],
             "steps": [

@@ -209,7 +209,7 @@
             "threat_step_id": "TS-CDR-023B",
             "objective": "The EC2-token Analytics alert fires and the correlation stitches both signals into one incident.",
             "preconditions": [
-              "TC-CDR-023A executed within the correlation window."
+              "TS-CDR-023A executed within the correlation window."
             ],
             "steps": [
               "Run cloud_storage_compute_emitter with event_pattern=ec2_token_usage against the collector (same instance role session).",

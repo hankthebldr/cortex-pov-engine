@@ -464,7 +464,7 @@
             "threat_step_id": "TS-MP-010C",
             "objective": "The correlation rule stitches the modeled appliance-plane tell to the endpoint-plane persistence into one incident — the EDR-only-can't-do-this proof.",
             "preconditions": [
-              "TC-MP-010A and TC-MP-010B observables present within the correlation window."
+              "TS-MP-010A and TS-MP-010B observables present within the correlation window."
             ],
             "steps": [
               "Let both the modeled appliance tell and an internal Windows persistence BIOC land within 24h.",

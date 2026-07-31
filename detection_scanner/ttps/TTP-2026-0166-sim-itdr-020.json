@@ -271,7 +271,7 @@
             "threat_step_id": "TS-ITDR-020B",
             "objective": "The subsequent NTLM Pass-the-Hash logon fires the Pass-the-Hash ABIOC and the correlation stitches the chain into one incident.",
             "preconditions": [
-              "TC-ITDR-020A executed so the roast burst is present for the identity."
+              "TS-ITDR-020A executed so the roast burst is present for the identity."
             ],
             "steps": [
               "Emit an NTLM (NtLmSsp) 4624 network logon (LogonType 3) for the same account.",

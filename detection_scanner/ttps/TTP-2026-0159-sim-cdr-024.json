@@ -205,7 +205,7 @@
             "threat_step_id": "TS-CDR-024B",
             "objective": "The 'Suspicious heavy allocation of compute resources' ABIOC fires on the GPU-instance burst and the correlation stitches the dormant-region Analytics alert and the heavy-allocation ABIOC into one incident.",
             "preconditions": [
-              "TC-CDR-024A telemetry present in the run window."
+              "TS-CDR-024A telemetry present in the run window."
             ],
             "steps": [
               "Run SIM-CDR-024 step-02 (cloud_storage_compute_emitter, heavy_compute_allocation preset, burst_count 10).",

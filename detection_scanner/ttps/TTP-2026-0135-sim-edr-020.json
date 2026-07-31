@@ -372,7 +372,7 @@
             "threat_step_id": "TS-EDR-020B",
             "objective": "The FRP reverse-tunnel endpoint process is stitched to its outbound network session under the same web-shell causality, proving the endpoint↔network pivot.",
             "preconditions": [
-              "TC-EDR-020A executed on the same target with NGFW / network telemetry ingested."
+              "TS-EDR-020A executed on the same target with NGFW / network telemetry ingested."
             ],
             "steps": [
               "Run the FRP endpoint-network egress-stitch XQL over the run window.",

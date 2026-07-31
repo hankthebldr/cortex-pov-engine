@@ -369,7 +369,7 @@
             "threat_step_id": "TS-MP-011B",
             "objective": "Each stage stands alone as an evidenced detection so the DC can show the pre-correlation orphan alerts.",
             "preconditions": [
-              "Same host and tenant as TC-MP-011A."
+              "Same host and tenant as TS-MP-011A."
             ],
             "steps": [
               "Run the WMI SQL 'sa' export stage.",

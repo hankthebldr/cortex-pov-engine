@@ -291,7 +291,7 @@
             "threat_step_id": "TS-NDR-012B",
             "objective": "The large HTTPS upload fires the Large Upload (HTTPS) ABIOC on the outbound-byte-volume deviation.",
             "preconditions": [
-              "Recurring beacon (TC-NDR-012A) already established the rare-domain callback pattern."
+              "Recurring beacon (TS-NDR-012A) already established the rare-domain callback pattern."
             ],
             "steps": [
               "Drive ngfw_eal_emitter with event_pattern large_upload_https.",
@@ -307,7 +307,7 @@
             "threat_step_id": "TS-NDR-012C",
             "objective": "The massive upload fires the Massive upload to a rare storage or mail domain ABIOC and the correlation stitches the beacon-then-exfil chain into one incident.",
             "preconditions": [
-              "Large upload (TC-NDR-012B) already demonstrated the outbound-volume deviation."
+              "Large upload (TS-NDR-012B) already demonstrated the outbound-volume deviation."
             ],
             "steps": [
               "Drive ngfw_eal_emitter with event_pattern massive_upload_rare_domain.",

@@ -350,7 +350,7 @@
             "threat_step_id": "TS-ITDR-017C",
             "objective": "The correlation rule fuses the full ESC1 chain into one ITDR incident whose causality graph is rooted on the requesting domain identity.",
             "preconditions": [
-              "The BIOCs from TC-ITDR-017A and the ABIOC from TC-ITDR-017B have fired.",
+              "The BIOCs from TS-ITDR-017A and the ABIOC from TS-ITDR-017B have fired.",
               "All signals fall within the 600-second correlation window."
             ],
             "steps": [

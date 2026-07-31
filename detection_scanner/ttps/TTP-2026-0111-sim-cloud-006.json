@@ -347,7 +347,7 @@
             "threat_step_id": "TS-CLOUD-006B",
             "objective": "The query-job deletion following the mass export fires the export-then-erase ABIOC.",
             "preconditions": [
-              "The export-deviation step (TC-CLOUD-006A) has run for the same integration token."
+              "The export-deviation step (TS-CLOUD-006A) has run for the same integration token."
             ],
             "steps": [
               "Issue deleteJob on the Bulk API query jobs created during the export.",

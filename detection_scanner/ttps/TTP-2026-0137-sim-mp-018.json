@@ -430,7 +430,7 @@
             "threat_step_id": "TS-MP-018B",
             "objective": "The Kubernetes secrets enumeration and the privileged DaemonSet apply pivot the incident from ANALYTICS into the CDR plane.",
             "preconditions": [
-              "TC-MP-018A produced a stitched incident on the runner."
+              "TS-MP-018A produced a stitched incident on the runner."
             ],
             "steps": [
               "Emit the representative burst of kube-apiserver secret-path requests from the CI-runner process.",
@@ -448,7 +448,7 @@
             "threat_step_id": "TS-MP-018C",
             "objective": "The recursive destructive wipe closes the chain and the correlation raises exactly one cluster-brick incident.",
             "preconditions": [
-              "TC-MP-018B extended the incident into the CDR plane."
+              "TS-MP-018B extended the incident into the CDR plane."
             ],
             "steps": [
               "Emulate the recursive destructive wipe from the privileged container against an isolated scratch tree.",

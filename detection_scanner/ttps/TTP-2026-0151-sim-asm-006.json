@@ -303,7 +303,7 @@
             "threat_step_id": "TS-ASM-006C",
             "objective": "The terminal correlation stitches the recon storyline into a single identity-takeover-precursor incident that fires before the downstream MFA-reset takeover.",
             "preconditions": [
-              "TC-ASM-006A and TC-ASM-006B signals observed on the same target org within the correlation window."
+              "TS-ASM-006A and TS-ASM-006B signals observed on the same target org within the correlation window."
             ],
             "steps": [
               "Let the ASM footprint exposure, help-desk recovery burst, and TIM attribution land on one target org within a 7-day window.",

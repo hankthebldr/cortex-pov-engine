@@ -304,7 +304,7 @@
             "threat_step_id": "TS-EDR-018B",
             "objective": "The breakout-window timing metric confirms the whole chain compressed inside 72 minutes so the latency KPI is measured, not assumed.",
             "preconditions": [
-              "TC-EDR-018A executed on the same target."
+              "TS-EDR-018A executed on the same target."
             ],
             "steps": [
               "Run the AI-SOC-72 Breakout-Window Timing XQL over the run window.",

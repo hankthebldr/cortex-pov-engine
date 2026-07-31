@@ -316,7 +316,7 @@
             "threat_step_id": "TS-EDR-015B",
             "objective": "The remote-service fan-out ABIOC fires when the newly-written tool connects to two or more distinct internal peers over SMB/RDP/WinRM.",
             "preconditions": [
-              "The lateral-tool-transfer step (TC-EDR-015A) has run on the same host."
+              "The lateral-tool-transfer step (TS-EDR-015A) has run on the same host."
             ],
             "steps": [
               "Drive the psexec marker toward two or more loopback/lab peers on 445/3389/5985.",
@@ -331,7 +331,7 @@
             "threat_step_id": "TS-EDR-015C",
             "objective": "The correlation rule stitches both ABIOCs with the NDR TCP/443 tunnel session into one cross-plane incident.",
             "preconditions": [
-              "Both ABIOCs (TC-EDR-015A, TC-EDR-015B) have fired on the same host.",
+              "Both ABIOCs (TS-EDR-015A, TS-EDR-015B) have fired on the same host.",
               "NDR/NGFW session telemetry is ingested into network_story."
             ],
             "steps": [

@@ -371,7 +371,7 @@
             "threat_step_id": "TS-SUPPLY-008B",
             "objective": "The exfil, self-replication, and runner-registration stages fire and correlate into one incident.",
             "preconditions": [
-              "TC-SUPPLY-008A executed within the correlation window."
+              "TS-SUPPLY-008A executed within the correlation window."
             ],
             "steps": [
               "Emulate the webhook.site / git-push exfil, the stolen-token sibling-package republish, and the self-hosted-runner registration (SAFE-MODE).",

@@ -296,7 +296,7 @@
             "threat_step_id": "TS-ITDR-013B",
             "objective": "The correlation rule fuses the lineage with the privileged TGT and inherited-privilege logon into one ITDR incident.",
             "preconditions": [
-              "Both ABIOCs from TC-ITDR-013A have fired.",
+              "Both ABIOCs from TS-ITDR-013A have fired.",
               "dMSA TGT (2946) and logon (4624) events are ingested within the correlation window."
             ],
             "steps": [

@@ -359,7 +359,7 @@
             "objective": "The avp.exe->cmd.exe masquerade dispatch fires the endpoint ABIOC and the correlation stitches both deviations into one incident.",
             "preconditions": [
               "Cortex XDR agent installed on the same host (xdr_data populated).",
-              "TC-NDR-011A executed so the Telegram C2 ABIOC is present for stitching."
+              "TS-NDR-011A executed so the Telegram C2 ABIOC is present for stitching."
             ],
             "steps": [
               "Run the avp.exe masquerade spawning cmd.exe with the /e:ON /v:OFF /d /c dispatcher string.",
