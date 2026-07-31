@@ -205,6 +205,13 @@ class ScenarioSchema(BaseModel):
     # ``pov_scenario_id`` names the index payload this scenario instantiates.
     tc_refs: list[str] = Field(default_factory=list)
     pov_scenario_id: Optional[str] = None
+    # ── License gating (Phase 3) ────────────────────────────────────────────
+    # What a tenant must own to run this scenario. Left empty in YAML and
+    # DERIVED at load time from tc_refs -> use case -> product/add-on row; an
+    # authored copy of index-owned data is the drift this work removes. A
+    # scenario may still override by declaring them explicitly.
+    required_base_platform: list[str] = Field(default_factory=list)
+    required_addons: list[str] = Field(default_factory=list)
     mitre_tactic: str
     mitre_tactic_name: str
     mitre_technique: str
@@ -537,6 +544,24 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
     return loaded_ids
 
 
+def _derive_entitlements(schema: "ScenarioSchema") -> dict[str, list[str]]:
+    """Resolve what a tenant must license to run this scenario.
+
+    Derived from the whole ``tc_refs`` evidence set (a scenario is only runnable
+    if the tenant can license everything it claims to prove, so the requirement
+    is the union). An explicit declaration in the YAML wins — that escape hatch
+    exists for scenarios whose index binding under-describes their real
+    dependencies — and an empty derivation is left empty rather than guessed.
+    """
+    from engine.uctc_registry import registry  # noqa: PLC0415
+
+    base, addons = registry.entitlements_for_many(schema.tc_refs or [schema.tc_ref])
+    return {
+        "required_base_platform": schema.required_base_platform or base,
+        "required_addons": schema.required_addons or addons,
+    }
+
+
 def _check_uctc_refs(schema: "ScenarioSchema", filepath: str) -> Optional[str]:
     """Validate ``uc_ref`` / ``tc_ref`` as a foreign key into the master UC/TC
     index, and flag positioning drift against the same row.
@@ -762,5 +787,6 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "correlation_window_seconds": schema.correlation_window_seconds,
         "stitching_key": schema.stitching_key,
         "required_planes_in_incident": schema.required_planes_in_incident,
+        **_derive_entitlements(schema),
         "created_at": datetime.utcnow(),
     }

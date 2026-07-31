@@ -33,9 +33,10 @@ async def list_scenarios(
     plane: Optional[str] = Query(None, description="Filter by detection plane (e.g. CDR)"),
     uc_ref: Optional[str] = Query(None, description="Filter by UC reference (e.g. UCS-CDR-03)"),
     ttp_ref: Optional[str] = Query(None, description="Filter to scenarios whose steps[].expected_detections[].ttp_ref cites this TTP id"),
+    entitlement: Optional[str] = Query(None, description="Filter to scenarios a tenant profile can license: ng-siem-bare | enterprise | premium"),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all scenarios, with optional plane / uc_ref / ttp_ref filters."""
+    """List all scenarios, with optional plane / uc_ref / ttp_ref / entitlement filters."""
     stmt = select(Scenario)
     if plane:
         stmt = stmt.where(Scenario.plane == plane.upper())
@@ -51,9 +52,14 @@ async def list_scenarios(
     if ttp_ref:
         scenarios = [s for s in scenarios if _scenario_cites_ttp(s, ttp_ref)]
 
+    # entitlement filter — a POV must not propose a scenario the prospect
+    # cannot license. Same runnability rule as POST /api/pov/scope.
+    if entitlement:
+        scenarios = [s for s in scenarios if _scenario_is_licensable(s, entitlement)]
+
     logger.info(
-        "list_scenarios plane=%s uc_ref=%s ttp_ref=%s count=%d",
-        plane, uc_ref, ttp_ref, len(scenarios),
+        "list_scenarios plane=%s uc_ref=%s ttp_ref=%s entitlement=%s count=%d",
+        plane, uc_ref, ttp_ref, entitlement, len(scenarios),
     )
     return {"scenarios": [s.to_dict() for s in scenarios], "total": len(scenarios)}
 
@@ -211,3 +217,22 @@ async def download_bundle(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _scenario_is_licensable(scenario: Scenario, profile: str) -> bool:
+    """True when a canned tenant profile covers this scenario's requirements.
+
+    Base platform is satisfied by owning ANY listed platform (the index names
+    the platforms a use case can land on, not a set to own in full); add-ons
+    must all be held. An unknown profile filters nothing out — better to show
+    the full catalog than to silently hide it behind a typo.
+    """
+    from api.pov import CANNED_PROFILES  # noqa: PLC0415
+
+    prof = CANNED_PROFILES.get(profile)
+    if prof is None:
+        return True
+    need_base = scenario.required_base_platform or []
+    base_ok = (not need_base) or bool(set(need_base) & set(prof["base_platform"]))
+    addons_ok = all(a in prof["addons"] for a in (scenario.required_addons or []))
+    return base_ok and addons_ok

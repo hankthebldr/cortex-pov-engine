@@ -435,6 +435,7 @@ from api.connectors import router as connectors_router  # noqa: E402
 from api.connectors import runs_reconcile_router        # noqa: E402
 from api.storyline import router as storyline_router    # noqa: E402
 from api.causality import router as causality_router    # noqa: E402
+from api.pov import router as pov_router                # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -460,6 +461,7 @@ app.include_router(storyline_router, prefix="/api")
 # Causality-Graph — per-run typed DAG (endpoint+network), extends the storyline
 # spine; same /runs-prefixed second-router pattern.
 app.include_router(causality_router, prefix="/api")
+app.include_router(pov_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

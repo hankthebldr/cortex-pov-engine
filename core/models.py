@@ -91,6 +91,14 @@ class Scenario(Base):
     stitching_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     required_planes_in_incident: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
 
+    # ── License gating (Phase 3) ───────────────────────────────────────────
+    # What a tenant must own to run this scenario. DERIVED at load time from
+    # tc_refs -> use case -> product/add-on row, never hand-authored: an
+    # authored copy of index-owned data is the drift this work exists to remove.
+    # Values are capability names that key into sku_catalog.csv.
+    required_base_platform: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    required_addons: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
     author: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -137,6 +145,8 @@ class Scenario(Base):
             "correlation_window_seconds": self.correlation_window_seconds,
             "stitching_key": self.stitching_key,
             "required_planes_in_incident": self.required_planes_in_incident or [],
+            "required_base_platform": self.required_base_platform or [],
+            "required_addons": self.required_addons or [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

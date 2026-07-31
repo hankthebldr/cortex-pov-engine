@@ -34,6 +34,19 @@ from typing import Any, Optional
 logger = logging.getLogger("cortexsim.uctc_registry")
 
 
+# Metered capacity, not capability gates. Every tenant sizes these; none of
+# them decides whether a scenario is runnable. The index's own
+# ``min_license_path`` derivation drops exactly this set.
+CAPACITY_SKUS = frozenset({
+    "Compute Units",
+    "Retention",
+    "GB Forwarding",
+    "Endpoint Forwarding",
+    "Data Ingestion — GB/day",
+    "Data Lake Ingestion — GB/day",
+})
+
+
 # ---------------------------------------------------------------------------
 # Index dataclasses
 # ---------------------------------------------------------------------------
@@ -439,6 +452,42 @@ class UcTcRegistry:
         and scenarios in the corpus use both forms."""
         return set(self._by_ucs) | set(self._uc)
 
+    def entitlements_for(self, tc_id: Optional[str]) -> tuple[list[str], list[str]]:
+        """``(base_platforms, addons)`` a tenant needs to run this test case.
+
+        Resolved test case → its use case → the product/add-on row. Derived on
+        every load rather than copied into scenario YAML: an authored duplicate
+        of index-owned data is exactly the drift this phase exists to remove.
+
+        Capacity SKUs are excluded, matching the index's own
+        ``min_license_path`` logic — ingestion, compute units, retention and
+        forwarding are metered sizing, not capability gates. UC-NDR lists
+        "Data Ingestion — GB/day" as an add-on yet its minimum path is bare
+        NG-SIEM, which is the index telling us the same thing.
+        """
+        tc = self.tc(tc_id)
+        if tc is None:
+            return [], []
+        uc = self.uc(tc.uc_id)
+
+        base = _split_pipe(uc.base_platform if uc else "") or _split_pipe(tc.base_platform)
+        addons = _split_pipe(uc.addon if uc else "") or _split_pipe(tc.required_addon)
+        return base, [a for a in addons if a not in CAPACITY_SKUS]
+
+    def entitlements_for_many(self, tc_ids: list[str]) -> tuple[list[str], list[str]]:
+        """Union of the entitlements across a scenario's whole evidence set.
+
+        A scenario is only runnable if the tenant can license *everything* it
+        claims to prove, so the requirement is the union, not the intersection.
+        """
+        base: list[str] = []
+        addons: list[str] = []
+        for tc_id in tc_ids:
+            b, a = self.entitlements_for(tc_id)
+            base.extend(x for x in b if x not in base)
+            addons.extend(x for x in a if x not in addons)
+        return base, addons
+
     def unscoreable(self) -> list[TestCase]:
         """DET/HNT test cases the index cannot score — no measurable threshold.
         Surfaced so the verifier emits ``not_applicable`` instead of a pass."""
@@ -511,6 +560,13 @@ def _read_version(mapping_dir: str) -> str:
             return fh.readline().strip()
     except OSError:
         return ""
+
+
+def _split_pipe(v: Optional[str]) -> list[str]:
+    """Split the index's ' · '-delimited capability lists. '—' means none."""
+    if not v:
+        return []
+    return [p.strip() for p in v.split("·") if p.strip() and p.strip() != "—"]
 
 
 def _int(v: Any) -> int:

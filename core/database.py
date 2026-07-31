@@ -110,6 +110,9 @@ def _migrate_scenarios_columns(connection) -> None:
         ("correlation_window_seconds", "INTEGER"),
         ("stitching_key", "VARCHAR"),
         ("required_planes_in_incident", "JSON"),
+        # Phase 3 — license gating
+        ("required_base_platform", "JSON"),
+        ("required_addons", "JSON"),
     ]
     for col_name, col_type in additions:
         if col_name in existing:
