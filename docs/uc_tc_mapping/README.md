@@ -65,6 +65,35 @@ set it false only to load a corpus mid-re-key. If the snapshot is absent
 entirely the registry reports `unverified` and never rejects, so a stripped
 deployment still boots.
 
+## In the product — the index is browsable, not just a file
+
+The snapshot is also served **inside CortexSim** so a DC can answer "what does
+this POV prove, and what does it not" without opening a CSV in front of a
+customer.
+
+- **API:** `core/api/uctc.py` → `GET /api/uctc/{summary,use-cases,test-cases,coverage,gaps,payloads,by-scenario/{id}}`.
+  Read-only by design; authoring stays in this directory and in
+  `scripts/uctc_crosswalk_v2.2.py`. Full endpoint table:
+  [`../reference/api-and-agent-surface.md`](../reference/api-and-agent-surface.md) §1.14.
+- **Console:** the **UC / TC Index** destination under *Analyze*
+  (`ui/src/components/console/UcTcIndexView.jsx`, route `#/uctc`). Three modes —
+  Index (UC rail → TC table → detail drawer), Coverage (worst-covered UC first),
+  and Gaps (unevidenced DET/HNT, P1 first). Deep-linkable:
+  `#/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03`.
+- **Licensing:** `core/api/pov.py` → `GET /api/pov/profiles`, `/capabilities`,
+  `POST /api/pov/scope` scopes the corpus to a tenant's entitlements and
+  generates the upsell list from the same registry.
+
+Two things the surface deliberately does **not** do. It never joins evidence
+through `pov_scenario_id` (one payload binds up to 21 test cases, so that would
+over-claim wildly), and it never hides `is_scoreable: false` — 57 of the 107
+detection-backable rows carry no measurable threshold, so a `pass` verdict is
+impossible for them by construction and saying so is the point.
+
+If the snapshot is absent from a deployment, every endpoint returns **200 with
+`index_loaded: false`** and the console renders an explicit degraded state
+rather than a misleading zero.
+
 ## Current state
 
 - **161 / 161 scenarios** resolve. Zero S-10/S-11/S-12/S-15.

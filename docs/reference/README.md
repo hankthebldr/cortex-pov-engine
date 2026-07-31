@@ -42,6 +42,23 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-07-31 — FY27 v2.2 UC/TC index reconciliation):**
+  The FY27 master index snapshot (**49 UC · 203 UCS · 266 TC · 140 POV-SC payloads · 38 SKU**)
+  is versioned in-repo at `docs/uc_tc_mapping/_v2.2-source/` and loaded at boot by
+  `core/engine/uctc_registry.py`. Scenario `uc_ref` / `tc_ref` / `tc_refs[]` /
+  `pov_scenario_id` are now a **validated foreign key** into it (`S-10..S-16`;
+  `CORTEXSIM_STRICT_REFS` **defaults true**). **161 / 161 scenarios resolve, zero
+  S-10/S-11/S-12/S-15**; **81 of 266** index test cases are evidenced (**62 of 107**
+  DET/HNT). The index is browsable **in the product**: `core/api/uctc.py` (9 read
+  endpoints) + the console **UC / TC Index** destination (`#/uctc`), with
+  `core/api/pov.py` scoping the corpus to a tenant entitlement set. The
+  **101 S-13 tier disagreements and 13 S-14 posture bindings are deliberate**, as is
+  the fact that 57 of the 107 detection-backable TCs are `is_scoreable: false` —
+  see [`../uc_tc_mapping/README.md`](../uc_tc_mapping/README.md) and
+  [`../uc_tc_mapping/index-gaps-v2.2.md`](../uc_tc_mapping/index-gaps-v2.2.md).
+  Full suite **3316 pass / 3 fail / 220 skip** (the 3 are the known `edr-013/017/021`
+  PowerShell-in-bash-bundle push-generator defect, not a regression);
+  `make validate` **328 pass / 0 warn / 0 fail**; exports byte-identical; UI **353 tests**.
 - **Counted ground truth (verified 2026-07-25 — analytics log-streamer + ABIOC/Analytics content):**
   **161 loadable scenarios** across **15 detection planes** (all `status: active`,
   0 rejected / 0 dangling refs; **1001/1001 detection_id slugs resolve** — GAP-4 held) ·
@@ -227,7 +244,8 @@ not exist, gcp/azure are accepted by Pydantic but have zero modules on disk, and
 `ttl_hours` is a no-op never rendered into any template.
 
 ### [`api-and-agent-surface.md`](api-and-agent-surface.md) — HTTP API + Agent Lifecycle
-Exhaustive map of all routes (now **65 across 11 routers**), the ORM state machines,
+Exhaustive map of all routes (**99 registered routes** as of 2026-07-31, including the
+new `/api/uctc` read surface and `/api/pov` entitlement scoping), the ORM state machines,
 the Go beacon poll/execute/report loop, the orchestrator task queue, and the
 push-bundle generator. The original audit's headline findings are now **RESOLVED
 (2026-06-08):** pull mode works end-to-end (wire-shape aligned), `/abort` + the

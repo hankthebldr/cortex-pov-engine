@@ -284,6 +284,56 @@ Authoring surface (gated on `CORTEXSIM_AUTHORING_ENABLED=true`, else 403 `AUTHOR
   endpoint subscribes and relays. An initial comment frame fires so
   `EventSource.onopen` triggers promptly (GAP-API-002, **closed 2026-06-08**).
 
+### 1.13 POV scoping (`core/api/pov.py`, prefix `/pov`)
+
+Answers "what can this tenant license, and what would they have to buy to run
+the rest of the POV". Backed by the v2.2 index registry, not by the scenario
+corpus alone — every capability it names resolves to a real `PAN-*` part number.
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/pov/profiles` | Canned tenant entitlement tiers | — | `ng-siem-bare` · `enterprise` · `premium` |
+| GET | `/api/pov/capabilities` | Every licensable capability + its SKU | — | capability → `PAN-*` part number |
+| POST | `/api/pov/scope` | Scope the corpus to an entitlement set | `{profile}` **or** `{base_platform[], addons[]}` | in-scope scenarios + the generated upsell list |
+
+- Entitlements always resolve through `registry.entitlements_for*`, which walks
+  the use case and drops capacity SKUs. Reading `TestCase.required_addon` raw
+  would disagree with this endpoint on the same test case.
+
+### 1.14 UC / TC index (`core/api/uctc.py`, prefix `/uctc`)
+
+The FY27 v2.2 master index as a **read-only** in-product surface, joined to the
+engine's own evidence (`Scenario.tc_refs` → `Run.tc_verdict`). Backs the
+console's **UC / TC Index** destination (`#/uctc`). Authoring stays in
+`docs/uc_tc_mapping/` + `scripts/uctc_crosswalk_v2.2.py` — there is no write path.
+
+| Method | Full path | Purpose | Response |
+|--------|-----------|---------|----------|
+| GET | `/api/uctc/summary` | Header counts + evidence rollup in one call | totals, per class/tier/priority/sheet tallies |
+| GET | `/api/uctc/use-cases` | The 49 UCs with per-UC coverage arithmetic | query: `sheet?`, `subdomain?`, `evidenced=all\|yes\|no\|partial` |
+| GET | `/api/uctc/use-cases/{uc_id}` | One UC + its UCS groups + child TCs | 404 `UC_NOT_FOUND` |
+| GET | `/api/uctc/test-cases` | The main table, all 266 rows, unpaginated | filters: `uc_id`, `ucs_id`, `validation_class`, `tier`, `priority`, `sheet`, `pov_scenario_id`, `evidenced`, `scoreable`, `plane` |
+| GET | `/api/uctc/test-cases/{tc_id}` | Full detail: measurement contract, entitlement, payload, evidencing scenarios, run verdicts | 404 `TC_NOT_FOUND` |
+| GET | `/api/uctc/coverage` | Every rollup at once (by UC / plane / class / tier / priority / sheet) | worst-covered UC first |
+| GET | `/api/uctc/gaps` | Unevidenced TCs — the build backlog | defaults `validation_class=DET,HNT`; P1 first |
+| GET | `/api/uctc/payloads` | POV-SC payloads + engine usage + `needs_split` | query: `in_use?` |
+| GET | `/api/uctc/by-scenario/{scenario_id}` | Forward view for a deep link | resolved/unresolved refs + tier delta; 404 `SCENARIO_NOT_FOUND` |
+
+- **Every** response carries `{index_loaded, index_version}`. The registry is
+  fail-soft (the prod image has historically shipped without `docs/`), so a
+  stripped deploy returns **200 with `index_loaded: false`** and empty
+  collections. Callers must render that as degraded, never as "0 test cases".
+- Evidence is keyed on `Scenario.tc_refs` **only**. Joining through
+  `pov_scenario_id` would over-claim: `POV-SC-001` binds 21 test cases.
+- Active scenarios only unless `include_inactive=true`.
+- `is_scoreable` is surfaced deliberately — 57 of the 107 detection-backable
+  rows carry no measurable threshold, so `pass` is impossible for them by
+  construction.
+
+> **Still undocumented in this table:** `/api/connectors`, `/api/xsiam`, and the
+> `/api/runs/*` storyline + causality routes. Those predate this pass and are
+> covered by their own design docs.
+
 ---
 
 ## 2. Lifecycle state machines

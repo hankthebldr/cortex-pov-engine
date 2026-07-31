@@ -316,9 +316,13 @@ which is materially thinner than the **82 techniques** the card corpus actually 
 `Result.observed`, which is only ever set when a DC manually validates a run via
 `PUT /api/results/{id}/validate`. On a fresh DB with no runs, **everything reads `not_run`**.
 
-`core/engine/uctc_mapper.py` is the UC/TC chain view; it reads `scenario.detection_types`
-(the BIOC/Analytics/IOC scenario vocabulary) and per-step `expected_detections`, so it inherits
-the same XQL/Correlation blindness described in GAP-2.
+**Superseded:** `core/engine/uctc_mapper.py` was the old UC/TC chain view, and it inherited the
+XQL/Correlation blindness described in GAP-2. It was **deleted** in the 2026-07-31 index
+reconciliation. UC/TC alignment now runs through `core/engine/uctc_registry.py` (the v2.2 master
+index as frozen dataclasses) with the scenario loader enforcing refs as a foreign key (S-10..S-16),
+and it is surfaced by `core/api/uctc.py` — which joins the index to real engine evidence
+(`Scenario.tc_refs` → `Run.tc_verdict`) rather than to the scenario detection vocabulary.
+See [`../uc_tc_mapping/README.md`](../uc_tc_mapping/README.md).
 
 The richer reverse-cross-ref path exists via `core/engine/ttp_catalog.py` +
 `core/api/ttps.py` (`GET /api/ttps/{ttp_id}` returns full card detail + reverse refs), but
@@ -435,7 +439,10 @@ fails to deploy. No automated grammar check exists in `detection_scanner/scripts
 - **Scenario schema**: `scenarios/_schema.yml`; loader `core/engine/scenario_loader.py`;
   ORM `core/models.py` (`Scenario`, `Result`, `Run`).
 - **Coverage/heatmap API**: `core/api/mitre.py` (`/api/mitre/coverage`).
-- **UC/TC chain mapping**: `core/engine/uctc_mapper.py` (PANW use-case / test-case alignment).
+- **UC/TC alignment**: index snapshot `docs/uc_tc_mapping/_v2.2-source/`; registry
+  `core/engine/uctc_registry.py`; ref enforcement in `core/engine/scenario_loader.py` (S-10..S-16);
+  read surface `core/api/uctc.py` + console `#/uctc`; entitlement scoping `core/api/pov.py`.
+  (Replaces the deleted `core/engine/uctc_mapper.py`.)
 - **Multi-plane correlation scenarios**: `scenarios/multi_plane/mp-00{1..5}-*.yml`
   (plane `ANALYTICS`) — the only place correlation rules are the headline detection.
 - **BlackSuit Blitz chain** (Unit 42 flagship): cards #0002 → #0004 → #0005 → #0006 fused by

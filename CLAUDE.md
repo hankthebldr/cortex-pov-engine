@@ -83,8 +83,8 @@ cd sources/<tool> && cargo build --release
 - `core/config.py` — Pydantic Settings from env vars (`CORTEXSIM_PORT`, `CORTEXSIM_ENV`, etc.)
 - `core/database.py` — async SQLAlchemy with SQLite at `{BASE_DIR}/data/cortexsim.db`
 - `core/models.py` — ORM: Scenario, Run, Result (with MTTD timing), ToolInstance, Agent (all have `.to_dict()`)
-- `core/api/` — FastAPI routers: scenarios, runs (with report export), results (with validation), tools, agents, mitre (coverage heatmap data)
-- `core/engine/` — scenario_loader (YAML→DB with Pydantic validation), orchestrator (auto-seeds Result rows from expected_detections), push_generator, uctc_mapper
+- `core/api/` — FastAPI routers: scenarios, runs (with report export), results (with validation), tools, agents, mitre (coverage heatmap data), uctc (UC/TC index read surface), pov (entitlement scoping)
+- `core/engine/` — scenario_loader (YAML→DB with Pydantic validation), orchestrator (auto-seeds Result rows from expected_detections), push_generator, uctc_registry (v2.2 index → frozen dataclasses), verifier (scores runs against thresholds)
 - `core/tools/` — `registry.py` (static TOOL_REGISTRY dict) + `instantiator.py` (subprocess lifecycle manager)
 - `core/planes/` — declarative `PlaneDescriptor` registry, one frozen-dataclass module per active plane (edr, cdr, ndr, itdr, cloud_app, analytics, ai_access, airs, ai_spm, asm, browser, cspm, koi, tim); `base.py` defines the descriptor model and `__init__.py` the registry
 
@@ -114,6 +114,16 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 - **`causality`** (per-step): `{parent_step, pivot?}` — this step's process descends from an EARLIER step's process via the declared edge kind. The loader rejects forward/self refs and allows at most one root step (the step that omits `causality`, which links from the CGO). `pivot` ∈ `process_lineage · network_session · endpoint_network_stitch · shared_entity · exposure_exploit · exploit_impact · temporal` (default `process_lineage`). A `process_lineage` pivot chains parent→child process nodes; any non-process pivot emits its own typed edge and leaves the step rooted at the CGO.
 - **`platforms`** (per-step): subset of `linux · windows · macos · container · k8s`.
 - **`platform_variants`** (per-step): `{os: command}` per-OS equivalents so a cross-platform TTP is exercised across environments (keys must be in the enum; lint warns if a key isn't also in that step's `platforms`).
+
+## UC/TC Alignment (FY27 v2.2 index)
+
+The FY27 Use-Case / Test-Case master index is the sales-motion source of truth. Its versioned snapshot lives at `docs/uc_tc_mapping/_v2.2-source/` (**49 UC · 203 UCS · 266 TC · 140 POV-SC payloads · 38 SKU**) and is loaded at boot by `core/engine/uctc_registry.py` into frozen dataclasses.
+
+**Scenario refs are a validated foreign key into that index, not free text.** Every scenario carries `uc_ref`, `tc_ref` (primary), `tc_refs[]` (the full evidence set, always containing `tc_ref`), and `pov_scenario_id`, plus the measurement contract (`validation_methodology`, `methodology_family` F1..F10, `primary_kpi`, `threshold`, `success_criteria`, `moat_tier`, `correlation_window_seconds`, `stitching_key`, `required_planes_in_incident`). `required_base_platform` / `required_addons` are **derived at load** from the registry, never authored. `core/engine/scenario_loader.py` enforces codes **S-10** (`tc_ref` not in index, ERROR) · **S-11** (unknown `uc_ref`, ERROR) · **S-12** (`tc_ref` parent ≠ `uc_ref`, ERROR) · **S-13** (tier disagreement, WARNING) · **S-14** (bound TC is POS/PLT/AUT, WARNING) · **S-15** (dangling `tc_refs[]` entry, ERROR) · **S-16** (unknown `pov_scenario_id`, WARNING). ERRORs reject only when `CORTEXSIM_STRICT_REFS` is true — **it defaults true**. If the snapshot is absent the registry degrades to advisory and never rejects, so a stripped deploy still boots.
+
+**In-product surface.** `core/api/uctc.py` serves the index read-only at `GET /api/uctc/{summary,use-cases,use-cases/{id},test-cases,test-cases/{id},coverage,gaps,payloads,by-scenario/{id}}`, joined to the engine's own evidence (`Scenario.tc_refs` → `Run.tc_verdict`). The console destination is **UC / TC Index** under *Analyze* (`ui/src/components/console/UcTcIndexView.jsx`, `#/uctc`, deep-linkable via `?uc=&tc=`). `core/api/pov.py` scopes the corpus to a tenant entitlement set (`GET /api/pov/profiles`, `/capabilities`, `POST /api/pov/scope`) and generates the upsell list with real `PAN-*` part numbers. Every `/api/uctc` response carries `{index_loaded, index_version}` — a snapshot-less deploy returns **200 with `index_loaded: false`**, which callers must render as degraded, never as "0 test cases".
+
+**Do not "fix" these.** 101 S-13 tier disagreements and 13 S-14 posture bindings are deliberate positioning calls (see `docs/uc_tc_mapping/index-gaps-v2.2.md`). 57 of the 107 detection-backable TCs carry no measurable threshold (`is_scoreable: false`) and are surfaced as such. Evidence never joins through `pov_scenario_id` — `POV-SC-001` alone binds 21 test cases. Three namespaces have historically been called "UC"/"TC"; only the index is canonical — `detection_scanner/ttps/*.json` uses card-local `threat_scenario_id` (`TS-*`) / `threat_step_id` and a guard test fails if a card id ever takes a `UC-`/`TC-` prefix again. Current state: **161/161 scenarios resolve, zero S-10/S-11/S-12/S-15; 81 of 266 index TCs evidenced (62 of 107 DET/HNT)**. Authoritative doc: `docs/uc_tc_mapping/README.md`; the crosswalk is hand-authored in `scripts/uctc_crosswalk_v2.2.py` (`--report` / `--emit` / `--apply`).
 
 ## Detection Planes
 
@@ -190,10 +200,10 @@ Declarative `ToolAdapter` model — one YAML per security tool under `tools/pack
 
 `.github/workflows/ci.yml` runs a **5-job matrix** on push / PR / manual dispatch:
 
-- **backend** — Python test suite (`pytest`, runs inside the prod image; 1596 pass / 80 skip as of the 2026-06-08 verification).
+- **backend** — Python test suite (`pytest`, runs inside the prod image; **3316 pass / 3 fail / 220 skip** on the full `tests/` tree as of the 2026-07-31 verification). The 3 failures are `tests/e2e_isolated/test_tier_b_push_bundle.py` on `edr-013` / `edr-017` / `edr-021`, which emit PowerShell steps into a bash bundle — a known open defect in the push generator, not a regression.
 - **agent** — Go beacon `build` + `vet` + `test -race -count=1`.
 - **ui** — vitest + `vite build`.
-- **detection** — detection-corpus validator (140 pass / 0 fail) + deterministic export regeneration check (`sha256sum -c`, SKELETON=0).
+- **detection** — detection-corpus validator (**328 pass / 0 warn / 0 fail**) + deterministic export regeneration check (`sha256sum -c`, SKELETON=0).
 - **adapters** — `scripts/check-adapter-sources.sh`: tier-2 adapter source trees (git submodules) **must exist on disk** (FAIL if missing — GAP-ADAPT-01 guard); tier-4 runtime-fetched misses are WARN only.
 
 `make -n ci` enumerates the local equivalents. Run `scripts/check-adapter-sources.sh`
