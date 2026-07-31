@@ -69,6 +69,11 @@ def _migrate_results_columns(connection) -> None:
         ("detection_logic", "TEXT"),
         ("detection_severity", "VARCHAR"),
         ("mitre_technique", "VARCHAR"),
+        # Phase 2 — verification
+        ("verification_xql", "TEXT"),
+        ("kpi_contribution", "JSON"),
+        ("kpi_verdict", "VARCHAR"),
+        ("verified_at", "DATETIME"),
     ]
     for col_name, col_type in additions:
         if col_name in existing:
@@ -92,14 +97,31 @@ def _migrate_scenarios_columns(connection) -> None:
     existing = {col["name"] for col in inspector.get_columns("scenarios")}
 
     additions = [
-        ("cgo_anchor", "JSON"),        # causality contract
+        ("cgo_anchor", "JSON"),          # causality contract
         ("pov_scenario_id", "VARCHAR"),  # UC/TC payload join
         ("tc_refs", "JSON"),             # full TC evidence set
+        # Phase 2 — measurement contract
+        ("validation_methodology", "VARCHAR"),
+        ("methodology_family", "VARCHAR"),
+        ("primary_kpi", "VARCHAR"),
+        ("threshold", "JSON"),
+        ("success_criteria", "TEXT"),
+        ("moat_tier", "VARCHAR"),
+        ("correlation_window_seconds", "INTEGER"),
+        ("stitching_key", "VARCHAR"),
+        ("required_planes_in_incident", "JSON"),
     ]
     for col_name, col_type in additions:
         if col_name in existing:
             continue
         connection.execute(text(f"ALTER TABLE scenarios ADD COLUMN {col_name} {col_type}"))
+
+    if "runs" in inspector.get_table_names():
+        run_existing = {col["name"] for col in inspector.get_columns("runs")}
+        for col_name, col_type in [("tc_verdict", "VARCHAR"), ("tc_verdict_detail", "JSON")]:
+            if col_name in run_existing:
+                continue
+            connection.execute(text(f"ALTER TABLE runs ADD COLUMN {col_name} {col_type}"))
 
 
 async def get_db():

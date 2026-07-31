@@ -330,6 +330,13 @@ class Orchestrator:
                     ttp_ref=ttp_ref,
                     detection_id=detection_id,
                     mitre_technique=step_technique,
+                    # Phase 2 — carry the verification contract onto the row so
+                    # verifier.py can score it without re-reading the YAML.
+                    # `pending` (not None) marks a row the verifier owns; rows
+                    # with no verification_xql stay unscoreable by design.
+                    verification_xql=detection.get("verification_xql"),
+                    kpi_contribution=detection.get("kpi_contribution"),
+                    kpi_verdict="pending" if detection.get("verification_xql") else None,
                 )
                 if card is not None:
                     result.detection_kind = card.kind

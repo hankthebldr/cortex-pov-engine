@@ -242,10 +242,9 @@ class ScenarioSchema(BaseModel):
         description="IaC generator module names for auto-suggest (e.g. ['base', 'edr'])")
 
     # ── v2.0 KPI / methodology metadata (all optional, back-compatible) ─────
-    # Mirror the columns in HR-Cortex-Use-Case-Index-Master-v2.0.xlsx.
-    # Surfaced in POV reports and (later) used by the validation harness to
-    # drive family-specific verification. Not yet persisted to the ORM —
-    # validation-only in this pass. See docs/uc_tc_mapping/v2.0-methodology-master.md.
+    # Mirror the columns in the master use-case index. Persisted to the
+    # Scenario ORM since Phase 2 and consumed by engine/verifier.py to score a
+    # run against its threshold. See docs/uc_tc_mapping/v2.0-methodology-master.md.
     validation_methodology: Optional[str] = None         # e.g. "Causality Graph Stitching"
     methodology_family: Optional[str] = None             # one of F1..F10
     primary_kpi: Optional[str] = None                    # e.g. "Cross-Source Correlation Rate"
@@ -751,5 +750,17 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "tags": schema.tags,
         "author": schema.author,
         "cgo_anchor": schema.cgo_anchor.model_dump() if schema.cgo_anchor else None,
+        # Measurement contract — validated since the v2.0 pass, persisted since
+        # Phase 2. Without these a run can report observed/MTTD but cannot say
+        # whether the test case PASSED.
+        "validation_methodology": schema.validation_methodology,
+        "methodology_family": schema.methodology_family,
+        "primary_kpi": schema.primary_kpi,
+        "threshold": schema.threshold.model_dump() if schema.threshold else None,
+        "success_criteria": schema.success_criteria,
+        "moat_tier": schema.moat_tier,
+        "correlation_window_seconds": schema.correlation_window_seconds,
+        "stitching_key": schema.stitching_key,
+        "required_planes_in_incident": schema.required_planes_in_incident,
         "created_at": datetime.utcnow(),
     }

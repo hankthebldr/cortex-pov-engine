@@ -78,6 +78,12 @@ validate-detection: ## validate.py (0 fail) + export-determinism gate (CI 'detec
 	python3 detection_scanner/scripts/export_artifacts.py
 	git diff --exit-code detection_scanner/exports/
 
+unscoreable-report: ## regenerate docs/uc_tc_mapping/unscoreable-tcs.md from the index snapshot
+	python3 scripts/report_unscoreable_tcs.py
+
+crosswalk-report: ## UC/TC crosswalk reconciliation summary
+	python3 scripts/uctc_crosswalk_v2.2.py --report
+
 check-adapters: ## tier-2 adapter source preflight (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
 

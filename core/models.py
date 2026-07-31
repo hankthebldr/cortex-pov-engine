@@ -75,6 +75,22 @@ class Scenario(Base):
     # migration. NOTE: prod needs `ALTER TABLE scenarios ADD COLUMN cgo_anchor JSON`.
     cgo_anchor: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # ── Measurement contract (v2.0 KPI block) ──────────────────────────────
+    # The scenario loader validated these for several releases and then dropped
+    # them, so a run could report observed/not-observed and MTTD but never
+    # answer "did this test case PASS its threshold". Persisted now so
+    # verifier.py can score a run and the POV report can state a verdict.
+    # All nullable; see _migrate_scenarios_columns in database.py.
+    validation_methodology: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    methodology_family: Mapped[Optional[str]] = mapped_column(String, nullable=True)   # F1..F10
+    primary_kpi: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    threshold: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)   # {kpi, op, value, unit}
+    success_criteria: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    moat_tier: Mapped[Optional[str]] = mapped_column(String, nullable=True)            # MOAT | LEAD | PARITY
+    correlation_window_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    stitching_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    required_planes_in_incident: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
     author: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -112,6 +128,15 @@ class Scenario(Base):
             "tags": self.tags,
             "author": self.author,
             "cgo_anchor": self.cgo_anchor,
+            "validation_methodology": self.validation_methodology,
+            "methodology_family": self.methodology_family,
+            "primary_kpi": self.primary_kpi,
+            "threshold": self.threshold,
+            "success_criteria": self.success_criteria,
+            "moat_tier": self.moat_tier,
+            "correlation_window_seconds": self.correlation_window_seconds,
+            "stitching_key": self.stitching_key,
+            "required_planes_in_incident": self.required_planes_in_incident or [],
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -134,6 +159,12 @@ class Run(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     output: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Run-level test-case verdict (Phase 2). Distinct from `status`: status is
+    # "did the run execute", tc_verdict is "did the test case PASS its
+    # threshold". Set by verifier.score_run.
+    tc_verdict: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # pass|fail|pending|not_applicable
+    tc_verdict_detail: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
     results: Mapped[list["Result"]] = relationship("Result", back_populates="run_rel")
@@ -147,6 +178,8 @@ class Run(Base):
             "target": self.target,
             "identity_context": self.identity_context,
             "status": self.status,
+            "tc_verdict": self.tc_verdict,
+            "tc_verdict_detail": self.tc_verdict_detail,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "output": self.output,
@@ -184,6 +217,17 @@ class Result(Base):
     detection_severity: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     mitre_technique: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    # ── Verification (Phase 2) ─────────────────────────────────────────────
+    # `observed` answers "did we see it". These answer "did it MEET the bar".
+    # kpi_verdict is deliberately four-valued: `not_applicable` is what an
+    # unscoreable test case gets (57 of the index's DET/HNT rows carry no
+    # measurable threshold), because a silent `pass` on one of those produces a
+    # green POV readout that means nothing.
+    verification_xql: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    kpi_contribution: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    kpi_verdict: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # pass|fail|pending|not_applicable
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     # Relationships
     run_rel: Mapped["Run"] = relationship("Run", back_populates="results")
 
@@ -210,6 +254,10 @@ class Result(Base):
             "executed_at": self.executed_at.isoformat() if self.executed_at else None,
             "observed_at": self.observed_at.isoformat() if self.observed_at else None,
             "mttd_seconds": self.mttd_seconds,
+            "verification_xql": self.verification_xql,
+            "kpi_contribution": self.kpi_contribution,
+            "kpi_verdict": self.kpi_verdict,
+            "verified_at": self.verified_at.isoformat() if self.verified_at else None,
             "ttp_ref": self.ttp_ref,
             "detection_id": self.detection_id,
             "detection_kind": self.detection_kind,
