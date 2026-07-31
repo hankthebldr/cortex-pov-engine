@@ -97,9 +97,9 @@ rather than a misleading zero.
 ## Current state
 
 - **161 / 161 scenarios** resolve. Zero S-10/S-11/S-12/S-15.
-- **81 of 266** index test cases are evidenced by the corpus (**62 of 107**
+- **84 of 266** index test cases are evidenced by the corpus (**65 of 107**
   DET/HNT — the detection-backable subset).
-- 101 scenarios carry an `S-13` tier disagreement and 13 an `S-14` posture-class
+- 100 scenarios carry an `S-13` tier disagreement and 13 an `S-14` posture-class
   binding. Both are advisory and both are real — see
   [`index-gaps-v2.2.md`](index-gaps-v2.2.md).
 

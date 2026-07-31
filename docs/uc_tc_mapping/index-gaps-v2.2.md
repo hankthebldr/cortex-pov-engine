@@ -25,7 +25,7 @@ index's own model already works this way — `scenario_library_v2.2.csv` binds o
 POV-SC payload to many test cases — so the engine now matches it rather than
 forcing a 1:1 the index never claimed.
 
-**Coverage today: 81 of 266 test cases evidenced (62 of 107 DET/HNT).**
+**Coverage today: 84 of 266 test cases evidenced (65 of 107 DET/HNT).**
 
 ---
 
@@ -119,3 +119,40 @@ readout that means nothing.
 `v2.0-tc-mapping-table.csv` carried two different test cases both labelled
 `TC-IR-02`. The second ("issue grouping stitches alerts across disparate
 sources") is `TC-IR-13` in v2.2, so it was re-keyed rather than deleted.
+
+
+---
+
+## 7 · The index files two XSIAM capabilities under Cortex Cloud
+
+Surfaced by the alignment audit, and the reason three EDR scenarios still derive
+a cloud SKU after the over-binding fix:
+
+| Test case | What it validates | Index UC | Product mapping |
+|---|---|---|---|
+| `TC-WAAS-04` | "Agent-Based Threat Detection (Runtime) — **Cortex Agent** detects web application attacks" | `UC-WAAS` | Cortex Cloud · Cloud AppSec |
+| `TC-CITH-07` | "AI-Powered Alert Stitching — alert-to-incident ratio demonstrates >80% noise reduction" | `UC-CITH` | Cortex Cloud |
+
+Both describe capabilities the **XDR agent and XSIAM** deliver, but their parent
+use cases are mapped to Cortex Cloud. Because `required_addons` is unioned over
+a scenario's whole evidence set, `SIM-EDR-014` / `SIM-EDR-020` (ASPX web shell
+in `w3wp`) and `SIM-EDR-018` (AI SOC summarization) each inherit `Cloud Runtime`.
+
+Those bindings are honest — an endpoint agent really is what catches the web
+shell — so they were left in place and allowlisted by name in
+`tests/engine/test_corpus_refs_strict.py`. Dropping them to tidy the SKU would
+be the force-fit this work exists to avoid. **The fix belongs upstream:** either
+re-file those two TCs, or split the product mapping so it can vary per test case
+rather than per use case.
+
+### Related: should entitlements derive from the whole evidence set?
+
+`_derive_entitlements` unions over every `tc_ref`. That is why one aspirational
+secondary ref could inflate a scenario's bill of materials. The alternative —
+derive from the primary only — under-states scenarios that genuinely span
+products. A third option is to keep the union but split the output into
+`required_addons` (primary) and `optional_addons` (secondary-derived), so
+`POST /api/pov/scope` can block on the first and merely note the second.
+
+Left as-is pending a decision. It is a semantics call about what "required"
+means in a POV quote, not a bug.
