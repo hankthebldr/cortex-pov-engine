@@ -37,6 +37,15 @@ class Scenario(Base):
     uc_name: Mapped[str] = mapped_column(String, nullable=False)
     tc_name: Mapped[str] = mapped_column(String, nullable=False)
 
+    # UC/TC payload join (v2.2 index). The master index binds one POV-SC
+    # *payload* to many test cases — a single scenario evidences a SET of TCs,
+    # not one. ``tc_ref`` stays the primary binding for back-compat; ``tc_refs``
+    # carries the full evidence set and ``pov_scenario_id`` names the index
+    # payload this scenario is an instance of.
+    # NOTE: prod needs the idempotent ADD COLUMN in database.py to have run.
+    pov_scenario_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    tc_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
     mitre_tactic: Mapped[str] = mapped_column(String, nullable=False)
     mitre_tactic_name: Mapped[str] = mapped_column(String, nullable=False)
     mitre_technique: Mapped[str] = mapped_column(String, nullable=False)
@@ -83,6 +92,8 @@ class Scenario(Base):
             "detection_types": self.detection_types,
             "uc_ref": self.uc_ref,
             "tc_ref": self.tc_ref,
+            "tc_refs": self.tc_refs or ([self.tc_ref] if self.tc_ref else []),
+            "pov_scenario_id": self.pov_scenario_id,
             "uc_name": self.uc_name,
             "tc_name": self.tc_name,
             "mitre_tactic": self.mitre_tactic,

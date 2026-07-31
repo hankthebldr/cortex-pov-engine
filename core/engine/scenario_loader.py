@@ -197,6 +197,14 @@ class ScenarioSchema(BaseModel):
     tc_ref: str
     uc_name: str
     tc_name: str
+    # ── UC/TC payload join (v2.2 index) ────────────────────────────────────
+    # The master index binds one POV-SC *payload* to many test cases, so a
+    # scenario evidences a SET of TCs rather than exactly one. ``tc_ref`` stays
+    # the primary binding (required, back-compatible); ``tc_refs`` carries the
+    # full evidence set and defaults to ``[tc_ref]`` when omitted.
+    # ``pov_scenario_id`` names the index payload this scenario instantiates.
+    tc_refs: list[str] = Field(default_factory=list)
+    pov_scenario_id: Optional[str] = None
     mitre_tactic: str
     mitre_tactic_name: str
     mitre_technique: str
@@ -270,6 +278,20 @@ class ScenarioSchema(BaseModel):
         if v not in allowed:
             raise ValueError(f"moat_tier must be one of {allowed}, got '{v}'")
         return v
+
+    @model_validator(mode="after")
+    def default_tc_refs_to_primary(self) -> "ScenarioSchema":
+        """``tc_refs`` defaults to ``[tc_ref]`` and always contains it.
+
+        Keeps the two fields from drifting: a caller that reads only
+        ``tc_refs`` sees the primary binding, and a scenario that never
+        declares the list behaves exactly as it did before the payload join.
+        """
+        refs = list(dict.fromkeys(self.tc_refs))  # de-dupe, preserve order
+        if self.tc_ref and self.tc_ref not in refs:
+            refs.insert(0, self.tc_ref)
+        object.__setattr__(self, "tc_refs", refs)
+        return self
 
     @field_validator("status")
     @classmethod
@@ -529,6 +551,8 @@ def _check_uctc_refs(schema: "ScenarioSchema", filepath: str) -> Optional[str]:
     ``S-14`` the TC's ``validation_class`` is POS/PLT/AUT, i.e.
              an assertion the index does not expect a detection
              scenario to satisfy                                 — WARNING
+    ``S-15`` a non-primary ``tc_refs[]`` entry is not in the index — ERROR
+    ``S-16`` ``pov_scenario_id`` names no payload in the index    — WARNING
 
     Returns a rejection reason when ``CORTEXSIM_STRICT_REFS`` is on and an
     S-10/S-11/S-12 fired; otherwise ``None`` (the scenario still loads and the
@@ -559,6 +583,33 @@ def _check_uctc_refs(schema: "ScenarioSchema", filepath: str) -> Optional[str]:
     tc = verdict.test_case
     if tc is None:  # unverified — no snapshot loaded
         return None
+
+    # S-15: the rest of the evidence set. A scenario claims to prove every TC
+    # in tc_refs, so a dangling entry inflates the coverage number silently —
+    # the exact failure mode this whole phase exists to close.
+    dangling = [
+        ref for ref in schema.tc_refs
+        if ref != schema.tc_ref and registry.tc(ref) is None
+    ]
+    if dangling:
+        detail = (
+            f"S-15 scenario={schema.scenario_id} tc_refs entries not in the "
+            f"v{registry.version} index: {', '.join(dangling)} (from {filepath})"
+        )
+        if strict:
+            return detail
+        logger.warning("%s [advisory — CORTEXSIM_STRICT_REFS is off]", detail)
+
+    # S-16: the payload this scenario instantiates. Advisory in both modes —
+    # a scenario may legitimately be a net-new payload the index has not
+    # absorbed yet, and that gap is content for the v2.3 proposal, not a
+    # boot failure.
+    if schema.pov_scenario_id and registry.payload(schema.pov_scenario_id) is None:
+        logger.warning(
+            "S-16 scenario=%s declares pov_scenario_id=%s which names no "
+            "payload in the v%s index (from %s)",
+            schema.scenario_id, schema.pov_scenario_id, registry.version, filepath,
+        )
 
     # S-13: the scenario's positioning claim vs the index's. The index wins;
     # a scenario claiming MOAT against a PARITY test case oversells the demo.
@@ -680,6 +731,8 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "detection_types": schema.detection_types,
         "uc_ref": schema.uc_ref,
         "tc_ref": schema.tc_ref,
+        "tc_refs": schema.tc_refs,
+        "pov_scenario_id": schema.pov_scenario_id,
         "uc_name": schema.uc_name,
         "tc_name": schema.tc_name,
         "mitre_tactic": schema.mitre_tactic,

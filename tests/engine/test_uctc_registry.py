@@ -134,6 +134,102 @@ def test_posture_class_needs_no_detection_content(registry):
 
 
 # ---------------------------------------------------------------------------
+# Payload join — the reason tc_refs is a list
+# ---------------------------------------------------------------------------
+
+
+def test_payload_library_loads(registry):
+    assert len(registry.all_payloads()) == 140
+
+
+def test_payload_binds_many_test_cases(registry):
+    """The index's own model is one payload → many TCs. This is the fact that
+    makes a singular tc_ref structurally unable to express coverage."""
+    p = registry.payload("POV-SC-008")
+    assert p is not None
+    assert len(p.bound_tc_ids) > 1
+    multi = [x for x in registry.all_payloads() if len(x.bound_tc_ids) > 1]
+    assert len(multi) > 20, "expected the index to be broadly many-to-one"
+
+
+def test_payload_test_cases_filters_to_detection_class(registry):
+    """A detection scenario evidences DET/HNT rows; the POS/PLT/AUT rows that
+    share its payload are posture assertions it cannot fire."""
+    all_tcs = registry.payload_test_cases("POV-SC-001", detection_only=False)
+    det_tcs = registry.payload_test_cases("POV-SC-001", detection_only=True)
+    assert all_tcs, "POV-SC-001 binds 21 TCs"
+    assert len(det_tcs) < len(all_tcs)
+    assert all(tc.needs_detection_content for tc in det_tcs)
+
+
+def test_oversubscribed_payload_flagged_for_split(registry):
+    """A payload backing 8+ TCs fires them all from one injection, so none is
+    independently validatable — Phase 4 splits these."""
+    split = [p for p in registry.all_payloads() if p.needs_split]
+    assert split, "expected SPLIT REQUIRED payloads"
+    assert registry.payload("POV-SC-001").needs_split is True
+
+
+def test_unknown_payload_resolves_to_nothing(registry):
+    assert registry.payload("POV-SC-999") is None
+    assert registry.payload_test_cases("POV-SC-999") == []
+
+
+def test_tc_refs_defaults_to_primary_ref():
+    """A scenario that never declares tc_refs behaves exactly as before."""
+    s = _schema()
+    assert s.tc_refs == ["TC-IR-01"]
+
+
+def test_tc_refs_always_contains_primary():
+    """Declaring an evidence set must not drop the primary binding."""
+    s = _schema(tc_refs=["TC-IR-05", "TC-CITH-07"])
+    assert s.tc_refs[0] == "TC-IR-01"
+    assert set(s.tc_refs) == {"TC-IR-01", "TC-IR-05", "TC-CITH-07"}
+
+
+def test_tc_refs_dedupes():
+    s = _schema(tc_refs=["TC-IR-01", "TC-IR-05", "TC-IR-05"])
+    assert s.tc_refs == ["TC-IR-01", "TC-IR-05"]
+
+
+def test_s15_dangling_evidence_ref_warns_then_rejects(loaded_singleton, monkeypatch, caplog):
+    """A dangling tc_refs entry silently inflates coverage — the exact defect
+    this phase closes — so it is an error under strict mode."""
+    from config import settings  # noqa: PLC0415
+    from engine.scenario_loader import _check_uctc_refs  # noqa: PLC0415
+
+    s = _schema(tc_refs=["TC-NOPE-99"])
+    with caplog.at_level(logging.WARNING):
+        assert _check_uctc_refs(s, "test.yml") is None
+    assert "S-15" in caplog.text
+
+    monkeypatch.setattr(settings, "CORTEXSIM_STRICT_REFS", True)
+    err = _check_uctc_refs(s, "test.yml")
+    assert err is not None and "S-15" in err
+
+
+def test_s16_unknown_payload_is_advisory_in_both_modes(loaded_singleton, monkeypatch, caplog):
+    """A net-new payload is content for the v2.3 proposal, not a boot failure."""
+    from config import settings  # noqa: PLC0415
+    from engine.scenario_loader import _check_uctc_refs  # noqa: PLC0415
+
+    monkeypatch.setattr(settings, "CORTEXSIM_STRICT_REFS", True)
+    with caplog.at_level(logging.WARNING):
+        err = _check_uctc_refs(_schema(pov_scenario_id="POV-SC-999"), "test.yml")
+    assert err is None
+    assert "S-16" in caplog.text
+
+
+def test_known_payload_does_not_warn(loaded_singleton, caplog):
+    from engine.scenario_loader import _check_uctc_refs  # noqa: PLC0415
+
+    with caplog.at_level(logging.WARNING):
+        _check_uctc_refs(_schema(pov_scenario_id="POV-SC-006"), "test.yml")
+    assert "S-16" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
 # validate_ref
 # ---------------------------------------------------------------------------
 

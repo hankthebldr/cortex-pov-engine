@@ -156,6 +156,31 @@ class UseCase:
 
 
 @dataclass(frozen=True)
+class Payload:
+    """One POV-SC simulation payload from the index's scenario library.
+
+    This is the join the engine actually lives on: the index binds ONE payload
+    to MANY test cases (``POV-SC-008`` — beaconing / DNS tunnel / SMB lateral —
+    backs 7 TCs), which is why a scenario's evidence set is ``tc_refs`` rather
+    than a single ``tc_ref``. An engine scenario is an *instance* of a payload,
+    finer-grained than the payload itself, so several scenarios legitimately
+    share one ``pov_scenario_id``.
+    """
+
+    pov_scenario_id: str
+    payload: str
+    bound_tc_ids: list[str] = field(default_factory=list)
+    mitre_techniques: list[str] = field(default_factory=list)
+    reuse_flag: str = ""               # ok | review | SPLIT REQUIRED
+
+    @property
+    def needs_split(self) -> bool:
+        """A payload backing 8+ test cases fires them all at once, so none of
+        them can be independently validated. Phase 4 splits these."""
+        return self.reuse_flag == "SPLIT REQUIRED"
+
+
+@dataclass(frozen=True)
 class Sku:
     """One capability → part-number row of the FY27 price book."""
 
@@ -211,6 +236,7 @@ class UcTcRegistry:
         self._tc: dict[str, TestCase] = {}
         self._uc: dict[str, UseCase] = {}
         self._by_ucs: dict[str, list[TestCase]] = {}
+        self._payload: dict[str, Payload] = {}
         self._sku: dict[str, Sku] = {}
         self._version: str = ""
 
@@ -222,6 +248,7 @@ class UcTcRegistry:
         self._tc.clear()
         self._uc.clear()
         self._by_ucs.clear()
+        self._payload.clear()
         self._sku.clear()
         self._version = ""
 
@@ -311,6 +338,21 @@ class UcTcRegistry:
                 bundle_alternative=a.get("bundle_alternative", ""),
             )
 
+        for row in _read_csv(os.path.join(source_dir, "scenario_library_v2.2.csv")):
+            pid = (row.get("pov_scenario_id") or "").strip()
+            if not pid:
+                continue
+            self._payload[pid] = Payload(
+                pov_scenario_id=pid,
+                payload=row.get("scenario_payload", ""),
+                bound_tc_ids=(row.get("bound_tc_ids") or "").split(),
+                mitre_techniques=[
+                    t for t in (row.get("mitre_techniques") or "").split()
+                    if t != "TBD"
+                ],
+                reuse_flag=(row.get("reuse_flag") or "").strip(),
+            )
+
         for row in _read_csv(os.path.join(source_dir, "sku_catalog.csv")):
             cap = (row.get("capability") or "").strip()
             if not cap:
@@ -325,9 +367,9 @@ class UcTcRegistry:
 
         logger.info(
             "UC/TC registry loaded (v%s): %d test cases across %d use cases "
-            "(%d UCS groups, %d SKUs) from %s",
+            "(%d UCS groups, %d payloads, %d SKUs) from %s",
             self._version or "?", len(self._tc), len(self._uc),
-            len(self._by_ucs), len(self._sku), source_dir,
+            len(self._by_ucs), len(self._payload), len(self._sku), source_dir,
         )
         return len(self._tc)
 
@@ -355,6 +397,28 @@ class UcTcRegistry:
 
     def sku(self, capability: Optional[str]) -> Optional[Sku]:
         return self._sku.get(capability) if capability else None
+
+    def payload(self, pov_scenario_id: Optional[str]) -> Optional[Payload]:
+        return self._payload.get(pov_scenario_id) if pov_scenario_id else None
+
+    def all_payloads(self) -> list[Payload]:
+        return list(self._payload.values())
+
+    def payload_test_cases(
+        self, pov_scenario_id: Optional[str], *, detection_only: bool = True
+    ) -> list[TestCase]:
+        """Resolve a payload to its bound test cases.
+
+        ``detection_only`` filters to DET/HNT rows — a detection scenario
+        evidences those, not the POS/PLT/AUT assertions that share the payload.
+        """
+        p = self.payload(pov_scenario_id)
+        if p is None:
+            return []
+        out = [self._tc[t] for t in p.bound_tc_ids if t in self._tc]
+        if detection_only:
+            out = [t for t in out if t.needs_detection_content]
+        return out
 
     def all_test_cases(self) -> list[TestCase]:
         return list(self._tc.values())

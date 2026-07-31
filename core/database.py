@@ -46,6 +46,7 @@ async def init_db() -> None:
         # COLUMNS — so a CortexSim dev box with an existing cortexsim.db
         # would otherwise SELECT-fail on the new columns.
         await conn.run_sync(_migrate_results_columns)
+        await conn.run_sync(_migrate_scenarios_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -73,6 +74,32 @@ def _migrate_results_columns(connection) -> None:
         if col_name in existing:
             continue
         connection.execute(text(f"ALTER TABLE results ADD COLUMN {col_name} {col_type}"))
+
+
+def _migrate_scenarios_columns(connection) -> None:
+    """Add later-phase columns to the ``scenarios`` table if absent.
+
+    Same rationale as ``_migrate_results_columns``: ``create_all`` never adds
+    columns to an existing table, so a box carrying an older cortexsim.db would
+    SELECT-fail on these. All are nullable (or JSON defaulting to ``[]`` at the
+    ORM layer), so the ADD COLUMN is non-blocking.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "scenarios" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("scenarios")}
+
+    additions = [
+        ("cgo_anchor", "JSON"),        # causality contract
+        ("pov_scenario_id", "VARCHAR"),  # UC/TC payload join
+        ("tc_refs", "JSON"),             # full TC evidence set
+    ]
+    for col_name, col_type in additions:
+        if col_name in existing:
+            continue
+        connection.execute(text(f"ALTER TABLE scenarios ADD COLUMN {col_name} {col_type}"))
 
 
 async def get_db():
