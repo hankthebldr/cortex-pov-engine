@@ -160,6 +160,8 @@ def score_run(
     threshold: Any = None,
     primary_kpi: Optional[str] = None,
     mttd_seconds: Optional[float] = None,
+    measured_value: Optional[float] = None,
+    tc_scoreable: bool = True,
 ) -> RunScore:
     """Aggregate per-result verdicts into one run-level test-case verdict.
 
@@ -175,6 +177,17 @@ def score_run(
     * else at least one ``pass`` → ``pass``.
     * else → ``not_applicable``. Nothing here could be scored, and saying so is
       the honest answer.
+
+    ``measured_value`` supplies the primary KPI directly, for callers that
+    measure something the engine cannot derive natively (an assertion probe
+    returns a row count, a latency, a coverage percentage). It takes precedence
+    over the MTTD path, which stays the default for detection scenarios.
+
+    ``tc_scoreable`` is the index's own verdict on whether the bound test case
+    carries a measurable threshold at all. When it is False a machine ``pass``
+    would assert something the index never defined, so PASS is clamped to
+    ``not_applicable``. FAIL is never clamped — a qualitative claim can be
+    disproved even when it cannot be machine-certified.
     """
     counts: dict[str, int] = {PASS: 0, FAIL: 0, PENDING: 0, NOT_APPLICABLE: 0}
     weighted_pass = 0.0
@@ -204,12 +217,24 @@ def score_run(
     # above already scored.
     primary: Optional[dict[str, Any]] = None
     if threshold is not None:
-        actual = mttd_seconds if _is_mttd(primary_kpi, threshold) else None
+        actual = measured_value
+        if actual is None and _is_mttd(primary_kpi, threshold):
+            actual = mttd_seconds
         tv = evaluate_threshold(threshold, actual)
         primary = tv.to_dict()
         if tv.verdict == FAIL:
             return RunScore(FAIL, f"primary KPI failed: {tv.detail}",
                             weighted_pass, weighted_total, counts, primary, unscoreable)
+        if tv.verdict == PENDING:
+            # A declared threshold whose KPI never got measured is an OPEN
+            # question, not a pass. Falling through here is how a run reported
+            # `pass` while `primary.verdict` read `pending` — a green readout
+            # for a bar nobody actually cleared.
+            return _clamp(RunScore(
+                PENDING,
+                f"primary KPI declared but not measured: {tv.detail}",
+                weighted_pass, weighted_total, counts, primary, unscoreable,
+            ), tc_scoreable)
 
     if counts.get(FAIL):
         detail = f"{counts[FAIL]} detection(s) failed verification"
@@ -218,8 +243,9 @@ def score_run(
     elif counts.get(PASS):
         detail = f"{counts[PASS]} detection(s) verified"
     elif primary and primary["verdict"] == PASS:
-        return RunScore(PASS, f"primary KPI passed: {primary['detail']}",
-                        weighted_pass, weighted_total, counts, primary, unscoreable)
+        return _clamp(RunScore(PASS, f"primary KPI passed: {primary['detail']}",
+                               weighted_pass, weighted_total, counts, primary,
+                               unscoreable), tc_scoreable)
     else:
         detail = (
             f"nothing scoreable: {counts.get(NOT_APPLICABLE, 0)} detection(s) "
@@ -229,8 +255,27 @@ def score_run(
                         counts, primary, unscoreable)
 
     verdict = FAIL if counts.get(FAIL) else (PENDING if counts.get(PENDING) else PASS)
-    return RunScore(verdict, detail, weighted_pass, weighted_total,
-                    counts, primary, unscoreable)
+    return _clamp(RunScore(verdict, detail, weighted_pass, weighted_total,
+                           counts, primary, unscoreable), tc_scoreable)
+
+
+def _clamp(score: RunScore, tc_scoreable: bool) -> RunScore:
+    """Downgrade a PASS to ``not_applicable`` when the bound test case carries
+    no measurable threshold.
+
+    The index scores 91 of its 110 POS rows — and 57 of its 107 detection-backable
+    rows — as ``Qualitative pass``. Machine-certifying a pass against a bar the
+    index never defined is the exact inflation this harness exists to prevent.
+    FAIL is deliberately untouched: you can disprove a qualitative claim.
+    """
+    if tc_scoreable or score.verdict != PASS:
+        return score
+    score.verdict = NOT_APPLICABLE
+    score.detail = (
+        f"{score.detail}; bound test case carries no measurable threshold — "
+        f"this is evidence, not a scored pass"
+    )
+    return score
 
 
 # ---------------------------------------------------------------------------
@@ -309,13 +354,22 @@ async def verify_run(
     scenario: Any,
     results: list[Any],
     runner: QueryRunner,
+    *,
+    expected_rows_min: Callable[[Any], int] | None = None,
+    measured_value: Optional[float] = None,
+    tc_scoreable: bool = True,
 ) -> RunScore:
     """Verify every result in a run, then score the run and persist the verdict.
 
     Returns the :class:`RunScore`; the caller owns the commit boundary in the
     same way ``connectors.service`` does.
+
+    ``tc_scoreable`` should be sourced from the bound index row
+    (``uctc_registry.registry.tc(scenario.tc_ref).is_scoreable``) by any caller
+    that has it; the default of True preserves the historical behaviour for
+    callers that do not.
     """
-    counts = await verify_results(results, runner)
+    counts = await verify_results(results, runner, expected_rows_min=expected_rows_min)
 
     mttd = [r.mttd_seconds for r in results
             if getattr(r, "mttd_seconds", None) is not None]
@@ -324,6 +378,8 @@ async def verify_run(
         threshold=getattr(scenario, "threshold", None),
         primary_kpi=getattr(scenario, "primary_kpi", None),
         mttd_seconds=(sum(mttd) / len(mttd)) if mttd else None,
+        measured_value=measured_value,
+        tc_scoreable=tc_scoreable,
     )
 
     run.tc_verdict = score.verdict
@@ -355,6 +411,26 @@ def xsiam_query_runner(client: Any, timeframe: dict[str, Any]) -> QueryRunner:
         if isinstance(total, int):
             return total
         return len(reply.get("results") or [])
+
+    return _run
+
+
+# A scalar runner returns the query's ROWS, not just how many there were.
+# ``QueryRunner`` discards every field value, so no latency, ratio or coverage
+# KPI is measurable through it — assertions need the values themselves. Both
+# forms are injected, so tests never reach the network.
+ScalarRunner = Callable[[str], Awaitable[list[dict[str, Any]]]]
+
+
+def xsiam_rows_runner(client: Any, timeframe: dict[str, Any]) -> ScalarRunner:
+    """Adapt an XSIAM client into a :data:`ScalarRunner` returning result rows."""
+
+    async def _run(query: str) -> list[dict[str, Any]]:
+        reply = await client.run_xql(query, timeframe)
+        if not isinstance(reply, dict):
+            return []
+        rows = reply.get("results") or []
+        return [r for r in rows if isinstance(r, dict)]
 
     return _run
 

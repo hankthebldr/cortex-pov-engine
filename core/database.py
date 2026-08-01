@@ -47,6 +47,7 @@ async def init_db() -> None:
         # would otherwise SELECT-fail on the new columns.
         await conn.run_sync(_migrate_results_columns)
         await conn.run_sync(_migrate_scenarios_columns)
+        await conn.run_sync(_migrate_assertion_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -125,6 +126,66 @@ def _migrate_scenarios_columns(connection) -> None:
             if col_name in run_existing:
                 continue
             connection.execute(text(f"ALTER TABLE runs ADD COLUMN {col_name} {col_type}"))
+
+
+def _migrate_assertion_columns(connection) -> None:
+    """Add later columns to the assertion tables if absent.
+
+    The three tables themselves are created by ``create_all`` on any box that
+    has never seen them, so this pass is a no-op on a fresh DB. It exists for
+    the same reason the other two do: ``create_all`` never adds a COLUMN to an
+    existing table, so once these tables ship, every subsequent column has to
+    land here or an upgraded box SELECT-fails. Keeping the (currently complete)
+    column list here makes that a one-line change instead of a re-derivation.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+
+    additions: dict[str, list[tuple[str, str]]] = {
+        "assertions": [
+            ("index_meta", "JSON"),
+            ("tc_scoreable", "BOOLEAN"),
+            ("scope_limitations", "TEXT"),
+            ("threshold", "JSON"),
+            ("required_base_platform", "JSON"),
+            ("required_addons", "JSON"),
+            ("spec", "JSON"),
+            ("source_file", "VARCHAR"),
+        ],
+        "assertion_runs": [
+            ("tenant", "VARCHAR"),
+            ("trigger_run_id", "VARCHAR"),
+            ("context", "JSON"),
+            ("tc_verdict", "VARCHAR"),
+            ("tc_verdict_detail", "JSON"),
+            ("reason", "VARCHAR"),
+        ],
+        "assertion_checks": [
+            ("verification_xql", "TEXT"),
+            ("measured_value", "FLOAT"),
+            ("measured_unit", "VARCHAR"),
+            ("taxonomy_code", "VARCHAR"),
+            ("remediation", "TEXT"),
+            ("detail", "TEXT"),
+            ("negative_control", "TEXT"),
+            ("kpi_contribution", "JSON"),
+            ("kpi_verdict", "VARCHAR"),
+            ("verified_at", "DATETIME"),
+            ("sample_rows", "JSON"),
+            ("detection_id", "VARCHAR"),
+        ],
+    }
+
+    for table, cols in additions.items():
+        if table not in tables:
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table)}
+        for col_name, col_type in cols:
+            if col_name in existing:
+                continue
+            connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
 
 
 async def get_db():

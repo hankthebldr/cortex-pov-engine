@@ -437,6 +437,10 @@ from api.storyline import router as storyline_router    # noqa: E402
 from api.causality import router as causality_router    # noqa: E402
 from api.pov import router as pov_router                # noqa: E402
 from api.uctc import router as uctc_router              # noqa: E402
+# Assertion substrate — the POS/PLT/AUT proof mechanism. The catalog loads
+# lazily on first access, so a deployment with no assertions/ directory boots
+# exactly as it did before.
+from api.assertions import router as assertions_router  # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -464,6 +468,7 @@ app.include_router(storyline_router, prefix="/api")
 app.include_router(causality_router, prefix="/api")
 app.include_router(pov_router, prefix="/api")
 app.include_router(uctc_router, prefix="/api")
+app.include_router(assertions_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

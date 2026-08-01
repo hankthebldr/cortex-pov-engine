@@ -576,6 +576,60 @@ def _derive_entitlements(schema: "ScenarioSchema") -> dict[str, list[str]]:
     }
 
 
+def validate_index_refs(
+    *,
+    uc_ref: str,
+    tc_ref: str,
+    tc_refs: list[str],
+    artifact_id: str,
+    source: str,
+    codes: tuple[str, str, str, str] = ("S-10", "S-11", "S-12", "S-15"),
+) -> tuple[Any, list[str]]:
+    """Validate an artifact's ``(uc_ref, tc_ref, tc_refs)`` as a foreign key
+    into the master UC/TC index.
+
+    This is the ONE implementation of the index FK path. The scenario loader
+    calls it with the ``S-1x`` code family; the assertion loader calls it with
+    ``A-1x``. Anything binding to the index goes through here — a second,
+    weaker ref path is how the join silently rots and the coverage number
+    inflates without anyone noticing.
+
+    Returns ``(test_case_or_None, errors)`` where ``errors`` are the hard FK
+    violations. The CALLER decides what to do with them (both loaders gate on
+    ``CORTEXSIM_STRICT_REFS``); a ``None`` test case with no errors means the
+    index snapshot is absent and validation degraded to advisory.
+    """
+    from engine.uctc_registry import registry  # noqa: PLC0415
+
+    dangling_tc, dangling_uc, fk_mismatch, dangling_set = codes
+    verdict = registry.validate_ref(uc_ref, tc_ref)
+
+    if verdict.is_error:
+        code = {
+            "dangling_tc": dangling_tc,
+            "dangling_uc": dangling_uc,
+            "fk_mismatch": fk_mismatch,
+        }[verdict.status]
+        return None, [
+            f"{code} {artifact_id} uc_ref={uc_ref} tc_ref={tc_ref}: "
+            f"{verdict.detail} (from {source})"
+        ]
+
+    tc = verdict.test_case
+    if tc is None:  # unverified — no snapshot loaded
+        return None, []
+
+    # The rest of the evidence set. An artifact claims to prove every TC in
+    # tc_refs, so a dangling entry inflates the coverage number silently.
+    dangling = [ref for ref in tc_refs if ref != tc_ref and registry.tc(ref) is None]
+    if dangling:
+        return tc, [
+            f"{dangling_set} {artifact_id} tc_refs entries not in the "
+            f"v{registry.version} index: {', '.join(dangling)} (from {source})"
+        ]
+    return tc, []
+
+
 def _check_uctc_refs(schema: "ScenarioSchema", filepath: str) -> Optional[str]:
     """Validate ``uc_ref`` / ``tc_ref`` as a foreign key into the master UC/TC
     index, and flag positioning drift against the same row.
@@ -600,43 +654,25 @@ def _check_uctc_refs(schema: "ScenarioSchema", filepath: str) -> Optional[str]:
     from config import settings  # noqa: PLC0415
     from engine.uctc_registry import registry  # noqa: PLC0415
 
-    verdict = registry.validate_ref(schema.uc_ref, schema.tc_ref)
     strict = bool(getattr(settings, "CORTEXSIM_STRICT_REFS", False))
 
-    if verdict.is_error:
-        code = {
-            "dangling_tc": "S-10",
-            "dangling_uc": "S-11",
-            "fk_mismatch": "S-12",
-        }[verdict.status]
-        detail = (
-            f"{code} scenario={schema.scenario_id} uc_ref={schema.uc_ref} "
-            f"tc_ref={schema.tc_ref}: {verdict.detail} (from {filepath})"
-        )
+    # S-10/S-11/S-12/S-15 come from the shared FK path so scenarios and
+    # assertions cannot drift into two different notions of a valid ref.
+    tc, ref_errors = validate_index_refs(
+        uc_ref=schema.uc_ref,
+        tc_ref=schema.tc_ref,
+        tc_refs=schema.tc_refs,
+        artifact_id=f"scenario={schema.scenario_id}",
+        source=filepath,
+    )
+    if ref_errors:
         if strict:
-            return detail
-        logger.warning("%s [advisory — CORTEXSIM_STRICT_REFS is off]", detail)
-        return None
+            return ref_errors[0]
+        for detail in ref_errors:
+            logger.warning("%s [advisory — CORTEXSIM_STRICT_REFS is off]", detail)
 
-    tc = verdict.test_case
-    if tc is None:  # unverified — no snapshot loaded
+    if tc is None:  # unverified — no snapshot loaded, or a hard FK error above
         return None
-
-    # S-15: the rest of the evidence set. A scenario claims to prove every TC
-    # in tc_refs, so a dangling entry inflates the coverage number silently —
-    # the exact failure mode this whole phase exists to close.
-    dangling = [
-        ref for ref in schema.tc_refs
-        if ref != schema.tc_ref and registry.tc(ref) is None
-    ]
-    if dangling:
-        detail = (
-            f"S-15 scenario={schema.scenario_id} tc_refs entries not in the "
-            f"v{registry.version} index: {', '.join(dangling)} (from {filepath})"
-        )
-        if strict:
-            return detail
-        logger.warning("%s [advisory — CORTEXSIM_STRICT_REFS is off]", detail)
 
     # S-16: the payload this scenario instantiates. Advisory in both modes —
     # a scenario may legitimately be a net-new payload the index has not
