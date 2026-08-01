@@ -167,4 +167,5 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0165` | Microsoft SharePoint & OneDrive Enumeration (SIM-CLOUD-009) | [sigma](sigma/TTP-2026-0165.yml), [xql](xql/TTP-2026-0165.xql), [correlation](correlation/TTP-2026-0165.json) |
 | `TTP-2026-0166` | Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash — Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) | [sigma](sigma/TTP-2026-0166.yml), [xql](xql/TTP-2026-0166.xql), [correlation](correlation/TTP-2026-0166.json) |
 | `TTP-2026-0167` | NGFW EAL Rare-Domain Beacon then Large/Massive HTTPS Upload Exfil — Cortex Network Analytics / ABIOC (T1071.001 / T1048 / T1567) | [sigma](sigma/TTP-2026-0167.yml), [xql](xql/TTP-2026-0167.xql), [correlation](correlation/TTP-2026-0167.json), [xsoar_playbook](xsoar_playbook/TTP-2026-0167.yml) |
+| `TTP-2026-0168` | Intel-to-Enforcement Rollback — A Withdrawn Indicator Must Retract From the EDL and Restore Traffic Unattended | [sigma](sigma/TTP-2026-0168.yml), [xql](xql/TTP-2026-0168.xql), [correlation](correlation/TTP-2026-0168.json) |
 

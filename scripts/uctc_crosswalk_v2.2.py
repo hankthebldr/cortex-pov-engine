@@ -265,10 +265,20 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Seven signals collapsing to one incident — the alert-stitching noise-reduction case exactly."),
     "SIM-MP-014": (["TC-IR-05", "TC-ITDR-03"], REMAP,
         "AzureHound cloud-identity enumeration after token theft."),
-    "SIM-MP-015": (["TC-IR-01", "TC-CITH-11", "TC-IR-03", "TC-TH-05"], REMAP,
+    "SIM-MP-015": (["TC-IR-01", "TC-CITH-11", "TC-IR-03", "TC-TH-05", "TC-SOT-02"], REMAP,
         "Triage discrimination under decoy noise — true-positive elevation measured "
         "against false-positive rate, which is exactly the smart-scoring "
-        "FP-reduction case (TC-TH-05)."
+        "FP-reduction case (TC-TH-05). TC-SOT-02 is added on the index's own "
+        "evidence, not on title similarity: it carries TC-IR-01's success_criteria "
+        "string verbatim, the same primary_kpi (Triage Automation Rate), the same "
+        ">60% threshold, the same detection_source (dataset=incidents) and the same "
+        "POV-SC-006 payload, and TC-IR-01 is already this scenario's primary ref. "
+        "This scenario asserts clauses 1-2 of that shared criteria (auto-triage "
+        "classifies the corpus; ranking puts the malicious incident above the "
+        "benign decoys). RESIDUE, disclosed rather than papered over: clause 3, "
+        "'analyst override feedback loop functions correctly', is proven by "
+        "NEITHER binding — it needs a human clicking override and the model "
+        "consuming that as training signal. TC-IR-01 inherits the same caveat."
 ),
     "SIM-MP-016": (["TC-ITDR-03", "TC-IR-05"], REMAP,
         "Okta admin takeover into a rogue federated IdP and cross-cloud resource access."),
@@ -373,6 +383,17 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Edge-VPN probing surge attributed to a scanning-infrastructure feed, then "
         "enforced at the edge via the EDL."
 ),
+    "SIM-TIM-007": (["TC-XTI-04"], REMAP,
+        "Enforcement REVERSIBILITY, the half of the intel-to-enforcement loop no "
+        "other scenario touches: a benign control FQDN is promoted to the EDL and "
+        "proven blocked, the operator withdraws the indicator, and the identical "
+        "request is then allowed. Bound to TC-XTI-04 alone and not to the wider "
+        "XTI set: TC-XTI-03 (promotion) is already evidenced by SIM-TIM-006, and "
+        "this scenario's pre-flight step only CONFIRMS the promote leg landed "
+        "rather than demonstrating promotion itself — claiming it here would take "
+        "credit for a guard. The index scores this row 100% Automation Rate, so "
+        "it is one of the few gap rows that can return a real pass."
+),
 
     # ── CLOUD_APP ──────────────────────────────────────────────────────────
     # OAuth-grant governance binds to UC-ITDR (the IdP surface, correct SKU)
@@ -450,6 +471,74 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "MCP sampling abuse — server-initiated inference for quota theft and covert tasking."),
     "SIM-KOI-008": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
         "Shai-Hulud self-replicating npm worm — a preinstall hook spawning a detached child."),
+}
+
+
+# ---------------------------------------------------------------------------
+# PLT assertion pack — assertions/plt/*.yml -> index binding.
+#
+# Deliberately a SEPARATE dict from CROSSWALK, and deliberately NOT merged into
+# the `index TCs evidenced` line the report prints. Those two decisions are the
+# same decision: an assertion is AUTHORED evidence, not PROVEN evidence, and a
+# PLT row only becomes proven when an AssertionRun against a real tenant returns
+# a pass or a fail. Folding these four into the scenario number would move
+# 84/266 to 88/266 on the strength of four YAML files, which is the exact
+# inflation the pack exists to avoid. They are reported on their own line, with
+# proven held at zero until a tenant says otherwise.
+#
+# assertion_id -> (tc_refs, headline mechanism, what it deliberately does NOT prove)
+# ---------------------------------------------------------------------------
+
+PLT_ASSERTION_CROSSWALK: dict[str, tuple[list[str], str, str]] = {
+    "PLT-IR-008": (["TC-IR-08"],
+        "Ingestion round-trip: three structurally dissimilar sources emitted with one "
+        "canary planted twice per record; normalized-field read-back is the claim, "
+        "raw-body read-back is the not-normalized/not-landed discriminator.",
+        "Which ingestion door carried the records — Broker VM, native collector and "
+        "forwarder are indistinguishable from the query side."),
+    "PLT-ERV-001": (["TC-ERV-01"],
+        "Same round-trip widened to six source families spanning container, SaaS, "
+        "network, cloud control-plane, endpoint/identity and IdP.",
+        "The BVM/Marketplace/native-connector provenance, and coverage of the "
+        "CUSTOMER's stack — the six families are the ones CortexSim emits."),
+    "PLT-ITDR-006": (["TC-ITDR-06"],
+        "One canonical principal planted into three identity providers' own principal "
+        "fields; a single query returns the cross-provider timeline for one human.",
+        "That CIE merged them into one entity OBJECT (no read API), and resolution "
+        "across DIFFERENT identifiers for the same human."),
+    "PLT-XDL-001": (["TC-XDL-01"],
+        "Field-level normalization fidelity as a ratio over the records the platform "
+        "landed, measured against the emitter's own ground truth. The pack's only "
+        "index row carrying a real number (95%), so its pass is not clamped.",
+        "The 1,100+ integration / 50-source / petabyte breadth claims, and the "
+        "query-ready-within-15-minutes leg."),
+}
+
+# PLT index rows examined and NOT bound, with the reason. Kept in the crosswalk
+# because an honest gap list is the other half of an honest coverage number.
+PLT_NOT_BOUND: dict[str, str] = {
+    "TC-NDR-05": "needs a genuinely THIRD-PARTY network sensor shape; every network "
+                 "emitter in the engine is first-party PAN-OS, so the test case's "
+                 "distinctive claim cannot be exercised.",
+    "TC-XTI-06": "needs 12 months of resident data. A POV tenant three weeks old "
+                 "fails for its age, which is indistinguishable from a retention "
+                 "misconfiguration through XQL alone — false red.",
+    "TC-XDL-04": "'<60 second' is a WALL-CLOCK query-latency bar. The substrate has "
+                 "no wall-clock probe, and measuring it engine-side folds emitter, "
+                 "collector and ingest delay into the platform's number.",
+    "TC-XDL-05": "same aged-data problem as TC-XTI-06 plus a wall-clock 15-minute bar.",
+    "TC-SIEM-01": "hot/warm/cold tier residency is not exposed by any query surface; "
+                  "lookback depth is a proxy, and a proxy is not a measurement.",
+    "TC-PGE-02": "a differential RBAC probe needs TWO credentials in one evaluation; "
+                 "the substrate hands a probe one runner.",
+    "TC-ITDR-04": "its distinctive claim IS the Marketplace connector and its sync "
+                  "cadence, neither of which any read API exposes. The residual "
+                  "(two IdP datasets normalize) is already PLT-ITDR-006's claim, and "
+                  "binding both would double-count one piece of work.",
+    "TC-TH-04": "Marketplace content-pack provenance is not exposed by any read API.",
+    "TC-ERV-01+": "the remaining 35 PLT rows need a Cortex Cloud REST client the "
+                  "engine does not have, billing/consumption data no API exposes, or "
+                  "an autonomous agent action that belongs to the AUT class.",
 }
 
 
@@ -701,6 +790,29 @@ def main() -> int:
               sum(1 for r in rows if r["validation_class"] in ("POS", "PLT", "AUT")))
         print("proposed v2.3 TCs:", len(PROPOSED_TCS),
               dict(Counter(p["uc_id"] for p in PROPOSED_TCS).most_common()))
+
+        # Reported on its own line, never folded into the number above. An
+        # assertion existing is AUTHORED, not PROVEN — proven needs an
+        # AssertionRun against a real tenant returning pass or fail.
+        plt_total = sum(1 for v in spec.values() if v["validation_class"] == "PLT")
+        plt_bound = {r for refs, _, _ in PLT_ASSERTION_CROSSWALK.values() for r in refs}
+        bad_plt = sorted(r for r in plt_bound if r not in tc)
+        wrong_class = sorted(
+            r for r in plt_bound
+            if spec.get(r, {}).get("validation_class") not in ("", "PLT")
+        )
+        if bad_plt:
+            print(f"ERROR: PLT assertion crosswalk references non-existent test "
+                  f"cases: {bad_plt}", file=sys.stderr)
+            return 1
+        if wrong_class:
+            print(f"ERROR: PLT assertion crosswalk binds non-PLT rows: "
+                  f"{wrong_class}", file=sys.stderr)
+            return 1
+        print(f"PLT assertions: {len(PLT_ASSERTION_CROSSWALK)} artifact(s) "
+              f"-> {len(plt_bound)}/{plt_total} PLT rows AUTHORED "
+              f"| 0/{plt_total} PROVEN (no tenant run recorded) "
+              f"| {len(PLT_NOT_BOUND)} documented non-bindings")
 
     if args.emit:
         cw = os.path.join(OUT, "crosswalk-v2.2.csv")
