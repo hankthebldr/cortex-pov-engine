@@ -20,6 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("cortexsim.loader")
 
+# PyYAML's pure-Python SafeLoader parses the 161-file corpus in ~754 ms; the
+# libyaml-backed CSafeLoader — already present in the prod image — does the
+# identical parse in ~84 ms. Boot pays this on every container start, so prefer
+# the C loader and fall back only where libyaml was not compiled in. Both
+# implement the same YAML 1.1 safe subset, so the parse result is unchanged.
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 
 # Canonical Cortex detection-engine vocabulary. XQL + Correlation are
 # first-class alongside the original BIOC | Analytics | IOC set (GAP-2);
@@ -447,7 +454,7 @@ def _parse_and_validate(filepath: str) -> tuple[Optional[ScenarioSchema], Option
     """
     try:
         with open(filepath, "r", encoding="utf-8") as fh:
-            raw: Any = yaml.safe_load(fh)
+            raw: Any = yaml.load(fh, Loader=_YAML_LOADER)
     except Exception as exc:  # noqa: BLE001
         return None, f"YAML parse error: {exc}"
 
@@ -478,6 +485,13 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
 
     loaded_ids: list[str] = []
     errors: list[str] = []
+
+    # One SELECT for the whole upsert instead of one per file. The loader is a
+    # boot-path stage, so 161 round-trips is 161 chances to be slow on a
+    # jumpbox's disk; the corpus comfortably fits in memory.
+    existing_by_id: dict[str, Scenario] = {
+        s.scenario_id: s for s in (await db.execute(select(Scenario))).scalars().all()
+    }
 
     for filepath in yaml_files:
         schema, error = _parse_and_validate(filepath)
@@ -510,17 +524,17 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
             errors.append(msg)
             continue
 
-        # Upsert: check if the scenario_id already exists
-        result = await db.execute(
-            select(Scenario).where(Scenario.scenario_id == schema.scenario_id)
-        )
-        existing: Optional[Scenario] = result.scalar_one_or_none()
+        # Upsert against the prefetched map. Newly-added scenarios are folded
+        # back in so a duplicate scenario_id across two files still collapses
+        # onto one row (the old per-file SELECT saw pending adds via autoflush).
+        existing: Optional[Scenario] = existing_by_id.get(schema.scenario_id)
 
         scenario_dict = _schema_to_orm_kwargs(schema)
 
         if existing is None:
             scenario = Scenario(**scenario_dict)
             db.add(scenario)
+            existing_by_id[schema.scenario_id] = scenario
             logger.info("LOADED new scenario %s from %s", schema.scenario_id, filepath)
         else:
             for key, val in scenario_dict.items():
