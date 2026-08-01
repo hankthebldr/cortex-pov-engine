@@ -811,6 +811,56 @@ export async function getUcTcByScenario(scenarioId) {
   return request(`/api/uctc/by-scenario/${encodeURIComponent(scenarioId)}`)
 }
 
+// ─── Assertions — the POS / PLT / AUT proof mechanism ────────────────────────
+//
+// Scenarios prove DET/HNT rows of the UC/TC index. POS/PLT/AUT rows are not
+// detections — a posture finding must be discovered, a platform capability
+// must be present, an automation outcome must occur inside a budget — so they
+// are proven by ``assertions/{pos,plt,aut}/*.yml`` instead. See
+// core/api/assertions.py and docs/uc_tc_mapping/assertions.md.
+
+/**
+ * GET /api/assertions
+ *
+ * Every loaded assertion, PLUS every artifact the loader refused and why
+ * (``rejected[]``). The falsifiability guard is only worth something if the
+ * artifacts it blocked are visible, so callers must render that list.
+ *
+ * The endpoint is optional: a SimCore built before the router landed answers
+ * 404, which callers treat as "mechanism not deployed" — never as zero
+ * coverage.
+ *
+ * @param {Object} filters  {validation_class, tc_ref, kind, status, probe}
+ * @returns {Promise<{assertions: Array, count: number, total: number,
+ *                    by_validation_class: Object, rejected: Array,
+ *                    warnings: Array, probes: Array}>}
+ */
+export async function getAssertions(filters = {}) {
+  return request(`/api/assertions${_qs(filters)}`)
+}
+
+/**
+ * GET /api/assertions/:assertion_id
+ * @param {string} assertionId  e.g. 'PLT-IR-008'
+ */
+export async function getAssertion(assertionId) {
+  return request(`/api/assertions/${encodeURIComponent(assertionId)}`)
+}
+
+/**
+ * GET /api/assertions/runs
+ *
+ * Recorded evaluations. An AUTHORED assertion is a claim; only a run carries a
+ * ``tc_verdict``, and only a credential-backed non-dry run can carry anything
+ * other than ``pending``. Callers must not present authorship as measurement.
+ *
+ * @param {Object} filters  {assertion_id, limit}
+ * @returns {Promise<{runs: Array, count: number}>}
+ */
+export async function getAssertionRuns(filters = {}) {
+  return request(`/api/assertions/runs${_qs(filters)}`)
+}
+
 // ─── EAL Traffic Simulator ───────────────────────────────────────────────────
 //
 // API surface for the plugin-based EAL simulator (core/eal_simulator/).

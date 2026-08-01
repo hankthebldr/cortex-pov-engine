@@ -413,3 +413,268 @@
   color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
   cursor: pointer;
 }
+
+/* ── class strip — coverage by validation class ───────────── */
+/*
+   Always visible, in every mode. A DC standing in front of a customer needs
+   the five numbers on screen before any drill-down, because the single 84/266
+   this replaces implies one population and one mechanism.
+*/
+
+.uctc__classstrip {
+  margin: 4px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.02));
+}
+
+.uctc__classstrip-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+  margin-bottom: 10px;
+}
+
+.uctc__classstrip-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.uctc__classcell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+  border-radius: 3px;
+  color: var(--c-text, var(--cortex-navy, #003366));
+  cursor: pointer;
+}
+.uctc__classcell:hover { border-color: var(--c-hairline-strong, #2B3E5E); }
+.uctc__classcell.is-active {
+  border-color: var(--c-action, var(--cortex-teal, #00C0E8));
+  background: var(--c-action-soft, rgba(0, 192, 232, 0.10));
+}
+.uctc__classcell:focus-visible {
+  outline: 1px solid var(--c-action, var(--cortex-teal, #00C0E8));
+  outline-offset: 1px;
+}
+
+.uctc__classcell-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.uctc__classcell-id {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--c-text, var(--cortex-navy, #003366));
+}
+
+.uctc__classcell-num {
+  font-size: 12px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+}
+
+.theme-console .uctc .uctc__classcell-bar { height: 6px; margin-bottom: 0; }
+
+.uctc__classcell-mech {
+  font-size: 9px;
+  line-height: 1.3;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__classstrip-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 9px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__legendkey { display: inline-flex; align-items: center; gap: 5px; }
+
+.uctc__legendswatch {
+  display: inline-block;
+  width: 10px;
+  height: 6px;
+  border-radius: 1px;
+}
+
+/* ── mechanisms mode ──────────────────────────────────────── */
+
+.uctc__mech { display: flex; flex-direction: column; gap: 14px; }
+
+.uctc__mech-prose {
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 860px;
+  margin: 0;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__mechcard {
+  padding: 12px 14px;
+  border: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.02));
+}
+
+.uctc__mechcard-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.uctc__mechcard-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__mechcard-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 6px 0 2px;
+  color: var(--c-text, var(--cortex-navy, #003366));
+}
+
+.uctc__mechcard-proves {
+  font-size: 11px;
+  margin: 0;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__mechcard-score { text-align: right; white-space: nowrap; }
+.uctc__mechcard-score-num {
+  font-size: 22px;
+  color: var(--c-detected, #4FD1A1);
+}
+.uctc__mechcard-score-den {
+  font-size: 13px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+}
+.uctc__mechcard-score-label {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+}
+
+.theme-console .uctc .uctc__mechcard-bar { height: 8px; margin: 10px 0 12px; }
+
+.uctc__mechcard-kv { margin: 0 0 10px; }
+
+.uctc__mechcard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.uctc__mechcard-oos {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+}
+
+.uctc__mechcard-oosprose {
+  font-size: 11px;
+  line-height: 1.6;
+  max-width: 780px;
+  margin: 6px 0 8px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+}
+
+.uctc__oos-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 10px;
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+}
+.uctc__oos-list li { padding: 2px 0; }
+
+.uctc__oos-count {
+  display: inline-block;
+  min-width: 22px;
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+}
+
+/* A blocked-on-ingest row is deliberately NOT red: it is not a failure and not
+   a refusal, it is work with a prerequisite. Steel reads as "not yet in the
+   frame" where amber reads as "owed and startable". */
+.uctc__chip-oos {
+  color: var(--c-text-muted, var(--cortex-steel, #6B7E8E));
+  border-color: var(--c-hairline-strong, #2B3E5E);
+}
+
+.uctc__banner--muted {
+  color: var(--c-text-secondary, var(--cortex-steel, #6B7E8E));
+  border-color: var(--c-hairline-strong, #2B3E5E);
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.03));
+}
+
+/* ── bound assertions, in the detail drawer ───────────────── */
+
+.uctc__assertions { display: flex; flex-direction: column; gap: 10px; }
+
+.uctc__assertcard {
+  padding: 10px 12px;
+  border: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+  border-left: 2px solid var(--c-signal, var(--cortex-teal, #00C0E8));
+  border-radius: 3px;
+  background: var(--c-surface-raised, rgba(255, 255, 255, 0.02));
+}
+
+.uctc__assertcard-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.uctc__assertcard-id {
+  font-size: 12px;
+  color: var(--c-signal, var(--cortex-teal, #00C0E8));
+}
+
+.uctc__assertcard-name {
+  font-size: 12px;
+  color: var(--c-text, var(--cortex-navy, #003366));
+}
+
+.uctc__assertcard-scope { margin: 8px 0; }
+
+/* ── gaps mode additions ──────────────────────────────────── */
+
+.uctc__gaps-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.uctc__gaps-oos {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
+}
