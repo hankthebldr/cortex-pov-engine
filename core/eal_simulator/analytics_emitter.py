@@ -55,6 +55,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from .audit import ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
+from .delivery import REMEDIATION, DeliveryLedger
 
 
 logger = logging.getLogger("cortexsim.eal.analytics_emitter")
@@ -177,6 +178,18 @@ class AnalyticsLogEmitter(BaseSimulation):
         dataset, e.g. ``cloud_audit_logs``) — exactly like ``email_emitter``.
         """
 
+    #: Every analytics log-streamer is offline-bundleable: ``build_events`` is
+    #: a pure record builder with no network, so SimCore can pre-render a
+    #: campaign's records and hand the DC a self-contained bundle that runs
+    #: from inside the customer network — where the collector actually lives.
+    supports_offline_bundle = True
+
+    def plan_offline_records(
+        self, params: AnalyticsEmitterParams, *, sim_run_id: str, iteration: int,
+    ) -> list[dict[str, Any]]:
+        """Offline-bundle hook — the records this iteration would POST."""
+        return self.build_events(params, sim_run_id=sim_run_id, iteration=iteration)
+
     # ------------------------------------------------------------------
     # Shared run — identical shape to the exemplars, no per-source logic.
     # ------------------------------------------------------------------
@@ -229,9 +242,10 @@ class AnalyticsLogEmitter(BaseSimulation):
                 },
             )
 
-        events_emitted = 0
-        bytes_sent = 0
-        responses_seen: dict[int, int] = {}
+        # One ledger per step: it is the single source of truth for what the
+        # collector actually accepted, and it — not "the POST didn't raise" —
+        # decides the step's status.
+        ledger = DeliveryLedger()
 
         # Stash verify_tls where _build_client reads it without changing its
         # (monkeypatched-in-tests) signature.
@@ -245,36 +259,38 @@ class AnalyticsLogEmitter(BaseSimulation):
                 events = self.build_events(
                     params, sim_run_id=per_request_sim_id, iteration=i + 1,
                 )
-                posted, iter_bytes, iter_status = await self._emit_events(
+                await self._emit_events(
                     client, params, ctx, events,
                     per_request_sim_id=per_request_sim_id,
-                    host=host, iteration=i + 1,
+                    host=host, iteration=i + 1, ledger=ledger,
                 )
-                events_emitted += posted
-                bytes_sent += iter_bytes
-                for code, n in iter_status.items():
-                    responses_seen[code] = responses_seen.get(code, 0) + n
                 if i < params.iterations - 1 and params.sleep_seconds > 0:
                     await asyncio.sleep(params.sleep_seconds)
         finally:
             await client.aclose()
 
+        delivery = ledger.to_dict()
         return SimulationResult(
             plugin=self.Meta.name,
             step_id=ctx.step_id,
-            status="success",
+            status=ledger.outcome,
             started_at=started_at,
             completed_at=self.utcnow(),
-            events_emitted=events_emitted,
-            bytes_sent=bytes_sent,
+            # events_emitted / bytes_sent report what the collector ACCEPTED.
+            # bytes attempted are still visible under detail.delivery so an
+            # operator can see the gap between "sent" and "ingested".
+            events_emitted=ledger.records_delivered,
+            bytes_sent=ledger.bytes_delivered,
+            error=ledger.error_summary(),
             detail={
                 **descriptor,
                 "iterations_completed": params.iterations,
-                "events_posted": events_emitted,
-                "response_status_counts": responses_seen,
+                "events_posted": ledger.records_delivered,
+                "response_status_counts": dict(ledger.status_counts),
                 "target": host,
                 "batch": params.batch,
                 "compress": params.compress,
+                "delivery": delivery,
             },
         )
 
@@ -351,14 +367,15 @@ class AnalyticsLogEmitter(BaseSimulation):
         per_request_sim_id: str,
         host: str,
         iteration: int,
-    ) -> tuple[int, int, dict[int, int]]:
-        """POST the iteration's records and return (records_posted, wire_bytes,
-        status_counts).
+        ledger: DeliveryLedger,
+    ) -> None:
+        """POST the iteration's records, accounting every send in ``ledger``.
 
         In batch mode the whole list becomes ONE NDJSON POST (one combined byte
         charge, one status count); otherwise one POST per record. Either way an
         ``httpx.HTTPError`` is swallowed per-POST with a failure audit event so
-        one bad send never aborts the iteration.
+        one bad send never aborts the iteration — but a non-2xx response is now
+        a *failure*, not a delivery, and the ledger says so.
         """
         base_headers = {
             **{k.lower(): v for k, v in ctx.telemetry_headers.items()},
@@ -379,64 +396,74 @@ class AnalyticsLogEmitter(BaseSimulation):
                 resp = await client.post(
                     params.collector_url, headers=hdrs, content=wire,
                 )
-                await ctx.emit_event(self._success_event(
+                code = ledger.record_response(
+                    resp.status_code, records=len(events), wire_bytes=len(wire),
+                )
+                await ctx.emit_event(self._delivery_event(
                     ctx, params, host=host, iteration=iteration,
                     per_request_sim_id=per_request_sim_id,
                     status_code=resp.status_code, wire_bytes=len(wire),
                     record_count=len(events), batched=True, descriptor=descriptor,
+                    failure_code=code,
                 ))
-                return len(events), len(wire), {resp.status_code: 1}
             except httpx.HTTPError as exc:
+                code = ledger.record_exception(
+                    exc, records=len(events), wire_bytes=len(wire),
+                )
                 await ctx.emit_event(self._failure_event(
                     ctx, params, host=host, iteration=iteration,
                     per_request_sim_id=per_request_sim_id, wire_bytes=len(wire),
-                    error=str(exc), descriptor=descriptor,
+                    error=str(exc), descriptor=descriptor, failure_code=code,
+                    record_count=len(events),
                 ))
-                return 0, len(wire), {0: 1}
+            return
 
-        records_posted = 0
-        bytes_sent = 0
-        status_counts: dict[int, int] = {}
         for evt in events:
             body = json.dumps(evt).encode("utf-8")
             wire, hdrs = self._encode(body, params, base_headers, "application/json")
-            bytes_sent += len(wire)
             ctx.charge_request()
             ctx.charge_bytes(len(wire))
             try:
                 resp = await client.post(
                     params.collector_url, headers=hdrs, content=wire,
                 )
-                records_posted += 1
-                status_counts[resp.status_code] = (
-                    status_counts.get(resp.status_code, 0) + 1
+                code = ledger.record_response(
+                    resp.status_code, records=1, wire_bytes=len(wire),
                 )
-                await ctx.emit_event(self._success_event(
+                await ctx.emit_event(self._delivery_event(
                     ctx, params, host=host, iteration=iteration,
                     per_request_sim_id=per_request_sim_id,
                     status_code=resp.status_code, wire_bytes=len(wire),
                     record_count=1, batched=False, descriptor=descriptor,
-                    event=evt,
+                    event=evt, failure_code=code,
                 ))
             except httpx.HTTPError as exc:
-                status_counts[0] = status_counts.get(0, 0) + 1
+                code = ledger.record_exception(exc, records=1, wire_bytes=len(wire))
                 await ctx.emit_event(self._failure_event(
                     ctx, params, host=host, iteration=iteration,
                     per_request_sim_id=per_request_sim_id, wire_bytes=len(wire),
-                    error=str(exc), descriptor=descriptor,
+                    error=str(exc), descriptor=descriptor, failure_code=code,
+                    record_count=1,
                 ))
-        return records_posted, bytes_sent, status_counts
 
     # ------------------------------------------------------------------
     # Audit event builders (keep the emit loop readable).
     # ------------------------------------------------------------------
 
-    def _success_event(
+    def _delivery_event(
         self, ctx: SimulationContext, params: AnalyticsEmitterParams, *,
         host: str, iteration: int, per_request_sim_id: str, status_code: int,
         wire_bytes: int, record_count: int, batched: bool,
-        descriptor: dict[str, Any], event: Optional[dict[str, Any]] = None,
+        descriptor: dict[str, Any], failure_code: Optional[str] = None,
+        event: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
+        """Audit line for a POST that got an HTTP response.
+
+        ``failure_code`` is the taxonomy verdict: ``None`` means the collector
+        accepted the records. A rejected POST is logged as an ECS *failure* —
+        previously any answered POST logged success, which is how a campaign
+        against a 401-ing collector looked green in the audit stream.
+        """
         extra = {
             **descriptor,
             "iteration": iteration,
@@ -445,7 +472,11 @@ class AnalyticsLogEmitter(BaseSimulation):
             "batched": batched,
             "compressed": params.compress,
             "simulation_request_id": per_request_sim_id,
+            "delivered": failure_code is None,
         }
+        if failure_code is not None:
+            extra["failure_code"] = failure_code
+            extra["remediation"] = REMEDIATION.get(failure_code, "")
         if event is not None:
             # Surface the record's own action verb where the source provides one.
             extra["event_name"] = (
@@ -453,14 +484,15 @@ class AnalyticsLogEmitter(BaseSimulation):
                 or event.get("protoPayload", {}).get("methodName")
                 or event.get("action")
             )
+        verb = "accepted by" if failure_code is None else f"REFUSED ({failure_code}) by"
         return ecs_event(
             action=f"{self.Meta.name}_event",
-            outcome="success",
+            outcome="success" if failure_code is None else "failure",
             category=self._ecs_category(),
-            type_="info",
+            type_="info" if failure_code is None else "error",
             message=(
                 f"analytics log event [{self._descriptor_str(descriptor)}] "
-                f"-> {host} status={status_code} records={record_count}"
+                f"{verb} {host} status={status_code} records={record_count}"
                 f"{' (batch)' if batched else ''}"
             ),
             campaign_id=ctx.campaign_id,
@@ -476,13 +508,14 @@ class AnalyticsLogEmitter(BaseSimulation):
         self, ctx: SimulationContext, params: AnalyticsEmitterParams, *,
         host: str, iteration: int, per_request_sim_id: str, wire_bytes: int,
         error: str, descriptor: dict[str, Any],
+        failure_code: Optional[str] = None, record_count: int = 1,
     ) -> dict[str, Any]:
         return ecs_event(
             action=f"{self.Meta.name}_event",
             outcome="failure",
             category=self._ecs_category(),
             type_="error",
-            message=f"analytics log event POST failed: {error}",
+            message=f"analytics log event POST failed ({failure_code}): {error}",
             campaign_id=ctx.campaign_id,
             run_id=ctx.run_id,
             step_id=ctx.step_id,
@@ -493,6 +526,10 @@ class AnalyticsLogEmitter(BaseSimulation):
                 **descriptor,
                 "iteration": iteration,
                 "error": error,
+                "failure_code": failure_code,
+                "remediation": REMEDIATION.get(failure_code or "", ""),
+                "record_count": record_count,
+                "delivered": False,
                 "simulation_request_id": per_request_sim_id,
             },
         )

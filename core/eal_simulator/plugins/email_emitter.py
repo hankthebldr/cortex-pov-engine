@@ -52,6 +52,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..audit import ecs_event
 from ..base import BaseSimulation, SimulationContext, SimulationResult
+from ..delivery import REMEDIATION, DeliveryLedger
 
 
 logger = logging.getLogger("cortexsim.eal.plugins.email_emitter")
@@ -361,6 +362,16 @@ class EmailEmitter(BaseSimulation):
         ]
         params_model = EmailEmitterParams
 
+    #: Record building is a pure function here too, so this plugin can ride the
+    #: offline bundle out to a jumpbox inside the customer network.
+    supports_offline_bundle = True
+
+    def plan_offline_records(
+        self, params: EmailEmitterParams, *, sim_run_id: str, iteration: int,
+    ) -> list[dict[str, Any]]:
+        """Offline-bundle hook — the records this iteration would POST."""
+        return self._build_events_for_pattern(params, sim_run_id=sim_run_id)
+
     async def run(self, ctx: SimulationContext) -> SimulationResult:
         params: EmailEmitterParams = ctx.params  # type: ignore[assignment]
         started_at = self.utcnow()
@@ -407,9 +418,9 @@ class EmailEmitter(BaseSimulation):
                 },
             )
 
-        events_emitted = 0
-        bytes_sent = 0
-        responses_seen: dict[int, int] = {}
+        # Delivery is accounted, not assumed: a POST that came back 401/404/302
+        # is a refusal, not an ingested email event.
+        ledger = DeliveryLedger()
 
         # Stash verify_tls where _build_client reads it without changing its
         # (monkeypatched-in-tests) signature.
@@ -417,13 +428,9 @@ class EmailEmitter(BaseSimulation):
         client = self._build_client(params)
         try:
             for i in range(params.iterations):
-                events_in_iter, iter_bytes, iter_status = await self._emit_pattern(
-                    client, params, ctx, iteration=i + 1,
+                await self._emit_pattern(
+                    client, params, ctx, iteration=i + 1, ledger=ledger,
                 )
-                events_emitted += events_in_iter
-                bytes_sent += iter_bytes
-                for code, n in iter_status.items():
-                    responses_seen[code] = responses_seen.get(code, 0) + n
                 if i < params.iterations - 1 and params.sleep_seconds > 0:
                     await asyncio.sleep(params.sleep_seconds)
         finally:
@@ -432,19 +439,21 @@ class EmailEmitter(BaseSimulation):
         return SimulationResult(
             plugin=self.Meta.name,
             step_id=ctx.step_id,
-            status="success",
+            status=ledger.outcome,
             started_at=started_at,
             completed_at=self.utcnow(),
-            events_emitted=events_emitted,
-            bytes_sent=bytes_sent,
+            events_emitted=ledger.records_delivered,
+            bytes_sent=ledger.bytes_delivered,
+            error=ledger.error_summary(),
             detail={
                 "provider": params.provider,
                 "event_pattern": params.event_pattern,
                 "iterations_completed": params.iterations,
-                "events_posted": events_emitted,
-                "response_status_counts": responses_seen,
+                "events_posted": ledger.records_delivered,
+                "response_status_counts": dict(ledger.status_counts),
                 "target": host,
                 "target_user": params.target_user,
+                "delivery": ledger.to_dict(),
             },
         )
 
@@ -557,7 +566,8 @@ class EmailEmitter(BaseSimulation):
         ctx: SimulationContext,
         *,
         iteration: int,
-    ) -> tuple[int, int, dict[int, int]]:
+        ledger: DeliveryLedger,
+    ) -> None:
         per_request_sim_id = f"{ctx.simulation_run_id}-i{iteration}-{secrets.token_hex(2)}"
         events = self._build_events_for_pattern(
             params, sim_run_id=per_request_sim_id,
@@ -569,14 +579,10 @@ class EmailEmitter(BaseSimulation):
             "content-type": "application/json",
         }
 
-        events_posted = 0
-        bytes_sent = 0
-        status_counts: dict[int, int] = {}
         host = urlparse(params.collector_url).hostname or ""
 
         for evt in events:
             body_bytes = json.dumps(evt).encode("utf-8")
-            bytes_sent += len(body_bytes)
             # Charge the campaign-level cumulative budget per event POST
             # (EAL-G06) before sending.
             ctx.charge_request()
@@ -585,17 +591,20 @@ class EmailEmitter(BaseSimulation):
                 resp = await client.post(
                     params.collector_url, headers=headers, content=body_bytes,
                 )
-                events_posted += 1
-                status_counts[resp.status_code] = status_counts.get(resp.status_code, 0) + 1
+                failure_code = ledger.record_response(
+                    resp.status_code, records=1, wire_bytes=len(body_bytes),
+                )
+                delivered = failure_code is None
                 await ctx.emit_event(ecs_event(
                     action="email_emitter_event",
-                    outcome="success",
+                    outcome="success" if delivered else "failure",
                     category="email",
-                    type_="info",
+                    type_="info" if delivered else "error",
                     message=(
                         f"email event provider={params.provider} "
                         f"pattern={params.event_pattern} "
-                        f"recipient={params.target_user} -> {host} "
+                        f"recipient={params.target_user} "
+                        f"{'-> ' if delivered else 'REFUSED by '}{host} "
                         f"status={resp.status_code}"
                     ),
                     campaign_id=ctx.campaign_id,
@@ -612,17 +621,22 @@ class EmailEmitter(BaseSimulation):
                         "classification": evt.get("classification")
                                           or evt.get("ThreatTypes"),
                         "status_code": resp.status_code,
+                        "delivered": delivered,
+                        "failure_code": failure_code,
+                        "remediation": REMEDIATION.get(failure_code or "", ""),
                         "simulation_request_id": per_request_sim_id,
                     },
                 ))
             except httpx.HTTPError as exc:
-                status_counts[0] = status_counts.get(0, 0) + 1
+                failure_code = ledger.record_exception(
+                    exc, records=1, wire_bytes=len(body_bytes),
+                )
                 await ctx.emit_event(ecs_event(
                     action="email_emitter_event",
                     outcome="failure",
                     category="email",
                     type_="error",
-                    message=f"email event POST failed: {exc}",
+                    message=f"email event POST failed ({failure_code}): {exc}",
                     campaign_id=ctx.campaign_id,
                     run_id=ctx.run_id,
                     step_id=ctx.step_id,
@@ -633,8 +647,9 @@ class EmailEmitter(BaseSimulation):
                         "iteration": iteration,
                         "provider": params.provider,
                         "error": str(exc),
+                        "delivered": False,
+                        "failure_code": failure_code,
+                        "remediation": REMEDIATION.get(failure_code or "", ""),
                         "simulation_request_id": per_request_sim_id,
                     },
                 ))
-
-        return events_posted, bytes_sent, status_counts

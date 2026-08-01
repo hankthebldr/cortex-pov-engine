@@ -29,6 +29,7 @@ from typing import Any, Awaitable, Callable, Optional
 from .audit import AuditLogger, ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
 from .campaign import Campaign, CampaignStep
+from .delivery import PLUGIN_MISCONFIGURED, summarise_step_results
 from .registry import PluginRegistry, get_default_registry
 from .safety import (
     BudgetError,
@@ -60,15 +61,20 @@ class ExecutorState:
     dry_run: bool = True
 
     def to_dict(self) -> dict[str, Any]:
+        step_results = [r.to_dict() for r in self.step_results]
         return {
             "run_id": self.run_id,
             "campaign_id": self.campaign_id,
             "status": self.status,
             "started_at": self.started_at.isoformat(),
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "step_results": [r.to_dict() for r in self.step_results],
+            "step_results": step_results,
             "error": self.error,
             "dry_run": self.dry_run,
+            # A campaign whose steps all "completed" while a collector refused
+            # every record is the worst POV outcome there is, so the rollup
+            # rides alongside status rather than being buried per-step.
+            "delivery": summarise_step_results(step_results),
         }
 
 
@@ -279,12 +285,18 @@ class CampaignExecutor:
         try:
             plugin_cls = self.registry.get(step.plugin)
         except KeyError as exc:
-            return self._failure(step, started_at, f"plugin_not_found: {exc}")
+            return self._failure(
+                step, started_at, f"plugin_not_found: {exc}",
+                code=PLUGIN_MISCONFIGURED,
+            )
 
         try:
             params = plugin_cls.validate_params(step.params)
         except Exception as exc:
-            return self._failure(step, started_at, f"params_invalid: {exc}")
+            return self._failure(
+                step, started_at, f"params_invalid: {exc}",
+                code=PLUGIN_MISCONFIGURED,
+            )
 
         plugin = self._plugin_factory(plugin_cls)
         sim_run_id = BaseSimulation.new_simulation_run_id()
@@ -330,7 +342,12 @@ class CampaignExecutor:
         try:
             result = await plugin.run(ctx)
         except SafetyError as exc:
-            return self._failure(step, started_at, f"safety_violation: {exc}", plugin=step.plugin)
+            from .delivery import TARGET_NOT_AUTHORISED  # noqa: PLC0415
+
+            return self._failure(
+                step, started_at, f"safety_violation: {exc}",
+                plugin=step.plugin, code=TARGET_NOT_AUTHORISED,
+            )
         except asyncio.CancelledError:
             return self._failure(step, started_at, "cancelled", plugin=step.plugin)
         except Exception as exc:
@@ -345,10 +362,13 @@ class CampaignExecutor:
                 plugin=step.plugin,
             )
 
+        # ECS event.outcome only admits success|failure|unknown, so a "partial"
+        # delivery maps to failure — half the records reaching a collector is
+        # not a green step, and the SOC filtering on outcome must see that.
         self._emit_event(
             ecs_event(
                 action="step_finished",
-                outcome=result.status,
+                outcome="success" if result.status == "success" else "failure",
                 category="process",
                 type_="end",
                 message=f"step {step.step_id} ({step.plugin}) finished: {result.status}",
@@ -357,7 +377,13 @@ class CampaignExecutor:
                 step_id=step.step_id,
                 plugin=step.plugin,
                 bytes_sent=result.bytes_sent,
-                extra={"events_emitted": result.events_emitted, "duration_seconds": result.duration_seconds},
+                extra={
+                    "events_emitted": result.events_emitted,
+                    "duration_seconds": result.duration_seconds,
+                    "step_status": result.status,
+                    "delivery": (result.detail or {}).get("delivery"),
+                    "error": result.error,
+                },
             )
         )
         return result
@@ -372,7 +398,13 @@ class CampaignExecutor:
         started_at: datetime,
         error: str,
         plugin: Optional[str] = None,
+        code: Optional[str] = None,
     ) -> SimulationResult:
+        detail: dict[str, Any] = {}
+        if code is not None:
+            from .delivery import REMEDIATION  # noqa: PLC0415
+
+            detail = {"failure_code": code, "remediation": REMEDIATION.get(code, "")}
         return SimulationResult(
             plugin=plugin or step.plugin,
             step_id=step.step_id,
@@ -380,6 +412,7 @@ class CampaignExecutor:
             started_at=started_at,
             completed_at=_utcnow(),
             events_emitted=0,
+            detail=detail,
             error=error,
         )
 

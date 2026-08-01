@@ -426,7 +426,14 @@ class TestPluginRun:
             raise_exc=httpx.ConnectError("boom"),
         )
         sr = state.step_results[0]
-        assert sr.status == "success"
+        # A transport failure is NOT a green step — nothing reached the
+        # collector, so the ledger must say so with a taxonomy code.
+        assert sr.status == "error"
+        assert sr.detail["delivery"]["outcome"] == "error"
+        assert sr.detail["delivery"]["records_delivered"] == 0
+        assert sr.detail["delivery"]["failures"][0]["code"] == "collector_unreachable"
+        assert sr.detail["delivery"]["failures"][0]["remediation"]
+        assert "collector_unreachable" in (sr.error or "")
         assert len(stub.requests) == 4  # all attempted despite errors
         assert sr.detail["response_status_counts"].get(0, 0) == 4
         assert sr.detail["events_posted"] == 0
