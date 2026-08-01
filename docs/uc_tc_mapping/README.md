@@ -90,18 +90,74 @@ over-claim wildly), and it never hides `is_scoreable: false` — 57 of the 107
 detection-backable rows carry no measurable threshold, so a `pass` verdict is
 impossible for them by construction and saying so is the point.
 
+## Two proof mechanisms, not one
+
+DET and HNT rows are proven by an **attack scenario** — a TTP fires and a
+detection catches it. POS, PLT and AUT rows are not detections at all: they ask
+whether a state *holds*, whether a capability is *present*, or whether an
+outcome *occurs inside a budget*. Authoring more scenario YAML cannot answer
+any of those, so the engine carries a second artifact type.
+
+| | DET / HNT | POS / PLT / AUT |
+|---|---|---|
+| artifact | `scenarios/{plane}/*.yml` | `assertions/{pos,plt,aut}/*.yml` |
+| ORM | `Scenario` → `Run` → `Result` | `Assertion` → `AssertionRun` → `AssertionCheck` |
+| proves | a detection fired | a probe measured a number and it cleared a bar |
+| scored by | `verifier.score_run` | `verifier.score_run` (same function) |
+| API | `/api/scenarios`, `/api/runs` | `/api/assertions`, `/api/assertions/runs` |
+
+An assertion **cannot be authored unless it can fail**. At load time the
+loader builds measurements across the probe's own physical domain, pushes them
+through the real evaluator, and rejects the artifact unless the check produces
+both a `fail` and a `pass` (`A-17`), and unless the author's declared
+`negative_control` really evaluates `fail` (`A-18`). Both are structural —
+`CORTEXSIM_STRICT_REFS` does not relax them. `expected_rows_min: 0` on a row
+count is rejected with *"this check can never fail and therefore proves
+nothing"*. No tenant, an unreachable tenant, a 401/429, a bad dataset or a dry
+run all resolve **`pending`**, never `pass` and never a benign
+`not_applicable`. Full contract: [`assertions.md`](assertions.md).
+
 If the snapshot is absent from a deployment, every endpoint returns **200 with
 `index_loaded: false`** and the console renders an explicit degraded state
 rather than a misleading zero.
 
 ## Current state
 
-- **161 / 161 scenarios** resolve. Zero S-10/S-11/S-12/S-15.
-- **84 of 266** index test cases are evidenced by the corpus (**65 of 107**
-  DET/HNT — the detection-backable subset).
+- **162 / 162 scenarios** resolve. Zero S-10/S-11/S-12/S-15.
+- **86 of 266** index test cases are evidenced by an attack **scenario**
+  (**67 of 107** DET/HNT — the detection-backable subset). This is the number
+  `scripts/uctc_crosswalk_v2.2.py --report` and `/api/uctc` report, because both
+  walk `Scenario` rows only.
+- **18 assertion artifacts** (`assertions/{pos,plt,aut}/*.yml`) bind **18 more
+  test cases**, 8 of which no scenario reached. Union across both mechanisms:
+  **94 of 266**.
 - 100 scenarios carry an `S-13` tier disagreement and 13 an `S-14` posture-class
   binding. Both are advisory and both are real — see
   [`index-gaps-v2.2.md`](index-gaps-v2.2.md).
+
+### Coverage by validation class
+
+The index is not one population. Each `validation_class` is proven by a
+different mechanism, and a flat percentage hides that.
+
+| class | total | by scenario | by assertion | union | open | index-scoreable | tenant-verified |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| DET | 102 | 63 | 0 | 63 | 39 | 49 | 0 |
+| HNT | 5 | 4 | 0 | 4 | 1 | 1 | 0 |
+| POS | 110 | 18 | 11 | 19 | 91 | 19 | 0 |
+| PLT | 43 | 1 | 4 | 5 | 38 | 16 | 0 |
+| AUT | 6 | 0 | 3 | 3 | 3 | 6 | 0 |
+| **all** | **266** | **86** | **18** | **94** | **172** | **91** | **0** |
+
+Read the last two columns before quoting the union. *index-scoreable* is how
+many rows carry a measurable threshold at all — the other 175 are
+`Qualitative pass` and `verifier.score_run` clamps them to `not_applicable`,
+never `pass`. *tenant-verified* is how many have an `AssertionRun` or `Run`
+carrying a real `pass`/`fail` against a live tenant: **zero**, because no
+assertion has been executed against a tenant yet.
+
+**Authored is not proven.** A binding means an artifact exists that A-17 proved
+can go red. It does not mean anyone watched it do so.
 
 ## Files
 
@@ -112,6 +168,7 @@ rather than a misleading zero.
 | `crosswalk-v2.2.csv` | scenario → index binding, one row per scenario, with rationale |
 | `proposed-tc-v2.3.csv` | 16 test cases the index does not yet carry |
 | `index-gaps-v2.2.md` | what the crosswalk surfaced that needs a human decision |
+| `assertions.md` | the POS/PLT/AUT proof mechanism — artifact schema, the A-* diagnostics, the verdict taxonomy |
 | `v2.0-methodology-master.md` | the F1–F10 methodology families (still current) |
 | `_archive/v2.0-source/` | the superseded v2.0 export, kept for the re-key trail |
 

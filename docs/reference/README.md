@@ -47,25 +47,27 @@
   is versioned in-repo at `docs/uc_tc_mapping/_v2.2-source/` and loaded at boot by
   `core/engine/uctc_registry.py`. Scenario `uc_ref` / `tc_ref` / `tc_refs[]` /
   `pov_scenario_id` are now a **validated foreign key** into it (`S-10..S-16`;
-  `CORTEXSIM_STRICT_REFS` **defaults true**). **161 / 161 scenarios resolve, zero
-  S-10/S-11/S-12/S-15**; **81 of 266** index test cases are evidenced (**62 of 107**
-  DET/HNT). The index is browsable **in the product**: `core/api/uctc.py` (9 read
+  `CORTEXSIM_STRICT_REFS` **defaults true**). **162 / 162 scenarios resolve, zero
+  S-10/S-11/S-12/S-15**; **86 of 266** index test cases are evidenced by a scenario
+  (**67 of 107** DET/HNT), plus **18 bound by an assertion artifact** (union **94 of
+  266**, tenant-verified **0** — authored is not proven; see
+  [`../uc_tc_mapping/assertions.md`](../uc_tc_mapping/assertions.md)). The index is browsable **in the product**: `core/api/uctc.py` (9 read
   endpoints) + the console **UC / TC Index** destination (`#/uctc`), with
   `core/api/pov.py` scoping the corpus to a tenant entitlement set. The
   **101 S-13 tier disagreements and 13 S-14 posture bindings are deliberate**, as is
   the fact that 57 of the 107 detection-backable TCs are `is_scoreable: false` —
   see [`../uc_tc_mapping/README.md`](../uc_tc_mapping/README.md) and
   [`../uc_tc_mapping/index-gaps-v2.2.md`](../uc_tc_mapping/index-gaps-v2.2.md).
-  Full suite **3316 pass / 3 fail / 220 skip** (the 3 are the known `edr-013/017/021`
+  Full suite **3718 pass / 3 fail / 221 skip** (the 3 are the known `edr-013/017/021`
   PowerShell-in-bash-bundle push-generator defect, not a regression);
-  `make validate` **328 pass / 0 warn / 0 fail**; exports byte-identical; UI **353 tests**.
+  `make validate` **330 pass / 0 warn / 0 fail**; exports byte-identical; UI **449 tests**.
 - **Counted ground truth (verified 2026-07-25 — analytics log-streamer + ABIOC/Analytics content):**
-  **161 loadable scenarios** across **15 detection planes** (all `status: active`,
+  **162 loadable scenarios** across **15 detection planes** (all `status: active`,
   0 rejected / 0 dangling refs; **1001/1001 detection_id slugs resolve** — GAP-4 held) ·
-  **161 TTP cards** (**1356 resolvable catalog detection objects**) · **21 EAL plugins** ·
+  **162 TTP cards** (**1674 catalog detection objects**) · **21 EAL plugins** ·
   85 tool-adapter packs (adapter wiring unchanged — the 14 new scenarios are
   analytics-streamer-driven with 0 new `adapter_ref`) · 11 AWS IaC modules.
-  `make validate` is green (**328 pass / 0 warn / 0 fail**). This pass adds the 14
+  `make validate` is green (**330 pass / 0 warn / 0 fail**). This pass adds the 14
   `TTP-2026-0154..0167` analytics-streamer pairs (147 + 14 = 161) and a **new analytics
   log-streamer EAL plugin family** — spine `core/eal_simulator/analytics_emitter.py` + 7
   net-new emitters (**14 → 21 plugins**) that POST **shape-true audit/log JSON** to an

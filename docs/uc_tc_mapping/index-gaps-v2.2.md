@@ -1,8 +1,8 @@
 # Index gaps surfaced by the v2.2 crosswalk
 
-What binding all 161 scenarios to the v2.2 master index revealed. Everything
+What binding all 162 scenarios to the v2.2 master index revealed. Everything
 here is a **decision for the index owner**, not an engine defect — the engine
-side is closed (161/161 resolve, zero S-10/S-11/S-12/S-15).
+side is closed (162/162 resolve, zero S-10/S-11/S-12/S-15).
 
 Generated against index v2.2 on 2026-07-31 by `scripts/uctc_crosswalk_v2.2.py`.
 
@@ -15,7 +15,7 @@ Generated against index v2.2 on 2026-07-31 by `scripts/uctc_crosswalk_v2.2.py`.
 | Index test cases | 266 |
 | …**DET/HNT** (detection-backable) | **107** |
 | …POS/PLT/AUT (posture / platform / automation assertions) | 159 |
-| Engine detection scenarios | **161** |
+| Engine detection scenarios | **162** |
 
 Per plane it is tighter still: 26 CDR scenarios against 3 `UC-CDR` DET rows,
 20 ITDR against 4, 6 ASM against 1.
@@ -25,7 +25,10 @@ index's own model already works this way — `scenario_library_v2.2.csv` binds o
 POV-SC payload to many test cases — so the engine now matches it rather than
 forcing a 1:1 the index never claimed.
 
-**Coverage today: 84 of 266 test cases evidenced (65 of 107 DET/HNT).**
+**Coverage today: 86 of 266 test cases evidenced by a scenario (67 of 107
+DET/HNT), plus 18 bound by an assertion artifact (8 of them net-new) → a union
+of 94 of 266. None of the 18 has been executed against a live tenant, so
+*authored* is 94 and *proven* is 86 + 0. See §4a.**
 
 ---
 
@@ -99,6 +102,77 @@ state rather than a fired detection. The warning is the signal the plan's Phase 
 wants: these need a **fixture harness**, not authored detection content. Building
 one is the single largest effort saver left — the index carries 159 POS/PLT/AUT
 rows and authoring a detection scenario per row would be wasted work.
+
+**This is now built.** See §4a.
+
+---
+
+## 4a · The assertion mechanism — and its honest ceiling
+
+The 159 POS/PLT/AUT rows now have an artifact type that is not a scenario:
+`assertions/{pos,plt,aut}/*.yml`, loaded by `core/engine/assertions.py`, scored
+by the same `verifier.score_run`. An artifact **cannot be authored unless it
+can fail** — `A-17` proves falsifiability by execution at load time and is not
+gated by `CORTEXSIM_STRICT_REFS`. Contract: [`assertions.md`](assertions.md).
+
+| class | total | by scenario | by assertion | union | open | index-scoreable | tenant-verified |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| DET | 102 | 63 | 0 | 63 | 39 | 49 | 0 |
+| HNT | 5 | 4 | 0 | 4 | 1 | 1 | 0 |
+| POS | 110 | 18 | 11 | 19 | 91 | 19 | 0 |
+| PLT | 43 | 1 | 4 | 5 | 38 | 16 | 0 |
+| AUT | 6 | 0 | 3 | 3 | 3 | 6 | 0 |
+| **all** | **266** | **86** | **18** | **94** | **172** | **91** | **0** |
+
+**The ceiling is not 266, and it is not close.** From the three design triages,
+roughly **45 of the 172 open rows** are reachable by this substrate at all:
+POS 13, PLT 12, AUT 3 (+1), DET 4. The rest are refused for stated reasons that
+are decisions for the index owner, not engine work:
+
+- **~92 POS rows carry `Qualitative pass`** and therefore clamp to
+  `not_applicable` even when satisfied. Adopting **one** measurable POS-family
+  threshold in `proposed-tc-v2.3.csv` — e.g. *"Planted-Finding Discovery
+  Coverage ≥ 100 % within one scan cycle"* — converts 10 of the 11 authored POS
+  assertions from `not_applicable` into real scored passes **with zero engine
+  work**. This is the highest-leverage index change available.
+- **~10 POS rows** name `Cortex Cloud Inventory (/api/v1/inventory)` as their
+  `detection_source`. Every probe is XQL; there is no REST driver, and a driver
+  that resolves `pending` for everything is indistinguishable from not having
+  one.
+- **8 of 12 "provable" PLT rows were refused on inspection**: third-party sensor
+  shapes the engine cannot emit (TC-NDR-05), 6–12 months of resident data a POV
+  tenant cannot have (TC-XTI-06, TC-XDL-05), wall-clock query latency and
+  hot/warm/cold tier residency no probe can measure without folding the
+  emitter's own delay into the platform's number (TC-XDL-04, TC-SIEM-01),
+  differential RBAC needing two credentials in one evaluation (TC-PGE-02), and
+  Marketplace connector provenance no read API exposes (TC-ITDR-04, TC-TH-04).
+- **3 of 6 AUT rows are unreachable**: TC-APB-01's premise is a property of the
+  *customer's* playbook, TC-APB-03 needs a human judging generated-playbook
+  quality plus a write, TC-APB-04 needs a live integration deliberately broken —
+  a destructive write outside the read-only charter. **AUT will never reach 6/6
+  and must not be reported as though it could.**
+- **31 of the 35 open DET rows carry `mitre_techniques: TBD`** and 23 name a
+  product surface the engine cannot drive (AgentiX, Unit 42 managed services).
+  They are POS/PLT/AUT work wearing a DET label and need an **index
+  reclassification**, which is a human decision.
+
+Two refusals are worth reading because they are the pattern:
+**TC-CIEM-01** was dropped because the `cspm` fixture has no permissions
+boundary or SCP, so a naïve attached-policy scanner satisfies any assertion
+exactly as well as a real net-effective permission engine — the check could not
+distinguish the capability from its trivial imitation. **TC-DLP-03** was dropped
+because two of its three "independent" exfil channels both land in
+`panw_ngfw_traffic_raw`, so a `count_distinct(channel) == 3` terminal measures
+two things, not three.
+
+**Not built: precision.** Every POS assertion measures *recall* against planted
+ground truth. None measures false positives, so a posture engine that flags
+every resource in the account satisfies all of them. Each artifact's
+`scope_limitations` says so verbatim. The obvious fix — a planted "clean
+control" asserted NOT flagged — was designed and rejected: a CIS-benchmarked
+scan legitimately raises a LOW finding on any S3 bucket, so `flagged == 0` goes
+red against a *correct* product. Manufactured red is as forbidden as false
+green. It needs a severity-field binding confirmed against a live tenant first.
 
 ---
 
