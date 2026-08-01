@@ -20,7 +20,7 @@ COMPOSE     ?= docker compose
 # in core/config.py) doesn't refuse to start with the `changeme` default.
 SECRET      ?= $(shell openssl rand -hex 32)
 
-.PHONY: help up down build test test-backend test-agent test-ui validate \
+.PHONY: help up down build agent-dist test test-backend test-agent test-ui validate \
         validate-detection check-refs check-adapters coverage coverage-strict ci clean
 
 help: ## Show this help
@@ -44,6 +44,9 @@ down: ## Stop SimCore
 
 build: ## Build the production simcore image
 	docker build -f core/Dockerfile -t $(IMAGE) .
+
+agent-dist: ## Cross-compile the beacon matrix into ./agent-dist (served by /api/agents/binary)
+	scripts/build-agent-dist.sh
 
 # -----------------------------------------------------------------------------
 # Code-test gates (mirror ci.yml backend / agent / ui jobs)

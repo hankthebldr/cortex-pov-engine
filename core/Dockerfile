@@ -8,6 +8,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY core/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.txt
 
+# ---- Agent builder stage: cross-compile the beacon SimCore hands to endpoints ----
+# WHY: the one-line onboarding must not require a Go toolchain or public Go-proxy
+# egress on the CUSTOMER endpoint. Baking the matrix here means a `docker compose
+# up` deployment can serve a ready-to-run beacon from /api/agents/binary with the
+# DC's own SimCore as the only outbound dependency. Kept in lockstep with
+# scripts/build-agent-dist.sh (same targets, same flags).
+FROM golang:1.22-alpine AS agent-builder
+
+WORKDIR /src
+COPY agent/ ./agent/
+RUN cd agent && \
+    for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do \
+        goos="${t%/*}"; goarch="${t#*/}"; \
+        CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+            go build -trimpath -ldflags="-s -w" \
+            -o "/out/cortexsim-agent-${goos}-${goarch}" . || exit 1; \
+    done && \
+    cd /out && sha256sum cortexsim-agent-* > SHA256SUMS
+
 # ---- UI builder stage: produce ui/dist/ for static serving ----
 FROM node:20-alpine AS ui-builder
 
@@ -49,6 +68,11 @@ COPY docs/uc_tc_mapping/ /app/docs/uc_tc_mapping/
 
 # Drop the built React UI into the location SimCore mounts as StaticFiles (see core/main.py).
 COPY --from=ui-builder /ui/dist/ /app/core/static/
+
+# Prebuilt beacons served by GET /api/agents/binary. Without them the installer
+# falls back to a source build (which needs Go on the target) and the endpoint
+# returns a structured AGENT_BINARY_UNAVAILABLE naming this directory.
+COPY --from=agent-builder /out/ /app/agent-dist/
 
 ENV CORTEXSIM_BASE_DIR=/app
 ENV CORTEXSIM_ENV=production

@@ -27,6 +27,16 @@ const (
 	defaultInterval = 10
 )
 
+// shutdownSignals are the signals that trigger a graceful stop.
+//
+// SIGHUP matters as much as the other two: a beacon started from an SSH session
+// (the nohup fallback in the installer, or a DC running it by hand) receives
+// SIGHUP when the controlling terminal goes away. Un-Notified, its DEFAULT
+// action terminates the process — the beacon would die with the laptop lid, mid
+// scenario, with no shutdown path. Catching it converts that into the same clean
+// cancel as Ctrl-C, and under systemd/launchd it is simply never delivered.
+var shutdownSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP}
+
 func main() {
 	// ----------------------------------------------------------------
 	// CLI flags
@@ -87,7 +97,7 @@ func main() {
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigCh, shutdownSignals...)
 
 	go func() {
 		sig := <-sigCh

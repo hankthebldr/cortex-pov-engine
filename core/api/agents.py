@@ -2,21 +2,31 @@
 CortexSim API — /api/agents router.
 
 Endpoints:
-  GET  /api/agents                   — list all connected agents
-  POST /api/agents/register          — agent registers itself
-  GET  /api/agents/{agent_id}/tasks  — agent polls for next task (returns task or null)
+  GET  /api/agents                     — list all connected agents
+  POST /api/agents/register            — agent registers itself
+  GET  /api/agents/{agent_id}/tasks    — agent polls for next task (task or null)
+  GET  /api/agents/install             — generate the one-line onboarding script
+  GET  /api/agents/binaries            — prebuilt beacon inventory (os/arch/sha256)
+  GET  /api/agents/binary              — download a prebuilt beacon
+  GET  /api/agents/binary/sha256       — its digest, for the installer's verify step
+  POST /api/agents/install/telemetry   — installer reports its stage/failure code
+  GET  /api/agents/install/attempts    — recent install attempts (console diagnostics)
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os  # NOTE: shadowed by the `os` query parameter inside agent_installer().
 import re
 import secrets
+from collections import deque
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,7 +72,237 @@ class EnrollRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-_AGENT_MODULE = "github.com/hankthebldr/cortexsim/agent"
+# ---------------------------------------------------------------------------
+# Prebuilt beacon distribution
+# ---------------------------------------------------------------------------
+#
+# WHY: onboarding used to `go install` a module path from the public Go proxy,
+# which meant a Go toolchain plus proxy.golang.org/sum.golang.org/github.com
+# egress ON THE CUSTOMER ENDPOINT. Neither survives a hardened network or a
+# change-control review, so the advertised one-liner could not actually run on
+# the hosts a POV targets. SimCore now ships the beacon itself: the DC's own
+# SimCore becomes the single outbound dependency and the endpoint needs no
+# compiler. The shelf is filled by `make agent-dist` (scripts/build-agent-dist.sh)
+# or by the `agent-builder` stage in core/Dockerfile.
+
+# Canonical GOOS/GOARCH values, plus the `uname` spellings an installer sends.
+_OS_ALIASES = {
+    "linux": "linux",
+    "darwin": "darwin", "macos": "darwin", "mac": "darwin", "osx": "darwin",
+    "windows": "windows", "win": "windows",
+}
+_ARCH_ALIASES = {
+    "amd64": "amd64", "x86_64": "amd64", "x64": "amd64",
+    "arm64": "arm64", "aarch64": "arm64",
+}
+
+# Digest cache keyed by (path, mtime_ns, size) — hashing 5 MB on every install
+# poll is wasteful, and the key invalidates the moment the file is rebuilt.
+_sha_cache: dict[tuple[str, int, int], str] = {}
+
+
+def _agent_dist_dir() -> Path:
+    """Directory holding the cross-compiled beacons.
+
+    ``CORTEXSIM_AGENT_DIST`` wins so a DC can point at an scp'd drop without
+    rebuilding the image; otherwise it is ``<BASE_DIR>/agent-dist``, which is
+    where both the Dockerfile stage and the make target write.
+    """
+    override = os.environ.get("CORTEXSIM_AGENT_DIST")
+    if override:
+        return Path(override)
+    from config import settings  # noqa: PLC0415 — avoid an import cycle at module load
+
+    return Path(settings.CORTEXSIM_BASE_DIR) / "agent-dist"
+
+
+def _normalize_target(os_raw: str, arch_raw: str) -> tuple[str, str]:
+    """Map a caller's os/arch spelling onto GOOS/GOARCH, or 400."""
+    os_norm = _OS_ALIASES.get((os_raw or "").strip().lower())
+    if os_norm is None:
+        raise HTTPException(status_code=400, detail={
+            "error": "Unsupported OS", "code": "BAD_OS",
+            "detail": f"os must be one of {sorted(set(_OS_ALIASES.values()))}"})
+    arch_norm = _ARCH_ALIASES.get((arch_raw or "").strip().lower())
+    if arch_norm is None:
+        raise HTTPException(status_code=400, detail={
+            "error": "Unsupported architecture", "code": "BAD_ARCH",
+            "detail": f"arch must be one of {sorted(set(_ARCH_ALIASES.values()))} "
+                      f"(uname -m spellings x86_64/aarch64 are accepted)"})
+    return os_norm, arch_norm
+
+
+def _binary_name(goos: str, goarch: str) -> str:
+    suffix = ".exe" if goos == "windows" else ""
+    return f"cortexsim-agent-{goos}-{goarch}{suffix}"
+
+
+def _binary_path(goos: str, goarch: str) -> Path:
+    return _agent_dist_dir() / _binary_name(goos, goarch)
+
+
+def _sha256_of(path: Path) -> str:
+    st = path.stat()
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    cached = _sha_cache.get(key)
+    if cached:
+        return cached
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    hexdigest = digest.hexdigest()
+    _sha_cache[key] = hexdigest
+    return hexdigest
+
+
+def _available_binaries() -> list[dict]:
+    """Inventory the dist directory. Empty list is a valid state — the installer
+    degrades to a source build and says so."""
+    dist = _agent_dist_dir()
+    if not dist.is_dir():
+        return []
+    out: list[dict] = []
+    for goos in sorted(set(_OS_ALIASES.values())):
+        for goarch in sorted(set(_ARCH_ALIASES.values())):
+            path = dist / _binary_name(goos, goarch)
+            if not path.is_file():
+                continue
+            st = path.stat()
+            out.append({
+                "os": goos,
+                "arch": goarch,
+                "filename": path.name,
+                "size_bytes": st.st_size,
+                "sha256": _sha256_of(path),
+                "modified_at": datetime.utcfromtimestamp(st.st_mtime).isoformat(),
+            })
+    return out
+
+
+def _resolve_binary_or_404(goos: str, goarch: str) -> Path:
+    path = _binary_path(goos, goarch)
+    if not path.is_file():
+        have = [f"{b['os']}/{b['arch']}" for b in _available_binaries()]
+        raise HTTPException(status_code=404, detail={
+            "error": "No prebuilt beacon for that target",
+            "code": "AGENT_BINARY_UNAVAILABLE",
+            "detail": (
+                f"{goos}/{goarch} is not in {_agent_dist_dir()}. "
+                f"Available: {have or 'none'}. Build the matrix on the SimCore host "
+                f"with `make agent-dist`, or rebuild the image (core/Dockerfile "
+                f"agent-builder stage), or scp a binary in and set CORTEXSIM_AGENT_DIST."
+            ),
+        })
+    return path
+
+
+@router.get("/binaries")
+async def list_agent_binaries():
+    """Inventory of prebuilt beacons this SimCore can hand to an endpoint."""
+    binaries = _available_binaries()
+    return {"binaries": binaries, "total": len(binaries),
+            "dist_dir": str(_agent_dist_dir())}
+
+
+@router.get("/binary")
+async def download_agent_binary(os: str = "linux", arch: str = "amd64"):
+    """Serve the prebuilt beacon for ``os``/``arch``.
+
+    This is the whole point of the redesign: the customer endpoint downloads a
+    static, stdlib-only binary from the DC's SimCore instead of compiling one.
+    The digest is echoed in ``X-CortexSim-Agent-SHA256`` so a client that
+    streams the body can verify without a second round trip.
+    """
+    goos, goarch = _normalize_target(os, arch)
+    path = _resolve_binary_or_404(goos, goarch)
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=path.name,
+        headers={"X-CortexSim-Agent-SHA256": _sha256_of(path)},
+    )
+
+
+@router.get("/binary/sha256", response_class=PlainTextResponse)
+async def agent_binary_sha256(os: str = "linux", arch: str = "amd64"):
+    """Bare hex digest of the prebuilt beacon — what the installer compares
+    against. Plain text (not JSON) so `curl … | read` needs no parser on a
+    minimal endpoint."""
+    goos, goarch = _normalize_target(os, arch)
+    path = _resolve_binary_or_404(goos, goarch)
+    return PlainTextResponse(_sha256_of(path) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Install telemetry — make a failed onboarding visible in the console
+# ---------------------------------------------------------------------------
+#
+# Before this, a failed install echoed one line on a host the DC may have
+# already left and SimCore showed nothing at all — indistinguishable from "the
+# DC hasn't run the command yet". The installer now POSTs a stable code at every
+# stage. Deliberately in-memory and bounded: this is operator diagnostics with a
+# minutes-long useful life, not an audit trail, and it must never be able to
+# grow the DB or fail an install.
+
+_INSTALL_ATTEMPTS_MAX = 100
+_install_attempts: deque[dict] = deque(maxlen=_INSTALL_ATTEMPTS_MAX)
+
+
+class InstallTelemetry(BaseModel):
+    stage: str = Field(max_length=40)          # detect | enroll | download | verify | install | run
+    code: str = Field(max_length=60)           # OK | ENROLL_DENIED | CHECKSUM_MISMATCH | …
+    detail: str = Field(default="", max_length=2000)
+    hostname: str = Field(default="", max_length=253)
+    os: str = Field(default="", max_length=32)
+    arch: str = Field(default="", max_length=32)
+    agent_id: Optional[str] = Field(default=None, max_length=120)
+
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+@router.post("/install/telemetry")
+async def record_install_telemetry(body: InstallTelemetry):
+    """Record an installer stage/outcome reported by a target endpoint.
+
+    Unauthenticated by design — the reporting host has not enrolled yet when the
+    interesting failures happen, so requiring a credential would silence exactly
+    the cases this exists for. Payload is length-capped by the model and stripped
+    of control characters here before it can reach an operator's screen.
+    """
+    entry = {
+        "stage": _CONTROL_CHARS.sub("", body.stage),
+        "code": _CONTROL_CHARS.sub("", body.code),
+        "detail": _CONTROL_CHARS.sub("", body.detail),
+        "hostname": _CONTROL_CHARS.sub("", body.hostname),
+        "os": _CONTROL_CHARS.sub("", body.os),
+        "arch": _CONTROL_CHARS.sub("", body.arch),
+        "agent_id": _CONTROL_CHARS.sub("", body.agent_id or "") or None,
+        "reported_at": datetime.utcnow().isoformat(),
+    }
+    _install_attempts.appendleft(entry)
+    logger.info("install telemetry host=%s %s/%s stage=%s code=%s",
+                entry["hostname"], entry["os"], entry["arch"], entry["stage"], entry["code"])
+
+    # Best-effort live surfacing on the existing global SSE stream. A bus hiccup
+    # must never turn an install report into an error the target sees.
+    try:
+        from events import event_bus  # noqa: PLC0415
+
+        await event_bus.publish(None, {"type": "agent.install", "run_id": None, "data": entry})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("event_bus publish failed for install telemetry")
+
+    return {"status": "recorded", "stage": entry["stage"], "code": entry["code"]}
+
+
+@router.get("/install/attempts")
+async def list_install_attempts(limit: int = 25):
+    """Most recent install attempts, newest first. In-memory — cleared on restart."""
+    capped = max(1, min(limit, _INSTALL_ATTEMPTS_MAX))
+    items = list(_install_attempts)[:capped]
+    return {"attempts": items, "total": len(_install_attempts), "retained_max": _INSTALL_ATTEMPTS_MAX}
 
 
 def _resolve_server(request: Request, override: Optional[str]) -> str:
@@ -74,90 +314,540 @@ def _resolve_server(request: Request, override: Optional[str]) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _linux_installer(server: str, agent_id: str, interval: int, token: Optional[str]) -> str:
-    # When a token is present, the script ENROLLS to obtain a server-assigned
-    # id (the recommended flow); otherwise it falls back to the explicit id.
-    enroll_block = f"""
-if [ -n "${{CORTEXSIM_TOKEN:-{token or ''}}}" ]; then
-  TOKEN="${{CORTEXSIM_TOKEN:-{token or ''}}}"
-  echo "[cortexsim] enrolling with token ...${{TOKEN: -6}}"
-  HOSTN="$(hostname 2>/dev/null || echo unknown)"
-  RESP="$(curl -fsSL -X POST "$SERVER/api/agents/enroll" \\
-    -H 'Content-Type: application/json' \\
-    -d "{{\\"token\\":\\"$TOKEN\\",\\"hostname\\":\\"$HOSTN\\",\\"os\\":\\"linux\\"}}")" \\
-    || {{ echo '[cortexsim] ERROR: enrollment failed (token invalid/expired?)' >&2; exit 1; }}
-  AGENT_ID="$(printf '%s' "$RESP" | sed -n 's/.*\\"agent_id\\":[[:space:]]*\\"\\([^\\"]*\\)\\".*/\\1/p')"
-  [ -n "$AGENT_ID" ] || {{ echo '[cortexsim] ERROR: no agent_id in enroll response' >&2; exit 1; }}
-  echo "[cortexsim] enrolled as: $AGENT_ID"
-fi"""
-    return f"""#!/usr/bin/env bash
-# ─── CortexSim agent installer (Linux) ──────────────────────────────────────
-# One-line onboarding. With a token, SimCore assigns the agent id (recommended);
-# without one, the explicit/default id is used (legacy).
-# Env overrides: CORTEXSIM_SERVER / CORTEXSIM_TOKEN / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL.
+# ---------------------------------------------------------------------------
+# One-line installers
+# ---------------------------------------------------------------------------
+#
+# The scripts are templates with @@TOKEN@@-style placeholders rather than
+# f-strings: the bodies are dense shell/PowerShell and doubling every literal
+# brace to survive `str.format` made them unreadable and easy to break.
+
+_POSIX_INSTALLER = r"""#!/usr/bin/env bash
+# ─── CortexSim beacon installer (Linux / macOS) ─────────────────────────────
+#
+#   curl -fsSL '<server>/api/agents/install?token=<tok>' | bash
+#
+# No compiler, no public-internet egress: the only host this talks to is the
+# SimCore that served it. It detects os/arch, enrols for a server-assigned agent
+# id, downloads the prebuilt beacon and verifies its sha256, then installs it as
+# a SUPERVISED service (systemd on Linux, launchd on macOS) so it survives your
+# SSH session and a reboot — a POV runs for weeks, not for one terminal.
+#
+# Every failure exits with a stable CODE and is reported back to SimCore
+# (GET /api/agents/install/attempts) so the operator sees why onboarding failed
+# without being logged into this host.
+#
+# Env overrides:
+#   CORTEXSIM_SERVER / CORTEXSIM_TOKEN / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL
+#   CORTEXSIM_MODE=service|foreground   service is the default
+#   CORTEXSIM_BIN=/path/to/beacon       pre-staged binary (fully air-gapped host)
+#   CORTEXSIM_SRC=/path/to/repo         build from source (needs Go) if no prebuilt
+#   CORTEXSIM_BIN_DIR / CORTEXSIM_LOG   install prefix + log path (read-only /usr/local)
+#   CORTEXSIM_TELEMETRY=0               suppress the install-status POST
 set -euo pipefail
-SERVER="${{CORTEXSIM_SERVER:-{server}}}"
-AGENT_ID="${{CORTEXSIM_AGENT_ID:-{agent_id}}}"
-INTERVAL="${{CORTEXSIM_INTERVAL:-{interval}}}"
-echo "[cortexsim] target server : $SERVER"
-{enroll_block}
-echo "[cortexsim] agent id      : $AGENT_ID"
 
-if ! command -v go >/dev/null 2>&1; then
-  echo "[cortexsim] ERROR: Go 1.21+ is required (https://go.dev/dl). Install Go and re-run." >&2
+SERVER="${CORTEXSIM_SERVER:-@@SERVER@@}"; SERVER="${SERVER%/}"
+AGENT_ID="${CORTEXSIM_AGENT_ID:-@@AGENT_ID@@}"
+INTERVAL="${CORTEXSIM_INTERVAL:-@@INTERVAL@@}"
+MODE="${CORTEXSIM_MODE:-@@MODE@@}"
+TOKEN="${CORTEXSIM_TOKEN:-@@TOKEN@@}"
+HOSTN="$(hostname 2>/dev/null || echo unknown)"
+OS_ID="unknown"; ARCH_ID="unknown"; BIN_SRC=""
+SVC="cortexsim-agent"
+PLIST_LABEL="com.paloaltonetworks.cortexsim.agent"
+
+WORKDIR="$(mktemp -d 2>/dev/null || mktemp -d -t cortexsim)"
+trap 'rm -rf "$WORKDIR"' EXIT
+
+cs_say() { echo "[cortexsim] $*"; }
+
+# Minimal JSON string escaping — the server length-caps and strips control
+# characters, so this only has to survive transport.
+cs_esc() { printf '%s' "${1:-}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n\r\t' '   '; }
+
+cs_report() {  # stage code detail
+  if [ "${CORTEXSIM_TELEMETRY:-1}" = "0" ]; then return 0; fi
+  curl -sS -m 5 -o /dev/null -X POST "$SERVER/api/agents/install/telemetry" \
+    -H 'Content-Type: application/json' \
+    -d "{\"stage\":\"$(cs_esc "$1")\",\"code\":\"$(cs_esc "$2")\",\"detail\":\"$(cs_esc "$3")\",\"hostname\":\"$(cs_esc "$HOSTN")\",\"os\":\"$OS_ID\",\"arch\":\"$ARCH_ID\",\"agent_id\":\"$(cs_esc "${AGENT_ID:-}")\"}" \
+    >/dev/null 2>&1 || true
+  return 0
+}
+
+cs_fail() {  # stage code what fix
+  echo "" >&2
+  echo "[cortexsim] FAILED  stage=$1  code=$2" >&2
+  echo "[cortexsim]   what : $3" >&2
+  if [ -n "${4:-}" ]; then echo "[cortexsim]   fix  : $4" >&2; fi
+  cs_report "$1" "$2" "$3"
   exit 1
-fi
+}
 
-WORKDIR="$(mktemp -d)"; BIN="$WORKDIR/cortexsim-agent"
-if [ -n "${{CORTEXSIM_SRC:-}}" ] && [ -d "$CORTEXSIM_SRC/agent" ]; then
-  echo "[cortexsim] building from local source: $CORTEXSIM_SRC/agent"
-  ( cd "$CORTEXSIM_SRC/agent" && go build -o "$BIN" . )
+# ── stage: detect ───────────────────────────────────────────────────────────
+UNAME_S="$(uname -s 2>/dev/null || echo unknown)"
+case "$UNAME_S" in
+  Linux)  OS_ID="linux" ;;
+  Darwin) OS_ID="darwin" ;;
+  *) cs_fail detect UNSUPPORTED_OS "uname -s reported '$UNAME_S'" \
+       "supported: Linux, macOS. For Windows targets use PUSH mode (the console's Push bundle)." ;;
+esac
+UNAME_M="$(uname -m 2>/dev/null || echo unknown)"
+case "$UNAME_M" in
+  x86_64|amd64)  ARCH_ID="amd64" ;;
+  aarch64|arm64) ARCH_ID="arm64" ;;
+  *) cs_fail detect UNSUPPORTED_ARCH "uname -m reported '$UNAME_M'" \
+       "supported: x86_64/amd64 and aarch64/arm64" ;;
+esac
+if ! command -v curl >/dev/null 2>&1; then
+  cs_fail detect CURL_MISSING "curl is not on PATH" \
+    "install curl, or scp the beacon over and re-run with CORTEXSIM_BIN=/path/to/cortexsim-agent"
+fi
+cs_say "target server : $SERVER"
+cs_say "platform      : $OS_ID/$ARCH_ID ($HOSTN)"
+
+# ── stage: enroll ───────────────────────────────────────────────────────────
+if [ -n "$TOKEN" ]; then
+  cs_say "enrolling with token ...${TOKEN: -6}"
+  PAYLOAD="$(printf '{"token":"%s","hostname":"%s","os":"%s","capabilities":["shell","identity-harness"]}' \
+    "$(cs_esc "$TOKEN")" "$(cs_esc "$HOSTN")" "$OS_ID")"
+  EBODY="$WORKDIR/enroll.json"; EERR="$WORKDIR/enroll.err"
+  # `|| true`, not `|| echo 000`: curl's -w writes "000" itself on a transport
+  # failure, so an appended fallback produced the nonsense code "000000".
+  ECODE="$(curl -sS -m 30 -o "$EBODY" -w '%{http_code}' -X POST "$SERVER/api/agents/enroll" \
+    -H 'Content-Type: application/json' -d "$PAYLOAD" 2>"$EERR" || true)"
+  if [ -z "$ECODE" ] || [ "$ECODE" = "000" ]; then
+    cs_fail enroll SERVER_UNREACHABLE \
+      "cannot reach $SERVER — $(head -c 300 "$EERR" 2>/dev/null || true)" \
+      "check routing / proxy / firewall from this host to SimCore, then re-run"
+  fi
+  if [ "$ECODE" != "200" ]; then
+    # Surface the server's own structured {error,code,detail} body verbatim —
+    # the old installer used `curl -f`, which threw it away and guessed.
+    cs_fail enroll ENROLL_DENIED \
+      "HTTP $ECODE from /api/agents/enroll — $(head -c 400 "$EBODY" 2>/dev/null || true)" \
+      "mint a fresh token: POST $SERVER/api/agents/enroll/tokens"
+  fi
+  AGENT_ID="$(sed -n 's/.*"agent_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$EBODY")"
+  if [ -z "$AGENT_ID" ]; then
+    cs_fail enroll NO_AGENT_ID \
+      "enroll returned 200 with no agent_id — body: $(head -c 300 "$EBODY" 2>/dev/null || true)" \
+      "SimCore/installer version mismatch — re-fetch the one-liner from this SimCore"
+  fi
+  cs_say "enrolled as   : $AGENT_ID"
 else
-  echo "[cortexsim] installing module {_AGENT_MODULE}@latest"
-  GOBIN="$WORKDIR" go install {_AGENT_MODULE}@latest
-  [ -x "$WORKDIR/agent" ] && BIN="$WORKDIR/agent"
+  cs_say "agent id      : $AGENT_ID (self-asserted — prefer ?token= so SimCore assigns it)"
+fi
+if [ -z "$AGENT_ID" ]; then
+  cs_fail enroll NO_AGENT_ID "no agent id resolved" "pass ?token=<tok> (recommended) or ?id=<name>"
 fi
 
-echo "[cortexsim] launching beacon (Ctrl-C to stop) …"
-exec "$BIN" --server "$SERVER" --id "$AGENT_ID" --interval "$INTERVAL"
+# ── stage: download ─────────────────────────────────────────────────────────
+cs_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v openssl >/dev/null 2>&1; then openssl dgst -sha256 "$1" | awk '{print $NF}'
+  else echo ""; fi
+}
+
+cs_try_download() {
+  DL="$WORKDIR/cortexsim-agent"
+  URL="$SERVER/api/agents/binary?os=$OS_ID&arch=$ARCH_ID"
+  cs_say "fetching prebuilt beacon ($OS_ID/$ARCH_ID)"
+  DCODE="$(curl -sS -m 300 -o "$DL" -w '%{http_code}' "$URL" 2>"$WORKDIR/dl.err" || true)"
+  if [ -z "$DCODE" ] || [ "$DCODE" = "000" ]; then
+    cs_fail download SERVER_UNREACHABLE \
+      "cannot reach $SERVER — $(head -c 300 "$WORKDIR/dl.err" 2>/dev/null || true)" \
+      "check routing / proxy / firewall from this host to SimCore"
+  fi
+  if [ "$DCODE" = "404" ]; then
+    cs_say "WARN: SimCore serves no beacon for $OS_ID/$ARCH_ID"
+    cs_say "      $(head -c 300 "$DL" 2>/dev/null || true)"
+    return 1
+  fi
+  if [ "$DCODE" != "200" ]; then
+    cs_fail download BINARY_FETCH_FAILED \
+      "HTTP $DCODE — $(head -c 300 "$DL" 2>/dev/null || true)" \
+      "GET '$URL' by hand to read the structured error"
+  fi
+  EXPECT="$(curl -sS -m 30 "$SERVER/api/agents/binary/sha256?os=$OS_ID&arch=$ARCH_ID" 2>/dev/null | tr -d '[:space:]' || true)"
+  ACTUAL="$(cs_sha256 "$DL")"
+  if [ -z "$ACTUAL" ] || [ -z "$EXPECT" ]; then
+    # Never silently skip integrity: warn loudly AND record it server-side.
+    cs_say "WARN: integrity NOT verified (no digest tool on host, or none served)"
+    cs_report verify CHECKSUM_SKIPPED "expect='$EXPECT' actual_tool_present=$([ -n "$ACTUAL" ] && echo yes || echo no)"
+  elif [ "$EXPECT" != "$ACTUAL" ]; then
+    cs_fail verify CHECKSUM_MISMATCH "expected $EXPECT, got $ACTUAL" \
+      "do NOT run this binary — re-fetch, and look for an intercepting TLS proxy"
+  else
+    cs_say "checksum OK   : ${ACTUAL:0:16}…"
+  fi
+  chmod +x "$DL"
+  BIN_SRC="$DL"
+  return 0
+}
+
+cs_try_source() {
+  if [ -z "${CORTEXSIM_SRC:-}" ] || [ ! -d "${CORTEXSIM_SRC:-}/agent" ]; then return 1; fi
+  if ! command -v go >/dev/null 2>&1; then
+    cs_say "WARN: CORTEXSIM_SRC is set but no Go toolchain is present — skipping source build"
+    return 1
+  fi
+  cs_say "building from local source: $CORTEXSIM_SRC/agent"
+  ( cd "$CORTEXSIM_SRC/agent" && CGO_ENABLED=0 go build -o "$WORKDIR/cortexsim-agent" . ) \
+    || cs_fail install SOURCE_BUILD_FAILED "go build failed in $CORTEXSIM_SRC/agent" \
+         "run the build by hand to see the compiler error"
+  BIN_SRC="$WORKDIR/cortexsim-agent"
+  return 0
+}
+
+if [ -n "${CORTEXSIM_BIN:-}" ]; then
+  if [ ! -x "${CORTEXSIM_BIN}" ]; then
+    cs_fail install BIN_NOT_EXECUTABLE "CORTEXSIM_BIN='$CORTEXSIM_BIN' is not an executable file" \
+      "chmod +x it, or unset CORTEXSIM_BIN to download from SimCore"
+  fi
+  cs_say "using pre-staged binary: $CORTEXSIM_BIN"
+  BIN_SRC="$CORTEXSIM_BIN"
+elif cs_try_download; then
+  :
+elif cs_try_source; then
+  :
+else
+  cs_fail install BINARY_UNAVAILABLE \
+    "no prebuilt beacon for $OS_ID/$ARCH_ID on $SERVER, and no local source build available" \
+    "on the SimCore host run 'make agent-dist' (or rebuild the image) and re-run this one-liner; air-gapped: scp the beacon over and set CORTEXSIM_BIN=/path/to/cortexsim-agent"
+fi
+
+# ── stage: install ──────────────────────────────────────────────────────────
+# Least privilege by default: we never escalate. As root we install a system
+# service (which the identity harness needs anyway, to runuser into www-data et
+# al); as a normal user we stay a normal user and say plainly what that costs.
+if [ "$(id -u)" = "0" ]; then
+  DEFAULT_BIN_DIR="/usr/local/bin"; DEFAULT_LOG="/var/log/cortexsim-agent.log"
+else
+  DEFAULT_BIN_DIR="$HOME/.local/bin"; DEFAULT_LOG="$HOME/.cortexsim/cortexsim-agent.log"
+fi
+BIN_DIR="${CORTEXSIM_BIN_DIR:-$DEFAULT_BIN_DIR}"
+LOG_FILE="${CORTEXSIM_LOG:-$DEFAULT_LOG}"
+BIN="$BIN_DIR/cortexsim-agent"
+mkdir -p "$BIN_DIR" "$(dirname "$LOG_FILE")"
+if [ "$BIN_SRC" != "$BIN" ]; then
+  cp "$BIN_SRC" "$BIN.new" && chmod 0755 "$BIN.new" && mv -f "$BIN.new" "$BIN" \
+    || cs_fail install BIN_INSTALL_FAILED "could not write $BIN" "check permissions / disk space on $BIN_DIR"
+fi
+cs_say "beacon        : $BIN"
+
+if [ "$MODE" = "foreground" ]; then
+  cs_report run OK "foreground mode"
+  cs_say "running in the FOREGROUND (Ctrl-C to stop) — dies with this session, demo use only"
+  exec "$BIN" --server "$SERVER" --id "$AGENT_ID" --interval "$INTERVAL"
+fi
+
+cs_install_systemd() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  UNIT_BODY="[Unit]
+Description=CortexSim beacon agent ($AGENT_ID)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$BIN --server $SERVER --id $AGENT_ID --interval $INTERVAL
+Restart=always
+RestartSec=10
+"
+  if [ "$(id -u)" = "0" ]; then
+    UNIT="/etc/systemd/system/$SVC.service"
+    printf '%s\n[Install]\nWantedBy=multi-user.target\n' "$UNIT_BODY" > "$UNIT"
+    systemctl daemon-reload
+    systemctl enable --now "$SVC" >/dev/null 2>&1 \
+      || cs_fail install SERVICE_START_FAILED "systemctl enable --now $SVC failed" \
+           "inspect: systemctl status $SVC ; journalctl -u $SVC -n 50"
+    cs_say "installed system unit: $UNIT"
+    cs_say "  status: systemctl status $SVC"
+    cs_say "  logs  : journalctl -u $SVC -f"
+    return 0
+  fi
+  # A --user unit needs a live user bus; on a jumpbox reached over ssh without
+  # lingering there may not be one, in which case we fall through to nohup.
+  systemctl --user show-environment >/dev/null 2>&1 || return 1
+  mkdir -p "$HOME/.config/systemd/user"
+  UNIT="$HOME/.config/systemd/user/$SVC.service"
+  printf '%s\n[Install]\nWantedBy=default.target\n' "$UNIT_BODY" > "$UNIT"
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$SVC" >/dev/null 2>&1 || return 1
+  cs_say "installed USER unit: $UNIT"
+  cs_say "  NOTE: running as $(id -un), not root — identity-harness steps that need"
+  cs_say "        'runuser -l www-data' will fail. Re-run as root for full fidelity."
+  cs_say "  survive logout: sudo loginctl enable-linger $(id -un)"
+  cs_say "  logs  : journalctl --user -u $SVC -f"
+  return 0
+}
+
+cs_install_launchd() {
+  command -v launchctl >/dev/null 2>&1 || return 1
+  if [ "$(id -u)" = "0" ]; then
+    PLIST="/Library/LaunchDaemons/$PLIST_LABEL.plist"; DOMAIN="system"
+  else
+    mkdir -p "$HOME/Library/LaunchAgents"
+    PLIST="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"; DOMAIN="gui/$(id -u)"
+  fi
+  cat > "$PLIST" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$PLIST_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$BIN</string>
+    <string>--server</string><string>$SERVER</string>
+    <string>--id</string><string>$AGENT_ID</string>
+    <string>--interval</string><string>$INTERVAL</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$LOG_FILE</string>
+  <key>StandardErrorPath</key><string>$LOG_FILE</string>
+</dict>
+</plist>
+PLIST_EOF
+  launchctl bootout "$DOMAIN/$PLIST_LABEL" >/dev/null 2>&1 || true
+  launchctl bootstrap "$DOMAIN" "$PLIST" >/dev/null 2>&1 \
+    || launchctl load -w "$PLIST" >/dev/null 2>&1 \
+    || return 1
+  cs_say "installed launchd job: $PLIST"
+  cs_say "  logs  : tail -f $LOG_FILE"
+  return 0
+}
+
+cs_install_nohup() {
+  cs_say "no service manager available — detaching the beacon with setsid/nohup"
+  if command -v setsid >/dev/null 2>&1; then
+    setsid nohup "$BIN" --server "$SERVER" --id "$AGENT_ID" --interval "$INTERVAL" \
+      >>"$LOG_FILE" 2>&1 </dev/null &
+  else
+    nohup "$BIN" --server "$SERVER" --id "$AGENT_ID" --interval "$INTERVAL" \
+      >>"$LOG_FILE" 2>&1 </dev/null &
+  fi
+  BEACON_PID=$!
+  disown "$BEACON_PID" 2>/dev/null || true
+  cs_say "  pid   : $BEACON_PID"
+  cs_say "  logs  : tail -f $LOG_FILE"
+  cs_say "  NOTE: unsupervised — no crash restart, no reboot survival."
+  cs_report install DEGRADED_NO_SUPERVISOR "no systemd/launchd — running under nohup (pid $BEACON_PID)"
+  return 0
+}
+
+SUPERVISED=0
+case "$OS_ID" in
+  linux)  if cs_install_systemd; then SUPERVISED=1; fi ;;
+  darwin) if cs_install_launchd; then SUPERVISED=1; fi ;;
+esac
+if [ "$SUPERVISED" = "0" ]; then cs_install_nohup; fi
+
+if [ "$SUPERVISED" = "1" ]; then cs_report install OK "supervised on $OS_ID/$ARCH_ID"; fi
+cs_say ""
+cs_say "done — '$AGENT_ID' should appear in the SimCore console within ${INTERVAL}s"
+cs_say "uninstall: curl -fsSL '$SERVER/api/agents/install?uninstall=1' | bash"
 """
 
 
-def _windows_installer(server: str, agent_id: str, interval: int, token: Optional[str]) -> str:
-    enroll_block = f"""
-$Token = if ($env:CORTEXSIM_TOKEN) {{ $env:CORTEXSIM_TOKEN }} else {{ '{token or ''}' }}
-if ($Token) {{
-  Write-Host "[cortexsim] enrolling with token ...$($Token.Substring([Math]::Max(0,$Token.Length-6)))"
-  $payload = @{{ token = $Token; hostname = $env:COMPUTERNAME; os = 'windows' }} | ConvertTo-Json
-  $resp = Invoke-RestMethod -Method Post -Uri "$Server/api/agents/enroll" -ContentType 'application/json' -Body $payload
-  $AgentId = $resp.agent_id
-  if (-not $AgentId) {{ Write-Error '[cortexsim] enrollment returned no agent_id'; exit 1 }}
-  Write-Host "[cortexsim] enrolled as: $AgentId"
-}}"""
-    return f"""# ─── CortexSim agent installer (Windows / PowerShell) ───────────────────────
-# One-line onboarding. With a token, SimCore assigns the agent id (recommended).
-# Env overrides: CORTEXSIM_SERVER / CORTEXSIM_TOKEN / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL.
+_POSIX_UNINSTALLER = r"""#!/usr/bin/env bash
+# ─── CortexSim beacon uninstaller (Linux / macOS) ───────────────────────────
+#
+#   curl -fsSL '<server>/api/agents/install?uninstall=1' | bash
+#
+# A DC leaving a customer site needs one line that takes the beacon back off the
+# endpoint. Best-effort by design (no `set -e`): every removal is attempted even
+# if an earlier one was never installed.
+set -uo pipefail
+
+SVC="cortexsim-agent"
+PLIST_LABEL="com.paloaltonetworks.cortexsim.agent"
+REMOVED=0
+cs_say() { echo "[cortexsim] $*"; }
+cs_gone() { cs_say "removed: $1"; REMOVED=$((REMOVED+1)); }
+
+if command -v systemctl >/dev/null 2>&1; then
+  if systemctl is-enabled "$SVC" >/dev/null 2>&1 || [ -f "/etc/systemd/system/$SVC.service" ]; then
+    systemctl disable --now "$SVC" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/$SVC.service" && cs_gone "system unit /etc/systemd/system/$SVC.service"
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  if [ -f "$HOME/.config/systemd/user/$SVC.service" ]; then
+    systemctl --user disable --now "$SVC" >/dev/null 2>&1 || true
+    rm -f "$HOME/.config/systemd/user/$SVC.service" && cs_gone "user unit $HOME/.config/systemd/user/$SVC.service"
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+  fi
+fi
+
+if command -v launchctl >/dev/null 2>&1; then
+  for p in "/Library/LaunchDaemons/$PLIST_LABEL.plist" "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"; do
+    if [ -f "$p" ]; then
+      launchctl bootout "system/$PLIST_LABEL" >/dev/null 2>&1 || true
+      launchctl bootout "gui/$(id -u)/$PLIST_LABEL" >/dev/null 2>&1 || true
+      launchctl unload -w "$p" >/dev/null 2>&1 || true
+      rm -f "$p" && cs_gone "launchd job $p"
+    fi
+  done
+fi
+
+# Anything still running from the nohup fallback.
+if command -v pkill >/dev/null 2>&1; then
+  if pkill -f 'cortexsim-agent --server' >/dev/null 2>&1; then cs_gone "running beacon process(es)"; fi
+fi
+
+for b in /usr/local/bin/cortexsim-agent "$HOME/.local/bin/cortexsim-agent"; do
+  if [ -e "$b" ]; then rm -f "$b" && cs_gone "binary $b"; fi
+done
+
+if [ "$REMOVED" = "0" ]; then
+  cs_say "nothing to remove — no CortexSim beacon found on this host"
+else
+  cs_say "done — $REMOVED item(s) removed"
+fi
+cs_say "the agent row stays in SimCore until you delete it: DELETE /api/agents/<agent_id>"
+"""
+
+
+_WINDOWS_INSTALLER = r"""# ─── CortexSim beacon installer (Windows / PowerShell) ──────────────────────
+#
+#   iwr '<server>/api/agents/install?os=windows&token=<tok>' -UseBasicParsing | iex
+#
+# Same contract as the POSIX installer: no compiler on the endpoint, the beacon
+# comes prebuilt and checksummed from SimCore, and it is registered as a Windows
+# service so it survives logoff and reboot. Failures carry a stable code and are
+# reported back to SimCore.
 $ErrorActionPreference = 'Stop'
-$Server   = if ($env:CORTEXSIM_SERVER)   {{ $env:CORTEXSIM_SERVER }}   else {{ '{server}' }}
-$AgentId  = if ($env:CORTEXSIM_AGENT_ID) {{ $env:CORTEXSIM_AGENT_ID }} else {{ '{agent_id}' }}
-$Interval = if ($env:CORTEXSIM_INTERVAL) {{ $env:CORTEXSIM_INTERVAL }} else {{ '{interval}' }}
-Write-Host "[cortexsim] target server : $Server"
-{enroll_block}
-Write-Host "[cortexsim] agent id      : $AgentId"
+$Server   = if ($env:CORTEXSIM_SERVER)   { $env:CORTEXSIM_SERVER }   else { '@@SERVER@@' }
+$AgentId  = if ($env:CORTEXSIM_AGENT_ID) { $env:CORTEXSIM_AGENT_ID } else { '@@AGENT_ID@@' }
+$Interval = if ($env:CORTEXSIM_INTERVAL) { $env:CORTEXSIM_INTERVAL } else { '@@INTERVAL@@' }
+$Token    = if ($env:CORTEXSIM_TOKEN)    { $env:CORTEXSIM_TOKEN }    else { '@@TOKEN@@' }
+$Server   = $Server.TrimEnd('/')
+$Arch     = if ([Environment]::Is64BitOperatingSystem) { 'amd64' } else { 'unsupported' }
 
-if (-not (Get-Command go -ErrorAction SilentlyContinue)) {{
-  Write-Error '[cortexsim] Go 1.21+ is required (https://go.dev/dl). Install Go and re-run.'
+function Cs-Report($Stage, $Code, $Detail) {
+  if ($env:CORTEXSIM_TELEMETRY -eq '0') { return }
+  try {
+    $b = @{ stage = $Stage; code = $Code; detail = "$Detail"; hostname = $env:COMPUTERNAME;
+            os = 'windows'; arch = $Arch; agent_id = $AgentId } | ConvertTo-Json -Compress
+    Invoke-RestMethod -Method Post -Uri "$Server/api/agents/install/telemetry" `
+      -ContentType 'application/json' -Body $b -TimeoutSec 5 | Out-Null
+  } catch { }
+}
+
+function Cs-Fail($Stage, $Code, $What, $Fix) {
+  Write-Host ""
+  Write-Host "[cortexsim] FAILED  stage=$Stage  code=$Code"
+  Write-Host "[cortexsim]   what : $What"
+  if ($Fix) { Write-Host "[cortexsim]   fix  : $Fix" }
+  Cs-Report $Stage $Code $What
   exit 1
-}}
+}
 
-$Work = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ("cortexsim-" + [guid]::NewGuid()))
-$env:GOBIN = $Work.FullName
-Write-Host '[cortexsim] installing module {_AGENT_MODULE}@latest'
-go install {_AGENT_MODULE}@latest
-$Bin = Join-Path $Work.FullName 'agent.exe'
-Write-Host '[cortexsim] launching beacon (Ctrl-C to stop) ...'
-& $Bin --server $Server --id $AgentId --interval $Interval
+Write-Host "[cortexsim] target server : $Server"
+@@PREFLIGHT@@
+
+if ($Arch -eq 'unsupported') {
+  Cs-Fail 'detect' 'UNSUPPORTED_ARCH' '32-bit Windows is not supported' 'use a 64-bit host'
+}
+
+if ($Token) {
+  Write-Host "[cortexsim] enrolling with token ...$($Token.Substring([Math]::Max(0,$Token.Length-6)))"
+  $payload = @{ token = $Token; hostname = $env:COMPUTERNAME; os = 'windows';
+                capabilities = @('shell') } | ConvertTo-Json -Compress
+  try {
+    $resp = Invoke-RestMethod -Method Post -Uri "$Server/api/agents/enroll" `
+      -ContentType 'application/json' -Body $payload -TimeoutSec 30
+  } catch {
+    Cs-Fail 'enroll' 'ENROLL_DENIED' "$($_.Exception.Message)" `
+      "mint a fresh token: POST $Server/api/agents/enroll/tokens"
+  }
+  $AgentId = $resp.agent_id
+  if (-not $AgentId) { Cs-Fail 'enroll' 'NO_AGENT_ID' 'enroll returned no agent_id' 'SimCore/installer version mismatch' }
+  Write-Host "[cortexsim] enrolled as   : $AgentId"
+}
+
+$Work = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP ("cortexsim-" + [guid]::NewGuid()))
+$Dl   = Join-Path $Work.FullName 'cortexsim-agent.exe'
+try {
+  Invoke-WebRequest -Uri "$Server/api/agents/binary?os=windows&arch=$Arch" -OutFile $Dl -UseBasicParsing -TimeoutSec 300
+} catch {
+  Cs-Fail 'download' 'BINARY_FETCH_FAILED' "$($_.Exception.Message)" `
+    "on the SimCore host build the windows beacon into agent-dist/, then re-run"
+}
+$Expect = (Invoke-RestMethod -Uri "$Server/api/agents/binary/sha256?os=windows&arch=$Arch" -TimeoutSec 30).Trim()
+$Actual = (Get-FileHash -Algorithm SHA256 -Path $Dl).Hash.ToLower()
+if ($Expect -ne $Actual) {
+  Cs-Fail 'verify' 'CHECKSUM_MISMATCH' "expected $Expect, got $Actual" `
+    'do NOT run this binary — re-fetch and look for an intercepting TLS proxy'
+}
+Write-Host "[cortexsim] checksum OK   : $($Actual.Substring(0,16))..."
+
+$InstallDir = Join-Path $env:ProgramData 'CortexSim'
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+$Bin = Join-Path $InstallDir 'cortexsim-agent.exe'
+Copy-Item -Force $Dl $Bin
+
+$IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
+           ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$Args = "--server $Server --id $AgentId --interval $Interval"
+if ($IsAdmin) {
+  sc.exe stop CortexSimAgent   | Out-Null
+  sc.exe delete CortexSimAgent | Out-Null
+  sc.exe create CortexSimAgent binPath= "`"$Bin`" $Args" start= auto DisplayName= "CortexSim beacon agent" | Out-Null
+  sc.exe failure CortexSimAgent reset= 0 actions= restart/10000 | Out-Null
+  sc.exe start CortexSimAgent | Out-Null
+  Write-Host "[cortexsim] installed service: CortexSimAgent (auto-start, restart on failure)"
+  Write-Host "[cortexsim]   status: sc.exe query CortexSimAgent"
+} else {
+  Cs-Report 'install' 'DEGRADED_NO_SUPERVISOR' 'not elevated — started as a detached process'
+  Start-Process -FilePath $Bin -ArgumentList $Args -WindowStyle Hidden
+  Write-Host "[cortexsim] NOT elevated — started detached; it will NOT survive a reboot."
+  Write-Host "[cortexsim]   re-run this from an elevated shell to install the service."
+}
+Cs-Report 'install' 'OK' "windows/$Arch"
+Write-Host "[cortexsim] done — '$AgentId' should appear in the console within $Interval s"
 """
+
+# Emitted into the Windows installer when this SimCore has no windows beacon to
+# serve. It fires BEFORE enrollment so a target that cannot run the beacon never
+# creates a phantom agent row. It disappears on its own the day the executor
+# grows _windows.go build-tag variants and the dist matrix includes windows.
+_WINDOWS_PREFLIGHT_UNAVAILABLE = (
+    "Cs-Fail 'detect' 'WINDOWS_AGENT_UNAVAILABLE' `\n"
+    "  'this SimCore serves no windows/amd64 beacon — agent/executor is POSIX-only "
+    "(syscall Setpgid/Kill) and does not compile for GOOS=windows' `\n"
+    "  'use PUSH mode for Windows targets: generate a bundle from the console and run it on the endpoint'"
+)
+
+
+def _render(template: str, **subs: str) -> str:
+    """Substitute @@NAME@@ placeholders. Deliberately not str.format — the
+    templates are shell/PowerShell and are full of literal braces."""
+    out = template
+    for key, value in subs.items():
+        out = out.replace(f"@@{key}@@", value)
+    return out
+
+
+def _posix_installer(server: str, agent_id: str, interval: int,
+                     token: Optional[str], mode: str) -> str:
+    return _render(
+        _POSIX_INSTALLER,
+        SERVER=server, AGENT_ID=agent_id, INTERVAL=str(interval),
+        TOKEN=token or "", MODE=mode,
+    )
+
+
+def _windows_installer(server: str, agent_id: str, interval: int,
+                       token: Optional[str]) -> str:
+    preflight = "" if _binary_path("windows", "amd64").is_file() else _WINDOWS_PREFLIGHT_UNAVAILABLE
+    return _render(
+        _WINDOWS_INSTALLER,
+        SERVER=server, AGENT_ID=agent_id, INTERVAL=str(interval),
+        TOKEN=token or "", PREFLIGHT=preflight,
+    )
 
 
 @router.get("/install")
@@ -168,31 +858,57 @@ async def agent_installer(
     server: Optional[str] = None,
     interval: int = 10,
     token: Optional[str] = None,
+    mode: str = "service",
+    uninstall: bool = False,
 ):
-    """Generate a ready-to-run agent installer for the chosen OS.
+    """Generate a ready-to-run beacon installer for the chosen OS.
 
-    Linux  → bash  (`curl -fsSL '<server>/api/agents/install?token=<tok>' | bash`)
-    Windows→ PowerShell (.ps1)
+    Linux/macOS → bash  (`curl -fsSL '<server>/api/agents/install?token=<tok>' | bash`)
+    Windows     → PowerShell (.ps1)
 
     Recommended flow: mint a token (`POST /api/agents/enroll/tokens`) and pass
-    `?token=`. The script then ENROLLS to obtain a server-assigned agent id —
-    the DC never invents one. Without a token it falls back to the explicit
-    `?id=` (legacy self-asserted path). Either way the script builds the
-    stdlib-only Go beacon (Go 1.21+ on the target) and launches it.
+    `?token=`. The script then ENROLLS to obtain a server-assigned agent id — the
+    DC never invents one. Without a token it falls back to the explicit `?id=`
+    (legacy self-asserted path).
+
+    The script needs **no compiler and no public-internet egress**: it downloads
+    the prebuilt beacon from this SimCore (`GET /api/agents/binary`) and verifies
+    its sha256. `?mode=service` (default) installs a supervised systemd/launchd
+    service that survives the SSH session and a reboot; `?mode=foreground` keeps
+    the old babysat behaviour for a throwaway container. `?uninstall=1` returns
+    the removal script instead.
     """
     os_norm = (os or "linux").strip().lower()
-    if os_norm not in {"linux", "windows"}:
+    if os_norm in {"macos", "mac", "osx"}:
+        os_norm = "darwin"
+    if os_norm not in {"linux", "darwin", "windows"}:
         raise HTTPException(
             status_code=400,
             detail={"error": "Unsupported OS", "code": "BAD_OS",
-                    "detail": "os must be 'linux' or 'windows'"},
+                    "detail": "os must be 'linux', 'darwin' (macos), or 'windows'"},
         )
+    mode_norm = (mode or "service").strip().lower()
+    if mode_norm not in {"service", "foreground"}:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Unsupported install mode", "code": "BAD_MODE",
+                    "detail": "mode must be 'service' (supervised) or 'foreground'"},
+        )
+
+    if uninstall:
+        # One removal script covers Linux and macOS; the Windows path is the
+        # documented sc.exe delete, which needs no generated wrapper.
+        return PlainTextResponse(
+            _POSIX_UNINSTALLER, media_type="text/x-shellscript; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="uninstall-cortexsim-agent.sh"'},
+        )
+
     resolved = _resolve_server(request, server)
     if os_norm == "windows":
         body = _windows_installer(resolved, id, interval, token)
         media, fname = "text/plain; charset=utf-8", "install-cortexsim-agent.ps1"
     else:
-        body = _linux_installer(resolved, id, interval, token)
+        body = _posix_installer(resolved, id, interval, token, mode_norm)
         media, fname = "text/x-shellscript; charset=utf-8", "install-cortexsim-agent.sh"
     return PlainTextResponse(
         body, media_type=media,

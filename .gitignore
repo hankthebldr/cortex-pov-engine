@@ -76,3 +76,8 @@ detection_scanner/ttps/_drafts/*
 ui/.claude/
 
 
+
+# Cross-compiled beacon matrix served by GET /api/agents/binary. ~21 MB of
+# build output produced by `make agent-dist` / the Dockerfile agent-builder
+# stage — regenerable, never committed.
+agent-dist/
