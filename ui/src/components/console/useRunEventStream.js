@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { runIdOf } from '../../api/ids.js'
 
 /**
  * useRunEventStream — subscribes to per-run event stream from the backend.
@@ -161,7 +162,7 @@ function projectEvents(run, sinceIso) {
 
   // Run lifecycle events
   events.push({
-    id: `run-${run.id || run.run_id}-start`,
+    id: `run-${runIdOf(run)}-start`,
     timestamp: baseTs,
     level: 'info',
     stepIndex: null,

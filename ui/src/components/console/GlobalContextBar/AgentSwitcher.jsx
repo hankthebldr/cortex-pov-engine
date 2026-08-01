@@ -1,6 +1,7 @@
 import React from 'react'
 import SwitcherPill from './SwitcherPill.jsx'
 import { useEnvironment } from '../../../context/EnvironmentContext.jsx'
+import { agentIdOf } from '../../../api/ids.js'
 
 /**
  * AgentSwitcher — always-visible active-beacon/agent pill in the global bar.
@@ -22,16 +23,16 @@ export default function AgentSwitcher({ onManage = () => {} }) {
   const { agent, agents, setAgent } = useEnvironment()
 
   const options = agents.map((a) => {
-    const id = a.id || a.agent_id
+    const id = agentIdOf(a)
     return {
       id,
-      label: a.hostname || a.id || id,
-      meta: [a.os, a.id].filter(Boolean).join(' · '),
+      label: a.hostname || id,
+      meta: [a.os, id].filter(Boolean).join(' · '),
       status: agentStatus(a),
     }
   })
 
-  const label = agent ? (agent.hostname || agent.id) : 'no agent'
+  const label = agent ? (agent.hostname || agentIdOf(agent)) : 'no agent'
 
   return (
     <SwitcherPill
@@ -40,7 +41,7 @@ export default function AgentSwitcher({ onManage = () => {} }) {
       status={agentStatus(agent)}
       empty={!agent}
       options={options}
-      activeId={agent ? (agent.id || agent.agent_id) : null}
+      activeId={agentIdOf(agent)}
       onSelect={setAgent}
       manageLabel="Manage agents…"
       onManage={onManage}

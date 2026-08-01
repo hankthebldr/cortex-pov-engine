@@ -128,6 +128,48 @@
   gap: 10px;
 }
 
+/* Coverage on a run that never executed. Reads as "we have no number",
+   never as a low score the customer could mistake for their result. */
+.storyline-kpi__value--unproven {
+  font-size: 20px;
+  color: var(--cortex-steel);
+}
+
+/* ── Unproven-run banner ────────────────────────────────────────────────── */
+
+.storyline-unproven {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3, 12px);
+  padding: var(--space-4, 16px);
+  border: 1px solid var(--cortex-steel);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm, 4px);
+  background: rgba(107, 126, 142, 0.08);
+}
+
+.storyline-unproven__tag {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--cortex-white, #fff);
+  background: var(--cortex-steel);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* The banner renders directly on the console shell, not on the storyline's
+   own light card — so it must read against BOTH. --c-text-secondary is the
+   console's light grey; the literal is the light-theme fallback. */
+.storyline-unproven p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--c-text-secondary, #1A2B3C);
+}
+
 .storyline-kpi__sub {
   font-size: 12px;
   font-weight: 500;
@@ -384,6 +426,12 @@
 .storyline-pill--pending  { background: rgba(0, 192, 232, 0.16);  color: #007da3; }
 .storyline-pill--missed   { background: rgba(231, 76, 60, 0.14);  color: #b03030; }
 .storyline-pill--idle     { background: rgba(107, 126, 142, 0.14); color: var(--cortex-steel); }
+/* Deliberately NEUTRAL, not red — "not executed" is our failure, not the
+   tenant's. Colouring it like a miss is the thing this state exists to undo. */
+.storyline-pill--not-executed {
+  background: rgba(107, 126, 142, 0.16);
+  color: var(--cortex-steel);
+}
 
 .storyline-pill--pending .storyline-pill__dot {
   animation: storyline-blink 1.2s infinite;
@@ -457,6 +505,13 @@
   background: rgba(231, 76, 60, 0.06);
   font-style: normal;
   font-weight: 600;
+}
+
+.storyline-detection__awaiting--unproven {
+  color: var(--cortex-steel);
+  background: rgba(107, 126, 142, 0.08);
+  font-style: normal;
+  font-weight: 500;
 }
 
 .storyline-scan {

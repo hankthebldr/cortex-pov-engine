@@ -7,6 +7,7 @@ import {
   getToolAdapters,
   getScenarioInfraHints,
 } from '../../api/client.js'
+import { agentIdOf } from '../../api/ids.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
 /**
@@ -315,7 +316,7 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
         />
         <ScopeChip
           label="Agent"
-          value={agent ? (agent.id || agent.agent_id) : null}
+          value={agentIdOf(agent)}
           detail={agent ? agent.status : null}
           onManage={() => onNavigate('agents')}
         />

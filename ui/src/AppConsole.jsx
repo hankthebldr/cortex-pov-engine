@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react'
 import AppShell from './components/console/AppShell.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
+import { SurfaceBoundary } from './components/console/SurfaceError.jsx'
 import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.jsx'
 import useConsoleRouter from './app/useConsoleRouter.js'
 import {
@@ -11,6 +12,7 @@ import {
   navGroups,
 } from './app/destinations.jsx'
 import { downloadReportBundle } from './api/client.js'
+import { agentIdOf } from './api/ids.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -143,7 +145,7 @@ function ConsoleShell() {
     })
 
     const agentSwitches = env.agents.map((a) => {
-      const id = a.id || a.agent_id
+      const id = agentIdOf(a)
       return {
         section: 'Switch agent',
         id: `agent-${id}`,
@@ -222,11 +224,28 @@ function ConsoleShell() {
         paletteItems={paletteItems}
         ticker={ticker}
       >
-        <Surface
-          params={router.params}
-          setParams={router.setParams}
-          onNavigate={router.navigate}
-        />
+        {/* Every fetcher below swallows its failure into an empty list, so a
+            dead SimCore reads as "nothing configured" on all ten destinations.
+            Say it once, globally, above whichever surface is mounted. */}
+        {env.apiError && (
+          <div className="api-down" role="alert" data-testid="api-down-banner">
+            <span className="api-down__tag">SIMCORE UNREACHABLE</span>
+            <span className="api-down__msg mono">{env.apiError}</span>
+            <span className="api-down__hint">
+              Views below may look empty because nothing could be loaded — not because
+              nothing exists. Retrying automatically.
+            </span>
+            <button type="button" className="btn btn--xs" onClick={env.refreshHealth}>↻ Retry now</button>
+          </div>
+        )}
+
+        <SurfaceBoundary resetKey={router.destination} title={dest.label}>
+          <Surface
+            params={router.params}
+            setParams={router.setParams}
+            onNavigate={router.navigate}
+          />
+        </SurfaceBoundary>
       </AppShell>
 
       <ConfirmDialog

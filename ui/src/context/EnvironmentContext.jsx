@@ -16,6 +16,7 @@ import {
   listXsiamTenants,
   getXsiamTenantHealth,
 } from '../api/client.js'
+import { agentIdOf, runIdOf, idMatches } from '../api/ids.js'
 
 /**
  * EnvironmentContext — the single home for ALL ambient console scope.
@@ -82,6 +83,7 @@ const DEFAULT_ENV = {
   agent: null,
   agents: [],
   health: { hostname: '', version: 'v1.0', sensors: {}, tenantHealth: null },
+  apiError: null,
   scenarios: [],
   planes: [],
   runs: [],
@@ -125,6 +127,9 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     sensors: {},
   })
   const [tenantHealth, setTenantHealth] = useState(null)
+  // Non-null when the last /api/health probe failed — the console is talking
+  // to nothing and every surface below it will look empty rather than broken.
+  const [apiError, setApiError] = useState(null)
   const [loading, setLoading] = useState({
     scenarios: true, runs: true, agents: true, tenants: true,
   })
@@ -177,13 +182,18 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
 
   const agent = useMemo(() => {
     if (!agentId) return null
-    return agents.find((a) => (a.id || a.agent_id) === agentId) || null
+    return agents.find((a) => idMatches(agentIdOf(a), agentId)) || null
   }, [agents, agentId])
 
   // ── Health (base /api/health + per-tenant health) ────────────────────────
+  // /api/health doubles as the console's REACHABILITY probe. Every other
+  // fetcher here swallows its failure into an empty list — which renders as
+  // "no scenarios" rather than "SimCore is down" — so this one failure has to
+  // be surfaced, or the operator is left explaining an empty console.
   const refreshHealth = useCallback(() => {
-    getHealth()
+    return getHealth()
       .then((d) => {
+        setApiError(null)
         if (!d) return
         setBaseHealth({
           hostname: d.hostname || (typeof window !== 'undefined' ? window.location.hostname : 'lab'),
@@ -193,7 +203,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
           sensors: {},
         })
       })
-      .catch(() => {})
+      .catch((err) => setApiError(err?.message || 'SimCore unreachable'))
   }, [])
 
   // Per-tenant health — refetched whenever the active tenant changes.
@@ -212,10 +222,12 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   useEffect(() => { refreshHealth() }, [refreshHealth])
 
   // Global run poll — not tab-gated (drives the global LIVE pill everywhere).
+  // The health probe rides the same tick so the unreachable banner clears
+  // itself the moment SimCore comes back, without an operator reload.
   useEffect(() => {
-    const t = setInterval(refreshRuns, runPollMs)
+    const t = setInterval(() => { refreshRuns(); refreshHealth() }, runPollMs)
     return () => clearInterval(t)
-  }, [refreshRuns, runPollMs])
+  }, [refreshRuns, refreshHealth, runPollMs])
 
   // Re-scope health when the active tenant changes.
   useEffect(() => {
@@ -237,9 +249,9 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
 
   useEffect(() => {
     if (loading.agents) return
-    if (agentId && !agents.some((a) => (a.id || a.agent_id) === agentId)) {
+    if (agentId && !agents.some((a) => idMatches(agentIdOf(a), agentId))) {
       const first = agents[0]
-      const next = first ? (first.id || first.agent_id) : null
+      const next = agentIdOf(first)
       setAgentId(next)
       writeLS(LS_AGENT, next)
     }
@@ -285,7 +297,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       ? Math.floor((Date.now() - new Date(running.started_at).getTime()) / 1000)
       : running.elapsed_seconds ?? 0
     return {
-      runId: running.id || running.run_id,
+      runId: runIdOf(running),
       scenarioId: running.scenario_id,
       step: currentStep,
       totalSteps,
@@ -300,7 +312,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     const finished = runs.find((r) => r && isRunTerminal(r.status))
     if (!finished) return null
     return {
-      runId: finished.id || finished.run_id,
+      runId: runIdOf(finished),
       scenarioId: finished.scenario_id,
       status: finished.status,
     }
@@ -332,7 +344,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   const value = useMemo(() => ({
     tenant, tenants,
     agent, agents,
-    health,
+    health, apiError,
     scenarios, planes,
     runs, activeRun, lastRun,
     pinnedIds,
@@ -341,7 +353,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     setTenant, setAgent,
     refreshHealth, refreshRuns, refreshScenarios, refreshAgents, refreshTenants,
   }), [
-    tenant, tenants, agent, agents, health, scenarios, planes, runs, activeRun,
+    tenant, tenants, agent, agents, health, apiError, scenarios, planes, runs, activeRun,
     lastRun, pinnedIds, loading, isPinned, togglePin, unpin, setTenant, setAgent,
     refreshHealth, refreshRuns, refreshScenarios, refreshAgents, refreshTenants,
   ])

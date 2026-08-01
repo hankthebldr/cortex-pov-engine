@@ -113,6 +113,8 @@
   color: var(--cortex-teal);
 }
 .cg-kpi--warn .cg-kpi__value { color: var(--cortex-warning, #f0a020); }
+/* "n/a" for a run that never executed — muted, so it never reads as a score. */
+.cg-kpi__value--unproven { font-size: 18px; color: var(--cortex-steel, #6B7E8E); }
 .cg-header__updated {
   font-family: var(--font-mono);
   font-size: 11px;

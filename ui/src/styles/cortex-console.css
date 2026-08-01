@@ -5183,6 +5183,52 @@
 .theme-console .deploy-hint { font-size: 10px; color: var(--c-text-muted); }
 .theme-console .deploy-hint code { color: var(--c-text-secondary); }
 
+/* ─── Enrollment-token mint form ─── */
+/* Three short fields read faster side by side; they stack under the modal's
+   own narrow width without a media query. */
+.theme-console .deploy-token-form {
+  display: flex; gap: 12px; flex-wrap: wrap;
+}
+.theme-console .deploy-token-form .deploy-field { flex: 1 1 140px; min-width: 0; }
+.theme-console .deploy-error {
+  margin: 0 0 12px; padding: 8px 10px;
+  border-radius: 3px;
+  background: var(--c-missed-soft); color: var(--c-missed);
+  font-family: var(--font-mono); font-size: 11px;
+}
+/* Advisory, not a failure: the chosen OS has no beacon yet. Amber, so it does
+   not read as an error the operator caused. */
+.theme-console .deploy-warn {
+  margin: 0 0 14px; padding: 9px 11px;
+  border-left: 3px solid var(--c-pending);
+  border-radius: 3px;
+  background: rgba(0, 192, 232, 0.08);
+  font-size: 11px; line-height: 1.55; color: var(--c-text-secondary);
+}
+.theme-console .deploy-warn code { color: var(--c-text); }
+/* The token and the command that carries it must WRAP. Both run past 100
+   chars, and the default nowrap+scroll hides the tail — an operator reading
+   it off a projector, or eyeballing what they are about to pipe to bash,
+   sees a truncated line and has to trust the Copy button blind. */
+.theme-console .deploy-snippet code[data-testid="deploy-token"],
+.theme-console .deploy-snippet code[data-testid="deploy-one-liner"] {
+  white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+}
+
+/* ─── Legacy self-asserted-id fallback (collapsed by default) ─── */
+.theme-console .deploy-legacy {
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid var(--c-hairline);
+}
+.theme-console .deploy-legacy__toggle {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--c-text-muted);
+}
+.theme-console .deploy-legacy__toggle:hover { color: var(--c-action-bright); }
+.theme-console .deploy-legacy__body { margin-top: 12px; }
+
 /* ─── Agent management card (Targets · Pull agents) ─── */
 .theme-console .target-card--agent { padding: 0; overflow: hidden; cursor: default; }
 .theme-console .target-card--agent:hover { transform: none; }
@@ -5233,3 +5279,80 @@
 .theme-console .launch-consent__row input { margin-top: 2px; accent-color: var(--c-action); }
 .theme-console .launch-consent__row--c2 input { accent-color: var(--c-missed); }
 .theme-console .launch-consent__row strong { color: var(--c-text); }
+/* An unticked gate is the reason Launch is dead — say so on the block itself,
+   not only in the blocker list, so the eye lands on the control to fix. */
+.theme-console .launch-consent--blocking { border-color: var(--c-missed); }
+.theme-console .launch-consent--blocking .launch-consent__title { color: var(--c-missed); }
+.theme-console .launch-consent__flag { opacity: 0.85; }
+
+/* ─── Launch blockers — why the button is disabled ─── */
+.theme-console .launch-blockers {
+  list-style: none; margin: 10px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.theme-console .launch-blockers__item {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+  color: var(--c-pending);
+}
+.theme-console .launch-result__code { opacity: 0.75; }
+
+/* ─── Run failure banner (Run Detail) ─── */
+/* Shown above the sub-tabs so the failure lands BEFORE any proof surface
+   invites a coverage reading. Red, because this one IS our error. */
+.theme-console .run-failure {
+  margin-bottom: 12px; padding: 12px 14px;
+  border: 1px solid var(--c-missed);
+  border-left-width: 4px;
+  border-radius: 4px;
+  background: var(--c-missed-soft);
+}
+.theme-console .run-failure__head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.theme-console .run-failure__tag {
+  flex: none;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; color: var(--c-missed);
+  border: 1px solid var(--c-missed); border-radius: 2px; padding: 2px 6px;
+}
+.theme-console .run-failure__lede {
+  font-size: 12px; line-height: 1.55; color: var(--c-text-secondary);
+}
+.theme-console .run-failure__output {
+  margin: 10px 0 0; padding: 8px 10px;
+  max-height: 180px; overflow: auto;
+  background: var(--c-void); border-radius: 3px;
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+  color: var(--c-text); white-space: pre-wrap; word-break: break-word;
+}
+.theme-console .run-failure__nooutput {
+  margin: 10px 0 0; font-size: 11px; color: var(--c-text-muted);
+}
+
+/* ─── SimCore-unreachable banner + surface error state ─── */
+.theme-console .api-down {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 10px 14px;
+  border: 1px solid var(--c-missed); border-left-width: 4px; border-radius: 4px;
+  background: var(--c-missed-soft);
+}
+.theme-console .api-down__tag {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; color: var(--c-missed);
+}
+.theme-console .api-down__msg { font-size: 11px; color: var(--c-text); }
+.theme-console .api-down__hint { font-size: 11px; color: var(--c-text-secondary); }
+
+.theme-console .surface-error {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; min-height: 50vh; padding: 32px; text-align: center;
+}
+.theme-console .surface-error__glyph { font-size: 32px; color: var(--c-missed); }
+.theme-console .surface-error__title {
+  font-family: var(--font-display); font-size: 20px; font-weight: 400; color: var(--c-text);
+}
+.theme-console .surface-error__msg { font-size: 12px; color: var(--c-missed); max-width: 640px; }
+.theme-console .surface-error__code { opacity: 0.75; }
+.theme-console .surface-error__hint {
+  font-size: 12px; color: var(--c-text-secondary); max-width: 520px; line-height: 1.6;
+}

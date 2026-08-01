@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCausality, causalityEventsUrl } from '../api/causality.js'
+import { isRunUnproven } from './DetectionStoryline.jsx'
 import './CausalityGraph.css'
 
 /**
@@ -240,6 +241,8 @@ function NodeChip({ node, onOpenEvidence, flashing }) {
 function GraphHeader({ graph, live, lastUpdated }) {
   const summary = graph.summary || {}
   const causality = graph.causality || {}
+  const runStatus = graph.run_status || null
+  const unproven = isRunUnproven(runStatus)
   const pct = summary.coverage_pct != null ? Math.round(summary.coverage_pct) : 0
   const chain =
     causality.chain_completeness_pct != null
@@ -254,7 +257,7 @@ function GraphHeader({ graph, live, lastUpdated }) {
         <span className="cg-header__scenario text-mono">
           {graph.scenario_id || graph.run_id}
         </span>
-        {live && (
+        {live && runStatus === 'running' && (
           <span className="cg-live" aria-live="polite">
             <span className="cg-live__dot" aria-hidden="true" />
             LIVE
@@ -264,12 +267,21 @@ function GraphHeader({ graph, live, lastUpdated }) {
       <div className="cg-kpis">
         <div className="cg-kpi">
           <span className="cg-kpi__label">Coverage</span>
-          <span className="cg-kpi__value">
-            {pct}%
-            <span className="cg-kpi__sub">
-              {summary.detected || 0}/{summary.total || 0}
+          {/* Never quote a coverage % for a run that never executed — see
+              DetectionStoryline.isRunUnproven for why that number is a lie. */}
+          {unproven ? (
+            <span className="cg-kpi__value cg-kpi__value--unproven">
+              n/a
+              <span className="cg-kpi__sub">run {runStatus}</span>
             </span>
-          </span>
+          ) : (
+            <span className="cg-kpi__value">
+              {pct}%
+              <span className="cg-kpi__sub">
+                {summary.detected || 0}/{summary.total || 0}
+              </span>
+            </span>
+          )}
         </div>
         <div className="cg-kpi">
           <span className="cg-kpi__label">Chain completeness</span>

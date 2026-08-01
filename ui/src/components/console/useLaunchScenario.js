@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { postRun, getAgents, downloadScenario } from '../../api/client.js'
+import { agentIdOf, runIdOf } from '../../api/ids.js'
 
 /**
  * useLaunchScenario — encapsulates pull/push launch state for a scenario.
@@ -47,7 +48,7 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
         const list = Array.isArray(data) ? data : []
         setAgents(list)
         if (list.length > 0 && !selectedAgent) {
-          setSelectedAgent(list[0].id || list[0].agent_id || '')
+          setSelectedAgent(agentIdOf(list[0]) || '')
         }
       })
       .catch(() => { if (!cancelled) setAgents([]) })
@@ -67,12 +68,14 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
       if (mode === 'pull' && selectedAgent) body.target_agent_id = selectedAgent
       if (consent && Object.keys(consent).length) body.consent = consent
       const run = await postRun(body)
-      setLastRun({ status: 'success', message: `Run ${run?.id || ''} started` })
+      setLastRun({ status: 'success', message: `Run ${runIdOf(run) || ''} started` })
       if (onRunComplete) onRunComplete(run)
       return run
     } catch (err) {
       const msg = err.message || 'Launch failed'
-      setLastRun({ status: 'error', message: msg })
+      // Keep the structured contract intact — the panel renders the code as a
+      // secondary line so a 422 reads as a named field, not a status number.
+      setLastRun({ status: 'error', message: msg, code: err.code || null })
       if (onError) onError(msg)
       return null
     } finally {
@@ -103,8 +106,22 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
     }
   }, [scenario, pushFormat, onError])
 
-  const launchDisabled = !scenario || launching ||
-    (mode === 'pull' && supportsPull && agents.length === 0)
+  // Named reasons, not one opaque boolean. A disabled Launch button with no
+  // stated cause is a dead stop mid-demo — the operator clicks, nothing
+  // happens, and nothing says why. Consumers render these verbatim.
+  const blockers = useMemo(() => {
+    const out = []
+    if (!scenario) out.push('Arm a scenario from the Library')
+    if (mode === 'pull' && supportsPull && agents.length === 0) {
+      out.push('No agent enrolled — deploy a beacon from Agents')
+    }
+    if (mode === 'pull' && agents.length > 0 && !selectedAgent) {
+      out.push('Pick the beacon to run on')
+    }
+    return out
+  }, [scenario, mode, supportsPull, agents.length, selectedAgent])
+
+  const launchDisabled = launching || blockers.length > 0
 
   return {
     // state
@@ -120,6 +137,7 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
     identityOptions,
     supportsPull, supportsPush,
     launchDisabled,
+    blockers,
     // actions
     launch,
     downloadPushBundle,

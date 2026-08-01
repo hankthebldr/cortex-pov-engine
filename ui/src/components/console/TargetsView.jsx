@@ -1,5 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { getInfraBundles, deleteAgent, agentInstallUrl } from '../../api/client.js'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  getInfraBundles,
+  deleteAgent,
+  agentInstallUrl,
+  mintEnrollmentToken,
+} from '../../api/client.js'
+import { agentIdOf } from '../../api/ids.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
 // Compact relative time for last-seen ("12s" / "5m" / "3h" / "2d").
@@ -19,12 +25,6 @@ function installerOS(os) {
   return /win/i.test(os || '') ? 'windows' : 'linux'
 }
 
-// Canonical agent id — MUST match EnvironmentContext's resolution
-// (`a.id || a.agent_id`) so `setAgent(id)` resolves the same record the header
-// AgentSwitcher does. Never diverge from that ordering here.
-function agentIdOf(a) {
-  return a.id || a.agent_id
-}
 
 /**
  * TargetsView — the Agents destination AND the guided-flow target picker.
@@ -63,10 +63,19 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   // ── Local scope: IaC bundles are not part of the ambient env, fetched here.
   const [bundles, setBundles] = useState([])
   const [loading, setLoading] = useState(true)
-  // Deploy-agent flow: pick OS → get install one-liner + downloadable installer.
+  // Deploy-agent flow: mint an enrollment token → copy ONE line → SimCore
+  // assigns the id when the jumpbox redeems it. The legacy self-asserted-id
+  // installer is kept behind a disclosure for hosts that cannot reach back.
   const [deployOpen, setDeployOpen] = useState(false)
   const [deployOS, setDeployOS]     = useState('linux')   // 'linux' | 'windows'
   const [deployId, setDeployId]     = useState('jumpbox-01')
+  const [tokenLabel, setTokenLabel] = useState('')
+  const [tokenTtl, setTokenTtl]     = useState(3600)      // seconds
+  const [tokenUses, setTokenUses]   = useState(1)
+  const [token, setToken]           = useState(null)      // minted token (shown once)
+  const [minting, setMinting]       = useState(false)
+  const [mintError, setMintError]   = useState(null)
+  const [showLegacy, setShowLegacy] = useState(false)
   const [copied, setCopied]         = useState(false)
   const [pendingDelete, setPendingDelete] = useState(null) // agent_id awaiting confirm
   const [busyDelete, setBusyDelete] = useState(null)       // agent_id mid-delete
@@ -84,16 +93,78 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   }, [refreshAgents])
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const installUrl = `${origin}/api/agents/install?os=${deployOS}&id=${encodeURIComponent(deployId || 'jumpbox-01')}`
-  const oneLiner = deployOS === 'windows'
-    ? `iwr -useb "${installUrl}" | iex`
-    : `curl -fsSL "${installUrl}" | bash`
-  const copyOneLiner = useCallback(() => {
+
+  // Token-bearing installer (preferred) vs legacy explicit-id installer.
+  // The token rides in an env var rather than the URL so it stays out of the
+  // jumpbox's shell history and any proxy access log the customer keeps.
+  const installUrl = `${origin}${agentInstallUrl({ os: deployOS })}`
+  const legacyInstallUrl = `${origin}${agentInstallUrl({ os: deployOS, id: deployId || 'jumpbox-01' })}`
+  const oneLiner = token
+    ? (deployOS === 'windows'
+        ? `$env:CORTEXSIM_TOKEN='${token.token}'; iwr -useb "${installUrl}" | iex`
+        : `curl -fsSL "${installUrl}" | CORTEXSIM_TOKEN='${token.token}' bash`)
+    : null
+  const legacyOneLiner = deployOS === 'windows'
+    ? `iwr -useb "${legacyInstallUrl}" | iex`
+    : `curl -fsSL "${legacyInstallUrl}" | bash`
+
+  const copyText = useCallback((text) => {
+    if (!text) return
     try {
-      navigator.clipboard.writeText(oneLiner)
+      navigator.clipboard.writeText(text)
       setCopied(true); setTimeout(() => setCopied(false), 1800)
     } catch { /* clipboard blocked — user can select manually */ }
-  }, [oneLiner])
+  }, [])
+
+  const mint = useCallback(async () => {
+    setMinting(true); setMintError(null)
+    try {
+      const t = await mintEnrollmentToken({
+        label: tokenLabel.trim() || null,
+        ttl_seconds: Number(tokenTtl),
+        max_uses: Number(tokenUses),
+      })
+      setToken(t)
+    } catch (err) {
+      setMintError(err.message || 'Could not mint an enrollment token')
+    } finally {
+      setMinting(false)
+    }
+  }, [tokenLabel, tokenTtl, tokenUses])
+
+  const closeDeploy = useCallback(() => {
+    setDeployOpen(false)
+    // The full token value is unrecoverable once dismissed — drop it from state
+    // rather than leaving a live credential sitting in a closed dialog.
+    setToken(null); setMintError(null); setShowLegacy(false)
+  }, [])
+
+  // ── Dialog focus + Escape ────────────────────────────────────────────────
+  // A keydown handler on the dialog element only fires once focus is already
+  // inside it, and opening the modal leaves focus on the opener behind the
+  // backdrop — so Escape did nothing for the operator who just clicked Deploy.
+  // Same contract as ConfirmDialog: move focus in, listen on the document,
+  // hand focus back on close.
+  const deployRef = useRef(null)
+  const deployPrevFocusRef = useRef(null)
+  useEffect(() => {
+    if (!deployOpen) return undefined
+    deployPrevFocusRef.current = document.activeElement
+    const t = setTimeout(() => {
+      const el = deployRef.current
+      if (!el) return
+      const first = el.querySelector('input, select, button:not(.deploy-modal__close)')
+      ;(first || el.querySelector('.deploy-modal__close'))?.focus()
+    }, 20)
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeDeploy() } }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('keydown', onKey)
+      const prev = deployPrevFocusRef.current
+      if (prev && prev.focus) prev.focus()
+    }
+  }, [deployOpen, closeDeploy])
 
   // ── Bundles (local) + agent liveness refresh (provider) ────────────────────
   const refreshBundles = useCallback(() => {
@@ -173,9 +244,13 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             <div className="target-card target-card--empty">
               <div className="target-card__title">No agents registered</div>
               <p className="target-card__sub">
-                Run a <code>cortexsim-agent</code> beacon against your jumpbox, or provision a lab below.
+                Pull mode needs one beacon on the target host. Mint an enrollment token and
+                run the one-liner it gives you — SimCore assigns the agent id. No agent?
+                Use the offline push bundle instead, or provision a lab below.
               </p>
-              <code className="target-card__cmd">cortexsim-agent --server &lt;url&gt; --id jumpbox-01</code>
+              <button type="button" className="btn btn--primary" onClick={() => setDeployOpen(true)}>
+                + Deploy agent ▸
+              </button>
             </div>
           )}
           {agents.map((a) => {
@@ -321,57 +396,188 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
       </div>
 
       {deployOpen && (
-        <div className="deploy-backdrop" onMouseDown={() => setDeployOpen(false)}>
-          <div className="deploy-modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label="Deploy agent">
+        <div className="deploy-backdrop" onMouseDown={closeDeploy}>
+          <div
+            className="deploy-modal"
+            ref={deployRef}
+            onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deploy-modal-title"
+          >
             <div className="deploy-modal__head">
-              <h2>Deploy a pull agent</h2>
-              <button type="button" className="deploy-modal__close" onClick={() => setDeployOpen(false)} aria-label="Close">×</button>
+              <h2 id="deploy-modal-title">Deploy a pull agent</h2>
+              <button type="button" className="deploy-modal__close" onClick={closeDeploy} aria-label="Close">×</button>
             </div>
             <p className="deploy-modal__lede">
-              Run the beacon on your target host. It registers with this SimCore and polls for tasks.
-              Requires Go 1.21+ on the target (stdlib-only build — no other dependencies).
+              Mint an enrollment token, run one line on the jumpbox, and SimCore assigns the
+              agent id when the token is redeemed — nobody has to invent one. Tokens expire
+              and can be revoked. The target needs <strong>no toolchain</strong> — SimCore
+              serves a prebuilt, checksummed beacon — only <code>curl</code> and outbound
+              reach to this SimCore.
             </p>
+            {deployOS === 'windows' && (
+              <p className="deploy-warn" role="status">
+                ⚠ No Windows beacon ships yet — this script refuses before it enrolls
+                (<code className="mono">WINDOWS_AGENT_UNAVAILABLE</code>) rather than
+                registering a host it cannot drive. Use the offline <strong>push bundle</strong>
+                for Windows targets.
+              </p>
+            )}
 
             <div className="deploy-field">
               <span className="launch-field__label">Target OS</span>
               <div className="deploy-os-toggle">
-                {['linux', 'windows'].map((o) => (
+                {/* macOS is a real target: /api/agents/install accepts it and
+                    the darwin beacons ship in the dist matrix. One POSIX script
+                    covers Linux and macOS — it branches on `uname -s`. */}
+                {[['linux', '🐧 Linux'], ['macos', '🍎 macOS'], ['windows', '🪟 Windows']].map(([o, label]) => (
                   <button
                     key={o}
                     type="button"
                     className={'deploy-os' + (deployOS === o ? ' is-active' : '')}
+                    aria-pressed={deployOS === o}
                     onClick={() => setDeployOS(o)}
-                  >{o === 'linux' ? '🐧 Linux' : '🪟 Windows'}</button>
+                  >{label}</button>
                 ))}
               </div>
             </div>
 
-            <label className="deploy-field">
-              <span className="launch-field__label">Agent ID</span>
-              <input
-                className="launch-select deploy-input"
-                value={deployId}
-                onChange={(e) => setDeployId(e.target.value)}
-                placeholder="jumpbox-01"
-                spellCheck={false}
-              />
-            </label>
+            {!token ? (
+              <>
+                <div className="deploy-token-form">
+                  <label className="deploy-field">
+                    <span className="launch-field__label">Label (optional)</span>
+                    <input
+                      className="launch-select deploy-input"
+                      value={tokenLabel}
+                      onChange={(e) => setTokenLabel(e.target.value)}
+                      placeholder="acme-pov jumpbox"
+                      maxLength={80}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="deploy-field">
+                    <span className="launch-field__label">Valid for</span>
+                    <select
+                      className="launch-select"
+                      value={tokenTtl}
+                      onChange={(e) => setTokenTtl(Number(e.target.value))}
+                    >
+                      <option value={900}>15 minutes</option>
+                      <option value={3600}>1 hour</option>
+                      <option value={86400}>1 day</option>
+                      <option value={604800}>7 days</option>
+                    </select>
+                  </label>
+                  <label className="deploy-field">
+                    <span className="launch-field__label">Max uses</span>
+                    <select
+                      className="launch-select"
+                      value={tokenUses}
+                      onChange={(e) => setTokenUses(Number(e.target.value))}
+                    >
+                      <option value={1}>1 host</option>
+                      <option value={5}>5 hosts</option>
+                      <option value={25}>25 hosts</option>
+                    </select>
+                  </label>
+                </div>
 
-            <div className="deploy-field">
-              <span className="launch-field__label">One-line install ({deployOS === 'windows' ? 'PowerShell' : 'bash'})</span>
-              <div className="deploy-snippet">
-                <code>{oneLiner}</code>
-                <button type="button" className="btn btn--xs" onClick={copyOneLiner}>{copied ? '✓ copied' : 'Copy'}</button>
-              </div>
-            </div>
+                {mintError && (
+                  <p className="deploy-error" role="alert">{mintError}</p>
+                )}
 
-            <div className="deploy-actions">
-              <a className="btn btn--primary btn--lg" href={installUrl} download>
-                ↓ Download installer ({deployOS === 'windows' ? '.ps1' : '.sh'})
-              </a>
-              <span className="deploy-hint mono">
-                or, once built: <code>cortexsim-agent --server {origin} --id {deployId || 'jumpbox-01'} --interval 10</code>
-              </span>
+                <div className="deploy-actions">
+                  <button
+                    type="button"
+                    className="btn btn--primary btn--lg"
+                    onClick={mint}
+                    disabled={minting}
+                  >
+                    {minting ? 'Minting…' : 'Mint enrollment token ▸'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="deploy-field">
+                  <span className="launch-field__label">
+                    Enrollment token — shown once, copy it now
+                  </span>
+                  <div className="deploy-snippet">
+                    <code data-testid="deploy-token">{token.token}</code>
+                    <button type="button" className="btn btn--xs" onClick={() => copyText(token.token)}>
+                      Copy
+                    </button>
+                  </div>
+                  <span className="deploy-hint mono">
+                    {token.remaining_uses ?? token.max_uses} use(s)
+                    {token.expires_at && ` · expires ${new Date(token.expires_at).toLocaleString()}`}
+                  </span>
+                </div>
+
+                <div className="deploy-field">
+                  <span className="launch-field__label">
+                    Run this on the target ({deployOS === 'windows' ? 'PowerShell' : 'bash'})
+                  </span>
+                  <div className="deploy-snippet">
+                    <code data-testid="deploy-one-liner">{oneLiner}</code>
+                    <button type="button" className="btn btn--xs" onClick={() => copyText(oneLiner)}>
+                      {copied ? '✓ copied' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="deploy-actions">
+                  <a className="btn btn--primary btn--lg" href={installUrl} download>
+                    ↓ Download installer ({deployOS === 'windows' ? '.ps1' : '.sh'})
+                  </a>
+                  <button type="button" className="btn" onClick={() => { setToken(null); setCopied(false) }}>
+                    Mint another
+                  </button>
+                </div>
+                <p className="deploy-hint">
+                  The beacon appears in this list within one poll interval (~10s) once the
+                  token is redeemed.
+                </p>
+              </>
+            )}
+
+            {/* Legacy path — kept because a host that cannot redeem a token
+                (no outbound POST, pre-seeded image) still needs an installer. */}
+            <div className="deploy-legacy">
+              <button
+                type="button"
+                className="linklike deploy-legacy__toggle"
+                aria-expanded={showLegacy}
+                onClick={() => setShowLegacy((v) => !v)}
+              >
+                {showLegacy ? '▾' : '▸'} Legacy: self-asserted agent id
+              </button>
+              {showLegacy && (
+                <div className="deploy-legacy__body">
+                  <label className="deploy-field">
+                    <span className="launch-field__label">Agent ID</span>
+                    <input
+                      className="launch-select deploy-input"
+                      value={deployId}
+                      onChange={(e) => setDeployId(e.target.value)}
+                      placeholder="jumpbox-01"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <div className="deploy-snippet">
+                    <code>{legacyOneLiner}</code>
+                    <button type="button" className="btn btn--xs" onClick={() => copyText(legacyOneLiner)}>
+                      Copy
+                    </button>
+                  </div>
+                  <span className="deploy-hint mono">
+                    or, once built: <code>cortexsim-agent --server {origin} --id {deployId || 'jumpbox-01'} --interval 10</code>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

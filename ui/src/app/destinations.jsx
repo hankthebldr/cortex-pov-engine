@@ -17,6 +17,7 @@ import EalConsole from '../components/EalConsole.jsx'
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
+import { runIdOf, idMatches } from '../api/ids.js'
 
 /**
  * destinations.js — the single destination REGISTRY.
@@ -87,9 +88,9 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
         onArmScenario={(sid) => { armedRef.current = sid }}
         onContinueToLaunch={() => onNavigate('guided', { arm: armedRef.current })}
         onOpenRunEvidence={(run) =>
-          onNavigate('runs', { run: run.id || run.run_id, tab: 'evidence' })}
+          onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
         onRunComplete={(run) =>
-          onNavigate('runs', { run: run?.id || run?.run_id, tab: 'live' })}
+          onNavigate('runs', { run: runIdOf(run), tab: 'live' })}
         onError={() => {}}
         onSurfaceMessage={() => {}}
       />
@@ -140,7 +141,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
           selectedTarget={selectedTarget}
           onRunComplete={(run) => {
             refreshRuns()
-            onNavigate('runs', { run: run?.id || run?.run_id, tab: 'live' })
+            onNavigate('runs', { run: runIdOf(run), tab: 'live' })
           }}
           onError={() => {}}
           onGoLibrary={() => onNavigate('library')}
@@ -163,7 +164,7 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
 
   const selected = useMemo(() => {
     if (!runId) return null
-    return runs.find((r) => (r.id || r.run_id) === runId) || null
+    return runs.find((r) => idMatches(runIdOf(r), runId)) || null
   }, [runs, runId])
 
   if (compare) {
@@ -217,7 +218,7 @@ function RunList({ runs = [], onOpen = () => {} }) {
   return (
     <div className="run-list" role="table" aria-label="Run history">
       {runs.map((r) => {
-        const id = r.id || r.run_id
+        const id = runIdOf(r)
         const terminal = isRunTerminal(r.status)
         const live = r.status === 'running'
         return (

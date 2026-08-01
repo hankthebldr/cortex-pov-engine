@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getRuns } from '../../api/client.js'
+import { runIdOf } from '../../api/ids.js'
 
 /**
  * useScenarioRunHistory — fetch the run list once and roll it up
@@ -69,7 +70,7 @@ function buildHistory(runs) {
     if (startedAt > entry.lastRunAt) {
       entry.lastRunAt = startedAt
       entry.lastStatus = (r.status || 'unknown').toLowerCase()
-      entry.lastRunId = r.id || r.run_id
+      entry.lastRunId = runIdOf(r)
     }
     map.set(sid, entry)
   }

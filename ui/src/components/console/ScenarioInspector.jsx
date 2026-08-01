@@ -2,6 +2,7 @@ import React from 'react'
 import PinButton from './PinButton.jsx'
 import { formatAgo } from './useScenarioRunHistory.js'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
+import { agentIdOf, runIdOf } from '../../api/ids.js'
 
 /**
  * ScenarioInspector — right-side 420px drawer with pinned launch CTA at top,
@@ -183,10 +184,10 @@ export default function ScenarioInspector({
                 >
                   {launch.agents.map((a) => (
                     <option
-                      key={a.id || a.agent_id}
-                      value={a.id || a.agent_id}
+                      key={agentIdOf(a)}
+                      value={agentIdOf(a)}
                     >
-                      {(a.hostname || a.id || a.agent_id) +
+                      {(a.hostname || agentIdOf(a)) +
                         (a.os ? ` (${a.os})` : '')}
                     </option>
                   ))}
@@ -379,7 +380,7 @@ function RunHistorySection({ runs = [], onOpenRunEvidence = () => {} }) {
         <ul className="insp-history__list">
           {shown.map((r) => (
             <RunHistoryRow
-              key={r.id || r.run_id}
+              key={runIdOf(r)}
               run={r}
               onOpen={() => onOpenRunEvidence(r)}
             />
@@ -391,7 +392,7 @@ function RunHistorySection({ runs = [], onOpenRunEvidence = () => {} }) {
 }
 
 function RunHistoryRow({ run, onOpen = () => {} }) {
-  const id     = run.id || run.run_id
+  const id     = runIdOf(run)
   const ts     = Date.parse(run.started_at || run.created_at || '') || 0
   const ago    = formatAgo(ts) || '—'
   // Backend terminal token is 'complete'; runStatusToken folds it (and the

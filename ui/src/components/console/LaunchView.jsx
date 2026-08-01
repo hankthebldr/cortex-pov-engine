@@ -71,6 +71,22 @@ export default function LaunchView({
   const toggleConsent = (key) =>
     launch.setConsent((c) => ({ ...c, [key]: !c[key] }))
 
+  // Every independent reason Launch is dead, in one list the operator can read.
+  // The hook owns scenario/agent readiness; the target pick and the consent
+  // gate are this view's, so they are folded in here rather than duplicated.
+  const blockersId = 'launch-blockers'
+  const blockers = useMemo(() => {
+    const out = [...(launch.blockers || [])]
+    if (!selectedTarget) out.push('Pick a target — an agent (pull) or the offline bundle (push)')
+    if (needsSim && !launch.consent.simulation_authorized) {
+      out.push('Tick the lab-only consent for the dual-use tools this scenario uses')
+    }
+    if (needsC2 && !launch.consent.c2_authorized) {
+      out.push('Tick the C2-framework consent for this scenario')
+    }
+    return out
+  }, [launch.blockers, selectedTarget, needsSim, needsC2, launch.consent])
+
   // ── Guard rails — guide the operator back to the missing step ──────────
   if (!scenario) {
     return (
@@ -163,8 +179,11 @@ export default function LaunchView({
 
           {/* dual-use / c2 consent gate */}
           {(needsSim || needsC2) && (
-            <div className="launch-consent">
-              <div className="launch-consent__title">⚠ Tool consent required</div>
+            <div className={'launch-consent' + (consentBlocked ? ' launch-consent--blocking' : '')}>
+              <div className="launch-consent__title">
+                ⚠ Tool consent required
+                {consentBlocked && <span className="launch-consent__flag"> · blocking launch</span>}
+              </div>
               {needsSim && (
                 <label className="launch-consent__row">
                   <input
@@ -201,7 +220,8 @@ export default function LaunchView({
                 <button
                   type="button"
                   className="btn btn--primary btn--lg"
-                  disabled={launch.launching || consentBlocked}
+                  disabled={launch.launching || blockers.length > 0}
+                  aria-describedby={blockers.length ? blockersId : undefined}
                   onClick={launch.launch}
                 >
                   {launch.launching ? 'Launching…' : 'Launch run ▸'}
@@ -219,7 +239,8 @@ export default function LaunchView({
               <button
                 type="button"
                 className="btn btn--primary btn--lg"
-                disabled={launch.launchDisabled || !selectedTarget || consentBlocked}
+                disabled={launch.launching || blockers.length > 0}
+                aria-describedby={blockers.length ? blockersId : undefined}
                 onClick={launch.launch}
               >
                 {launch.launching ? 'Launching…' : 'Launch run ▸'}
@@ -227,9 +248,24 @@ export default function LaunchView({
             )}
           </div>
 
+          {/* Why the button is dead. Rendered next to it, tied by
+              aria-describedby so a screen reader hears the reason too. */}
+          {blockers.length > 0 && (
+            <ul className="launch-blockers" id={blockersId} data-testid="launch-blockers">
+              {blockers.map((b) => (
+                <li key={b} className="launch-blockers__item">
+                  <span aria-hidden="true">▸</span> {b}
+                </li>
+              ))}
+            </ul>
+          )}
+
           {launch.lastRun && (
-            <div className={`launch-result launch-result--${launch.lastRun.status}`}>
+            <div className={`launch-result launch-result--${launch.lastRun.status}`} role="status">
               {launch.lastRun.message}
+              {launch.lastRun.code && (
+                <span className="launch-result__code mono"> [{launch.lastRun.code}]</span>
+              )}
             </div>
           )}
         </section>

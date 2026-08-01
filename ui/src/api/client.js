@@ -6,6 +6,48 @@
 const BASE_URL = window.location.origin
 
 /**
+ * Render FastAPI's *validation* error body (422) as operator-readable text.
+ *
+ * Pydantic emits `detail: [{loc: ["body","target_agent_id"], msg: "Input
+ * should be a valid string", ...}]`. Collapsing that to "HTTP 422 —
+ * Unprocessable Entity" throws away the only part that tells the DC what to
+ * fix, so name the offending field and quote the validator verbatim.
+ *
+ * @param {Array} detail  FastAPI `detail` array
+ * @returns {string|null} e.g. "target_agent_id: Input should be a valid string"
+ */
+function formatValidationDetail(detail) {
+  if (!Array.isArray(detail) || detail.length === 0) return null
+  const parts = detail
+    .map((d) => {
+      if (!d || typeof d !== 'object') return String(d ?? '')
+      // Drop the leading "body"/"query" segment — the operator cares about the field.
+      const loc = Array.isArray(d.loc) ? d.loc.filter((s) => s !== 'body' && s !== 'query') : []
+      const field = loc.join('.')
+      const msg = d.msg || d.type || 'invalid value'
+      return field ? `${field}: ${msg}` : msg
+    })
+    .filter(Boolean)
+  return parts.length ? parts.join('; ') : null
+}
+
+/**
+ * Build an Error that CARRIES the project's structured error contract
+ * (`{error, code, detail}`) instead of flattening it to a status line.
+ *
+ * `err.message` stays the human sentence a toast renders, and `err.code` /
+ * `err.detail` / `err.status` ride along so a caller that wants to explain the
+ * failure precisely (the launch panel) can, without re-parsing prose.
+ */
+function apiError(message, { code = null, detail = null, status = null } = {}) {
+  const err = new Error(message)
+  err.code = code
+  err.detail = detail
+  err.status = status
+  return err
+}
+
+/**
  * Core fetch wrapper — handles JSON parsing and structured error extraction.
  * On non-2xx response, throws Error with the message from JSON body.
  */
@@ -26,24 +68,35 @@ async function request(path, options = {}) {
   const response = await fetch(url, config)
 
   if (!response.ok) {
-    let errorMessage = `HTTP ${response.status} — ${response.statusText}`
+    const fallback = `HTTP ${response.status} — ${response.statusText}`
+    let errorMessage = fallback
+    let code = null
+    let detail = null
     try {
       const errorBody = await response.json()
-      // FastAPI returns errors as { detail: ... } where detail may be a
-      // plain string OR a structured object {error, code, detail, ...}.
-      // Stringifying an object error to "[object Object]" loses the code,
-      // so unpack it here.
-      if (errorBody.detail && typeof errorBody.detail === 'object') {
+      // FastAPI returns errors as { detail: ... } where detail is one of:
+      //   • an ARRAY  — Pydantic request-validation failures (422)
+      //   • an OBJECT — this project's {error, code, detail} contract
+      //   • a STRING  — a plain HTTPException message
+      // All three carry the actionable part; only the status line does not.
+      if (Array.isArray(errorBody.detail)) {
+        detail = errorBody.detail
+        errorMessage = formatValidationDetail(errorBody.detail) || fallback
+        code = 'VALIDATION_ERROR'
+      } else if (errorBody.detail && typeof errorBody.detail === 'object') {
         const d = errorBody.detail
-        const code = d.code ? ` [${d.code}]` : ''
-        errorMessage = `${d.error || d.detail || errorMessage}${code}`
+        code = d.code || null
+        detail = d.detail ?? null
+        errorMessage = `${d.error || d.detail || fallback}${d.code ? ` [${d.code}]` : ''}`
       } else {
-        errorMessage = errorBody.detail || errorBody.error || errorBody.message || errorMessage
+        code = errorBody.code || null
+        detail = errorBody.detail ?? null
+        errorMessage = errorBody.detail || errorBody.error || errorBody.message || fallback
       }
     } catch {
       // Response body was not JSON — keep the HTTP status message
     }
-    throw new Error(errorMessage)
+    throw apiError(errorMessage, { code, detail, status: response.status })
   }
 
   // For blob responses (downloads), return raw Response
@@ -459,11 +512,58 @@ export async function deleteAgent(agentId) {
 /**
  * Build the installer download URL for an agent (bash .sh / PowerShell .ps1).
  * Server URL is auto-derived server-side from the request.
- * @param {{os?:string, id?:string, interval?:number}} opts
+ *
+ * Pass `token` to get the ENROLLMENT installer (SimCore assigns the agent id);
+ * pass `id` for the legacy self-asserted path. Prefer the token: an operator
+ * who invents ids produces duplicates and typos, and the token is revocable.
+ *
+ * @param {{os?:string, id?:string, interval?:number, token?:string}} opts
  */
-export function agentInstallUrl({ os = 'linux', id = 'jumpbox-01', interval = 10 } = {}) {
-  const q = new URLSearchParams({ os, id, interval: String(interval) })
+export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token = null } = {}) {
+  const q = new URLSearchParams({ os, interval: String(interval) })
+  if (token) q.set('token', token)
+  if (id) q.set('id', id)
   return `/api/agents/install?${q.toString()}`
+}
+
+// ─── Agent enrollment tokens ─────────────────────────────────────────────────
+// The documented front door for onboarding: mint a TTL/max-uses/revocable
+// token, hand the jumpbox ONE line, and let SimCore assign the agent id.
+
+/**
+ * POST /api/agents/enroll/tokens — mint an enrollment token.
+ *
+ * The full token value is returned EXACTLY once, here; every later read shows
+ * only its tail. Callers must surface it immediately or it is unrecoverable.
+ *
+ * @param {{label?:string, ttl_seconds?:number, max_uses?:number}} opts
+ * @returns {Promise<{id:number, token:string, label:?string, expires_at:?string,
+ *                    max_uses:number, used_count:number, remaining_uses:number}>}
+ */
+export async function mintEnrollmentToken({ label = null, ttl_seconds = 3600, max_uses = 1 } = {}) {
+  return request('/api/agents/enroll/tokens', {
+    method: 'POST',
+    body: JSON.stringify({ label, ttl_seconds, max_uses }),
+  })
+}
+
+/**
+ * GET /api/agents/enroll/tokens — list minted tokens (tails only, with a
+ * server-derived `valid` flag folding revoked/expired/exhausted into one bit).
+ * @returns {Promise<Array>}
+ */
+export async function listEnrollmentTokens() {
+  const data = await request('/api/agents/enroll/tokens')
+  return Array.isArray(data) ? data : data?.tokens ?? []
+}
+
+/**
+ * DELETE /api/agents/enroll/tokens/:id — revoke a token so it can no longer
+ * be redeemed. Already-enrolled agents are unaffected.
+ * @param {number|string} tokenId
+ */
+export async function revokeEnrollmentToken(tokenId) {
+  return request(`/api/agents/enroll/tokens/${encodeURIComponent(tokenId)}`, { method: 'DELETE' })
 }
 
 // ─── TTP browser (detection_scanner/ttps/*.json) ────────────────────────────

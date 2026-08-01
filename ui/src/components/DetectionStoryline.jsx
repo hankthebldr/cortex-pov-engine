@@ -85,9 +85,10 @@ function EngineBadge({ type }) {
 }
 
 const STATUS_META = {
-  detected: { cls: 'detected', label: 'Detected' },
-  pending:  { cls: 'pending',  label: 'Awaiting' },
-  missed:   { cls: 'missed',   label: 'Missed' },
+  detected:      { cls: 'detected',      label: 'Detected' },
+  pending:       { cls: 'pending',       label: 'Awaiting' },
+  missed:        { cls: 'missed',        label: 'Missed' },
+  'not-executed': { cls: 'not-executed', label: 'Not executed' },
 }
 
 function StatusPill({ status }) {
@@ -100,6 +101,31 @@ function StatusPill({ status }) {
   )
 }
 
+// Run states in which NO claim about the customer's detection posture is
+// defensible: the simulation itself did not finish, so an un-fired detection
+// means "we never generated the signal", not "Cortex missed it".
+const UNPROVEN_RUN_STATUSES = new Set(['failed', 'aborted'])
+
+export function isRunUnproven(runStatus) {
+  return UNPROVEN_RUN_STATUSES.has(String(runStatus || '').toLowerCase())
+}
+
+/**
+ * Reconcile the server's per-detection status with the run's own outcome.
+ *
+ * The storyline builder marks every un-reviewed detection `missed` once a run
+ * reaches ANY terminal state — including `failed`. Rendering that as a
+ * detection gap tells the customer their Cortex tenant missed alerts that were
+ * never generated: a false-negative claim about their own product, made on our
+ * evidence surface. A `detected` row survives (the signal demonstrably fired
+ * before the run died); an unfired one is downgraded to `not-executed`.
+ */
+export function reconcileStatus(status, runStatus) {
+  const s = status || 'pending'
+  if (s === 'detected') return s
+  return isRunUnproven(runStatus) ? 'not-executed' : s
+}
+
 // Stable key for a detection within a step (used for flash tracking + React key).
 function detectionKey(det, stepId, di) {
   return `${stepId || det.step_id || 'step'}::${det.detection_type || '?'}::${det.plane || '?'}::${di}`
@@ -107,8 +133,8 @@ function detectionKey(det, stepId, di) {
 
 // ── Detection row ───────────────────────────────────────────────────────────
 
-function DetectionRow({ det, dkey, flashing, onOpenEvidence }) {
-  const status = det.status || 'pending'
+function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
+  const status = reconcileStatus(det.status, runStatus)
   const mttd = formatMttd(det.mttd_seconds)
   const detected = status === 'detected'
   const evidenceCount = det.evidence_count || 0
@@ -170,6 +196,11 @@ function DetectionRow({ det, dkey, flashing, onOpenEvidence }) {
             </a>
           )}
         </div>
+      ) : status === 'not-executed' ? (
+        <div className="storyline-detection__awaiting storyline-detection__awaiting--unproven">
+          Signal never generated — the run did not complete, so this detection was
+          never put to the test.
+        </div>
       ) : status === 'missed' ? (
         <div className="storyline-detection__awaiting storyline-detection__awaiting--missed">
           No alert reconciled — detection gap
@@ -199,10 +230,12 @@ function DetectionRow({ det, dkey, flashing, onOpenEvidence }) {
 
 // ── Step node ───────────────────────────────────────────────────────────────
 
-function StepNode({ step, index, flashing, onOpenEvidence }) {
+function StepNode({ step, index, flashing, runStatus, onOpenEvidence }) {
   const detections = step.detections || []
   const anyDetected = detections.some((d) => d.status === 'detected')
-  const anyPending = detections.some((d) => (d.status || 'pending') === 'pending')
+  const anyPending = detections.some(
+    (d) => reconcileStatus(d.status, runStatus) === 'pending',
+  )
   const nodeState = anyDetected ? 'detected' : anyPending ? 'pending' : 'idle'
   const stepId = step.step_id || step.id
 
@@ -238,6 +271,7 @@ function StepNode({ step, index, flashing, onOpenEvidence }) {
                   dkey={dkey}
                   det={det}
                   flashing={flashing.has(dkey)}
+                  runStatus={runStatus}
                   onOpenEvidence={onOpenEvidence}
                 />
               )
@@ -255,6 +289,8 @@ function StorylineHeader({ storyline, live, lastUpdated }) {
   const coverage = storyline.coverage || {}
   const mttd = storyline.mttd || {}
   const prov = storyline.provenance || {}
+  const runStatus = storyline.run_status || null
+  const unproven = isRunUnproven(runStatus)
   const pct = coverage.pct != null
     ? Math.round(coverage.pct)
     : coverage.expected
@@ -268,7 +304,9 @@ function StorylineHeader({ storyline, live, lastUpdated }) {
         <span className="storyline-header__scenario text-mono">
           {storyline.scenario_id || storyline.run_id}
         </span>
-        {live && (
+        {/* The SSE channel stays open on a dead run, so an open socket alone is
+            not liveness — only the run's own status is. */}
+        {live && runStatus === 'running' && (
           <span className="storyline-live" aria-live="polite">
             <span className="storyline-live__dot" aria-hidden="true" />
             LIVE
@@ -279,12 +317,24 @@ function StorylineHeader({ storyline, live, lastUpdated }) {
       <div className="storyline-kpis">
         <div className="storyline-kpi">
           <span className="storyline-kpi__label">Coverage</span>
-          <span className="storyline-kpi__value">
-            {pct}%
-            <span className="storyline-kpi__sub">
-              {coverage.detected || 0}/{coverage.expected || 0}
+          {unproven ? (
+            // A percentage here is a claim about the customer's tenant. Refuse
+            // to make one when the simulation never produced the signal.
+            <span
+              className="storyline-kpi__value storyline-kpi__value--unproven"
+              data-testid="storyline-coverage-unproven"
+            >
+              n/a
+              <span className="storyline-kpi__sub">run {runStatus}</span>
             </span>
-          </span>
+          ) : (
+            <span className="storyline-kpi__value">
+              {pct}%
+              <span className="storyline-kpi__sub">
+                {coverage.detected || 0}/{coverage.expected || 0}
+              </span>
+            </span>
+          )}
         </div>
         <div className="storyline-kpi">
           <span className="storyline-kpi__label">MTTD p50</span>
@@ -468,10 +518,23 @@ export default function DetectionStoryline({
   if (!storyline) return null
 
   const steps = storyline.steps || []
+  const runStatus = storyline.run_status || null
+  const unproven = isRunUnproven(runStatus)
 
   return (
     <section className="storyline" aria-label="Detection storyline">
       <StorylineHeader storyline={storyline} live={live} lastUpdated={lastUpdated} />
+
+      {unproven && (
+        <div className="storyline-unproven" role="status" data-testid="storyline-unproven-banner">
+          <span className="storyline-unproven__tag">RUN {String(runStatus).toUpperCase()}</span>
+          <p>
+            The simulation did not complete, so nothing below is a verdict on this
+            tenant's detection posture — the signal was never generated. Fix the run
+            (see the failure detail on the Live tab), then re-launch to measure coverage.
+          </p>
+        </div>
+      )}
 
       {steps.length === 0 ? (
         <div className="storyline--empty">
@@ -485,6 +548,7 @@ export default function DetectionStoryline({
               step={step}
               index={idx}
               flashing={flashing}
+              runStatus={runStatus}
               onOpenEvidence={onOpenEvidence}
             />
           ))}
