@@ -311,6 +311,14 @@ class ADWindowsEmitterParams(AnalyticsEmitterParams):
 
 
 class ADWindowsEmitter(AnalyticsLogEmitter):
+    # TargetUserName carries the canonical canary principal so one human
+    # resolves across AD, Entra and Okta. WorkstationName only exists on 4624,
+    # and a path that is absent is skipped rather than created.
+    CANARY_FIELDS = {
+        "EventData.TargetUserName": "{principal}",
+        "EventData.WorkstationName": "{value}-{account}",
+    }
+
     class Meta:
         name = "ad_windows_emitter"
         version = "1.0.0"

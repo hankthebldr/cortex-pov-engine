@@ -46,6 +46,7 @@ import asyncio
 import gzip
 import json
 import logging
+import re
 import secrets
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -133,6 +134,19 @@ class AnalyticsEmitterParams(BaseModel):
                     "POST count for high-volume streams.",
     )
 
+    # -- net-new ingestion round-trip marker -----------------------------
+    canary_token: Optional[str] = Field(
+        default=None,
+        description="Optional per-run ingestion-round-trip marker. When set, "
+                    "every emitted record carries the token TWICE — once as the "
+                    "top-level raw field 'cortexsim_canary' and once inside the "
+                    "data source's OWN schema fields (see the plugin's "
+                    "CANARY_FIELDS) — so a read-back query can tell 'never "
+                    "ingested' apart from 'ingested but not normalized'. Leave "
+                    "it None (the default) and the emitted records are "
+                    "byte-identical to what they were before this field existed.",
+    )
+
     @field_validator("collector_url")
     @classmethod
     def _collector_url_safe(cls, v: str) -> str:
@@ -142,6 +156,119 @@ class AnalyticsEmitterParams(BaseModel):
         if not parsed.hostname:
             raise ValueError("collector_url must include a hostname")
         return v
+
+    @field_validator("canary_token")
+    @classmethod
+    def _canary_token_safe(cls, v: Optional[str]) -> Optional[str]:
+        # The token lands inside log-record field VALUES and, downstream,
+        # inside an XQL string literal in an assertion query. Restricting it to
+        # lowercase alphanumerics and hyphens is what makes both safe with no
+        # escaping anywhere: it survives a Kubernetes object name, an email
+        # local part, a Windows sAMAccountName and an XQL literal untouched, and
+        # it satisfies the assertion substrate's own context-value whitelist.
+        if v is None:
+            return v
+        if not CANARY_TOKEN_RE.match(v):
+            raise ValueError(
+                "canary_token must match ^[a-z0-9][a-z0-9-]{5,63}$ — it is "
+                "substituted into log-record field values and into XQL string "
+                "literals, so it may not carry characters that could reshape "
+                "either (e.g. 'csim-9f2a41c0d3e7')"
+            )
+        return v
+
+
+# --------------------------------------------------------------------------
+# Ingestion round-trip canary
+#
+# A record POSTed to a collector proves nothing until it is read back out of
+# the tenant. Reading it back needs a marker, and the marker has to be planted
+# in TWO places or the read-back cannot tell three very different failures
+# apart:
+#
+#   * a top-level raw field ('cortexsim_canary'). A vendor-specific parser maps
+#     the fields IT knows and routinely discards unknown top-level keys, so a
+#     round-trip built only on this reads "never ingested" against precisely
+#     the tenants whose parsers are working. On its own it is a bytes-arrived
+#     signal, nothing more.
+#
+#   * the data source's OWN schema fields (each plugin's CANARY_FIELDS). This
+#     is what the parser is guaranteed to map, so it is the normalization
+#     signal.
+#
+# raw hit + native miss  -> ingested, NOT normalized  (parser / modeling-rule gap)
+# raw miss + native miss -> never landed              (collector / transport gap)
+# both hit               -> ingested AND normalized
+#
+# The duplication is not redundancy; it IS the discriminator.
+# --------------------------------------------------------------------------
+
+CANARY_TOKEN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{5,63}$")
+
+#: Top-level raw marker. Deliberately distinct from ``cortexsim_run_id``, which
+#: is re-minted per ITERATION — a per-iteration id cannot join records emitted
+#: by three different plugins into one round-trip claim.
+CANARY_RAW_FIELD = "cortexsim_canary"
+
+#: Reserved, non-resolving domain (RFC 2606 .invalid) for the canary principal.
+CANARY_DOMAIN = "cortexsim-canary.invalid"
+
+
+def canary_bindings(token: str) -> dict[str, str]:
+    """Template values a plugin's ``CANARY_FIELDS`` may substitute.
+
+    ``principal`` is the load-bearing one: the SAME string in every identity
+    source's own principal field is what lets a read-back query ask "does one
+    human resolve across AD, Entra and Okta?" rather than "did three unrelated
+    records land?".
+    """
+    # The token is already lowercase alphanumerics-and-hyphens, which is the
+    # intersection of what a Kubernetes object name, an email local part, a
+    # sAMAccountName and an XQL literal all accept — so ``account`` is the token
+    # itself rather than a re-prefixed copy of it. Prefixing here is how you get
+    # 'csim-csim-<token>' in a customer readout.
+    return {
+        "token": token,
+        "account": token,
+        "principal": f"{token}@{CANARY_DOMAIN}",
+    }
+
+
+def plant_canary(
+    record: dict[str, Any], token: str, fields: dict[str, str],
+) -> dict[str, Any]:
+    """Plant the canary into one record, in place, and return it.
+
+    ``fields`` maps a dotted path into the record to a template over
+    :func:`canary_bindings` plus ``{value}`` (the value already at that path).
+
+    A path that is absent, or whose current value is empty when the template
+    needs ``{value}``, is SKIPPED rather than created. Creating a field the
+    source's real schema does not carry would make the record less shape-true
+    than it was, and the whole point of the family is shape truth.
+    """
+    record[CANARY_RAW_FIELD] = token
+    bindings = canary_bindings(token)
+
+    for path, template in fields.items():
+        parts = path.split(".")
+        node: Any = record
+        for part in parts[:-1]:
+            if not isinstance(node, dict) or part not in node:
+                node = None
+                break
+            node = node[part]
+        leaf = parts[-1]
+        if not isinstance(node, dict) or leaf not in node:
+            continue
+        current = node[leaf]
+        if not isinstance(current, str):
+            continue
+        if "{value}" in template and not current:
+            continue
+        node[leaf] = template.format(value=current, **bindings)
+
+    return record
 
 
 # --------------------------------------------------------------------------
@@ -178,17 +305,45 @@ class AnalyticsLogEmitter(BaseSimulation):
         dataset, e.g. ``cloud_audit_logs``) — exactly like ``email_emitter``.
         """
 
+    #: Dotted path in this source's OWN record shape -> template over
+    #: :func:`canary_bindings` (plus ``{value}``). Empty by default, so a plugin
+    #: that does not declare it emits the raw marker only and is honest about
+    #: carrying no normalization signal. See the canary block above for why the
+    #: native-field plant is what makes the round-trip diagnostic.
+    CANARY_FIELDS: dict[str, str] = {}
+
     #: Every analytics log-streamer is offline-bundleable: ``build_events`` is
     #: a pure record builder with no network, so SimCore can pre-render a
     #: campaign's records and hand the DC a self-contained bundle that runs
     #: from inside the customer network — where the collector actually lives.
     supports_offline_bundle = True
 
+    def records_for(
+        self, params: AnalyticsEmitterParams, *, sim_run_id: str, iteration: int,
+    ) -> list[dict[str, Any]]:
+        """``build_events`` plus the optional canary plant.
+
+        The single seam every record passes through, so the wire path and the
+        offline-bundle path cannot drift on whether the marker is present.
+        With ``params.canary_token`` unset this returns ``build_events``'s
+        output unchanged, which is why adding the marker did not change any
+        existing emitter's output shape.
+        """
+        events = self.build_events(
+            params, sim_run_id=sim_run_id, iteration=iteration,
+        )
+        token = getattr(params, "canary_token", None)
+        if not token:
+            return events
+        return [plant_canary(e, token, self.CANARY_FIELDS) for e in events]
+
     def plan_offline_records(
         self, params: AnalyticsEmitterParams, *, sim_run_id: str, iteration: int,
     ) -> list[dict[str, Any]]:
         """Offline-bundle hook — the records this iteration would POST."""
-        return self.build_events(params, sim_run_id=sim_run_id, iteration=iteration)
+        return self.records_for(
+            params, sim_run_id=sim_run_id, iteration=iteration,
+        )
 
     # ------------------------------------------------------------------
     # Shared run — identical shape to the exemplars, no per-source logic.
@@ -256,7 +411,7 @@ class AnalyticsLogEmitter(BaseSimulation):
                 per_request_sim_id = (
                     f"{ctx.simulation_run_id}-i{i + 1}-{secrets.token_hex(2)}"
                 )
-                events = self.build_events(
+                events = self.records_for(
                     params, sim_run_id=per_request_sim_id, iteration=i + 1,
                 )
                 await self._emit_events(

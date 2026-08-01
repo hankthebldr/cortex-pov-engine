@@ -1,0 +1,97 @@
+# POS-CSPM-001 — did the posture engine find the nine misconfigurations we
+# deliberately planted?
+#
+# The ground truth is the `cspm` Terraform module: nine AWS resources, each
+# carrying a `CortexSimCSPMFinding = "<slug>"` tag written by us, not by the
+# product. The assertion joins on OUR tag key, never on the product's own
+# finding vocabulary — a query that guesses the product's classification names
+# returns zero rows when the guess is wrong, which reports a correct platform
+# as FAILED. Joining on the tag we planted keeps the only wrong-guess failure
+# mode ("this tenant's posture records do not carry resource tags") a schema
+# problem the operator can see and fix, not a silent false red.
+assertion_id: POS-CSPM-001
+name: Planted CSPM misconfiguration recall — nine tagged resources
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CSPM
+
+uc_ref: UCS-CSPM-02
+tc_ref: TC-CSPM-02
+tc_refs: [TC-CSPM-02]
+uc_name: "Cloud Security Posture Management (CSPM)"
+tc_name: "Validate Security Policy Enforcement"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "Posture Finding Coverage"
+success_criteria: |
+  Every one of the nine resources the cspm module plants and tags is present in
+  the tenant's posture findings within one scan cycle.
+
+scope_limitations: >
+  Proves that policy evaluation produced a posture finding against all nine
+  resources the cspm module plants (public-read bucket, unversioned bucket,
+  no-CMK bucket, SSH-open SG, DB-ports-open SG, AdministratorAccess role,
+  iam:* user, unencrypted EBS volume, weak CloudTrail). It does NOT prove which
+  compliance framework fired (CIS vs NIST vs SOC 2 attribution is not queried),
+  does NOT prove custom RQL policy authoring, does NOT prove the severity or the
+  IaC remediation text the finding carries, and does NOT measure false
+  positives — no correctly-configured control resource is planted, so a posture
+  engine that flags every resource in the account would satisfy this check.
+  Recall only. The dataset name `cortex_cloud_posture` and the `tags` /
+  `resource_id` fields are convention-named and NOT yet confirmed against a live
+  tenant; a wrong dataset name errors the query and resolves `pending`, but a
+  tenant whose posture records omit resource tags will read `fail` for a schema
+  reason rather than a discovery reason — confirm the field on first run.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/cspm
+  detail: >
+    terraform apply the `cspm` module into the account Cortex Cloud is connected
+    to (read-only), confirm `terraform output findings_summary` lists nine
+    resource ids, then wait one posture scan cycle before evaluating. Widen
+    `lookback_seconds` past the module's apply time if the scan cycle is slower
+    than an hour.
+
+checks:
+  - check_id: chk-01
+    title: All nine planted CSPM resources surfaced as posture findings
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = cortex_cloud_posture
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter cloud_provider = "AWS"
+        | filter tags contains "CortexSimCSPMFinding"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: planted resources surfaced
+      op: ">="
+      value: 9
+      unit: resources
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-CSPM-02 "Qualitative pass". The cspm module plants
+        exactly nine tagged resources and `terraform output findings_summary`
+        enumerates them, so "the policies evaluated correctly against the target
+        resources" has an objective floor: all nine. Nine is the count of the
+        fixture, not a number chosen to be reachable — authoring eight would
+        forgive a miss, authoring ten would manufacture red.
+    negative_control:
+      description: >
+        Cortex Cloud is connected to the account and its S3, IAM and EBS policies
+        fire, but no policy covers CloudTrail log-file validation and the weak
+        trail is never flagged — eight of nine planted resources surface.
+      measured_value: 8
+
+tags: [posture, cspm, aws, recall, planted-fixture]
+author: "Henry Reed"

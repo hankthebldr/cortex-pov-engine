@@ -1,0 +1,242 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# TC-AEPS-02 — Agentic Endpoint Security · Agentic Containment & Remediation
+#
+# This is the canonical `outcome` shape: a causally-raised condition must have
+# provoked an action inside a budget. Three things have to be true together and
+# the assertion measures each separately so a partial result reads as a partial
+# result rather than a bare red:
+#
+#   chk-01  it was TIMELY   — outcome_ts - precursor_ts < 5 min, in the
+#                             PLATFORM's clock (never CortexSim wall-clock,
+#                             which would fold agent dispatch and ingest delay
+#                             into the platform's MTTR and over-report it).
+#   chk-02  it was COMPLETE — isolate + kill-process + quarantine, three
+#                             distinct actions, not one action three times.
+#   chk-03  it was GOVERNED — a high-risk action was routed through an approval
+#                             gate and the gate decision is in the audit log.
+#
+# The precursor query in chk-01 is what makes `fail` legitimate at all: FAIL is
+# only reachable when the trigger incident is positively observed and the
+# containment is not. No precursor -> PRECURSOR_MISSING -> pending, because that
+# is a DETECTION failure and painting the automation red for it is wrong.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: AUT-AEPS-002
+name: Autonomous containment isolates, kills and quarantines inside the MTTR budget
+version: "1.0"
+status: active
+
+validation_class: AUT
+kind: outcome
+plane: EDR
+
+uc_ref: UCS-AEPS-02
+tc_ref: TC-AEPS-02
+tc_refs: [TC-AEPS-02]
+uc_name: "Agentic Endpoint Security"
+tc_name: "Demonstrate autonomous containment (isolate, kill process, quarantine) with human-in-the-loop gates for high-risk actions"
+
+moat_tier: EMERGING
+methodology_family: F5
+primary_kpi: "MTTR"
+success_criteria: |
+  The endpoint alert raised by the trigger is followed, inside 5 minutes of
+  platform clock, by an autonomous containment on the same host that spans
+  isolate-endpoint, kill-process and quarantine-file, and at least one
+  high-risk action in the same window carries a recorded approval-gate
+  decision rather than executing unattended.
+
+scope_limitations: >
+  Proves that autonomous containment fired on the exercised host, spanned the
+  three declared action kinds, and closed inside the 5-minute budget measured
+  between two timestamps the tenant itself wrote. Three things it does NOT
+  prove. (1) It does not prove the containment was EFFECTIVE — that the isolated
+  host actually lost network reachability, that the killed process stayed dead,
+  or that the quarantined file could not be restored; proving efficacy needs an
+  outcome-of-the-outcome probe (the SIM-CLOUD-007 pattern, where a replay of the
+  revoked token returns 401) and no such read-only probe exists for endpoint
+  isolation. (2) chk-03 proves every high-risk action THE PLATFORM RECORDED was
+  gated. It cannot prove the platform recorded them all — an action the tenant
+  never wrote to the incident store is invisible to a read-only probe, so this
+  is a completeness claim over the audit log, not over reality. (3) The scoping
+  key is hostname plus lookback window, not an engine-minted per-run nonce: a
+  containment of the SAME host inside the SAME window from an earlier run would
+  satisfy these probes. Run against a freshly provisioned host, or narrow
+  timeframe_seconds to the trigger run, before presenting the result.
+
+stimulus:
+  kind: scenario_run
+  scenario_id: SIM-EDR-011
+  detail: >
+    Run SIM-EDR-011 (ransomware pre-encryption ABIOC) against ONE target host
+    carrying the Cortex XDR agent. Its step-02 is a real mass file-rewrite burst
+    followed by a recovery-inhibition step — the highest-confidence
+    pre-impact endpoint signal in the corpus, and the class of alert an
+    autonomous containment agent is expected to act on unattended. Wait out the
+    settle window, then supply the host as context.target_host.
+
+settle:
+  # Nothing is readable before the platform has ingested and indexed the
+  # containment record; querying earlier burns an XQL slot on a zero that means
+  # nothing.
+  ingest_floor_seconds: 120
+  poll_interval_seconds: 15
+  # A-22: must be >= expect_by + ingest_floor, or the probe stops looking
+  # before the budget expires and manufactures false red.
+  max_wait_seconds: 900
+  expect_by_seconds: 300
+
+context_vars: [target_host]
+
+checks:
+  # ── TIMELY ───────────────────────────────────────────────────────────────
+  - check_id: chk-01
+    title: Containment closes within the MTTR budget, measured in the platform's clock
+    probe: xql_latency
+    primary: true
+    weight: 2.0
+    params:
+      # PRECURSOR — positive proof the automation was handed something to act
+      # on. Without a hit here the check may not go red.
+      precursor_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter severity in ("high", "critical")
+        | alter alert_epoch_seconds = divide(_time, 1000000)
+        | comp min(alert_epoch_seconds) as alert_epoch_seconds by incident_id
+        | fields incident_id, alert_epoch_seconds
+      # _time is written by XSIAM in microseconds; the probe compares plain
+      # epoch seconds, so the conversion happens here in the tenant's own
+      # arithmetic rather than being guessed at by the reader.
+      precursor_ts_field: alert_epoch_seconds
+      outcome_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter automation_actor_type = "agent"
+        | filter automation_actions contains "isolate-endpoint"
+        | alter contained_epoch_seconds = divide(contained_ts, 1000000)
+        | comp min(contained_epoch_seconds) as contained_epoch_seconds by incident_id
+        | fields incident_id, contained_epoch_seconds
+      outcome_ts_field: contained_epoch_seconds
+    threshold:
+      kpi: "MTTR"
+      op: "<"
+      value: 300
+      unit: "s"
+      source: index
+      rationale: >
+        Transcribed from the index row's own threshold ("<5 min") against its own
+        declared primary_kpi ("MTTR"), converted to the seconds the probe emits.
+    negative_control:
+      description: >
+        The loop closed but it was late — the agent isolated the host 612 s
+        (10 m 12 s) after the alert, so the ransomware pre-encryption burst had
+        already run to completion. This is the failure a customer most needs to
+        see as a NUMBER rather than as "nothing happened", which is why the
+        budget lives in the threshold and not inside the query.
+      measured_value: 612
+
+  # ── COMPLETE ─────────────────────────────────────────────────────────────
+  # Deliberately a RATIO over the containments the platform actually performed,
+  # not a distinct-count over action rows. A distinct-count returns 0 when the
+  # trigger never fired, which scores `fail` and paints the automation red for a
+  # detection that never happened — the false red chk-01's precursor gate exists
+  # to prevent, re-introduced through the side door. Over an empty population a
+  # ratio resolves POPULATION_EMPTY -> pending, which is the honest answer.
+  - check_id: chk-02
+    title: Every containment the agent performed spans all three declared action kinds
+    probe: xql_ratio
+    weight: 1.0
+    params:
+      # POPULATION — the containments that DID happen on this host.
+      population_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter automation_actor_type = "agent"
+        | filter automation_actions contains "isolate-endpoint"
+        | fields incident_id, automation_actions
+      # NUMERATOR — those that were COMPLETE. A membership test on all three
+      # names, because one action recorded three times is not three actions.
+      numerator_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter automation_actor_type = "agent"
+        | filter automation_actions contains "isolate-endpoint"
+        | filter automation_actions contains "kill-process"
+        | filter automation_actions contains "quarantine-file"
+        | fields incident_id, automation_actions
+      min_population: 1
+    threshold:
+      kpi: "containments spanning all three action kinds"
+      op: ">="
+      value: 100
+      unit: "%"
+      source: authored_sharpening
+      rationale: >
+        The index names the three actions explicitly in the test-case title —
+        "isolate, kill process, quarantine" — so the required set is objectively
+        defined and not an invented bar. The share is absolute because a
+        containment that isolates and kills but never quarantines leaves the
+        dropped binary on disk to be re-executed the moment isolation lifts:
+        partial containment is the failure, not a lower grade of success.
+    negative_control:
+      description: >
+        The agent isolated the endpoint and killed the encryptor process but
+        never quarantined the dropped binary, so none of the containments it
+        performed was complete — 0 % against an absolute bar.
+      measured_value: 0
+
+  # ── GOVERNED ─────────────────────────────────────────────────────────────
+  - check_id: chk-03
+    title: Every high-risk action the agent took carries an approval-gate decision
+    probe: xql_ratio
+    weight: 1.0
+    params:
+      # POPULATION — the high-risk actions the platform recorded the agent
+      # taking. Empty (agent never reached for a high-blast-radius action) is
+      # POPULATION_EMPTY -> pending, never a green on a gate nobody exercised.
+      population_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter automation_actor_type = "agent"
+        | filter action_risk = "high"
+        | fields incident_id, automation_action, action_risk, approval_state, approver
+      numerator_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter automation_actor_type = "agent"
+        | filter action_risk = "high"
+        | filter approval_state in ("requested", "approved", "denied")
+        | filter approver != null and approver != ""
+        | fields incident_id, automation_action, approval_state, approver
+      min_population: 1
+    threshold:
+      kpi: "high-risk actions carrying an approval-gate decision"
+      op: ">="
+      value: 100
+      unit: "%"
+      source: authored_sharpening
+      rationale: >
+        The "human-in-the-loop gates for high-risk actions" half of the test case
+        is an absolute claim — the gate either bounds every high-blast-radius
+        action or it is not a gate. Expressed as a ratio over the platform's own
+        record of high-risk actions rather than as a count of ungated ones:
+        "count of ungated actions = 0" passes on a tenant where the field does
+        not exist, where nothing ran and where the product is absent, which is a
+        tautology dressed as a control.
+    negative_control:
+      description: >
+        The agent executed high-risk actions on the host and not one carries an
+        approval decision or a named approver — autonomy with an unbounded kill
+        switch on production hosts, which is precisely what the HITL clause
+        exists to disprove.
+      measured_value: 0
+
+tags: [agentic, endpoint, containment, mttr, hitl, aes]
+author: "Henry Reed"

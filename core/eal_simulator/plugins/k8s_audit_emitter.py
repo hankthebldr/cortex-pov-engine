@@ -364,6 +364,18 @@ class K8sAuditEmitterParams(AnalyticsEmitterParams):
 
 
 class K8sAuditEmitter(AnalyticsLogEmitter):
+    # Ingestion round-trip plant. ``user.username`` is the deliberately NESTED
+    # one: Kubernetes audit is the most structurally hostile source in the
+    # family (deep JSON, no flat identity field), so it is where a parser that
+    # only lifts top-level keys silently loses the principal. ``userAgent`` is
+    # the flat control on the same record — raw hit + flat hit + nested miss is
+    # a nested-field normalization gap, not a transport gap.
+    CANARY_FIELDS = {
+        "user.username": "{value}-{account}",
+        "objectRef.name": "{value}-{account}",
+        "userAgent": "{value} canary/{token}",
+    }
+
     class Meta:
         name = "k8s_audit_emitter"
         version = "1.0.0"

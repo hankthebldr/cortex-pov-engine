@@ -1,0 +1,86 @@
+# POS-AISP-005 — the training-data store is classified as holding regulated data.
+#
+# The module plants a bucket tagged `training-data-with-regulated-pii` holding
+# PII/PHI/PCI canary fixtures. The bucket is a resource and carries the tag; the
+# canary OBJECTS inside it carry an object tag that a resource inventory does
+# not enumerate, so this assertion asserts store-level classification only.
+assertion_id: POS-AISP-005
+name: AI sensitive-data classification — regulated training store flagged
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: AI_SPM
+
+uc_ref: UCS-AISP-05
+tc_ref: TC-AISP-05
+tc_refs: [TC-AISP-05]
+uc_name: "AI Security Posture Management"
+tc_name: "Validate AI Sensitive Data Classification"
+
+moat_tier: MOAT
+methodology_family: F4
+primary_kpi: "Posture Finding Coverage"
+success_criteria: |
+  The S3 bucket used as an AI training-data store is surfaced as an AI-SPM
+  finding for holding regulated data.
+
+scope_limitations: >
+  Proves the training-data STORE is surfaced. It does NOT prove the platform
+  read the objects and identified PII, PHI or PCI inside them — the canary
+  fixtures are S3 objects and a resource-level tag join cannot see object
+  content, so content classification ACCURACY is unevidenced. It does NOT prove
+  data lineage from source to training to model, which is the second clause of
+  the index row and has no fixture. It does NOT prove governance-violation
+  flagging. A platform that flags the bucket purely because it is named
+  "training-data" would pass this check; the check's value is that a platform
+  that never surfaces the store at all reads FAIL. Dataset and field names are
+  convention-named and unconfirmed against a live tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/ai-spm
+  detail: >
+    terraform apply the `ai-spm` module; the store is
+    `terraform output training_data_bucket` and it contains the PII/PHI/PCI
+    canary object. Wait one AI-SPM / DSPM scan cycle — content classification is
+    typically slower than resource inventory, so widen `lookback_seconds` rather
+    than reading an early zero as a failure.
+
+checks:
+  - check_id: chk-01
+    title: The regulated training-data store is surfaced as an AI-SPM finding
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = ai_spm_findings
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter tags contains "training-data-with-regulated-pii"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: regulated training stores flagged
+      op: ">="
+      value: 1
+      unit: data stores
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-AISP-05 "Qualitative pass". The module plants exactly
+        one training-data store carrying regulated-data canaries, tagged
+        `CortexSimAISPMFinding = "training-data-with-regulated-pii"`, so the
+        objective floor is one.
+    negative_control:
+      description: >
+        Data classification is enabled for the account's general S3 estate but
+        the AI-SPM module never links the bucket to the SageMaker training job,
+        so the store is inventoried as ordinary storage and no AI training-data
+        finding is raised.
+      measured_value: 0
+
+tags: [posture, ai-spm, aws, data-classification, planted-fixture]
+author: "Henry Reed"

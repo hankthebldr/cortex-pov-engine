@@ -263,6 +263,15 @@ class M365ActivityEmitterParams(AnalyticsEmitterParams):
 
 
 class M365ActivityEmitter(AnalyticsLogEmitter):
+    # UserId/UserKey take the canonical canary PRINCIPAL (not a suffix) so the
+    # same human string appears here and in every identity source — that shared
+    # value is what a cross-provider entity-resolution read-back joins on.
+    CANARY_FIELDS = {
+        "UserId": "{principal}",
+        "UserKey": "{principal}",
+        "ObjectId": "{value}-{account}",
+    }
+
     class Meta:
         name = "m365_activity_emitter"
         version = "1.0.0"

@@ -550,6 +550,14 @@ class CloudAuditEmitterParams(AnalyticsEmitterParams):
 
 
 class CloudAuditEmitter(AnalyticsLogEmitter):
+    # One map spans both providers: the AWS path exists only on CloudTrail
+    # records and the GCP path only on AuditLog records, and plant_canary skips
+    # whichever is absent.
+    CANARY_FIELDS = {
+        "userIdentity.userName": "{value}-{account}",
+        "protoPayload.authenticationInfo.principalEmail": "{principal}",
+    }
+
     class Meta:
         name = "cloud_audit_emitter"
         version = "1.1.0"

@@ -299,6 +299,15 @@ class NgfwEalEmitterParams(AnalyticsEmitterParams):
 
 
 class NgfwEalEmitter(AnalyticsLogEmitter):
+    # All three are flat PAN-OS traffic-log columns, and all three are SUFFIXED
+    # rather than replaced so the record keeps its shape-true domain\user,
+    # firewall-hostname and endpoint-hostname forms.
+    CANARY_FIELDS = {
+        "user": "{value}-{account}",
+        "device_name": "{value}-{account}",
+        "endpoint_device_name": "{value}-{account}",
+    }
+
     class Meta:
         name = "ngfw_eal_emitter"
         version = "1.0.0"

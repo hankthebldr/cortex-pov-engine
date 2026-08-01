@@ -349,6 +349,17 @@ class IdpSigninEmulatorParams(AnalyticsEmitterParams):
 
 
 class IdpSigninEmulator(AnalyticsLogEmitter):
+    # Three provider shapes, one map — Okta nests the principal under actor,
+    # Entra carries it flat, Google nests it under actor.email. Each record
+    # only has one of them, and the rest are skipped.
+    CANARY_FIELDS = {
+        "actor.alternateId": "{principal}",
+        "actor.displayName": "{account}",
+        "actor.email": "{principal}",
+        "userPrincipalName": "{principal}",
+        "userDisplayName": "{account}",
+    }
+
     class Meta:
         name = "idp_signin_emulator"
         version = "2.0.0"
