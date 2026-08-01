@@ -157,9 +157,18 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
-| GET | `/api/agents/install` | Generate ready-to-run installer script | query: `os=linux\|windows`, `id`, `server?`, `interval` | `PlainTextResponse` bash (`.sh`) or PowerShell (`.ps1`); 400 `BAD_OS` |
+| GET | `/api/agents/install` | Generate ready-to-run installer script | query: `os=linux\|macos\|darwin\|windows`, `token?`, `id`, `server?`, `interval`, `mode=service\|foreground`, `uninstall=0\|1` | `PlainTextResponse` bash (`.sh`) or PowerShell (`.ps1`); 400 `BAD_OS` |
+| GET | `/api/agents/binaries` | Inventory the prebuilt beacon shelf | — | `{"binaries":[{os,arch,filename,size_bytes,sha256,modified_at}],"total":N}` |
+| GET | `/api/agents/binary` | Download a prebuilt beacon | query: `os`, `arch` (`uname` spellings accepted) | `FileResponse` + `X-CortexSim-Agent-SHA256`; 400 `BAD_OS`/`BAD_ARCH`; 404 `AGENT_BINARY_UNAVAILABLE` |
+| GET | `/api/agents/binary/sha256` | Expected digest for a target | query: `os`, `arch` | `PlainTextResponse` hex digest; same 400/404 |
+| POST | `/api/agents/install/telemetry` | Installer reports its terminal stage/code | `InstallTelemetry` (length-capped, control chars stripped) | `{"status":"recorded"}`; also an `agent.install` SSE frame |
+| GET | `/api/agents/install/attempts` | Read recent install attempts | query: `limit` (default 25) | `{"attempts":[…],"total":N}` — in-memory deque (100), lost on restart |
+| POST | `/api/agents/enroll/tokens` | Mint a TTL / max-uses / revocable enrollment token | `{label?, ttl_minutes?, max_uses?}` | token (revealed once) |
+| GET | `/api/agents/enroll/tokens` | List token metadata (never the secret) | — | `{"tokens":[…]}` |
+| DELETE | `/api/agents/enroll/tokens/{token_id}` | Revoke a token | — | `{"status":"revoked"}` |
+| POST | `/api/agents/enroll` | Redeem a token; SimCore **assigns** the agent id | `EnrollRequest`: `{token, hostname, os, capabilities[], desired_name?}` | `{"status":"enrolled","agent_id"}`; 4xx `ENROLL_DENIED` |
 | GET | `/api/agents` | List registered agents (newest `last_seen` first) | — | `{"agents":[<agent.to_dict()>],"total":N}` |
-| POST | `/api/agents/register` | Register/re-register a beacon (idempotent) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[]}` | `{"status":"registered","agent_id","message"}` |
+| POST | `/api/agents/register` | Register/re-register a beacon (idempotent, legacy self-asserted id) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[]}` | `{"status":"registered","agent_id","message"}` |
 | DELETE | `/api/agents/{agent_id}` | Prune a beacon row (does not touch run history) | — | `{"status":"deleted","agent_id"}`; 404 `AGENT_NOT_FOUND` |
 | GET | `/api/agents/{agent_id}/tasks` | Beacon polls for next task; bumps `last_seen` | — | `{"task":<task.to_dict()>}` or `{"task":null}`; 404 if agent unknown |
 
@@ -173,9 +182,41 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   `main.py` lifespan, 30s interval) recomputes each agent's derived status and emits
   `agent.status` SSE frames on the global bus when one flips. `GET /api/agents` adds a
   `last_seen_age_seconds` field per row (GAP-AGENT-001, **closed 2026-06-08**).
-- The installer builds the stdlib-only Go beacon **on the target** (`go install
-  github.com/hankthebldr/cortexsim/agent@latest` or local `CORTEXSIM_SRC` build).
-  No binary hosting. Requires Go 1.21+ on the target.
+- **The installer needs no compiler and no public-internet egress on the target**
+  (changed 2026-07-31; it previously ran `go install …@latest` against
+  proxy.golang.org, which no hardened endpoint allows). SimCore *serves* the
+  beacon: `{linux,darwin}×{amd64,arm64}` are cross-compiled into `/app/agent-dist`
+  by the `agent-builder` stage of `core/Dockerfile` (baked into the image, and
+  **not** shadowed by any compose mount) or on a host-run dev SimCore by
+  `make agent-dist` → `scripts/build-agent-dist.sh`. `CORTEXSIM_AGENT_DIST` points
+  at an scp'd drop instead. With an empty shelf `/api/agents/binary` returns a 404
+  that names what *is* available and the command that fixes it.
+- Acquisition order in the script: `CORTEXSIM_BIN` (pre-staged — fully air-gapped)
+  → download from this SimCore + sha256 verify → `CORTEXSIM_SRC` local source build
+  (dev escape hatch, needs Go) → fail `BINARY_UNAVAILABLE`. A checksum mismatch is a
+  hard stop, never a silent fallthrough to a compiler.
+- `?mode=service` (**default**) installs a supervisor so the beacon survives the
+  SSH session and a reboot — systemd system unit as root (`Restart=always`), a
+  `--user` unit otherwise (with the `runuser`/linger caveat printed), or a launchd
+  `LaunchDaemon`/`LaunchAgent` on macOS. With no supervisor present it detaches via
+  `setsid`+`nohup` and reports `DEGRADED_NO_SUPERVISOR` rather than claiming a
+  service exists. `?mode=foreground` keeps the old babysat behaviour;
+  `?uninstall=1` returns an idempotent best-effort removal script.
+  `CORTEXSIM_BIN_DIR` / `CORTEXSIM_LOG` relocate the install prefix and log.
+- Every stage exits with a stable code, printed as `stage= code= / what: / fix:`
+  **and** POSTed to `/api/agents/install/telemetry`: `OK` · `UNSUPPORTED_OS` ·
+  `UNSUPPORTED_ARCH` · `CURL_MISSING` · `SERVER_UNREACHABLE` · `ENROLL_DENIED` ·
+  `NO_AGENT_ID` · `BINARY_FETCH_FAILED` · `BINARY_UNAVAILABLE` · `CHECKSUM_MISMATCH` ·
+  `CHECKSUM_SKIPPED` · `BIN_NOT_EXECUTABLE` · `BIN_INSTALL_FAILED` ·
+  `SOURCE_BUILD_FAILED` · `SERVICE_START_FAILED` · `DEGRADED_NO_SUPERVISOR`.
+- **Windows has no beacon.** `agent/executor` is POSIX-only and does not compile
+  for `GOOS=windows`, so no windows binary is in the matrix. `?os=windows` still
+  returns 200 PowerShell, but the script hard-fails `WINDOWS_AGENT_UNAVAILABLE`
+  *before* enrolling (no phantom agent row) and points at push mode. The rest of
+  that script (download + `Get-FileHash` verify + `sc.exe create`) is real and the
+  refusal lifts on its own once a windows beacon lands in the dist matrix.
+- The Go beacon treats **SIGHUP** as a graceful shutdown; previously a hangup hit
+  the default disposition and killed the beacon when the terminal went away.
 
 ### 1.7 MITRE (`core/api/mitre.py`, prefix `/mitre`)
 
@@ -210,8 +251,13 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 | GET | `/api/eal/campaigns` | List campaigns (newest first) | — | `{"campaigns":[...],"total":N}` |
 | GET | `/api/eal/campaigns/{campaign_id}` | Single campaign | — | `<EalCampaign.to_dict()>`; 404 `CAMPAIGN_NOT_FOUND` |
 | POST | `/api/eal/campaigns/{campaign_id}/launch` | Launch campaign in background (dry-run default) | `LaunchRequest`: `{dry_run?, operator?}` | `LaunchResponse`: `{run_id, campaign_id, status, dry_run}`; 404; 422 `SPEC_INVALID`/`SAFETY_VIOLATION` |
+| GET | `/api/eal/campaigns/{campaign_id}/collectors` | Resolve every step's collector destination (secret-free) + warnings | — | `{collectors:[{scheme,host,port,path,dataset,auth_header,auth_scheme,token_configured}],destinations:[…],warnings:[…]}` |
+| POST | `/api/eal/campaigns/{campaign_id}/collectors/preflight` | Canary-POST one discard-safe record per collector | — | per-collector verdict in the delivery taxonomy; non-allowlisted hosts are `target_not_authorised` and **never contacted** |
+| POST | `/api/eal/campaigns/{campaign_id}/bundle` | Pre-render records into a self-contained offline bundle | — | `{bundle_id, download_url, records, skipped_steps[]}` (201) |
+| GET | `/api/eal/bundles/{bundle_id}/download` | Download the bundle tar.gz | — | `FileResponse` gzip; 404 |
 | GET | `/api/eal/runs` | List EAL runs | query: `campaign_id?` | `{"runs":[...],"total":N}` |
-| GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>`; 404 `RUN_NOT_FOUND` |
+| GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>` incl. the campaign-level `delivery` rollup; 404 `RUN_NOT_FOUND` |
+| POST | `/api/eal/runs/{run_id}/abort` | Cooperative abort of a live campaign | — | `AbortResponse` |
 
 - **This is a parallel run/lifecycle subsystem** distinct from the `Run`/agent
   system. EAL campaigns run via FastAPI `BackgroundTasks` (in-process async),
@@ -219,9 +265,32 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   (`pending` → terminal). Cross-link: it shares the `consent`/`simulation_authorized`
   safety-gate philosophy with the orchestrator but enforces it via `SafetyPolicy`
   pre-flight, returning 422 `SAFETY_VIOLATION`.
-- **GAP-API-011:** EAL runs also have no abort endpoint — once a background task
-  is launched it runs to completion or crash. EAL run statuses are a *different
-  enum* (`pending`/`success`/`failed`/etc. from the executor) than core Runs.
+- **Delivery is accounted, not assumed** (2026-07-31). Collector-POST plugins
+  (every analytics log-streamer + `email_emitter`) previously counted any POST that
+  did not raise as a delivered record — a 401 from a Broker VM, a 404 on a mistyped
+  path, or a 302 to a captive portal all produced `status="success"` and a green
+  campaign that ingested nothing. Only **2xx** now delivers; `events_emitted` /
+  `bytes_sent` report what the collector **accepted**, `detail.delivery` carries
+  attempted-vs-delivered, and the step status derives success / partial / error
+  against a 12-code taxonomy with a remediation line each. `GET /api/eal/runs/{id}`
+  gains a campaign-level `delivery_verdict` (`delivered` / `partial` /
+  `not_delivered` / `not_applicable`) computed at read time — no schema migration,
+  and pre-ledger runs render `not_applicable`. **Not applied** to
+  `oauth_grant_emulator` / `llm_provider_egress` / `agentic_egress`: those POST to
+  real third-party endpoints where a 4xx is the expected outcome, so the same rule
+  would manufacture a false red.
+- **To emit from inside the customer network**, use the offline bundle — record
+  building is a pure function, so SimCore pre-renders every record and the artifact
+  only POSTs bytes via stdlib `urllib` (no pip install, no SimCore at run time,
+  same invariant as a push bundle). Credentials are never written into a bundle;
+  the manifest names an env var the operator exports. Steps that cannot be
+  pre-rendered (C2 beacon, DNS tunnel, browser driver) are listed in
+  `skipped_steps`. **There is still no way to dispatch an EAL campaign to an
+  enrolled beacon** — the executor runs in SimCore's own process.
+- EAL run statuses are a *different enum* (`pending`/`success`/`failed`/etc. from
+  the executor) than core Runs. Abort is cooperative and cannot pre-empt an
+  in-flight bundle send. Bundle artifacts accumulate under `data/eal_bundles` with
+  no retention sweep (same as `infra/blueprints`).
 
 ### 1.10 Credentials (`core/api/credentials.py`, prefix `/credentials`)
 
