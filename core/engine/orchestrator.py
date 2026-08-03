@@ -115,16 +115,25 @@ class Orchestrator:
         """
         Create a Run record and route to pull or push path.
 
-        ``consent`` carries launch-time authorizations for tool-adapter
-        safety gates. Currently honoured keys:
+        ``consent`` carries launch-time authorizations. Honoured keys:
 
           - ``c2_authorized`` (bool) — required when any external_tools
             entry references a ``safety_class: c2-framework`` adapter
           - ``simulation_authorized`` (bool) — required for
             ``dual-use-lab-only`` adapters
+          - ``cluster_privilege_authorized`` (bool) — required for a **push**
+            launch of a scenario whose ``cluster_posture`` plants cluster-scoped
+            or wildcard RBAC
+          - ``node_access_authorized`` (bool) — required for a **push** launch
+            of a scenario whose ``cluster_posture`` plants privileged /
+            hostPID / hostNetwork / hostPath / hostPort capabilities. Also
+            requires ``CORTEXSIM_ALLOW_PRIVILEGED_K8S`` on the deployment.
 
-        Missing consent for a gated adapter aborts the launch with a
-        structured error and creates no Run record.
+        The last two are ORTHOGONAL, not nested: a manifest that wants wildcard
+        RBAC and touches no node needs only the first.
+
+        Missing consent aborts the launch with a structured error and creates
+        no Run record.
         """
         from models import Run, Scenario  # noqa: PLC0415
 
@@ -139,10 +148,10 @@ class Orchestrator:
                 error=f"Scenario '{scenario_id}' not found",
             )
 
-        # Phase A — adapter consent gate. Refuse to create the Run record
-        # if the scenario uses a gated adapter and the operator hasn't
-        # supplied the matching consent.
-        gate_error = _check_adapter_consent(scenario, consent or {})
+        # The launch consent gate. Refuse to create the Run record if the
+        # scenario uses a gated adapter, or would stage a Kubernetes workload
+        # that plants gated cluster capabilities, without the matching consent.
+        gate_error = _check_launch_consent(scenario, consent or {}, mode=mode)
         if gate_error is not None:
             logger.warning(
                 "Launch refused scenario=%s reason=%s",
@@ -555,8 +564,136 @@ def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
         return None
 
 
+def allow_privileged_k8s() -> bool:
+    """Deployment-level kill switch for node-access Kubernetes workloads.
+
+    Default **false**. Lives here rather than in the API layer so the launch
+    gate and the generation gate cannot answer this question differently:
+    ``core/api/scenarios.py`` delegates to it.
+
+    ``Settings`` wins when the config track has landed the field; the raw env
+    var is the fallback so the switch is real today.
+    """
+    from config import settings  # noqa: PLC0415
+
+    val = getattr(settings, "CORTEXSIM_ALLOW_PRIVILEGED_K8S", None)
+    if val is None:
+        val = __import__("os").getenv("CORTEXSIM_ALLOW_PRIVILEGED_K8S", "")
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _check_launch_consent(
+    scenario: Any,
+    consent: dict[str, bool],
+    *,
+    mode: Optional[str] = None,
+) -> Optional[str]:
+    """THE launch-time authorization gate. One entry point, two clauses.
+
+    Returns an error string when refused, ``None`` when cleared — so
+    :meth:`Orchestrator.launch` is unchanged and a refusal still creates no Run
+    record.
+
+    Clause 1 — **tool adapters** (:func:`_check_adapter_consent`): unchanged.
+    Clause 2 — **cluster posture**: delegates to
+    :func:`engine.k8s_manifest.check_cluster_consent`, the single authority the
+    generation gate in ``core/api/scenarios.py`` also calls. Two surfaces, one
+    decision function; a second, parallel implementation would be a defect.
+
+    Launch is the SECONDARY gate and must not be presented as sufficient. The
+    primary boundary is generation, because the dangerous artifact is the file
+    that leaves SimCore: it is applied by ``kubectl`` on a laptop days later, on
+    a host SimCore never sees, by someone who may not be the person who
+    downloaded it.
+    """
+    adapter_error = _check_adapter_consent(scenario, consent)
+    if adapter_error is not None:
+        return adapter_error
+    return _check_cluster_launch_consent(scenario, consent, mode=mode)
+
+
+def _check_cluster_launch_consent(
+    scenario: Any,
+    consent: dict[str, bool],
+    *,
+    mode: Optional[str],
+) -> Optional[str]:
+    """Cluster-posture clause of the launch gate.
+
+    Scoped to **push** mode on purpose. Push is the mode that stages an artifact
+    for the DC to apply against a real cluster, and for a scenario declaring
+    ``cluster_posture`` that artifact IS the Kubernetes manifest — the workload
+    is the agent. Pull mode dispatches a task to an enrolled beacon and never
+    emits a manifest, so gating it would fire the prompt on a case it does not
+    describe. That is how an operator learns the flags are ceremony, and a gate
+    that is ceremony is worse than no gate.
+    """
+    if mode != "push":
+        return None
+    raw = getattr(scenario, "cluster_posture", None)
+    if not raw:
+        return None
+
+    from engine import k8s_manifest as km  # noqa: PLC0415
+
+    scenario_id = getattr(scenario, "scenario_id", "UNKNOWN")
+    try:
+        posture = km.parse_posture({"cluster_posture": raw})
+    except Exception as exc:  # a posture the model refuses outright
+        return (
+            f"Scenario {scenario_id} declares a cluster_posture this engine "
+            f"refuses regardless of consent: {exc}"
+        )
+    if posture is None:
+        return None
+    try:
+        km.check_cluster_consent(
+            scenario_id, posture, consent or {},
+            allow_privileged_k8s=allow_privileged_k8s(),
+        )
+    except km.ClusterConsentRequired as exc:
+        return _cluster_refusal_text(exc)
+    return None
+
+
+def _cluster_refusal_text(exc: "Any") -> str:
+    """Render the shipped refusal as one actionable sentence.
+
+    Same voice as the adapter clause, and it names the capability, the object it
+    lands on, and the literal consent key — "this scenario is privileged" is not
+    actionable; "the pod template sets privileged: true" is.
+    """
+    body = exc.to_error()
+    caps = ", ".join(
+        f"{row['capability']} on the {row['object']}"
+        for row in body.get("requested_capabilities", [])
+    ) or "gated cluster capabilities"
+    if exc.disabled_by_deployment:
+        return (
+            f"Scenario {exc.scenario_id} would create a {body['risk_tier']} "
+            f"Kubernetes workload ({caps}) but CORTEXSIM_ALLOW_PRIVILEGED_K8S is "
+            f"false on this SimCore. That is a deployment setting owned by "
+            f"whoever runs this SimCore — no consent key will change it. "
+            f"See docs/reference/k8s-delivery.md."
+        )
+    keys = ", ".join(exc.missing)
+    relaunch = " and ".join(f"consent.{k}=true" for k in exc.missing)
+    return (
+        f"Scenario {exc.scenario_id} would create a {body['risk_tier']} "
+        f"Kubernetes workload ({caps}) but consent {keys} is not set. "
+        f"Re-launch with {relaunch} to proceed. Generating the manifest itself "
+        f"additionally requires POST /api/scenarios/{exc.scenario_id}/bundle "
+        f"with the same consent plus authorized_by — a launch does not authorise "
+        f"the artifact. See docs/reference/k8s-delivery.md."
+    )
+
+
 def _check_adapter_consent(scenario: Any, consent: dict[str, bool]) -> Optional[str]:
-    """Validate that the operator authorised every gated adapter the
+    """Tool-adapter clause of :func:`_check_launch_consent`.
+
+    Validate that the operator authorised every gated adapter the
     scenario references. Returns an error string when refused, ``None`` when
     cleared.
 
