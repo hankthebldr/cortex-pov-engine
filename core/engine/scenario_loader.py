@@ -18,6 +18,10 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# The K8s delivery contract. Pure model + vocabulary, no heavy deps, so a
+# module-level import is safe here (the loader already owns the schema).
+from engine.k8s_manifest import AppIdentitySpec, ClusterPosture, findings_for
+
 logger = logging.getLogger("cortexsim.loader")
 
 # PyYAML's pure-Python SafeLoader parses the 161-file corpus in ~754 ms; the
@@ -241,6 +245,15 @@ class ScenarioSchema(BaseModel):
     # The Causality Group Owner anchor drives the CGO node label/username in the
     # causality graph. Absent → the graph falls back to 'cortexsim-agent'/'root'.
     cgo_anchor: Optional[CgoAnchorSchema] = None
+    # ── K8s delivery contract (optional, back-compat) ───────────────────────
+    # Declares the cluster posture the generated manifest must PLANT. The
+    # workload is simultaneously the KSPM finding a posture engine should
+    # discover, the execution vehicle the runtime TTP needs to be non-vacuous,
+    # and the CGO anchor of a genuinely connected process spine. Absent ->
+    # generate_k8s emits the baseline (ungated, self-contained) manifest.
+    # Model + finding vocabulary: core/engine/k8s_manifest.py.
+    # Contract: docs/reference/k8s-delivery.md.
+    cluster_posture: Optional[ClusterPosture] = None
     # GAP-3 / S-08 / S-10 — schema-vs-loader reconcile. The doc-schema once
     # marked `created`/`last_updated` "required", but the loader never modelled
     # them, so Pydantic silently dropped them. Model them here as optional ISO
@@ -421,6 +434,61 @@ class ScenarioSchema(BaseModel):
                 "a declared causality spine allows at most one root step "
                 f"(steps without causality), got {len(roots)}: "
                 f"{[s.id for s in roots]}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_cluster_posture(self) -> "ScenarioSchema":
+        """K8s delivery contract cross-checks.
+
+        ``S-17`` ``cluster_posture.app_identity.name`` and
+                 ``cgo_anchor.image_name`` are both set and DIFFER — ERROR.
+        ``S-18`` ``cluster_posture`` is declared but no step lists ``k8s`` or
+                 ``container`` in ``platforms`` — WARNING.
+
+        S-17 is STRUCTURAL and is not gated by ``CORTEXSIM_STRICT_REFS``: it is
+        about the internal consistency of one file, not about the index
+        snapshot. ``cgo_anchor`` is the causality-graph LABEL and
+        ``app_identity.name`` is the RUNTIME FACT (the process the manifest
+        actually renames PID 1 to). If they disagree the Causality View shows a
+        process the cluster never ran — confidently wrong in front of a
+        customer. So drift is made structurally impossible: when only one is
+        set, the other is BACK-FILLED from it; when both are set and differ, the
+        scenario is rejected.
+        """
+        cp = self.cluster_posture
+        if cp is None:
+            return self
+
+        anchor = self.cgo_anchor.image_name if self.cgo_anchor else None
+        app = cp.app_identity.name if cp.app_identity else None
+
+        if anchor and app and anchor != app:
+            raise ValueError(
+                f"S-17 cgo_anchor.image_name={anchor!r} disagrees with "
+                f"cluster_posture.app_identity.name={app!r}. These name the SAME "
+                f"process — the graph label and the runtime fact — and a mismatch "
+                f"guarantees a Causality View showing a process the cluster never ran."
+            )
+        if anchor and not app:
+            object.__setattr__(
+                cp, "app_identity", AppIdentitySpec(name=anchor),
+            )
+        elif app and not anchor:
+            object.__setattr__(
+                self, "cgo_anchor",
+                CgoAnchorSchema(image_name=app, primary_username="root"),
+            )
+
+        in_cluster = any(
+            {"k8s", "container"} & set(s.platforms or []) for s in self.steps
+        )
+        if not in_cluster:
+            logger.warning(
+                "S-18 scenario=%s declares cluster_posture but no step lists "
+                "'k8s' or 'container' in platforms — the posture is emitted but "
+                "nothing is marked as running there",
+                self.scenario_id,
             )
         return self
 
@@ -796,7 +864,7 @@ def _warn_scenario_hygiene(schema: "ScenarioSchema", filepath: str) -> None:
 
 def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
     """Convert a validated ScenarioSchema into keyword args for the Scenario ORM model."""
-    return {
+    kwargs = {
         "scenario_id": schema.scenario_id,
         "name": schema.name,
         "version": schema.version,
@@ -840,3 +908,13 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         **_derive_entitlements(schema),
         "created_at": datetime.utcnow(),
     }
+    # The `cluster_posture` ORM column is owned by a separate track
+    # (core/models.py + `ALTER TABLE scenarios ADD COLUMN cluster_posture JSON`).
+    # Guard on the attribute so this loader lands independently and starts
+    # persisting the moment the column exists — no coordinated deploy, and no
+    # TypeError on a Scenario model that has not caught up yet.
+    from models import Scenario  # noqa: PLC0415  (import cycle: models -> engine)
+
+    if schema.cluster_posture is not None and hasattr(Scenario, "cluster_posture"):
+        kwargs["cluster_posture"] = schema.cluster_posture.model_dump(mode="json")
+    return kwargs
