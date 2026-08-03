@@ -19,13 +19,72 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from engine.push_generator import generate_bash, generate_k8s
+from engine.push_generator import (
+    BundleTargetUnsatisfiable,
+    emittable_targets,
+    generate_bash,
+    generate_k8s,
+    generate_powershell,
+    resolve_target,
+)
 from models import Scenario
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.scenarios")
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
+
+
+# ---------------------------------------------------------------------------
+# List projection
+# ---------------------------------------------------------------------------
+#
+# The full corpus serialises to 1248.6 KB across 162 scenarios, and 817.1 KB of
+# that (65%) is ``steps[]`` — 243 KB of shell ``command`` text and 149 KB of
+# per-detection ``description`` prose that no list view renders. The console
+# ships in this repo and is the only consumer, so the fields below were chosen
+# by grepping ``ui/src`` for what is actually read off a LIST-derived scenario:
+#
+#   step.mitre_technique                → FilterPalette / useScenarioFilter /
+#                                         ScenarioGrid technique facets
+#   step.expected_detections[].type     → detection-type facet + filter
+#   step.expected_detections[].plane    → cross-plane badge (ScenarioGrid,
+#                                         StackCoverageView, useScenarioFilter)
+#   steps.length                        → AppConsole command-palette meta
+#
+# Everything else in a step, plus the four heaviest unread top-level fields,
+# is dropped here and served in full by ``GET /api/scenarios/{id}`` — which
+# every consumer that needs detail already calls (OperationsView hydrates on
+# card select; LaunchView / ScenarioInspector / UCTCMapper read the detail).
+_LIST_OMIT_FIELDS = (
+    "steps",             # replaced by the slim projection below
+    "cleanup",           # 24.9 KB — detail + push bundle only
+    "external_tools",    # 27.8 KB — LaunchView reads it off the DETAIL fetch
+    "success_criteria",  # 78.8 KB — index detail view, not the scenario list
+)
+_LIST_STEP_KEYS = ("id", "name", "mitre_technique")
+_LIST_DETECTION_KEYS = ("type", "plane")
+
+
+def _slim_step(step: dict) -> dict:
+    """Project one step down to the keys the list view renders."""
+    out = {k: step.get(k) for k in _LIST_STEP_KEYS if k in step}
+    dets = step.get("expected_detections")
+    if isinstance(dets, list):
+        out["expected_detections"] = [
+            {k: d.get(k) for k in _LIST_DETECTION_KEYS if k in d}
+            for d in dets if isinstance(d, dict)
+        ]
+    return out
+
+
+def _slim_scenario(scenario: Scenario) -> dict:
+    """Summary projection of a scenario for the list endpoint."""
+    full = scenario.to_dict()
+    slim = {k: v for k, v in full.items() if k not in _LIST_OMIT_FIELDS}
+    steps = full.get("steps")
+    slim["steps"] = [_slim_step(s) for s in steps if isinstance(s, dict)] if isinstance(steps, list) else []
+    return slim
 
 
 @router.get("")
@@ -36,7 +95,13 @@ async def list_scenarios(
     entitlement: Optional[str] = Query(None, description="Filter to scenarios a tenant profile can license: ng-siem-bare | enterprise | premium"),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all scenarios, with optional plane / uc_ref / ttp_ref / entitlement filters."""
+    """List scenarios (summary projection), with optional plane / uc_ref /
+    ttp_ref / entitlement filters.
+
+    Rows are the SUMMARY shape — see ``_LIST_OMIT_FIELDS``. Fetch
+    ``GET /api/scenarios/{id}`` for the full document (commands, cleanup,
+    external_tools, success_criteria, per-detection logic).
+    """
     stmt = select(Scenario)
     if plane:
         stmt = stmt.where(Scenario.plane == plane.upper())
@@ -61,7 +126,13 @@ async def list_scenarios(
         "list_scenarios plane=%s uc_ref=%s ttp_ref=%s entitlement=%s count=%d",
         plane, uc_ref, ttp_ref, entitlement, len(scenarios),
     )
-    return {"scenarios": [s.to_dict() for s in scenarios], "total": len(scenarios)}
+    # `projection` names the shape explicitly so a consumer can tell a summary
+    # row from a detail document without guessing at which keys are missing.
+    return {
+        "scenarios": [_slim_scenario(s) for s in scenarios],
+        "total": len(scenarios),
+        "projection": "summary",
+    }
 
 
 def _scenario_cites_ttp(scenario: Scenario, ttp_ref: str) -> bool:
@@ -174,16 +245,39 @@ async def get_infra_hints(
     }
 
 
+#: format → the execution target it needs the scenario to satisfy.
+_FORMAT_TARGET = {"bash": "posix", "k8s": "posix", "powershell": "windows"}
+
+
+def _unsatisfiable(scenario_id: str, target: str, unresolved) -> HTTPException:
+    """409, not 400: the REQUEST is well-formed — the scenario's content cannot
+    satisfy it. A 400 would tell the caller to fix its query string; the fix is
+    to declare platform_variants on the named steps."""
+    exc = BundleTargetUnsatisfiable(scenario_id, target, tuple(unresolved))
+    return HTTPException(status_code=409, detail=exc.to_error())
+
+
 @router.get("/{scenario_id}/download")
 async def download_bundle(
     scenario_id: str,
-    format: str = Query("bash", description="Output format: bash | k8s"),
+    format: str = Query(
+        "auto",
+        description="Output format: auto | bash | powershell | k8s",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Generate and download a self-contained execution bundle.
-    format=bash  → shell script
-    format=k8s   → Kubernetes YAML manifest
+
+    format=auto        → the scenario's own emittable target (POSIX preferred)
+    format=bash        → shell script          (requires a POSIX-emittable scenario)
+    format=powershell  → PowerShell script     (requires a Windows-emittable scenario)
+    format=k8s         → Kubernetes YAML manifest (the Job runs /bin/bash in ubuntu:22.04,
+                         so it needs the same POSIX resolution as format=bash)
+
+    A scenario that cannot satisfy the requested target returns 409 naming the
+    offending steps, rather than emitting a bundle that parses and then dies in
+    front of a customer — which reads as "the stack detected nothing".
     """
     result = await db.execute(
         select(Scenario).where(Scenario.scenario_id == scenario_id)
@@ -197,26 +291,62 @@ async def download_bundle(
 
     scenario_dict = scenario.to_dict()
 
+    if format not in ("auto", *_FORMAT_TARGET):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Invalid format",
+                "code": "INVALID_FORMAT",
+                "detail": "format must be one of 'auto', 'bash', 'powershell', 'k8s'",
+            },
+        )
+
+    targets = emittable_targets(scenario_dict)
+
+    if format == "auto":
+        if not targets:
+            # Every target failed — report the POSIX reasons, which name the
+            # steps a DC is most likely to be able to fix.
+            raise _unsatisfiable(
+                scenario_id, "posix", resolve_target(scenario_dict, "posix").unresolved
+            )
+        # POSIX first: the console has always downloaded .sh, and a scenario
+        # that can do both should not change format under an existing caller.
+        format = "bash" if "posix" in targets else "powershell"
+
+    target = _FORMAT_TARGET[format]
+    if target not in targets:
+        raise _unsatisfiable(
+            scenario_id, target, resolve_target(scenario_dict, target).unresolved
+        )
+
     if format == "bash":
         content = generate_bash(scenario_dict)
         filename = f"cortexsim-{scenario_id}.sh"
         media_type = "text/x-shellscript"
-    elif format == "k8s":
+    elif format == "powershell":
+        content = generate_powershell(scenario_dict)
+        filename = f"cortexsim-{scenario_id}.ps1"
+        # NOT application/x-powershell — unregistered, and some proxies mangle it.
+        media_type = "text/plain; charset=utf-8"
+    else:  # k8s
         content = generate_k8s(scenario_dict)
         filename = f"cortexsim-{scenario_id}-k8s.yaml"
         media_type = "application/x-yaml"
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "Invalid format", "code": "INVALID_FORMAT", "detail": "format must be 'bash' or 'k8s'"},
-        )
 
-    logger.info("download_bundle scenario_id=%s format=%s", scenario_id, format)
-    return PlainTextResponse(
-        content=content,
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-CortexSim-Bundle-Target": target,
+    }
+    alternates = [t for t in targets if t != target]
+    if alternates:
+        headers["X-CortexSim-Bundle-Alternates"] = ",".join(alternates)
+
+    logger.info(
+        "download_bundle scenario_id=%s format=%s target=%s alternates=%s",
+        scenario_id, format, target, alternates,
     )
+    return PlainTextResponse(content=content, media_type=media_type, headers=headers)
 
 
 def _scenario_is_licensable(scenario: Scenario, profile: str) -> bool:
