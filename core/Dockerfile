@@ -74,6 +74,15 @@ COPY --from=ui-builder /ui/dist/ /app/core/static/
 # returns a structured AGENT_BINARY_UNAVAILABLE naming this directory.
 COPY --from=agent-builder /out/ /app/agent-dist/
 
+# The K8s payload shelf, served by GET /api/k8s/payload/{name}. Staged on the
+# HOST by ./scripts/build-payloads.sh before `docker build`, deliberately: a
+# builder stage that downloaded here would make `docker build` require network,
+# which breaks the offline build this feature exists to serve. An empty shelf is
+# a valid state — the manifest generator then reports every declared tool as
+# unstaged and the bootstrap endpoint refuses with PAYLOAD_NOT_STAGED rather
+# than let a pod run a scenario without its tooling.
+COPY payloads/ /app/payloads/
+
 ENV CORTEXSIM_BASE_DIR=/app
 ENV CORTEXSIM_ENV=production
 ENV CORTEXSIM_PORT=8888
