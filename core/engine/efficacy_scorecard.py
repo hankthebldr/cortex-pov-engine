@@ -125,6 +125,43 @@ class BreakdownRow:
 
 
 @dataclasses.dataclass(frozen=True)
+class VerdictTally:
+    """How many runs actually MET their bound test case's bar.
+
+    Coverage answers "how much of what we expected did we see". It does not
+    answer "did the test case pass", which is the question a POV readout turns
+    on — and the two diverge: a run can observe every seeded detection and still
+    miss its MTTD threshold. ``not_applicable`` is carried explicitly rather
+    than folded into a pass rate, because a test case the index gave no
+    measurable threshold can never be certified and saying so is the point.
+    """
+
+    passed: int = 0
+    failed: int = 0
+    pending: int = 0
+    not_applicable: int = 0
+    unscored: int = 0            # no verdict recorded at all
+
+    @property
+    def scored(self) -> int:
+        return self.passed + self.failed
+
+    @property
+    def pass_pct(self) -> Optional[float]:
+        """Share of SCOREABLE runs that passed. None when nothing was scoreable
+        — a 0% that really means "nothing could be scored" misleads a reader."""
+        return round(self.passed / self.scored * 100, 1) if self.scored else None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "passed": self.passed, "failed": self.failed,
+            "pending": self.pending, "not_applicable": self.not_applicable,
+            "unscored": self.unscored,
+            "scored": self.scored, "pass_pct": self.pass_pct,
+        }
+
+
+@dataclasses.dataclass(frozen=True)
 class EfficacyScorecard:
     title: str
     run_count: int
@@ -135,6 +172,7 @@ class EfficacyScorecard:
     by_detection_type: tuple[BreakdownRow, ...]
     by_product: tuple[BreakdownRow, ...]
     generated_at: str
+    verdicts: VerdictTally = dataclasses.field(default_factory=VerdictTally)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -142,6 +180,7 @@ class EfficacyScorecard:
             "run_count": self.run_count,
             "run_ids": list(self.run_ids),
             "coverage": self.coverage.to_dict(),
+            "verdicts": self.verdicts.to_dict(),
             "mttd": self.mttd.to_dict(),
             "by_plane": [r.to_dict() for r in self.by_plane],
             "by_detection_type": [r.to_dict() for r in self.by_detection_type],
@@ -240,6 +279,7 @@ def build_efficacy_scorecard(
     run_ids: Optional[Iterable[str]] = None,
     title: Optional[str] = None,
     generated_at: Optional[str] = None,
+    tc_verdicts: Optional[Iterable[Optional[str]]] = None,
 ) -> EfficacyScorecard:
     """Build the efficacy scorecard from ``Result.to_dict()``-shaped dicts.
 
@@ -270,6 +310,20 @@ def build_efficacy_scorecard(
     ids = tuple(dict.fromkeys(run_ids or []))  # de-dupe, preserve order
     run_count = len(ids) if ids else (1 if rows else 0)
 
+    # Run.tc_verdict is per-RUN, not per-result, so it arrives alongside the
+    # rows rather than inside them. A run with no verdict counts as unscored —
+    # never silently as a pass.
+    counts: dict[str, int] = {}
+    for v in (tc_verdicts or []):
+        counts[v or "unscored"] = counts.get(v or "unscored", 0) + 1
+    tally = VerdictTally(
+        passed=counts.get("pass", 0),
+        failed=counts.get("fail", 0),
+        pending=counts.get("pending", 0),
+        not_applicable=counts.get("not_applicable", 0),
+        unscored=counts.get("unscored", 0),
+    )
+
     return EfficacyScorecard(
         title=title or "Cortex POV Efficacy Scorecard",
         run_count=run_count,
@@ -280,6 +334,7 @@ def build_efficacy_scorecard(
         by_detection_type=tuple(by_detection_type),
         by_product=tuple(by_product),
         generated_at=generated_at or datetime.now(timezone.utc).isoformat(),
+        verdicts=tally,
     )
 
 
@@ -341,6 +396,36 @@ def render_markdown(scorecard: EfficacyScorecard) -> str:
         f"{_verdict(cov.pct)}"
     )
     lines.append("")
+
+    # Test-case verdict. Deliberately its own section directly under the
+    # summary: coverage is "how much of what we expected did we see", the
+    # verdict is "did the test case meet its bar", and a reader who sees only
+    # the first will take a high coverage number as a pass.
+    v = sc.verdicts
+    if v.passed or v.failed or v.pending or v.not_applicable or v.unscored:
+        lines.append("## Test-Case Verdict")
+        lines.append("")
+        if v.scored:
+            lines.append(
+                f"**{v.passed} of {v.scored}** scoreable test case(s) met their "
+                f"threshold (**{v.pass_pct}%**)."
+            )
+        else:
+            lines.append(
+                "No test case in this scope carries a machine-evaluable "
+                "threshold, so none can be certified as passed."
+            )
+        if v.not_applicable:
+            lines.append("")
+            lines.append(
+                f"_{v.not_applicable} test case(s) report `not_applicable` — the "
+                f"index defines no measurable threshold for them, so a pass "
+                f"cannot be asserted._"
+            )
+        if v.pending:
+            lines.append("")
+            lines.append(f"_{v.pending} still pending verification._")
+        lines.append("")
 
     # Coverage headline
     lines.append("## Detection Coverage")

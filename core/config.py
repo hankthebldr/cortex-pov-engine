@@ -33,6 +33,22 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
     CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
 
+    # Auto-verify phase of the reconcile sweep. OFF by default and, unlike
+    # reconcile, it runs XQL against the customer's tenant — a metered resource
+    # their own analysts share. Requires an integration of kind 'xsiam_tenant'
+    # (the reconcile 'xsiam' credential is a DIFFERENT kind and does NOT enable
+    # this). Piggybacks on the auto-reconcile timer, so it does nothing unless
+    # CORTEXSIM_AUTO_RECONCILE is also on — main.py warns at boot if it is not.
+    #
+    # Offline scoring (Run.tc_verdict from local MTTD + thresholds) is NOT
+    # gated by this: it makes zero outbound calls, so gating it would gate
+    # honesty rather than risk.
+    CORTEXSIM_AUTO_VERIFY: bool = False
+    CORTEXSIM_AUTO_VERIFY_MAX_ATTEMPTS: int = 3           # give up after N sweeps
+    CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS: int = 600      # doubled per attempt, capped at 4h
+    CORTEXSIM_AUTO_VERIFY_MAX_QUERIES_PER_SWEEP: int = 50  # hard stop on tenant queries
+    CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS: int = 3600   # XQL lookback per query
+
     # UC/TC foreign-key strictness. When false (the default for one release),
     # a scenario whose uc_ref/tc_ref does not resolve against the master index
     # snapshot logs S-10/S-11/S-12 as a WARNING and still loads. When true, the

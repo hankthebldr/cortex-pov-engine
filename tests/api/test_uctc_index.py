@@ -45,7 +45,7 @@ def client(make_client):
 
 @pytest.fixture
 def seeded(session_factory):
-    """Seed the real 162-scenario evidence set from the crosswalk.
+    """Seed the real 169-scenario evidence set from the crosswalk.
 
     Only the columns the reverse index touches are populated; the rest carry
     placeholders because this surface never reads them.
@@ -53,7 +53,7 @@ def seeded(session_factory):
     from models import Scenario  # noqa: PLC0415
 
     rows = list(csv.DictReader(CROSSWALK.open(encoding="utf-8")))
-    assert len(rows) == 162
+    assert len(rows) == 169
 
     async def _seed() -> None:
         async with session_factory() as session:
@@ -106,9 +106,9 @@ def test_summary_reports_the_index_totals(client, seeded):
 
 def test_summary_reports_the_evidence_ground_truth(client, seeded):
     ev = client.get("/api/uctc/summary").json()["evidence"]
-    assert ev["evidenced"] == 86
+    assert ev["evidenced"] == 89
     assert ev["detection_backable"] == 107
-    assert ev["evidenced_detection_backable"] == 67
+    assert ev["evidenced_detection_backable"] == 70
     # Over half the detection-backable surface carries no measurable threshold,
     # so the verifier can never return a pass for it.
     assert ev["unscoreable"] == 57
@@ -369,8 +369,8 @@ def test_unknown_test_case_is_a_structured_404(client, seeded):
 def test_coverage_totals_match_the_summary(client, seeded):
     cov = client.get("/api/uctc/coverage").json()
     summ = client.get("/api/uctc/summary").json()["evidence"]
-    assert cov["totals"]["evidenced"] == summ["evidenced"] == 86
-    assert cov["totals"]["evidenced_detection_backable"] == 67
+    assert cov["totals"]["evidenced"] == summ["evidenced"] == 89
+    assert cov["totals"]["evidenced_detection_backable"] == 70
 
 
 def test_coverage_by_use_case_puts_the_worst_gap_first(client, seeded):
@@ -402,7 +402,7 @@ def test_coverage_by_plane_is_scenario_derived(client, seeded):
 
 def test_gaps_default_to_the_actionable_detection_classes(client, seeded):
     body = client.get("/api/uctc/gaps").json()
-    assert body["total"] == 40
+    assert body["total"] == 37
     assert all(g["evidence"]["evidenced"] is False for g in body["gaps"])
     assert {g["validation_class"] for g in body["gaps"]} <= {"DET", "HNT"}
     assert body["scope"]["validation_class"] == "DET,HNT"
@@ -444,7 +444,7 @@ def test_payloads_report_engine_usage_and_the_split_flag(client, seeded):
     body = client.get("/api/uctc/payloads").json()
     assert body["total"] == 140
     in_use = client.get("/api/uctc/payloads?in_use=true").json()
-    assert in_use["total"] == 31
+    assert in_use["total"] == 33
     assert all(p["scenario_count"] > 0 for p in in_use["payloads"])
     sc1 = next(p for p in body["payloads"] if p["pov_scenario_id"] == "POV-SC-001")
     assert sc1["needs_split"] is True

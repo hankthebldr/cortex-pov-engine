@@ -175,8 +175,21 @@ async def lifespan(app: FastAPI):
             settings.CORTEXSIM_AUTO_RECONCILE_LOOKBACK,
             settings.CORTEXSIM_AUTO_RECONCILE_WINDOW,
         ))
-        logger.info("Auto-reconcile loop started (interval=%ds)",
-                    settings.CORTEXSIM_AUTO_RECONCILE_INTERVAL)
+        logger.info("Auto-reconcile loop started (interval=%ds, auto_verify=%s)",
+                    settings.CORTEXSIM_AUTO_RECONCILE_INTERVAL,
+                    settings.CORTEXSIM_AUTO_VERIFY)
+    elif settings.CORTEXSIM_AUTO_VERIFY:
+        # Verify runs as a PHASE of the reconcile sweep, so with the reconcile
+        # loop off there is no timer to carry it. Deliberately NOT starting a
+        # standalone timer here: silently beginning to issue XQL against a
+        # customer tenant off the back of an unrelated flag is exactly the
+        # surprise the opt-in exists to prevent.
+        logger.warning(
+            "CORTEXSIM_AUTO_VERIFY is on but CORTEXSIM_AUTO_RECONCILE is off — "
+            "auto-verify is INERT. It runs as a phase of the reconcile sweep; "
+            "enable CORTEXSIM_AUTO_RECONCILE too, or verify on demand with "
+            "POST /api/runs/{run_id}/verify."
+        )
 
     logger.info("CortexSim ready — listening on port %d", settings.CORTEXSIM_PORT)
     yield

@@ -245,3 +245,43 @@ def test_format_mttd_buckets():
     assert es.format_mttd(30) == "30s"
     assert es.format_mttd(90) == "1m 30s"
     assert es.format_mttd(3661) == "1h 1m"
+
+
+def test_scorecard_reports_the_test_case_verdict_not_just_coverage():
+    """Coverage and verdict answer different questions and can disagree.
+
+    A run can observe every seeded detection — 100% coverage — and still FAIL
+    its test case by blowing the MTTD threshold. A CISO one-pager that reports
+    only coverage invites "100% covered" to be read as "passed", which the data
+    does not support.
+    """
+    from engine.efficacy_scorecard import build_efficacy_scorecard  # noqa: PLC0415
+
+    rows = [{"observed": True, "plane": "EDR", "signal_type": "BIOC",
+             "mttd_seconds": 900.0}]
+    sc = build_efficacy_scorecard(rows, run_ids=["r1"], tc_verdicts=["fail"])
+
+    assert sc.coverage.pct == 100.0          # every expected detection observed
+    assert sc.verdicts.failed == 1           # and yet the test case failed
+    assert sc.verdicts.pass_pct == 0.0
+    assert sc.to_dict()["verdicts"]["failed"] == 1
+
+
+def test_a_run_with_no_verdict_is_unscored_never_passed():
+    from engine.efficacy_scorecard import build_efficacy_scorecard  # noqa: PLC0415
+
+    sc = build_efficacy_scorecard([{"observed": True, "plane": "EDR"}],
+                                  run_ids=["r1"], tc_verdicts=[None])
+    assert sc.verdicts.unscored == 1
+    assert sc.verdicts.passed == 0
+
+
+def test_pass_pct_is_none_when_nothing_was_scoreable():
+    """0% would read as "everything failed"; the truth is "nothing could be
+    scored", which is a different message entirely."""
+    from engine.efficacy_scorecard import build_efficacy_scorecard  # noqa: PLC0415
+
+    sc = build_efficacy_scorecard([{"observed": True, "plane": "EDR"}],
+                                  run_ids=["r1"], tc_verdicts=["not_applicable"])
+    assert sc.verdicts.pass_pct is None
+    assert sc.verdicts.not_applicable == 1

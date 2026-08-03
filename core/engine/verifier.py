@@ -400,6 +400,33 @@ async def verify_run(
     return score
 
 
+def tc_scoreable_for(tc_ref: Optional[str]) -> bool:
+    """Whether the INDEX can score the test case a *scenario* binds.
+
+    The sibling of ``engine.assertions.tc_scoreable``, which answers the same
+    question for an ``AssertionSpec``. Both exist because the two callers hold
+    different objects (a scenario row vs an assertion spec) and neither owns
+    the other; the degradation rule below is the part that must stay identical.
+
+    With no snapshot loaded there is no index claim to clamp against, so this
+    returns True — the same degradation ``validate_ref`` makes when it reports
+    ``unverified`` rather than rejecting. Clamping on absent data would make
+    every run unpassable in a stripped deployment.
+
+    Expect this to return False for 123 of the 162 scenarios: they bind an
+    index row whose threshold is literally ``Qualitative pass``. That is the
+    point — see :func:`_clamp`.
+    """
+    from engine.uctc_registry import registry  # noqa: PLC0415
+
+    if not registry.loaded:
+        return True
+    if not tc_ref:
+        return False
+    tc = registry.tc(tc_ref)
+    return bool(tc and tc.is_scoreable)
+
+
 def xsiam_query_runner(client: Any, timeframe: dict[str, Any]) -> QueryRunner:
     """Adapt an XSIAM client into a :data:`QueryRunner` returning a row count."""
 

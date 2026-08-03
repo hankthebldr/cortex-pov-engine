@@ -94,6 +94,47 @@ def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
     return rows
 
 
+def _verdict_section(run: Run) -> list[str]:
+    """Markdown block for a run's test-case verdict. Empty when unscored.
+
+    Reuses ``report_generator._VERDICT_LABEL`` rather than restating the four
+    labels — the wording of "NOT SCOREABLE" in particular is load-bearing and
+    must not fork between the two renderers.
+    """
+    if not run.tc_verdict:
+        return []
+    detail = run.tc_verdict_detail if isinstance(run.tc_verdict_detail, dict) else {}
+    label = report_generator._VERDICT_LABEL.get(run.tc_verdict, run.tc_verdict)
+
+    out = ["## Test-Case Verdict", "", f"**{label}**", ""]
+    if detail.get("detail"):
+        out.append(f"{detail['detail']}.")
+        out.append("")
+
+    primary = detail.get("primary")
+    if isinstance(primary, dict) and primary.get("op"):
+        out.append("| Primary KPI | Verdict | Measured | Threshold |")
+        out.append("|-------------|---------|----------|-----------|")
+        actual = primary.get("actual")
+        out.append(
+            f"| {primary.get('detail') or '—'} | {primary.get('verdict') or '—'} | "
+            f"{'—' if actual is None else actual} | "
+            f"{primary.get('op')} {primary.get('expected')} |"
+        )
+        out.append("")
+
+    unscoreable = detail.get("unscoreable") or []
+    if unscoreable:
+        out.append(
+            f"> {len(unscoreable)} detection(s) carry no measurable threshold and "
+            f"are reported as evidence, never as a scored pass: "
+            f"{', '.join(str(u) for u in unscoreable[:8])}"
+            + (" …" if len(unscoreable) > 8 else "")
+        )
+        out.append("")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -270,6 +311,11 @@ async def get_report(
             [r.to_dict() for r in results],
             run_ids=[run_id],
             title=f"Cortex POV Efficacy Scorecard — {scenario.name if scenario else run.scenario_id}",
+            # Coverage says how much of what we expected we saw; the verdict says
+            # whether the test case actually met its bar. A CISO one-pager that
+            # reports only the first invites "94% covered" to be read as "94%
+            # passed", which the two numbers do not support.
+            tc_verdicts=[run.tc_verdict],
         )
         if format == "scorecard-html":
             return Response(
@@ -380,6 +426,12 @@ async def get_report(
         pct = round(stats["observed"] / stats["total"] * 100, 1) if stats["total"] > 0 else 0
         lines.append(f"| {dt} | {stats['observed']} | {stats['total']} | {pct}% |")
     lines.append("")
+
+    # Test-case verdict — the answer coverage % cannot give. A coverage
+    # percentage with no verdict is exactly the inflation the verifier exists
+    # to prevent. Rendered only when a verdict exists: an unscored historical
+    # run must not grow a fake section.
+    lines.extend(_verdict_section(run))
 
     # MTTD
     if mttd_values:
@@ -637,13 +689,22 @@ async def complete_run(
         {"type": "run.status", "run_id": run_id, "data": {"status": run.status, "step_id": None}},
     )
 
+    # Seed the test-case verdict at completion. At t=0 nothing is observed, so
+    # a threshold-carrying scenario lands on `pending` ("declared but not
+    # measured") — which is the point: every finished run now carries an
+    # explicit verdict, so /api/uctc stops conflating "never scored" with
+    # "scored pending". Offline only; no tenant call on an agent callback.
+    from connectors.service import score_run_safely  # noqa: PLC0415
+    tc_verdict = await score_run_safely(db, run, source="complete")
+
     logger.info(
-        "run_complete run_id=%s exit_code=%d status=%s",
+        "run_complete run_id=%s exit_code=%d status=%s tc_verdict=%s",
         run_id,
         body.exit_code,
         run.status,
+        tc_verdict,
     )
-    return {"status": run.status, "run_id": run_id}
+    return {"status": run.status, "run_id": run_id, "tc_verdict": tc_verdict}
 
 
 # ---------------------------------------------------------------------------
@@ -688,6 +749,53 @@ async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
 
     logger.info("abort_run run_id=%s -> aborted", run_id)
     return {"status": "aborted", "run_id": run_id, "was_terminal": False}
+
+
+@router.post("/{run_id}/verify")
+async def verify_run_endpoint(
+    run_id: str,
+    integration: Optional[str] = Query(None, description="xsiam_tenant integration name (defaults to the first registered)"),
+    timeframe_seconds: Optional[int] = Query(None, ge=60, le=86400, description="XQL lookback per query"),
+    force: bool = Query(False, description="Re-verify a run that already reached a terminal verdict"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify this run's ``verification_xql`` detections against a tenant, then
+    score the run's test-case verdict.
+
+    Not flag-gated — an explicit POST naming the action is its own consent,
+    exactly like ``POST /api/runs/{id}/reconcile``. The response always names
+    the tenant it queried and how many queries it issued, so nobody has to
+    discover after the fact which customer environment was touched.
+
+    Returns **200** with ``tc_verdict: "pending"`` and
+    ``reason: "no_tenant_integration"`` when no credential is registered — the
+    same contract the assertion surface uses. "No tenant wired" is an honest
+    verdict, not a client error; only a *named* integration that does not exist
+    is a 404.
+    """
+    from connectors.service import VerifyError, verify_run_now  # noqa: PLC0415
+
+    result = await db.execute(select(Run).where(Run.run_id == run_id))
+    run: Optional[Run] = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
+        )
+
+    try:
+        outcome = await verify_run_now(
+            db, run, integration=integration, timeframe_seconds=timeframe_seconds,
+            force=force, source="verify",
+        )
+    except VerifyError as e:
+        raise HTTPException(status_code=404, detail={
+            "error": str(e), "code": e.code, "detail": e.detail})
+
+    logger.info("verify_run run_id=%s verdict=%s tenant=%s queries=%d reason=%s",
+                run_id, outcome.tc_verdict, outcome.tenant,
+                outcome.queries_issued, outcome.reason)
+    return outcome.to_dict()
 
 
 @router.get("/{run_id}/control")

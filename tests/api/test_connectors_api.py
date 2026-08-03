@@ -157,10 +157,19 @@ def test_manual_ingest_publishes_result_observed_sse(session_factory):
 
             evt = await asyncio.wait_for(q.get(), timeout=2.0)
 
-            # Exactly ONE frame — the second seeded result (T1552.004) does not
-            # match the single observation, so no further frame is published.
-            with pytest.raises(asyncio.TimeoutError):
-                await asyncio.wait_for(q.get(), timeout=0.25)
+            # Exactly ONE `result.observed` frame — the second seeded result
+            # (T1552.004) does not match the single observation, so no further
+            # per-result frame is published. Ingest also emits one trailing
+            # `run.verdict` frame (the run-level test-case verdict recomputed
+            # from the new MTTD), which is a different event type and is not
+            # what this test is pinning.
+            extra: list[dict] = []
+            while True:
+                try:
+                    extra.append(await asyncio.wait_for(q.get(), timeout=0.25))
+                except asyncio.TimeoutError:
+                    break
+            assert [e["type"] for e in extra] == ["run.verdict"]
         finally:
             event_bus.unsubscribe(run_id, q)
 
