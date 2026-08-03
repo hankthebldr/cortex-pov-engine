@@ -46,6 +46,32 @@ cgo_anchor:
   image_name: "containerd-shim"
   primary_username: "root"
 
+# ── Cluster posture — the insecure-pod misconfiguration IS this workload ─────
+# RANK 5 of the first slice, and the cheapest correctness win. Before this block
+# step-03 was `kubectl apply -f K8-container-misconfig.yaml` against a file that
+# was NOT in the bundle, wrapped in `||` echo — it always "succeeded" and planted
+# nothing. Moving the misconfiguration INTO the workload's own securityContext is
+# the whole thesis of this pass in one edit: the pod IS the privileged /
+# run-as-root / hostPath / no-limits misconfiguration step-03 used to fake, so
+# the posture BIOC and the cortex_cloud_posture XQL now fire on a real object.
+# Plants pod-privileged, pod-run-as-root, hostpath-mount, pod-allow-privilege-
+# escalation, namespace-pod-security-privileged, pod-no-resource-limits
+# (resources: null), pod-writable-root-filesystem. GATED: node_access. Joined by
+# POS-CSPM-004 and refused by POS-KSPM-003 in enforce mode.
+cluster_posture:
+  workload: auto
+  security_context:
+    privileged: true
+    run_as_user: 0
+  resources: null                  # deliberately plants pod-no-resource-limits
+  host_access:
+    host_paths:
+      - name: hostvarlog
+        host_path: /var/log        # read-only, NOT a forbidden writable root
+        mount_path: /host-var-log
+        type: Directory
+        read_only: true
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # Pairs the WildFire verdict path (official benign PE/APK/macOS/ELF test
 # samples, execution stubbed) with the lab's nine insecure-pod scenarios in one
@@ -114,13 +140,18 @@ steps:
         detection_id: bioc-cdr-012-container-executes-downloaded-sample
 
   - id: step-03
-    name: "Apply insecure-pod misconfiguration manifest (privileged / root / hostPath)"
+    name: "Surface the insecure-pod misconfiguration (this workload's own securityContext)"
     command: |
-      kubectl apply -f "${MISCONFIG_MANIFEST:-K8-container-misconfig.yaml}" || \
-        echo "[*] insecure-pod misconfiguration manifest applied (privileged/root/hostPath/no-limits)"
-      echo "[*] posture misconfiguration planted for Cortex Cloud CDR validation"
+      echo "[*] This pod IS the insecure-pod misconfiguration — no phantom manifest to apply."
+      echo "[*] Effective capabilities (privileged container widens the mask):"
+      grep -E 'CapEff|CapBnd' /proc/self/status || true
+      echo "[*] Running identity (run-as-root):"; id
+      echo "[*] hostPath mount observable from inside the container:"
+      mount | grep -E '/host-var-log' || echo '[-] hostPath mount not visible'
+      echo "[*] privileged/run-as-root/hostPath/no-limits posture surfaces in cortex_cloud_posture"
     identity: container-runtime
     mitre_technique: "T1610"
+    platforms: ["k8s", "container"]
     causality:
       parent_step: step-02
       pivot: process_lineage
@@ -155,9 +186,7 @@ steps:
 cleanup:
   commands:
     - "rm -rf /var/tmp/.hidden_wildfire_samples"
-    - "kubectl delete -f ${MISCONFIG_MANIFEST:-K8-container-misconfig.yaml} --ignore-not-found"
-    - "kubectl delete namespace insecure-container-scenarios --ignore-not-found"
-    - "echo '[CortexSim] SIM-CDR-012 cleanup complete'"
+    - "echo '[CortexSim] SIM-CDR-012 cleanup complete — the misconfiguration is the workload; teardown is k8s_teardown'"
   k8s_teardown: "kubectl delete -f {manifest_path}"
 
 author: "Henry Reed"

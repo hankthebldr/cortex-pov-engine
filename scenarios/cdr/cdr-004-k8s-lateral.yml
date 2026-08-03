@@ -77,6 +77,33 @@ cgo_anchor:
   image_name: "containerd-shim"
   primary_username: "root"
 
+# ── Cluster posture — the over-permissioned deployment IS the premise ────────
+# RANK 3 of the first slice, and the fix for live FALSE-GREEN #2. Before this
+# block every step targeted https://kubernetes.default.svc with the namespace
+# DEFAULT service account, which has no API rights: step-01 curl → 403
+# (swallowed), step-03 `kubectl get pods --all-namespaces` → Forbidden, step-04
+# resolved TARGET_POD empty and the exec was a no-op, step-05's CronJob apply →
+# Forbidden. "Kubernetes Lateral Movement" moved nothing laterally.
+#
+# The wildcard ClusterRole is a DUAL artifact: it is the execution vehicle the
+# lateral-movement steps need to be non-vacuous AND the planted KSPM finding a
+# posture engine must surface. This is the canonical worked example in
+# docs/reference/k8s-delivery.md §9 — the same posture that yields 10 findings
+# (clusterrole-wildcard-verbs/-resources, secrets-read-cluster-wide, pod-exec,
+# token-mint, impersonate, the binding, token-automounted, run-as-root,
+# writable-rootfs). `auto` → Deployment (a Job reaped in minutes cannot be
+# discovered by a scan cycle measured in hours). Every object carries
+# cortexsim.io/posture-finding, joined by POS-CSPM-004. GATED: cluster_privilege
+# only — this touches no node. app_identity back-fills from cgo_anchor per S-17.
+cluster_posture:
+  workload: auto
+  service_account:
+    automount_token: true
+    cluster_role_rules:
+      - api_groups: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
+
 steps:
   - id: step-01
     name: "Enumerate Kubernetes service accounts and RBAC permissions"

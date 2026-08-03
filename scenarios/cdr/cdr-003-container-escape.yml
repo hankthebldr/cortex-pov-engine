@@ -81,6 +81,38 @@ cgo_anchor:
   image_name: "containerd-shim"
   primary_username: "root"
 
+# ── Cluster posture — the privilege the escape needs to actually escape ──────
+# RANK 4 of the first slice, and the fix for the WORST live FALSE-GREEN in the
+# corpus (#1). In a pod WITHOUT host_pid, /proc/1 is the container's OWN
+# entrypoint, so `nsenter --mount=/proc/1/ns/mnt` (steps 03–05) enters the
+# CONTAINER's mount namespace: step-03 prints the container's /etc and logs
+# "Successfully entered host mount namespace", step-05 writes /etc/cron.d INSIDE
+# the container and prints "Persistence dropped on HOST". Nothing escaped — a DC
+# demoing it asserted a host compromise that did not occur.
+#
+# host_pid: true is the LOAD-BEARING field: with it, PID 1 is the host's init and
+# every nsenter step becomes a real escape. privileged + SYS_ADMIN + hostPath /
+# (read-only) complete the breakout posture. Plants pod-privileged,
+# pod-host-pid, hostpath-root-mount, pod-added-capabilities, hostpath-mount,
+# pod-allow-privilege-escalation (forced true — Kubernetes rejects
+# privileged+APE=false), namespace-pod-security-privileged. GATED: node_access,
+# AND gated a second time by the CORTEXSIM_ALLOW_PRIVILEGED_K8S deployment kill
+# switch. Do NOT apply this manifest to any cluster you are not willing to lose a
+# node on — the charter reserves rank 4 for a throwaway cluster only.
+cluster_posture:
+  workload: auto
+  security_context:
+    privileged: true
+    capabilities_add: ["SYS_ADMIN"]
+  host_access:
+    host_pid: true
+    host_paths:
+      - name: hostroot
+        host_path: /
+        mount_path: /host
+        type: Directory
+        read_only: true
+
 steps:
   - id: step-01
     name: "Verify privileged container mode and enumerate escape preconditions"

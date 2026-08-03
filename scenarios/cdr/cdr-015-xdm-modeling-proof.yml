@@ -44,6 +44,28 @@ cgo_anchor:
   image_name: "containerd-shim"
   primary_username: "root"
 
+# ── Cluster posture — a non-privileged DRIVER that spawns a privileged PROBE ──
+# RANK 2 of the first slice. The driver Deployment itself is compliant
+# (non-privileged); its step-02 `kubectl run … securityContext.privileged=true`
+# is the privileged workload. Splitting the two arms honestly is the whole point
+# of the conversion: on a cluster WITHOUT admission enforcement the probe is
+# ADMITTED and the modeling-rule BIOC (step-03) fires on the normalized
+# `privileged` field; on a cluster WITH enforcement the probe CREATE is REFUSED
+# (403) and that refusal is POS-KSPM-003's passing evidence. The driver needs a
+# namespace-scoped Role to `create` the probe pod — namespace-scoped, not a
+# cluster grant, so the driver stays UNGATED. app_identity back-fills from
+# cgo_anchor per S-17. NOTE: the driver image must carry `kubectl`; on the
+# default debian:12-slim the require_bin preflight exits 78 LOUDLY (never a
+# silent green) — supply a kubectl-bearing image or served payloads.
+cluster_posture:
+  workload: deployment
+  service_account:
+    automount_token: true
+    namespace_role_rules:
+      - api_groups: [""]
+        resources: ["pods"]
+        verbs: ["create", "get", "list", "watch", "delete"]
+
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # This scenario proves the XDM normalization SUBSTRATE beneath detections: an
 # XDM modeling rule (detections.modeling_rules[], NOT a detection_type) maps raw

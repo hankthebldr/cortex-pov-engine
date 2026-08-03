@@ -1,0 +1,114 @@
+# POS-CSPM-004 — did the posture engine surface the in-cluster misconfigurations
+# the k8s_manifest builder planted and labelled?
+#
+# ┌─ HONESTY GATE (travels with the artifact, per the coverage-inflation risk) ─┐
+# │ TC-CSPM-02 is ALREADY authored by POS-CSPM-001 against the AWS `cspm`       │
+# │ module's nine tagged resources. This artifact adds BREADTH of evidence (a  │
+# │ Kubernetes resource class in addition to AWS) and moves the coverage       │
+# │ number by ZERO. It must never be presented as taking POS from 19 toward    │
+# │ 20 — the only net-new binding out of this K8s pass is POS-KSPM-003.        │
+# └────────────────────────────────────────────────────────────────────────────┘
+#
+# The ground truth is the generated K8s manifest set: every object the builder
+# emits carries `cortexsim.io/posture-finding=<slug>` in the same spirit as
+# `CortexSimCSPMFinding` in infra/modules/aws/cspm. This assertion joins on OUR
+# label key, never on the product's own finding vocabulary — a guessed
+# classification name returns zero rows and reports a correct platform as FAILED.
+assertion_id: POS-CSPM-004
+name: Planted in-cluster KSPM misconfiguration recall — labelled workloads
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CDR
+
+uc_ref: UCS-CSPM-02
+tc_ref: TC-CSPM-02
+tc_refs: [TC-CSPM-02]
+uc_name: "Cloud Security Posture Management (CSPM)"
+tc_name: "Validate Security Policy Enforcement"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "Posture Finding Coverage"
+success_criteria: |
+  Each of the three gated in-cluster misconfigurations the fixture plants (two
+  privileged pods and one wildcard ClusterRole) surfaces as a posture finding
+  carrying our label within one scan cycle.
+
+# ─── MANDATORY: what this does NOT prove (A-19) ──────────────────────────────
+scope_limitations: >
+  BREADTH, NOT COVERAGE: TC-CSPM-02 is already authored by POS-CSPM-001 against
+  the AWS cspm module — this artifact proves the SAME test case against a
+  Kubernetes resource class and moves the coverage number by zero. Recall only:
+  it proves the posture engine produced a finding against the three gated
+  workloads the fixture plants (SIM-CDR-003 privileged pod, SIM-CDR-004 wildcard
+  ClusterRole, SIM-CDR-012 privileged pod), each labelled
+  cortexsim.io/posture-finding. It does NOT prove which compliance framework
+  fired (CIS vs NIST attribution is not queried), does NOT prove severity or
+  remediation text, and does NOT measure false positives — no correctly-
+  configured control workload is asserted un-flagged, because a CIS-benchmarked
+  scan legitimately raises a LOW finding on almost any pod, so flagged==0 on a
+  clean workload would go red against a CORRECT product. The fixture also labels
+  additional BASELINE objects (ServiceAccount token automount, run-as-root) that
+  a scan may surface at LOW severity; those only raise the measured value above
+  the floor and are not counted toward it — the floor is a recall floor on the
+  three GATED misconfigurations, which is why it is 3 and not the full labelled-
+  object count. The dataset name `cortex_cloud_posture` and the `labels` /
+  `resource_id` fields are convention-named and NOT yet confirmed against a live
+  tenant (POS-CSPM-001 carries the same caveat); a wrong dataset name errors the
+  query to pending, but a tenant whose posture records omit resource labels reads
+  `fail` for a schema reason rather than a discovery reason — confirm on first
+  run. Requires Cortex Cloud to have a KUBERNETES connector, not only the AWS
+  connector.
+
+stimulus:
+  kind: iac_fixture
+  detail: >
+    With the appropriate consent (cluster_privilege for SIM-CDR-004,
+    node_access for SIM-CDR-003 and SIM-CDR-012), generate `?format=k8s` for the
+    three gated CDR scenarios and `kubectl apply` each into its
+    cortexsim-sim-cdr-<nnn> namespace, so the labelled privileged pods and the
+    wildcard ClusterRole exist in the cluster Cortex Cloud's KSPM connector reads.
+    Wait one posture scan cycle before evaluating; widen lookback_seconds past
+    the apply time if the scan cycle is slower than an hour.
+
+checks:
+  - check_id: chk-01
+    title: The three gated in-cluster misconfigurations surfaced as posture findings
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = cortex_cloud_posture
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter labels contains "cortexsim.io/posture-finding"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: gated misconfigurations surfaced
+      op: ">="
+      value: 3
+      unit: resources
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-CSPM-02 "Qualitative pass". The fixture plants three
+        UNAMBIGUOUS misconfigurations a KSPM engine must surface — SIM-CDR-003's
+        privileged pod, SIM-CDR-004's wildcard ClusterRole, and SIM-CDR-012's
+        privileged pod — so the objective floor is those three distinct resources.
+        Three is the count of the gated fixture, not a number chosen to be
+        reachable: baseline-only labelled objects only push the value above three,
+        they cannot pull it below.
+    negative_control:
+      description: >
+        Cortex Cloud is connected to the AWS account but has NO Kubernetes
+        connector, so no in-cluster workload carries a posture finding and the
+        label query returns nothing.
+      measured_value: 0
+
+tags: [posture, cspm, kspm, kubernetes, recall, planted-fixture, breadth-not-coverage]
+author: "Henry Reed"

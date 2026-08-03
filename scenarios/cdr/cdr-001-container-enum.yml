@@ -86,6 +86,34 @@ cgo_anchor:
   image_name: "containerd-shim"
   primary_username: "root"
 
+# ── Cluster posture — the deployment IS the agent (K8s delivery contract) ────
+# RANK 1 of the K8s-native first slice. This scenario's steps were ALREADY
+# written for Henry's field pattern (step-02 is `curl … deepce.sh | bash`), so
+# it is the lowest-blast-radius proof that `kubectl apply` → kubelet → entrypoint
+# → SimCore payload → tool works end to end. Posture is deliberately BASELINE:
+# a namespaced, non-privileged Deployment running as www-data (UID 33), with a
+# namespace-scoped Role granting get/list on secrets so step-04's secret/token
+# harvest has something worth harvesting. No cluster_role_rules, no host access,
+# no privilege → UNGATED (required_consent_keys() == ()), so the existing
+# `GET /download?format=k8s` keeps working with no consent prompt. Deployment,
+# not Job, so it appears in cluster inventory like a normal service and yields a
+# genuinely connected CGO→process spine. It is ALSO the compliant control that
+# POS-KSPM-003 chk-02 asserts is ADMITTED without disruption while the
+# privileged fixture workloads are refused. app_identity back-fills from
+# cgo_anchor.image_name (containerd-shim) per the S-17 two-way back-fill.
+cluster_posture:
+  workload: deployment
+  security_context:
+    run_as_user: 33                # www-data — the recon's declared identity
+    allow_privilege_escalation: false
+    capabilities_drop: ["ALL"]
+  service_account:
+    automount_token: true          # so step-04's SA-token read is non-vacuous
+    namespace_role_rules:          # namespace-scoped only — NOT a cluster grant
+      - api_groups: [""]
+        resources: ["secrets"]
+        verbs: ["get", "list"]
+
 steps:
   - id: step-01
     name: "Install enumeration dependencies"
