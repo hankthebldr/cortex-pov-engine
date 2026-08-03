@@ -11,7 +11,11 @@ name: CI
 #               detection_scanner/, tools/) from the bundled /app copy with
 #               CORTEXSIM_BASE_DIR=/app, so running in-image is the only way
 #               to reproduce the ~1551-test green run faithfully.
-#   agent     — Go 1.21+: build, vet, and `go test -race` the beacon agent.
+#   agent     — Go 1.21+: build, vet, and `go test -race` the beacon agent,
+#               PLUS a cross-compile gate for every host family the engine
+#               claims to support (linux, darwin, windows). The Windows arm is
+#               load-bearing: the beacon silently could not compile for Windows
+#               while 71 scenarios declared platforms: [windows].
 #   ui        — Node 20: npm ci + vite build + vitest run (>=305 tests).
 #   detection — detection_scanner/scripts/validate.py (0 fail) AND the
 #               export-determinism gate: regenerate every artifact and assert
@@ -88,6 +92,29 @@ jobs:
       - name: Vet
         working-directory: agent
         run: go vet ./...
+
+      # Cross-compile gate. 71 of the 162 scenarios declare platforms: [windows],
+      # yet the beacon could not compile for GOOS=windows at all (POSIX-only
+      # Setpgid / syscall.Kill in agent/executor) — so pull mode was impossible
+      # on Windows and nothing in CI ever said so. Building for every host family
+      # the engine claims to support is what keeps that honest. CGO_ENABLED=0
+      # matches scripts/build-agent-dist.sh, which is what actually ships.
+      - name: Cross-compile (windows/amd64)
+        working-directory: agent
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: go build ./... && go vet ./...
+
+      - name: Cross-compile (darwin/arm64)
+        working-directory: agent
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+          CGO_ENABLED: '0'
+        run: go build ./... && go vet ./...
+
       - name: Test (race)
         working-directory: agent
         run: go test ./... -race -count=1 -v

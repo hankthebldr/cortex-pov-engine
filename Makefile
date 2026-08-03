@@ -20,8 +20,9 @@ COMPOSE     ?= docker compose
 # in core/config.py) doesn't refuse to start with the `changeme` default.
 SECRET      ?= $(shell openssl rand -hex 32)
 
-.PHONY: help up down build agent-dist test test-backend test-agent test-ui validate \
-        validate-detection check-refs check-adapters coverage coverage-strict ci clean
+.PHONY: help up down build agent-dist test test-backend test-agent test-agent-cross \
+        test-ui validate validate-detection check-refs check-adapters coverage \
+        coverage-strict ci clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -65,8 +66,20 @@ test-backend: build ## pytest INSIDE the built prod image (CI 'backend' job)
 		sh -c "pip install --no-cache-dir pytest pytest-asyncio httpx && \
 		       pytest tests/ -v --tb=short --ignore=tests/smoke"
 
-test-agent: ## go build + vet + test -race (CI 'agent' job)
+test-agent: test-agent-cross ## go build + vet + test -race, all target platforms (CI 'agent' job)
 	cd agent && go build ./... && go vet ./... && go test ./... -race -count=1 -v
+
+# The beacon shipped for months unable to compile for Windows (POSIX-only
+# Setpgid/syscall.Kill in agent/executor) while 71 scenarios declared
+# platforms: [windows] — pull mode was impossible there and no gate noticed.
+# This target is that gate. CGO_ENABLED=0 matches scripts/build-agent-dist.sh.
+test-agent-cross: ## Cross-compile + vet the beacon for every supported host family
+	@set -e; for goos in linux darwin windows; do \
+		echo "[agent-cross] GOOS=$$goos build+vet"; \
+		( cd agent && CGO_ENABLED=0 GOOS=$$goos go build ./... \
+		           && CGO_ENABLED=0 GOOS=$$goos go vet ./... ); \
+	done
+	@echo "[agent-cross] linux darwin windows OK"
 
 test-ui: ## npm ci + build + vitest (CI 'ui' job)
 	cd ui && npm ci && npm run build && npx vitest run

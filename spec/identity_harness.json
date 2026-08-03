@@ -21,5 +21,12 @@
     "empty_or_direct_identity": "direct",
     "known_service_account": "runuser",
     "unknown_username": "runuser (best-effort; emit a WARN)"
+  },
+  "impersonation_platforms": ["linux", "darwin"],
+  "windows": {
+    "_comment": "Windows has NO unattended impersonation primitive available to the beacon: runuser/sudo/su are POSIX-only and runas requires an interactive password prompt. Every non-direct identity therefore collapses to `direct` on Windows and MUST be reported as a degradation in the run record — a step that claims to have run as `administrator` while running as the beacon account is a correctness lie a POV readout would be built on. The single exception is when the beacon process is ALREADY running as the requested principal (e.g. installed as a service under NT AUTHORITY\\SYSTEM), which is verified against the real process token, not assumed. Enforced by agent/identity/platform.go (ResolveFor) and guarded by harness_spec_test.go.",
+    "impersonation_supported": false,
+    "resolution": "direct (degraded) — unless the beacon's own account matches the requested identity, in which case it is honoured",
+    "degradation_must_be_recorded": true
   }
 }

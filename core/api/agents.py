@@ -812,13 +812,19 @@ Write-Host "[cortexsim] done — '$AgentId' should appear in the console within 
 
 # Emitted into the Windows installer when this SimCore has no windows beacon to
 # serve. It fires BEFORE enrollment so a target that cannot run the beacon never
-# creates a phantom agent row. It disappears on its own the day the executor
-# grows _windows.go build-tag variants and the dist matrix includes windows.
+# creates a phantom agent row.
+#
+# The executor now HAS _windows build-tag variants and the dist matrix includes
+# windows/amd64, so this is no longer a statement about the agent — it is a
+# statement about THIS deployment. A SimCore built without the agent-builder
+# stage, or running from a checkout with no agent-dist/, still serves nothing,
+# and the DC needs to know that is a packaging gap rather than a missing feature.
 _WINDOWS_PREFLIGHT_UNAVAILABLE = (
     "Cs-Fail 'detect' 'WINDOWS_AGENT_UNAVAILABLE' `\n"
-    "  'this SimCore serves no windows/amd64 beacon — agent/executor is POSIX-only "
-    "(syscall Setpgid/Kill) and does not compile for GOOS=windows' `\n"
-    "  'use PUSH mode for Windows targets: generate a bundle from the console and run it on the endpoint'"
+    "  'this SimCore is not serving a windows/amd64 beacon — the image was built "
+    "without the agent-builder stage, or agent-dist/ is missing' `\n"
+    "  'rebuild with make agent-dist (or docker build -f core/Dockerfile), or use PUSH "
+    "mode: generate a bundle from the console and run it on the endpoint'"
 )
 
 

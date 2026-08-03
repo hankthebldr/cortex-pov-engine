@@ -15,6 +15,12 @@ truth: ``spec/identity_harness.json`` at the repo root.
 If the spec file is missing (e.g. running from an odd CWD), the loader falls
 back to a hard-coded copy so push-bundle generation never breaks — the Go-side
 test still guards against drift.
+
+Platform note: impersonation is POSIX-only. The spec's ``impersonation_platforms``
+key names the host families on which a non-direct identity can actually be
+honoured (linux, darwin). On Windows every identity collapses to ``direct`` and
+the executing side MUST record that degradation — see :func:`impersonation_platforms`
+and the ``windows`` block of the spec.
 """
 from __future__ import annotations
 
@@ -34,6 +40,7 @@ _FALLBACK_DIRECT = ("root", "container-runtime", "direct")
 _FALLBACK_SERVICE = (
     "www-data", "postgres", "mysql", "node", "python3", "nobody", "svc-backup",
 )
+_FALLBACK_IMPERSONATION_PLATFORMS = ("linux", "darwin")
 
 
 def _spec_path() -> str:
@@ -57,6 +64,7 @@ def _load() -> dict:
         return {
             "direct_identities": list(_FALLBACK_DIRECT),
             "service_accounts": list(_FALLBACK_SERVICE),
+            "impersonation_platforms": list(_FALLBACK_IMPERSONATION_PLATFORMS),
         }
 
 
@@ -72,6 +80,25 @@ def service_accounts() -> tuple[str, ...]:
     return tuple(vals)
 
 
+def impersonation_platforms() -> tuple[str, ...]:
+    """Host families on which a non-direct identity can actually be honoured.
+
+    A platform absent from this tuple (notably ``windows``) has no unattended
+    impersonation primitive, so a step declaring a service account there runs
+    as the executing account instead. Any generator or executor targeting such
+    a platform must SURFACE that, not swallow it: a run record claiming a step
+    ran as ``www-data`` when it ran as the beacon user is a correctness lie.
+    """
+    vals = _load().get("impersonation_platforms") or list(_FALLBACK_IMPERSONATION_PLATFORMS)
+    return tuple(vals)
+
+
+def supports_impersonation(platform: str) -> bool:
+    """Whether ``platform`` (a GOOS-style name) can honour an impersonated identity."""
+    return platform.strip().lower() in impersonation_platforms()
+
+
 # Module-level convenience constants (resolved once at import).
 DIRECT_IDENTITIES = direct_identities()
 SERVICE_ACCOUNTS = service_accounts()
+IMPERSONATION_PLATFORMS = impersonation_platforms()

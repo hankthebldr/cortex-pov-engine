@@ -139,6 +139,12 @@ type BeaconClient struct {
 	regHostname     string
 	regOS           string
 	regCapabilities []string
+
+	// resolveIdentity maps a step's identity USERNAME to something this host can
+	// actually execute. Injectable so the Windows degradation path — which is the
+	// whole point of the mechanism and cannot be reached from a Linux runner — is
+	// exercised by the test suite rather than merely asserted about.
+	resolveIdentity func(string) identity.Resolution
 }
 
 // New constructs a BeaconClient with a sensible default HTTP timeout.
@@ -150,6 +156,29 @@ func New(serverURL, agentID string, interval time.Duration) *BeaconClient {
 		http: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		resolveIdentity: identity.Resolve,
+	}
+}
+
+// resolve applies the identity resolver, tolerating a zero-value BeaconClient
+// built by a test with a struct literal rather than New().
+func (c *BeaconClient) resolve(username string) identity.Resolution {
+	if c.resolveIdentity != nil {
+		return c.resolveIdentity(username)
+	}
+	return identity.Resolve(username)
+}
+
+// logIdentity emits the per-step identity diagnostics to the agent log. The
+// degradation ALSO goes into the run record via formatStepOutput — a log line on
+// the customer's jumpbox is not evidence anybody reading the POV report sees.
+func logIdentity(stepID, username string, res identity.Resolution) {
+	if res.Unknown {
+		log.Printf("[beacon] WARN unknown identity %q for step %s — mapping to runuser (best-effort)",
+			username, stepID)
+	}
+	if res.Degraded() {
+		log.Printf("[beacon] WARN identity NOT honoured for step %s: %s", stepID, res.Degradation)
 	}
 }
 
@@ -393,6 +422,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 	}
 
 	finalExitCode := 0
+	degradedSteps := 0
 
 	for i, step := range task.Steps {
 		// (a) Abort check before each step.
@@ -404,25 +434,25 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		}
 
 		username := c.resolveStepUsername(task, &step)
-		mode, user, unknown := identity.ResolveIdentity(username)
-		if unknown {
-			log.Printf("[beacon] WARN unknown identity %q for step %s — mapping to runuser (best-effort)",
-				username, step.ID)
+		idRes := c.resolve(username)
+		logIdentity(step.ID, username, idRes)
+		if idRes.Degraded() {
+			degradedSteps++
 		}
 
 		log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s",
-			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, mode)
+			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
 
 		execID := identity.ExecutionIdentity{
-			Mode:     mode,
-			Username: user,
+			Mode:     idRes.Mode,
+			Username: idRes.Username,
 			Command:  step.Command,
 		}
 
 		res, aborted, execErr := c.runStep(ctx, task.RunID, execID)
 
 		// Build the per-step output and attribute it to this step.
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, res, execErr)
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr)
 		if err := c.SendOutput(task.RunID, step.ID, stepOut); err != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
@@ -459,7 +489,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		}
 	}
 
-	summary := buildSummary(task, finalExitCode)
+	summary := buildSummary(task, finalExitCode, degradedSteps)
 	if err := c.Complete(task.RunID, finalExitCode, summary); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
 	}
@@ -497,6 +527,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		task.RunID, cgoImage, totalSteps)
 
 	finalExitCode := 0
+	degradedSteps := 0
 	for i, step := range task.Steps {
 		if state, _ := c.Control(task.RunID); state.Abort {
 			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
@@ -506,13 +537,13 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		}
 
 		username := c.resolveStepUsername(task, &step)
-		mode, user, unknown := identity.ResolveIdentity(username)
-		if unknown {
-			log.Printf("[beacon] WARN unknown identity %q for step %s — mapping to runuser (best-effort)",
-				username, step.ID)
+		idRes := c.resolve(username)
+		logIdentity(step.ID, username, idRes)
+		if idRes.Degraded() {
+			degradedSteps++
 		}
 		wrapped, wrapErr := identity.WrapCommand(identity.ExecutionIdentity{
-			Mode: mode, Username: user, Command: step.Command,
+			Mode: idRes.Mode, Username: idRes.Username, Command: step.Command,
 		})
 		if wrapErr != nil {
 			log.Printf("[beacon] wrap error step %s run_id=%s: %v", step.ID, task.RunID, wrapErr)
@@ -521,11 +552,11 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		}
 
 		log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s (chained)",
-			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, mode)
+			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
 
 		res, aborted, execErr := c.runChainedStep(sessCtx, sessCancel, session, task.RunID, wrapped)
 
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, res, execErr)
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr)
 		if sendErr := c.SendOutput(task.RunID, step.ID, stepOut); sendErr != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, sendErr)
 		}
@@ -557,7 +588,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		}
 	}
 
-	summary := buildSummary(task, finalExitCode)
+	summary := buildSummary(task, finalExitCode, degradedSteps)
 	if err := c.Complete(task.RunID, finalExitCode, summary); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
 	}
@@ -612,6 +643,7 @@ func (c *BeaconClient) runChainedStep(
 func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 	totalSteps := len(task.Steps)
 	finalExitCode := 0
+	degradedSteps := 0
 	for i, step := range task.Steps {
 		if state, _ := c.Control(task.RunID); state.Abort {
 			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
@@ -620,16 +652,16 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 			return
 		}
 		username := c.resolveStepUsername(task, &step)
-		mode, user, unknown := identity.ResolveIdentity(username)
-		if unknown {
-			log.Printf("[beacon] WARN unknown identity %q for step %s — mapping to runuser (best-effort)",
-				username, step.ID)
+		idRes := c.resolve(username)
+		logIdentity(step.ID, username, idRes)
+		if idRes.Degraded() {
+			degradedSteps++
 		}
 		log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s",
-			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, mode)
-		execID := identity.ExecutionIdentity{Mode: mode, Username: user, Command: step.Command}
+			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
+		execID := identity.ExecutionIdentity{Mode: idRes.Mode, Username: idRes.Username, Command: step.Command}
 		res, aborted, execErr := c.runStep(ctx, task.RunID, execID)
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, res, execErr)
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr)
 		if err := c.SendOutput(task.RunID, step.ID, stepOut); err != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
@@ -651,7 +683,7 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 			break
 		}
 	}
-	summary := buildSummary(task, finalExitCode)
+	summary := buildSummary(task, finalExitCode, degradedSteps)
 	if err := c.Complete(task.RunID, finalExitCode, summary); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
 	}
@@ -764,12 +796,25 @@ func (c *BeaconClient) post(path string, body interface{}) ([]byte, error) {
 	return respBody, nil
 }
 
+// identityDegradedMarker prefixes an unhonoured-identity notice. It is a stable
+// literal because it is what an operator (and any downstream parser of the run
+// record) greps for to find steps whose actor attribution cannot be trusted.
+const identityDegradedMarker = "!! IDENTITY NOT HONOURED:"
+
 // formatStepOutput renders one step's combined output with a step header so the
 // SSE/log stream shows per-step progress.
-func (c *BeaconClient) formatStepOutput(n, total int, step *Step, username string, res identity.ExecResult, execErr error) string {
+//
+// An unhonoured identity is written into this output — not just the agent log —
+// because THIS is what reaches SimCore, the Result rows and the POV report. A
+// step whose actor could not be impersonated but whose readout says otherwise
+// is the exact false-green the engine exists to eliminate.
+func (c *BeaconClient) formatStepOutput(n, total int, step *Step, username string, idRes identity.Resolution, res identity.ExecResult, execErr error) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "=== STEP %d/%d · %s · %s · identity=%s ===\n",
 		n, total, step.ID, step.MitreTechnique, username)
+	if idRes.Degraded() {
+		fmt.Fprintf(&b, "%s %s\n", identityDegradedMarker, idRes.Degradation)
+	}
 	if execErr != nil {
 		fmt.Fprintf(&b, "ERROR: %v\n", execErr)
 	}
@@ -802,10 +847,21 @@ func combineOutput(stdout, stderr string) string {
 }
 
 // buildSummary creates a human-readable completion summary for the whole task.
-func buildSummary(task *Task, exitCode int) string {
+//
+// degradedSteps is carried into the summary rather than left in the per-step
+// output alone: the summary is the one line a DC reads on the run card, and a
+// run where N steps could not honour their declared identity must not present
+// as an unqualified SUCCESS.
+func buildSummary(task *Task, exitCode, degradedSteps int) string {
 	status := "SUCCESS"
 	if exitCode != 0 {
 		status = fmt.Sprintf("FAILED (exit %d)", exitCode)
 	}
-	return fmt.Sprintf("%s | scenario=%s steps=%d", status, task.ScenarioID, len(task.Steps))
+	summary := fmt.Sprintf("%s | scenario=%s steps=%d", status, task.ScenarioID, len(task.Steps))
+	if degradedSteps > 0 {
+		summary += fmt.Sprintf(" | IDENTITY DEGRADED: %d step(s) ran as the beacon account "+
+			"instead of their declared identity — actor attribution is UNVALIDATED (see step output)",
+			degradedSteps)
+	}
+	return summary
 }

@@ -14,9 +14,9 @@
 # runs on any glibc/musl host of the right arch — no runtime deps to smuggle
 # past change control.
 #
-# windows/amd64 is deliberately ABSENT: agent/executor is POSIX-only (Setpgid,
-# syscall.Kill) and does not compile for GOOS=windows. Serving a binary we
-# cannot build would be worse than the honest 501 the install endpoint returns.
+# windows/amd64 is INCLUDED as of the build-tag split: agent/executor now has
+# _unix / _windows variants, so GOOS=windows builds and vets clean and the
+# Windows beacon is a real artifact rather than an honest 501.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -28,6 +28,7 @@ TARGETS=(
   "linux/arm64"
   "darwin/amd64"
   "darwin/arm64"
+  "windows/amd64"
 )
 
 if ! command -v go >/dev/null 2>&1; then
@@ -47,7 +48,11 @@ echo "[agent-dist] out: $OUT_DIR"
 for target in "${TARGETS[@]}"; do
   goos="${target%%/*}"
   goarch="${target##*/}"
-  out="$OUT_DIR/cortexsim-agent-${goos}-${goarch}"
+  # Windows refuses to execute an extensionless binary, and the installer's
+  # download path keys on the served filename — so the suffix is load-bearing,
+  # not cosmetic.
+  ext=""; [ "$goos" = "windows" ] && ext=".exe"
+  out="$OUT_DIR/cortexsim-agent-${goos}-${goarch}${ext}"
   # -trimpath keeps the build reproducible across checkout locations; -s -w drops
   # the symbol table so the artefact a DC copies onto a customer host is ~5 MB.
   ( cd "$AGENT_DIR" && CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \

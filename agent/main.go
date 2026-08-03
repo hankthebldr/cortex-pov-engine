@@ -78,7 +78,7 @@ func main() {
 		hostname = *idFlag
 	}
 
-	capabilities := []string{"shell", "identity-harness"}
+	capabilities := agentCapabilities(runtime.GOOS)
 
 	log.Printf("registering — hostname=%s os=%s capabilities=%v", hostname, runtime.GOOS, capabilities)
 

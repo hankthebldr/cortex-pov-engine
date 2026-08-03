@@ -26,7 +26,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 )
 
 // ChainSession is a persistent anchor shell that runs steps as its children.
@@ -47,18 +46,14 @@ type ChainSession struct {
 
 // NewChainSession starts the anchor shell. cgoImage, when non-empty, is used as
 // the anchor's argv[0] so the process's command line reflects the intended CGO
-// image (e.g. "nginx"); the executed binary is still /bin/sh. The session runs
-// in its own process group so a ctx cancel (operator abort / shutdown) tears the
-// whole chain down at once.
+// image (e.g. "nginx"); the executed binary is still the host shell (/bin/sh on
+// POSIX, powershell.exe on Windows). The session is started so its whole
+// descendant tree is terminable, so a ctx cancel (operator abort / shutdown)
+// tears the entire chain down at once.
 func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error) {
 	sctx, cancel := context.WithCancel(ctx)
 
-	cmd := exec.Command("sh")
-	if strings.TrimSpace(cgoImage) != "" {
-		// Rewrite argv[0] only (Args[0]); the binary remains sh.
-		cmd.Args[0] = cgoImage
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd := newAnchorCmd(strings.TrimSpace(cgoImage))
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -96,14 +91,13 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 	go s.scan(stdoutPipe, s.outCh)
 	go s.scan(stderrPipe, s.errCh)
 
-	// Watcher: on ctx cancel, SIGTERM→SIGKILL the whole anchor group so an
-	// in-flight step (and the idle anchor) die together — same contract as
-	// RunCommandCtx.
+	// Watcher: on ctx cancel, tear down the whole anchor tree so an in-flight
+	// step (and the idle anchor) die together — same contract as RunCommandCtx.
 	go func() {
 		<-sctx.Done()
 		s.cancelled.Store(true)
 		if s.cmd.Process != nil {
-			killProcessGroup(s.cmd.Process.Pid)
+			killProcessTree(s.cmd.Process.Pid)
 		}
 	}()
 
@@ -115,7 +109,10 @@ func (s *ChainSession) scan(r io.Reader, ch chan<- string) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
-		ch <- sc.Text()
+		// trimEOL: PowerShell terminates lines with CRLF and Scanner only strips
+		// the \n, so without this the stderr sentinel (an exact match on the bare
+		// marker) never fires on Windows and every step would block.
+		ch <- trimEOL(sc.Text())
 	}
 	close(ch)
 }
@@ -131,17 +128,11 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 		return "", "", 130, context.Canceled
 	}
 
-	// Run the step in a SUBSHELL `( ... )` — a real forked child of the anchor
-	// (so the step is a descendant of the one CGO, a connected causality tree)
-	// that ALSO isolates `exit`/`set -e` from the anchor and gives no cross-step
-	// state, exactly matching the default per-step `sh -c` semantics. The
-	// sentinel printfs run in the ANCHOR (outside the parens) so they always
-	// fire even if the subshell called `exit`. $? is captured immediately after
-	// the subshell so it reflects the step, not the printf.
-	script := "(\n" + wrappedCmd + "\n)\n__cs_rc=$?" +
-		fmt.Sprintf("; printf '\\n%s %%d\\n' \"$__cs_rc\"", s.marker) + // stdout: marker + rc
-		fmt.Sprintf("; printf '\\n%s\\n' 1>&2", s.marker) + // stderr: bare marker
-		"\n"
+	// The step runs in a real CHILD PROCESS of the anchor (a POSIX subshell, or a
+	// nested powershell.exe on Windows) so it is a descendant of the one CGO —
+	// a connected causality tree — while the sentinels are emitted by the ANCHOR
+	// itself so they still fire if the step called `exit`. See script.go.
+	script := chainStepScript(s.marker, wrappedCmd)
 	if _, werr := io.WriteString(s.stdin, script); werr != nil {
 		return "", "", -1, fmt.Errorf("chain write: %w", werr)
 	}
@@ -162,8 +153,13 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 				if !ok {
 					return
 				}
-				if strings.HasPrefix(line, s.marker+" ") {
-					if v, e := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, s.marker+" "))); e == nil {
+				// Sentinel matching is done on an ANSI-stripped copy: a PowerShell
+				// anchor's prompt loop glues terminal control sequences onto the
+				// following line, and an unmatched sentinel hangs the step forever.
+				// The line stored in the body below is the RAW one — a TTP's output
+				// is evidence and is kept byte-for-byte.
+				if clean := stripANSI(line); strings.HasPrefix(clean, s.marker+" ") {
+					if v, e := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(clean, s.marker+" "))); e == nil {
 						rc = v
 					} else {
 						rcErr = e
@@ -188,7 +184,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 				if !ok {
 					return
 				}
-				if line == s.marker {
+				if stripANSI(line) == s.marker {
 					return
 				}
 				if errB.Len() > 0 {
@@ -217,7 +213,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 func (s *ChainSession) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
-		_, _ = io.WriteString(s.stdin, "exit\n")
+		_, _ = io.WriteString(s.stdin, anchorExitScript)
 		_ = s.stdin.Close()
 		err = s.cmd.Wait()
 		s.cancel()
