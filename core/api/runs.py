@@ -145,9 +145,23 @@ class LaunchRequest(BaseModel):
     mode: str  # "pull" | "push"
     target_agent_id: Optional[str] = None
     identity: Optional[str] = None
-    # Launch-time consent for gated tool adapters. Keys: simulation_authorized
-    # (dual-use-lab-only) and c2_authorized (c2-framework). The orchestrator
-    # refuses to create a Run for a gated adapter without the matching consent.
+    # Launch-time consent. Two families, checked by the ONE launch gate
+    # (engine.orchestrator._check_launch_consent):
+    #
+    #   tool adapters   simulation_authorized (dual-use-lab-only)
+    #                   c2_authorized         (c2-framework)
+    #   cluster posture cluster_privilege_authorized (cluster-scoped/wildcard RBAC)
+    #                   node_access_authorized       (privileged · hostPID ·
+    #                                                 hostNetwork · hostPath ·
+    #                                                 hostPort), push mode only,
+    #                                                 and additionally requires
+    #                                                 CORTEXSIM_ALLOW_PRIVILEGED_K8S
+    #                                                 on the deployment
+    #
+    # The orchestrator refuses to create a Run without the matching consent.
+    # A launch does NOT authorise the manifest itself — generating that is
+    # POST /api/scenarios/{id}/bundle, which gates independently and also
+    # demands authorized_by. See docs/reference/k8s-delivery.md.
     consent: Optional[dict[str, bool]] = None
 
 

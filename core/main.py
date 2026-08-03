@@ -454,6 +454,11 @@ from api.uctc import router as uctc_router              # noqa: E402
 # lazily on first access, so a deployment with no assertions/ directory boots
 # exactly as it did before.
 from api.assertions import router as assertions_router  # noqa: E402
+# K8s payload serving — the pod-facing half of the container delivery mode.
+# For a cloud-native target the DEPLOYMENT is the agent: no beacon, no binary on
+# a customer host. The init container fetches and sha256-verifies its payload
+# from these endpoints. See docs/reference/k8s-delivery.md §5.
+from api.payloads import router as k8s_payloads_router  # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -482,6 +487,7 @@ app.include_router(causality_router, prefix="/api")
 app.include_router(pov_router, prefix="/api")
 app.include_router(uctc_router, prefix="/api")
 app.include_router(assertions_router, prefix="/api")
+app.include_router(k8s_payloads_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

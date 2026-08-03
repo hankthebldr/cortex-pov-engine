@@ -624,6 +624,66 @@ PLT_NOT_BOUND: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# POS assertion pack — assertions/pos/k8s/*.yml -> index binding.
+#
+# Same discipline as PLT_ASSERTION_CROSSWALK, and the same two decisions: an
+# assertion is AUTHORED evidence, not PROVEN, and it is reported on its own line
+# and NEVER folded into the `index TCs evidenced` number (which walks Scenario
+# rows only). Only TC-KSPM-03 is a NET-NEW binding — TC-CSPM-02 is already
+# authored by POS-CSPM-001 against the AWS cspm module, so POS-CSPM-004 adds
+# breadth (a Kubernetes resource class) and moves the coverage number by ZERO.
+# Reporting that split is the whole point; the K8s pass has repeatedly chosen an
+# honest smaller number over an inflated one.
+#
+# assertion_id -> (tc_refs, headline mechanism, what it deliberately does NOT prove)
+# ---------------------------------------------------------------------------
+
+POS_ASSERTION_CROSSWALK: dict[str, tuple[list[str], str, str]] = {
+    "POS-KSPM-003": (["TC-KSPM-03"],
+        "Admission enforcement as a REFUSE-is-pass check: kubernetes_audit_logs "
+        "403 creates in cortexsim- namespaces are the passing evidence (chk-01), "
+        "and the compliant SIM-CDR-001 control being ADMITTED (chk-02) stops a "
+        "block-everything controller scoring green. The fixture is the GENERATED "
+        "manifests of the privileged CDR scenarios (SIM-CDR-003/-012), not a "
+        "hand-written parallel set that could drift.",
+        "Attribution to Cortex Cloud's admission controller specifically (PSA "
+        "produces an identical 403 shape; the namespaces opt out of PSA so the "
+        "denial is provably a cluster-scoped webhook, but Cortex-vs-Kyverno needs "
+        "the webhook name confirmed), the sanctioned-exception audit clause (a "
+        "write), and enforcement latency."),
+    "POS-CSPM-004": (["TC-CSPM-02"],
+        "In-cluster arm of the planted-misconfiguration recall: the three gated "
+        "workloads (SIM-CDR-003/-004/-012) surface in cortex_cloud_posture, "
+        "joined on OUR cortexsim.io/posture-finding label, never the product's "
+        "finding vocabulary.",
+        "COVERAGE — TC-CSPM-02 is already authored by POS-CSPM-001, so this is "
+        "BREADTH not coverage and moves the number by zero. Also: framework "
+        "attribution, severity, remediation text, and false positives (recall "
+        "only)."),
+}
+
+# POS index rows examined during the K8s pass and NOT bound, with the reason —
+# the honest other half of the coverage number (see index-gaps §4a / §2e of the
+# K8s content triage).
+POS_NOT_BOUND: dict[str, str] = {
+    "TC-KSPM-01": "asset discovery + deployment→replicaset→pod→container lineage "
+                  "names Cortex Cloud Inventory (/api/v1/inventory) as its source — "
+                  "the REST-probe refusal, not a fixture gap. A Deployment fixture "
+                  "makes its lineage claim checkable IF a REST probe is ever built.",
+    "TC-KSPM-02": "CIS Kubernetes Benchmark control-id attribution: the "
+                  "control-id FIELD name on cortex_cloud_posture is unknown on top "
+                  "of the dataset name, so authoring it now yields a permanent "
+                  "pending. Ranked below the others until confirmed on a live tenant.",
+    "TC-CDR-05": "agentless workload protection is a two-population comparison and "
+                 "both populations land in the same dataset — the check would "
+                 "measure one thing while claiming two.",
+    "TC-CIEM-01": "net-effective permissions names IAM/resource-policy/SCP/boundary "
+                  "constructs by name; Kubernetes RBAC is a different permission "
+                  "algebra and does not make the AWS-shaped row reachable.",
+}
+
+
 # Proposed v2.3 test cases for the NET-NEW resolutions, grouped by the UC that
 # should carry them. UC-AEPS already exists (correct SKU for agentic endpoint);
 # UC-BROWSER and UC-AIACC are proposed net-new use cases.
@@ -895,6 +955,35 @@ def main() -> int:
               f"-> {len(plt_bound)}/{plt_total} PLT rows AUTHORED "
               f"| 0/{plt_total} PROVEN (no tenant run recorded) "
               f"| {len(PLT_NOT_BOUND)} documented non-bindings")
+
+        # The K8s POS pack, on its own line for the same reason. Only NET-NEW POS
+        # rows (ones no Scenario and no other assertion already reached) are the
+        # honest coverage delta; a row already authored elsewhere is breadth, not
+        # coverage, and is called out as such.
+        pos_total = sum(1 for v in spec.values() if v["validation_class"] == "POS")
+        pos_bound = {r for refs, _, _ in POS_ASSERTION_CROSSWALK.values() for r in refs}
+        bad_pos = sorted(r for r in pos_bound if r not in tc)
+        wrong_pos = sorted(
+            r for r in pos_bound
+            if spec.get(r, {}).get("validation_class") not in ("", "POS")
+        )
+        if bad_pos:
+            print(f"ERROR: POS assertion crosswalk references non-existent test "
+                  f"cases: {bad_pos}", file=sys.stderr)
+            return 1
+        if wrong_pos:
+            print(f"ERROR: POS assertion crosswalk binds non-POS rows: "
+                  f"{wrong_pos}", file=sys.stderr)
+            return 1
+        # A POS row is net-new only if no scenario in CROSSWALK already evidences
+        # it; TC-CSPM-02 is evidenced by SIM-CSPM-001, so it is breadth here.
+        pos_net_new = sorted(pos_bound - evidenced)
+        pos_breadth = sorted(pos_bound & evidenced)
+        print(f"POS assertions (K8s pack): {len(POS_ASSERTION_CROSSWALK)} artifact(s) "
+              f"-> {len(pos_bound)}/{pos_total} POS rows AUTHORED "
+              f"| 0/{pos_total} PROVEN (no tenant run recorded) "
+              f"| net-new {pos_net_new} | breadth-not-coverage {pos_breadth} "
+              f"| {len(POS_NOT_BOUND)} documented non-bindings")
 
     if args.emit:
         cw = os.path.join(OUT, "crosswalk-v2.2.csv")

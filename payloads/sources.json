@@ -1,0 +1,44 @@
+{
+  "$comment": [
+    "Declared tool artifacts scripts/build-payloads.sh stages onto the shelf that",
+    "GET /api/k8s/payload/{name} serves. A scenario asks for one by name in",
+    "cluster_posture.payloads; a name declared there but missing from the shelf",
+    "makes GET /api/k8s/bootstrap/{id} refuse with PAYLOAD_NOT_STAGED rather than",
+    "let a pod run the scenario without its tooling.",
+    "",
+    "sha256 is a PIN. When set, a download whose digest differs fails the build —",
+    "a build must never bless a changed upstream. Leave it null to have the",
+    "builder print the computed digest for you to paste back in; the shelf then",
+    "records pinned:false and the inventory endpoint reports it.",
+    "",
+    "Both entries below are deliberately left UNPINNED because both URLs are",
+    "moving targets (a branch tip and a 'latest' release). Pinning them would",
+    "guarantee a PAYLOAD_PIN_MISMATCH the next time upstream ships. For an",
+    "engagement that needs reproducibility, repoint the url at a release TAG and",
+    "paste the digest the builder prints into sha256 — then the build refuses a",
+    "changed artifact instead of quietly staging it.",
+    "",
+    "These are third-party artifacts under their own licences. They are staged,",
+    "not vendored: nothing here is committed (see .gitignore) and both source_url",
+    "and license travel with the artifact into MANIFEST.json, the inventory",
+    "endpoint and the manifest banner."
+  ],
+  "payloads": [
+    {
+      "name": "deepce.sh",
+      "url": "https://raw.githubusercontent.com/stealthcopter/deepce/main/deepce.sh",
+      "sha256": null,
+      "license": "GPL-3.0",
+      "adapter_id": "TOOL-DEEPCE",
+      "used_by": "SIM-CDR-001 container enumeration"
+    },
+    {
+      "name": "linpeas.sh",
+      "url": "https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh",
+      "sha256": null,
+      "license": "MIT",
+      "adapter_id": "TOOL-LINPEAS",
+      "used_by": "SIM-CDR-001 / SIM-CDR-011 in-container privilege enumeration"
+    }
+  ]
+}
