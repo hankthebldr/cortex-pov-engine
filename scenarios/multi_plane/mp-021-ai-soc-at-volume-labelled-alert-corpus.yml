@@ -1,0 +1,399 @@
+scenario_id: SIM-MP-021
+name: "AI SOC at Volume — 800-Alert Labelled Corpus Measures Grouping Collapse, Triage Precision/Recall and Disposition Latency"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - ABIOC
+  - XQL
+  - Analytics
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# Primary is TC-AGTX-03 — "AI-driven triage auto-classifies, prioritizes and
+# enriches incidents using contextual understanding rather than static rules",
+# scored at 90% against a diverse submitted alert set. That is EXACTLY what a
+# labelled corpus measures, and it is the only unevidenced index row this
+# scenario can claim honestly rather than aspirationally.
+#
+# Deliberately NOT bound: TC-AGTX-06. Its index row demands forensics and
+# containment "across multi-vendor EDR environments running XDR, CrowdStrike
+# and Defender". CortexSim cannot emit CrowdStrike or Defender telemetry, so
+# binding it would claim credit for a leg the engine physically cannot run.
+uc_ref: UCS-AGTX-02
+tc_ref: TC-AGTX-03
+tc_refs:
+  - TC-AGTX-03
+  - TC-IR-01
+  - TC-IR-02
+  - TC-AES-08
+pov_scenario_id: POV-SC-006
+uc_name: "Agentic Automation (AgentiX)"
+tc_name: "Validate AgentiX AI-driven triage auto-classifies, prioritizes, and enriches incidents using contextual understanding rather than static rules"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# The malicious arc follows the index's own POV-SC-006 payload shape:
+# T1566.002 spearphishing link -> T1059.001 encoded PowerShell -> T1021.001
+# RDP/SMB lateral -> T1078.004 cloud administrative assumption. The lead tactic
+# is Initial Access because the phished recipient's mail client is the CGO that
+# owns the entire chain — that ownership is what grouping has to collapse on.
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1566.002"
+mitre_technique_name: "Phishing: Spearphishing Link"
+additional_techniques:
+  - technique: "T1059.001"
+    name: "Command and Scripting Interpreter: PowerShell"
+  - technique: "T1021.001"
+    name: "Remote Services: Remote Desktop Protocol"
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1078"
+    name: "Valid Accounts"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — AI, Automation and Attacks: Unpacking the 2026 Global Incident Response Report"
+threat_report_url: "https://unit42.paloaltonetworks.com/ai-incident-response-report/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - svc-backup
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# F7 AI Triage & Summarization, terminating on an F5-shaped measurement. The
+# KPI is classification accuracy against an AUTHOR-TIME ground-truth label
+# column carried on every emitted record — precision and recall are computed,
+# not asserted, which is the whole reason this scenario exists alongside
+# SIM-MP-015 (which proves the same thesis with three decoys).
+validation_methodology: "Labelled-Corpus Triage Discrimination (computed confusion matrix)"
+methodology_family: "F7"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The corpus is emitted at volume with three deliberately distinct labelled
+  populations, and FOUR numbers are computed against the label column:
+
+    1. GROUPING — the four malicious-labelled stages (phish click -> encoded
+       PowerShell -> SMB/RDP fan-out -> cloud admin assumption) collapse into
+       ONE incident attributed to one normalized principal, and that incident
+       ranks above every benign-labelled alert in the run.
+    2. PRECISION — no benign-labelled alert appears inside the malicious
+       incident, and the hard-positive automation deviation raises its OWN
+       incident rather than being absorbed into the malicious one. A merged
+       hard positive is a grouping-precision failure and is reported as such,
+       separately from a missed alert.
+    3. RECALL — the recall miss list (malicious- or hard-positive-labelled
+       alerts that never joined any incident) is empty.
+    4. LATENCY — email-alert disposition latency is measured on the mail
+       platforms the engine actually ingests.
+
+  Classification accuracy against the truth column must reach >= 90%. Because
+  every alert carries its label before the platform ever sees it, each of these
+  four can go the wrong way independently, and each failure names a different
+  remediation. A collapse ratio on its own is NOT a pass: it is gameable by
+  suppressing true positives, which is exactly what the recall miss list and
+  the hard positive exist to catch.
+moat_tier: "MOAT"
+
+# ── F2-Style Stitch Fields ──────────────────────────────────────────────────
+# The malicious arc joins on the normalized principal across the email,
+# endpoint, network and identity planes. The correlation window is deliberately
+# wide (2h) because the point is discrimination under sustained alert volume,
+# not tight-window stitching — SIM-MP-006 already proves the tight case.
+correlation_window_seconds: 7200
+required_planes_in_incident:
+  - EMAIL
+  - EDR
+  - ITDR
+stitching_key: normalized_user
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The phished recipient's mail client OWNS the malicious chain: outlook.exe
+# spawns the Office document, which spawns the encoded PowerShell, which drives
+# the lateral fan-out and the cloud assumption. Anchoring here (rather than on
+# the synthetic beacon) is what makes the grouping claim meaningful — grouping
+# is only impressive if there is a real causal spine to collapse onto.
+# The hard positive and the benign floor deliberately share NEITHER this CGO
+# nor its principal, so a wrongful merge is detectable rather than invisible.
+cgo_anchor:
+  image_name: "outlook.exe"
+  primary_username: "jdoe"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# SAFE-MODE throughout: no real phishing, PowerShell, lateral movement or cloud
+# authentication is performed. Every signal is a labelled marker record.
+#
+# step-01 is the root AND publishes the ground-truth manifest. The two are
+# combined deliberately: the manifest must exist before any record it labels,
+# and a declared causality spine allows exactly one root step, so the manifest
+# cannot be a second root without breaking the connected chain.
+steps:
+  - id: step-01
+    name: "Publish the run's labelled ground-truth manifest, then fire malicious signal 1/4 — spearphishing credential link delivered and clicked"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
+      P="${COMPROMISED_PRINCIPAL:-jdoe@corp.local}"
+      # Ground truth, fixed at authoring time and stamped BEFORE the corpus it
+      # labels. Without this the confusion matrix has nothing to join against
+      # and the whole scenario degrades into an anecdote.
+      {
+        printf '{"run_tag":"%s","signal_class":"phish_link_click","cortexsim_label":"malicious","principal":"%s"}\n' "$RUN_TAG" "$P"
+        printf '{"run_tag":"%s","signal_class":"office_encoded_powershell","cortexsim_label":"malicious","principal":"%s"}\n' "$RUN_TAG" "$P"
+        printf '{"run_tag":"%s","signal_class":"smb_rdp_fanout","cortexsim_label":"malicious","principal":"%s"}\n' "$RUN_TAG" "$P"
+        printf '{"run_tag":"%s","signal_class":"cloud_admin_assume","cortexsim_label":"malicious","principal":"%s"}\n' "$RUN_TAG" "$P"
+        printf '{"run_tag":"%s","signal_class":"backup_envelope_deviation","cortexsim_label":"hard_positive","principal":"svc-backup@corp.local"}\n' "$RUN_TAG"
+        printf '{"run_tag":"%s","signal_class":"authenticated_scanner_sweep","cortexsim_label":"benign","principal":"svc-scanner@corp.local"}\n' "$RUN_TAG"
+        printf '{"run_tag":"%s","signal_class":"sanctioned_admin_module_load","cortexsim_label":"benign","principal":"admin-sanctioned@corp.local"}\n' "$RUN_TAG"
+        printf '{"run_tag":"%s","signal_class":"rmm_patch_fanout","cortexsim_label":"benign","principal":"svc-rmm@corp.local"}\n' "$RUN_TAG"
+        printf '{"run_tag":"%s","signal_class":"in_window_backup","cortexsim_label":"benign","principal":"svc-backup@corp.local"}\n' "$RUN_TAG"
+      } > "$D/manifest.ndjson"
+      printf '{"run_tag":"%s","cortexsim_label":"malicious","event":"mail_click","recipient":"%s","sender":"invoices@vendor-portal-secure.example","url_host":"vendor-portal-secure.example","threat_type":"url","click_permitted":true}\n' "$RUN_TAG" "$P" > "$D/phish-click.json"
+      echo "cortexsim-mp021-manifest-published rows=$(wc -l < "$D/manifest.ndjson")"
+      echo cortexsim-mp021-phish-link-click-emitted
+    identity: www-data
+    mitre_technique: "T1566.002"
+    # ROOT of the malicious chain — no causality block; links from the
+    # outlook.exe CGO. Mail delivery/click is OS-agnostic at the identity level.
+    platforms: ["windows", "linux", "macos"]
+    expected_detections:
+      - plane: EMAIL
+        type: XQL
+        description: "Pre-flight — the ground-truth manifest landed and is joinable: every corpus record carries its run tag and its author-time label (malicious / hard_positive / benign). If this returns nothing, every downstream precision and recall number is unprovable and must resolve pending, not pass."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "xql-labelled-alert-corpus-ground-truth-manifest-landed-and-is-joinable"
+      - plane: EMAIL
+        type: BIOC
+        description: "A credential-harvest phishing link is delivered to a corporate recipient and clicked — the initial-access stage of the malicious arc, anchored to the recipient so every downstream stage shares one normalized principal."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "bioc-credential-harvest-phishing-link-delivered-and-clicked-by-a-corporate-recipient"
+
+  - id: step-02
+    name: "Malicious signal 2/4 — Office parent spawns an encoded PowerShell downloader"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
+      P="${COMPROMISED_PRINCIPAL:-jdoe@corp.local}"
+      # SAFE-MODE: no PowerShell is executed. The signal that matters is the
+      # parent-child LINEAGE plus the encoded command line, not the binary.
+      printf '{"run_tag":"%s","cortexsim_label":"malicious","event":"process","parent":"winword.exe","child":"powershell.exe","cmdline":"powershell.exe -nop -w hidden -enc SQBFAFgA","user":"%s"}\n' "$RUN_TAG" "$P" > "$D/ps-chain.json"
+      echo cortexsim-mp021-office-encoded-powershell-emitted
+    identity: www-data
+    mitre_technique: "T1059.001"
+    # Office -> PowerShell is a Windows-native lineage; the endpoint process is
+    # owned by the outlook.exe CGO via a real parent->child exec.
+    platforms: ["windows"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command \"Write-Output 'cortexsim-mp021 SAFE-MODE: winword.exe -> powershell.exe -enc lineage marker (no payload executed)'\""
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "An Office parent spawns an encoded/hidden PowerShell downloader under the phished principal. The BIOC keys on the lineage and the encoded command line, deliberately NOT on the PowerShell binary — firing on PowerShell itself is precisely the false positive the sanctioned-admin-module-load decoy is testing for."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "bioc-office-parent-spawning-an-encoded-powershell-downloader"
+
+  - id: step-03
+    name: "Malicious signal 3/4 — SMB and RDP lateral fan-out from the phished principal"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
+      P="${COMPROMISED_PRINCIPAL:-jdoe@corp.local}"
+      # SAFE-MODE: RFC5737 documentation addresses, no sockets opened.
+      for TARGET in 198.51.100.31 198.51.100.32 198.51.100.33; do
+        printf '{"run_tag":"%s","cortexsim_label":"malicious","event":"netconn","remote_ip":"%s","remote_port":445,"user":"%s"}\n' "$RUN_TAG" "$TARGET" "$P"
+        printf '{"run_tag":"%s","cortexsim_label":"malicious","event":"netconn","remote_ip":"%s","remote_port":3389,"user":"%s"}\n' "$RUN_TAG" "$TARGET" "$P"
+      done > "$D/lateral.ndjson"
+      echo cortexsim-mp021-smb-rdp-fanout-emitted
+    identity: www-data
+    mitre_technique: "T1021.001"
+    platforms: ["windows"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command \"'198.51.100.31','198.51.100.32','198.51.100.33' | ForEach-Object { Write-Output ('cortexsim-mp021 SAFE-MODE: SMB/RDP fan-out marker for ' + $_) }\""
+    causality:
+      parent_step: step-02
+      pivot: network_session
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "Validation — SMB (445) and RDP (3389) fan-out from the phished principal reaching multiple internal hosts inside the run window, corroborating the lateral stage of the malicious arc."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "xql-lateral-smb-and-rdp-fan-out-from-the-phished-principal"
+
+  - id: step-04
+    name: "Malicious signal 4/4 — valid-account cloud administrative role assumption (the elevation the AI must rank #1)"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
+      P="${COMPROMISED_PRINCIPAL:-jdoe@corp.local}"
+      printf '{"run_tag":"%s","cortexsim_label":"malicious","event":"cloud_assume","principal":"%s","role":"GlobalAdministrator","source_ip":"203.0.113.10","mfa":"satisfied_by_token"}\n' "$RUN_TAG" "$P" > "$D/cloud-assume.json"
+      echo cortexsim-mp021-cloud-admin-assumption-emitted
+    identity: root
+    mitre_technique: "T1078.004"
+    platforms: ["windows", "linux"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "TRUE-POSITIVE ELEVATION, measured under load. Auto-tuned behavioral ML fuses four stages that arrived amid several hundred near-miss benign alerts into one causally connected chain on a shared causality_id and normalized principal, and ranks the resulting incident above every benign-labelled alert in the corpus. The claim is not that any single stage looked loud — none does — but that the chain is elevated because it is connected."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "abioc-multi-stage-intrusion-chain-elevated-above-a-high-volume-benign-alert-floor"
+
+  - id: step-05
+    name: "HARD POSITIVE — backup automation identity genuinely deviates from its own learned job envelope"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
+      # A real deviation by a real automation account: a different share set,
+      # outside the learned window, followed by egress. It shares NO principal,
+      # host or CGO with the malicious arc — that disjointness is the test.
+      for SHARE in /mnt/finance-archive /mnt/hr-records /mnt/legal-hold /mnt/board-minutes; do
+        printf '{"run_tag":"%s","cortexsim_label":"hard_positive","event":"file_read","path":"%s","user":"svc-backup","hour":3}\n' "$RUN_TAG" "$SHARE"
+      done > "$D/hard-positive.ndjson"
+      echo cortexsim-mp021-hard-positive-envelope-deviation-emitted
+    identity: svc-backup
+    mitre_technique: "T1078"
+    # Deliberately temporal, not process_lineage: this alert co-occurs in the
+    # window but is causally UNRELATED to the malicious chain. A platform that
+    # merges it into the malicious incident has failed grouping precision, and
+    # a platform that blanket-suppresses automation noise has missed it. Both
+    # failures are separately visible in the confusion matrix.
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-01
+      pivot: temporal
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The hard positive — the item that separates a tuned platform from a loud one. An automation identity whose learned envelope is a fixed nightly window over a fixed share set reads a different share set outside that window. It must be caught (or it is a recall failure) AND it must raise its own incident rather than being absorbed into the malicious one (or it is a grouping-precision failure)."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "abioc-automation-identity-deviating-from-its-own-learned-job-envelope-under-corpus-load"
+
+  - id: step-06
+    name: "BENIGN NEAR-MISS FLOOR at volume — authenticated scanner sweep, sanctioned admin module load, RMM patch fan-out, in-window backup"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp021; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP021}"
+      SIZE="${CORTEXSIM_CORPUS_SIZE:-800}"
+      # Deliberately NEAR-MISS, not obvious noise. Each of these four is a shape
+      # a naive rule set alerts on; obvious benign traffic would inflate
+      # precision for free and prove nothing. Volume is produced by the EAL
+      # analytics log-streamer (iterations / burst_count over batched NDJSON) —
+      # this step emits the class exemplars and the target count.
+      for CLASS in authenticated_scanner_sweep sanctioned_admin_module_load rmm_patch_fanout in_window_backup; do
+        printf '{"run_tag":"%s","cortexsim_label":"benign","signal_class":"%s","target_volume":%s}\n' "$RUN_TAG" "$CLASS" "$SIZE"
+      done > "$D/benign-floor.ndjson"
+      echo "cortexsim-mp021-benign-floor-emitted classes=4 target=$SIZE"
+    identity: svc-backup
+    mitre_technique: "T1078"
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-01
+      pivot: temporal
+    expected_detections:
+      - plane: ANALYTICS
+        type: Analytics
+        description: "FALSE-POSITIVE SUPPRESSION evidence — every benign-labelled near-miss alert stays a singleton (<= 1 alert per incident) and below the escalation floor. A benign-labelled alert found inside the malicious incident is a precision failure and is reported as such."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "xql-benign-near-miss-alerts-remain-singletons-below-the-escalation-floor"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Volume guard — the benign floor actually reached the corpus target across all four near-miss classes. Without this the discrimination claim is untested: three decoys and eight hundred are not the same experiment, and a precision number measured against a thin floor is not transferable to the customer's Tuesday."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "xql-near-miss-benign-alert-floor-reached-the-corpus-volume-target"
+
+  - id: step-07
+    name: "TERMINAL MEASUREMENT — collapse ratio, confusion matrix against the label column, recall miss list, email disposition latency"
+    command: |
+      set -u
+      echo '[MP-021] Terminal measurement — waiting for grouping and AI triage to converge'
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-180}"
+      echo '[*] CR-MP-0021 asserts ONE incident for the four malicious-labelled stages, ranked above every benign-labelled alert'
+      echo '[*] Precision: no benign-labelled alert inside the malicious incident; hard positive on its OWN incident'
+      echo '[*] Recall: the recall miss list (malicious/hard_positive alerts that never grouped) is empty'
+      echo '[*] Collapse ratio and classification accuracy are COMPUTED against the author-time label column'
+      echo '[*] Failure modes, each separately reportable: benign merged (precision) | malicious ungrouped (recall) | hard positive absorbed (grouping precision) | collapse ratio below bar (grouping)'
+      echo cortexsim-mp021-terminal-measurement-complete
+    identity: root
+    mitre_technique: "T1078.004"
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Terminal — CR-MP-0021 asserts a MEASUREMENT, not merely a merge: one incident for the malicious arc ranked above every benign-labelled alert, the hard positive on its own incident, the benign floor singleton, and precision/recall computed against the truth column."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "CR-MP-0021"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Grouping KPI — the collapse ratio across the whole labelled corpus (1 - incidents/raw_alerts). Reported alongside recall on purpose: a collapse ratio on its own is gameable by suppressing true positives."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "xql-alert-grouping-collapse-ratio-across-the-labelled-corpus"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Accuracy KPI — the confusion matrix joining the platform's severity verdict against the author-time truth column, so precision and recall are both computable rather than asserted."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "xql-triage-classification-confusion-matrix-against-the-ground-truth-label"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Recall miss list — malicious- or hard-positive-labelled alerts that never joined any incident. A non-empty result is a recall failure and must be reported as one; it is the number a collapse ratio hides."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "xql-malicious-labelled-alerts-that-never-joined-an-incident-the-recall-miss-list"
+      - plane: EMAIL
+        type: XQL
+        description: "Disposition latency on the mail platforms the engine actually ingests (Proofpoint TAP and M365). This is the honest, bounded reading of the AgentiX email-triage claim: it measures disposition time and accuracy on TWO ingested platforms, not on 'all email platforms'."
+        ttp_ref: "TTP-2026-0169"
+        detection_id: "xql-email-alert-disposition-latency-on-the-ingested-mail-platforms"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp021"
+    - "echo 'cortexsim-mp021-cleanup-complete'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-08-02"
+last_updated: "2026-08-02"
+tags:
+  - multi-plane
+  - analytics
+  - ai-triage
+  - labelled-corpus
+  - ground-truth
+  - confusion-matrix
+  - precision-recall
+  - alert-grouping
+  - collapse-ratio
+  - near-miss-decoy
+  - hard-positive
+  - f7
+  - moat

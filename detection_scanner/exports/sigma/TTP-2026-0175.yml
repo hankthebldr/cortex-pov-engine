@@ -1,0 +1,31 @@
+title: "Adversary Capability Development \u2014 Phishing-Kit and LLM Prompt-Farm Staging Detected Before Weaponization \u2014 First Estate Contact With Pre-Weaponization Staging Infrastructure"
+id: ttp-2026-0175-abioc-01
+status: experimental
+description: |
+  The match, and the only leg of this scenario that involves the customer's own telemetry at all. First-ever contact from the estate to a host that the platform already held intel on before the contact happened. Anchored on first-contact rather than on volume because capability-development infrastructure is touched once, quietly, by whoever clicks first — there is no beacon cadence to profile yet, and waiting for one means waiting for weaponization.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter cortexsim_run_tag = "TIM009"
+    | filter dest_fqdn contains "adversary-dev.example" and intel_match = true
+    | comp count() as sessions, min(_time) as first_contact_time, count_distinct(source_ip) as internal_hosts by dest_fqdn, indicator_confidence
+    | filter sessions >= 1 and indicator_confidence >= 70
+    | sort desc sessions
+    | fields dest_fqdn, indicator_confidence, internal_hosts, sessions, first_contact_time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1566/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1566.002
+    - attack.t1583.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

@@ -1,7 +1,7 @@
 """The enforcement path itself, run against the real corpus.
 
 Every other UC/TC test exercises the *machinery* — validate_ref on synthetic
-refs, _check_uctc_refs on a fixture scenario. None of them walks the actual 162
+refs, _check_uctc_refs on a fixture scenario. None of them walks the actual 169
 scenario YAMLs through the loader with the registry loaded and strict mode on,
 which means a scenario re-keyed to a dangling ref would ship green: the loader
 would reject it at boot, but no test and no CI job would ever see that happen.
@@ -56,7 +56,7 @@ def parsed(loaded_registry):
 
 def test_the_corpus_is_the_expected_size(parsed):
     """A sudden drop would make the ref checks below trivially pass."""
-    assert len(parsed) == 162
+    assert len(parsed) == 169
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):

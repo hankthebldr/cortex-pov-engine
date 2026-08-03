@@ -1,0 +1,296 @@
+scenario_id: SIM-APB-001
+name: "Governed Autonomy — Autonomous Action Audit-Trail Reconstruction Across Three Incident Classes (Identity Disable · Endpoint Isolate · Cloud Token Revoke)"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+# ANALYTICS. The scenario id deliberately carries the APB (Autonomous
+# Playbooks) token rather than a plane token — the same convention SIM-MP-*
+# already uses — because what it measures is a governance property of the
+# response layer, not a detection on any one plane.
+plane: ANALYTICS
+detection_types:
+  - ABIOC
+  - XQL
+  - Analytics
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# TC-APB-06 — "Demonstrate full auditability: every autonomous action
+# reconstructs to its reasoning and approver", threshold "100% of actions
+# reconstructable". This is the ONLY unevidenced P1 row in the index that
+# carries a measurable threshold. The other eight P1 rows are scored
+# "Qualitative pass", which verifier.score_run clamps to not_applicable — so
+# authoring them raises a coverage count that can never go green. This one can.
+uc_ref: UCS-APB-03
+tc_ref: TC-APB-06
+tc_refs:
+  - TC-APB-06
+  - TC-SOAR-02
+pov_scenario_id: POV-SC-088
+uc_name: "Autonomous Playbooks (AgentiX)"
+tc_name: "Demonstrate full auditability — every autonomous action reconstructs to its reasoning and approver"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# The index records this row as having no MITRE mapping, which is correct: an
+# audit-trail property is not an adversary technique. The mapping below is
+# INHERITED from the three trigger arms that provoke the actions being audited,
+# and is documented as such rather than invented. Lead is the identity arm.
+mitre_tactic: "TA0004"
+mitre_tactic_name: "Privilege Escalation"
+mitre_technique: "T1078"
+mitre_technique_name: "Valid Accounts"
+additional_techniques:
+  - technique: "T1059"
+    name: "Command and Scripting Interpreter"
+  - technique: "T1550.001"
+    name: "Use Alternate Authentication Material: Application Access Token"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — AI, Automation and Attacks: Unpacking the 2026 Global Incident Response Report"
+threat_report_url: "https://unit42.paloaltonetworks.com/ai-incident-response-report/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - svc-account
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Autonomy Auditability (completeness ratio over executed actions)"
+methodology_family: "F5"
+primary_kpi: "Completeness %"
+threshold:
+  kpi: "Completeness %"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  Three structurally DIFFERENT autonomous actions execute in one run — an
+  identity disable, an endpoint isolation and a cloud token revocation — and
+  100% of the actions taken reconstruct end to end to all five fields the index
+  names: triggering input, reasoning trace, policy decision, approver identity,
+  resulting change. The resulting change must additionally be observable in the
+  target system, not merely claimed by the action row.
+
+  Three arms rather than one, on purpose. An audit trail can be complete for the
+  action class a vendor demoed and threadbare for every other, and a single-arm
+  run cannot distinguish those two worlds.
+
+  WHAT THIS DOES NOT PROVE, and what must be said out loud in the readout
+  rather than buried:
+
+    * It proves the audit RECORD is complete, attributable and queryable. It
+      does NOT prove the recorded reasoning was CORRECT. An agent can log a
+      coherent rationale for a wrong action and no query can adjudicate that.
+    * It requires a real AgentiX / XSOAR tenant with governed-autonomy logging
+      enabled. Without one, every completeness measurement resolves PENDING —
+      never pass, and never a benign not_applicable. An unreachable tenant and
+      a missing audit trail are different claims, and reporting the first as
+      the second is exactly the inflation this engine exists to refuse.
+
+  Failure is specific: the audit-gap list names each action missing a field and
+  which field it is missing, so the finding is actionable rather than a score.
+moat_tier: "MOAT"
+
+# ── F5 Correlation / Automation Fields ──────────────────────────────────────
+# The join is the run tag, not a host or principal — deliberately, because the
+# three arms are causally DISJOINT and joining them on a shared entity would
+# defeat the point of running three. required_planes_in_incident asserts the
+# three action classes really did come from three different planes.
+correlation_window_seconds: 7200
+required_planes_in_incident:
+  - ITDR
+  - EDR
+  - CLOUD_APP
+stitching_key: session_id
+response_automation:
+  playbook: "GovernedAutonomy-AuditReconstruction"
+  fires_on: CR-APB-0001
+  actions:
+    - disable-account
+    - isolate-endpoint
+    - revoke-token
+  pre_empts_step: step-05
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The AgentiX orchestrator process that executes the autonomous actions owns
+# the chain being audited. That is the honest CGO here: the thing under
+# measurement is the RESPONDER, not any one attacker.
+cgo_anchor:
+  image_name: "cortex-agentix-orchestrator"
+  primary_username: "svc-agentix"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# SAFE-MODE: no account is disabled, no host isolated and no token revoked
+# against a real tenant. The three arms emit labelled trigger markers so the
+# tenant's OWN automation fires and writes its OWN action audit rows — those
+# rows, not anything CortexSim writes, are the artifact under measurement.
+steps:
+  - id: step-01
+    name: "Trigger arm 1/3 (identity) — privileged principal signs in off its learned access baseline, expecting an autonomous account disable"
+    command: |
+      set -u
+      D=/tmp/cortexsim-apb001; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-APB001}"
+      printf '{"run_tag":"%s","arm":"identity","event":"signin","principal":"svc-privileged@corp.local","source_ip":"203.0.113.55","privileged":true,"baseline_match":false}\n' "$RUN_TAG" > "$D/arm-identity.json"
+      echo cortexsim-apb001-identity-arm-emitted
+    identity: www-data
+    mitre_technique: "T1078"
+    # ROOT — links from the AgentiX orchestrator CGO. Identity-plane sign-in is
+    # OS-agnostic in origin.
+    platforms: ["linux", "windows", "macos"]
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "Arm 1 of 3. A privileged principal authenticates from infrastructure absent from its learned calling baseline. The detection itself is well-trodden; it exists here to CAUSE an autonomous account-disable whose action row can then be walked backwards."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "abioc-identity-anomaly-trigger-privileged-principal-sign-in-deviating-from-its-learned-access-baseline"
+
+  - id: step-02
+    name: "Trigger arm 2/3 (endpoint) — off-baseline interpreter chain on a server-role host, expecting an autonomous endpoint isolation"
+    command: |
+      set -u
+      D=/tmp/cortexsim-apb001; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-APB001}"
+      printf '{"run_tag":"%s","arm":"endpoint","event":"process","host_role":"server","parent":"httpd","child":"bash","cmdline":"bash -i","baseline_match":false}\n' "$RUN_TAG" > "$D/arm-endpoint.json"
+      echo cortexsim-apb001-endpoint-arm-emitted
+    identity: www-data
+    mitre_technique: "T1059"
+    # Deliberately temporal, not process_lineage: the three arms are causally
+    # DISJOINT by design. If they shared a chain, one action row could satisfy
+    # the audit claim for all three and the coverage argument would collapse.
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command \"Write-Output 'cortexsim-apb001 SAFE-MODE: w3wp.exe -> cmd.exe off-baseline interpreter marker (no shell spawned)'\""
+    causality:
+      parent_step: step-01
+      pivot: temporal
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "Arm 2 of 3, structurally different from arm 1 — a process-causality anomaly rather than an identity anomaly. A web-server parent spawns an interactive shell on a host whose learned role never does so, expecting an autonomous endpoint isolation."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "abioc-endpoint-anomaly-trigger-off-baseline-interpreter-chain-on-a-server-role-host"
+
+  - id: step-03
+    name: "Trigger arm 3/3 (cloud) — application access token used from an unseen calling location, expecting an autonomous token revocation"
+    command: |
+      set -u
+      D=/tmp/cortexsim-apb001; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-APB001}"
+      printf '{"run_tag":"%s","arm":"cloud","event":"api_call","oauth_token_id":"0CiSIMAPB001","caller_ip":"198.51.100.44","caller_seen_before":false}\n' "$RUN_TAG" > "$D/arm-cloud.json"
+      echo cortexsim-apb001-cloud-arm-emitted
+    identity: svc-account
+    mitre_technique: "T1550.001"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-01
+      pivot: temporal
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Arm 3 of 3 — an already-consented application access token is used from a calling location absent from its history. No credential-theft event and no interactive sign-in exists to alert on; the anomaly is the token's own calling-location delta. Expects an autonomous token revocation."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "xql-cloud-anomaly-trigger-application-access-token-used-from-an-unseen-calling-location"
+
+  - id: step-04
+    name: "Coverage guard — three structurally different autonomous action classes actually executed in this run"
+    command: |
+      set -u
+      echo '[APB-001] Waiting for the three autonomous response policies to execute'
+      sleep "${CORTEXSIM_ACTION_WAIT_SECONDS:-180}"
+      echo '[*] Expected: disable-account, isolate-endpoint and revoke-token action rows under this run tag'
+      echo '[*] If fewer than three classes executed, the audit-completeness claim below covers only the classes that ran and MUST be reported that way'
+      echo cortexsim-apb001-action-coverage-checked
+    identity: root
+    mitre_technique: "T1078"
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: XQL
+        description: "Coverage guard — at least three distinct autonomous action_type values executed under this run tag. One action class proving reconstructable says nothing about the others, so this guard is what stops a single-arm result being reported as full auditability."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "xql-three-structurally-different-autonomous-actions-executed-in-one-run"
+
+  - id: step-05
+    name: "TERMINAL AUDIT — every executed action reconstructs to triggering input, reasoning trace, policy decision, approver identity and an observable change"
+    command: |
+      set -u
+      echo '[APB-001] Terminal audit reconstruction'
+      echo '[*] CR-APB-0001 asserts 100% of actions taken carry all five reconstruction fields'
+      echo '[*] Reasoning trace must resolve to its triggering input, per action class'
+      echo '[*] Approver identity and policy decision recorded, per action class'
+      echo '[*] Resulting change independently observable in the target system, not merely claimed'
+      echo '[*] Audit-gap list names any action missing a field, and which field'
+      echo '[*] NOT PROVEN: that the recorded reasoning was CORRECT — only that it is present, attributable and queryable'
+      echo '[*] No tenant / autonomy logging off => PENDING, never pass and never a benign not_applicable'
+      echo cortexsim-apb001-terminal-audit-complete
+    identity: root
+    mitre_technique: "T1078"
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Terminal — CR-APB-0001 asserts a completeness RATIO over every autonomous action executed in the run, across at least three structurally different action classes. Distinguishes fail (an action exists and is missing a field) from pending (no tenant, or autonomy logging disabled)."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "CR-APB-0001"
+      - plane: ANALYTICS
+        type: XQL
+        description: "The KPI itself — actions_reconstructable / actions_taken as a percentage. The index scores this row at 100% of actions reconstructable, which is a genuine ratio, so unlike almost every other P1 gap row this one can return a real scored pass rather than not_applicable."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "xql-autonomous-action-audit-completeness-all-five-reconstruction-fields-present"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Reasoning-trace resolution — for each action class, the trace resolves to the triggering input that provoked it. A trace that exists but dangles is not a reconstruction."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "xql-autonomous-action-reasoning-trace-resolves-to-its-triggering-input"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Governance attribution — approver identity and policy decision recorded per action class. 'The policy approved it' is only an answer if the policy itself has a named owner."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "xql-approver-identity-and-policy-decision-recorded-for-every-autonomous-action"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Effect verification — the resulting change is observable in the target system rather than asserted by the action row. An action that reports success while changing nothing is the failure mode that matters most, and it is invisible if you trust the action row."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "xql-resulting-change-is-independently-observable-in-the-target-system"
+      - plane: ANALYTICS
+        type: XQL
+        description: "Audit-gap list — every autonomous action missing at least one reconstruction field, grouped by action class. A non-empty result is the fail, and it names what to fix."
+        ttp_ref: "TTP-2026-0170"
+        detection_id: "xql-autonomous-actions-missing-at-least-one-reconstruction-field-the-audit-gap-list"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-apb001"
+    - "echo 'cortexsim-apb001-cleanup-complete'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-08-02"
+last_updated: "2026-08-02"
+tags:
+  - multi-plane
+  - analytics
+  - governed-autonomy
+  - auditability
+  - reasoning-trace
+  - approver-identity
+  - closed-loop-response
+  - f5
+  - moat

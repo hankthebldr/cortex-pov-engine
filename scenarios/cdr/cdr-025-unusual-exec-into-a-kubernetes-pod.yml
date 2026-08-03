@@ -59,6 +59,12 @@ external_tools:
     type: script
     install_inline: false
 
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# methodology_family was absent, so this scenario was silently missing from the
+# coverage analyzer's Section 4 family table — invisible rather than uncovered.
+validation_methodology: "Kubernetes Audit-Log Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+
 steps:
   - id: step-01
     name: "Interactive exec into a running pod (create pods/exec)"

@@ -1,0 +1,301 @@
+scenario_id: SIM-TIM-009
+name: "Adversary Capability Development — Phishing-Kit and LLM Prompt-Farm Staging Detected Before Weaponization"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: TIM
+detection_types:
+  - ABIOC
+  - XQL
+  - Analytics
+  - IOC
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# NONE of these rows is net-new — all three are already evidenced elsewhere, so
+# this scenario moves the index coverage number by zero. Its value is coverage
+# of a tactic the corpus barely touches: it is the first T1588 in the library
+# and the second T1587, both of which stood at ZERO steps corpus-wide, and it
+# takes Resource Development (TA0042) from 4 scenarios to 5, clearing the
+# coverage analyzer's only strict breach.
+#
+# TC-XTI-07 is the honest primary: the claim that survives is that campaign and
+# actor context attach to a live match, which is what the terminal step asserts.
+uc_ref: UCS-XTI-04
+tc_ref: TC-XTI-07
+tc_refs:
+  - TC-XTI-07
+  - TC-XTI-05
+  - TC-XTI-02
+pov_scenario_id: POV-SC-079
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate automatic attribution and campaign context attaches to a live case"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Three of the four techniques are TA0042. T1587.001 is the DEVELOP half (the
+# adversary builds a phishing-kit builder), T1588.002 is the OBTAIN half (a
+# commodity prompt-farm tool bought rather than built), and T1583.001 is the
+# infrastructure they run on. T1566.002 appears only as the eventual purpose —
+# and deliberately never detonates here, because the whole point is that this
+# is caught BEFORE weaponization.
+mitre_tactic: "TA0042"
+mitre_tactic_name: "Resource Development"
+mitre_technique: "T1587.001"
+mitre_technique_name: "Develop Capabilities: Malware"
+additional_techniques:
+  - technique: "T1588.002"
+    name: "Obtain Capabilities: Tool"
+  - technique: "T1583.001"
+    name: "Acquire Infrastructure: Domains"
+  - technique: "T1566.002"
+    name: "Phishing: Spearphishing Link"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Strategically Aged Domain Detection: Capture APT Attacks With DNS Traffic Trends"
+threat_report_url: "https://unit42.paloaltonetworks.com/strategically-aged-domain-detection/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+required_content:
+  - repo: "PaloAltoNetworks/mocktaxii"
+
+infra_modules_needed:
+  - tim
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Pre-Weaponization Intel Sequencing (ordering asserted, not narrated)"
+methodology_family: "F1"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  CR-TIM-0009 raises one "we saw it before it was pointed at you" case, and the
+  SEQUENCING is the whole test rather than a detail of it.
+
+  Everything in this scenario happens on infrastructure the customer does not
+  own and cannot instrument, so the only honest proof available is an ordering
+  proof: the indicator's TAXII ingest timestamp must strictly PRECEDE the
+  estate's first-contact timestamp, and the run reports the lead in seconds.
+
+  Get that backwards and the demonstration proves nothing at all. An indicator
+  ingested AFTER the traffic it appears to have caught is a retrospective
+  lookup wearing prevention's clothes — easy to present convincingly, and
+  indistinguishable from the real thing unless somebody compares the two
+  timestamps. So the comparison is asserted, not narrated.
+
+  Two controls decide whether the rest means anything:
+
+    * LOW-CONFIDENCE CONTROL — a deliberately weak indicator ships inside the
+      SAME TAXII batch and must be scored and NOT promoted to detection. A
+      platform that promotes everything in a feed has a pipe, not a confidence
+      model, and the difference is invisible until something in the batch was
+      supposed to be suppressed.
+    * RETRO-HUNT — the sweep must fire on intel ARRIVAL and report what it
+      found across the retention window, because the realistic case is that
+      somebody in the estate touched the staging infrastructure days before
+      anyone thought to look.
+
+  T1566.002 is listed but deliberately never detonates. If a lure lands, the
+  scenario has failed at its own premise.
+moat_tier: "MOAT"
+
+# ── F2-Style Stitch Fields ──────────────────────────────────────────────────
+correlation_window_seconds: 86400
+required_planes_in_incident:
+  - TIM
+  - NDR
+stitching_key: session_id
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The client process that makes first contact owns the endpoint chain — the
+# convention SIM-TIM-006/007/008 use for this plane. The intel-ingestion and
+# retro-hunt steps have no process of their own and join on the shared
+# indicator value (shared_entity) rather than being given a fictional one.
+cgo_anchor:
+  image_name: "curl"
+  primary_username: "container-runtime"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# SAFE-MODE: no domain is acquired, no kit is staged and no real host is
+# contacted. All names are in the reserved .example documentation TLD and every
+# request targets 127.0.0.1.
+#
+# STEP ORDER IS THE EXPERIMENT. Steps 01-03 must complete before step-04. If
+# the intel does not land before first contact, this scenario proves the
+# opposite of its claim, which is why step-05 asserts the ordering numerically.
+steps:
+  - id: step-01
+    name: "Adversary develops capability — a phishing-kit builder staged on acquired infrastructure"
+    command: |
+      set -u
+      D=/tmp/cortexsim-tim009; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM009}"
+      STAGING="${CORTEXSIM_STAGING_FQDN:-kit-builder-stage.adversary-dev.example}"
+      printf '{"run_tag":"%s","event":"capability_staging","fqdn":"%s","capability":"phishing_kit_builder","stage":"pre_weaponization"}\n' "$RUN_TAG" "$STAGING" > "$D/kit-staging.json"
+      echo cortexsim-tim009-kit-staging-emitted
+    identity: container-runtime
+    mitre_technique: "T1587.001"
+    # ROOT — links from the curl CGO. Nothing here touches the customer; this
+    # step exists so the readout can show what was happening while the estate
+    # was, correctly, quiet.
+    platforms: ["linux", "windows", "macos"]
+    expected_detections:
+      - plane: TIM
+        type: IOC
+        description: "The staging host as an indicator, delivered during capability development and BEFORE it was ever pointed at the customer. Its value is entirely a function of WHEN it arrived: pre-landed it is prevention, post-hoc it is a retrospective search. The sequencing query at step-05 is what tells those apart."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "ioc-domain-kit-builder-stage-adversary-dev-example"
+
+  - id: step-02
+    name: "Adversary obtains capability — a commodity prompt-farm tool for lure mass-production"
+    command: |
+      set -u
+      D=/tmp/cortexsim-tim009; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM009}"
+      printf '{"run_tag":"%s","event":"capability_obtained","tool":"prompt-farm","source":"commodity_marketplace","purpose":"lure_generation"}\n' "$RUN_TAG" > "$D/tool-obtained.json"
+      echo cortexsim-tim009-tool-obtained-emitted
+    identity: container-runtime
+    mitre_technique: "T1588.002"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "The OBTAIN half of capability development, as distinct from the DEVELOP half in step-01 — bought rather than built. T1588 had zero steps in the entire corpus before this one."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "xql-adversary-obtained-a-commodity-prompt-farm-tool-for-lure-mass-production"
+
+  - id: step-03
+    name: "Intel lands FIRST via TAXII — with a deliberate low-confidence control indicator in the same batch"
+    command: |
+      set -u
+      D=/tmp/cortexsim-tim009; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM009}"
+      STAGING="${CORTEXSIM_STAGING_FQDN:-kit-builder-stage.adversary-dev.example}"
+      {
+        printf '{"run_tag":"%s","event":"intel_ingest","indicator":"%s","confidence":90,"promoted":true,"feed":"taxii"}\n' "$RUN_TAG" "$STAGING"
+        printf '{"run_tag":"%s","event":"intel_ingest","indicator":"low-conf-control.adversary-dev.example","confidence":15,"promoted":false,"feed":"taxii"}\n' "$RUN_TAG"
+      } > "$D/intel-bundle.ndjson"
+      echo cortexsim-tim009-intel-bundle-landed
+    identity: container-runtime
+    mitre_technique: "T1583.001"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "CONFIDENCE-SCORING CONTROL — a deliberately weak indicator ships in the SAME batch and must be scored and NOT promoted to detection. A pipeline that promotes everything looks identical to one that scores well, right up until something in the batch is supposed to be suppressed."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "xql-low-confidence-control-indicator-from-the-same-batch-was-scored-and-not-promoted"
+
+  - id: step-04
+    name: "First estate contact with the staging host — matching intel that already landed"
+    command: |
+      set -u
+      D=/tmp/cortexsim-tim009; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM009}"
+      STAGING="${CORTEXSIM_STAGING_FQDN:-kit-builder-stage.adversary-dev.example}"
+      curl -s --max-time 3 -o /dev/null "https://127.0.0.1/kit" 2>/dev/null || true
+      printf '{"run_tag":"%s","event":"session","dest_fqdn":"%s","first_contact":true,"app":"ssl"}\n' "$RUN_TAG" "$STAGING" > "$D/first-contact.json"
+      echo cortexsim-tim009-first-contact-emitted
+    identity: www-data
+    mitre_technique: "T1566.002"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command \"Write-Output 'cortexsim-tim009 SAFE-MODE: first-contact marker for kit-builder-stage.adversary-dev.example (no request issued)'\""
+    causality:
+      parent_step: step-03
+      pivot: network_session
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "The only leg involving the customer's own telemetry. First-ever contact from the estate to a host the platform already held intel on. Anchored on FIRST CONTACT rather than on cadence, because capability-development infrastructure is touched once, quietly, by whoever clicks first — there is no beacon rhythm to profile yet, and waiting for one means waiting for weaponization."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "abioc-first-estate-contact-with-pre-weaponization-staging-infrastructure"
+
+  - id: step-05
+    name: "TERMINAL — sequencing asserted numerically, attribution attached, retro-hunt reported"
+    command: |
+      set -u
+      echo '[TIM-009] Terminal — asserting the ordering rather than narrating it'
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-90}"
+      echo '[*] SEQUENCING: indicator ingest_time must strictly PRECEDE first-contact time; the run reports lead_seconds'
+      echo '[*] An indicator ingested AFTER the traffic is a retrospective lookup, not prevention — and looks identical in a demo'
+      echo '[*] ATTRIBUTION: campaign + actor context must attach to the live case'
+      echo '[*] RETRO-HUNT: must fire on intel ARRIVAL and report historical matches across the retention window'
+      echo '[*] PREMISE CHECK: no lure detonated — if one did, this scenario failed at its own premise'
+      echo cortexsim-tim009-terminal-stitch-verified
+    identity: root
+    mitre_technique: "T1587.001"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: Correlation
+        description: "Terminal — CR-TIM-0009 fuses the pre-landed intel, the first-contact ABIOC and the attribution into one pre-weaponization case, with the sequencing assertion as its spine rather than as supporting narrative."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "CR-TIM-0009"
+      - plane: TIM
+        type: XQL
+        description: "THE SEQUENCING PROOF — lead_seconds between indicator ingest and first estate contact, and it must be strictly positive. This single comparison is the entire difference between prevention and a retrospective search, and without it the flattering interpretation is the one that gets presented."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "xql-capability-intel-landed-strictly-before-any-estate-contact-with-the-staging-host"
+      - plane: TIM
+        type: Analytics
+        description: "Attribution — campaign name and actor context attach to the live case rather than the analyst having to go and find them."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "xql-campaign-attribution-and-actor-context-attach-to-the-live-match"
+      - plane: TIM
+        type: XQL
+        description: "Retro-hunt — fired on intel ARRIVAL, reporting historical matches and the retention window it searched. The realistic case is that someone touched the staging infrastructure days before anyone looked, and a hunt that only runs on a schedule finds that late."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "xql-retro-hunt-swept-historical-telemetry-when-the-capability-intel-landed"
+      - plane: NDR
+        type: XQL
+        description: "Hunt — any estate contact with a resource-development-phase indicator across the retention window. The artifact the DC leaves behind: everything the customer touched before it became a campaign."
+        ttp_ref: "TTP-2026-0175"
+        detection_id: "xql-estate-contact-with-any-pre-weaponization-staging-indicator-in-the-retention-window"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-tim009"
+    - "echo 'cortexsim-tim009-cleanup-complete'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-08-02"
+last_updated: "2026-08-02"
+tags:
+  - tim
+  - threat-intel
+  - resource-development
+  - develop-capabilities
+  - obtain-capabilities
+  - pre-weaponization
+  - taxii
+  - sequencing-proof
+  - confidence-scoring-control
+  - f1
+  - moat

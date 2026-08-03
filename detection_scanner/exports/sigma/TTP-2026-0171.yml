@@ -1,0 +1,96 @@
+title: "Encryption-Less Extortion \u2014 Mass Staging, Chunked Egress and a Ransom Note With No Data-Encrypted-For-Impact Event \u2014 Ransom Note Written to Staged Shares With No Preceding Mass File Rename"
+id: ttp-2026-0171-bioc-01
+status: experimental
+description: |
+  The extortion tell in an encryption-less operation. The note is the only overtly hostile artifact in the whole chain, and it arrives WITHOUT the mass rename or extension change that a ransomware BIOC keys on. Detecting it late is still detecting it late — this fires after the data is already gone, which is precisely why the behavioural staging and egress detections upstream are the ones that matter.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter cortexsim_run_tag = "MP022"
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE_NEW
+    | filter action_file_name contains "README-RESTORE" or action_file_name contains "HOW-TO-RECOVER" or action_file_name contains "RESTORE-MY-FILES"
+    | comp count() as notes, count_distinct(action_file_path) as note_paths by agent_hostname, action_process_username, causality_id
+    | filter notes >= 1
+    | sort desc note_paths
+    | fields agent_hostname, action_process_username, causality_id, note_paths, notes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1657/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1657
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Encryption-Less Extortion \u2014 Mass Staging, Chunked Egress and a Ransom Note With No Data-Encrypted-For-Impact Event \u2014 Mass Staging Tempo Deviating From a Host's Learned File-Access Envelope"
+id: ttp-2026-0171-abioc-02
+status: experimental
+description: |
+  The primary claim. With no encryption event to key on, the signal is tempo and breadth against what this host and this identity normally read: distinct share roots touched, files read per minute, and the collection of those reads into one staging path. Keyed on the causality chain rather than on any file name, because file names are exactly what an encryption-less operation leaves untouched.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter cortexsim_run_tag = "MP022"
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
+    | comp count() as files_read, count_distinct(action_file_directory) as share_roots, min(_time) as first_read, max(_time) as last_read by agent_hostname, action_process_username, causality_id
+    | alter window_seconds = timestamp_diff(last_read, first_read, "SECOND")
+    | filter share_roots >= 3 and files_read >= 25
+    | sort desc files_read
+    | fields agent_hostname, action_process_username, causality_id, share_roots, files_read, window_seconds
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1074/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1074.001
+    - attack.t1083
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Encryption-Less Extortion \u2014 Mass Staging, Chunked Egress and a Ransom Note With No Data-Encrypted-For-Impact Event \u2014 Sustained Chunked Egress Held Below the Per-Session Volume Alert Floor"
+id: ttp-2026-0171-abioc-03
+status: experimental
+description: |
+  The counter to the obvious tuning. Each session is individually small enough that a static per-session byte threshold never trips; the deviation is only visible in the sustained aggregate for one host to one destination over the window. A stack that alerts here on the malicious arm but not on the benign archive job has demonstrated a learned baseline; a stack that alerts on both has demonstrated a threshold.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter cortexsim_run_tag = "MP022"
+    | filter app in ("ssl", "web-browsing", "cloud-storage", "webdav")
+    | comp sum(bytes_sent) as total_sent, count() as sessions, max(bytes_sent) as largest_session by source_ip, dest_ip, app
+    | filter sessions >= 6 and total_sent >= 300000000
+    | sort desc total_sent
+    | fields source_ip, dest_ip, app, sessions, largest_session, total_sent
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1030/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1030
+    - attack.t1567.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

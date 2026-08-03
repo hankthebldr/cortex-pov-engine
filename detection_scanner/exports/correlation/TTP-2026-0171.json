@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1074.001",
+    "T1030",
+    "T1567.002",
+    "T1657",
+    "T1083"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Mass Staging Tempo Deviating From a Host's Learned File-Access Envelope) AND ABIOC(Sustained Chunked Egress Held Below the Per-Session Volume Alert Floor) AND BIOC(Ransom Note Written to Staged Shares With No Preceding Mass File Rename) observed on the same host and staging identity inside the correlation window \u2014 stitches enumeration, staging, chunked egress and the note into ONE extortion incident that contains no encryption event at all. Two assertions make the result meaningful rather than merely present. The NEGATIVE CONTROL asserts that no mass rename or extension change occurred anywhere in the run window: if one did, the scenario has quietly become an ordinary ransomware test and its claim is void. The BENIGN COMPARISON ARM asserts that the quarterly archive job, which has a similar bulk-read-compress-upload I/O shape in the same window under a different identity, did NOT raise this incident. Alerting on both arms means the platform matched on volume, which is a threshold, not a baseline \u2014 and it is the outcome a customer's incumbent stack usually produces here.",
+      "name": "Encryption-Less Extortion Lifecycle Stitch",
+      "rule_id": "CR-MP-0022",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0171"
+}

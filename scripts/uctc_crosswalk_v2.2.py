@@ -293,6 +293,37 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Kali external-to-internal kill chain across recon, exploit, credential access, and lateral movement."),
     "SIM-MP-020": (["TC-EDR-04", "TC-IR-07", "TC-SOAR-02"], REMAP,
         "BlackSuit ransomware precursor triggering auto-containment before the ESXi impact stage."),
+    "SIM-MP-021": (["TC-AGTX-03", "TC-IR-01", "TC-IR-02", "TC-AES-08"], REMAP,
+        "An 800-alert LABELLED corpus, so precision, recall and the grouping "
+        "collapse ratio are computed against an author-time truth column rather "
+        "than asserted. TC-AGTX-03 is NET-NEW evidence and is the honest "
+        "primary: the row scores AI-driven triage classification at 90% against "
+        "a diverse submitted alert set, which is exactly the measurement. "
+        "TC-AES-08 is bound with a stated limit — the row says 'across all "
+        "email platforms' and this measures disposition on the TWO the engine "
+        "ingests (Proofpoint TAP and M365), which the scenario says out loud. "
+        "TC-AGTX-06 is deliberately NOT bound: it demands forensics and "
+        "containment across CrowdStrike and Defender, and CortexSim cannot emit "
+        "either, so binding it would claim credit for a leg the engine "
+        "physically cannot run."),
+    "SIM-MP-022": (["TC-DLP-02", "TC-IR-05", "TC-DLP-01"], REMAP,
+        "Encryption-less extortion — staging, chunked sub-threshold egress and "
+        "a ransom note with NO T1486 anywhere in the run. Every bound row is "
+        "already evidenced, so this moves the coverage number by zero and says "
+        "so. Its value is that every other impact scenario in the library "
+        "resolves on an encryption crescendo, and Unit 42 puts encryption in a "
+        "shrinking minority of extortion cases. Carries a benign comparison arm "
+        "with a matching I/O shape, because an alert on the malicious arm alone "
+        "only proves the platform alerts on bulk file activity."),
+    "SIM-APB-001": (["TC-APB-06", "TC-SOAR-02"], REMAP,
+        "Governed-autonomy audit reconstruction across three structurally "
+        "different action classes. TC-APB-06 is NET-NEW and is the ONLY "
+        "unevidenced P1 row in the index carrying a measurable threshold "
+        "(100% of actions reconstructable) — the other eight P1 rows are scored "
+        "'Qualitative pass', which verifier.score_run clamps to not_applicable, "
+        "so authoring them raises a count that can never go green. Three arms "
+        "rather than one because an audit trail can be complete for the action "
+        "class a vendor demoed and threadbare for every other."),
 
     # ── EMAIL ──────────────────────────────────────────────────────────────
     "SIM-EMAIL-001": (["TC-AES-01", "TC-AES-06"], REMAP,
@@ -394,6 +425,40 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "credit for a guard. The index scores this row 100% Automation Rate, so "
         "it is one of the few gap rows that can return a real pass."
 ),
+    "SIM-TIM-008": (["TC-XTI-03", "TC-NDR-06", "TC-ASM-05"], REMAP,
+        "Dangling-DNS record claimed and weaponized as reputation-inheriting C2 "
+        "— the corpus's first T1584, closing half the coverage analyzer's only "
+        "strict breach (Resource Development at 3/5). TC-XTI-03 is the honest "
+        "primary and is a genuine claim rather than a re-run of SIM-TIM-006's: "
+        "the indicator promoted here is MINTED LOCALLY from an ASM inventory "
+        "fact plus NDR behaviour, because no feed will ever carry the "
+        "customer's own subdomain. "
+        "TC-XTI-09 (exposure re-ranks on active-exploitation intel) was "
+        "examined and DELIBERATELY NOT BOUND, even though it is unevidenced, "
+        "carries a real >=90% threshold and would have raised the coverage "
+        "count. Two reasons. Its validation_class is POS, and the whole "
+        "DET-by-scenario / POS-by-assertion split exists so that a scenario "
+        "cannot claim a state property it only provokes. And this scenario "
+        "genuinely cannot prove the queue reordered — it emits the telemetry "
+        "that should cause the reorder, while the reorder itself needs a live "
+        "exposure queue and the assertion substrate's pending-versus-fail "
+        "taxonomy. It is a good candidate for a POS assertion under "
+        "assertions/pos/, which is outside this pass's file scope."
+),
+    "SIM-TIM-009": (["TC-XTI-07", "TC-XTI-05", "TC-XTI-02"], REMAP,
+        "Pre-weaponization capability development — a phishing-kit builder and "
+        "a commodity prompt-farm tool staged before anything is pointed at the "
+        "customer. Adds ZERO net-new index coverage; all three rows are already "
+        "evidenced. What it adds is tactic depth: the corpus's first T1588 and "
+        "second T1587, both previously at zero steps, taking Resource "
+        "Development from 4 scenarios to 5 and clearing the coverage "
+        "analyzer's only strict breach. The proof is a SEQUENCING proof — the "
+        "TAXII ingest timestamp must strictly precede first estate contact, "
+        "because an indicator ingested after the traffic is a retrospective "
+        "lookup that presents identically to prevention. TC-XTI-02 is bound on "
+        "the strength of a deliberate low-confidence control shipped inside "
+        "the same feed batch that must be scored and not promoted."
+),
 
     # ── CLOUD_APP ──────────────────────────────────────────────────────────
     # OAuth-grant governance binds to UC-ITDR (the IdP surface, correct SKU)
@@ -419,6 +484,14 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "M365 storage exfiltration with mailbox enumeration by an Azure app."),
     "SIM-CLOUD-009": (["TC-DLP-11", "TC-DSPM-04"], REMAP,
         "SharePoint and OneDrive enumeration by a consented application."),
+    "SIM-CLOUD-010": (["TC-DLP-11", "TC-ITDR-03", "TC-AES-07", "TC-DSPM-04"], REMAP,
+        "A compromised vendor's already-consented integration pivots into the "
+        "tenant. Adds NOTHING to the coverage count — every bound row is already "
+        "evidenced — and that is stated in the scenario header rather than left "
+        "for someone to discover. Its value is threat currency: T1199 had ONE "
+        "step in the entire corpus before it, against a 2026 supply-chain "
+        "finding that risk moved from vulnerable code to misused trusted "
+        "connectivity."),
 
     # ── AI_ACCESS ──────────────────────────────────────────────────────────
     # NET-NEW: the detection capability is honestly DLP-shaped, but UC-DLP
@@ -435,6 +508,15 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Jailbreak prompt fingerprinting on the egress path rather than at the model."),
     "SIM-AIACC-005": (["TC-DLP-11"], NETNEW,
         "Cross-provider rotation to evade single-provider policy."),
+    "SIM-AIACC-006": (["TC-CITH-04", "TC-DLP-11"], NETNEW,
+        "Token jacking — a stolen LLM provider key replayed from off-baseline "
+        "infrastructure for unauthorized compute. Direction is the INVERSE of "
+        "SIM-AIACC-001..005: those detect secrets leaking OUT to a provider, "
+        "this detects a leaked provider key being USED. Primary is TC-CITH-04 "
+        "because the claim is signature-independent behavioural detection — the "
+        "traffic is well-formed TLS to a legitimate provider carrying a valid "
+        "key, so there is nothing to signature. The honest home is a proposed "
+        "v2.3 UC-AIACC row, which is out of scope for this pass."),
 
     # ── BROWSER ────────────────────────────────────────────────────────────
     # NET-NEW for the same reason: Prisma Browser is not the Endpoint DLP SKU.

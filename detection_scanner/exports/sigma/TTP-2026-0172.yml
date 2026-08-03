@@ -1,0 +1,62 @@
+title: "Trusted-Relationship Abuse \u2014 A Compromised Vendor's Consented Integration Pivots Into the Tenant With No Sign-In Anomaly \u2014 Consented Integration Deviating From Its Own Learned Call-Rate and Scope-Usage Baseline"
+id: ttp-2026-0172-abioc-01
+status: experimental
+description: |
+  The primary claim, and the only thing left to detect on. No consent event, no interactive sign-in and no credential theft exists in this chain, so the anomaly must be the integration's behaviour against the integration's own history: request volume above its learned profile combined with the first-ever exercise of scopes it was granted long ago and never used. A scope granted is not a scope used, and the gap between the two is the most under-instrumented surface in a SaaS tenant.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_o365_audit
+    | filter cortexsim_run_tag = "CLOUD010"
+    | filter auth_type = "app_only" and is_interactive = false
+    | comp count() as api_calls, count_distinct(scope_used) as scopes_exercised, count_distinct(target_mailbox) as mailboxes by app_id, app_display_name
+    | filter api_calls >= 40 and scopes_exercised >= 3
+    | sort desc api_calls
+    | fields app_id, app_display_name, scopes_exercised, mailboxes, api_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1199/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1199
+    - attack.t1550.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Trusted-Relationship Abuse \u2014 A Compromised Vendor's Consented Integration Pivots Into the Tenant With No Sign-In Anomaly \u2014 Vendor Integration Touching Object Classes It Has Never Touched Before"
+id: ttp-2026-0172-abioc-02
+status: experimental
+description: |
+  The second delta, chosen because it survives the obvious evasion of the first. An adversary who paces the call rate to stay inside the learned profile still has to read record types the integration never read, because the point of the pivot is to reach data the vendor's own function never needed. Object-class novelty is therefore the harder-to-evade half of the pair, and it is meaningless without the call-rate half — together they are specific, apart they are noise.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_o365_audit
+    | filter cortexsim_run_tag = "CLOUD010"
+    | filter object_class_first_seen = true
+    | comp count_distinct(object_class) as novel_classes, count() as accesses by app_id, app_display_name, publisher_name
+    | filter novel_classes >= 2
+    | sort desc novel_classes
+    | fields app_id, app_display_name, publisher_name, novel_classes, accesses
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1114/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1114.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

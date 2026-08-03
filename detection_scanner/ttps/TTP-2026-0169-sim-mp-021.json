@@ -1,0 +1,417 @@
+{
+  "id": "TTP-2026-0169",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-02T00:00:00+00:00",
+    "updated_at": "2026-08-02T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane",
+      "ai-triage",
+      "labelled-corpus",
+      "ground-truth",
+      "confusion-matrix",
+      "alert-grouping",
+      "collapse-ratio",
+      "near-miss-decoy",
+      "f7",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 900,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AI SOC at Volume — Labelled 800-Alert Corpus Measures Grouping Collapse, Triage Precision/Recall and Disposition Latency",
+    "summary": "Emits a labelled alert corpus at production volume: a four-stage phishing-to-cloud-admin intrusion, one hard-positive automation identity that genuinely deviates, and a high-volume floor of near-miss benign alerts. Every alert carries an author-time ground-truth label, so precision, recall and the grouping collapse ratio are COMPUTED rather than asserted.",
+    "description": "This card exists because 'our AI triages for you' is the single most-challenged XSIAM claim in a POV, and the corpus previously answered it with three decoy alerts. Three decoys do not answer 'does this survive my Tuesday'. Here the alert corpus is a measurement instrument: every emitted signal carries a cortexsim_label of malicious, hard_positive or benign, fixed at authoring time and stamped onto the record before the platform ever sees it. Because the truth column exists in the lake alongside the platform's own verdict, the readout is a real confusion matrix rather than a demo anecdote. Three populations are deliberately distinct. (1) The MALICIOUS arc is a single connected chain following the index's own payload arc — phishing credential link, Office parent spawning an encoded PowerShell downloader, SMB/RDP lateral fan-out, valid-account cloud administrative role assumption — all attributable to one normalized principal, so grouping has something real to collapse. (2) The HARD POSITIVE is a backup automation identity that genuinely deviates from its own learned job envelope (unusual share set, off-window, followed by egress). It shares no principal, host or CGO with the malicious arc, so an engine that merely elevates everything anomalous will wrongly merge it, and an engine that suppresses all automation noise will miss it outright. It is the item that separates a tuned platform from a loud one. (3) The BENIGN NEAR-MISS floor is deliberately near-miss, not obvious noise: an AUTHENTICATED vulnerability-scanner sweep, a SANCTIONED admin PowerShell module load, an RMM patch fan-out and an in-window scheduled backup. Obvious benign traffic proves nothing; each of these is a shape that a naive rule set alerts on. Volume comes from the EAL analytics log-streamer family (iterations / burst_count over batched NDJSON), not from new engine code. The terminal measurement is four numbers, each of which can go the wrong way: grouping collapse ratio across the corpus, classification precision and recall against the label column, the recall miss list (malicious-labelled alerts that never joined an incident), and email-alert disposition latency on the mail platforms the engine actually ingests.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Unit 42 2026 Global Incident Response Report — AI-accelerated intrusions reaching exfiltration in as little as 72 minutes, against SOC alert volumes that did not shrink"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2026-02-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.002",
+        "name": "Phishing: Spearphishing Link",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.001",
+        "name": "Remote Services: Remote Desktop Protocol",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Process: Process Creation",
+      "Logon Session: Logon Session Creation",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-021 — labelled alert corpus at production volume with a computed confusion matrix.",
+    "prerequisites": [
+      {
+        "description": "An operator-supplied HTTP log collector (Broker VM applet or equivalent) is reachable so the EAL analytics log-streamer can POST the corpus at volume.",
+        "check_command": "true"
+      },
+      {
+        "description": "Alert grouping and AI triage are enabled on the tenant, and xsiam_incidents is queryable, or the collapse-ratio and precision/recall measurements resolve pending rather than pass.",
+        "check_command": "true"
+      }
+    ],
+    "privilege_required": "user",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: no real phishing, PowerShell, lateral movement or cloud auth is\n# performed. Every signal is a labelled marker record; the labels are the whole\n# point, so they are written BEFORE the corpus they describe.\nset -euo pipefail\nD=/tmp/cortexsim-mp021\nRUN_TAG=\"${CORTEXSIM_RUN_TAG:-MP021}\"\nPRINCIPAL=\"${COMPROMISED_PRINCIPAL:-jdoe@corp.local}\"\nmkdir -p \"$D\"\n# (0) ground-truth manifest — author-time labels, one row per emitted signal class\ncat > \"$D/manifest.ndjson\" <<EOF\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"phish_link_click\",\"cortexsim_label\":\"malicious\",\"principal\":\"$PRINCIPAL\"}\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"office_encoded_powershell\",\"cortexsim_label\":\"malicious\",\"principal\":\"$PRINCIPAL\"}\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"smb_rdp_fanout\",\"cortexsim_label\":\"malicious\",\"principal\":\"$PRINCIPAL\"}\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"cloud_admin_assume\",\"cortexsim_label\":\"malicious\",\"principal\":\"$PRINCIPAL\"}\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"backup_envelope_deviation\",\"cortexsim_label\":\"hard_positive\",\"principal\":\"svc-backup@corp.local\"}\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"authenticated_scanner_sweep\",\"cortexsim_label\":\"benign\",\"principal\":\"svc-scanner@corp.local\"}\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"sanctioned_admin_module_load\",\"cortexsim_label\":\"benign\",\"principal\":\"admin-sanctioned@corp.local\"}\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"rmm_patch_fanout\",\"cortexsim_label\":\"benign\",\"principal\":\"svc-rmm@corp.local\"}\n{\"run_tag\":\"$RUN_TAG\",\"signal_class\":\"in_window_backup\",\"cortexsim_label\":\"benign\",\"principal\":\"svc-backup@corp.local\"}\nEOF\necho \"cortexsim-mp021-manifest-published rows=$(wc -l < \"$D/manifest.ndjson\")\"\necho cortexsim-mp021-labelled-corpus-emitted",
+      "input_variables": [
+        {
+          "name": "CORTEXSIM_RUN_TAG",
+          "type": "string",
+          "default": "MP021",
+          "description": "Run-scoped tag stamped onto every corpus record so yesterday's corpus cannot prove today's run."
+        },
+        {
+          "name": "CORTEXSIM_CORPUS_SIZE",
+          "type": "string",
+          "default": "800",
+          "description": "Target total alert count for the emitted corpus. The benign near-miss floor scales to fill the remainder after the malicious and hard-positive arcs."
+        }
+      ],
+      "timeout_seconds": 900
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "Every corpus record carries the run tag and the author-time ground-truth label, so the platform's verdict can be joined against truth.",
+        "expected_value": "cortexsim_run_tag = \"MP021\" and cortexsim_label in (\"malicious\", \"hard_positive\", \"benign\")"
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "The four malicious-labelled signals collapse into a single incident attributed to one normalized principal.",
+        "expected_value": "count_distinct(incident_id) = 1 for cortexsim_label = \"malicious\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Benign-labelled near-miss alerts remain singletons and do not join the malicious incident.",
+        "expected_value": "alerts_in_incident <= 1 for cortexsim_label = \"benign\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-mp021; echo '[CortexSim] SIM-MP-021 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Credential-Harvest Phishing Link Delivered and Clicked by a Corporate Recipient",
+        "description": "The malicious arc's initial access: a spearphishing message carrying a credential-harvest link is delivered and the recipient clicks it. Anchored to the recipient so the whole downstream chain shares one normalized principal — that shared key is what grouping is being measured on.",
+        "logic": "dataset = proofpoint_tap_raw\n| filter cortexsim_run_tag = \"MP021\" and cortexsim_label = \"malicious\"\n| filter threat_type = \"url\" and click_permitted = true\n| comp count() as clicks by recipient, sender, url_host, campaign_id\n| filter clicks >= 1\n| sort desc clicks\n| fields recipient, sender, url_host, campaign_id, clicks",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1566.002"
+        ]
+      },
+      {
+        "name": "Office Parent Spawning an Encoded PowerShell Downloader",
+        "description": "Second stage of the malicious arc. The signal is the parent-child lineage plus the encoded command line, not the PowerShell binary — PowerShell itself is legitimate and firing on it is precisely the false positive the benign floor is testing for.",
+        "logic": "dataset = xdr_data\n| filter cortexsim_run_tag = \"MP021\"\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"winword.exe\", \"excel.exe\", \"outlook.exe\")\n| filter action_process_image_name = \"powershell.exe\"\n| filter action_process_image_command_line contains \"-enc\" or action_process_image_command_line contains \"-EncodedCommand\"\n| comp count() as spawns by agent_hostname, causality_actor_process_image_name, action_process_username, causality_id\n| filter spawns >= 1\n| fields agent_hostname, causality_actor_process_image_name, action_process_username, causality_id, spawns",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.001"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Multi-Stage Intrusion Chain Elevated Above a High-Volume Benign Alert Floor",
+        "description": "The true-positive elevation claim, measured under load rather than in isolation. Auto-tuned behavioral ML must fuse four stages that arrive amid several hundred near-miss benign alerts and rank the resulting incident above every one of them. Keyed on the shared causality_id and the normalized principal, so the chain is elevated because it is causally connected, not because any single stage looked loud.",
+        "logic": "dataset = xdr_data\n| filter cortexsim_run_tag = \"MP021\" and cortexsim_label = \"malicious\"\n| filter event_type = ENUM.PROCESS or event_type = ENUM.STORY\n| comp count_distinct(mitre_technique_id_and_name) as stages, count() as signals, min(_time) as first_seen, max(_time) as last_seen by causality_id, causality_actor_process_image_name, action_process_username\n| filter stages >= 3\n| sort desc stages\n| fields causality_id, causality_actor_process_image_name, action_process_username, stages, signals, first_seen, last_seen",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1566.002",
+          "T1059.001",
+          "T1021.001",
+          "T1078.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Phished recipient's mail client owns the chain; the encoded PowerShell downloader, the lateral fan-out and the cloud administrative assumption all descend from it under one causality_id and one normalized principal."
+      },
+      {
+        "name": "Automation Identity Deviating From Its Own Learned Job Envelope Under Corpus Load",
+        "description": "The hard positive, and the item that separates a tuned platform from a loud one. A backup automation identity whose learned envelope is a fixed nightly window over a fixed share set suddenly archives a different share set outside that window and then egresses. It shares no principal, host or causality chain with the malicious arc, so a platform that elevates everything anomalous will wrongly merge it into that incident, and a platform that blanket-suppresses automation noise will miss it entirely. Both are failures and both are visible in the confusion matrix.",
+        "logic": "dataset = xdr_data\n| filter cortexsim_run_tag = \"MP021\" and cortexsim_label = \"hard_positive\"\n| filter event_type = ENUM.PROCESS and action_process_username = \"svc-backup\"\n| alter run_hour = extract_time(_time, \"HOUR\")\n| comp count_distinct(action_file_path) as share_paths, count() as ops, min(run_hour) as earliest_hour, max(run_hour) as latest_hour by agent_hostname, action_process_username, causality_id\n| filter share_paths >= 3\n| sort desc share_paths\n| fields agent_hostname, action_process_username, causality_id, share_paths, ops, earliest_hour, latest_hour",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1078"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The backup service's own scheduler process owns this chain. It is deliberately disjoint from the phishing CGO so a wrongful merge into the malicious incident is detectable as a grouping precision error."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Labelled Alert Corpus Ground-Truth Manifest Landed and Is Joinable",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP021\"\n| comp count() as records, count_distinct(cortexsim_signal_class) as signal_classes by cortexsim_label\n| filter records >= 1\n| sort desc records\n| fields cortexsim_label, signal_classes, records",
+        "expected_rows_min": 3,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Lateral SMB and RDP Fan-Out From the Phished Principal",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP021\" and cortexsim_label = \"malicious\"\n| filter action_remote_port in (445, 3389)\n| comp count_distinct(action_remote_ip) as reached_hosts, count() as sessions by agent_hostname, action_process_username, causality_id\n| filter reached_hosts >= 2\n| sort desc reached_hosts\n| fields agent_hostname, action_process_username, causality_id, reached_hosts, sessions",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Benign Near-Miss Alerts Remain Singletons Below the Escalation Floor",
+        "query": "dataset = xsiam_incidents\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP021\" and cortexsim_label = \"benign\"\n| comp count() as alerts_in_incident, count_distinct(cortexsim_signal_class) as classes by incident_id, incident_severity\n| filter alerts_in_incident <= 1 and incident_severity in (\"informational\", \"low\", \"medium\")\n| sort desc alerts_in_incident\n| fields incident_id, incident_severity, classes, alerts_in_incident",
+        "expected_rows_min": 1,
+        "dataset": "xsiam_incidents"
+      },
+      {
+        "purpose": "validation",
+        "name": "Near-Miss Benign Alert Floor Reached the Corpus Volume Target",
+        "query": "dataset = xsiam_incidents\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP021\" and cortexsim_label = \"benign\"\n| comp count() as benign_alerts, count_distinct(cortexsim_signal_class) as near_miss_classes by cortexsim_run_tag\n| filter benign_alerts >= 600 and near_miss_classes >= 4\n| fields cortexsim_run_tag, benign_alerts, near_miss_classes",
+        "expected_rows_min": 1,
+        "dataset": "xsiam_incidents"
+      },
+      {
+        "purpose": "validation",
+        "name": "Alert Grouping Collapse Ratio Across the Labelled Corpus",
+        "query": "dataset = xsiam_incidents\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP021\"\n| comp count() as raw_alerts, count_distinct(incident_id) as incidents by cortexsim_run_tag\n| alter collapse_ratio_pct = multiply(subtract(1, divide(incidents, raw_alerts)), 100)\n| fields cortexsim_run_tag, raw_alerts, incidents, collapse_ratio_pct",
+        "expected_rows_min": 1,
+        "dataset": "xsiam_incidents"
+      },
+      {
+        "purpose": "validation",
+        "name": "Triage Classification Confusion Matrix Against the Ground-Truth Label",
+        "query": "dataset = xsiam_incidents\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP021\"\n| alter truth = if(cortexsim_label = \"benign\", \"benign\", \"malicious\")\n| alter predicted = if(incident_severity in (\"high\", \"critical\"), \"malicious\", \"benign\")\n| comp count() as alerts by truth, predicted\n| sort desc alerts\n| fields truth, predicted, alerts",
+        "expected_rows_min": 2,
+        "dataset": "xsiam_incidents"
+      },
+      {
+        "purpose": "validation",
+        "name": "Email-Alert Disposition Latency on the Ingested Mail Platforms",
+        "query": "dataset = xsiam_incidents\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP021\"\n| filter alert_source in (\"proofpoint_tap_raw\", \"msft_o365_email\")\n| alter disposition_seconds = timestamp_diff(disposition_time, alert_time, \"SECOND\")\n| comp avg(disposition_seconds) as avg_disposition_seconds, max(disposition_seconds) as worst_disposition_seconds, count() as email_alerts by alert_source\n| sort desc worst_disposition_seconds\n| fields alert_source, email_alerts, avg_disposition_seconds, worst_disposition_seconds",
+        "expected_rows_min": 1,
+        "dataset": "xsiam_incidents"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Malicious-Labelled Alerts That Never Joined an Incident — the Recall Miss List",
+        "query": "dataset = xsiam_incidents\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP021\"\n| filter cortexsim_label in (\"malicious\", \"hard_positive\")\n| filter incident_id = null\n| comp count() as ungrouped_alerts by cortexsim_label, cortexsim_signal_class\n| sort desc ungrouped_alerts\n| fields cortexsim_label, cortexsim_signal_class, ungrouped_alerts",
+        "expected_rows_min": 0,
+        "dataset": "xsiam_incidents"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AI SOC Volume Triage Discrimination Terminal Stitch",
+        "rule_id": "CR-MP-0021",
+        "logic": "ABIOC(Multi-Stage Intrusion Chain Elevated Above a High-Volume Benign Alert Floor) AND XQL(Alert Grouping Collapse Ratio Across the Labelled Corpus) AND XQL(Triage Classification Confusion Matrix Against the Ground-Truth Label) AND XQL(Benign Near-Miss Alerts Remain Singletons Below the Escalation Floor) observed under one cortexsim_run_tag — the terminal assertion is a measurement, not a merge. The four malicious-labelled stages must resolve to ONE incident ranked above every benign-labelled alert; the hard-positive automation deviation must raise its OWN incident and must NOT be absorbed into the malicious one; the benign near-miss floor must stay singleton and below the escalation floor. Precision and recall are computed from the confusion-matrix query against the author-time label column, and the collapse ratio from the raw-alert to incident count. Failure modes are individually visible and individually reportable: a benign alert inside the malicious incident is a precision failure, a malicious-labelled alert on the recall miss list is a recall failure, a hard positive merged into the malicious incident is a grouping-precision failure, and a collapse ratio below the bar is a grouping failure."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — auto-tuned multi-stage causality chain scoring under alert load",
+      "Cortex XSIAM — alert grouping and SmartScore incident ranking",
+      "Cortex XSIAM Analytics — per-identity job-envelope baselining for automation accounts"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-MP021-ELEVATE",
+          "CR-MP-0021"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xsiam_incidents | filter cortexsim_run_tag = \"MP021\" | comp count() as raw_alerts, count_distinct(incident_id) as incidents by cortexsim_label"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-021",
+        "name": "AI SOC at Volume — Labelled Corpus Discrimination",
+        "description": "Proves the AI triage layer's discrimination with computed numbers rather than a demo anecdote, by running a labelled alert corpus at production volume through grouping, ranking and disposition and joining the platform's verdict against an author-time truth column.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-021A",
+            "objective": "The four malicious-labelled stages collapse into ONE incident ranked above every benign-labelled alert in the corpus.",
+            "preconditions": [
+              "Alert grouping and AI triage enabled on the tenant.",
+              "The corpus landed with its label column intact."
+            ],
+            "steps": [
+              "Emit the labelled corpus at the configured volume.",
+              "Observe the multi-stage elevation ABIOC fire on the shared causality chain.",
+              "Confirm the malicious incident outranks every benign-labelled alert."
+            ],
+            "success_criteria": [
+              "ABIOC `Multi-Stage Intrusion Chain Elevated Above a High-Volume Benign Alert Floor` fires.",
+              "Exactly one incident carries the four malicious-labelled signal classes.",
+              "Collapse ratio across the corpus clears the authored bar."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-021B",
+            "objective": "The hard-positive automation deviation is caught on its OWN incident and is not absorbed into the malicious one.",
+            "preconditions": [
+              "A learned job envelope exists for the backup automation identity."
+            ],
+            "steps": [
+              "Emit the off-envelope backup deviation.",
+              "Confirm the automation-envelope ABIOC fires.",
+              "Confirm its incident_id differs from the malicious incident_id."
+            ],
+            "success_criteria": [
+              "ABIOC `Automation Identity Deviating From Its Own Learned Job Envelope Under Corpus Load` fires.",
+              "The hard-positive alert is not a member of the malicious incident."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-MP-021C",
+            "objective": "Precision and recall are computed against the label column, and the near-miss benign floor stays singleton and below the escalation floor.",
+            "preconditions": [
+              "The benign near-miss floor reached the configured volume."
+            ],
+            "steps": [
+              "Run the confusion-matrix query against the truth column.",
+              "Run the recall miss list for malicious-labelled alerts that never grouped.",
+              "Confirm every benign-labelled alert stayed a singleton below the escalation floor."
+            ],
+            "success_criteria": [
+              "The confusion matrix returns at least two truth/predicted cells, so precision and recall are both computable.",
+              "The recall miss list is empty.",
+              "No benign-labelled alert appears inside the malicious incident."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Baseline automation identities on their own job envelopes (window, share set, volume) so a deviating service account is separable from the automation noise floor rather than blanket-suppressed with it.",
+      "Keep a labelled regression corpus for the SOC and re-run it after every tuning change, so suppression work is measured against recall rather than against alert-count relief."
+    ],
+    "detection_engineering": [
+      "Score the triage layer with a confusion matrix computed from a truth column carried on the record, not with a demo anecdote — a collapse ratio on its own can be gamed by suppressing true positives.",
+      "Treat a merged hard positive as a grouping PRECISION failure and report it separately from a missed malicious alert; they have different remediations.",
+      "Keep the near-miss population near-miss. An authenticated scanner sweep, a sanctioned admin module load and an RMM patch fan-out are the shapes a naive rule set alerts on; obvious benign traffic in the corpus inflates precision for free."
+    ],
+    "response_playbook": "XSOAR-PB-LabelledCorpusTriageRegression-v1"
+  },
+  "references": [
+    {
+      "title": "AI, Automation and Attacks: Unpacking the Unit 42 2026 Global Incident Response Report",
+      "url": "https://unit42.paloaltonetworks.com/ai-incident-response-report/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1566.002 — Phishing: Spearphishing Link",
+      "url": "https://attack.mitre.org/techniques/T1566/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Alert grouping, SmartScore incident ranking and Analytics alert reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

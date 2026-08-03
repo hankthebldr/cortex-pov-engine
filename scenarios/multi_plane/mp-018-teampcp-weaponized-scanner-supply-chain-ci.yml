@@ -85,6 +85,12 @@ stitching_key: causality_id
 # credential-access, discovery, deploy, and impact stages. Each downstream step
 # declares causality.parent_step so the graph builds a CONNECTED chain, not a
 # star hanging off the beacon.
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# methodology_family was absent, so this scenario was silently missing from the
+# coverage analyzer's Section 4 family table — invisible rather than uncovered.
+validation_methodology: "Code-to-Cloud Traceability (compromised build artifact to cloud control-plane impact)"
+methodology_family: "F9"
+
 steps:
   - id: step-01
     name: "CGO — weaponized trivy/kics CI action spawns kamikaze.sh credential-harvest child"
