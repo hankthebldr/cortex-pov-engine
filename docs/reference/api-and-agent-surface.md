@@ -65,15 +65,34 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
-| GET | `/api/scenarios` | List scenarios; optional filters | query: `plane`, `uc_ref`, `ttp_ref` | `{"scenarios":[<scenario.to_dict()>],"total":N}` |
-| GET | `/api/scenarios/{scenario_id}` | Single scenario detail | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
+| GET | `/api/scenarios` | List scenarios (**summary projection**); optional filters | query: `plane`, `uc_ref`, `ttp_ref`, `entitlement` | `{"scenarios":[<summary>],"total":N,"projection":"summary"}` |
+| GET | `/api/scenarios/{scenario_id}` | Single scenario detail (**full document**) | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
 | GET | `/api/scenarios/{scenario_id}/infra-hints` | Resolve `external_tools[].adapter_ref` → IaC module suggestions | — | `{scenario_id, plane, adapter_refs[], resolved_adapters[], unresolved_refs[], suggested_modules[]}` |
-| GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=bash\|k8s` (default `bash`) | `PlainTextResponse` shell/yaml w/ `Content-Disposition` attachment; 400 `INVALID_FORMAT` |
+| GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=bash\|k8s\|powershell\|auto` (default `auto`) | `PlainTextResponse` shell/`.ps1`/yaml w/ `Content-Disposition`; 400 `INVALID_FORMAT`; 409 `BUNDLE_TARGET_UNSATISFIABLE` |
 
 - `plane` is upper-cased server-side; `uc_ref` exact-match; `ttp_ref` filtered in
-  Python (full scan of `steps[].expected_detections[].ttp_ref`, justified by small
-  catalog ~50-69 scenarios).
-- `download` calls `push_generator.generate_bash` / `generate_k8s` directly — see §4.
+  Python against the ORM rows (so the list projection does not affect it).
+- **List projection (contract change, 2026-08-02).** The list response is a
+  SUMMARY row, not a detail document — the full corpus serialised to 1293 KB and
+  ~66 % of that was step `command` text and per-detection `description` prose no
+  list view renders. Measured **1293.2 KB → 431.2 KB (-66.7 %)**. Each step keeps
+  only `{id, name, mitre_technique, expected_detections:[{type, plane}]}` — the
+  fields the console actually reads off a list row (technique/detection-type/plane
+  facets in `FilterPalette`, `useScenarioFilter`, `ScenarioGrid`,
+  `StackCoverageView`, and `steps.length` in `AppConsole`). Four top-level fields
+  are dropped whole: `cleanup`, `external_tools`, `success_criteria`, and the
+  unprojected `steps` payload. The envelope carries `projection: "summary"` so a
+  consumer can tell a summary row from a detail document without guessing at
+  missing keys. **`GET /api/scenarios/{id}` is unchanged** and remains the source
+  for commands, cleanup, identity, causality, `platform_variants`,
+  `detection_id`/`ttp_ref` and `verification_xql`.
+- `download` dispatches through `push_generator.resolve_target` — see §4. `auto`
+  prefers POSIX for back-compat and falls back to `windows`. **409, not 400**, is
+  returned when the request is well-formed but the scenario's content cannot
+  satisfy the target; the `detail` names every offending step, its reason code
+  and the fix. `k8s` is gated on the POSIX resolution (its Job runs `/bin/bash -c`
+  in `ubuntu:22.04`). `X-CortexSim-Bundle-Target` is always set;
+  `X-CortexSim-Bundle-Alternates` appears when both targets are emittable.
 
 ### 1.3 Runs (`core/api/runs.py`, **no router prefix** — routes are absolute)
 
@@ -92,7 +111,8 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
 | POST | `/api/runs/{run_id}/output` | Agent streams output (append) | `OutputRequest`: `{output}` | `{"status":"ok","run_id"}`; 404 |
-| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary}` | `{"status":"complete"\|"failed","run_id"}`; 404 |
+| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary}` | `{"status":"complete"\|"failed","run_id","tc_verdict"}`; 404 |
+| POST | `/api/runs/{run_id}/verify` | **Tier-2** verification against a registered XSIAM tenant (outbound XQL) | query: `force=0\|1` | `{run_id, tc_verdict, reverified, tenant, queries_issued, reason?}`; 200 + `pending` + `reason:"no_tenant_integration"` when no credential; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/abort` | Operator-initiated abort | — | `{"status":"aborted"\|<terminal>,"run_id","was_terminal"}`; 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
 | GET | `/api/runs/{run_id}/events` | SSE stream scoped to one run (+ global) | — | `text/event-stream` |
@@ -209,12 +229,21 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   `NO_AGENT_ID` · `BINARY_FETCH_FAILED` · `BINARY_UNAVAILABLE` · `CHECKSUM_MISMATCH` ·
   `CHECKSUM_SKIPPED` · `BIN_NOT_EXECUTABLE` · `BIN_INSTALL_FAILED` ·
   `SOURCE_BUILD_FAILED` · `SERVICE_START_FAILED` · `DEGRADED_NO_SUPERVISOR`.
-- **Windows has no beacon.** `agent/executor` is POSIX-only and does not compile
-  for `GOOS=windows`, so no windows binary is in the matrix. `?os=windows` still
-  returns 200 PowerShell, but the script hard-fails `WINDOWS_AGENT_UNAVAILABLE`
-  *before* enrolling (no phantom agent row) and points at push mode. The rest of
-  that script (download + `Get-FileHash` verify + `sc.exe create`) is real and the
-  refusal lifts on its own once a windows beacon lands in the dist matrix.
+- **Windows beacon: BUILDABLE, not yet SERVABLE (updated 2026-08-02).** The
+  beacon now compiles and vets clean for `GOOS=windows` — the POSIX-only
+  `syscall.SysProcAttr{Setpgid}` / `syscall.Kill` moved behind
+  `agent/executor/platform_unix.go` + `platform_windows.go`, and CI gates all
+  three host families (see the `agent` job in `ci.yml` / `make test-agent-cross`).
+  **However `scripts/build-agent-dist.sh` still omits `windows/amd64` from its
+  `TARGETS`**, so no windows binary reaches the shelf and `?os=windows` still
+  returns 200 PowerShell that hard-fails `WINDOWS_AGENT_UNAVAILABLE` *before*
+  enrolling (no phantom agent row). Two stale assertions must be corrected
+  together with that dist-matrix change, because both now state something false:
+  the comment at `scripts/build-agent-dist.sh:17-19` and the operator-facing
+  string `core/api/agents.py::_WINDOWS_PREFLIGHT_UNAVAILABLE`, which tells a DC
+  the executor "does not compile for GOOS=windows". Until the matrix is fixed,
+  **push mode is the working path for Windows targets** — and it is now a real
+  one (see §1.2 `format=powershell`).
 - The Go beacon treats **SIGHUP** as a graceful shutdown; previously a hangup hit
   the default disposition and killed the beacon when the terminal went away.
 
@@ -347,7 +376,15 @@ Authoring surface (gated on `CORTEXSIM_AUTHORING_ENABLED=true`, else 403 `AUTHOR
 
 - Both return `text/event-stream` and emit one SSE frame per event. The browser
   consumes them with `EventSource.onmessage` + `JSON.parse`; each event carries a
-  `{type, run_id, ts, data}` envelope (`run.status`, `run.output`, `agent.status`, …).
+  `{type, run_id, ts, data}` envelope (`run.status`, `run.output`, `result.observed`,
+  `agent.status`, `agent.install`, `run.verdict`, …).
+- **`run.verdict` (new, 2026-08-02)** is published whenever `Run.tc_verdict` is
+  written — i.e. from `complete_run` (seeds the verdict, typically `pending` at
+  t=0) and from `connectors/service.py::apply_verdicts`, the single funnel for
+  manual `/observations`, credential-backed `/reconcile` and the auto sweep. It
+  is the frame that tells a console the POV pass/fail readout moved. Note that
+  `core/events.py`'s module docstring still enumerates only the original four
+  types and has not been updated.
 - Backed by an in-process `event_bus` (`core/events.py`). The orchestrator and the
   `/abort`, `/output`, `/complete`, and heartbeat-sweep paths publish to it; the SSE
   endpoint subscribes and relays. An initial comment frame fires so

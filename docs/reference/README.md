@@ -42,6 +42,45 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-08-02 — library-breadth authoring pass):**
+  **169 loadable scenarios · 169 TTP cards** across **15 detection planes** (all
+  `status: active`, 0 rejected / 0 dangling refs; **1073/1073 scenario
+  `detection_id` slugs resolve** — GAP-4 held) · **1756 catalog detection objects** ·
+  1082 step-detections. `make validate` **344 pass / 0 warn / 0 fail**; exports
+  byte-identical across two regenerations (535 files); `make check-refs` **6 passed**;
+  full backend suite **3935 pass / 236 skip / 0 fail**.
+  This pass adds **7 scenarios + 7 cards** (`TTP-2026-0169..0175`) authored against the
+  library-breadth audit, weighted ABIOC/Analytics/Correlation so the detection-type
+  gate improves rather than breaks: **ABIOC+Analytics 15.0% → 15.9%** (it was passing
+  its 15% target by 0.0pp) and Correlation holds 10.7%.
+  * `SIM-MP-021` — 800-alert **labelled** corpus (malicious / hard-positive / benign
+    near-miss), so triage precision, recall and grouping collapse are **computed**
+    against an author-time truth column rather than asserted.
+  * `SIM-APB-001` — governed-autonomy audit reconstruction across three action classes.
+  * `SIM-MP-022` — encryption-less extortion (no T1486 anywhere in the run).
+  * `SIM-CLOUD-010` — trusted-relationship vendor-integration pivot (T1199 had **one**
+    step corpus-wide before it).
+  * `SIM-AIACC-006` — token jacking, the inverse direction of the shipped AI Access set.
+  * `SIM-TIM-008` / `SIM-TIM-009` — dangling-DNS takeover as allowlisted C2, and
+    pre-weaponization capability development. First `T1584` and first `T1588` in the
+    corpus.
+  **Index coverage moves 86 → 89 of 266** (DET/HNT **67 → 70 of 107**); the three
+  net-new rows are `TC-AGTX-03`, `TC-AES-08` and `TC-APB-06` — the last being the only
+  unevidenced **P1** row in the index carrying a measurable threshold, since the other
+  eight are `Qualitative pass` and clamp to `not_applicable`. Open DET/HNT gaps
+  **40 → 37**; payloads in use **31 → 33**.
+  **`make coverage-strict` now exits 0** (was 1): Resource Development (TA0042) went
+  **3 → 5** scenarios, clearing the analyzer's only strict breach. Six scenarios that
+  carried no `methodology_family` (`SIM-CDR-022/023/025/026`, `SIM-EDR-020`,
+  `SIM-MP-018`) were silently absent from the family table and are now counted —
+  F1 104→111, F9 2→3.
+  **S-13 tier drift rises 100 → 104** and is deliberate: four new scenarios carry a
+  higher `moat_tier` than their index row, because the bound rows are tiered PARITY for
+  the table-stakes version of a capability that these scenarios prove the
+  differentiated version of. **S-14 holds at 13** — `TC-XTI-09` was examined for
+  `SIM-TIM-008`, is unevidenced and scoreable, and was **deliberately not bound**
+  because its `validation_class` is POS and a scenario must not claim a state property
+  it only provokes. It is recorded as a candidate for `assertions/pos/`.
 - **Counted ground truth (verified 2026-07-31 — FY27 v2.2 UC/TC index reconciliation):**
   The FY27 master index snapshot (**49 UC · 203 UCS · 266 TC · 140 POV-SC payloads · 38 SKU**)
   is versioned in-repo at `docs/uc_tc_mapping/_v2.2-source/` and loaded at boot by
