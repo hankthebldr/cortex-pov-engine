@@ -113,6 +113,13 @@ cluster_posture:
       - api_groups: [""]
         resources: ["secrets"]
         verbs: ["get", "list"]
+  # The tools this scenario's steps download. SimCore stages and serves them, so
+  # the pod never reaches github.com — the egress a customer's default-deny CNI
+  # blocks first. Declaring these forces delivery=served and installs the
+  # shelf-backed curl shim, which is what makes step-02 and step-05 resolve.
+  payloads:
+    - deepce.sh
+    - linpeas.sh
 
 steps:
   - id: step-01

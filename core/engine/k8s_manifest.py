@@ -853,6 +853,13 @@ cs_die() {{  # cs_die <stage> <code> <what>
   exit {exit_never_ran}
 }}
 
+# The fetch initContainer writes shelf-backed curl/wget shims into the shared
+# volume, but its PATH export died with it. Re-prepend here so a scenario's
+# verbatim `curl .../linpeas.sh` resolves to the verified shelf copy — and so
+# require_bin below finds them and does NOT hard-stop on an image that ships no
+# real curl. Harmless when nothing is staged: the directory simply will not exist.
+[ -d /cortexsim/bin ] && PATH="/cortexsim/bin:$PATH" && export PATH
+
 require_bin() {{  # require_bin <binary> <step-id>
   command -v "$1" >/dev/null 2>&1 && return 0
   cs_die "$2" MISSING_BIN \\
@@ -1028,6 +1035,43 @@ def _for_carrier(findings: tuple[PostureFinding, ...], carrier: str) -> list[Pos
     return [f for f in findings if f.carrier == carrier]
 
 
+class PayloadNotStaged(Exception):
+    """A scenario declares a tool the shelf does not carry.
+
+    Raised at GENERATION time on purpose. The alternative is a manifest that
+    applies cleanly and dies in the pod, which costs a DC a cluster round-trip
+    and reads — until they open the logs — exactly like a detection failure.
+    """
+
+
+def _resolve_payloads(names: list[str]) -> list[dict[str, str]]:
+    """Bind each declared tool to the shelf's digest for it.
+
+    The digest is resolved HERE, on the DC's SimCore, and baked into the
+    manifest. The pod therefore verifies against a value it carried in rather
+    than one it fetched from the same server it is trusting — the same anchoring
+    the bootstrap digest already uses.
+
+    An empty sha256 would make the pod's `[ "$ACT" = "$WANT" ]` compare against
+    "" and pass on anything, which is how an integrity check silently becomes a
+    no-op. So a name the shelf cannot resolve is a hard refusal, never a blank.
+    """
+    if not names:
+        return []
+    from api.payloads import inventory  # noqa: PLC0415
+
+    shelf = {p["name"]: p["sha256"] for p in inventory()}
+    missing = [n for n in names if n not in shelf]
+    if missing:
+        raise PayloadNotStaged(
+            f"scenario declares payload(s) {missing} that are not on the shelf. "
+            f"Staged: {sorted(shelf) or 'none'}. Run ./scripts/build-payloads.sh "
+            f"on the SimCore host and rebuild the image, or drop them from "
+            f"cluster_posture.payloads."
+        )
+    return [{"name": n, "sha256": shelf[n]} for n in names]
+
+
 def _integrity_env(scenario_id: str, digest: str, payloads: list[dict[str, str]]) -> str:
     """Flat KEY=VALUE integrity data.
 
@@ -1094,6 +1138,72 @@ ACT="$(sha256sum /cortexsim/.bootstrap.part | awk '{{print $1}}')"
 chmod 0755 /cortexsim/.bootstrap.part
 mv /cortexsim/.bootstrap.part /cortexsim/bootstrap.sh
 echo "[CORTEXSIM] payload verified sha256=$ACT (served from $CORTEXSIM_SERVER)"
+# --- staged tools -----------------------------------------------------------
+# Each declared payload is fetched and verified against the digest baked into
+# this manifest. A tool that arrives corrupted is refused rather than run: a
+# truncated linpeas.sh exits non-zero and reads in the POV report as "the TTP
+# ran and the customer's stack saw nothing".
+mkdir -p /cortexsim/tools
+i=0
+while [ "$i" -lt "${{PAYLOAD_COUNT:-0}}" ]; do
+  eval "PN=\$PAYLOAD_${{i}}_NAME"
+  eval "PS=\$PAYLOAD_${{i}}_SHA256"
+  [ -n "$PS" ] || die "PAYLOAD_INTEGRITY_MISSING no digest for '$PN' — refusing to stage an unverifiable tool"
+  wget -q -T 120 -O "/cortexsim/tools/.$PN.part" "$CORTEXSIM_SERVER/api/k8s/payload/$PN" \\
+    || die "PAYLOAD_FETCH_FAILED could not fetch '$PN' from $CORTEXSIM_SERVER. NOTHING RAN."
+  PA="$(sha256sum "/cortexsim/tools/.$PN.part" | awk '{{print $1}}')"
+  [ "$PA" = "$PS" ] \\
+    || die "PAYLOAD_SHA256_MISMATCH '$PN' expected=$PS actual=$PA — refusing to execute a tool that changed in transit."
+  chmod 0755 "/cortexsim/tools/.$PN.part"
+  mv "/cortexsim/tools/.$PN.part" "/cortexsim/tools/$PN"
+  echo "[CORTEXSIM] staged tool $PN sha256=$PA"
+  i=$((i+1))
+done
+
+# --- shelf-backed fetch shims ------------------------------------------------
+# The scenario's commands are emitted VERBATIM — a DC reading `kubectl logs`
+# sees the same `curl -sSL .../linpeas.sh` the scenario declares, and the bash
+# bundle for the same scenario stays byte-identical. What changes is where that
+# curl RESOLVES: these shims sit first on PATH and serve the request from the
+# verified shelf instead of the public internet.
+#
+# That is the whole point of staging. A pod in a customer's cluster reaching
+# github.com is the egress problem this design exists to remove, and it is the
+# first thing a default-deny CNI blocks.
+#
+# A URL whose basename is NOT staged is a hard failure, never a silent network
+# fallback: falling through to the internet would work on the DC's laptop and
+# fail in the customer's cluster, which is the worst possible place to discover
+# the difference.
+mkdir -p /cortexsim/bin
+cat > /cortexsim/bin/curl <<'CS_SHIM_EOF'
+#!/bin/sh
+# CortexSim shelf shim. Supports the download shapes the corpus uses:
+#   curl [flags] <url> -o <dst>   |   curl [flags] -o <dst> <url>
+url=""; dst=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o|--output) dst="$2"; shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+[ -n "$url" ] || {{ echo "[cortexsim-shim] no URL in curl invocation" >&2; exit 2; }}
+name="${{url##*/}}"
+src="/cortexsim/tools/$name"
+if [ ! -f "$src" ]; then
+  echo "[cortexsim-shim][FATAL] '$name' is not on the SimCore shelf and this pod has no internet egress by design." >&2
+  echo "[cortexsim-shim] add it to cluster_posture.payloads and re-stage with ./scripts/build-payloads.sh" >&2
+  exit 7
+fi
+echo "[cortexsim-shim] $name served from the verified shelf (requested $url)" >&2
+if [ -n "$dst" ]; then cp "$src" "$dst"; else cat "$src"; fi
+CS_SHIM_EOF
+chmod 0755 /cortexsim/bin/curl
+# wget's download shape is `wget [flags] -O <dst> <url>`; same resolution.
+sed 's/-o|--output/-O|--output-document/' /cortexsim/bin/curl > /cortexsim/bin/wget
+chmod 0755 /cortexsim/bin/wget
+PATH="/cortexsim/bin:$PATH"; export PATH
 """
 
 _RUNNER_CMD = """\
@@ -1328,7 +1438,7 @@ def build_objects(
         cluster_scoped_names = [("clusterroles", cr_name), ("clusterrolebindings", cr_name)]
 
     # ── integrity ConfigMap ────────────────────────────────────────────────
-    payload_entries = [{"name": n, "sha256": ""} for n in eff.payloads]
+    payload_entries = _resolve_payloads(eff.payloads)
     integrity_data = {
         "integrity.env": _integrity_env(scenario_id, digest, payload_entries),
         # JSON is for humans and the console, never for the verification path.
