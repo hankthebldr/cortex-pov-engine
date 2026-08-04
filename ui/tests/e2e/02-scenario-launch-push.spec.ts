@@ -13,20 +13,28 @@ test('DC arms a scenario against a target and launches through the consent gate'
   await api.health()
   await page.goto('/')
 
-  // ① Targets — pick the always-ready offline push bundle
+  // ① Targets — the destination renders the same TargetsView, so confirm the
+  //    offline push bundle is offered there.
   await gotoView(page, 'Targets')
-  await page.locator('.target-card--push').first().click()
+  await expect(page.locator('.target-card--push').first()).toBeVisible({ timeout: 10_000 })
 
-  // ② Library — filter to EDR and arm a scenario (clicking the card arms it)
+  // ② Library — filter to EDR and confirm the scenario is browsable.
   await gotoView(page, 'Library')
   await page.getByTestId('plane-button-EDR').click()
   const card = page.getByText(/SIM-EDR-001/).first()
   await expect(card).toBeVisible({ timeout: 10_000 })
-  await card.click()
 
-  // ③ Launch — armed scenario + selected target compose here
-  await gotoView(page, 'Launch')
+  // ③ Launch — the guided flow owns its own armed-scenario state (it is a
+  //    separate surface from Library since the destination redesign), so the
+  //    scenario is armed via the route rather than by clicking in Library.
+  await gotoView(page, 'Launch', { arm: 'SIM-EDR-001' })
   await expect(page.locator('.launch-card__title').first()).toBeVisible({ timeout: 10_000 })
+
+  //    The guided flow owns its OWN selectedTarget — a target picked in the
+  //    Targets destination is a different component instance and does not
+  //    compose here, so pick it inside the flow or "Pick a target" stays a
+  //    launch blocker.
+  await page.locator('.target-card--push').first().click()
 
   // dual-use consent gate: button is disabled until consent is granted
   const launchBtn = page.getByRole('button', { name: /Launch run/i })
