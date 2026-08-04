@@ -1,0 +1,172 @@
+# Endpoint Management — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Endpoint Management"
+operations:
+  - op_id: OP-DISTRIBUTIONS-GET-VERSIONS
+    name: "Get Distribution version"
+    method: POST
+    path: "/public_api/v1/distributions/get_versions"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/riio6dzgcx9jq-get-distribution-version"
+  - op_id: OP-ENDPOINTS-GET-ENDPOINTS
+    name: "Get all Endpoints"
+    method: POST
+    path: "/public_api/v1/endpoints/get_endpoints"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/josa75msg4xym-get-all-endpoints"
+  - op_id: OP-ENDPOINTS-GET-POLICY
+    name: "Get Policy"
+    method: POST
+    path: "/public_api/v1/endpoints/get_policy"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/04crccks4jk2o-get-policy"
+  - op_id: OP-ENDPOINTS-DELETE
+    name: "Delete Endpoints"
+    method: POST
+    path: "/public_api/v1/endpoints/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/r0anrn95u1yyt-delete-endpoints"
+  - op_id: OP-DISTRIBUTIONS-CREATE
+    name: "Create distributions"
+    method: POST
+    path: "/public_api/v1/distributions/create"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/q3wribur9dylf-create-distributions"
+  - op_id: OP-DISTRIBUTIONS-GET-DISTRIBUTIONS
+    name: "Get Distributions"
+    method: POST
+    path: "/public_api/v1/distributions/get_distributions"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/3fabtmrc8nmjv-get-distributions"
+  - op_id: OP-DEVICE-CONTROL-GET-VIOLATIONS
+    name: "Get Violations"
+    method: POST
+    path: "/public_api/v1/device_control/get_violations"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/9vks6oalpiebt-get-violations"
+  - op_id: OP-DISTRIBUTIONS-GET-STATUS
+    name: "Get Distribution status"
+    method: POST
+    path: "/public_api/v1/distributions/get_status"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/og7h4cvkon4pa-get-distribution-status"
+  - op_id: OP-DISTRIBUTIONS-GET-DIST-URL
+    name: "Get Distribution URL"
+    method: POST
+    path: "/public_api/v1/distributions/get_dist_url"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/sjkg3r5qdfqvu-get-distribution-url"
+  - op_id: OP-ENDPOINTS-UPDATE-AGENT-NAME
+    name: "Set an Endpoint Alias"
+    method: POST
+    path: "/public_api/v1/endpoints/update_agent_name"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/qmhtgk4ura8kw-set-an-endpoint-alias"
+  - op_id: OP-TAGS-AGENTS-ASSIGN
+    name: "Assign Tags"
+    method: POST
+    path: "/public_api/v1/tags/agents/assign"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/1h0jz8q3by0gs-assign-tags"
+  - op_id: OP-TAGS-AGENTS-REMOVE
+    name: "Remove Tags"
+    method: POST
+    path: "/public_api/v1/tags/agents/remove"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/o7p7d05xyoh18-remove-tags"
+  - op_id: OP-ENDPOINTS-GET-ENDPOINT
+    name: "Get Endpoint"
+    method: POST
+    path: "/public_api/v1/endpoints/get_endpoint"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/nxq2mf3ia6wrd-get-endpoint"
+  - op_id: OP-TRIAGE-ENDPOINT
+    name: "Initiate Forensics Triage"
+    method: POST
+    path: "/public_api/v1/triage_endpoint"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/7fcczcxp7x3h6-initiate-forensics-triage"
+  - op_id: OP-DISTRIBUTIONS-DELETE
+    name: "Delete agent installation packages"
+    method: POST
+    path: "/public_api/v1/distributions/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/2idioh1xzgpn4-delete-agent-installation-packages"
+  - op_id: OP-TAGS-AGENTS-DELETE-PERMANENTLY
+    name: "Delete Tags Permanently"
+    method: POST
+    path: "/public_api/v1/tags/agents/delete_permanently"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/7e1f05dae37d9-delete-tags-permanently"
+  - op_id: OP-ENDPOINTS-UPGRADE
+    name: "Upgrade Agents"
+    method: POST
+    path: "/public_api/v1/endpoints/upgrade"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/85a3df45b1af1-upgrade-agents"
+  - op_id: OP-ENDPOINTS-GET-PROFILES
+    name: "Get endpoint security profiles"
+    method: POST
+    path: "/public_api/v1/endpoints/get_profiles"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/8e9bnkte8t8v8-get-endpoint-security-profiles"
+  - op_id: OP-LEGACY-EXCEPTIONS-GET-MODULES
+    name: "Get Legacy Exceptions Modules"
+    method: POST
+    path: "/public_api/v1/legacy_exceptions/get_modules"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/088215b260fc2-get-legacy-exceptions-modules"
+  - op_id: OP-LEGACY-EXCEPTIONS-FETCH
+    name: "Fetch Legacy Exception Rules"
+    method: POST
+    path: "/public_api/v1/legacy_exceptions/fetch"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/e2b51ac322de9-fetch-legacy-exception-rules"
+  - op_id: OP-LEGACY-EXCEPTIONS-ADD
+    name: "Add Legacy Exception Rule"
+    method: POST
+    path: "/public_api/v1/legacy_exceptions/add"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/def84d8bd0b52-add-legacy-exception-rule"
+  - op_id: OP-LEGACY-EXCEPTIONS-EDIT
+    name: "Edit Legacy Exception Rule"
+    method: POST
+    path: "/public_api/v1/legacy_exceptions/edit"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/83edf03720f7c-edit-legacy-exception-rule"
+  - op_id: OP-LEGACY-EXCEPTIONS-DELETE
+    name: "Delete Legacy Exception Rules"
+    method: POST
+    path: "/public_api/v1/legacy_exceptions/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/b401aa313475a-delete-legacy-exception-rules"
+  - op_id: OP-PROFILES-PREVENTION-ADD
+    name: "Add Prevention Profile"
+    method: POST
+    path: "/public_api/v1/profiles/prevention/add"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/5bb092543923b-add-prevention-profile"
+  - op_id: OP-PROFILES-ADD-SIGNER-CN-TO-ALLOWLIST
+    name: "Add Signer CN to Allowlist"
+    method: POST
+    path: "/public_api/v1/profiles/add_signer_cn_to_allowlist"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/d69c78ed7835c-add-signer-cn-to-allowlist"
+  - op_id: OP-PROFILES-PREVENTION-EDIT
+    name: "Edit Prevention Profile"
+    method: POST
+    path: "/public_api/v1/profiles/prevention/edit"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/f0566ac4764eb-edit-prevention-profile"
+  - op_id: OP-PROFILES-PREVENTION-GET-MODULES
+    name: "Get Prevention Profile Modules"
+    method: POST
+    path: "/public_api/v1/profiles/prevention/get_modules"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/3cc60f5ee327f-get-prevention-profile-modules"
+  - op_id: OP-POLICIES-PREVENTION-EDIT
+    name: "Edit prevention policy rules"
+    method: POST
+    path: "/public_api/v1/policies/prevention/edit"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/e5ee06a5f1532-edit-prevention-policy-rules"

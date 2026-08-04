@@ -1,0 +1,70 @@
+# Response Action — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Response Action"
+operations:
+  - op_id: OP-ENDPOINTS-RESTORE
+    name: "Restore File"
+    method: POST
+    path: "/public_api/v1/endpoints/restore"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/lslt3zwmpw7p9-restore-file"
+  - op_id: OP-ACTIONS-FILE-RETRIEVAL-DETAILS
+    name: "File Retrieval Details"
+    method: POST
+    path: "/public_api/v1/actions/file_retrieval_details"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ifeyx54qbusiq-file-retrieval-details"
+  - op_id: OP-HASH-EXCEPTIONS-ALLOWLIST
+    name: "Allow List Files"
+    method: POST
+    path: "/public_api/v1/hash_exceptions/allowlist"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/md2df8eqgx7fr-allow-list-files"
+  - op_id: OP-QUARANTINE-STATUS
+    name: "Get Quarantine Status"
+    method: POST
+    path: "/public_api/v1/quarantine/status"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ay663dcgsvgv6-get-quarantine-status"
+  - op_id: OP-ENDPOINTS-QUARANTINE
+    name: "Quarantine Files"
+    method: POST
+    path: "/public_api/v1/endpoints/quarantine"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/rd1ptd5jtusi2-quarantine-files"
+  - op_id: OP-HASH-EXCEPTIONS-BLOCKLIST
+    name: "Block List Files"
+    method: POST
+    path: "/public_api/v1/hash_exceptions/blocklist"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/bugt5tvao9rls-block-list-files"
+  - op_id: OP-ENDPOINTS-UNISOLATE
+    name: "Unisolate Endpoints"
+    method: POST
+    path: "/public_api/v1/endpoints/unisolate"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/lfv45czgt4kd6-unisolate-endpoints"
+  - op_id: OP-ENDPOINTS-ISOLATE
+    name: "Isolate Endpoints"
+    method: POST
+    path: "/public_api/v1/endpoints/isolate"
+    access_class: write
+    tags: [confirm-tail]
+  - op_id: OP-ENDPOINTS-SCAN
+    name: "Scan Endpoints"
+    method: POST
+    path: "/public_api/v1/endpoints/scan"
+    access_class: write
+    tags: [confirm-tail]
+  - op_id: OP-ENDPOINTS-ABORT-SCAN
+    name: "Cancel Scan"
+    method: POST
+    path: "/public_api/v1/endpoints/abort_scan"
+    access_class: write
+    tags: [confirm-tail]
+  - op_id: OP-ENDPOINTS-FILE-RETRIEVAL
+    name: "Retrieve File"
+    method: POST
+    path: "/public_api/v1/endpoints/file_retrieval"
+    access_class: write
+    tags: [confirm-tail]

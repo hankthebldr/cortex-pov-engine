@@ -17,6 +17,7 @@ const DETECTION_KIND_CHIP = {
   analytics_modules: 'Analytics',
 }
 
+
 /**
  * TtpBrowserView — surface the TTP corpus that lives under
  * ``detection_scanner/ttps/*.json``.

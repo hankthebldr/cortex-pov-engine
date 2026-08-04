@@ -1,0 +1,22 @@
+# Dashboards — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Dashboards"
+operations:
+  - op_id: OP-DASHBOARDS-GET
+    name: "Get dashboards"
+    method: POST
+    path: "/public_api/v1/dashboards/get"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/k58hffooxe978-get-dashboards"
+  - op_id: OP-DASHBOARDS-INSERT
+    name: "Insert or update dashboards"
+    method: POST
+    path: "/public_api/v1/dashboards/insert"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/4l206rch3z7fw-insert-or-update-dashboards"
+  - op_id: OP-DASHBOARDS-DELETE
+    name: "Delete dashboards"
+    method: POST
+    path: "/public_api/v1/dashboards/delete"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/sw5z379fbcbix-delete-dashboards"

@@ -152,6 +152,20 @@ CI runs two gates: `scripts/validate.py` (must exit 0) and a sync check on the
 generated `exports/` tree (`git diff --exit-code detection_scanner/exports/`
 after `scripts/export_artifacts.py --clean`).
 
+## Engine load contract
+
+The `cortex-pov-engine` enumerates the corpus by **globbing `ttps/*.json`
+directly** (non-recursive, skipping `_drafts/`) — there is no manifest file and
+no manifest-diff CI gate. See `core/engine/ttp_catalog.py:load()`. Each card is
+parsed in place; `metadata.pov_engine.auto_load`, `status`, `destructive`, and
+`safety_class` are read per card. `scripts/build-manifest.py` still exists for
+ad-hoc human reporting, but its `manifest.json` output is **gitignored** and is
+not consumed by the engine or by CI.
+
+CI runs two gates: `scripts/validate.py` (must exit 0) and a sync check on the
+generated `exports/` tree (`git diff --exit-code detection_scanner/exports/`
+after `scripts/export_artifacts.py --clean`).
+
 ## Open contracts (still to lock with cortex-pov-engine)
 
 - BIOC syntax dialect: this corpus assumes XQL-flavored `preset = xdr_data | ...`. **Structural** grammar (balanced quotes/parens, a `dataset =`/`preset =` anchor, no placeholder/skeleton tokens) is now enforced by `scripts/validate.py` check 13, so a malformed body fails CI rather than shipping silently. What remains open is **semantic** drift: `dataset` names and `event_sub_type` enums change between XSIAM 2.x versions, so confirm the field names against the customer's live tenant before each POV.

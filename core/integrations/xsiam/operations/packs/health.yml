@@ -1,0 +1,10 @@
+# Health — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Health"
+operations:
+  - op_id: OP-HEALTHCHECK
+    name: "Healthcheck"
+    method: GET
+    path: "/public_api/v1/healthcheck"
+    access_class: read
+    tags: [confirm-tail]

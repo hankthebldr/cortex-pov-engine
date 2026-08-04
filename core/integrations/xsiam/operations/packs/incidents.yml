@@ -1,0 +1,22 @@
+# Incidents — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Incidents"
+operations:
+  - op_id: OP-INCIDENTS-GET-INCIDENTS
+    name: "Get Incidents"
+    method: POST
+    path: "/public_api/v1/incidents/get_incidents"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-INCIDENTS-GET-INCIDENT-EXTRA-DATA
+    name: "Get Incident Extra Data"
+    method: POST
+    path: "/public_api/v1/incidents/get_incident_extra_data"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-INCIDENTS-UPDATE-INCIDENT
+    name: "Update an Incident"
+    method: POST
+    path: "/public_api/v1/incidents/update_incident"
+    access_class: write
+    tags: [confirm-tail]

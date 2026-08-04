@@ -1,0 +1,22 @@
+# Dataset Management — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Dataset Management"
+operations:
+  - op_id: OP-XQL-ADD-DATASET
+    name: "Add Dataset"
+    method: POST
+    path: "/public_api/v1/xql/add_dataset"
+    access_class: write
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/iuos0v5ns8b5k-add-dataset"
+  - op_id: OP-XQL-DELETE-DATASET
+    name: "Delete a dataset"
+    method: POST
+    path: "/public_api/v2/xql/delete_dataset"
+    access_class: destructive
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/psfk3y0hseojo-delete-a-dataset"
+  - op_id: OP-XQL-GET-DATASETS
+    name: "Get all datasets"
+    method: POST
+    path: "/public_api/v1/xql/get_datasets"
+    access_class: read
+    doc_link: "https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/75b9xbso53qb2-get-all-datasets"

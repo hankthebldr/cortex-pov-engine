@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 import httpx
 
-from .auth import standard_auth_headers
+from .auth import advanced_auth_headers, standard_auth_headers
 from .config import AuthMode, XsiamTenantConfig
 from .exceptions import (
     XsiamApiError, XsiamAuthError, XsiamConfigError,
@@ -31,19 +31,27 @@ class XsiamClient:
         transport: Optional[httpx.AsyncBaseTransport] = None,
         timeout: float = 30.0,
     ):
-        if config.auth_mode is not AuthMode.standard:
-            raise XsiamConfigError(
-                f"auth_mode '{config.auth_mode.value}' unsupported in Slice 1 (standard only)"
-            )
+        if config.auth_mode not in (AuthMode.standard, AuthMode.advanced):
+            raise XsiamConfigError(f"unsupported auth_mode '{config.auth_mode}'")
         self._base = config.base_url.rstrip("/")
-        self._headers = standard_auth_headers(api_key, config.api_key_id)
+        self._api_key = api_key
+        self._api_key_id = config.api_key_id
+        self._auth_mode = config.auth_mode
         self._transport = transport
         self._timeout = timeout
+
+    def _build_headers(self) -> dict[str, str]:
+        # Rebuilt per request: advanced auth signs a fresh nonce + timestamp
+        # every call, so headers cannot be cached at construction.
+        # `==` not `is`: pydantic may coerce the str-Enum to a plain str.
+        if self._auth_mode == AuthMode.advanced:
+            return advanced_auth_headers(self._api_key, self._api_key_id)
+        return standard_auth_headers(self._api_key, self._api_key_id)
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self._base,
-            headers=self._headers,
+            headers=self._build_headers(),
             transport=self._transport,
             timeout=self._timeout,
         )
@@ -82,6 +90,48 @@ class XsiamClient:
             return resp.json()
         except Exception as exc:  # noqa: BLE001
             raise XsiamApiError("XSIAM returned a non-JSON response") from exc
+
+    @staticmethod
+    def _check_app_error(reply: Any) -> Any:
+        """Raise on XSIAM's HTTP-200 application-level error envelope.
+
+        XSIAM returns 200 with ``{"err_code","err_msg"}`` for app-level failures
+        (bad filter, quota, syntax). A normal read reply is also a dict, so only
+        an envelope carrying ``err_code``/``err_msg`` (and not a wrapping ``reply``)
+        is treated as an error — ordinary result dicts pass through untouched.
+        """
+        if (
+            isinstance(reply, dict)
+            and ("err_code" in reply or "err_msg" in reply)
+            and "reply" not in reply
+        ):
+            err_code = reply.get("err_code", "")
+            err_msg = reply.get("err_msg") or str(reply)
+            err = f"{err_code}: {err_msg}" if err_code else err_msg
+            if err_code == "XQL_0003" or "quota" in str(err_msg).lower():
+                raise XsiamQuotaError(f"XSIAM quota exceeded: {err}")
+            raise XsiamQueryError(f"XSIAM API error: {err}")
+        return reply
+
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Optional[Any] = None,
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
+        """Generic Cortex Public API call used by the operation-catalog executor.
+
+        Sends ``json`` verbatim (the caller/operation supplies the
+        ``request_data``-shaped body — the client never invents a payload),
+        unwraps ``reply``, and surfaces HTTP-200 app-errors via ``_check_app_error``.
+        """
+        async with self._client() as c:
+            resp = await c.request(method.upper(), path, json=json, params=params)
+        data = self._unwrap(resp)
+        reply = data.get("reply", data) if isinstance(data, dict) else data
+        return self._check_app_error(reply)
 
     async def start_xql_query(self, query: str, timeframe: dict[str, Any]) -> str:
         body = {"request_data": {"query": query, "timeframe": timeframe}}

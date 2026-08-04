@@ -1,0 +1,22 @@
+# Alerts — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Alerts"
+operations:
+  - op_id: OP-ALERTS-GET-ALERTS-MULTI-EVENTS
+    name: "Get Alerts (multi-events)"
+    method: POST
+    path: "/public_api/v1/alerts/get_alerts_multi_events"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-ALERTS-INSERT-PARSED-ALERTS
+    name: "Insert Parsed Alerts"
+    method: POST
+    path: "/public_api/v1/alerts/insert_parsed_alerts"
+    access_class: write
+    tags: [confirm-tail]
+  - op_id: OP-ALERTS-INSERT-CEF-ALERTS
+    name: "Insert CEF Alerts"
+    method: POST
+    path: "/public_api/v1/alerts/insert_cef_alerts"
+    access_class: write
+    tags: [confirm-tail]

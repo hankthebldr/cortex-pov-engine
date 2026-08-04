@@ -54,13 +54,22 @@ async def test_healthcheck_403_carries_upstream_status():
 
 
 @pytest.mark.asyncio
-async def test_advanced_auth_rejected_in_slice1():
+async def test_advanced_auth_is_supported():
+    """Advanced (signed) auth is now supported — the client signs per request."""
     from integrations.xsiam.client import XsiamClient
-    from integrations.xsiam.exceptions import XsiamConfigError
+
     cfg = XsiamTenantConfig(base_url=CFG.base_url, region="us",
                             auth_mode="advanced", api_key_id="1")
-    with pytest.raises(XsiamConfigError):
-        XsiamClient(cfg, "key")
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(dict(request.headers))
+        return httpx.Response(200, json={"status": "ok"})
+
+    client = XsiamClient(cfg, "key", transport=_transport(handler))
+    await client.healthcheck()
+    assert "x-xdr-nonce" in seen               # signed, not verbatim
+    assert seen["authorization"] != "key"
 
 
 @pytest.mark.asyncio

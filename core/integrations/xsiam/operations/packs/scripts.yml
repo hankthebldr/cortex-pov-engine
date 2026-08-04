@@ -1,0 +1,40 @@
+# Scripts — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "Scripts"
+operations:
+  - op_id: OP-SCRIPTS-GET-SCRIPTS
+    name: "Get Scripts"
+    method: POST
+    path: "/public_api/v1/scripts/get_scripts"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-SCRIPTS-GET-SCRIPT-METADATA
+    name: "Get Script Metadata"
+    method: POST
+    path: "/public_api/v1/scripts/get_script_metadata"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-SCRIPTS-GET-SCRIPT-EXECUTION-STATUS
+    name: "Get Script Execution Status"
+    method: POST
+    path: "/public_api/v1/scripts/get_script_execution_status"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-SCRIPTS-GET-SCRIPT-EXECUTION-RESULTS
+    name: "Get Script Execution Results"
+    method: POST
+    path: "/public_api/v1/scripts/get_script_execution_results"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-SCRIPTS-RUN-SCRIPT
+    name: "Run Script"
+    method: POST
+    path: "/public_api/v1/scripts/run_script"
+    access_class: write
+    tags: [confirm-tail]
+  - op_id: OP-SCRIPTS-RUN-SNIPPET-CODE-SCRIPT
+    name: "Run Snippet Code Script"
+    method: POST
+    path: "/public_api/v1/scripts/run_snippet_code_script"
+    access_class: write
+    tags: [confirm-tail]

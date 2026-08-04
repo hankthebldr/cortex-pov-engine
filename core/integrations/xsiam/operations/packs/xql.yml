@@ -1,0 +1,28 @@
+# XQL — Cortex XSIAM Platform API operations
+# Auto-generated from the operation CSV; edit to add fields or fix drift.
+category: "XQL"
+operations:
+  - op_id: OP-XQL-START-XQL-QUERY
+    name: "Start an XQL Query"
+    method: POST
+    path: "/public_api/v1/xql/start_xql_query"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-XQL-GET-QUERY-RESULTS
+    name: "Get XQL Query Results"
+    method: POST
+    path: "/public_api/v1/xql/get_query_results"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-XQL-GET-QUERY-RESULTS-STREAM
+    name: "Get XQL Query Results Stream"
+    method: POST
+    path: "/public_api/v1/xql/get_query_results_stream"
+    access_class: read
+    tags: [confirm-tail]
+  - op_id: OP-XQL-GET-QUOTA
+    name: "Get XQL Quota"
+    method: POST
+    path: "/public_api/v1/xql/get_quota"
+    access_class: read
+    tags: [confirm-tail]

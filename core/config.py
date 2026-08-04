@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     # inflating the coverage number. Set false to load a corpus mid-re-key.
     CORTEXSIM_STRICT_REFS: bool = True
 
+
+    # XSIAM API harness — master safety switches for the operation executor.
+    # Both OFF by default: the harness pulls freely from a configured tenant
+    # (read ops), but any write/delete operation additionally requires the
+    # matching flag here AND per-request consent, and defaults to dry-run.
+    # These are the "does not write to Cortex" invariant's off-switch — flip
+    # them only for a tenant you are explicitly authorized to mutate.
+    CORTEXSIM_XSIAM_ALLOW_WRITE: bool = False
+    CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE: bool = False
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
