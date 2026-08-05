@@ -436,6 +436,64 @@ console's **UC / TC Index** destination (`#/uctc`). Authoring stays in
   rows carry no measurable threshold, so `pass` is impossible for them by
   construction.
 
+### 1.15 Payload shelf (`core/api/payloads.py`, prefixes `/shelf` **and** `/k8s`)
+
+Staged, digest-pinned tool artifacts, so a scenario's tooling does **not** have to
+be fetched from the public internet by the target host at dispatch. Contract:
+[`payload-shelf.md`](payload-shelf.md).
+
+**Two prefixes, one implementation.** `_register_shelf_routes` registers the same
+handler functions on both routers. `/api/k8s/*` stays mounted **forever** — every
+manifest this engine has emitted hard-codes `$CORTEXSIM_SERVER/api/k8s/payloads`
+and `/api/k8s/payload/$PN` inside `k8s_manifest._SERVED_FETCH`, and those files
+live in customers' GitOps repos. It is an additional mount, **not a redirect**: a
+redirect would make a stale manifest silently keep working, so the drift would
+never be discovered.
+
+| Method | Full path | Auth | Purpose | Response |
+|--------|-----------|------|---------|----------|
+| GET | `/api/shelf/payloads` · `/api/k8s/payloads` | **always open** | Inventory + reachability probe + `declared[]` | staged names, sizes, digests |
+| GET | `/api/shelf/payload/{name}` · `/api/k8s/payload/{name}` | shelf token | The bytes | `X-CortexSim-Payload-SHA256`, `-Name`, `Cache-Control: no-store`; 404 `PAYLOAD_UNAVAILABLE` |
+| GET | `/api/shelf/payload/{name}/sha256` (+ `/api/k8s/…`) | shelf token | Bare hex, **humans only** | a consumer using this verifies nothing |
+| GET | `/api/shelf/artifacts` | open | The DERIVED declaration | `{staged[], unstaged[], unpinned[], artifacts[]}` |
+| POST | `/api/shelf/compose` | shelf token | Resolve a digest-bound plan, or refuse | 409 `PAYLOAD_NOT_STAGED` / `PAYLOAD_PIN_MISMATCH`; 400 `BAD_CONSUMER` |
+| GET | `/api/shelf/resolve/{scenario_id}` | shelf token | Console preflight for one scenario | same shape, `consumer=console` |
+| POST | `/api/shelf/stage` | shelf token | Pull a public tool onto **this SimCore** | 201 + `pack_snippet` + `DECLARE_IN_PACK`; 409 `SHELF_EGRESS_DISABLED`; 502 `PAYLOAD_FETCH_FAILED` |
+
+- **`/payloads` is unauthenticated in every mode** — it is the manifest's
+  reachability probe, and a probe that can fail for two reasons (no route / bad
+  credential) sends a DC to argue with the customer's network team about an auth
+  problem that does not exist.
+- The **digest is recomputed from the shelf bytes at compose time** and baked
+  into what the consumer carries. The consumer verifies against a value it
+  carried **in**, never one it fetched from the server it is trusting.
+- `composition_id` is deterministic (it excludes `server_url`), so a POV report
+  can cite it and two DCs can compare.
+- **`air_gapped` + `unstaged_adapters[]` are the anti-false-green fields.** A
+  shelf covering two of a scenario's five tools must be legible, not silent.
+  ⚠ **Known defect:** an `adapter_ref` that is not in the catalog is silently
+  dropped rather than landing in `unstaged_adapters[]` — `payload-shelf.md` §9
+  item 12.
+- ⚠ **Known defect:** `GET /api/shelf/artifacts` reports
+  `used_by = "(no scenario references this adapter yet)"` for every artifact,
+  because the handler calls `declared_artifacts()` without `scenarios=`. The
+  generated `payloads/sources.json` — same function, called with it — is
+  correct. §9 item 13.
+
+**Agent capability `artifact-fetch`.** A beacon that can stage artifacts
+advertises `artifact-fetch` alongside `shell` / `identity-harness` on all three
+`GOOS` (`agent/capabilities.go`). `GET /api/agents/{id}/tasks` **refuses** to
+hand an artifact-carrying task to an agent that lacks it — **409
+`AGENT_CANNOT_STAGE_ARTIFACTS`** naming the artifact, the agent's actual roster
+and the re-install one-liner — and fails the run rather than letting it hang in
+`running`. Without that gate an old beacon would silently drop the unknown
+`artifacts` key and run every step **without its tooling**: a manufactured false
+negative delivered by the back-compat mechanism itself. Optional
+`--artifact-token` / `CORTEXSIM_ARTIFACT_TOKEN` carries a shelf bearer token;
+note that `scripts/build-agent-dist.sh` and `GET /api/agents/install` do **not**
+yet bake it into the systemd unit, so shelf `token` mode + a beacon is currently
+unreachable in the field (it 403s with `ARTIFACT_FORBIDDEN` naming the fix).
+
 > **Still undocumented in this table:** `/api/connectors`, `/api/xsiam`, and the
 > `/api/runs/*` storyline + causality routes. Those predate this pass and are
 > covered by their own design docs.
@@ -646,23 +704,34 @@ POST /api/run {mode:"pull", target_agent_id:"jumpbox-01", identity:"..."}
    DC later: PUT /api/results/{id}/validate to confirm detections (MTTD)
 ```
 
-- **Queue is in-memory and ephemeral** (`orchestrator._queue`). Restarting SimCore
-  loses all undelivered tasks; the durable `Run` row is left at `running` with no
-  way to recover the task — GAP-API-005 (high).
+- **The queue is durable** (GAP-API-005 closed). `orchestrator._queue` is a
+  write-through cache over the `queued_tasks` table and is rehydrated by
+  `orchestrator.rehydrate()` at boot; a SimCore restart restores undelivered
+  tasks and fails any orphaned `running` run whose task was lost.
 - `_resolve_adapter_placeholders` substitutes `{adapter:TOOL-XYZ}` in step commands
   with the adapter's rendered `run_template`; unresolved placeholders are left raw
-  so the agent surfaces the failure instead of silently no-op'ing.
+  so the agent surfaces the failure instead of silently no-op'ing. ⚠ Note
+  `generate_bash` does **not** substitute them — a push bundle would ship the
+  literal string `{adapter:TOOL-LINPEAS}`. No shipped scenario uses the
+  placeholder, which is why this has never been caught.
 
-> ⚠️ **GAP-AGENT-002 (critical) — Task wire-shape mismatch.** The orchestrator's
-> `Task.to_dict()` emits `{task_id, run_id, scenario_id, steps:[...],
-> identity_context, created_at}` (a list of steps + a string identity context).
-> The Go beacon's `Task` struct (`agent/beacon/client.go` lines 24-38) expects
-> `{run_id, scenario_id, command:string, identity:{mode,username}}` — a single
-> flat command + a structured identity object. The fields **do not line up**:
-> the agent has no `steps` handling, gets an empty `Command`, and `Identity`
-> (mode/username) is never populated by the server. A real pull-mode run today
-> would dispatch an empty command. This is the single biggest blocker for the
-> pull path working end-to-end.
+> ✅ **GAP-AGENT-002 is CLOSED.** The historical wire-shape mismatch (server
+> emitting `steps[]`, beacon expecting a flat `command`) no longer exists. Verified
+> 2026-08-05 by a real pull-mode launch of `SIM-EDR-022` against a compiled beacon:
+> the task was received (`steps=5`), executed as a causality-chained run under an
+> `apache2` CGO, and reported per-step output and completion.
+
+> ⚠️ **The artifact-staging phase is NOT wired into launch.** `Task.artifacts`
+> exists on the wire, round-trips durably, and the beacon honours it: it stages
+> **all-or-nothing before any step runs**, verifying each artifact's sha256
+> against the digest carried in the task, and on failure emits a per-step
+> `ARTIFACT NOT STAGED` frame plus exit **78** (`EX_CONFIG`) with *"THIS STEP DID
+> NOT RUN … NOT a gap in the customer's detection coverage"*. But
+> **`_handle_pull` never calls `payload_shelf.compose()`**, so `Task.artifacts`
+> is `[]` on every real launch and nothing is ever staged; and `compose()` emits
+> `url`/`dest_path` while the beacon's `ArtifactSpec` requires `path`/`dest`, so
+> even a wired call would be refused with `ARTIFACT_SPEC_INVALID`. See
+> [`payload-shelf.md`](payload-shelf.md) §9 items 5 and 5a.
 
 ### 3.2 Push mode (`_handle_push`)
 

@@ -42,6 +42,41 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-08-05 — payload-shelf content pass):**
+  **170 loadable scenarios · 170 TTP cards** across **15 detection planes** ·
+  **91 tool-adapter packs**, of which **8 declare a payload-shelf
+  `install.artifact`** (`TOOL-LINPEAS`, `TOOL-PSPY`, `TOOL-SUID3NUM`,
+  `TOOL-LSE`, `TOOL-LINENUM`, `TOOL-DEEPCE`, `TOOL-TRAITOR`,
+  `TOOL-AMICONTAINED`) — every one commit/tag-pinned with a real digest and a
+  licence read from the project's own LICENSE file. `payloads/sources.json` is
+  fully **derived** from those packs and its `unbound[]` migration bucket has
+  reached **zero**. `PAYLOAD_ALLOW_UNPINNED=0 ./scripts/build-payloads.sh`
+  stages 8 artifacts, **0 unpinned**. `make validate` **346 pass / 0 warn /
+  0 fail**; exports byte-identical across two regenerations; `make check-refs`
+  **6 passed**; `coverage_report.py --strict` exits 0.
+  This pass adds **1 scenario + 1 card** — `SIM-EDR-022` / `TTP-2026-0176`,
+  the EDR sibling of the proven CDR/K8s shelf path: an enrolled beacon runs a
+  shelf-staged privilege-escalation enumerator under `www-data` with `apache2`
+  as the causality group owner.
+  * **Index coverage is UNCHANGED at 89/266 (DET/HNT 70/107).** `SIM-EDR-022`
+    binds `TC-EDR-05` + `TC-EDR-03`, both already evidenced. It adds a second,
+    *behaviourally* keyed piece of evidence and a delivery path that survives
+    default-deny egress — not new index breadth. Reporting it as coverage growth
+    would be the false-green this repo keeps catching.
+  * The card ships **seven behavioural BIOCs** (service-account interpreter
+    spawn under a web-server CGO, discovery-binary breadth burst, privesc read
+    fan-out, staging-directory execution, `/proc` cmdline sweep, cron-path read,
+    SUID sweep) and **two deliberately filename-keyed detections plus two
+    filename IOCs labelled NEGATIVE-CONTROL TARGET** — authored to go dark under
+    a rename so the behavioural rules have to carry the detection alone. Three
+    `file-sha256` IOCs are pinned to the packs' `install.artifact.sha256`
+    because a rename changes the destination and never the bytes.
+  * `k8s_manifest._resolve_payloads` now **delegates** to
+    `payload_shelf.compose(consumer="k8s")` instead of keeping its own shelf
+    lookup, and `build_objects` **refuses** a `delivery=served` manifest while
+    `CORTEXSIM_K8S_PAYLOAD_AUTH=token` (the init container's bare `wget` carries
+    no Authorization header, so the manifest would apply cleanly and 403 in the
+    pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
 - **Counted ground truth (verified 2026-08-02 — library-breadth authoring pass):**
   **169 loadable scenarios · 169 TTP cards** across **15 detection planes** (all
   `status: active`, 0 rejected / 0 dangling refs; **1073/1073 scenario

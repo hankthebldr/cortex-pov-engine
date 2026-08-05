@@ -364,6 +364,38 @@ fails in the field.
 | `GET /api/k8s/payload/{name}/sha256` | bare hex + `\n` |
 | `GET /api/k8s/posture-findings` | `k8s_manifest.vocabulary()` |
 
+**These paths are permanent.** They are hard-coded inside
+`k8s_manifest._SERVED_FETCH`, so they live verbatim in every manifest this engine
+has ever emitted — files that sit in customers' GitOps repos and change tickets.
+The payload shelf added a plane-agnostic second mount at **`/api/shelf/*`**
+(`payloads` · `payload/{name}` · `payload/{name}/sha256`, plus `artifacts`,
+`compose`, `resolve/{id}`, `stage`) from the **same handler functions** —
+`_register_shelf_routes` registers one implementation on both routers. It is not
+a move and deliberately **not a redirect**: a redirect would make a stale
+manifest silently keep working, so the drift would never be discovered. New
+consumers (the Go beacon, the console) use `/api/shelf/*`; K8s keeps `/api/k8s/*`
+forever. Contract: [`payload-shelf.md`](payload-shelf.md).
+
+**`_resolve_payloads` now delegates to `payload_shelf.compose(consumer="k8s")`**
+rather than keeping its own shelf lookup, so there is exactly one integrity walk
+(two implementations of an integrity check drift, and the one that drifts is the
+one nobody ran that quarter). The delegation is **narrow on purpose**: only
+literal `cluster_posture.payloads` names go through it, never `external_tools`
+— an adapter-derived artifact would land at the pack's `stage_path` instead of
+`/cortexsim/tools/` and break the curl/wget shim. A/B generation of the
+`SIM-CDR-001` served manifest with and without the change differs only in
+wall-clock TTL fields; digests, shim, paths and `PAYLOAD_` ordering are identical.
+
+`build_objects` also gained `_guard_served_shelf_auth`, which refuses to generate
+a `delivery=served` manifest while `CORTEXSIM_K8S_PAYLOAD_AUTH=token`, because
+`_SERVED_FETCH` is a bare `wget` with no header: the manifest would apply cleanly
+and then 403 in the pod, which reads in a POV report as a detection miss. ⚠ That
+refusal currently surfaces as a **500 `INTERNAL_ERROR`** carrying the right text,
+because `core/api/scenarios.py` does not map
+`ShelfAuthUnreachableFromCluster` — a 500 reads as "CortexSim is broken" rather
+than "your shelf-auth setting makes this delivery mode unusable". The 409 handler
+is written out in the exception's docstring.
+
 `generate_bootstrap` is **deterministic**: the same scenario dict always renders
 the same bytes, because its sha256 is baked into the manifest at generation
 time. Never add a timestamp, a uuid, or unsorted iteration to it —

@@ -9,7 +9,14 @@
 > [`docs/superpowers/specs/2026-05-19-tool-adapter-framework-design.md`](../superpowers/specs/2026-05-19-tool-adapter-framework-design.md);
 > for pack-authoring see [`tools/packs/README.md`](../../tools/packs/README.md).
 
-## 0. TL;DR numbers (verified by enumeration, 2026-06-07)
+> **STALENESS WARNING (2026-08-05).** Every count in §0 and every table below
+> was enumerated on **2026-06-07, when there were 69 packs**. There are now
+> **91**. The Kali pass added 15 and the payload-shelf pass added 7. Treat the
+> per-tier tables as a snapshot, not ground truth; the counted ground truth is
+> `python3 -c "from tools.adapter_loader import load_adapters; …"` at boot and
+> `scripts/check-adapter-sources.sh`. §9 below is current.
+
+## 0. TL;DR numbers (verified by enumeration, 2026-06-07 — SEE STALENESS WARNING)
 
 | Metric | Value | Notes |
 |---|---|---|
@@ -428,3 +435,75 @@ See the structured `gaps` array for severity. Summary:
    — but the same doc's §7 "live: 18" contradicts it. Internal inconsistency.
 8. **Stale pack tags** — atomic-red-team tagged `already-submoduled`, scapy
    tagged `already-submoduled-target` — aspirational/false given GAP #1.
+
+---
+
+## 9. Payload-shelf bindings (`install.artifact`) — added 2026-08-05
+
+Every tier-4 pack installs its tool **from the public internet, on the target
+host, at dispatch**. The customers who buy Cortex run default-deny egress, so
+that is the first thing their network blocks — and a step whose tool never
+arrived RUNS ANYWAY, produces no detection, and the absent detection reads in a
+POV report as *"Cortex missed it"*. A pack that declares `install.artifact`
+moves the fetch onto the DC's own SimCore, where egress is already accepted, and
+makes the bytes checksummable before they reach a customer host.
+
+Contract: [`payload-shelf.md`](payload-shelf.md). Schema and the `TA-01`..`TA-12`
+rules: [`tools/packs/_schema.yml`](../../tools/packs/_schema.yml).
+
+### 9.1 The 8 packs that declare a staged artifact
+
+Every digest below was fetched from the real upstream and pasted; every licence
+was read from the project's own LICENSE file rather than taken from the GitHub
+API. `python3 -m engine.payload_shelf --check` gates `payloads/sources.json`
+against this set.
+
+| adapter | shelf filename | pin | licence | size | staged at |
+|---|---|---|---|---|---|
+| `TOOL-LINPEAS` | `linpeas.sh` | release-tag `20260803-00785084` | GPL-2.0-or-later | 1.1 MB | `/tmp/linpeas.sh` |
+| `TOOL-PSPY` | `pspy64` | release-tag `v1.2.1` | GPL-3.0 | 3.1 MB | `/tmp/pspy64` |
+| `TOOL-SUID3NUM` | `suid3num.py` | commit `881b4886…` | MIT | 27 KB | `/tmp/suid3num.py` |
+| `TOOL-LSE` | `lse.sh` | release-tag `4.14nw` | GPL-3.0 | 55 KB | `/tmp/lse.sh` |
+| `TOOL-LINENUM` | `LinEnum.sh` | commit `c47f9b22…` | MIT | 46 KB | `/tmp/LinEnum.sh` |
+| `TOOL-DEEPCE` | `deepce.sh` | commit `420b1d1d…` | GPL-3.0 | 41 KB | `/tmp/deepce.sh` |
+| `TOOL-TRAITOR` | `traitor-amd64` | release-tag `v0.0.14` | MIT | 9.4 MB | `/tmp/traitor-amd64` |
+| `TOOL-AMICONTAINED` | `amicontained-linux-amd64` | release-tag `v0.4.9` | MIT | 6.1 MB | `/tmp/amicontained-linux-amd64` |
+
+**Zero unpinned. Zero `unbound[]`.** `PAYLOAD_ALLOW_UNPINNED=0
+./scripts/build-payloads.sh` stages all eight and every digest matched its pin.
+The migration bucket the shelf design opened has reached zero — including the
+pre-existing drift where `payloads/sources.json` claimed
+`adapter_id: TOOL-LINPEAS` for a pack that had never existed.
+
+Two licence notes worth carrying into a customer conversation:
+
+* **PEASS-ng (LinPEAS) is GPL-2.0-or-later, not MIT.** The GitHub API reports
+  `NOASSERTION`; the repository's `LICENSE` is a GPLv2-or-later text with
+  Nmap-style "derived works" clarifications under which *parsing* peass-ng
+  output creates a derived work while "typical shell or execution-menu apps,
+  which simply display raw peass-ng output" do not. CortexSim streams the step's
+  raw stdout and never parses it, which is the exempt case. The §8 worked
+  example in `payload-shelf.md` says MIT — that is wrong; `tools/packs/linpeas.yml`
+  is the authority.
+* Four of the eight are GPL. A staged artifact is **redistributed to a customer
+  host**, so the licence is an audit fact, not a nicety —
+  `tests/tools/test_adapter_artifact_schema.py::test_the_shipped_shelf_bindings_are_pinned_and_licensed`
+  fails on an unlicensed or `"unknown"` binding.
+
+### 9.2 Why the other ~42 tier-4 packs have NO artifact — and must not fake one
+
+This gap is meant to be **legible, not closed by guessing**. `compose()` reports
+each one in `unstaged_adapters[]` with a reason and flips `air_gapped` to
+`false`, so a DC learns it before the engagement rather than in it.
+
+| family | ~count | why it is not shelf-able |
+|---|---:|---|
+| distro package manager | ~20 | An `apt-get install -y <pkg>` resolves a dependency graph, not a file. Closing this means hosting a Debian mirror — a different project. |
+| language package manager | ~15 | Same shape one layer up (pip / pipx / gem / `go install` / cargo): a resolver, not a file. A vendored wheel/gem set is a real option and a separate design. |
+| `git clone` of a tree | ~8 | Many files, not one. `kind: archive` is REJECTED by **TA-08** because no consumer can unpack one — the Go beacon is stdlib-only by contract and the K8s init container is a busybox `wget`. Accepting the value would let a pack declare a tool that silently never lands. |
+| release **archive** | ~5 | Single artifact, wrong container (`.zip` / `.tar.gz`). These are the **first candidates** when an unpack step lands on the consumers — until then, declaring them would be a claim TA-08 correctly refuses. |
+| oversized single file | 1 | `kubescape` is genuinely one binary, but the `v4.0.11` linux-amd64 asset is **262 MB** — four times the 64 MiB `CORTEXSIM_SHELF_MAX_BYTES` default. Raising the cap for one tool trades a hard limit for a 262 MB image layer. |
+
+The honest summary: **8 of 50 tier-4 packs are air-gap-capable today.** The
+remaining 42 still need public-internet egress on the target, and the console
+says so per scenario at `GET /api/shelf/resolve/{scenario_id}`.
