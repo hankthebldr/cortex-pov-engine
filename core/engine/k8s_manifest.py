@@ -1041,11 +1041,25 @@ class PayloadNotStaged(Exception):
     Raised at GENERATION time on purpose. The alternative is a manifest that
     applies cleanly and dies in the pod, which costs a DC a cluster round-trip
     and reads — until they open the logs — exactly like a detection failure.
+
+    Kept as a distinct type (rather than aliased onto
+    ``payload_shelf.PayloadNotStaged``) because every ``except PayloadNotStaged``
+    site and test in this repo imports it from here. ``_resolve_payloads``
+    translates the resolver's error into this one; the DECISION lives in one
+    place, only the exception class is local.
     """
 
 
-def _resolve_payloads(names: list[str]) -> list[dict[str, str]]:
+def _resolve_payloads(
+    names: list[str], *, scenario_id: str = "",
+) -> list[dict[str, str]]:
     """Bind each declared tool to the shelf's digest for it.
+
+    DELEGATES to ``engine.payload_shelf.compose`` — it does not do its own shelf
+    lookup. Two implementations of an integrity check drift, and the one that
+    drifts is the one nobody ran that quarter. ``tests/engine/test_k8s_manifest_shelf.py``
+    monkeypatches the resolver and asserts this path calls it, so a future fork
+    fails CI rather than passing quietly.
 
     The digest is resolved HERE, on the DC's SimCore, and baked into the
     manifest. The pod therefore verifies against a value it carried in rather
@@ -1054,22 +1068,94 @@ def _resolve_payloads(names: list[str]) -> list[dict[str, str]]:
 
     An empty sha256 would make the pod's `[ "$ACT" = "$WANT" ]` compare against
     "" and pass on anything, which is how an integrity check silently becomes a
-    no-op. So a name the shelf cannot resolve is a hard refusal, never a blank.
+    no-op. So a name the shelf cannot resolve is a hard refusal, never a blank —
+    and ``compose`` refuses a blank digest for the same reason.
+
+    ONLY the literal ``cluster_posture.payloads`` names are passed through, never
+    the scenario's ``external_tools[].adapter_ref`` set. That is deliberate: an
+    adapter-derived artifact carries the PACK's ``stage_path`` (``/tmp/deepce.sh``),
+    while the pod's shelf shim resolves a scenario's verbatim
+    ``curl …/deepce.sh`` against ``/cortexsim/tools/``. Widening the input here
+    would silently move the destination and break the one delivery path that has
+    been verified on a live kind cluster. Widening it is a deliberate future
+    change to the shim, not a side effect of this delegation.
     """
     if not names:
         return []
-    from api.payloads import inventory  # noqa: PLC0415
+    from engine.payload_shelf import (  # noqa: PLC0415 — avoids an import cycle
+        PayloadResolutionError,
+        compose,
+    )
 
-    shelf = {p["name"]: p["sha256"] for p in inventory()}
-    missing = [n for n in names if n not in shelf]
-    if missing:
-        raise PayloadNotStaged(
-            f"scenario declares payload(s) {missing} that are not on the shelf. "
-            f"Staged: {sorted(shelf) or 'none'}. Run ./scripts/build-payloads.sh "
-            f"on the SimCore host and rebuild the image, or drop them from "
-            f"cluster_posture.payloads."
+    try:
+        composition = compose(
+            scenario={
+                "scenario_id": scenario_id or None,
+                "cluster_posture": {"payloads": list(names)},
+            },
+            consumer="k8s",
+            path_prefix="/api/k8s",
         )
-    return [{"name": n, "sha256": shelf[n]} for n in names]
+    except PayloadResolutionError as exc:
+        raise PayloadNotStaged(exc.detail) from exc
+
+    # The pod's integrity.env is indexed by PAYLOAD_<i>_NAME, and the shim
+    # resolves by name, so the DECLARED order is what the manifest must carry —
+    # `compose` sorts by filename for its own determinism.
+    by_name = {a.name: a.sha256 for a in composition.artifacts}
+    return [{"name": n, "sha256": by_name[n]} for n in names]
+
+
+class ShelfAuthUnreachableFromCluster(Exception):
+    """``delivery=served`` cannot work while the shelf demands a bearer token.
+
+    Refused at GENERATION time. ``_SERVED_FETCH`` issues a bare ``wget`` with no
+    Authorization header, so a manifest generated under
+    ``CORTEXSIM_K8S_PAYLOAD_AUTH=token`` applies cleanly, pulls its image, and
+    then 403s inside the init container. From the console that is a pod that
+    never produced a detection — which is exactly the manufactured false
+    negative this delivery path exists to avoid.
+
+    OWED BY THE API TRACK — ``core/api/scenarios.py`` (outside this file's
+    ownership) does not yet map this, so it currently surfaces as **500
+    INTERNAL_ERROR** carrying the right message. A 500 reads as "CortexSim is
+    broken" when the truth is "your shelf-auth setting makes this delivery mode
+    unusable", so it must become a 409. Two call sites, same shape as the
+    adjacent ``PayloadTooLargeToEmbed`` handler::
+
+        except km.ShelfAuthUnreachableFromCluster as exc:
+            raise HTTPException(status_code=409, detail={
+                "error": "Served delivery unreachable under shelf token auth",
+                "code": "SHELF_AUTH_UNREACHABLE_FROM_CLUSTER",
+                "detail": str(exc),
+                "scenario_id": scenario_id,
+                "docs": GATE_DOCS,
+            }) from exc
+
+    — once around ``generate_k8s`` in ``download_bundle`` (the ``format=k8s``
+    branch) and once in ``generate_bundle``.
+    """
+
+
+def _guard_served_shelf_auth(scenario_id: str, delivery: str) -> None:
+    """Refuse a served manifest the cluster provably cannot authenticate to."""
+    if delivery != "served":
+        return
+    from api.payloads import _AUTH_ENV, _auth_mode  # noqa: PLC0415
+
+    if _auth_mode() != "token":
+        return
+    raise ShelfAuthUnreachableFromCluster(
+        f"{scenario_id}: refusing to generate a delivery=served manifest while "
+        f"{_AUTH_ENV}=token. The init container fetches its bootstrap and every "
+        f"declared tool with a bare `wget` and carries no Authorization header, "
+        f"so this manifest would apply cleanly and then 403 in the pod — which "
+        f"reads in a POV report as a detection miss rather than as an auth "
+        f"problem. Either re-download with delivery=embedded (self-contained, no "
+        f"SimCore at run time), or set {_AUTH_ENV}=open for the duration of the "
+        f"engagement and keep SimCore on a network the cluster can reach and a "
+        f"stranger cannot."
+    )
 
 
 def _integrity_env(scenario_id: str, digest: str, payloads: list[dict[str, str]]) -> str:
@@ -1290,6 +1376,11 @@ def build_objects(
     plane = scenario.get("plane", "")
     sid_lower = scenario_id.lower().replace("_", "-")
 
+    # Refuse first, build nothing. A manifest that is GOING to 403 in the pod
+    # must not reach a DC's disk — once it is on disk it gets applied, and a pod
+    # that never ran reads like a detection miss.
+    _guard_served_shelf_auth(scenario_id, delivery)
+
     # A scenario with no posture still gets a first-class object graph — the
     # legacy per-step-Job shape is replaced, not preserved. See docs §5.
     eff = posture or ClusterPosture(workload="job", resources=ResourcesSpec())
@@ -1438,7 +1529,7 @@ def build_objects(
         cluster_scoped_names = [("clusterroles", cr_name), ("clusterrolebindings", cr_name)]
 
     # ── integrity ConfigMap ────────────────────────────────────────────────
-    payload_entries = _resolve_payloads(eff.payloads)
+    payload_entries = _resolve_payloads(eff.payloads, scenario_id=scenario_id)
     integrity_data = {
         "integrity.env": _integrity_env(scenario_id, digest, payload_entries),
         # JSON is for humans and the console, never for the verification path.
