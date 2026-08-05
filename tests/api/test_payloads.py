@@ -77,10 +77,30 @@ def test_inventory_hides_shelf_bookkeeping_files(client, shelf):
     assert "MANIFEST.json" not in names and "SHA256SUMS" not in names
 
 
-def test_empty_shelf_is_a_valid_state(client, empty_shelf):
+@pytest.fixture
+def cold_catalog(monkeypatch):
+    """An EMPTY adapter catalog, asserted rather than assumed — see the twin
+    fixture in ``tests/api/test_payloads_shelf.py`` for the full argument. Short
+    version: ``declared`` is derived from the ``tools.adapter_catalog`` module
+    SINGLETON, so a test that hopes for a cold catalog passes or fails on
+    collection order."""
+    from tools.adapter_catalog import catalog  # noqa: PLC0415
+
+    monkeypatch.setattr(catalog, "_by_id", {})
+    return catalog
+
+
+def test_empty_shelf_is_a_valid_state(client, empty_shelf, cold_catalog):
     body = client.get("/api/k8s/payloads").json()
-    assert body == {"payloads": [], "total": 0,
-                    "dist_dir": body["dist_dir"], "auth": "open"}
+    assert body["payloads"] == []
+    assert body["total"] == 0
+    assert body["auth"] == "open"
+    # `declared` is the other half of the answer and is what lets a console show
+    # what is MISSING rather than only what is present. On an empty shelf with
+    # no adapter pack declaring an artifact, both lists are empty — and that is
+    # a genuinely empty shelf, not a degraded read.
+    assert body["declared"] == []
+    assert "writable" in body
 
 
 def test_unreadable_manifest_degrades_to_no_provenance(client, shelf):

@@ -1164,8 +1164,79 @@ async def poll_tasks(
         logger.debug("poll_tasks agent=%s no tasks", agent_id)
         return {"task": None}
 
+    # --- The artifact-staging capability gate -------------------------------
+    #
+    # An old beacon decodes an unknown `artifacts` key with encoding/json, which
+    # silently drops it. It would then run every step WITHOUT its tooling, exit 0
+    # on all of them, and the absent detections would read in a POV report as
+    # gaps in the customer's coverage. So a task that needs staged artifacts is
+    # never handed to an agent that cannot stage them: the run is failed LOUDLY
+    # here rather than executing and looking green.
+    if task.requires_artifact_fetch():
+        gate = await _refuse_unstageable_task(agent, task, db)
+        if gate is not None:
+            raise gate
+
     logger.info("poll_tasks agent=%s dispatching task_id=%s run_id=%s", agent_id, task.task_id, task.run_id)
     return {"task": task.to_dict()}
+
+
+async def _refuse_unstageable_task(
+    agent: Agent, task, db: AsyncSession
+) -> Optional[HTTPException]:
+    """Refuse to deliver an artifact-carrying task to a beacon that cannot stage.
+
+    Returns the HTTPException to raise, or ``None`` when the agent is capable.
+
+    The task has already been dequeued (its durable row is gone), so the run
+    would otherwise hang in ``running`` forever. It is marked **failed** with the
+    same vocabulary the beacon itself uses — a run that could not execute must
+    never be mistaken for a run that executed and found nothing.
+    """
+    from models import Run  # noqa: PLC0415
+    from engine.orchestrator import (  # noqa: PLC0415
+        ARTIFACT_FETCH_CAPABILITY,
+        _publish_run_status,
+    )
+
+    caps = list(agent.capabilities or [])
+    if ARTIFACT_FETCH_CAPABILITY in caps:
+        return None
+
+    names = ", ".join(str(a.get("name", "?")) for a in task.artifacts)
+    detail = (
+        f"{task.scenario_id} requires {len(task.artifacts)} staged artifact(s) "
+        f"({names}) but agent '{agent.agent_id}' advertises [{', '.join(caps) or 'none'}] — "
+        "it predates artifact staging and would run every step WITHOUT its tooling, "
+        "producing a run that looks green and proves nothing. Re-install the beacon: "
+        "curl -fsSL '<server>/api/agents/install?os=linux' | CORTEXSIM_TOKEN='cxs_…' bash"
+    )
+
+    run_row = await db.execute(select(Run).where(Run.run_id == task.run_id))
+    run: Optional[Run] = run_row.scalar_one_or_none()
+    if run is not None and run.status not in ("complete", "failed", "aborted"):
+        run.status = "failed"
+        run.completed_at = datetime.utcnow()
+        run.output = (run.output or "") + (
+            "\n--- RUN FAILED: AGENT_CANNOT_STAGE_ARTIFACTS ---\n"
+            f"ARTIFACT STAGING FAILED: {detail}\n"
+            "NO STEPS RAN. This run proves NOTHING about the customer's detection coverage.\n"
+        )
+        await db.commit()
+        await _publish_run_status(task.run_id, "failed")
+
+    logger.warning(
+        "poll_tasks REFUSED agent=%s run_id=%s scenario=%s reason=AGENT_CANNOT_STAGE_ARTIFACTS",
+        agent.agent_id, task.run_id, task.scenario_id,
+    )
+    return HTTPException(
+        status_code=409,
+        detail={
+            "error": "Agent cannot stage artifacts",
+            "code": "AGENT_CANNOT_STAGE_ARTIFACTS",
+            "detail": detail,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

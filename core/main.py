@@ -474,6 +474,12 @@ from api.assertions import router as assertions_router  # noqa: E402
 # a customer host. The init container fetches and sha256-verifies its payload
 # from these endpoints. See docs/reference/k8s-delivery.md §5.
 from api.payloads import router as k8s_payloads_router  # noqa: E402
+# The same shelf, plane-agnostic. Three consumers pull tools from it: the Go
+# beacon (EDR-plane endpoint), the K8s init container (CDR/cloud-EDR pod) and
+# the console. `/api/k8s/*` stays mounted FOREVER because every manifest this
+# engine has emitted hard-codes those paths; `/api/shelf/*` is an additional
+# mount of the same handlers, never a redirect.
+from api.payloads import shelf_router  # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -503,6 +509,7 @@ app.include_router(pov_router, prefix="/api")
 app.include_router(uctc_router, prefix="/api")
 app.include_router(assertions_router, prefix="/api")
 app.include_router(k8s_payloads_router, prefix="/api")
+app.include_router(shelf_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

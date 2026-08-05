@@ -44,6 +44,12 @@ func main() {
 	serverFlag := flag.String("server", defaultServer, "SimCore server URL (e.g. http://localhost:8888)")
 	idFlag := flag.String("id", "", "Agent ID — required (e.g. hostname or custom label)")
 	intervalFlag := flag.Int("interval", defaultInterval, "Poll interval in seconds")
+	// The shelf defaults to open; this is only needed when SimCore runs
+	// CORTEXSIM_K8S_PAYLOAD_AUTH=token. It is supplied at INSTALL time (baked
+	// into the systemd unit / launchd plist) and never travels in the task body:
+	// queued_tasks.payload is plaintext JSON in SQLite.
+	artifactTokenFlag := flag.String("artifact-token", "",
+		"Bearer token for the payload shelf when SimCore runs it in token mode (env: CORTEXSIM_ARTIFACT_TOKEN)")
 	flag.Parse()
 
 	// Validate required flag.
@@ -68,6 +74,23 @@ func main() {
 	// Build beacon client
 	// ----------------------------------------------------------------
 	client := beacon.New(*serverFlag, *idFlag, time.Duration(*intervalFlag)*time.Second)
+
+	artifactToken := *artifactTokenFlag
+	if artifactToken == "" {
+		artifactToken = os.Getenv("CORTEXSIM_ARTIFACT_TOKEN")
+	}
+	if artifactToken != "" {
+		client.SetArtifactToken(artifactToken)
+		log.Printf("payload-shelf token configured for artifact fetches")
+	}
+
+	// Remove staging directories a previous beacon left behind when it was
+	// SIGKILLed, OOM-killed, or the host rebooted — the cases where the deferred
+	// per-run Cleanup does not run. Offensive tooling must not accumulate on a
+	// customer endpoint across a POV.
+	if n := beacon.SweepStaleStaging(); n > 0 {
+		log.Printf("swept %d stale artifact staging director(ies) from a previous run", n)
+	}
 
 	// ----------------------------------------------------------------
 	// Register with SimCore

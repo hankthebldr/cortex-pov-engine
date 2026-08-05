@@ -62,6 +62,11 @@ type Task struct {
 	// initial-access process). Present only for scenarios that declare the
 	// causality contract; nil (and ignored on the wire) otherwise.
 	CgoAnchor *CgoAnchor `json:"cgo_anchor,omitempty"`
+	// Artifacts are staged tools this task requires BEFORE any step runs. The
+	// server omits the key entirely when empty, so a task for any of today's
+	// scenarios decodes to a nil slice and both execution paths are unchanged.
+	// See artifact.go for the integrity model.
+	Artifacts []Artifact `json:"artifacts,omitempty"`
 }
 
 // CgoAnchor labels the causality-chain root so the endpoint sensor's Causality
@@ -145,6 +150,19 @@ type BeaconClient struct {
 	// whole point of the mechanism and cannot be reached from a Linux runner — is
 	// exercised by the test suite rather than merely asserted about.
 	resolveIdentity func(string) identity.Resolution
+
+	// artifactHTTP is a SEPARATE client for artifact fetches. The shared one
+	// carries Timeout: 30s, which would kill a large fetch mid-body and surface
+	// as a truncation of unknown cause. Timeout is 0 here on purpose: the
+	// deadline is per-artifact and context-driven.
+	artifactHTTP  *http.Client
+	artifactToken string
+
+	// Injectable seams for the staging phase, same idiom as resolveIdentity:
+	// getenv drives the per-platform dest allowlist, artifactProbeExec drives
+	// the noexec pre-flight branch that CI cannot reach by mounting anything.
+	artifactGetenv    func(string) string
+	artifactProbeExec func(string) error
 }
 
 // New constructs a BeaconClient with a sensible default HTTP timeout.
@@ -158,6 +176,47 @@ func New(serverURL, agentID string, interval time.Duration) *BeaconClient {
 		},
 		resolveIdentity: identity.Resolve,
 	}
+}
+
+// SetArtifactToken supplies the bearer token used when the payload shelf runs in
+// `token` mode. It comes from --artifact-token / CORTEXSIM_ARTIFACT_TOKEN, baked
+// into the systemd unit at install time — deliberately NOT from the task body,
+// because queued_tasks.payload is plaintext JSON in SQLite.
+func (c *BeaconClient) SetArtifactToken(token string) { c.artifactToken = strings.TrimSpace(token) }
+
+// artifactClient returns the artifact-fetch HTTP client, building it on first
+// use so a zero-value BeaconClient built by a test with a struct literal works.
+func (c *BeaconClient) artifactClient() *http.Client {
+	if c.artifactHTTP == nil {
+		c.artifactHTTP = &http.Client{
+			// See the struct field comment: no client-wide timeout.
+			Timeout: 0,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				// The fetch origin is fixed by the operator at install time.
+				// Following a redirect off-origin would defeat that and would
+				// carry the bearer token to a host the operator never named.
+				// A 3xx therefore surfaces as ARTIFACT_UNAVAILABLE — loud, not
+				// silent. This repo has already shipped a 302-to-a-captive-portal
+				// counted as a delivered record.
+				return http.ErrUseLastResponse
+			},
+		}
+	}
+	return c.artifactHTTP
+}
+
+func (c *BeaconClient) getenv(key string) string {
+	if c.artifactGetenv != nil {
+		return c.artifactGetenv(key)
+	}
+	return os.Getenv(key)
+}
+
+func (c *BeaconClient) probeExec(probePath string) error {
+	if c.artifactProbeExec != nil {
+		return c.artifactProbeExec(probePath)
+	}
+	return defaultExecProbe(probePath)
 }
 
 // resolve applies the identity resolver, tolerating a zero-value BeaconClient
@@ -410,6 +469,39 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		log.Printf("[beacon] task run_id=%s has no steps — completing as no-op", task.RunID)
 		_ = c.Complete(task.RunID, 0, fmt.Sprintf("SUCCESS | scenario=%s | no steps", task.ScenarioID))
 		return
+	}
+
+	// ---- Artifact staging: all-or-nothing, BEFORE step 1 ----
+	//
+	// Placed above the hasCausalityContract() dispatch so ALL THREE execution
+	// paths (this loop, executeTaskChained, executeTaskPerStep) inherit it from
+	// one place. Teardown is registered in the same statement: pull mode never
+	// executes a scenario's cleanup.commands — only push_generator emits those —
+	// so the beacon owns removal outright and it cannot be delegated to content.
+	// Every abort/shutdown/fail-fast branch in the three executors returns
+	// normally, so this defer fires on every exit path.
+	if len(task.Artifacts) > 0 {
+		// Do not stage tooling for a run the operator has already killed.
+		if state, _ := c.Control(task.RunID); state.Abort {
+			log.Printf("[beacon] abort detected before artifact staging (run_id=%s)", task.RunID)
+			_ = c.SendOutput(task.RunID, "", "--- ABORTED (operator) before artifact staging ---")
+			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator")
+			return
+		}
+	}
+	staged := c.stageArtifacts(ctx, task)
+	defer staged.Cleanup(c, task.RunID)
+
+	if !staged.OK() {
+		// A step whose tool could not be staged must not run, must not be
+		// skipped silently, and must be reported as not-having-run.
+		c.reportStagingFailure(task, staged)
+		return
+	}
+	if staged.Total > 0 {
+		if err := c.SendOutput(task.RunID, "", staged.Ledger()); err != nil {
+			log.Printf("[beacon] sendOutput (staging ledger) error: %v", err)
+		}
 	}
 
 	// Contract mode: run the steps as children of ONE anchor shell so the
