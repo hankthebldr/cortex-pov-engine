@@ -175,6 +175,30 @@ class ExternalToolSchema(BaseModel):
     # scenario step commands via the {adapter:<id>} placeholder. Existing
     # scenarios without adapter_ref continue to work via the legacy path.
     adapter_ref: Optional[str] = None
+    #: Stage this adapter's artifact under a DIFFERENT on-disk name/path.
+    #:
+    #: The rename negative control. Two BIOCs in this corpus key on the tool's
+    #: FILENAME (`command_line contains "linpeas"`), which proves a customer's
+    #: stack can match a string, not that it understands privilege-escalation
+    #: reconnaissance. Staging the same bytes as `/tmp/.cache/sysinfo.sh` splits
+    #: those apart: the behavioural detections must still fire, and if nothing
+    #: fires the finding is that the coverage is name-keyed — not that the TTP
+    #: did not run.
+    #:
+    #: Authored here rather than only as an API override so the control is
+    #: committed, reviewable and re-runnable. Validated by S-19 against the same
+    #: staging allowlist the composer enforces, because a destination is a WRITE
+    #: on a host the DC does not own and the beacon frequently runs as root.
+    stage_as: Optional[str] = None
+
+    @field_validator("stage_as")
+    @classmethod
+    def _validate_stage_as(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        from tools.adapter_loader import _validate_stage_path  # noqa: PLC0415
+
+        return _validate_stage_path(v, code="S-19", field="external_tools[].stage_as")
 
 
 class CleanupSchema(BaseModel):
