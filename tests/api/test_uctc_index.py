@@ -45,15 +45,19 @@ def client(make_client):
 
 @pytest.fixture
 def seeded(session_factory):
-    """Seed the real 169-scenario evidence set from the crosswalk.
+    """Seed the real 170-scenario evidence set from the crosswalk.
 
     Only the columns the reverse index touches are populated; the rest carry
     placeholders because this surface never reads them.
+
+    169 -> 170 on 2026-08-05: SIM-EDR-022, the payload-shelf EDR scenario. The
+    count guards against a truncated CSV making every assertion below trivially
+    pass, so it moves deliberately with the corpus and never by default.
     """
     from models import Scenario  # noqa: PLC0415
 
     rows = list(csv.DictReader(CROSSWALK.open(encoding="utf-8")))
-    assert len(rows) == 169
+    assert len(rows) == 170
 
     async def _seed() -> None:
         async with session_factory() as session:

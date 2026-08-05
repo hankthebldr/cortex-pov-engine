@@ -101,6 +101,11 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Web shell to in-memory Mimikatz — runtime web-app compromise into credential access."),
     "SIM-EDR-021": (["TC-EDR-03", "TC-EDR-05"], REMAP,
         "BYOVD EDR-kill — the driver-load anomaly must be caught before the sensor goes blind."),
+    "SIM-EDR-022": (["TC-EDR-05", "TC-EDR-03"], REMAP,
+        "Shelf-staged privesc enumeration — the causality claim is the point: walk back from the "
+        "enumeration burst to the apache2 CGO. Adds NO new index coverage (both rows are already "
+        "evidenced); it adds a SECOND, behavioural-not-name-keyed piece of evidence and the delivery "
+        "path that works inside a default-deny network."),
 
     # ── CDR ────────────────────────────────────────────────────────────────
     "SIM-CDR-001": (["TC-CDR-01", "TC-CITH-03"], REMAP,

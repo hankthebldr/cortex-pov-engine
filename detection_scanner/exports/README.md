@@ -175,4 +175,5 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0173` | Token Jacking — A Stolen LLM Provider API Key Replayed From Foreign Infrastructure for Unauthorized Compute | [sigma](sigma/TTP-2026-0173.yml), [xql](xql/TTP-2026-0173.xql), [correlation](correlation/TTP-2026-0173.json) |
 | `TTP-2026-0174` | Compromise Infrastructure — A Dangling-DNS Subdomain Takeover Weaponized as Allowlisted C2 | [sigma](sigma/TTP-2026-0174.yml), [xql](xql/TTP-2026-0174.xql), [correlation](correlation/TTP-2026-0174.json) |
 | `TTP-2026-0175` | Adversary Capability Development — Phishing-Kit and LLM Prompt-Farm Staging Detected Before Weaponization | [sigma](sigma/TTP-2026-0175.yml), [xql](xql/TTP-2026-0175.xql), [correlation](correlation/TTP-2026-0175.json) |
+| `TTP-2026-0176` | Shelf-Staged Privilege-Escalation Enumeration Under a Service Identity (T1082) | [sigma](sigma/TTP-2026-0176.yml), [xql](xql/TTP-2026-0176.xql), [correlation](correlation/TTP-2026-0176.json) |
 

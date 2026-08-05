@@ -55,8 +55,11 @@ def parsed(loaded_registry):
 
 
 def test_the_corpus_is_the_expected_size(parsed):
-    """A sudden drop would make the ref checks below trivially pass."""
-    assert len(parsed) == 169
+    """A sudden drop would make the ref checks below trivially pass.
+
+    169 -> 170 on 2026-08-05: SIM-EDR-022, the payload-shelf EDR scenario.
+    """
+    assert len(parsed) == 170
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):
