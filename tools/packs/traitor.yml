@@ -1,0 +1,70 @@
+adapter_id: TOOL-TRAITOR
+name: Traitor
+version: "0.0.14"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/liamg/traitor
+  license: "MIT"
+  attribution: Liam Galvin (liamg)
+
+cortex_signal:
+  planes:
+    - EDR
+    - CDR
+  expected_techniques:
+    - T1548.003  # Abuse Elevation Control Mechanism: Sudo and Sudo Caching
+    - T1068  # Exploitation for Privilege Escalation
+    - T1611  # Escape to Host
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "test -x /tmp/traitor-amd64 || (curl -fsSLo /tmp/traitor-amd64 https://github.com/liamg/traitor/releases/download/v0.0.14/traitor-amd64 && chmod +x /tmp/traitor-amd64)"
+  binary: /tmp/traitor-amd64
+
+  artifact:
+    filename: traitor-amd64
+    url: "https://github.com/liamg/traitor/releases/download/v0.0.14/traitor-amd64"
+    kind: file
+    sha256: "fdfbfc07248c3359d9f1f536a406d4268f01ed63a856bd6cef9dccb3cf4f2376"
+    pin:
+      type: release-tag
+      ref: "v0.0.14"
+    license: "MIT"
+    stage_path: /tmp/traitor-amd64
+    mode: "0755"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {flags}"
+  default_args:
+    # EMPTY ON PURPOSE. Upstream: "Run with no arguments to find potential
+    # vulnerabilities/misconfigurations"; `-a`/`--any` attempts each exploit
+    # until it pops a root shell. Detection validation wants the enumeration
+    # telemetry, not an unattended root shell on a customer's host, so the
+    # exploit flags must be an explicit per-scenario override and never a
+    # default that a new scenario inherits by omission.
+    flags: ""
+  identity_required: www-data
+
+cleanup:
+  commands:
+    - "rm -f /tmp/traitor-amd64"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-LINPEAS
+
+author: Henry Reed
+created: "2026-08-05"
+last_updated: "2026-08-05"
+tags:
+  - privilege-escalation
+  - gtfobins
+  - linux
+  - edr
+  - payload-shelf
