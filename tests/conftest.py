@@ -72,6 +72,13 @@ def _declared_payload_names() -> set[str]:
 def _hermetic_payload_shelf(tmp_path_factory):
     """Stage a deterministic stub for every payload the corpus declares."""
     shelf = tmp_path_factory.mktemp("payload-shelf")
+    # Declare the shelf a test double. Stub bytes can never satisfy a pack's
+    # real sha256 pin, and the alternative — downloading 8 live offensive tools
+    # to run the suite — is worse. payload_shelf honours this marker only when
+    # CORTEXSIM_PAYLOAD_DIST is set explicitly and the env is not production, so
+    # neither the repo's payloads/ nor the image's baked-in shelf can be marked,
+    # and every composition off it carries a STUB_SHELF warning.
+    (shelf / ".cortexsim-stub-shelf").write_text("")
     for name in sorted(_declared_payload_names()):
         # Deterministic content -> deterministic digest, so a manifest rendered
         # twice in one session is byte-identical (the export-determinism gate

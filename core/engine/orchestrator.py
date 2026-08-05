@@ -27,6 +27,19 @@ logger = logging.getLogger("cortexsim.orchestrator")
 # ---------------------------------------------------------------------------
 
 
+# The capability a beacon must advertise before it may be handed a task that
+# declares staged artifacts (``agent/capabilities.go::agentCapabilities``).
+#
+# This exists because "optional and additive" is NOT sufficient here. An old
+# beacon decodes a task with ``artifacts`` using ``encoding/json``, which
+# SILENTLY DROPS the unknown key. It would then run every step without its
+# tooling, exit 0 on all of them, and the missing detections would read in a POV
+# report as gaps in the customer's coverage — the precise manufactured false
+# negative artifact staging exists to prevent, delivered by the back-compat
+# mechanism itself.
+ARTIFACT_FETCH_CAPABILITY = "artifact-fetch"
+
+
 @dataclass
 class Task:
     task_id: str
@@ -43,6 +56,30 @@ class Task:
     # connected process chain rooted at this anchor. None for contract-less
     # scenarios, which the beacon runs per-step exactly as before.
     cgo_anchor: Optional[dict[str, Any]] = None
+    # Staged tool artifacts this task requires BEFORE any step runs — the
+    # beacon half of the payload shelf (docs/reference/payload-shelf.md).
+    #
+    # Each entry is the shape `payload_shelf.compose(consumer="beacon")`
+    # produces, projected onto the beacon's wire contract:
+    #
+    #   {"name": "linpeas.sh",                  # THE SHELF KEY
+    #    "sha256": "0ea7e9…",                   # 64 lowercase hex, resolved on
+    #                                           #   THIS SimCore at enqueue time
+    #    "size_bytes": 1106683,                 # optional; distinguishes a
+    #                                           #   truncating proxy from tampering
+    #    "path": "/api/shelf/payload/linpeas.sh",  # SERVER-RELATIVE, never a URL
+    #    "dest": "/tmp/.cache/sysinfo.sh",      # absolute, computed server-side
+    #    "mode": "0755",                        # POSIX octal; recorded, not
+    #                                           #   applied, on Windows
+    #    "steps": ["step-05"]}                  # attribution for a staging failure
+    #
+    # `path` is deliberately server-RELATIVE: the beacon joins it onto its own
+    # ServerURL, so task data can never redirect the fetch to an origin the
+    # operator never named. The digest travels IN the task so the beacon
+    # verifies against a value it carried in rather than one it fetched from the
+    # same server it is trusting — the identical anchoring
+    # ``k8s_manifest._resolve_payloads`` uses for the pod.
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict[str, Any]:
@@ -57,7 +94,17 @@ class Task:
         }
         if self.cgo_anchor:
             payload["cgo_anchor"] = self.cgo_anchor
+        # Omitted entirely when empty — the same pattern cgo_anchor uses — so a
+        # task for any of today's 169 scenarios is byte-identical to what
+        # shipped before artifact staging existed.
+        if self.artifacts:
+            payload["artifacts"] = self.artifacts
         return payload
+
+    def requires_artifact_fetch(self) -> bool:
+        """True when this task cannot be honoured by a beacon that predates
+        artifact staging."""
+        return bool(self.artifacts)
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +265,29 @@ class Orchestrator:
             )
 
         execution_identity = getattr(scenario, "execution_identity", None) or {}
+
+        # THE link the whole payload shelf turns on: the console stages a public
+        # tool, this resolves a digest-bound plan, and the beacon fetches and
+        # verifies it before any step runs. Without this call every other piece
+        # is built and unreachable — the task carries no artifacts, the beacon
+        # stages nothing, and a scenario wired to a shelf artifact runs its steps
+        # with no tooling. The absent detection then reads in the POV report as
+        # "Cortex missed it", which is a false negative manufactured by us and
+        # shown to a customer.
+        from engine.payload_shelf import PayloadResolutionError  # noqa: PLC0415
+
+        try:
+            artifacts = _compose_artifacts(scenario)
+        except PayloadResolutionError as exc:
+            # Refuse at LAUNCH, not on the target. A run that cannot be tooled
+            # must never reach a customer endpoint half-armed, and the operator
+            # is still at the console to read why.
+            return LaunchResult(
+                success=False,
+                run_id=run_id,
+                error=f"{exc.code}: {exc.detail}",
+            )
+
         task = Task(
             task_id=str(uuid.uuid4()),
             run_id=run_id,
@@ -226,6 +296,7 @@ class Orchestrator:
             identity_context=identity,
             identity_default=execution_identity.get("default"),
             cgo_anchor=getattr(scenario, "cgo_anchor", None),
+            artifacts=artifacts,
         )
         self._enqueue(target_agent_id, task)
         # Mirror the task to the durable queue so a restart can rehydrate it.
@@ -541,6 +612,35 @@ class Orchestrator:
 _ADAPTER_PLACEHOLDER_RE = __import__("re").compile(r"\{adapter:(TOOL-[A-Z0-9-]+)\}")
 
 
+def _compose_artifacts(scenario: Any) -> list[dict[str, Any]]:
+    """Resolve this scenario's staged tools onto the beacon's wire contract.
+
+    Returns ``[]`` when the scenario references no shelf-backed adapter — the
+    overwhelming majority of the corpus — so an ordinary run enqueues a task
+    byte-identical to the one it enqueued before the shelf existed.
+
+    Raises :class:`PayloadResolutionError` when a tool IS declared but cannot be
+    resolved. That refusal is the point: the alternative is a task that runs the
+    TTP without its tool.
+    """
+    from engine.payload_shelf import compose  # noqa: PLC0415 — import cycle
+
+    plan = compose(
+        scenario={
+            "scenario_id": getattr(scenario, "scenario_id", None),
+            "external_tools": getattr(scenario, "external_tools", None) or [],
+            "cluster_posture": getattr(scenario, "cluster_posture", None) or {},
+        },
+        consumer="beacon",
+    )
+    for warning in plan.warnings:
+        logger.info(
+            "payload plan %s (%s): %s",
+            plan.composition_id, warning.get("code"), warning.get("detail"),
+        )
+    return plan.to_beacon_artifacts()
+
+
 def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
     """Reconstruct a :class:`Task` from a persisted ``queued_tasks.payload``
     dict (the round-trip of ``Task.to_dict()``). Returns ``None`` on a
@@ -557,6 +657,11 @@ def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
             identity_context=payload.get("identity_context"),
             identity_default=payload.get("identity_default"),
             cgo_anchor=payload.get("cgo_anchor"),
+            # Read back or a SimCore restart rehydrates a task that has
+            # FORGOTTEN its tooling — the beacon would then run every step
+            # without the tool it needs and report green. That is the same
+            # manufactured false negative arriving by a side door.
+            artifacts=payload.get("artifacts") or [],
             created_at=datetime.fromisoformat(created) if created else datetime.utcnow(),
         )
     except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive
