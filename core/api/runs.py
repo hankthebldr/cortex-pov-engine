@@ -46,6 +46,41 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 compat_router = APIRouter(tags=["runs"])
 
 
+#: Markers a run carries when its tooling never reached the target. Emitted
+#: identically by the beacon (`agent/beacon/artifact.go`) and by the capability
+#: gate in `core/api/agents.py`, so one vocabulary covers both refusal points.
+_INTEGRITY_MARKERS: tuple[tuple[str, str], ...] = (
+    ("ARTIFACT STAGING FAILED",
+     "A staged tool could not be fetched or verified on the target, so the "
+     "steps that needed it did not run."),
+    ("PAYLOAD_NOT_STAGED_ON_TARGET",
+     "A step's preflight found its tool absent on the target and refused to "
+     "run the TTP untooled."),
+    ("ARTIFACT_SPEC_INVALID",
+     "The beacon rejected the artifact plan it was handed, so nothing was "
+     "staged."),
+    ("RUN FAILED ON RESTART",
+     "SimCore restarted before the agent collected this task; the run never "
+     "reached the target."),
+)
+
+
+def _execution_integrity(run: Any) -> dict[str, Any]:
+    """Did this run actually execute as authored?
+
+    Keys on `run.output` because that is where both refusal points already
+    write, and both are stable strings. Returns ``ok: True`` for the ordinary
+    case so an unremarkable run's report is byte-identical to before.
+    """
+    output = (getattr(run, "output", "") or "")
+    problems = [
+        f"**{marker}** — {explanation}"
+        for marker, explanation in _INTEGRITY_MARKERS
+        if marker in output
+    ]
+    return {"ok": not problems, "problems": problems}
+
+
 def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
     """Resolve a scenario's external_tools[] entries into report-row dicts.
 
@@ -358,12 +393,14 @@ async def get_report(
     mttd_max = round(max(mttd_values), 1) if mttd_values else None
 
     tools_used = _build_tools_used_rows(scenario.external_tools if scenario else None)
+    integrity = _execution_integrity(run)
 
     if format == "json":
         return {
             "run": run.to_dict(),
             "scenario": scenario.to_dict() if scenario else None,
             "results": [r.to_dict() for r in results],
+            "execution_integrity": integrity,
             "coverage": {
                 "observed": observed, "total": total, "pct": coverage_pct,
                 "by_type": {k: {**v, "pct": round(v["observed"] / v["total"] * 100, 1) if v["total"] > 0 else 0} for k, v in by_type.items()},
@@ -390,6 +427,33 @@ async def get_report(
     lines.append(f"**Completed:** {run.completed_at.strftime('%Y-%m-%d %H:%M UTC') if run.completed_at else 'In Progress'}  ")
     lines.append(f"**Status:** {run.status}  ")
     lines.append("")
+
+    # Execution integrity FIRST — before MITRE, tools and coverage. A run whose
+    # tooling never reached the target would otherwise render as an ordinary
+    # miss: 0/14 detections, every row ❌, and a "Tools Used" table introduced as
+    # the run's audit trail listing three tools that never arrived. That is the
+    # manufactured false negative relocated out of the API and into the one
+    # artifact a DC actually puts in front of a customer, where it reads as a gap
+    # in THEIR coverage. The beacon already refuses correctly and says so in
+    # run.output; the report simply has to stop throwing that away.
+    if not integrity["ok"]:
+        lines.append("## ⚠ Execution Integrity — READ THIS FIRST")
+        lines.append("")
+        lines.append(
+            "**The detection results below are NOT evidence about this "
+            "environment's coverage.** This run did not execute as authored:"
+        )
+        lines.append("")
+        for problem in integrity["problems"]:
+            lines.append(f"- {problem}")
+        lines.append("")
+        lines.append(
+            "A step whose tool could not be staged did not run. Absent "
+            "detections therefore say nothing about whether Cortex would have "
+            "caught the behaviour — treat the coverage numbers below as void "
+            "and re-run once staging is fixed."
+        )
+        lines.append("")
 
     if s:
         lines.append("## MITRE ATT&CK Mapping")
