@@ -22,6 +22,8 @@ from tools.adapter_loader import (
     ToolAdapterSchema,
     _find_pack_files,
     _parse_and_validate,
+    artifact_conflicting_ids,
+    validate_artifact_uniqueness,
 )
 
 logger = logging.getLogger("cortexsim.tools.adapter_catalog")
@@ -63,6 +65,20 @@ class AdapterCatalog:
                 continue
             self._by_id[adapter.adapter_id] = adapter
             loaded += 1
+
+        # TA-12 is inherently cross-pack and therefore cannot live in the
+        # per-file validator. The shelf is keyed by filename: two packs claiming
+        # one filename with different digests is an unresolvable shelf, so the
+        # SECOND claimant is dropped. Enforced here as well as in
+        # `load_adapters` because this is the runtime singleton — an invariant
+        # only the standalone helper checks is an invariant production does not
+        # have.
+        validate_artifact_uniqueness(list(self._by_id.values()))
+        conflicting = artifact_conflicting_ids(list(self._by_id.values()))
+        for adapter_id in conflicting:
+            self._by_id.pop(adapter_id, None)
+            loaded -= 1
+            rejected += 1
 
         logger.info(
             "Adapter catalog loaded: %d adapter(s) (rejected=%d) from %s",

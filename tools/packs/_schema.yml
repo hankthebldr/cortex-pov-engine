@@ -101,6 +101,110 @@ install:
   runtime_install_command: "apt-get install -y nmap || (curl -sSL https://nmap.org/dist/nmap-7.94.tgz | tar xz)"
   binary: "nmap"
 
+  # ── install.artifact — the PAYLOAD SHELF binding (tier 4 only, optional) ──
+  #
+  # WHY: `runtime_install_command` runs ON THE TARGET and reaches the public
+  # internet. The customers who buy Cortex run default-deny egress, so it is the
+  # first thing their network blocks — and a step whose tool never arrived runs
+  # anyway, produces no detection, and the absent detection reads in a POV
+  # report as "Cortex missed it". Declaring an artifact moves the fetch onto the
+  # DC's OWN SimCore, where egress is already accepted, and makes the bytes
+  # checksummable before they reach a customer.
+  #
+  # THIS BLOCK IS THE SOURCE OF TRUTH FOR STAGING. `payloads/sources.json` is
+  # GENERATED from every pack's install.artifact by
+  # `python3 -m engine.payload_shelf --write`, and a CI gate fails on drift.
+  # Never hand-edit the generated section — a second hand-maintained list is a
+  # failure this repo has already paid for.
+  #
+  # NOT every tier-4 pack can have one, and the gap is meant to be visible
+  # rather than papered over. Of the 50 tier-4 packs, roughly 20 are apt/yum,
+  # ~15 are pip/pipx/gem/go install/cargo and ~8 are a `git clone` of a repo
+  # tree. Only a single-file download is shelf-able today. The other families
+  # keep `runtime_install_command` and are reported as needing target egress;
+  # closing that for apt would mean hosting a Debian mirror.
+  #
+  # artifact:
+  #   filename: linpeas.sh
+  #     # (required) THE SHELF KEY. A bare filename matching
+  #     # ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ — same regex the serving endpoints
+  #     # use, because a name they would 400 on could be staged and never
+  #     # served. Two packs may not claim one filename with different digests
+  #     # (TA-12): the shelf is keyed by filename, so only one set of bytes can
+  #     # exist and the other pack's consumers would verify against a digest
+  #     # that can never match.
+  #
+  #   url: "https://github.com/carlospolop/PEASS-ng/releases/download/20250601/linpeas.sh"
+  #     # (required) https (http only with CORTEXSIM_SHELF_ALLOW_HTTP=1).
+  #     # SHOULD be immutable — a release-tag download URL or a commit-sha raw
+  #     # URL. TA-11 WARNs on /releases/latest/download/, /raw/main/,
+  #     # /archive/refs/heads/ and @latest|@main|@master.
+  #
+  #   kind: file
+  #     # (required) `file` is the ONLY accepted value. `archive` is reserved
+  #     # and REJECTED (TA-08) because no consumer can unpack one: the Go beacon
+  #     # is stdlib-only by contract and the K8s init container is a busybox
+  #     # wget. Accepting it would let a pack declare a tool that silently never
+  #     # lands. Consumers already branch on `kind`, so adding archive later is
+  #     # additive rather than a wire change.
+  #
+  #   sha256: "0ea7e9ce…"
+  #     # (required unless pin.type is `none`) 64 lowercase hex. THIS IS A PIN.
+  #     #
+  #     # The two failure modes are different and operators conflate them:
+  #     #   UNPINNED — the builder records whatever it downloaded, every
+  #     #     consumer verifies against THAT and passes, and the DC silently
+  #     #     ships a different tool than the one they tested. Nothing goes red.
+  #     #     This is the dangerous one.
+  #     #   PINNED TO A MOVING URL — the build FAILS loudly the next time
+  #     #     upstream ships. Loud, diagnosable, correct.
+  #     # Pinning converts a silent substitution into a loud build failure.
+  #
+  #   pin:
+  #     type: release-tag        # release-tag | commit | digest-only | none
+  #     ref: "20250601"          # (required for release-tag / commit)
+  #     waiver_reason: null      # (REQUIRED, non-empty, when type is `none`)
+  #     # Unpinned is allowed; unpinned AND unexplained is not (TA-06).
+  #     # `type: none` is a DEV-ONLY state — never valid in an image that goes
+  #     # to an engagement. Enforce with PAYLOAD_ALLOW_UNPINNED=0.
+  #
+  #   license: MIT               # (optional) defaults to upstream.license
+  #
+  #   stage_path: /tmp/linpeas.sh
+  #     # (optional) DEFAULT absolute destination on the target. Must sit under
+  #     # /tmp, /var/tmp, /dev/shm or /opt/cortexsim, with no `..` segment
+  #     # (TA-09) — a destination is a WRITE on a host the DC does not own, and
+  #     # a beacon frequently runs as root.
+  #     #
+  #     # TA-10, two-way: when install.binary is an ABSOLUTE path, stage_path
+  #     # back-fills from it, and an explicit disagreement is REJECTED (the
+  #     # artifact would land at one path while `{binary}` rendered another, so
+  #     # every step invoking the adapter would run a file that is not there).
+  #     # When install.binary is a bare name, stage_path is REQUIRED — a staged
+  #     # artifact does not go on PATH.
+  #     #
+  #     # This is only the DEFAULT. Precedence, lowest to highest:
+  #     #   install.artifact.stage_path            (this pack — the tool's own name)
+  #     #     <- external_tools[].stage_as         (the scenario, committed, reviewable)
+  #     #       <- a compose-request override      (ad hoc)
+  #     # The scenario level is where the RENAME NEGATIVE CONTROL lives: stage
+  #     # linpeas as /tmp/.cache/sysinfo.sh and the corpus BIOCs keyed on
+  #     # `action_process_image_command_line contains "linpeas"` correctly go
+  #     # dark while the behavioural detections must still fire. Renaming in the
+  #     # PACK would rename it for every consumer and make the positive case
+  #     # unauthorable.
+  #
+  #   mode: "0755"               # (optional) 3-digit octal string
+  #
+  # Validation codes: TA-01 (tier-4 only) · TA-02 (tier 4 needs
+  # runtime_install_command OR artifact) · TA-03 (servable filename/url) ·
+  # TA-04 (digest shape) · TA-05 (pinned claim needs a digest) · TA-06
+  # (unpinned needs a waiver_reason) · TA-07 (pin type/ref) · TA-08 (kind) ·
+  # TA-09 (stage_path allowlist) · TA-10 (binary/stage_path agreement) · TA-11
+  # (moving URL, WARN) · TA-12 (filename uniqueness across packs).
+  #
+  # Full contract, endpoints and worked example: docs/reference/payload-shelf.md
+
 # ── Invoke: how to run the tool ─────────────────────────────────────────────
 
 invoke:

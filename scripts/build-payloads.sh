@@ -18,7 +18,7 @@
 #   PAYLOAD_OFFLINE=1 ./scripts/build-payloads.sh    # no network: empty shelf, exit 0
 #   PAYLOAD_ALLOW_UNPINNED=0 ./scripts/build-payloads.sh   # CI: refuse unpinned
 #
-# SimCore serves the result from GET /api/k8s/payload/<name>; an empty shelf is
+# SimCore serves the result from GET /api/shelf/payload/<name>; an empty shelf is
 # a valid state (the generator then reports every declared tool as unstaged).
 set -euo pipefail
 
@@ -72,12 +72,23 @@ fi
 # of an IFS whitespace character, so a genuinely empty sha256 between two tabs
 # would shift `license` into `PIN` and the build would compare the digest
 # against "MIT". Found by running it.
+#
+# TWO LISTS, one derived and one shrinking:
+#   payloads[] — GENERATED from tools/packs/*.yml install.artifact blocks by
+#                `python3 -m engine.payload_shelf --write`. A CI gate fails on
+#                drift, so this is the authoritative declaration.
+#   unbound[]  — the migration bucket: an artifact that is stageable but has no
+#                adapter pack yet. Staged identically, but NOTHING can compose
+#                it (no adapter_ref resolves to it), so it must reach zero.
+# Both are staged here because a shelf that silently skipped the unbound half
+# would make `PAYLOAD_OFFLINE=0` produce a partially-filled shelf that reads as
+# a full one.
 mapfile -t ROWS < <(python3 - "$SOURCES" <<'PY'
 import json, sys
 doc = json.load(open(sys.argv[1]))
-for p in doc.get("payloads", []):
+for p in list(doc.get("payloads", [])) + list(doc.get("unbound", [])):
     print("\t".join([
-        str(p.get(k) or "-") for k in ("name", "url", "sha256", "license")
+        str(p.get(k) or "-") for k in ("name", "url", "sha256", "license", "kind")
     ]))
 PY
 )
@@ -88,11 +99,19 @@ UNPINNED=0
 
 for row in "${ROWS[@]}"; do
   [ -n "$row" ] || continue
-  IFS=$'\t' read -r NAME URL PIN LICENSE <<<"$row"
+  IFS=$'\t' read -r NAME URL PIN LICENSE KIND <<<"$row"
   [ "$PIN" = "-" ] && PIN=""
   [ "$LICENSE" = "-" ] && LICENSE=""
+  [ "$KIND" = "-" ] && KIND="file"
   if [ "$NAME" = "-" ] || [ "$URL" = "-" ] || [ -z "$NAME" ] || [ -z "$URL" ]; then
     echo "[payloads] FATAL malformed entry in $SOURCES (name/url required)" >&2
+    exit 1
+  fi
+  # `file` is the only kind any consumer can handle: the beacon is stdlib-only
+  # and the K8s init container is a busybox wget. Staging an archive nothing can
+  # unpack would put a tool on the shelf that silently never lands.
+  if [ "$KIND" != "file" ]; then
+    echo "[payloads] FATAL $NAME declares kind=$KIND; only 'file' is supported" >&2
     exit 1
   fi
 
@@ -145,4 +164,4 @@ write_manifest "$ENTRIES"
   fi )
 
 echo "[payloads] staged $STAGED artifact(s) into $OUT_DIR ($UNPINNED unpinned)"
-echo "[payloads] done — SimCore serves these from GET /api/k8s/payload/<name>"
+echo "[payloads] done — SimCore serves these from GET /api/shelf/payload/<name>"
