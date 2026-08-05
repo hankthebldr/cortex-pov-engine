@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { postRun, getAgents, downloadScenario } from '../../api/client.js'
+import { getLaunchCapability } from '../../api/payloads.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
 
 /**
@@ -15,7 +16,7 @@ import { agentIdOf, runIdOf } from '../../api/ids.js'
  * @param {(run) => void} callbacks.onRunComplete
  * @param {(message: string) => void} callbacks.onError
  */
-export default function useLaunchScenario(scenario, { onRunComplete, onError } = {}) {
+export default function useLaunchScenario(scenario, { onRunComplete, onError, payloadPlan = null } = {}) {
   const [mode, setMode]                   = useState('pull')      // 'pull' | 'push'
   const [identity, setIdentity]           = useState('')
   const [agents, setAgents]               = useState([])
@@ -26,6 +27,13 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
   const [launching, setLaunching]         = useState(false)
   const [downloading, setDownloading]     = useState(false)
   const [lastRun, setLastRun]             = useState(null)        // { status, message }
+  // null = not probed yet · true/false = this SimCore's LaunchRequest does /
+  // does not carry `payload_plan`. Probed, never assumed: Pydantic silently
+  // IGNORES unknown body fields, so posting a plan to a SimCore that has none
+  // would return 200 and run every step with the tool under its ORIGINAL name
+  // while the console reported a rename — a false claim in a customer-facing
+  // report, produced by the back-compat mechanism itself.
+  const [payloadPlanAccepted, setPayloadPlanAccepted] = useState(null)
 
   const identityOptions  = scenario?.execution_identity?.options || []
   const defaultIdentity  = scenario?.execution_identity?.default || ''
@@ -55,6 +63,16 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
     return () => { cancelled = true }
   }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Probe once, only when a plan is actually in play.
+  useEffect(() => {
+    if (!payloadPlan?.artifacts?.length) return
+    let cancelled = false
+    getLaunchCapability().then((cap) => {
+      if (!cancelled) setPayloadPlanAccepted(cap.supported === true)
+    })
+    return () => { cancelled = true }
+  }, [payloadPlan])
+
   const launch = useCallback(async () => {
     if (!scenario) return null
     setLaunching(true)
@@ -67,6 +85,10 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
       }
       if (mode === 'pull' && selectedAgent) body.target_agent_id = selectedAgent
       if (consent && Object.keys(consent).length) body.consent = consent
+      // Only sent when the server's own schema says it will be read.
+      if (payloadPlanAccepted === true && payloadPlan?.artifacts?.length) {
+        body.payload_plan = payloadPlan.artifacts
+      }
       const run = await postRun(body)
       setLastRun({ status: 'success', message: `Run ${runIdOf(run) || ''} started` })
       if (onRunComplete) onRunComplete(run)
@@ -81,7 +103,8 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
     } finally {
       setLaunching(false)
     }
-  }, [scenario, mode, identity, selectedAgent, consent, onRunComplete, onError])
+  }, [scenario, mode, identity, selectedAgent, consent, payloadPlan, payloadPlanAccepted,
+      onRunComplete, onError])
 
   const downloadPushBundle = useCallback(async () => {
     if (!scenario) return
@@ -133,6 +156,7 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError } =
     consent, setConsent,
     launching, downloading,
     lastRun,
+    payloadPlanAccepted,
     // derived
     identityOptions,
     supportsPull, supportsPush,

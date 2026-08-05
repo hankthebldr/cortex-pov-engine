@@ -3,6 +3,9 @@ import PinButton from './PinButton.jsx'
 import { formatAgo } from './useScenarioRunHistory.js'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
+import { getToolAdapters } from '../../api/client.js'
+import useShelf from './useShelf.js'
+import { SUPPLY, supplyOf } from './supplyState.js'
 
 /**
  * ScenarioInspector — right-side 420px drawer with pinned launch CTA at top,
@@ -286,6 +289,9 @@ export default function ScenarioInspector({
         </dl>
       </div>
 
+      {/* ── Tools & payload supply ─────────────────────────────────────── */}
+      <ScenarioToolsSection scenario={scenario} scenarioId={id} />
+
       {/* ── Expected detection matrix ──────────────────────────────────── */}
       <div className="insp-detection-matrix">
         <div className="insp-section__title">Expected detection matrix</div>
@@ -351,6 +357,97 @@ function countDetections(scenario) {
 function truncate(s, n) {
   if (!s || s.length <= n) return s
   return s.slice(0, n - 1) + '\u2026'
+}
+
+/* ─── Tools & payload supply ──────────────────────────────────────── */
+
+/**
+ * The tools this scenario needs, and WHO fetches each one at run time.
+ *
+ * This is the earliest point in the operator's path where "the target has to
+ * reach github.com mid-run" can be surfaced — long before the launch screen and
+ * long before the customer meeting. Entries with no `adapter_ref` render greyed
+ * with no supply chip: the corpus has not wired them to an adapter, so
+ * fabricating a state for them would be inventing coverage.
+ */
+function ScenarioToolsSection({ scenario, scenarioId }) {
+  const tools = scenario?.external_tools || []
+  const [adapters, setAdapters] = React.useState([])
+  const shelf = useShelf({ adapters })
+
+  React.useEffect(() => {
+    if (!tools.length) return undefined
+    let cancelled = false
+    getToolAdapters()
+      .then((d) => { if (!cancelled) setAdapters(Array.isArray(d?.adapters) ? d.adapters : []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [tools.length])
+
+  if (!tools.length) return null
+
+  const byId = Object.fromEntries(adapters.map((a) => [a.adapter_id, a]))
+  const rows = tools.map((t) => {
+    const adapter = t.adapter_ref ? byId[t.adapter_ref] : null
+    return { tool: t, adapter, supply: adapter ? supplyOf(adapter, shelf.shelf) : null }
+  })
+  const egress = rows.filter(
+    (r) => r.supply && (r.supply.state === SUPPLY.UNSTAGED || r.supply.state === SUPPLY.RUNTIME_FETCH),
+  )
+
+  // Direct hash write rather than prop-drilling onNavigate through
+  // OperationsView — the console's router is the hash and listens for changes.
+  const goShelf = (params) => {
+    const sp = new URLSearchParams(params)
+    window.location.hash = `#/adapters?${sp.toString()}`
+  }
+
+  return (
+    <div className="insp-section" data-testid="insp-tools">
+      <div className="insp-section__title">Tools</div>
+      {rows.map((r, i) => (
+        <div
+          className={'insp-tool' + (r.adapter ? '' : ' insp-tool--unwired')}
+          key={`${r.tool.adapter_ref || r.tool.name}-${i}`}
+        >
+          <span className="mono insp-tool__id">{r.tool.adapter_ref || r.tool.name}</span>
+          {r.supply ? (
+            <>
+              <button
+                type="button"
+                className={r.supply.chipClass}
+                data-testid={`insp-supply-${r.tool.adapter_ref}`}
+                onClick={() => goShelf({ tool: r.tool.adapter_ref })}
+                title={r.supply.egressLabel}
+                style={{ border: 'none', cursor: 'pointer' }}
+              >
+                {r.supply.label}
+              </button>
+              <span className="mono insp-tool__egress">{r.supply.egressLabel}</span>
+            </>
+          ) : (
+            <span className="mono insp-tool__egress">
+              no adapter_ref — this tool is inlined in the step command, so its supply is not
+              managed and not knowable here
+            </span>
+          )}
+        </div>
+      ))}
+      {egress.length > 0 && (
+        <div className="insp-tool__warn" data-testid="insp-tools-warn">
+          {egress.length} of {rows.length} tools are fetched by the target from the internet at run
+          time.{' '}
+          <button
+            type="button"
+            className="btn btn--xs"
+            onClick={() => goShelf({ scenario: scenarioId, supply: SUPPLY.UNSTAGED })}
+          >
+            Review ▸
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /* ─── Run history section ─────────────────────────────────────────── */

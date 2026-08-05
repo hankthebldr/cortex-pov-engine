@@ -45,6 +45,11 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   'Live': { dest: 'runs', params: { tab: 'live' } },
   'Evidence': { dest: 'runs', params: { tab: 'evidence' } },
   'EAL Plugins': { dest: 'eal' },
+  // The tool-adapter catalog, relabelled "Tools & Payloads" when the payload
+  // shelf landed on it. The destination id is unchanged, which is the point of
+  // keeping it: routes, testids and ⌘K entries all derive from the id.
+  'Tools & Payloads': { dest: 'adapters' },
+  'Payload Shelf': { dest: 'adapters', params: { supply: 'unstaged' } },
 }
 
 export async function gotoView(

@@ -8,7 +8,7 @@ import RunDetailView from '../components/console/RunDetailView.jsx'
 import MultiRunCompare from '../components/console/MultiRunCompare.jsx'
 import CoverageView from '../components/console/CoverageView.jsx'
 import TtpBrowserView from '../components/console/TtpBrowserView.jsx'
-import ToolAdapterCatalog from '../components/console/ToolAdapterCatalog.jsx'
+import ToolAdapterCatalog, { decodePlan } from '../components/console/ToolAdapterCatalog.jsx'
 import UcTcIndexView from '../components/console/UcTcIndexView.jsx'
 import LabView from '../components/console/LabView.jsx'
 import TenantManager from '../components/console/TenantManager.jsx'
@@ -106,6 +106,10 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
   const [scenario, setScenario] = useState(null)
   const [selectedTarget, setSelectedTarget] = useState(null)
   const { refreshRuns } = useEnvironment()
+  // A composed payload plan arrives in the URL from Tools & Payloads. Decoding
+  // here (rather than re-composing) keeps the launch reload-safe and means the
+  // exact digests the DC saw are the ones the launch carries.
+  const payloadPlan = useMemo(() => decodePlan(params.plan || null), [params.plan])
 
   useEffect(() => {
     if (!armId) { setScenario(null); return undefined }
@@ -138,6 +142,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
       {scenario && (
         <LaunchView
           scenario={scenario}
+          payloadPlan={payloadPlan}
           selectedTarget={selectedTarget}
           onRunComplete={(run) => {
             refreshRuns()
@@ -259,7 +264,13 @@ function RunList({ runs = [], onOpen = () => {} }) {
 // ─── Thin re-home wrappers for self-sourcing surfaces ────────────────────────
 function CoverageSurface() { return <CoverageView /> }
 function TtpsSurface({ params = {} }) { return <TtpBrowserView initialTtpId={params.ttp || null} /> }
-function AdaptersSurface() { return <ToolAdapterCatalog /> }
+// "Tools & Payloads" — the catalog plus the payload shelf. Staging state is a
+// PROPERTY of an adapter, not a new noun, so it lives on this destination
+// rather than an eleventh one: splitting them would list `linpeas.sh` in one
+// place and `TOOL-LINPEAS` in another and make the DC hold the join.
+function AdaptersSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
+  return <ToolAdapterCatalog params={params} setParams={setParams} onNavigate={onNavigate} />
+}
 // Deep-linkable: #/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03
 function UcTcSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
   return <UcTcIndexView params={params} setParams={setParams} onNavigate={onNavigate} />
@@ -276,7 +287,9 @@ export const DESTINATIONS = [
   { id: 'coverage',     label: 'Coverage',      group: 'Analyze',        icon: '▦', Component: CoverageSurface },
   { id: 'ttps',         label: 'TTP Cards',     group: 'Analyze',        icon: '◆', Component: TtpsSurface },
   { id: 'uctc',         label: 'UC / TC Index', group: 'Analyze',        icon: '≣', Component: UcTcSurface },
-  { id: 'adapters',     label: 'Tool Adapters', group: 'Analyze',        icon: '⚙', Component: AdaptersSurface },
+  // id stays 'adapters' — it is the route (#/adapters), the data-testid and the
+  // ⌘K entry. Only the label changed.
+  { id: 'adapters',     label: 'Tools & Payloads', group: 'Analyze',     icon: '⚙', Component: AdaptersSurface, badge: 'targetEgress' },
   { id: 'eal',          label: 'Traffic / EAL', group: 'Traffic',        icon: '∿', Component: EalSurface },
   { id: 'environments', label: 'Environments',  group: 'Infrastructure', icon: '☁', Component: EnvironmentsSurface },
   { id: 'agents',       label: 'Agents',        group: 'Manage',         icon: '◉', Component: AgentsSurface },

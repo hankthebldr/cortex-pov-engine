@@ -5356,3 +5356,292 @@
 .theme-console .surface-error__hint {
   font-size: 12px; color: var(--c-text-secondary); max-width: 520px; line-height: 1.6;
 }
+
+/* ══ Payload shelf — supply state, staging, composition ═══════════════════
+   Tokens only (--cortex-navy #003366 · --cortex-teal #00C0E8 ·
+   --cortex-steel #6B7E8E plus the console scale). No new colour values: an
+   amber that means "the target reaches the internet" already exists as
+   --c-pending, and inventing a second one would be a colour the operator has
+   to decode. */
+
+.theme-console .payload-banner {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--c-pending);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: var(--c-surface-raised);
+}
+.theme-console .payload-banner--readonly,
+.theme-console .payload-banner--unknown { border-color: var(--c-hairline-strong); }
+.theme-console .payload-banner--muted {
+  border-color: var(--c-hairline);
+  color: var(--c-text-muted);
+}
+.theme-console .payload-banner__tag {
+  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-pending);
+  padding-top: 2px;
+}
+.theme-console .payload-banner--unknown .payload-banner__tag,
+.theme-console .payload-banner--readonly .payload-banner__tag { color: var(--c-text-muted); }
+.theme-console .payload-banner__body { flex: 1 1 320px; min-width: 0; }
+.theme-console .payload-banner__msg {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--c-text-primary);
+}
+.theme-console .payload-banner__msg--unknown,
+.theme-console .payload-banner__msg--unbound { color: var(--c-text-secondary); }
+.theme-console .payload-banner__detail { font-size: 10px; color: var(--c-text-muted); }
+.theme-console .payload-banner__actions { display: flex; gap: 6px; align-items: flex-start; }
+.theme-console .payload-banner__why {
+  flex: 1 1 100%;
+  border-top: 1px solid var(--c-hairline);
+  padding-top: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--c-text-secondary);
+}
+.theme-console .payload-banner__why p { margin: 0 0 6px; }
+.theme-console .payload-banner__recipe,
+.theme-console .stage-dialog__recipe {
+  margin: 6px 0;
+  padding: 8px 10px;
+  background: var(--c-bg-elevated);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.theme-console .adapter-registry__scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: var(--c-text-secondary);
+}
+
+.theme-console .adapter-card__supply {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.theme-console .adapter-card__egress {
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--c-text-muted);
+}
+.theme-console .adapter-card__provenance {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--c-text-secondary);
+}
+
+/* ── Supply detail (drill-down panel, first section) ─────────────────── */
+.theme-console .supply-detail__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.theme-console .supply-detail__egress { font-size: 10.5px; color: var(--c-text-muted); }
+.theme-console .supply-detail__note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--c-text-secondary);
+}
+.theme-console .supply-detail__note--muted { color: var(--c-text-muted); font-size: 11px; }
+.theme-console .supply-detail__cmd {
+  margin: 6px 0;
+  padding: 8px 10px;
+  background: var(--c-bg-elevated);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  font-size: 10.5px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+.theme-console .supply-detail__actions { display: flex; gap: 8px; margin-top: 10px; }
+
+/* ── Provenance ─────────────────────────────────────────────────────── */
+.theme-console .provenance { margin-top: 8px; }
+.theme-console .provenance__row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--c-hairline);
+  font-size: 11px;
+}
+.theme-console .provenance__key { color: var(--c-text-muted); text-transform: lowercase; }
+.theme-console .provenance__val { min-width: 0; word-break: break-all; }
+.theme-console .provenance__digest { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.theme-console .provenance__link { color: var(--cortex-teal, #00C0E8); }
+.theme-console .provenance__unpinned { color: var(--c-pending); }
+.theme-console .provenance__muted { color: var(--c-text-muted); }
+.theme-console .provenance__warn { margin-top: 4px; color: var(--c-missed); font-size: 11px; line-height: 1.5; }
+.theme-console .provenance__copy {
+  background: none;
+  border: 1px solid var(--c-hairline-strong);
+  border-radius: 3px;
+  color: var(--c-text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+.theme-console .provenance__copy:hover { color: var(--cortex-teal, #00C0E8); }
+.theme-console .provenance__actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.theme-console .provenance__hint { font-size: 10px; color: var(--c-text-muted); }
+
+/* ── Stage dialog ───────────────────────────────────────────────────── */
+.theme-console .stage-dialog { max-width: 640px; }
+.theme-console .stage-dialog__body { max-height: 56vh; overflow-y: auto; }
+.theme-console .stage-dialog__lede { font-size: 12px; line-height: 1.55; color: var(--c-text-secondary); }
+.theme-console .stage-dialog__ack {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.theme-console .stage-dialog__warn { margin-top: 8px; color: var(--c-pending); font-size: 11.5px; line-height: 1.55; }
+.theme-console .stage-dialog__ok { color: var(--c-detected); font-size: 13px; }
+.theme-console .stage-dialog__fail { color: var(--c-missed); font-size: 13px; }
+.theme-console .stage-dialog__note { font-size: 11px; color: var(--c-text-muted); line-height: 1.55; }
+.theme-console .stage-dialog__detail { font-size: 10.5px; color: var(--c-text-muted); word-break: break-word; }
+.theme-console .stage-dialog__digest {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 6px 0; font-size: 11px; word-break: break-all;
+}
+.theme-console .stage-dialog__progress { display: flex; align-items: center; gap: 10px; font-size: 11.5px; }
+.theme-console .stage-dialog__spinner {
+  width: 12px; height: 12px; flex: 0 0 auto;
+  border: 2px solid var(--c-hairline-strong);
+  border-top-color: var(--cortex-teal, #00C0E8);
+  border-radius: 50%;
+  animation: cortexsim-spin 0.8s linear infinite;
+}
+@keyframes cortexsim-spin { to { transform: rotate(360deg); } }
+.theme-console .stage-dialog__snippet { margin-top: 10px; font-size: 11px; }
+.theme-console .stage-dialog__snippet pre {
+  margin: 6px 0; padding: 8px; background: var(--c-bg-elevated);
+  border: 1px solid var(--c-hairline); border-radius: 3px;
+  font-size: 10.5px; overflow-x: auto;
+}
+
+/* ── Composer ───────────────────────────────────────────────────────── */
+.theme-console .payload-compose {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline-strong);
+  border-radius: 4px;
+}
+.theme-console .payload-compose__section { margin-top: 14px; }
+.theme-console .payload-compose__presets { display: flex; flex-direction: column; gap: 8px; }
+.theme-console .payload-compose__preset {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.theme-console .payload-compose__preset.is-active { border-color: var(--cortex-teal, #00C0E8); }
+.theme-console .payload-compose__preset-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.theme-console .payload-compose__preset-title { font-size: 12px; color: var(--c-text-primary); }
+.theme-console .payload-compose__preset-path { font-size: 11px; color: var(--cortex-teal, #00C0E8); word-break: break-all; }
+.theme-console .payload-compose__preset-note { font-size: 11px; color: var(--c-text-muted); line-height: 1.5; }
+.theme-console .payload-compose__path { width: 100%; margin-top: 4px; }
+.theme-console .payload-compose__why { margin-top: 10px; font-size: 12px; line-height: 1.55; color: var(--c-text-secondary); }
+.theme-console .payload-compose__why p { margin: 6px 0; }
+.theme-console .payload-compose__why summary { cursor: pointer; color: var(--cortex-teal, #00C0E8); }
+.theme-console .payload-compose__impact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.theme-console .payload-compose__impact-col {
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.theme-console .payload-compose__impact-col--unknown { border-style: dashed; }
+.theme-console .payload-compose__impact-head { font-size: 12px; color: var(--c-text-primary); }
+.theme-console .payload-compose__impact-sub { font-size: 10px; color: var(--c-text-muted); margin-bottom: 6px; }
+.theme-console .payload-compose__impact-list { list-style: none; margin: 0; padding: 0; }
+.theme-console .payload-compose__impact-list li {
+  font-size: 11px; padding: 3px 0; word-break: break-all;
+  border-bottom: 1px solid var(--c-hairline);
+}
+.theme-console .payload-compose__impact-foot {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--c-text-secondary);
+}
+.theme-console .payload-compose__snippet { font-size: 10px; color: var(--c-text-muted); margin-top: 2px; word-break: break-all; }
+.theme-console .payload-compose__cmds { display: flex; flex-direction: column; gap: 10px; }
+.theme-console .payload-compose__cmd-head { font-size: 11px; color: var(--c-text-secondary); }
+.theme-console .payload-compose__cmd-pre {
+  margin: 4px 0;
+  padding: 8px 10px;
+  background: var(--c-bg-elevated);
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+.theme-console .payload-compose__cmd-pre--new { border-color: var(--cortex-teal, #00C0E8); }
+.theme-console .payload-compose__cmd-label {
+  display: inline-block; min-width: 34px;
+  color: var(--c-text-muted); text-transform: uppercase; font-size: 9px;
+}
+.theme-console .payload-compose__artifact { font-size: 11px; padding: 2px 0; word-break: break-all; }
+.theme-console .payload-compose__warn { color: var(--c-pending); font-size: 11.5px; line-height: 1.55; margin: 6px 0 0; }
+.theme-console .payload-compose__ok { color: var(--c-detected); font-size: 12px; line-height: 1.55; }
+.theme-console .payload-compose__error { color: var(--c-missed); font-size: 12px; line-height: 1.55; }
+.theme-console .payload-compose__detail { font-size: 10.5px; color: var(--c-text-muted); }
+.theme-console .payload-compose__muted { color: var(--c-text-muted); font-size: 11.5px; }
+.theme-console .payload-compose__empty { color: var(--c-text-secondary); font-size: 12px; line-height: 1.55; }
+.theme-console .payload-compose__note { font-size: 11px; color: var(--c-text-muted); line-height: 1.55; flex: 1 1 260px; }
+.theme-console .payload-compose__actions {
+  display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--c-hairline);
+}
+
+/* ── Launch: payload plan card ──────────────────────────────────────── */
+.theme-console .launch-card--payload { border-left: 2px solid var(--cortex-teal, #00C0E8); }
+.theme-console .launch-payload__row { margin-top: 6px; }
+.theme-console .launch-payload__path { font-size: 12px; word-break: break-all; }
+.theme-console .launch-payload__meta { font-size: 10.5px; color: var(--c-text-muted); }
+.theme-console .launch-payload__renamed { margin-top: 4px; font-size: 11.5px; line-height: 1.55; color: var(--c-pending); }
+.theme-console .launch-payload__warn { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--c-pending); }
+
+/* ── Inspector: tool supply rows ────────────────────────────────────── */
+.theme-console .insp-tool {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 4px 0; border-bottom: 1px solid var(--c-hairline);
+}
+.theme-console .insp-tool--unwired { opacity: 0.6; }
+.theme-console .insp-tool__id { font-size: 11px; }
+.theme-console .insp-tool__egress { font-size: 10px; color: var(--c-text-muted); flex: 1 1 100%; }
+.theme-console .insp-tool__warn { margin-top: 8px; font-size: 11px; color: var(--c-pending); line-height: 1.5; }

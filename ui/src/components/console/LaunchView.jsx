@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import useLaunchScenario from './useLaunchScenario.js'
 import { getToolAdapters } from '../../api/client.js'
+import useShelf from './useShelf.js'
+import { SUPPLY, supplyOf, shortDigest } from './supplyState.js'
 
 /**
  * LaunchView — ③ Launch: arm a scenario against a target and fire.
@@ -21,12 +23,14 @@ import { getToolAdapters } from '../../api/client.js'
 export default function LaunchView({
   scenario = null,
   selectedTarget = null,
+  payloadPlan = null,
   onRunComplete = () => {},
   onError = () => {},
   onGoLibrary = () => {},
   onGoTargets = () => {},
+  onNavigate = null,
 }) {
-  const launch = useLaunchScenario(scenario, { onRunComplete, onError })
+  const launch = useLaunchScenario(scenario, { onRunComplete, onError, payloadPlan })
 
   // Derive mode + agent from the chosen target — the operator picks a target,
   // not a transport. agent → pull; push/iac → push bundle.
@@ -63,6 +67,34 @@ export default function LaunchView({
     }
   }, [scenario, adapterIndex])
 
+  // ── Payload supply ────────────────────────────────────────────────────
+  // Which of this scenario's tools will be fetched by the TARGET at run time,
+  // and whether anything the scenario DECLARES is missing from the shelf.
+  const adapterList = useMemo(() => Object.values(adapterIndex), [adapterIndex])
+  const shelf = useShelf({ adapters: adapterList })
+
+  const scenarioTools = useMemo(() => {
+    const refs = (scenario?.external_tools || [])
+      .map((t) => t.adapter_ref).filter(Boolean)
+    return Array.from(new Set(refs))
+      .map((r) => adapterIndex[r])
+      .filter(Boolean)
+      .map((a) => ({ adapter: a, supply: supplyOf(a, shelf.shelf) }))
+  }, [scenario, adapterIndex, shelf.shelf])
+
+  const egressTools = scenarioTools.filter(
+    (t) => t.supply.state === SUPPLY.UNSTAGED || t.supply.state === SUPPLY.RUNTIME_FETCH,
+  )
+
+  // A scenario that DECLARES cluster_posture.payloads and is missing one is a
+  // hard stop: SimCore's own guard 409s PAYLOAD_NOT_STAGED, and a named dead
+  // button beats a 409 mid-demo.
+  const missingDeclaredPayloads = useMemo(() => {
+    const declared = scenario?.cluster_posture?.payloads || []
+    if (!declared.length || !shelf.shelf.available) return []
+    return declared.filter((n) => !shelf.shelf.stagedNames.has(n))
+  }, [scenario, shelf.shelf])
+
   const needsSim = gated.dualUse.length > 0
   const needsC2  = gated.c2.length > 0
   const consentBlocked =
@@ -84,8 +116,14 @@ export default function LaunchView({
     if (needsC2 && !launch.consent.c2_authorized) {
       out.push('Tick the C2-framework consent for this scenario')
     }
+    for (const name of missingDeclaredPayloads) {
+      out.push(
+        `${name} is declared by this scenario but is not staged — SimCore will refuse the launch `
+        + '(PAYLOAD_NOT_STAGED). Stage it in Tools & Payloads.',
+      )
+    }
     return out
-  }, [launch.blockers, selectedTarget, needsSim, needsC2, launch.consent])
+  }, [launch.blockers, selectedTarget, needsSim, needsC2, launch.consent, missingDeclaredPayloads])
 
   // ── Guard rails — guide the operator back to the missing step ──────────
   if (!scenario) {
@@ -125,6 +163,22 @@ export default function LaunchView({
           <p className="launch-card__desc">{scenario.tc_name || scenario.uc_name || ''}</p>
           <button type="button" className="btn" onClick={onGoLibrary}>Change scenario</button>
         </section>
+
+        {/* payload plan — what tooling this run carries, and who fetches it */}
+        <PayloadPlanCard
+          plan={payloadPlan}
+          planAccepted={launch.payloadPlanAccepted}
+          egressTools={egressTools}
+          shelfAvailable={shelf.available}
+          onGoShelf={onNavigate ? () => onNavigate('adapters', { supply: SUPPLY.UNSTAGED }) : null}
+          onEdit={onNavigate && payloadPlan
+            ? () => onNavigate('adapters', {
+                tool: payloadPlan.artifacts?.[0]?.adapter_id || null,
+                panel: 'compose',
+                scenario: sid,
+              })
+            : null}
+        />
 
         {/* target + config */}
         <section className="launch-card launch-card--config">
@@ -271,5 +325,89 @@ export default function LaunchView({
         </section>
       </div>
     </div>
+  )
+}
+
+/**
+ * PayloadPlanCard — what tooling this run carries and who has to reach the
+ * internet for it.
+ *
+ * Three states, none of them silent:
+ *   plan present   → artifact, digest, destination, and whether it was renamed.
+ *   no plan, tools → a WARNING that the target will fetch them itself. Launch
+ *                    stays enabled: the DC may know egress is fine, and a
+ *                    consent tick on 50 tools is ceremony. The goal is
+ *                    legibility, not permission.
+ *   nothing        → the card does not render.
+ */
+function PayloadPlanCard({
+  plan, planAccepted, egressTools, shelfAvailable, onGoShelf, onEdit,
+}) {
+  const artifacts = plan?.artifacts || []
+  if (!artifacts.length && !egressTools.length) return null
+
+  return (
+    <section className="launch-card launch-card--payload" data-testid="launch-payload-plan">
+      <div className="launch-card__kicker">
+        Payload plan
+        {onEdit && artifacts.length > 0 && (
+          <button type="button" className="btn btn--xs" style={{ marginLeft: 8 }} onClick={onEdit}>
+            Edit ▸
+          </button>
+        )}
+      </div>
+
+      {artifacts.map((a) => (
+        <div key={a.payload_name} className="launch-payload__row" data-testid={`launch-payload-${a.payload_name}`}>
+          <div className="mono launch-payload__path">{a.payload_name} → {a.dest_path}</div>
+          <div className="mono launch-payload__meta">
+            sha256 {shortDigest(a.sha256)} · served from this SimCore
+          </div>
+          {a.renamed && (
+            <div className="launch-payload__renamed" data-testid="launch-payload-renamed">
+              ⚠ renamed — detections keyed on the tool&apos;s own filename will not fire.
+              <strong> That is the control, not a miss.</strong> Behavioural detections must still
+              fire; if nothing fires, the finding is that the coverage was name-keyed.
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* THE ANTI-FALSE-GREEN LINE. A plan the server would ignore must never
+          render as a plan the run honoured. */}
+      {artifacts.length > 0 && planAccepted === false && (
+        <div className="launch-payload__warn" data-testid="launch-payload-unsupported">
+          This SimCore&apos;s <span className="mono">POST /api/runs</span> does not accept a{' '}
+          <span className="mono">payload_plan</span>, so the console will not send one — an unknown
+          field is silently dropped, and the run would execute the scenario&apos;s own commands
+          unchanged while this card claimed a rename. The artifact is staged and served either way;
+          the destination above is <strong>not</strong> in effect for this run.
+        </div>
+      )}
+
+      {egressTools.length > 0 && (
+        <div className="launch-payload__warn" data-testid="launch-payload-egress">
+          <strong>{egressTools.length}</strong>{' '}
+          {egressTools.length === 1 ? 'tool is' : 'tools are'} fetched by the target from the public
+          internet at run time:{' '}
+          <span className="mono">
+            {egressTools.map((t) => t.adapter.name).join(' · ')}
+          </span>
+          . A default-deny egress policy blocks that, and the step then runs without its tool.
+          {onGoShelf && (
+            <button type="button" className="btn btn--xs" style={{ marginLeft: 8 }} onClick={onGoShelf}>
+              Stage them ▸
+            </button>
+          )}
+        </div>
+      )}
+
+      {shelfAvailable === false && (
+        <div className="launch-payload__warn" data-testid="launch-payload-unknown">
+          This SimCore does not report shelf state, so tool supply for this run is{' '}
+          <strong>UNKNOWN</strong> — not &ldquo;fine&rdquo;.
+        </div>
+      )}
+    </section>
   )
 }

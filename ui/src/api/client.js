@@ -51,7 +51,7 @@ function apiError(message, { code = null, detail = null, status = null } = {}) {
  * Core fetch wrapper — handles JSON parsing and structured error extraction.
  * On non-2xx response, throws Error with the message from JSON body.
  */
-async function request(path, options = {}) {
+export async function request(path, options = {}) {
   const url = `${BASE_URL}${path}`
   const defaults = {
     headers: {

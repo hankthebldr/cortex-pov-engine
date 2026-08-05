@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from './components/console/AppShell.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import { SurfaceBoundary } from './components/console/SurfaceError.jsx'
@@ -11,7 +11,8 @@ import {
   isValidDestination,
   navGroups,
 } from './app/destinations.jsx'
-import { downloadReportBundle } from './api/client.js'
+import { downloadReportBundle, getToolAdapters } from './api/client.js'
+import useShelf from './components/console/useShelf.js'
 import { agentIdOf } from './api/ids.js'
 
 /**
@@ -42,6 +43,18 @@ function ConsoleShell() {
 
   const [toast, setToast] = useState(null)
   const [abortConfirmOpen, setAbortConfirmOpen] = useState(false)
+  // The adapter catalog is the denominator for the shelf badge. Fetched once
+  // here; a failure leaves it empty and the badge simply does not render — a
+  // missing badge is honest, a badge of "0" would read as "nothing to worry
+  // about" when we could not check.
+  const [toolAdapters, setToolAdapters] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    getToolAdapters()
+      .then((d) => { if (!cancelled) setToolAdapters(Array.isArray(d?.adapters) ? d.adapters : []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const surfaceToast = useCallback((message, type = 'info', ms = 3000) => {
     setToast({ message, type })
@@ -95,10 +108,15 @@ function ConsoleShell() {
   }, [env, surfaceToast])
 
   // ── Nav badges ────────────────────────────────────────────────────────────
+  // The Tools & Payloads badge counts adapters whose tool the TARGET must fetch
+  // from the internet mid-run. A number on the nav is the only thing that makes
+  // a DC open that surface BEFORE the customer meeting rather than during it.
+  const shelf = useShelf({ adapters: toolAdapters })
   const badges = useMemo(() => ({
     scenarioCount: env.scenarios.length ? String(env.scenarios.length) : null,
     live: env.activeRun ? { text: 'LIVE', variant: 'live' } : null,
-  }), [env.scenarios.length, env.activeRun])
+    targetEgress: shelf.counts.target_egress > 0 ? String(shelf.counts.target_egress) : null,
+  }), [env.scenarios.length, env.activeRun, shelf.counts.target_egress])
 
   const groups = useMemo(() => navGroups(badges), [badges])
 
@@ -175,6 +193,14 @@ function ConsoleShell() {
         meta: 'guided target → launch flow',
         icon: '▸',
         onSelect: () => router.navigate('guided'),
+      },
+      {
+        section: 'Actions',
+        id: 'stage-tool',
+        title: 'Stage a tool payload',
+        meta: 'pull a public tool onto this SimCore',
+        icon: '⇩',
+        onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
       },
       {
         section: 'Actions',
