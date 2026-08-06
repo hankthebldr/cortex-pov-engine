@@ -53,9 +53,14 @@ test.describe('Tools & Payloads', () => {
     const card = page.locator('[data-testid^="tool-adapter-card-"]').first()
     await card.click()
     await expect(page.getByTestId('tool-adapter-detail')).toBeVisible()
-    const labels = await page.locator('.competitive__detail-label').allInnerTexts()
-    expect(labels.indexOf('Supply')).toBeGreaterThanOrEqual(0)
-    expect(labels.indexOf('Supply')).toBeLessThan(labels.indexOf('Upstream'))
+    // Normalised: the labels are styled `text-transform: uppercase`, and
+    // Chromium's allInnerTexts() returns the RENDERED casing, so matching
+    // 'Supply' against 'SUPPLY' failed. Asserting on casing that comes from CSS
+    // is brittle — the property under test is the ORDER.
+    const labels = (await page.locator('.competitive__detail-label').allInnerTexts())
+      .map((t) => t.trim().toLowerCase())
+    expect(labels).toContain('supply')
+    expect(labels.indexOf('supply')).toBeLessThan(labels.indexOf('upstream'))
   })
 
   test('LinPEAS is in the catalog and stageable — Henry\'s exact journey', async ({ page, request, baseURL }) => {

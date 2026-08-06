@@ -72,6 +72,13 @@ export async function gotoView(
     const qs = new URLSearchParams(params).toString()
     await page.goto(`/#/${route.dest}${qs ? `?${qs}` : ''}`)
   } else {
+    // Load the app first if this is the spec's opening action. Every other
+    // spec happens to `page.goto('/')` before calling gotoView; 06 did not, so
+    // it looked for the rail on about:blank and each test burned the full 10 s
+    // timeout on a button that was never going to appear. Making gotoView
+    // self-sufficient is better than adding a goto to one spec — the next
+    // author will assume it works as a first call too.
+    if (!/#\//.test(page.url())) await page.goto('/')
     const btn = page.getByTestId(`dest-button-${route.dest}`)
     await btn.waitFor({ state: 'visible', timeout: 10_000 })
     await btn.click()
