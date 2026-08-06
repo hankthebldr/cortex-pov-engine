@@ -21,6 +21,13 @@ safety_class: safe
 install:
   runtime_install_command: "test -d /tmp/CMSeeK || git clone --depth 1 https://github.com/Tuhinshubhra/CMSeeK /tmp/CMSeeK"
   binary: "python3 /tmp/CMSeeK/cmseek.py"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: SOURCE_TREE_REQUIRED
+    reason: >-
+      CMSeeK needs its CMS detection-signature database directory alongside
+      the script, so the script alone does nothing. It is cloned onto the
+      target host, so the target needs internet access.
 
 invoke:
   target_platform: linux

@@ -26,6 +26,34 @@ install:
   # binary for jumpboxes that lack a Go toolchain.
   runtime_install_command: "command -v gobuster >/dev/null 2>&1 || (command -v go >/dev/null 2>&1 && go install github.com/OJ/gobuster/v3@v3.6.0) || (curl -sSL https://github.com/OJ/gobuster/releases/download/v3.6.0/gobuster_Linux_x86_64.tar.gz | tar xz -C /usr/local/bin gobuster && chmod +x /usr/local/bin/gobuster)"
   binary: gobuster
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: ARCHIVE_ONLY_NO_EXTRACTOR
+    reason: >-
+      Gobuster's maintainers publish it only as a compressed archive, and
+      CortexSim can currently stage single files only — so it cannot be served
+      from the shelf yet. This tool needs internet access on the target host
+      until that changes.
+    revisit: >-
+      Blocked on CortexSim, not on upstream. Requires a single-member
+      extractor (download the pinned archive on the DC's SimCore, verify the
+      ARCHIVE digest, extract one named member, verify the MEMBER digest, put
+      that one file on the shelf) so compose() still emits kind: file and
+      neither the Go beacon nor the K8s init container learns a new word.
+      Measured 2026-08-06: gobuster_Linux_x86_64.tar.gz at release tag v3.6.0
+      is 3,258,506 bytes, sha256
+      871be404ce5f80c96b864586b3caa90f894598d1a8222ae316c19e5f70e04cfc, and
+      holds exactly 3 entries (LICENSE, README.md, gobuster); the member
+      'gobuster' is a self-contained 8,081,408-byte static binary. PIN v3.6.0,
+      NOT the newer v3.8.2: runtime_install_command already hard-codes the
+      v3.6.0 release URL and is emitted verbatim into the byte-frozen push
+      bundles, so a different artifact version would make an egress-capable
+      and an air-gapped target run different binaries for the same scenario —
+      and scenarios/asm/asm-004 binds detection_id
+      ioc-user-agent-gobuster-3-6. Also required before this is worth wiring:
+      the beacon does not prepend the stage directory to PATH, and every
+      corpus step invokes 'gobuster' by bare name, so staging alone yields
+      'command not found'.
 
 invoke:
   target_platform: linux

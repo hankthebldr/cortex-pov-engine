@@ -118,11 +118,15 @@ install:
   # failure this repo has already paid for.
   #
   # NOT every tier-4 pack can have one, and the gap is meant to be visible
-  # rather than papered over. Of the 50 tier-4 packs, roughly 20 are apt/yum,
-  # ~15 are pip/pipx/gem/go install/cargo and ~8 are a `git clone` of a repo
-  # tree. Only a single-file download is shelf-able today. The other families
-  # keep `runtime_install_command` and are reported as needing target egress;
-  # closing that for apt would mean hosting a Debian mirror.
+  # rather than papered over. Counted on this tree 2026-08-06 (not estimated):
+  # of 56 tier-4 packs, 8 are shelf-backed and 48 are not — 18 DISTRO_PACKAGE,
+  # 12 LANGUAGE_PACKAGE_MANAGER, 7 SOURCE_TREE_REQUIRED, 6
+  # ARCHIVE_ONLY_NO_EXTRACTOR, 2 NEEDS_RUNTIME_DATA, and one each of
+  # LICENCE_NO_REDISTRIBUTION, ARCHIVE_MEMBER_NOT_SELF_CONTAINED and
+  # ARTIFACT_TOO_LARGE. Only a single-file download is shelf-able today; the
+  # other families keep `runtime_install_command` and MUST declare
+  # `install.artifact_exempt` (TA-13) saying why. Closing the apt family would
+  # mean hosting a Debian mirror.
   #
   # artifact:
   #   filename: linpeas.sh
@@ -142,11 +146,24 @@ install:
   #
   #   kind: file
   #     # (required) `file` is the ONLY accepted value. `archive` is reserved
-  #     # and REJECTED (TA-08) because no consumer can unpack one: the Go beacon
-  #     # is stdlib-only by contract and the K8s init container is a busybox
-  #     # wget. Accepting it would let a pack declare a tool that silently never
-  #     # lands. Consumers already branch on `kind`, so adding archive later is
-  #     # additive rather than a wire change.
+  #     # and REJECTED (TA-08) because NO consumer can unpack one. Verified on
+  #     # this tree 2026-08-06 — the previous version of this comment claimed
+  #     # "consumers already branch on `kind`, so adding archive later is
+  #     # additive rather than a wire change", and that is FALSE:
+  #     #   * agent/beacon/artifact.go's Artifact struct has NO `Kind` field at
+  #     #     all, and nothing under agent/ imports archive/tar, archive/zip or
+  #     #     compress/gzip. The beacon cannot see `kind`, let alone branch on it.
+  #     #   * k8s_manifest._SERVED_FETCH is wget -> sha256sum -> chmod -> mv with
+  #     #     no extraction branch, on an alpine fetch image whose busybox has
+  #     #     `tar -z` but no `unzip`.
+  #     #   * scripts/build-payloads.sh hard-fails on kind != file.
+  #     # Adding `archive` is therefore a wire change in THREE places. Accepting
+  #     # the value here would let a pack declare a tool that silently never
+  #     # lands — worse than a pack that honestly still uses
+  #     # runtime_install_command. Packs whose upstream ships only an archive
+  #     # declare install.artifact_exempt with reason_code
+  #     # ARCHIVE_ONLY_NO_EXTRACTOR; six do today, each carrying the measured
+  #     # archive digest and member name in its `revisit` line.
   #
   #   sha256: "0ea7e9ce…"
   #     # (required unless pin.type is `none`) 64 lowercase hex. THIS IS A PIN.
@@ -196,12 +213,78 @@ install:
   #
   #   mode: "0755"               # (optional) 3-digit octal string
   #
+  # ── install.artifact_exempt — why this pack is NOT shelf-backed ───────────
+  #
+  # MUTUALLY EXCLUSIVE with install.artifact. A tier-4 pack declares EXACTLY
+  # ONE of the two (TA-13 rejects neither, TA-14 rejects both). There is no
+  # third state — that is the point.
+  #
+  # WHY THIS IS A REJECT AND NOT A WARN. Before this field, all 48 artifact-less
+  # tier-4 packs produced ONE byte-identical sentence in the console's
+  # `unstaged_adapters[]`: "pack declares no install.artifact, so it falls back
+  # to install.runtime_install_command". True, and useless. It read the same for
+  # hydra (apt — will never be shelvable), nuclei (staging the binary would not
+  # even remove the egress dependency, because it clones its template repo at
+  # run time) and gobuster (shelvable the day an extractor exists). A DC reading
+  # that list could not tell a DECISION from an OMISSION. A boot warning would
+  # have scrolled past in a log nobody reads — which is exactly how 48 packs
+  # accumulated an identical non-explanation. Rejecting makes "nobody got to it"
+  # UNREPRESENTABLE: a new tier-4 pack cannot load until its author has decided
+  # which bucket it is in.
+  #
+  # artifact_exempt:
+  #   reason_code: DISTRO_PACKAGE
+  #     # (required) CLOSED vocabulary — a free string lets the next author
+  #     # invent a ninth spelling of "we didn't get to it", and the console
+  #     # groups and counts these. Settled (no path forward):
+  #     #   DISTRO_PACKAGE             apt/yum. Shelving = hosting a Debian mirror.
+  #     #   LANGUAGE_PACKAGE_MANAGER   pip/gem/go install/cargo, incl. dep trees.
+  #     #   SOURCE_TREE_REQUIRED       the tool IS a directory, not a file.
+  #     #   LICENCE_NO_REDISTRIBUTION  no licence grant, so no right to serve it
+  #     #                              onto a host you do not own.
+  #     #   NEEDS_RUNTIME_DATA         the binary is inert without a feed it
+  #     #                              fetches at run time, so staging it would
+  #     #                              make CortexSim report a scenario as
+  #     #                              air-gapped when it is NOT.
+  #     #   IN_TREE_ALTERNATIVE        superseded by a tier-1/2 pack. Reserved.
+  #     # Blocked on a CortexSim decision — these ARE the backlog, and TA-17
+  #     # requires a `revisit` on each:
+  #     #   ARCHIVE_ONLY_NO_EXTRACTOR          upstream ships only .tar.gz/.zip.
+  #     #   ARCHIVE_MEMBER_NOT_SELF_CONTAINED  the binary alone does not run.
+  #     #   ARTIFACT_TOO_LARGE                 over CORTEXSIM_SHELF_MAX_BYTES.
+  #
+  #   reason: >-
+  #     Hydra installs from the operating system's package repository. Staging
+  #     it on the shelf would mean hosting a Debian mirror, so this tool needs
+  #     internet access on the target host.
+  #     # (required) Rendered VERBATIM to an operator. Second person, name the
+  #     # consequence for the POV, no repo-internal vocabulary — the person
+  #     # reading it is standing in front of a customer, not reading this file.
+  #     # TA-16 rejects placeholders (todo/tbd/n-a/unknown/none/fixme) and
+  #     # anything under 40 characters: a reason short enough to be a label is
+  #     # not an explanation.
+  #
+  #   revisit: null
+  #     # (optional; REQUIRED by TA-17 for the three ARCHIVE_*/TOO_LARGE codes)
+  #     # The concrete next action. This is what keeps "someone should extract
+  #     # this archive" distinguishable from "apt, forever" — without it the
+  #     # real backlog dissolves into the same undifferentiated soup this field
+  #     # exists to drain. TA-17 is also why a SETTLED code must NOT carry one:
+  #     # a revisit line on a DISTRO_PACKAGE row says both "never shelvable" and
+  #     # "here is how to shelve it".
+  #
   # Validation codes: TA-01 (tier-4 only) · TA-02 (tier 4 needs
   # runtime_install_command OR artifact) · TA-03 (servable filename/url) ·
   # TA-04 (digest shape) · TA-05 (pinned claim needs a digest) · TA-06
   # (unpinned needs a waiver_reason) · TA-07 (pin type/ref) · TA-08 (kind) ·
   # TA-09 (stage_path allowlist) · TA-10 (binary/stage_path agreement) · TA-11
-  # (moving URL, WARN) · TA-12 (filename uniqueness across packs).
+  # (moving URL, WARN) · TA-12 (filename uniqueness across packs) · TA-13
+  # (tier 4 declares artifact OR artifact_exempt) · TA-14 (never both) · TA-15
+  # (artifact_exempt is tier-4 only) · TA-16 (known reason_code, real reason) ·
+  # TA-17 (a revisitable code names its next action).
+  #
+  # TA-13..TA-17 are STRUCTURAL and are NOT gated by CORTEXSIM_STRICT_REFS —
+  # same posture as A-17/A-18 for assertions, and as S-17/S-19 for scenarios.
   #
   # Full contract, endpoints and worked example: docs/reference/payload-shelf.md
 

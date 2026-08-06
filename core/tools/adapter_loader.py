@@ -20,6 +20,9 @@ Validation rules (enforced):
 7. ``install.artifact`` (the payload-shelf binding) is validated against
    ``TA-01``..``TA-12`` — see :class:`ArtifactSchema` and
    ``docs/reference/payload-shelf.md``.
+8. Every tier-4 pack declares **exactly one** of ``install.artifact`` (it is
+   shelf-backed) or ``install.artifact_exempt`` (it is not, and says why) —
+   ``TA-13``..``TA-17``. See :class:`ArtifactExemptSchema`.
 
 Invalid adapter files are rejected with a logged error and excluded from
 the catalog — they never crash startup.
@@ -131,11 +134,22 @@ _ARTIFACT_RESERVED_NAMES = frozenset(
     {"MANIFEST.json", "SHA256SUMS", "README.md", "sources.json", ".gitignore"}
 )
 
-#: `archive` is deliberately NOT accepted yet: no consumer can unpack one. The
-#: beacon is stdlib-only by contract and the K8s init container is a busybox
-#: `wget`; accepting the value here would let a pack declare something that
-#: silently never lands. The enum has one member on purpose — consumers branch
-#: on `kind` today so adding `archive` later is additive, not a wire change.
+#: `archive` is deliberately NOT accepted: no consumer can unpack one. Verified
+#: on this tree 2026-08-06, because the previous version of this comment made a
+#: claim that is FALSE and would have made wiring an archive look cheap:
+#:
+#:   * `agent/beacon/artifact.go::Artifact` has NO `Kind` field at all — the
+#:     beacon cannot see `kind`, let alone branch on it. `grep -rn
+#:     'archive/tar|archive/zip|compress/gzip' agent/` returns nothing.
+#:   * `k8s_manifest._SERVED_FETCH` is `wget` -> `sha256sum` -> `chmod` -> `mv`
+#:     with no extraction branch, and its fetch image is alpine (busybox `tar`
+#:     exists, `unzip` does not).
+#:   * `scripts/build-payloads.sh` hard-fails on `kind != file`.
+#:
+#: So adding `archive` later IS a wire change in three places, not an additive
+#: enum member. Accepting the value here would let a pack declare a tool that
+#: silently never lands. Packs whose upstream ships only an archive declare
+#: `install.artifact_exempt` with reason_code `ARCHIVE_ONLY_NO_EXTRACTOR`.
 _VALID_ARTIFACT_KINDS: set[str] = {"file"}
 _DEFERRED_ARTIFACT_KINDS: set[str] = {"archive"}
 
@@ -341,6 +355,126 @@ def _validate_stage_path(value: str, *, code: str, field: str) -> str:
     return raw
 
 
+#: Why a tier-4 pack has no ``install.artifact``. CLOSED vocabulary — a free
+#: string would let the 48th author invent a 9th spelling of "we didn't get to
+#: it", which is the ambiguity this field exists to remove.
+#:
+#: Ordered roughly by how permanent the blocker is. The three that carry a real
+#: path forward (``_REVISITABLE_REASON_CODES``) are the ONLY backlog; everything
+#: else is a settled property of how the tool is published.
+_VALID_EXEMPT_REASON_CODES: set[str] = {
+    # Settled — no path forward without hosting a mirror of someone else's index.
+    "DISTRO_PACKAGE",            # apt / yum. Shelving = hosting a Debian mirror.
+    "LANGUAGE_PACKAGE_MANAGER",  # pip / gem / go install / cargo, incl. dep trees.
+    "SOURCE_TREE_REQUIRED",      # the tool IS a directory, not a file.
+    "LICENCE_NO_REDISTRIBUTION",  # no licence grant -> no right to redistribute.
+    "NEEDS_RUNTIME_DATA",        # binary is inert without a feed it fetches at run time.
+    "IN_TREE_ALTERNATIVE",       # superseded by a tier-1/2 pack. Reserved, unused today.
+    # Blocked on a CortexSim decision, not on the tool. These are the backlog.
+    "ARCHIVE_ONLY_NO_EXTRACTOR",          # upstream ships only .tar.gz/.zip; nothing unpacks.
+    "ARCHIVE_MEMBER_NOT_SELF_CONTAINED",  # the binary alone does not run.
+    "ARTIFACT_TOO_LARGE",                 # over CORTEXSIM_SHELF_MAX_BYTES.
+}
+
+#: Codes that describe a CortexSim limitation rather than a property of the
+#: tool, so a concrete `revisit` action exists and is REQUIRED (TA-17). Without
+#: this, the genuine backlog dissolves into the same undifferentiated soup as
+#: apt — which is exactly what the identical 48-way "no install.artifact"
+#: message did before this field existed.
+_REVISITABLE_REASON_CODES: frozenset[str] = frozenset({
+    "ARCHIVE_ONLY_NO_EXTRACTOR",
+    "ARCHIVE_MEMBER_NOT_SELF_CONTAINED",
+    "ARTIFACT_TOO_LARGE",
+})
+
+#: Placeholder prose that means "nobody decided". Rejected by TA-16 — the whole
+#: value of this field is that a human made a call and wrote it down.
+_EXEMPT_REASON_PLACEHOLDER_RE = re.compile(
+    r"^(todo|tbd|n/?a|unknown|none|fixme|xxx|\?+)\b", re.IGNORECASE
+)
+
+#: A reason short enough to be a label is not an explanation. 40 chars is about
+#: "Installs from apt." — true, and useless to the DC who has to plan around it.
+_EXEMPT_REASON_MIN_CHARS = 40
+
+
+class ArtifactExemptSchema(BaseModel):
+    """Why this tier-4 pack does NOT bind a payload-shelf artifact.
+
+    WHY THIS FIELD EXISTS
+    ---------------------
+    Before it, all 48 artifact-less tier-4 packs produced ONE byte-identical
+    string in ``compose().unstaged_adapters[]``: *"pack declares no
+    install.artifact, so it falls back to install.runtime_install_command"*.
+    True, and useless. It read the same for ``hydra`` (apt — will never be
+    shelvable), ``nuclei`` (staging the binary would not even remove the egress
+    dependency) and ``gobuster`` (shelvable the moment an extractor exists). A
+    DC reading that list could not tell a **decision** from an **omission**,
+    which is the console-facing form of "green while proving nothing".
+
+    ``reason`` is rendered VERBATIM to an operator. Write it in the second
+    person, name the consequence for the POV, and use no repo-internal
+    vocabulary — the person reading it is standing in front of a customer, not
+    reading this file.
+    """
+
+    reason_code: str
+    reason: str
+    revisit: Optional[str] = None
+
+    @field_validator("reason_code")
+    @classmethod
+    def _code_known(cls, v: str) -> str:
+        if v not in _VALID_EXEMPT_REASON_CODES:
+            raise ValueError(
+                f"TA-16 install.artifact_exempt.reason_code must be one of "
+                f"{sorted(_VALID_EXEMPT_REASON_CODES)}, got {v!r}. The vocabulary "
+                f"is closed on purpose: a free string lets the next author invent "
+                f"another spelling of 'we did not get to it', and the console "
+                f"groups and counts these."
+            )
+        return v
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_is_an_explanation(cls, v: str) -> str:
+        raw = " ".join((v or "").split())
+        if not raw:
+            raise ValueError(
+                "TA-16 install.artifact_exempt.reason must be non-empty — it is "
+                "shown verbatim to a DC planning a POV against a default-deny "
+                "network."
+            )
+        if _EXEMPT_REASON_PLACEHOLDER_RE.match(raw):
+            raise ValueError(
+                f"TA-16 install.artifact_exempt.reason {raw!r} is a placeholder, "
+                f"not a decision. An exemption records that a human judged this "
+                f"tool unshelvable and why; 'TODO' records that nobody looked."
+            )
+        if len(raw) < _EXEMPT_REASON_MIN_CHARS:
+            raise ValueError(
+                f"TA-16 install.artifact_exempt.reason must be at least "
+                f"{_EXEMPT_REASON_MIN_CHARS} characters, got {len(raw)} "
+                f"({raw!r}). A reason short enough to be a label is not an "
+                f"explanation — say what the DC has to do about it."
+            )
+        return raw
+
+    @model_validator(mode="after")
+    def _backlog_names_its_next_action(self) -> "ArtifactExemptSchema":
+        if self.reason_code in _REVISITABLE_REASON_CODES:
+            if not (self.revisit or "").strip():
+                raise ValueError(
+                    f"TA-17 install.artifact_exempt.reason_code="
+                    f"{self.reason_code!r} describes a CortexSim limitation, not "
+                    f"a property of the tool, so a concrete next action exists "
+                    f"and `revisit` is REQUIRED. Without it this real backlog "
+                    f"item becomes indistinguishable from the settled apt/pip "
+                    f"verdicts, which is the ambiguity this whole field removes."
+                )
+        return self
+
+
 class InstallSchema(BaseModel):
     # All fields optional at the schema level — tier validation in the
     # parent enforces which combinations are valid.
@@ -352,6 +486,8 @@ class InstallSchema(BaseModel):
     runtime_install_command: Optional[str] = None
     #: Tier-4 only. The payload-shelf binding — see ArtifactSchema.
     artifact: Optional[ArtifactSchema] = None
+    #: Tier-4 only, mutually exclusive with `artifact`. See ArtifactExemptSchema.
+    artifact_exempt: Optional[ArtifactExemptSchema] = None
 
 
 class InvokeSchema(BaseModel):
@@ -460,6 +596,66 @@ class ToolAdapterSchema(BaseModel):
         """
         art = self.install.artifact
         return art.stage_path if art else None
+
+    @property
+    def artifact_exempt_reason_code(self) -> Optional[str]:
+        """The declared reason this pack is not shelf-backed, if any.
+
+        The accessor consumers read. ``payload_shelf.required_artifacts`` should
+        use it so ``compose().unstaged_adapters[]`` carries the pack's own
+        sentence instead of one generic string for all 48 — see
+        ``docs/reference/payload-shelf.md`` §9.
+        """
+        ex = self.install.artifact_exempt
+        return ex.reason_code if ex else None
+
+    @model_validator(mode="after")
+    def _artifact_declaration_is_explicit(self) -> "ToolAdapterSchema":
+        """TA-13 / TA-14 / TA-15 — a tier-4 pack must SAY which one it is.
+
+        TA-13 is a REJECT and not a WARN on purpose. A warning at boot scrolls
+        past in a log nobody reads, which is precisely how 48 packs accumulated
+        an identical non-explanation in the first place. Rejecting makes "nobody
+        got to it" *unrepresentable*: a new tier-4 pack physically cannot load
+        without its author having spent thirty seconds deciding which bucket it
+        is in. Same posture as A-17/A-18 for assertions — structural, and NOT
+        gated by ``CORTEXSIM_STRICT_REFS``.
+        """
+        ex = self.install.artifact_exempt
+        art = self.install.artifact
+
+        if ex is not None and self.tier != 4:
+            raise ValueError(
+                f"TA-15 install.artifact_exempt is tier-4 only, but this pack is "
+                f"tier {self.tier}. Only tier 4 fetches its tool at dispatch, so "
+                f"only tier 4 has a target-egress problem for the shelf to solve "
+                f"or to be exempt from."
+            )
+
+        if self.tier != 4:
+            return self
+
+        if art is not None and ex is not None:
+            raise ValueError(
+                "TA-14 this pack declares BOTH install.artifact and "
+                "install.artifact_exempt. They are mutually exclusive: the first "
+                "says the shelf serves this tool, the second says it cannot. "
+                "Both together means the console must guess which is true."
+            )
+
+        if art is None and ex is None:
+            raise ValueError(
+                "TA-13 tier-4 pack declares neither install.artifact (this tool "
+                "is staged on the DC's SimCore and served to the target) nor "
+                "install.artifact_exempt (it is not, and here is why). One is "
+                "REQUIRED. Without it this pack reports as 'needs target egress' "
+                "with the same generic sentence as every other unstaged tool, so "
+                "a DC cannot tell a deliberate decision from an omission — and "
+                "an unshelved tool is a step that runs with no tooling and reads "
+                "in a POV report as 'Cortex missed it'. Pick a reason_code from "
+                f"{sorted(_VALID_EXEMPT_REASON_CODES)}."
+            )
+        return self
 
     @model_validator(mode="after")
     def _artifact_consistency(self) -> "ToolAdapterSchema":

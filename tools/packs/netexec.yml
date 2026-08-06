@@ -25,6 +25,14 @@ install:
   # successor. pipx is the upstream-recommended install; pip3 is the fallback.
   runtime_install_command: "command -v nxc >/dev/null 2>&1 || pipx install netexec 2>/dev/null || pip3 install --no-input netexec"
   binary: nxc
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: LANGUAGE_PACKAGE_MANAGER
+    reason: >-
+      NetExec installs from the Python (pipx/pip) package index along with its
+      dependency tree. The shelf stages one file, and there is no single file
+      that runs. Staging it would mean hosting a package mirror, so this tool
+      needs internet access on the target host.
 
 invoke:
   target_platform: linux

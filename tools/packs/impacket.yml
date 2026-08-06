@@ -24,6 +24,14 @@ install:
   # impacket ships console scripts (secretsdump.py, GetUserSPNs.py, …) on PATH.
   runtime_install_command: "command -v secretsdump.py >/dev/null 2>&1 || pip3 install --no-input impacket==0.12.0"
   binary: secretsdump.py
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: LANGUAGE_PACKAGE_MANAGER
+    reason: >-
+      Impacket installs from the Python (pip) package index along with its
+      dependency tree. The shelf stages one file, and there is no single file
+      that runs. Staging it would mean hosting a package mirror, so this tool
+      needs internet access on the target host.
 
 invoke:
   target_platform: linux

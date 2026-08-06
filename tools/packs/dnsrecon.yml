@@ -26,6 +26,14 @@ install:
   # Tier 4 (runtime-fetched): apt on Kali/Debian, pip fallback elsewhere.
   runtime_install_command: "command -v dnsrecon >/dev/null 2>&1 || (apt-get install -y dnsrecon 2>/dev/null || pip3 install --no-input dnsrecon)"
   binary: dnsrecon
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: DISTRO_PACKAGE
+    reason: >-
+      dnsrecon installs from the operating system's package repository.
+      Staging it on the shelf would mean hosting a Debian mirror, so this tool
+      needs internet access on the target host. Plan the POV around that, or
+      have the customer pre-install it on the target.
 
 invoke:
   target_platform: linux

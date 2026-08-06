@@ -24,6 +24,15 @@ install:
   # console script on PATH at dispatch. Idempotent guard.
   runtime_install_command: "command -v evil-winrm >/dev/null 2>&1 || gem install evil-winrm"
   binary: evil-winrm
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: LANGUAGE_PACKAGE_MANAGER
+    reason: >-
+      Evil-WinRM is a Ruby gem with eight further gem dependencies (winrm,
+      winrm-fs, logger, csv, stringio, syslog, fileutils, benchmark), and its
+      GitHub release publishes no downloadable binary. The shelf stages one
+      file; there is no single file that runs. This tool needs internet access
+      on the target host.
 
 invoke:
   # Runs on the linux attacker host and opens a WinRM (5985/5986) shell into

@@ -23,6 +23,13 @@ install:
   # into /tmp. Payload data only — no build step.
   runtime_install_command: "test -d /tmp/PayloadsAllTheThings || git clone --depth 1 https://github.com/swisskyrepo/PayloadsAllTheThings /tmp/PayloadsAllTheThings"
   binary: "ls"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: SOURCE_TREE_REQUIRED
+    reason: >-
+      PayloadsAllTheThings is a directory of payload and wordlist files, not a
+      program. There is no single file to stage. It is cloned onto the target
+      host, so the target needs internet access.
 
 invoke:
   target_platform: linux

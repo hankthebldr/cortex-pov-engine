@@ -107,11 +107,18 @@ for row in "${ROWS[@]}"; do
     echo "[payloads] FATAL malformed entry in $SOURCES (name/url required)" >&2
     exit 1
   fi
-  # `file` is the only kind any consumer can handle: the beacon is stdlib-only
-  # and the K8s init container is a busybox wget. Staging an archive nothing can
-  # unpack would put a tool on the shelf that silently never lands.
+  # `file` is the only kind any consumer can handle. Re-verified 2026-08-06:
+  # agent/beacon/artifact.go's Artifact struct has NO `Kind` field at all and
+  # nothing under agent/ imports archive/tar|archive/zip|compress/gzip, and the
+  # K8s init container is a wget->sha256sum->chmod->mv loop on an image with no
+  # `unzip`. Staging an archive nothing can unpack would put a tool on the shelf
+  # that silently never lands — worse than a pack that honestly still uses
+  # runtime_install_command.
   if [ "$KIND" != "file" ]; then
     echo "[payloads] FATAL $NAME declares kind=$KIND; only 'file' is supported" >&2
+    echo "[payloads]   No consumer can unpack an archive (see docs/reference/payload-shelf.md §11)." >&2
+    echo "[payloads]   A pack whose upstream ships only an archive declares" >&2
+    echo "[payloads]   install.artifact_exempt with reason_code ARCHIVE_ONLY_NO_EXTRACTOR." >&2
     exit 1
   fi
 

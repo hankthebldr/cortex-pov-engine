@@ -176,10 +176,35 @@ def test_tier4_pack_with_artifact_and_no_runtime_command_loads():
 
 
 def test_tier4_pack_with_neither_is_rejected():
+    """TA-02: a tier-4 pack with no way to obtain its tool at all.
+
+    The exemption is present so TA-13 is SATISFIED and this isolates TA-02.
+    Without it the pack fails both rules and the assertion would silently start
+    proving TA-13 instead — a test that still passes while the rule it names
+    goes unexercised.
+    """
     rejects("TA-02", **{
         "install.runtime_install_command": _DELETE,
         "install.artifact": _DELETE,
+        "install.artifact_exempt": {
+            "reason_code": "DISTRO_PACKAGE",
+            "reason": (
+                "Fixture installs from the operating system's package "
+                "repository, so it needs internet access on the target host."
+            ),
+        },
     })
+
+
+def test_tier4_pack_with_no_declaration_at_all_names_ta13_first():
+    """Neither an install path nor a shelf declaration. TA-13 is the more
+    actionable message of the two that apply, and it must be the one raised."""
+    with pytest.raises(Exception) as exc:
+        load(**{
+            "install.runtime_install_command": _DELETE,
+            "install.artifact": _DELETE,
+        })
+    assert "TA-13" in str(exc.value)
 
 
 # ---------------------------------------------------------------------------

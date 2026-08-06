@@ -21,6 +21,27 @@ safety_class: safe
 install:
   runtime_install_command: "command -v gitleaks >/dev/null 2>&1 || (apt-get install -y gitleaks 2>/dev/null || go install github.com/gitleaks/gitleaks/v8@latest)"
   binary: "gitleaks"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: ARCHIVE_ONLY_NO_EXTRACTOR
+    reason: >-
+      Gitleaks' maintainers publish it only as a compressed archive, and
+      CortexSim can currently stage single files only — so it cannot be served
+      from the shelf yet. This tool needs internet access on the target host
+      until that changes.
+    revisit: >-
+      Blocked on CortexSim, not on upstream. Requires a single-member
+      extractor (download the pinned archive on the DC's SimCore, verify the
+      ARCHIVE digest, extract one named member, verify the MEMBER digest, put
+      that one file on the shelf) so compose() still emits kind: file and
+      neither the Go beacon nor the K8s init container learns a new word.
+      Measured 2026-08-06: gitleaks_8.18.4_linux_x64.tar.gz at release tag
+      v8.18.4 (terminal patch of the 8.18 line this pack declares) is
+      2,903,447 bytes, sha256
+      ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d, and
+      holds 3 entries (LICENSE, README.md, gitleaks); the member 'gitleaks' is
+      a self-contained 6,959,256-byte static binary. Also blocked on the
+      beacon PATH gap: SIM-CDR-007 invokes 'gitleaks' by bare name.
 
 invoke:
   target_platform: linux
