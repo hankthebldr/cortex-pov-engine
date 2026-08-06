@@ -38,6 +38,28 @@ DOCKERFILE = REPO_ROOT / "core" / "Dockerfile"
 TOOLS = ("ackbarx", "signalbench", "xdrtop")
 
 
+#: Tests below need the tier-2 SUBMODULE trees on disk. `test.yml`'s fast
+#: python job checks out with `submodules: false` on purpose, so they skip
+#: there — and they are NOT merely skipped everywhere: the `backend` and
+#: `adapters` CI jobs both check out `submodules: recursive` and RUN them, and
+#: `adapters` is the GAP-ADAPT-01 guard that FAILS when a tier-2 source tree is
+#: absent. So submodule presence is still gated; it is gated once, in the job
+#: that owns it, rather than being reported as a pass by a job that never
+#: fetched anything.
+_SUBMODULES_PRESENT = (
+    REPO_ROOT / "sources" / "signalbench" / "helpers" / "pacemaker" / "Cargo.toml"
+).is_file()
+
+requires_submodules = pytest.mark.skipif(
+    not _SUBMODULES_PRESENT,
+    reason=(
+        "tier-2 submodule trees are not checked out (this job uses "
+        "submodules: false); the backend + adapters CI jobs run this with "
+        "submodules: recursive"
+    ),
+)
+
+
 def _dockerfile_text() -> str:
     assert DOCKERFILE.is_file(), f"core/Dockerfile missing at {DOCKERFILE}"
     text = DOCKERFILE.read_text()
@@ -134,6 +156,7 @@ def test_signalbench_builds_the_pacemaker_helper_first(rust_stage: str):
     assert helper_copy < crate_build, "the helper is staged after the crate build"
 
 
+@requires_submodules
 def test_signalbench_helper_crate_still_exists_on_disk():
     """The cheap always-on half of the gate. A gitlink bump that moves or
     removes helpers/pacemaker breaks the image build five minutes in, with a
