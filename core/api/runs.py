@@ -218,6 +218,15 @@ class CompleteRequest(BaseModel):
 _TERMINAL_STATES = {"complete", "failed", "aborted", "staged"}
 
 
+#: Refusal codes that mean "the request was fine, a precondition is not met".
+#: These get 409 (same posture as PAYLOAD_NOT_STAGED) rather than 422, which
+#: says the body was malformed and sends the operator looking at their JSON.
+_LAUNCH_PRECONDITION_CODES = frozenset({
+    "CONSENT_REQUIRED",
+    "ADAPTER_MISSING_CLEANUP",
+})
+
+
 async def _safe_publish(run_id: Optional[str], event: dict) -> None:
     """Publish to the event bus without ever letting a bus error propagate
     into the mutation path that triggered it."""
@@ -262,9 +271,20 @@ async def _launch_run_impl(
     )
 
     if not result.success:
+        # A missing consent flag is not a malformed request — the body was
+        # perfectly valid, the operator simply has not authorised the action
+        # yet. 409 puts it in the same position and posture as the other
+        # preconditions a launch can fail on (PAYLOAD_NOT_STAGED), and the
+        # structured detail means a console offers the exact checkbox instead
+        # of regexing the sentence for a key name.
+        status = 409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
         raise HTTPException(
-            status_code=422,
-            detail={"error": result.error, "code": "LAUNCH_FAILED", "detail": ""},
+            status_code=status,
+            detail={
+                "error": result.error,
+                "code": result.error_code,
+                "detail": result.error_detail or "",
+            },
         )
 
     response: dict = {

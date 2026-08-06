@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     # them only for a tenant you are explicitly authorized to mutate.
     CORTEXSIM_XSIAM_ALLOW_WRITE: bool = False
     CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE: bool = False
+
+    # SQLAlchemy statement echo. Previously tied to CORTEXSIM_ENV=development,
+    # which meant a dev boot log carried every aiosqlite statement TWICE (once
+    # from the sqlalchemy.engine logger, once through the app formatter). A DC
+    # reading the boot log for a real error scrolled past hundreds of duplicated
+    # lines to find it. Opt in explicitly when you actually want statement-level
+    # tracing.
+    CORTEXSIM_SQL_ECHO: bool = False
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

@@ -14,13 +14,19 @@ _db_path = os.path.join(settings.CORTEXSIM_BASE_DIR, "data", "cortexsim.db")
 _db_dir = os.path.dirname(_db_path)
 
 # Ensure the data directory exists at import time so the URL is always valid.
-os.makedirs(_db_dir, exist_ok=True)
+# A read-only parent makes this raise at IMPORT time, i.e. before the lifespan
+# handler that knows how to explain it — swallow it here so the failure surfaces
+# at init_db() as a named DB_NOT_WRITABLE instead of an import traceback.
+try:
+    os.makedirs(_db_dir, exist_ok=True)
+except OSError:
+    pass
 
 DATABASE_URL = f"sqlite+aiosqlite:///{_db_path}"
 
 engine = create_async_engine(
     DATABASE_URL,
-    echo=(settings.CORTEXSIM_ENV == "development"),
+    echo=settings.CORTEXSIM_SQL_ECHO,
     connect_args={"check_same_thread": False},
 )
 
@@ -35,8 +41,126 @@ class Base(DeclarativeBase):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Boot diagnostics
+#
+# `config.validate_master_key` is the model: a named condition, a plain-English
+# cause, and a copy-pasteable fix. Two equally likely deployment faults had
+# nothing — a corrupt cortexsim.db and a read-only data/ mount both produced a
+# raw SQLAlchemy traceback and exit 3, indistinguishable from a code defect.
+#
+# Exit code 4 (distinct from the master-key guard's 3) so an operator scripting
+# the boot can branch on "the storage is wrong" vs "the secret is wrong".
+# ---------------------------------------------------------------------------
+
+DB_BOOT_EXIT_CODE = 4
+
+
+class DatabaseBootError(RuntimeError):
+    """A storage-layer fault that CortexSim can name and remediate.
+
+    ``code`` is stable and machine-readable; ``str(exc)`` is the operator-facing
+    message and is printed INSTEAD of a traceback.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def db_path() -> str:
+    """Absolute path of the run-history SQLite file."""
+    return _db_path
+
+
+def classify_db_error(exc: BaseException) -> DatabaseBootError:
+    """Translate a SQLAlchemy/sqlite3 boot failure into a named, fixable one.
+
+    Matched on the sqlite3 message text rather than the exception class because
+    SQLAlchemy wraps every one of these in ``OperationalError`` /
+    ``DatabaseError`` — the class tells you nothing, the text tells you
+    everything. Anything unrecognised falls through to ``DB_INIT_FAILED`` with
+    the original text, so a new failure mode is still legible even before it has
+    a dedicated branch.
+    """
+    text = str(exc).lower()
+    path = _db_path
+
+    if "file is not a database" in text or "file is encrypted" in text:
+        return DatabaseBootError("DB_CORRUPT", (
+            f"CORRUPT DATABASE — {path} exists but is not a SQLite database.\n"
+            f"\n"
+            f"Usually a truncated copy, a Git LFS pointer committed in place of "
+            f"the file, or an unrelated file mounted at that path.\n"
+            f"\n"
+            f"CortexSim stores ONLY run history here. Scenarios, TTP cards, "
+            f"adapter packs and the UC/TC index all load from disk at boot, so "
+            f"moving this file aside costs you past run records and nothing "
+            f"else.\n"
+            f"\n"
+            f"To fix:\n"
+            f"  1. mv {path} {path}.bad\n"
+            f"  2. restart CortexSim (the schema is recreated automatically)\n"
+        ))
+
+    if "unable to open database file" in text or "readonly database" in text \
+            or "attempt to write a readonly database" in text:
+        try:
+            uid = os.getuid()
+        except AttributeError:  # pragma: no cover - non-POSIX
+            uid = -1
+        return DatabaseBootError("DB_NOT_WRITABLE", (
+            f"DATA DIRECTORY NOT WRITABLE — cannot open {path} for writing.\n"
+            f"\n"
+            f"The data directory is read-only, or it is owned by a different "
+            f"uid than the one CortexSim runs as (uid {uid}).\n"
+            f"\n"
+            f"To fix:\n"
+            f"  - In Docker: check for ':ro' on the volume mount for "
+            f"{_db_dir} in docker-compose.yml, and that the named volume is "
+            f"not backed by a read-only filesystem.\n"
+            f"  - On a host: chown -R {uid} {_db_dir}\n"
+            f"  - Confirm with: touch {_db_dir}/.write-test\n"
+        ))
+
+    if "disk is full" in text or "database or disk is full" in text \
+            or "no space left" in text:
+        return DatabaseBootError("DB_DISK_FULL", (
+            f"DISK FULL — SQLite cannot extend {path}.\n"
+            f"\n"
+            f"To fix:\n"
+            f"  1. df -h {_db_dir}\n"
+            f"  2. Free space, or point CORTEXSIM_BASE_DIR at a larger volume.\n"
+            f"  3. Run history is the only thing stored here; an old "
+            f"cortexsim.db can be archived and removed safely.\n"
+        ))
+
+    return DatabaseBootError("DB_INIT_FAILED", (
+        f"DATABASE INITIALISATION FAILED at {path}.\n"
+        f"\n"
+        f"{type(exc).__name__}: {exc}\n"
+        f"\n"
+        f"This condition has no dedicated remediation yet. Capture the full "
+        f"server log and report it; as a workaround, move {path} aside (you "
+        f"lose past run records only) and restart.\n"
+    ))
+
+
 async def init_db() -> None:
-    """Create all tables.  Called from FastAPI startup handler."""
+    """Create all tables. Called from the FastAPI lifespan handler.
+
+    Storage faults are re-raised as :class:`DatabaseBootError` so the caller can
+    print a remediation instead of a traceback.
+    """
+    try:
+        await _init_db_inner()
+    except DatabaseBootError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — translated, then re-raised
+        raise classify_db_error(exc) from exc
+
+
+async def _init_db_inner() -> None:
     async with engine.begin() as conn:
         # Import models so their metadata is registered before create_all
         import models  # noqa: F401

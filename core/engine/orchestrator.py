@@ -120,6 +120,12 @@ class LaunchResult:
     message: str = ""
     download_url: Optional[str] = None  # push mode only
     error: Optional[str] = None
+    # Machine code + structured payload for a refusal. `error` stays the prose
+    # a human reads; these are what a console branches on instead of regexing
+    # the sentence. Default LAUNCH_FAILED preserves the historical envelope for
+    # every refusal that has not been given a specific code yet.
+    error_code: str = "LAUNCH_FAILED"
+    error_detail: dict[str, Any] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -201,10 +207,15 @@ class Orchestrator:
         gate_error = _check_launch_consent(scenario, consent or {}, mode=mode)
         if gate_error is not None:
             logger.warning(
-                "Launch refused scenario=%s reason=%s",
-                scenario_id, gate_error,
+                "Launch refused scenario=%s code=%s reason=%s",
+                scenario_id, _refusal_code(gate_error), gate_error,
             )
-            return LaunchResult(success=False, error=gate_error)
+            return LaunchResult(
+                success=False,
+                error=str(gate_error),
+                error_code=_refusal_code(gate_error),
+                error_detail=_refusal_detail(gate_error),
+            )
 
         run_id = str(uuid.uuid4())
         now = datetime.utcnow()
@@ -689,6 +700,35 @@ def allow_privileged_k8s() -> bool:
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
 
 
+class LaunchRefusal(str):
+    """A gate refusal that is BOTH the human sentence and the machine payload.
+
+    Deliberately a ``str`` subclass. The gate's contract has always been
+    "return prose or None", and every caller and test in the tree relies on
+    that — but a console cannot branch on prose, so it was regexing the
+    sentence to find out which consent key to offer. Subclassing keeps every
+    existing ``err is None`` / ``"key" in err`` assertion true while carrying
+    ``code`` and ``detail`` for the API layer.
+    """
+
+    code: str
+    detail: dict[str, Any]
+
+    def __new__(cls, message: str, *, code: str, detail: Optional[dict] = None):
+        obj = super().__new__(cls, message)
+        obj.code = code
+        obj.detail = detail or {}
+        return obj
+
+
+def _refusal_code(err: Optional[str]) -> str:
+    return getattr(err, "code", "LAUNCH_FAILED") if err is not None else "LAUNCH_FAILED"
+
+
+def _refusal_detail(err: Optional[str]) -> dict[str, Any]:
+    return dict(getattr(err, "detail", {}) or {}) if err is not None else {}
+
+
 def _check_launch_consent(
     scenario: Any,
     consent: dict[str, bool],
@@ -803,10 +843,23 @@ def _check_adapter_consent(scenario: Any, consent: dict[str, bool]) -> Optional[
     cleared.
 
     Scenarios that use no adapter_refs (back-compat path) always pass.
+
+    EVERY unmet requirement is collected in ONE pass. Returning at the first
+    one made the DC re-launch, get the next refusal, re-launch again — three
+    round trips in front of a customer to learn two facts SimCore knew before
+    the first. The message still leads with the first adapter so the prose is
+    unchanged in the single-adapter case; ``detail`` carries the full set.
     """
     from tools.adapter_catalog import catalog  # noqa: PLC0415
 
+    #: safety_class → the consent key that clears it.
+    gated = {"c2-framework": "c2_authorized",
+             "dual-use-lab-only": "simulation_authorized"}
+
+    reasons: list[dict[str, Any]] = []
+    required: list[str] = []
     tools = scenario.external_tools or []
+
     for tool in tools:
         adapter_ref = tool.get("adapter_ref") if isinstance(tool, dict) else None
         if not adapter_ref:
@@ -815,29 +868,55 @@ def _check_adapter_consent(scenario: Any, consent: dict[str, bool]) -> Optional[
         if adapter is None:
             # Loader already warned; treat as advisory at launch time too.
             continue
-        if adapter.safety_class == "c2-framework" and not consent.get("c2_authorized"):
-            return (
-                f"Scenario uses C2-framework adapter {adapter_ref!r} "
-                f"({adapter.name} v{adapter.version}) but consent c2_authorized "
-                f"is not set. Re-launch with consent.c2_authorized=true to proceed."
-            )
-        if adapter.safety_class == "dual-use-lab-only" and not consent.get("simulation_authorized"):
-            return (
-                f"Scenario uses dual-use adapter {adapter_ref!r} "
-                f"({adapter.name} v{adapter.version}) but consent "
-                f"simulation_authorized is not set. Re-launch with "
-                f"consent.simulation_authorized=true to proceed."
-            )
+
         if adapter.safety_class == "destructive":
             if not (adapter.cleanup and adapter.cleanup.commands):
                 # Defence in depth — the loader rejects this case already,
                 # but if a deprecated_by/migration left a stale destructive
-                # adapter in the catalog we refuse to dispatch it.
-                return (
+                # adapter in the catalog we refuse to dispatch it. NOT a
+                # consent problem: no key the operator can set fixes it, so it
+                # keeps its own code and short-circuits.
+                return LaunchRefusal(
                     f"Scenario references destructive adapter {adapter_ref!r} "
-                    f"but its catalog entry has no cleanup commands — refusing launch."
+                    f"but its catalog entry has no cleanup commands — refusing launch.",
+                    code="ADAPTER_MISSING_CLEANUP",
+                    detail={"adapter_id": adapter_ref},
                 )
-    return None
+            continue
+
+        key = gated.get(adapter.safety_class)
+        if key is None or consent.get(key):
+            continue
+        if key not in required:
+            required.append(key)
+        reasons.append({
+            "adapter_id": adapter_ref,
+            "name": adapter.name,
+            "version": adapter.version,
+            "safety_class": adapter.safety_class,
+            "required_consent": key,
+        })
+
+    if not reasons:
+        return None
+
+    first = reasons[0]
+    label = ("C2-framework" if first["safety_class"] == "c2-framework" else "dual-use")
+    also = ""
+    if len(reasons) > 1:
+        also = (f" ({len(reasons) - 1} further gated adapter(s) in this scenario "
+                f"also need consent — see detail.reasons)")
+    message = (
+        f"Scenario uses {label} adapter '{first['adapter_id']}' "
+        f"({first['name']} v{first['version']}) but consent "
+        f"{first['required_consent']} is not set. Re-launch with "
+        f"consent.{first['required_consent']}=true to proceed.{also}"
+    )
+    return LaunchRefusal(
+        message,
+        code="CONSENT_REQUIRED",
+        detail={"required_consent": required, "reasons": reasons},
+    )
 
 
 def _resolve_adapter_placeholders(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
