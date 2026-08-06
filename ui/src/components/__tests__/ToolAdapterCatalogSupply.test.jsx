@@ -91,9 +91,12 @@ describe('Tools & Payloads — supply state', () => {
   it('warns about target egress in the banner, with a count', async () => {
     installRoutes({ 'GET /api/tools/adapters': ADAPTERS, ...shelf({ declared: [DECLARED] }) })
     render(<Harness />)
-    await waitFor(() => expect(screen.getByTestId('payload-shelf-banner')).toBeInTheDocument())
-    expect(screen.getByTestId('payload-shelf-banner'))
-      .toHaveTextContent(/2 of 3 tools fetch from the public internet/)
+    // Wait on the CONTENT, not the element. The banner mounts immediately in a
+    // "checking payload shelf…" state, so waiting for it to exist proves only
+    // that the component rendered — the assertion then raced the fetch and won
+    // locally while losing on a slower CI runner.
+    await waitFor(() => expect(screen.getByTestId('payload-shelf-banner'))
+      .toHaveTextContent(/2 of 3 tools fetch from the public internet/))
   })
 
   it('names staged-but-UNBOUND artifacts as bytes nothing can compose', async () => {
