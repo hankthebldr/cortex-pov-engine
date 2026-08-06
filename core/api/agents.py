@@ -544,6 +544,18 @@ fi
 
 cs_install_systemd() {
   command -v systemctl >/dev/null 2>&1 || return 1
+  # `systemctl` on PATH does not mean systemd is RUNNING it. Containers, WSL
+  # without systemd, LXC and chroots all ship the client with PID 1 something
+  # else, and there the unit install dead-ends: binary installed, unit written,
+  # zero beacons running, and an enrolled agent row reading `online` while the
+  # printed fix line recommends journalctl on a host with no journal. Probe the
+  # manager, not the binary, so those hosts take the honest nohup degrade.
+  # The disjunction is deliberate: is-system-running returns non-zero for
+  # degraded/starting/maintenance, all of which are perfectly usable, and
+  # /run/systemd/system exists on every live-systemd host — either arm passing
+  # is sufficient, so a working host is never falsely downgraded.
+  systemctl is-system-running >/dev/null 2>&1 || \
+    [ -d /run/systemd/system ] || return 1
   UNIT_BODY="[Unit]
 Description=CortexSim beacon agent ($AGENT_ID)
 After=network-online.target
@@ -559,9 +571,18 @@ RestartSec=10
     UNIT="/etc/systemd/system/$SVC.service"
     printf '%s\n[Install]\nWantedBy=multi-user.target\n' "$UNIT_BODY" > "$UNIT"
     systemctl daemon-reload
-    systemctl enable --now "$SVC" >/dev/null 2>&1 \
-      || cs_fail install SERVICE_START_FAILED "systemctl enable --now $SVC failed" \
-           "inspect: systemctl status $SVC ; journalctl -u $SVC -n 50"
+    if ! systemctl enable --now "$SVC" >/dev/null 2>&1; then
+      # A live-systemd host that still refuses the unit is a real problem, but
+      # cs_fail exits 1 — which left the DC with an enrolled agent row, an
+      # installed binary and NO beacon running. Report the supervisor problem
+      # and return so the caller reaches cs_install_nohup, which emits an honest
+      # DEGRADED_NO_SUPERVISOR. A degraded beacon that runs beats a clean
+      # failure that does not.
+      cs_say "WARN: systemctl enable --now $SVC failed — degrading to unsupervised"
+      rm -f "$UNIT"; systemctl daemon-reload >/dev/null 2>&1 || true
+      cs_report install SERVICE_START_FAILED "systemctl enable --now $SVC failed; degrading to nohup"
+      return 1
+    fi
     cs_say "installed system unit: $UNIT"
     cs_say "  status: systemctl status $SVC"
     cs_say "  logs  : journalctl -u $SVC -f"

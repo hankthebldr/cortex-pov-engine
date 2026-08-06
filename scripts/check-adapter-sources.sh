@@ -156,6 +156,38 @@ for file in "$PACKS_DIR"/*.yml; do
 done
 shopt -u nullglob
 
+# ------------------------------------------------------------------------------
+# Rust tier-2 tools — the three source trees NO adapter pack covers.
+#
+# signalbench, ackbarx and xdrtop are tier-2 submodules with no tools/packs/*.yml,
+# so the loop above never looks at them and this gate was blind to all three.
+# That blindness is why signalbench's registry build_cmd ("cargo build --release")
+# could be broken for every DC who ever ran it without anything noticing: the
+# crate embeds helpers/pacemaker's output via include_bytes! and that helper must
+# be built FIRST. build-rust-dist.sh --check-recipe asserts exactly the inputs
+# that rot silently, costs ~50 ms, and needs no compiler and no Docker — so it
+# belongs in this always-on job rather than behind a paths: filter, where a skip
+# would read exactly like a pass.
+# ------------------------------------------------------------------------------
+RUST_CHECK="${REPO_ROOT}/scripts/build-rust-dist.sh"
+echo ""
+if [[ ! -x "$RUST_CHECK" ]]; then
+    warn=$((warn + 1))
+    echo -e "  ${YELLOW}WARN${NC} rust tools: scripts/build-rust-dist.sh not present/executable — recipe gate skipped"
+elif [[ ! -d "${REPO_ROOT}/sources" ]]; then
+    # e.g. running inside the SimCore image, which does not COPY sources/.
+    warn=$((warn + 1))
+    echo -e "  ${YELLOW}WARN${NC} rust tools: sources/ absent in this context — recipe gate NOT run (run it from a checkout)"
+else
+    if "$RUST_CHECK" --check-recipe; then
+        pass=$((pass + 1))
+    else
+        fail=$((fail + 1))
+        fail_lines+=("rust tier-2 tools: build-rust-dist.sh --check-recipe failed (see output above)")
+    fi
+fi
+echo ""
+
 echo "--------------------------------------------------------------------------"
 echo -e "Summary: ${GREEN}PASS=${pass}${NC}  ${YELLOW}WARN=${warn}${NC}  ${RED}FAIL=${fail}${NC}"
 

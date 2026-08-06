@@ -17,6 +17,18 @@
 # windows/amd64 is INCLUDED as of the build-tag split: agent/executor now has
 # _unix / _windows variants, so GOOS=windows builds and vets clean and the
 # Windows beacon is a real artifact rather than an honest 501.
+#
+# REPRODUCIBILITY, precisely: -trimpath makes the output independent of the
+# checkout path, so the SAME Go toolchain over the SAME source yields
+# byte-identical binaries (measured: two consecutive runs, all 5 digests equal).
+# The Go PATCH VERSION is still an input — go1.22.2 here and go1.22.12 in
+# `golang:1.22-alpine` produce different bytes for the same commit. That is
+# expected and harmless HERE because nothing trusts a carried-in digest: the
+# installer fetches the checksum from the same SimCore that serves the bytes,
+# and /api/agents/binary/sha256 hashes the file on disk rather than reading
+# SHA256SUMS. Do not build a supply-chain check that pins a digest across
+# toolchains — it would be unfalsifiable, and would go red on a Go point
+# release rather than on tampering.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

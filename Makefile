@@ -22,7 +22,8 @@ SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up down build agent-dist test test-backend test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
-        coverage-strict ci clean
+        coverage-strict check-agent-shelf rust-dist check-rust-recipe \
+        check-rust-shelf check-rust-exec ci clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -48,6 +49,14 @@ build: ## Build the production simcore image
 
 agent-dist: ## Cross-compile the beacon matrix into ./agent-dist (served by /api/agents/binary)
 	scripts/build-agent-dist.sh
+
+# The Rust half of the same answer the beacon matrix gives for Go: build once on
+# the DC's machine, serve checksummed bytes, and the customer jumpbox needs
+# neither rustup nor crates.io egress. Docker is REQUIRED and the script refuses
+# without it — a host `cargo build --release` produces a glibc-DYNAMIC binary
+# that dies on a customer host, which is worse than no binary at all.
+rust-dist: ## Build the static-musl Rust tool matrix into ./rust-dist (served by /api/tools/binary)
+	scripts/build-rust-dist.sh
 
 # -----------------------------------------------------------------------------
 # Code-test gates (mirror ci.yml backend / agent / ui jobs)
@@ -87,7 +96,58 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-adapters check-streamer ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity gates
+validate: validate-detection check-refs check-adapters check-streamer check-agent-shelf ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf gates
+# NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
+# Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
+# check-rust-exec are NOT in validate: both need a `make build` / `make
+# rust-dist` first and cost minutes, so they are opt-in (and paths:-filtered in
+# CI). See the rust-dist target above.
+
+# The assertion is about the IMAGE, never the checkout — hence `--entrypoint sh`
+# with no `-v`. A host mount would let a `make agent-dist` on the dev box mask an
+# agent-builder stage that never built the target, which is exactly how the
+# windows/amd64 gap survived: the script emitted 5, the image shipped 4, and
+# every gate that looked at the source tree agreed with itself.
+check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target (needs `make build`)
+	docker run --rm --entrypoint sh $(IMAGE) -c '\
+	  set -e; cd /app/agent-dist; sha256sum -c SHA256SUMS; \
+	  for t in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64.exe; do \
+	    test -s "cortexsim-agent-$$t" || { echo "MISSING cortexsim-agent-$$t"; exit 1; }; \
+	  done; \
+	  echo "shelf OK: $$(ls cortexsim-agent-* | wc -l) targets"'
+
+check-rust-recipe: ## ~50ms: assert the Rust build recipes still match the submodule trees
+	scripts/build-rust-dist.sh --check-recipe
+
+# Same argument as check-agent-shelf, applied to the Rust matrix: assert the
+# IMAGE, never the checkout. The beacon shipped 5 targets from the script and 4
+# from the image for months because every gate looked at the source tree and
+# agreed with itself. `docker run --entrypoint sh` with no `-v` is deliberate —
+# a host mount would let a local `make rust-dist` mask a rust-builder stage that
+# never landed.
+check-rust-shelf: ## assert the BUILT IMAGE serves the Rust tool matrix (needs `make build`)
+	docker run --rm --entrypoint sh $(IMAGE) -c '\
+	  set -e; cd /app/rust-dist; sha256sum -c SHA256SUMS; \
+	  for t in signalbench ackbarx xdrtop; do \
+	    test -s "cortexsim-tool-$$t-linux-amd64" || { echo "MISSING cortexsim-tool-$$t-linux-amd64"; exit 1; }; \
+	  done; \
+	  echo "rust shelf OK: $$(ls cortexsim-tool-* | wc -l) tools"'
+
+# THE gate this pass exists for. A binary that exists is not a binary that runs:
+# a compiled file that dies with `error while loading shared libraries` on a
+# customer jumpbox is worse than an honest "not supported", because the DC finds
+# out in front of the customer. Every artifact is started on a clean glibc host
+# AND a clean musl host, with --network none so nothing can be quietly fetched.
+check-rust-exec: ## execute every rust-dist binary on clean ubuntu + alpine (needs `make rust-dist`)
+	@set -e; for img in ubuntu:22.04 alpine:3; do \
+	  for t in signalbench ackbarx xdrtop; do \
+	    printf '  %-14s %-12s ' "$$img" "$$t"; \
+	    docker run --rm --network none --platform linux/amd64 \
+	      -v "$(CURDIR)/rust-dist:/d:ro" "$$img" \
+	      "/d/cortexsim-tool-$$t-linux-amd64" --version; \
+	  done; \
+	done; \
+	echo "[rust-exec] 6/6 started on clean glibc + musl hosts with no network"
 
 validate-detection: ## validate.py (0 fail) + export-determinism gate (CI 'detection' job)
 	python3 detection_scanner/scripts/validate.py --quiet

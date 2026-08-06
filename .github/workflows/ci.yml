@@ -22,7 +22,15 @@ name: CI
 #               `git diff --exit-code detection_scanner/exports/` is clean,
 #               proving the committed exports match the live TTP cards.
 #   adapters  — scripts/check-adapter-sources.sh: tier-2 submodule sources
-#               must exist on disk (tier-4 runtime-fetched misses are WARN).
+#               must exist on disk (tier-4 runtime-fetched misses are WARN),
+#               PLUS build-rust-dist.sh --check-recipe (~50 ms, no compiler):
+#               the three tier-2 Rust tools have no adapter pack, so this gate
+#               was blind to all three and signalbench's build_cmd was broken
+#               for every DC who ever ran it without anything noticing.
+#   rust-dist — static-musl build of signalbench/ackbarx/xdrtop, then EXECUTE
+#               each on clean ubuntu:22.04 AND alpine:3 with --network none.
+#               Change-filtered (gitlink / recipe / registry only) and NOT a
+#               required check; the always-on half lives in `adapters`.
 #
 # All jobs run independently and in parallel — a failure in one surfaces a
 # precise gate without masking the others.
@@ -208,18 +216,101 @@ jobs:
         run: pytest tests/engine/test_corpus_refs_strict.py -q
 
   # ---------------------------------------------------------------------------
-  # adapters — tool-adapter source preflight.
+  # adapters — tool-adapter source preflight + Rust build-recipe preflight.
+  #
+  # The Rust half is folded in HERE, not into the paths:-filtered rust-dist job
+  # below, deliberately: it costs ~50 ms, needs no compiler and no Docker, and
+  # this job is unconditional. A job that can be skipped reads exactly like a
+  # passing one, so the cheap assertions live in the job that always runs.
   # ---------------------------------------------------------------------------
   adapters:
-    name: adapters (tier-2 source preflight)
+    name: adapters (tier-2 source + rust recipe preflight)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         # Tier-2 adapter sources are git submodules; the check FAILs if any
-        # declared source_path is missing on disk, so pull them.
+        # declared source_path is missing on disk, so pull them. The Rust gate
+        # additionally needs sources/signalbench/helpers/pacemaker.
         with:
           submodules: recursive
-      - name: Adapter source existence check
+      - name: Adapter source existence + rust recipe check
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
         run: scripts/check-adapter-sources.sh
+
+  # ---------------------------------------------------------------------------
+  # rust-dist — static musl build of the three tier-2 Rust tools, then EXECUTE
+  # each one on a clean glibc host and a clean musl host with no network.
+  #
+  # paths:-filtered because a full Rust build is ~4 min cold and only a gitlink
+  # bump, a recipe change or a registry change can break it. NOT a required
+  # check — the always-on assertions are in `adapters` above.
+  #
+  # The exec step is the entire point. A build-only job would have gone green on
+  # a binary that dies with `error while loading shared libraries` on a customer
+  # jumpbox — and the DC would find out in front of the customer. Had this job
+  # existed, signalbench's broken `cargo build --release` (it embeds
+  # helpers/pacemaker's output via include_bytes! and that helper must be built
+  # FIRST) would have been caught at the commit that pinned v1.8.1.
+  # ---------------------------------------------------------------------------
+  rust-dist:
+    name: rust-dist (static musl build + exec proof)
+    runs-on: ubuntu-22.04
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Detect whether anything that can break the Rust build changed
+        id: changed
+        run: |
+          # On workflow_dispatch, or when we cannot diff (first commit), run it.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          [ -n "$base" ] || base="${{ github.event.before }}"
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only "$base" HEAD | grep -qE \
+              '^(sources/|scripts/build-rust-dist\.sh|core/tools/registry\.py|core/Dockerfile|\.github/workflows/ci\.yml)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No gitlink / recipe / registry change — Rust matrix unchanged."
+          fi
+      - name: Build the static musl matrix
+        if: steps.changed.outputs.run == 'true'
+        run: scripts/build-rust-dist.sh
+      - name: Verify SHA256SUMS
+        if: steps.changed.outputs.run == 'true'
+        run: cd rust-dist && sha256sum -c SHA256SUMS
+      # --network none is load-bearing: it proves the binary needs nothing
+      # fetched at run time, which is the whole claim being made about it.
+      - name: EXECUTE each binary on clean ubuntu:22.04 (glibc) and alpine:3 (musl)
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          set -e
+          for img in ubuntu:22.04 alpine:3; do
+            for t in signalbench ackbarx xdrtop; do
+              printf '  %-14s %-12s ' "$img" "$t"
+              docker run --rm --network none --platform linux/amd64 \
+                -v "$PWD/rust-dist:/d:ro" "$img" \
+                "/d/cortexsim-tool-$t-linux-amd64" --version
+            done
+          done
+          echo "6/6 started on clean glibc + musl hosts with no network"
+      - name: Upload the matrix
+        if: steps.changed.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-dist-linux-amd64
+          path: |
+            rust-dist/cortexsim-tool-*
+            rust-dist/SHA256SUMS
+            rust-dist/MANIFEST.json
+          if-no-files-found: error
