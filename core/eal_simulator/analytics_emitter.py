@@ -56,7 +56,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from .audit import ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
-from .delivery import REMEDIATION, DeliveryLedger
+from .delivery import REMEDIATION, DeliveryLedger, response_evidence
 
 
 logger = logging.getLogger("cortexsim.eal.analytics_emitter")
@@ -551,8 +551,13 @@ class AnalyticsLogEmitter(BaseSimulation):
                 resp = await client.post(
                     params.collector_url, headers=hdrs, content=wire,
                 )
+                _ct, _bp = response_evidence(resp)
                 code = ledger.record_response(
                     resp.status_code, records=len(events), wire_bytes=len(wire),
+                    # Without these a 200 carrying a captive-portal login page
+                    # counts as delivered records — the classifier exists and
+                    # was simply never handed the evidence it needs.
+                    content_type=_ct, body_prefix=_bp,
                 )
                 await ctx.emit_event(self._delivery_event(
                     ctx, params, host=host, iteration=iteration,
@@ -582,8 +587,10 @@ class AnalyticsLogEmitter(BaseSimulation):
                 resp = await client.post(
                     params.collector_url, headers=hdrs, content=wire,
                 )
+                _ct, _bp = response_evidence(resp)
                 code = ledger.record_response(
                     resp.status_code, records=1, wire_bytes=len(wire),
+                    content_type=_ct, body_prefix=_bp,
                 )
                 await ctx.emit_event(self._delivery_event(
                     ctx, params, host=host, iteration=iteration,

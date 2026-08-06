@@ -52,7 +52,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..audit import ecs_event
 from ..base import BaseSimulation, SimulationContext, SimulationResult
-from ..delivery import REMEDIATION, DeliveryLedger
+from ..delivery import REMEDIATION, DeliveryLedger, response_evidence
 
 
 logger = logging.getLogger("cortexsim.eal.plugins.email_emitter")
@@ -591,8 +591,11 @@ class EmailEmitter(BaseSimulation):
                 resp = await client.post(
                     params.collector_url, headers=headers, content=body_bytes,
                 )
+                _ct, _bp = response_evidence(resp)
                 failure_code = ledger.record_response(
                     resp.status_code, records=1, wire_bytes=len(body_bytes),
+                    # A 200 that is an HTML captive-portal page is not an ingest.
+                    content_type=_ct, body_prefix=_bp,
                 )
                 delivered = failure_code is None
                 await ctx.emit_event(ecs_event(

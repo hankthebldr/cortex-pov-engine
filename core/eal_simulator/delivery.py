@@ -50,6 +50,18 @@ COLLECTOR_UNAUTHORIZED = "collector_unauthorized"
 COLLECTOR_THROTTLED = "collector_throttled"
 COLLECTOR_REDIRECTED = "collector_redirected"
 
+#: Something answered 200 — but with an HTML document, not an ingest
+#: acknowledgement. A log collector never answers a JSON/NDJSON POST with
+#: `<html>`. This is the modern enterprise egress-interception shape (ZTNA
+#: portals, GlobalProtect/Zscaler/Netskope login interstitials, corporate SSO
+#: walls): they do NOT 302, they return 200 with a login page. It is the MORE
+#: common interception shape and, before this code, the only one that passed —
+#: a campaign against a captive portal reported `delivered, 6/6 records`.
+#: `POST /api/shelf/stage` already refuses exactly this condition for staged
+#: tool artifacts (an HTML error page saved as linpeas.sh has a perfect digest
+#: and runs as a no-op). One codebase, one rule.
+COLLECTOR_INTERCEPTED = "collector_intercepted"
+
 #: Collector answered but is itself broken/overloaded. Retry or escalate.
 COLLECTOR_ERROR = "collector_error"
 COLLECTOR_UNAVAILABLE = "collector_unavailable"
@@ -69,6 +81,7 @@ FAILURE_CODES = frozenset({
     COLLECTOR_UNAUTHORIZED,
     COLLECTOR_THROTTLED,
     COLLECTOR_REDIRECTED,
+    COLLECTOR_INTERCEPTED,
     COLLECTOR_ERROR,
     COLLECTOR_UNAVAILABLE,
     COLLECTOR_UNREACHABLE,
@@ -101,6 +114,14 @@ REMEDIATION: dict[str, str] = {
         "Collector answered with a redirect and the simulator does not follow "
         "them (a redirect usually means a proxy/captive login, not ingestion). "
         "Point collector_url at the final ingestion endpoint."
+    ),
+    COLLECTOR_INTERCEPTED: (
+        "The collector answered 200 but returned an HTML page, not a log-ingest "
+        "acknowledgement. This is almost always a captive portal, SSO wall or "
+        "inspecting proxy standing between SimCore and the collector — the "
+        "records were accepted by the interceptor and never reached Cortex. "
+        "Verify the collector URL from this host with `curl -i` and confirm the "
+        "response is JSON."
     ),
     COLLECTOR_ERROR: (
         "Collector returned a server error — inspect the Broker VM / collector "
@@ -138,14 +159,83 @@ REMEDIATION: dict[str, str] = {
 }
 
 
-def classify_status(status_code: int) -> Optional[str]:
+#: Bytes of the response body worth sniffing for an HTML document. An
+#: interceptor's login page announces itself in the first line; anything past
+#: this is a doctype hidden behind half a kilobyte of whitespace, which no real
+#: portal emits and which is not worth buffering for.
+_BODY_SNIFF_BYTES = 512
+
+_HTML_MARKERS = (b"<html", b"<!doctype html", b"<head", b"<body")
+
+
+def response_evidence(resp: Any) -> tuple[str, bytes]:
+    """Extract ``(content_type, body_prefix)`` from an HTTP response.
+
+    THE single place the collector-POST plugins get delivery evidence, so the
+    three call sites cannot drift into passing different things — a real
+    ``httpx.Response`` always carries both, so in production every 2xx is
+    inspected and a captive-portal login page can never be counted as ingested
+    records.
+
+    Tolerant of objects lacking either attribute purely so a test double is not
+    required to impersonate the whole of httpx. That tolerance is SAFE because
+    it is visible: :class:`DeliveryLedger` counts such a POST under
+    ``delivered_uninspected`` rather than ``delivered_inspected``, so "we never
+    looked" is reported instead of being silently rendered as "we checked and it
+    was fine".
+    """
+    content_type = ""
+    headers = getattr(resp, "headers", None)
+    if headers is not None:
+        try:
+            content_type = headers.get("content-type", "") or ""
+        except AttributeError:  # pragma: no cover - exotic double
+            content_type = ""
+    body = getattr(resp, "content", b"") or b""
+    if not isinstance(body, bytes):
+        body = str(body).encode("utf-8", "replace")
+    return content_type, body[:512]
+
+
+def looks_like_html(content_type: str = "", body_prefix: bytes = b"") -> bool:
+    """Is this response an HTML document rather than an ingest acknowledgement?
+
+    Two independent signals, because an interceptor may set either without the
+    other: the declared content-type, and the body itself. A log collector never
+    answers a JSON/NDJSON POST with an HTML document, so either signal is
+    sufficient.
+    """
+    ctype = (content_type or "").strip().lower()
+    if ctype.startswith("text/html") or ctype.startswith("application/xhtml"):
+        return True
+    if body_prefix:
+        head = bytes(body_prefix[:_BODY_SNIFF_BYTES]).lstrip().lower()
+        return any(head.startswith(m) or m in head for m in _HTML_MARKERS)
+    return False
+
+
+def classify_status(
+    status_code: int,
+    *,
+    content_type: str = "",
+    body_prefix: bytes = b"",
+) -> Optional[str]:
     """Map an HTTP status onto a taxonomy code; ``None`` means delivered.
 
-    Only 2xx counts as delivered. 3xx is explicitly a failure because every
-    collector-POST client in this package runs with ``follow_redirects=False``
-    — a redirect is a black hole, not an ingest.
+    Only 2xx counts as delivered — and only when the 2xx body is not an HTML
+    document. 3xx is explicitly a failure because every collector-POST client in
+    this package runs with ``follow_redirects=False``: a redirect is a black
+    hole, not an ingest.
+
+    ``content_type`` / ``body_prefix`` are keyword-only and default to empty so
+    a caller that has not been wired up yet keeps its previous behaviour rather
+    than crashing — but a caller that passes NEITHER is not proving delivery,
+    only proving a status code, and ``DeliveryLedger`` records that distinction
+    explicitly (see ``content_type_evidence``).
     """
     if 200 <= status_code < 300:
+        if looks_like_html(content_type, body_prefix):
+            return COLLECTOR_INTERCEPTED
         return None
     if 300 <= status_code < 400:
         return COLLECTOR_REDIRECTED
@@ -212,22 +302,46 @@ class DeliveryLedger:
     bytes_attempted: int = 0
     bytes_delivered: int = 0
     status_counts: dict[int, int] = dataclasses.field(default_factory=dict)
+    #: 2xx responses whose content-type/body WAS inspected for the captive-portal
+    #: shape, and those where the caller supplied neither signal. A campaign that
+    #: reports `delivered` on responses nobody inspected has proved a status
+    #: code, not an ingest — and the rollup says so rather than implying the
+    #: interception check ran.
+    delivered_inspected: int = 0
+    delivered_uninspected: int = 0
     _failures: dict[str, _FailureBucket] = dataclasses.field(default_factory=dict)
 
     # -- recording -------------------------------------------------------
 
     def record_response(
-        self, status_code: int, *, records: int, wire_bytes: int,
+        self,
+        status_code: int,
+        *,
+        records: int,
+        wire_bytes: int,
+        content_type: str = "",
+        body_prefix: bytes = b"",
     ) -> Optional[str]:
         """Account one POST that got an HTTP response. Returns the failure code
-        (``None`` when the collector accepted it)."""
+        (``None`` when the collector accepted it).
+
+        Pass ``content_type`` (and ideally the first bytes of the body) so a 200
+        carrying a captive-portal login page is classified as
+        ``collector_intercepted`` rather than counted as a delivered record.
+        """
         self.records_attempted += records
         self.requests_attempted += 1
         self.bytes_attempted += wire_bytes
         self.status_counts[status_code] = self.status_counts.get(status_code, 0) + 1
 
-        code = classify_status(status_code)
+        code = classify_status(
+            status_code, content_type=content_type, body_prefix=body_prefix,
+        )
         if code is None:
+            if content_type or body_prefix:
+                self.delivered_inspected += 1
+            else:
+                self.delivered_uninspected += 1
             self.records_delivered += records
             self.requests_delivered += 1
             self.bytes_delivered += wire_bytes
@@ -308,9 +422,32 @@ class DeliveryLedger:
             parts.append(bucket.sample_error)
         return " — ".join(parts)
 
+    @property
+    def content_type_evidence(self) -> str:
+        """``full`` | ``partial`` | ``absent`` | ``not_applicable``.
+
+        States whether the captive-portal check actually ran on the responses
+        this step counted as delivered. ``absent`` means the step's verdict
+        rests on the status code alone — an interceptor answering 200 with an
+        HTML login page would have been counted as a delivery, so the verdict
+        must not be read as proof of ingest.
+        """
+        inspected = self.delivered_inspected
+        uninspected = self.delivered_uninspected
+        if inspected + uninspected == 0:
+            return "not_applicable"
+        if uninspected == 0:
+            return "full"
+        if inspected == 0:
+            return "absent"
+        return "partial"
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "outcome": self.outcome,
+            "content_type_evidence": self.content_type_evidence,
+            "delivered_inspected": self.delivered_inspected,
+            "delivered_uninspected": self.delivered_uninspected,
             "records_attempted": self.records_attempted,
             "records_delivered": self.records_delivered,
             "requests_attempted": self.requests_attempted,
@@ -357,6 +494,8 @@ def summarise_step_results(step_results: Iterable[dict[str, Any]]) -> dict[str, 
     steps_total = 0
     steps_with_delivery = 0
     failure_codes: dict[str, int] = {}
+    inspected = 0
+    uninspected = 0
 
     for result in step_results:
         steps_total += 1
@@ -366,6 +505,8 @@ def summarise_step_results(step_results: Iterable[dict[str, Any]]) -> dict[str, 
         steps_with_delivery += 1
         for key in totals:
             totals[key] += int(delivery.get(key) or 0)
+        inspected += int(delivery.get("delivered_inspected") or 0)
+        uninspected += int(delivery.get("delivered_uninspected") or 0)
         for failure in delivery.get("failures") or []:
             code = failure.get("code")
             if code:
@@ -385,6 +526,28 @@ def summarise_step_results(step_results: Iterable[dict[str, Any]]) -> dict[str, 
         verdict = "delivered"
 
     dominant = max(failure_codes, key=lambda c: failure_codes[c]) if failure_codes else None
+
+    # How much of a 'delivered'/'partial' verdict was actually inspected for the
+    # captive-portal shape. Reported alongside the verdict so nobody reads a
+    # green campaign as proof of ingest when the only evidence was a 2xx.
+    if inspected + uninspected == 0:
+        evidence = "not_applicable"
+    elif uninspected == 0:
+        evidence = "full"
+    elif inspected == 0:
+        evidence = "absent"
+    else:
+        evidence = "partial"
+    evidence_caveat = ""
+    if evidence in ("absent", "partial") and verdict in ("delivered", "partial"):
+        evidence_caveat = (
+            f"{uninspected} accepted response(s) were classified on the HTTP "
+            f"status alone — their content-type was not inspected, so a captive "
+            f"portal or SSO wall answering 200 with an HTML login page would "
+            f"have been counted as a delivery. Confirm the collector answers "
+            f"JSON with `curl -i` from this host before reporting ingest."
+        )
+
     return {
         "delivery_verdict": verdict,
         "steps_total": steps_total,
@@ -393,6 +556,8 @@ def summarise_step_results(step_results: Iterable[dict[str, Any]]) -> dict[str, 
         "failure_codes": dict(sorted(failure_codes.items())),
         "dominant_failure": dominant,
         "remediation": REMEDIATION.get(dominant, "") if dominant else "",
+        "content_type_evidence": evidence,
+        "evidence_caveat": evidence_caveat,
     }
 
 
