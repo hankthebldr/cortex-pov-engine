@@ -48,6 +48,42 @@ function apiError(message, { code = null, detail = null, status = null } = {}) {
 }
 
 /**
+ * How long the console waits for SimCore before calling it a failure.
+ *
+ * WHY THIS EXISTS: `fetch` has no default timeout, so a SimCore that accepts the
+ * connection and never answers hangs the calling surface FOREVER — a spinner
+ * that spins for the length of a customer meeting. That is not hypothetical
+ * here: a blocking tenant call inside an async handler was measured stalling
+ * `/api/health` for 28 seconds, during which every console request queued behind
+ * it. A spinner and a blank screen are the same outcome to the operator, and
+ * neither says which one it is. A named REQUEST_TIMEOUT does.
+ */
+export const REQUEST_TIMEOUT_MS = 20_000
+/** Reports and bundles are generated on demand and legitimately take longer. */
+export const DOWNLOAD_TIMEOUT_MS = 60_000
+
+/**
+ * Attach an abort signal unless the caller brought their own.
+ *
+ * A caller-supplied signal WINS — `useShelf` owns a 180 s staging deadline and
+ * a 20 s default would cut a legitimate large download in half.
+ */
+function armTimeout(options, ms) {
+  if (options.signal) return { signal: options.signal, cleanup: () => {}, timedOut: () => false }
+  if (typeof AbortController === 'undefined') {
+    return { signal: undefined, cleanup: () => {}, timedOut: () => false }
+  }
+  const controller = new AbortController()
+  let fired = false
+  const timer = setTimeout(() => { fired = true; controller.abort() }, ms)
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timer),
+    timedOut: () => fired,
+  }
+}
+
+/**
  * Core fetch wrapper — handles JSON parsing and structured error extraction.
  * On non-2xx response, throws Error with the message from JSON body.
  */
@@ -65,7 +101,27 @@ export async function request(path, options = {}) {
     headers: { ...defaults.headers, ...(options.headers || {}) },
   }
 
-  const response = await fetch(url, config)
+  const budgetMs = options._timeoutMs
+    ?? (options._returnBlob ? DOWNLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS)
+  const timeout = armTimeout(options, budgetMs)
+  if (timeout.signal) config.signal = timeout.signal
+
+  let response
+  try {
+    response = await fetch(url, config)
+  } catch (err) {
+    if (timeout.timedOut()) {
+      throw apiError(
+        `SimCore did not answer ${path} in ${Math.round(budgetMs / 1000)}s. `
+        + 'Check /api/health — a blocked event loop or an unreachable dependency stalls every '
+        + 'request behind it.',
+        { code: 'REQUEST_TIMEOUT', detail: { path, timeout_ms: budgetMs }, status: null },
+      )
+    }
+    throw err
+  } finally {
+    timeout.cleanup()
+  }
 
   if (!response.ok) {
     const fallback = `HTTP ${response.status} — ${response.statusText}`
@@ -1038,4 +1094,98 @@ export async function startXsiamXql(name, body) {
  */
 export async function getXsiamXqlResults(name, queryId) {
   return request(`/api/xsiam/tenants/${encodeURIComponent(name)}/xql/${encodeURIComponent(queryId)}`)
+}
+
+// ─── Readiness ───────────────────────────────────────────────────────────────
+//
+// The surface that answers "am I ready to run this in front of a customer?"
+// BEFORE the customer is watching. Every helper below is OPTIONAL on the
+// server: a SimCore that predates the endpoint answers 404, and the caller
+// renders that as a NAMED CAPABILITY GAP — never as a zero, and never as ok.
+
+/**
+ * GET /api/credentials/integrations[?kind=…]
+ *
+ * ALL integration credentials, not just `xsiam_tenant`. The console has to show
+ * both Cortex credential kinds side by side: `xsiam` buys alert read-back and
+ * `xsiam_tenant` buys XQL, and configuring the first does not authorise the
+ * second. A surface that lists only one lets a DC believe they have a capability
+ * they never registered.
+ *
+ * @param {string|null} kind
+ * @returns {Promise<Array>}
+ */
+export async function listIntegrations(kind = null) {
+  const suffix = kind ? `?kind=${encodeURIComponent(kind)}` : ''
+  const data = await request(`/api/credentials/integrations${suffix}`)
+  return Array.isArray(data) ? data : data?.integrations ?? []
+}
+
+/**
+ * GET /api/connectors — the read-back connector kinds and whether each has a
+ * usable credential. Returns the RAW body so `connectors[]` keeps its envelope.
+ */
+export async function getConnectors() {
+  return request('/api/connectors')
+}
+
+/**
+ * POST /api/xsiam/tenants/:name/preflight — the staged, read-only connection
+ * check (config → dns → tls → auth → scope → datasets → quota → clock).
+ *
+ * Resolves `{ _unavailable: true }` on 404 rather than throwing: a SimCore
+ * without the endpoint has not FAILED preflight, it cannot RUN one, and the two
+ * must not render the same.
+ */
+/**
+ * Preflight ONE registered xsiam_tenant integration by name.
+ *
+ * There is no `/api/xsiam/tenants/{name}/preflight` — that path was never
+ * implemented, and because `/api/xsiam/...` has other routes it answers 405
+ * rather than 404, so the `_unavailable` fallback below never fired and the
+ * button just threw. The real surface is the same connector preflight every
+ * other kind uses; it takes the integration name as a query param.
+ */
+export async function preflightXsiamTenant(name) {
+  const qs = name ? `?integration=${encodeURIComponent(name)}` : ''
+  try {
+    return await request(`/api/connectors/xsiam_tenant/preflight${qs}`, { method: 'POST' })
+  } catch (err) {
+    // A deploy that predates the connector preflight router answers 404. That
+    // is "this tenant CANNOT be checked", not "this tenant FAILED a check", and
+    // collapsing the two would let an unverifiable credential read as a broken
+    // one. Note the old code caught 404 on a path that never existed at all —
+    // which answers 405, so this branch could never fire.
+    if (err && (err.status === 404 || err.status === 405)) {
+      return { _unavailable: true, tenant: name }
+    }
+    throw err
+  }
+}
+
+/**
+ * POST /api/connectors/:kind/preflight — same staged check for the reconcile
+ * credential, whose first exercise is otherwise a live run mid-demo.
+ */
+export async function preflightConnector(kind) {
+  try {
+    return await request(`/api/connectors/${encodeURIComponent(kind)}/preflight`, { method: 'POST' })
+  } catch (err) {
+    if (err && err.status === 404) return { _unavailable: true, kind }
+    throw err
+  }
+}
+
+/**
+ * GET /api/agents/install/attempts — enrolment telemetry, so "ran the one-liner,
+ * nothing appeared" has an answer on the readiness surface.
+ */
+export async function getInstallAttempts() {
+  try {
+    const data = await request('/api/agents/install/attempts')
+    return Array.isArray(data) ? data : data?.attempts ?? []
+  } catch (err) {
+    if (err && err.status === 404) return null
+    throw err
+  }
 }
