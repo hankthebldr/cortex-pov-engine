@@ -91,9 +91,16 @@ RUN apk add --no-cache \
 # its own tree, and it writes it into this copy.
 
 # --- ackbarx: SNMP trap forwarder. rustls-tls, no C dependencies. ---
-COPY sources/ackbarx/Cargo.toml /src/ackbarx/Cargo.toml
-COPY sources/ackbarx/src/       /src/ackbarx/src/
+# Directory-level COPY, deliberately: a missing FILE makes COPY fail the whole
+# build, an EMPTY DIRECTORY does not. `git clone` without --recursive leaves
+# sources/<tool>/ empty, and before this the image could not be built at all
+# from such a tree — a hard regression for anyone who cloned normally, and what
+# broke the e2e job, which checks out with submodules disabled on purpose.
+# .dockerignore keeps host-built target/ out of the context.
+COPY sources/ackbarx/ /src/ackbarx/
 RUN cd /src/ackbarx \
+    && if [ ! -f Cargo.toml ]; then \
+         echo "[rust-dist] SKIP ackbarx: submodule not checked out"; exit 0; fi \
     && RUSTFLAGS="-C target-feature=+crt-static" \
        cargo build --release --target x86_64-unknown-linux-musl \
     && cp target/x86_64-unknown-linux-musl/release/ackbarx \
@@ -103,10 +110,10 @@ RUN cd /src/ackbarx \
 # OPENSSL_NO_VENDOR stops openssl-sys from trying to compile its own copy (it
 # would need the `vendored` feature, which is not enabled in the submodule);
 # OPENSSL_STATIC + OPENSSL_DIR point it at alpine's libssl.a/libcrypto.a.
-COPY sources/xdrtop/Cargo.toml /src/xdrtop/Cargo.toml
-COPY sources/xdrtop/Cargo.lock /src/xdrtop/Cargo.lock
-COPY sources/xdrtop/src/       /src/xdrtop/src/
+COPY sources/xdrtop/ /src/xdrtop/
 RUN cd /src/xdrtop \
+    && if [ ! -f Cargo.toml ]; then \
+         echo "[rust-dist] SKIP xdrtop: submodule not checked out"; exit 0; fi \
     && RUSTFLAGS="-C target-feature=+crt-static" \
        OPENSSL_STATIC=1 OPENSSL_NO_VENDOR=1 OPENSSL_DIR=/usr \
        cargo build --release --target x86_64-unknown-linux-musl \
@@ -126,11 +133,10 @@ RUN cd /src/xdrtop \
 # Because this image is musl-native, the helper's own build.sh recipe
 # (x86_64-unknown-linux-musl + crt-static) is what a plain release build already
 # produces here.
-COPY sources/signalbench/Cargo.toml /src/signalbench/Cargo.toml
-COPY sources/signalbench/Cargo.lock /src/signalbench/Cargo.lock
-COPY sources/signalbench/src/       /src/signalbench/src/
-COPY sources/signalbench/helpers/   /src/signalbench/helpers/
+COPY sources/signalbench/ /src/signalbench/
 RUN cd /src/signalbench \
+    && if [ ! -f Cargo.toml ]; then \
+         echo "[rust-dist] SKIP signalbench: submodule not checked out"; exit 0; fi \
     && test -f helpers/pacemaker/Cargo.toml || { \
          echo "FATAL: sources/signalbench/helpers/pacemaker is missing."; \
          echo "  signalbench's lib embeds helpers/pacemaker's output via"; \
@@ -155,6 +161,14 @@ RUN cd /src/signalbench \
 # release that changes the env-var contract — would otherwise reintroduce the
 # exact portability failure this stage removes, without failing the build.
 RUN set -eu; \
+    if ! ls /out/cortexsim-tool-*-linux-amd64 >/dev/null 2>&1; then \
+        echo "[rust-dist] NO tools built — the submodules are not checked out."; \
+        echo "  The image will serve an EMPTY rust shelf and /api/tools/binaries"; \
+        echo "  will report total: 0. That is the honest state, not a failure:"; \
+        echo "  a normal \`git clone\` must still be able to build this image."; \
+        echo "  To ship the Rust tools: git submodule update --init --recursive"; \
+        exit 0; \
+    fi; \
     for f in /out/cortexsim-tool-*-linux-amd64; do \
         if readelf -l "$f" | grep -q INTERP; then \
             echo "FATAL: $f has a PT_INTERP segment — it is dynamically linked."; \
@@ -186,6 +200,21 @@ ARG XDRTOP_COMMIT=""
 # from. Rendered deterministically — fixed key order, no timestamp, no hostname,
 # no builder username — so two builds of the same inputs are diffable.
 RUN set -eu; cd /out; \
+    if ! ls cortexsim-tool-* >/dev/null 2>&1; then \
+        : > SHA256SUMS; \
+        printf '%s\n' '{' \
+          '  "$generated": { "by": "core/Dockerfile rust-builder stage", "schema": 1 },' \
+          '  "builder_image": "rust:1.90-alpine",' \
+          '  "target": "x86_64-unknown-linux-musl",' \
+          '  "platform": "linux/amd64",' \
+          '  "provenance": "not_built",' \
+          '  "tools": [],' \
+          '  "unsupported_targets": [],' \
+          '  "not_built_reason": "the tier-2 Rust submodules were not checked out in this build context; run git submodule update --init --recursive and rebuild"' \
+          '}' > MANIFEST.json; \
+        echo "[rust-dist] wrote an EMPTY manifest with provenance not_built"; \
+        exit 0; \
+    fi; \
     sha256sum cortexsim-tool-* > SHA256SUMS; \
     prov="recorded"; \
     [ -n "$SIGNALBENCH_COMMIT$ACKBARX_COMMIT$XDRTOP_COMMIT" ] || prov="unrecorded"; \
