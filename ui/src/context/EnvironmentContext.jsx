@@ -8,6 +8,7 @@ import React, {
 } from 'react'
 import usePinnedScenarios from '../components/console/usePinnedScenarios.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
+import { buildHealthModel } from '../components/console/readiness/healthModel.js'
 import {
   getHealth,
   getRuns,
@@ -84,6 +85,7 @@ const DEFAULT_ENV = {
   agents: [],
   health: { hostname: '', version: 'v1.0', sensors: {}, tenantHealth: null },
   apiError: null,
+  healthModel: null,
   scenarios: [],
   planes: [],
   runs: [],
@@ -127,6 +129,10 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     sensors: {},
   })
   const [tenantHealth, setTenantHealth] = useState(null)
+  // undefined = never probed · null = probe failed · object = the raw body.
+  // Three states, because "not yet asked" and "asked and it failed" must not
+  // render the same on a readiness banner.
+  const [healthBody, setHealthBody] = useState(undefined)
   // Non-null when the last /api/health probe failed — the console is talking
   // to nothing and every surface below it will look empty rather than broken.
   const [apiError, setApiError] = useState(null)
@@ -194,6 +200,11 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     return getHealth()
       .then((d) => {
         setApiError(null)
+        // Keep the RAW body. The console used to read three scalars off /api/health
+        // and drop the per-component map — so a SimCore booted without tools/
+        // (adapter_catalog count 0, every adapter_ref unresolvable) looked
+        // identical to a healthy one everywhere except a page nobody had opened.
+        setHealthBody(d || null)
         if (!d) return
         setBaseHealth({
           hostname: d.hostname || (typeof window !== 'undefined' ? window.location.hostname : 'lab'),
@@ -203,7 +214,10 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
           sensors: {},
         })
       })
-      .catch((err) => setApiError(err?.message || 'SimCore unreachable'))
+      .catch((err) => {
+        setHealthBody(null)
+        setApiError(err?.message || 'SimCore unreachable')
+      })
   }, [])
 
   // Per-tenant health — refetched whenever the active tenant changes.
@@ -341,10 +355,17 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     }
   }, [baseHealth, tenantHealth])
 
+  // Component-level readiness, derived once here so the banner, the header and
+  // the Readiness surface cannot disagree about whether this deployment is whole.
+  const healthModel = useMemo(
+    () => (healthBody === undefined ? null : buildHealthModel(healthBody, { error: apiError })),
+    [healthBody, apiError],
+  )
+
   const value = useMemo(() => ({
     tenant, tenants,
     agent, agents,
-    health, apiError,
+    health, apiError, healthModel,
     scenarios, planes,
     runs, activeRun, lastRun,
     pinnedIds,
@@ -353,7 +374,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     setTenant, setAgent,
     refreshHealth, refreshRuns, refreshScenarios, refreshAgents, refreshTenants,
   }), [
-    tenant, tenants, agent, agents, health, apiError, scenarios, planes, runs, activeRun,
+    tenant, tenants, agent, agents, health, apiError, healthModel, scenarios, planes, runs, activeRun,
     lastRun, pinnedIds, loading, isPinned, togglePin, unpin, setTenant, setAgent,
     refreshHealth, refreshRuns, refreshScenarios, refreshAgents, refreshTenants,
   ])

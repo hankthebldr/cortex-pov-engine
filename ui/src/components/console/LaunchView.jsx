@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import useLaunchScenario from './useLaunchScenario.js'
-import { getToolAdapters } from '../../api/client.js'
+import { getToolAdapters, listIntegrations } from '../../api/client.js'
 import useShelf from './useShelf.js'
 import { SUPPLY, supplyOf, shortDigest } from './supplyState.js'
+import ScenarioPreflightCard from './ScenarioPreflightCard.jsx'
+import { preflightScenario } from './readiness/scenarioPreflight.js'
 
 /**
  * LaunchView — ③ Launch: arm a scenario against a target and fire.
@@ -95,6 +97,31 @@ export default function LaunchView({
     return declared.filter((n) => !shelf.shelf.stagedNames.has(n))
   }, [scenario, shelf.shelf])
 
+  // ── Preflight inputs ──────────────────────────────────────────────────
+  // Integrations answer "can anything measure this run?". A failure here is
+  // NULL, not [] — "we could not ask" and "nothing is configured" produce
+  // different advice and must not render the same.
+  const [integrations, setIntegrations] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    listIntegrations()
+      .then((list) => { if (!cancelled) setIntegrations(Array.isArray(list) ? list : null) })
+      .catch(() => { if (!cancelled) setIntegrations(null) })
+    return () => { cancelled = true }
+  }, [])
+
+  const preflight = useMemo(() => preflightScenario({
+    scenario,
+    target: selectedTarget,
+    agents: launch.agents,
+    shelf: shelf.shelf,
+    adapterIndex,
+    integrations,
+    identity: launch.identity,
+    pushFormat: launch.pushFormat,
+  }), [scenario, selectedTarget, launch.agents, shelf.shelf, adapterIndex, integrations,
+       launch.identity, launch.pushFormat])
+
   const needsSim = gated.dualUse.length > 0
   const needsC2  = gated.c2.length > 0
   const consentBlocked =
@@ -122,8 +149,18 @@ export default function LaunchView({
         + '(PAYLOAD_NOT_STAGED). Stage it in Tools & Payloads.',
       )
     }
+    // Preflight rows marked BLOCK are conditions SimCore's own guards refuse
+    // (or that cannot execute at all). They belong in the same list, in the
+    // operator's words. `tools` and the no-target case are already stated
+    // above; adding them again would read as two separate problems.
+    for (const c of preflight.blocking) {
+      if (c.id === 'tools') continue
+      if (c.id === 'target' && !selectedTarget) continue
+      out.push(`${c.label}: ${c.summary} — ${c.remediation || c.detail}`)
+    }
     return out
-  }, [launch.blockers, selectedTarget, needsSim, needsC2, launch.consent, missingDeclaredPayloads])
+  }, [launch.blockers, selectedTarget, needsSim, needsC2, launch.consent, missingDeclaredPayloads,
+      preflight.blocking])
 
   // ── Guard rails — guide the operator back to the missing step ──────────
   if (!scenario) {
@@ -163,6 +200,21 @@ export default function LaunchView({
           <p className="launch-card__desc">{scenario.tc_name || scenario.uc_name || ''}</p>
           <button type="button" className="btn" onClick={onGoLibrary}>Change scenario</button>
         </section>
+
+        {/* preflight — every precondition, checked here rather than discovered
+            mid-demo. Rendered before the payload plan because tool supply is
+            one of the things it reports on. */}
+        <ScenarioPreflightCard
+          scenario={scenario}
+          target={selectedTarget}
+          agents={launch.agents}
+          shelf={shelf.shelf}
+          adapterIndex={adapterIndex}
+          integrations={integrations}
+          identity={launch.identity}
+          pushFormat={launch.pushFormat}
+          onNavigate={onNavigate}
+        />
 
         {/* payload plan — what tooling this run carries, and who fetches it */}
         <PayloadPlanCard

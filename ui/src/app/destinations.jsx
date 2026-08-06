@@ -12,6 +12,7 @@ import ToolAdapterCatalog, { decodePlan } from '../components/console/ToolAdapte
 import UcTcIndexView from '../components/console/UcTcIndexView.jsx'
 import LabView from '../components/console/LabView.jsx'
 import TenantManager from '../components/console/TenantManager.jsx'
+import ReadinessView from '../components/console/ReadinessView.jsx'
 import EalConsole from '../components/EalConsole.jsx'
 
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
@@ -277,6 +278,10 @@ function UcTcSurface({ params = {}, setParams = () => {}, onNavigate = () => {} 
 }
 function EalSurface() { return <EalConsole /> }
 function EnvironmentsSurface() { return <LabView /> }
+// Readiness is grouped under Manage, next to Agents and Tenants — the three
+// things a DC configures before a POV. It is deliberately NOT the default
+// destination: a health page that greets you every morning stops being read.
+function ReadinessSurface({ onNavigate = () => {} }) { return <ReadinessView onNavigate={onNavigate} /> }
 function AgentsSurface() { return <TargetsView /> }
 function TenantsSurface() { return <TenantManager /> }
 
@@ -294,6 +299,7 @@ export const DESTINATIONS = [
   { id: 'environments', label: 'Environments',  group: 'Infrastructure', icon: '☁', Component: EnvironmentsSurface },
   { id: 'agents',       label: 'Agents',        group: 'Manage',         icon: '◉', Component: AgentsSurface },
   { id: 'tenants',      label: 'Tenants',       group: 'Manage',         icon: '⬡', Component: TenantsSurface },
+  { id: 'readiness',    label: 'Readiness',     group: 'Manage',         icon: '✓', Component: ReadinessSurface, badge: 'degraded' },
   // Hidden route — the optional guided demo path, reachable from Library + ⌘K.
   { id: 'guided',       label: 'New POV run',   group: null, hidden: true, icon: '▸', Component: GuidedPovFlow },
 ]

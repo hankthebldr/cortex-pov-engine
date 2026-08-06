@@ -5645,3 +5645,181 @@
 .theme-console .insp-tool__id { font-size: 11px; }
 .theme-console .insp-tool__egress { font-size: 10px; color: var(--c-text-muted); flex: 1 1 100%; }
 .theme-console .insp-tool__warn { margin-top: 8px; font-size: 11px; color: var(--c-pending); line-height: 1.5; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   READINESS — "am I ready to run this in front of a customer?"
+   Cortex tokens only (--cortex-navy #003366 · --cortex-teal #00C0E8 ·
+   --cortex-steel #6B7E8E, via the console's --c-* aliases). Every state
+   carries a TEXT label as well as a colour: a projector flattens hue and
+   WCAG 1.4.1 does not accept colour as the only signal.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.theme-console .readiness { display: flex; flex-direction: column; gap: 20px; }
+.theme-console .readiness__loading {
+  padding: 48px; text-align: center; color: var(--c-text-muted);
+  font-family: var(--font-mono); font-size: 12px;
+}
+.theme-console .readiness__head-actions { display: flex; align-items: center; gap: 10px; }
+.theme-console .readiness__stamp { font-size: 10.5px; color: var(--c-text-muted); }
+
+.theme-console .readiness__section {
+  border: 1px solid var(--c-hairline); border-radius: 3px;
+  background: var(--c-surface-raised); padding: 16px 18px;
+}
+.theme-console .readiness__section--gaps { border-left: 2px solid var(--c-text-muted); }
+.theme-console .readiness__h {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
+  color: var(--c-text); margin: 0 0 4px;
+}
+.theme-console .readiness__h-meta { font-size: 10.5px; color: var(--c-text-muted); font-weight: 400; }
+.theme-console .readiness__lede {
+  font-size: 11.5px; line-height: 1.6; color: var(--c-text-secondary); margin: 0 0 14px;
+}
+.theme-console .readiness__invariant {
+  margin-top: 14px; padding: 10px 12px; font-size: 11.5px; line-height: 1.6;
+  color: var(--c-text); background: var(--c-signal-soft);
+  border-left: 2px solid var(--cortex-teal, #00C0E8); border-radius: 2px;
+}
+.theme-console .readiness__empty {
+  padding: 14px; font-size: 11.5px; line-height: 1.6; color: var(--c-text-secondary);
+  border: 1px dashed var(--c-hairline-strong); border-radius: 3px;
+}
+.theme-console .readiness__empty p { margin: 0 0 10px; }
+
+/* SimCore unreachable — the loud one. */
+.theme-console .readiness__down {
+  border: 1px solid var(--c-missed); background: var(--c-missed-soft);
+  border-radius: 3px; padding: 16px 18px;
+}
+.theme-console .readiness__down-tag {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+  color: var(--c-missed); font-weight: 700;
+}
+.theme-console .readiness__down-msg { font-size: 12px; line-height: 1.6; color: var(--c-text); margin: 8px 0; }
+.theme-console .readiness__down-hint { font-size: 11px; line-height: 1.6; color: var(--c-text-secondary); margin: 0; }
+
+/* ── The four-rung connector ladder ─────────────────────────────────── */
+.theme-console .readiness__ladder {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;
+}
+.theme-console .rdy-rung {
+  border: 1px solid var(--c-hairline); border-radius: 3px;
+  background: var(--c-surface); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.theme-console .rdy-rung--yes { border-color: var(--c-detected); }
+.theme-console .rdy-rung--no { border-color: var(--c-pending); }
+.theme-console .rdy-rung--unknown { border-style: dashed; }
+.theme-console .rdy-rung__top { display: flex; align-items: center; gap: 8px; }
+.theme-console .rdy-rung__n {
+  font-size: 10px; color: var(--c-text-muted);
+  border: 1px solid var(--c-hairline-strong); border-radius: 50%;
+  width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
+}
+.theme-console .rdy-rung__label { font-size: 12px; font-weight: 700; color: var(--c-text); flex: 1; }
+.theme-console .rdy-rung__q { font-size: 11px; color: var(--c-text-secondary); }
+.theme-console .rdy-rung__detail { font-size: 11px; line-height: 1.55; color: var(--c-text); }
+.theme-console .rdy-rung__proves { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.theme-console .rdy-rung__proves-yes { font-size: 10.5px; color: var(--c-text-muted); }
+.theme-console .rdy-rung__proves-no { font-size: 10.5px; color: var(--c-pending); }
+
+/* ── Tenants ────────────────────────────────────────────────────────── */
+.theme-console .readiness__tenants { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.theme-console .rdy-tenant {
+  border: 1px solid var(--c-hairline); border-radius: 3px;
+  background: var(--c-surface); padding: 10px 12px;
+}
+.theme-console .rdy-tenant__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.theme-console .rdy-tenant__name { font-size: 12px; font-weight: 700; color: var(--c-text); }
+.theme-console .rdy-tenant__kind { font-size: 11px; color: var(--c-text-secondary); margin-top: 4px; }
+.theme-console .rdy-tenant__host { font-size: 10.5px; color: var(--c-text-muted); }
+.theme-console .rdy-tenant__buys { font-size: 10.5px; color: var(--c-text-muted); margin-top: 6px; line-height: 1.6; }
+.theme-console .rdy-tenant__notbuys { color: var(--c-pending); }
+.theme-console .rdy-tenant__caveat {
+  margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--c-pending);
+}
+
+/* ── Preflight stage checklist ──────────────────────────────────────── */
+.theme-console .rdy-preflight {
+  margin-top: 10px; border-top: 1px solid var(--c-hairline); padding-top: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.theme-console .rdy-preflight--err { color: var(--c-missed); font-size: 11.5px; }
+.theme-console .rdy-preflight--gap { color: var(--c-text-secondary); font-size: 11.5px; line-height: 1.6; }
+.theme-console .rdy-preflight__head { display: flex; align-items: center; gap: 8px; font-size: 10.5px; }
+.theme-console .rdy-preflight__empty { font-size: 11px; color: var(--c-text-muted); }
+.theme-console .rdy-stage { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; }
+.theme-console .rdy-stage__id { font-size: 10.5px; color: var(--c-text-secondary); min-width: 92px; }
+.theme-console .rdy-stage__detail { color: var(--c-text); flex: 1 1 200px; }
+.theme-console .rdy-stage__fix { flex: 1 1 100%; font-size: 10.5px; color: var(--c-pending); line-height: 1.55; }
+
+/* ── Component grid ─────────────────────────────────────────────────── */
+.theme-console .readiness__grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;
+}
+.theme-console .rdy-comp {
+  border: 1px solid var(--c-hairline); border-radius: 3px;
+  background: var(--c-surface); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.theme-console .rdy-comp--degraded { border-left: 2px solid var(--c-pending); }
+.theme-console .rdy-comp--error { border-left: 2px solid var(--c-missed); }
+.theme-console .rdy-comp--ok { border-left: 2px solid var(--c-detected); }
+.theme-console .rdy-comp__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.theme-console .rdy-comp__label { font-size: 12px; font-weight: 600; color: var(--c-text); }
+.theme-console .rdy-comp__count { font-size: 20px; line-height: 1; color: var(--c-text); }
+.theme-console .rdy-comp__purpose { font-size: 10.5px; color: var(--c-text-muted); line-height: 1.5; }
+.theme-console .rdy-comp__disagree { font-size: 11px; color: var(--c-pending); line-height: 1.6; }
+.theme-console .rdy-comp__detail { font-size: 10.5px; color: var(--c-text-secondary); line-height: 1.55; }
+.theme-console .rdy-comp__fix { font-size: 11px; color: var(--c-text); line-height: 1.6; }
+
+/* ── Gap list ───────────────────────────────────────────────────────── */
+.theme-console .readiness__gaps { margin: 0; padding-left: 18px; }
+.theme-console .readiness__gaps li {
+  font-size: 11px; line-height: 1.65; color: var(--c-text-secondary); margin-bottom: 6px;
+}
+
+/* ── Global degraded banner ─────────────────────────────────────────── */
+.theme-console .readiness-banner {
+  border: 1px solid var(--c-pending); background: var(--c-pending-soft);
+  border-radius: 3px; padding: 8px 12px; margin-bottom: 12px;
+}
+.theme-console .readiness-banner__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.theme-console .readiness-banner__tag {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+  font-weight: 700; color: var(--c-pending);
+}
+.theme-console .readiness-banner__count { font-size: 10.5px; color: var(--c-text-secondary); flex: 1; }
+.theme-console .readiness-banner__x {
+  background: none; border: none; color: var(--c-text-muted); cursor: pointer;
+  font-size: 12px; padding: 2px 4px; border-radius: 2px;
+}
+.theme-console .readiness-banner__x:focus-visible { outline: 2px solid var(--cortex-teal, #00C0E8); }
+.theme-console .readiness-banner__list { margin: 6px 0 0; padding-left: 18px; }
+.theme-console .readiness-banner__list li {
+  font-size: 11px; line-height: 1.6; color: var(--c-text); margin-bottom: 3px;
+}
+.theme-console .readiness-banner__fix { color: var(--c-text-secondary); }
+
+/* ── Per-scenario preflight card (inside Launch) ────────────────────── */
+.theme-console .launch-card--preflight { border-left: 2px solid var(--cortex-steel, #6B7E8E); }
+.theme-console .preflight__lede {
+  font-size: 11px; line-height: 1.6; color: var(--c-text-secondary); margin: 4px 0 10px;
+}
+.theme-console .preflight__checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.theme-console .preflight__check { border-top: 1px solid var(--c-hairline); padding-top: 8px; }
+.theme-console .preflight__check:first-child { border-top: none; padding-top: 0; }
+.theme-console .preflight__check-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.theme-console .preflight__check-label { font-size: 11.5px; font-weight: 600; color: var(--c-text); }
+.theme-console .preflight__check-summary { font-size: 10.5px; color: var(--c-text-secondary); flex: 1 1 140px; }
+.theme-console .preflight__check-detail { font-size: 11px; line-height: 1.6; color: var(--c-text); margin-top: 4px; }
+.theme-console .preflight__check-fix { font-size: 11px; line-height: 1.6; color: var(--c-pending); margin-top: 3px; }
+.theme-console .preflight__unknown {
+  margin-top: 10px; font-size: 11px; line-height: 1.6; color: var(--c-text-secondary);
+  border-left: 2px solid var(--c-text-muted); padding-left: 8px;
+}
+.theme-console .preflight__actions { margin-top: 10px; }
+.theme-console .rdy-comp__code {
+  font-size: 10px; letter-spacing: 0.06em; color: var(--c-text-secondary);
+}

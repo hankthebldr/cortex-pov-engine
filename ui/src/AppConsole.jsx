@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from './components/console/AppShell.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import { SurfaceBoundary } from './components/console/SurfaceError.jsx'
+import ReadinessBanner from './components/console/ReadinessBanner.jsx'
 import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.jsx'
 import useConsoleRouter from './app/useConsoleRouter.js'
 import {
@@ -112,11 +113,14 @@ function ConsoleShell() {
   // from the internet mid-run. A number on the nav is the only thing that makes
   // a DC open that surface BEFORE the customer meeting rather than during it.
   const shelf = useShelf({ adapters: toolAdapters })
+  const degradedCount = env.healthModel ? env.healthModel.degraded.length : 0
   const badges = useMemo(() => ({
     scenarioCount: env.scenarios.length ? String(env.scenarios.length) : null,
     live: env.activeRun ? { text: 'LIVE', variant: 'live' } : null,
     targetEgress: shelf.counts.target_egress > 0 ? String(shelf.counts.target_egress) : null,
-  }), [env.scenarios.length, env.activeRun, shelf.counts.target_egress])
+    // A count, never a dot: "3" sends a DC to the page, a coloured pip does not.
+    degraded: degradedCount > 0 ? String(degradedCount) : null,
+  }), [env.scenarios.length, env.activeRun, shelf.counts.target_egress, degradedCount])
 
   const groups = useMemo(() => navGroups(badges), [badges])
 
@@ -263,6 +267,14 @@ function ConsoleShell() {
             </span>
             <button type="button" className="btn btn--xs" onClick={env.refreshHealth}>↻ Retry now</button>
           </div>
+        )}
+
+        {/* SimCore answered, but is not whole. The two deployments that break
+            hardest — booted without tools/ or without scenarios/ — both report
+            `status: "ok"`, so the first signal a DC gets today is an empty
+            Library that reads as "this product has no content". */}
+        {router.destination !== 'readiness' && (
+          <ReadinessBanner model={env.healthModel} onNavigate={router.navigate} />
         )}
 
         <SurfaceBoundary resetKey={router.destination} title={dest.label}>
