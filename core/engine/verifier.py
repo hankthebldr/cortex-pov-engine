@@ -24,6 +24,7 @@ nothing — strictly worse than reporting no score at all. Those resolve to
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -329,23 +330,70 @@ async def verify_results(
     return counts
 
 
+#: The floor below which a row count proves nothing. ``rows >= 0`` is true for
+#: every possible tenant response, including a healthy tenant that ingests
+#: nothing, an empty dataset, and a query against a dataset the customer does
+#: not have. A check that cannot fail cannot pass either — this is the identical
+#: rule ``assertions.py``'s A-17 enforces at load time ("this check can never
+#: fail and therefore proves nothing"); the scenario verification path simply
+#: never had it.
+_MIN_MEANINGFUL_ROWS = 1
+
+
 def _expected_rows_min(result: Any) -> int:
     """Row floor for a result's verification query.
 
-    Sourced from the TTP card's ``xql_queries[].expected_rows_min`` when the
-    result resolves to one, else the schema default of 1.
+    Sourced from the TTP card's ``xql_queries[].expected_rows_min``, matched on
+    the result's OWN ``detection_id``. Matching only on ``purpose == validation``
+    returned the card's FIRST validation query regardless of which detection was
+    being verified — and for seven cards that first entry is an "MTTD Anchor
+    Bookkeeping" query declaring ``expected_rows_min: 0``. Combined with
+    ``PASS if rows >= want`` that made 14 of the 34 seeded results carrying a
+    verification_xql UNFALSIFIABLE: a healthy tenant returning zero rows scored
+    a machine-certified PASS with ``verified_at`` stamped, which is the precise
+    claim a DC would repeat to a customer.
+
+    A declared floor of 0 is therefore CLAMPED to 1 rather than honoured. If a
+    card genuinely wants to assert absence, that is a different predicate and
+    needs its own operator — it is not expressible as a row minimum.
     """
     from engine.ttp_catalog import catalog  # noqa: PLC0415
 
     ttp_ref = getattr(result, "ttp_ref", None)
     raw = catalog.raw(ttp_ref) if ttp_ref else None
-    if isinstance(raw, dict):
-        for q in (raw.get("detections") or {}).get("xql_queries") or []:
-            if isinstance(q, dict) and q.get("purpose") == "validation":
-                got = q.get("expected_rows_min")
-                if isinstance(got, int):
-                    return got
-    return 1
+    if not isinstance(raw, dict):
+        return _MIN_MEANINGFUL_ROWS
+
+    queries = [
+        q for q in ((raw.get("detections") or {}).get("xql_queries") or [])
+        if isinstance(q, dict) and q.get("purpose") == "validation"
+    ]
+    detection_id = getattr(result, "detection_id", None)
+
+    chosen = None
+    if detection_id:
+        for q in queries:
+            if q.get("detection_id") == detection_id:
+                chosen = q
+                break
+    if chosen is None:
+        # No per-detection query. Fall back to the card-level floor ONLY when the
+        # card declares exactly one validation query — with several, "the first
+        # one" is an arbitrary pick that silently scores one detection against
+        # another's threshold.
+        if len(queries) == 1:
+            chosen = queries[0]
+
+    got = chosen.get("expected_rows_min") if chosen else None
+    if not isinstance(got, int):
+        return _MIN_MEANINGFUL_ROWS
+    if got < _MIN_MEANINGFUL_ROWS:
+        logger.warning(
+            "expected_rows_min=%s on %s/%s cannot fail; clamping to %s",
+            got, ttp_ref, detection_id or "?", _MIN_MEANINGFUL_ROWS,
+        )
+        return _MIN_MEANINGFUL_ROWS
+    return got
 
 
 async def verify_run(
@@ -428,16 +476,25 @@ def tc_scoreable_for(tc_ref: Optional[str]) -> bool:
 
 
 def xsiam_query_runner(client: Any, timeframe: dict[str, Any]) -> QueryRunner:
-    """Adapt an XSIAM client into a :data:`QueryRunner` returning a row count."""
+    """Adapt an XSIAM client into a :data:`QueryRunner` returning a row count.
+
+    The unwrapping lives in ``integrations.xsiam.queries`` — deliberately NOT
+    inlined here. This function previously carried its own copy that read
+    ``len(reply.get("results") or [])``; because XSIAM returns ``results`` as
+    ``{"data": [...]}``, a zero-row reply measured as **1** and
+    ``verify_results`` scored ``rows(1) >= want(1)`` as **pass** — a detection
+    that never fired, reported green. There is now exactly one unwrapper.
+
+    It also does not swallow a shape it does not recognise: ``row_count``
+    raises, ``verify_results`` catches any runner exception and records
+    ``pending``. An unparseable reply is an open question, not a failed
+    detection.
+    """
+    from integrations.xsiam.queries import row_count  # noqa: PLC0415
 
     async def _run(query: str) -> int:
-        reply = await client.run_xql(query, timeframe)
-        if not isinstance(reply, dict):
-            return 0
-        total = reply.get("number_of_results")
-        if isinstance(total, int):
-            return total
-        return len(reply.get("results") or [])
+        async with _tenant_budget(client):
+            return row_count(await client.run_xql(query, timeframe))
 
     return _run
 
@@ -450,16 +507,75 @@ ScalarRunner = Callable[[str], Awaitable[list[dict[str, Any]]]]
 
 
 def xsiam_rows_runner(client: Any, timeframe: dict[str, Any]) -> ScalarRunner:
-    """Adapt an XSIAM client into a :data:`ScalarRunner` returning result rows."""
+    """Adapt an XSIAM client into a :data:`ScalarRunner` returning result rows.
+
+    Every assertion probe (POS/PLT/AUT — the mechanism that owns 140 of the
+    index's open rows) runs through here. The previous inline unwrap iterated
+    the ``results`` **dict**, yielding its keys, which all failed the
+    ``isinstance(r, dict)`` filter — so this returned ``[]`` unconditionally
+    against a healthy tenant. ``XqlRowsProbe`` reads that as a MEASURED row
+    count of 0 and evaluates it against the authored floor, so all 18 assertion
+    artifacts would have reported **fail**. The A-17 guard cannot catch it: it
+    proves the *evaluator* can go red, not that the *runner* can return rows.
+    """
+    from integrations.xsiam.queries import result_rows  # noqa: PLC0415
 
     async def _run(query: str) -> list[dict[str, Any]]:
-        reply = await client.run_xql(query, timeframe)
-        if not isinstance(reply, dict):
-            return []
-        rows = reply.get("results") or []
-        return [r for r in rows if isinstance(r, dict)]
+        async with _tenant_budget(client):
+            return result_rows(await client.run_xql(query, timeframe))
 
     return _run
+
+
+def tenant_ledger_key(base_url: str) -> str:
+    """THE ledger key for a tenant, derived from its base URL.
+
+    Public because more than one surface needs it and they MUST agree. The
+    health component used to snapshot the ledger by INTEGRATION NAME while this
+    module charged and tripped it by tenant HOST, so the two looked at different
+    rows: a breaker could be open, every verify degrading to pending, and
+    ``/api/health`` would report ``breaker_open: false`` with a full quota. A
+    diagnostic surface that cannot see the thing it exists to report is worse
+    than not having it.
+    """
+    return str(base_url or "").split("://")[-1].split("/")[0] or "default"
+
+
+def _tenant_name(client: Any) -> str:
+    """A stable ledger key for a client — its tenant host.
+
+    Derived rather than passed so EVERY caller is accounted whether or not it
+    remembered to name the tenant. An unattributed query is an unbudgeted query.
+    """
+    return tenant_ledger_key(str(getattr(client, "_base", "") or ""))
+
+
+@contextlib.asynccontextmanager
+async def _tenant_budget(client: Any):
+    """Charge the process-wide tenant ledger around one XQL call.
+
+    Deliberately HERE rather than only in ``connectors.service._budgeted``:
+    ``_budgeted`` wraps the sweep and the manual verify endpoint, but assertion
+    runs (``/api/assertions/{id}/run``) build a runner directly and would
+    otherwise be entirely unbudgeted — a third path onto the same metered
+    resource with no ceiling and no breaker.
+
+    Both exits resolve ``pending`` upstream: ``verify_results`` and the
+    assertion probes catch any runner exception and never score a budget
+    CortexSim spent as a detection the customer missed.
+    """
+    from integrations.xsiam.exceptions import XsiamQuotaError  # noqa: PLC0415
+    from integrations.xsiam.ledger import ledger  # noqa: PLC0415
+
+    from connectors import tuning  # noqa: PLC0415
+
+    tenant = _tenant_name(client)
+    ledger.charge(tenant, limit=tuning.xsiam_max_queries_per_day())
+    try:
+        yield
+    except XsiamQuotaError:
+        ledger.trip(tenant, cooldown_seconds=tuning.xsiam_breaker_cooldown())
+        raise
 
 
 # ---------------------------------------------------------------------------
