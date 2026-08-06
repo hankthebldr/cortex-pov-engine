@@ -27,18 +27,23 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
-import secrets
-import string
 from datetime import datetime
 from typing import Any, Optional
+
+from integrations.xsiam import codes
+from integrations.xsiam.auth import advanced_auth_headers, standard_auth_headers
+from integrations.xsiam.exceptions import XsiamConfigError
+from integrations.xsiam.tenant_url import normalize_tenant_base_url
 
 from .base import (
     Connector,
     ConnectorConfig,
+    ConnectorError,
     ObservedAlert,
     PullResult,
+    coerce_utc,
     register_connector,
+    _host_only,
 )
 
 logger = logging.getLogger("cortexsim.connectors.xsiam")
@@ -71,18 +76,37 @@ class XsiamConnector(Connector):
         until: datetime,
         filters: Optional[dict[str, Any]] = None,
     ) -> PullResult:
-        fqdn = (cfg.config or {}).get("fqdn") or (cfg.config or {}).get("tenant_url")
-        api_key_id = (cfg.config or {}).get("api_key_id") or (cfg.config or {}).get("auth_id")
+        conf = cfg.config or {}
+        # `base_url` first so ONE registration (the xsiam_tenant spelling) can
+        # serve both call paths; `fqdn`/`tenant_url` stay for back-compat with
+        # every reconcile credential already in the field.
+        fqdn = conf.get("base_url") or conf.get("fqdn") or conf.get("tenant_url")
+        api_key_id = conf.get("api_key_id") or conf.get("auth_id")
         if not fqdn or not api_key_id:
             return PullResult(
-                ok=False, connector=self.kind,
-                error="integration config missing 'fqdn' and/or 'api_key_id'",
+                ok=False, connector=self.kind, code=codes.XSIAM_CONFIG_ERROR,
+                error="integration config missing 'fqdn'/'base_url' and/or 'api_key_id'",
             )
 
-        url = self._base_url(fqdn) + self._ALERTS_PATH
-        headers = self._auth_headers(cfg.secret, str(api_key_id),
-                                     mode=(cfg.config or {}).get("auth_mode", "standard"))
-        headers["Content-Type"] = "application/json"
+        try:
+            base = normalize_tenant_base_url(str(fqdn))
+        except XsiamConfigError as e:
+            # Refusing here is the whole point: without it this connector would
+            # POST `Authorization: <raw api key>` in cleartext to whatever host
+            # the config named. The tenant client has always validated its URL;
+            # this one did not, and both send the same key to the same tenant.
+            logger.warning("xsiam pull refused: %s", e)
+            return PullResult(ok=False, connector=self.kind,
+                              code=codes.XSIAM_CONFIG_ERROR, error=str(e))
+
+        url = base + self._ALERTS_PATH
+        mode = str(conf.get("auth_mode", "standard")).lower()
+        # One signer, shared with the tenant client. Two byte-identical copies of
+        # a signature scheme is two edits when PANW changes it, and one of them
+        # gets missed.
+        headers = (advanced_auth_headers(cfg.secret, str(api_key_id))
+                   if mode == "advanced"
+                   else standard_auth_headers(cfg.secret, str(api_key_id)))
 
         payload = self._build_request(since, until, filters or {})
         body = json.dumps(payload).encode("utf-8")
@@ -91,64 +115,41 @@ class XsiamConnector(Connector):
             status, text = self._fetch("POST", url, headers, body, 30.0)
         except Exception as e:  # noqa: BLE001 — offline-safe boundary
             logger.warning("xsiam pull transport error: %s", e)
-            return PullResult(ok=False, connector=self.kind, error=str(e))
+            return PullResult(ok=False, connector=self.kind,
+                              code=codes.XSIAM_TRANSPORT_ERROR, error=str(e))
 
         if status != 200:
+            # The tenant's response body is attacker-influenceable and unbounded,
+            # and this error string is persisted to
+            # IntegrationCredential.last_verified_error, which /api/credentials
+            # and the console both return. Keep the body in the server log; ship
+            # only a status and a digest the operator can correlate with it.
+            logger.warning("xsiam pull HTTP %s from %s; body=%s",
+                           status, _host_only(url), text[:500])
             return PullResult(
-                ok=False, connector=self.kind,
+                ok=False, connector=self.kind, code=codes.code_for_status(status),
                 error=f"tenant returned HTTP {status}",
-                detail={"status": status, "body": text[:500]},
+                detail={"status": status,
+                        "body_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]},
             )
 
         try:
-            observations = self._parse_alerts(text)
+            observations, dropped = self._parse_alerts(text)
         except Exception as e:  # noqa: BLE001
             return PullResult(ok=False, connector=self.kind,
+                              code=codes.XSIAM_PARSE_ERROR,
                               error=f"failed to parse tenant response: {e}")
 
-        return PullResult(ok=True, connector=self.kind, observations=observations,
-                          detail={"queried": url, "window": [since.isoformat(), until.isoformat()]})
-
-    # ── auth ────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _base_url(fqdn: str) -> str:
-        fqdn = fqdn.strip().rstrip("/")
-        if fqdn.startswith("http://") or fqdn.startswith("https://"):
-            return fqdn
-        return f"https://{fqdn}"
-
-    def _auth_headers(self, api_key: str, api_key_id: str, *, mode: str) -> dict[str, str]:
-        """Build Cortex Public API auth headers for the chosen mode."""
-        if mode == "advanced":
-            nonce = "".join(
-                secrets.choice(string.ascii_letters + string.digits) for _ in range(64)
-            )
-            timestamp = str(self._now_ms())
-            digest = hashlib.sha256(
-                (api_key + nonce + timestamp).encode("utf-8")
-            ).hexdigest()
-            return {
-                "x-xdr-auth-id": api_key_id,
-                "x-xdr-nonce": nonce,
-                "x-xdr-timestamp": timestamp,
-                "Authorization": digest,
-            }
-        # standard
-        return {
-            "x-xdr-auth-id": api_key_id,
-            "Authorization": api_key,
+        detail: dict[str, Any] = {
+            "queried_host": _host_only(url),
+            "window": [since.isoformat(), until.isoformat()],
         }
-
-    @staticmethod
-    def _now_ms() -> int:
-        # datetime.utcnow is allowed; avoid time.time() variability in tests by
-        # honoring an override env (used nowhere in prod, handy for determinism).
-        override = os.environ.get("CORTEXSIM_XSIAM_TS_MS")
-        if override:
-            return int(override)
-        epoch = datetime(1970, 1, 1)
-        return int((datetime.utcnow() - epoch).total_seconds() * 1000)
+        if dropped:
+            # Visible, not absorbed: a dropped alert is one the DC's coverage
+            # number will not include, and they must be told why.
+            detail["unparseable_timestamps"] = dropped
+        return PullResult(ok=True, connector=self.kind, observations=observations,
+                          dropped=dropped, detail=detail)
 
     # ── request / response shaping ──────────────────────────────────────
 
@@ -173,19 +174,64 @@ class XsiamConnector(Connector):
         }
         return {"request_data": request_data}
 
-    def _parse_alerts(self, text: str) -> list[ObservedAlert]:
+    def _parse_alerts(self, text: str) -> "tuple[list[ObservedAlert], int]":
+        """Return ``(alerts, dropped)``; ``dropped`` counts unreadable timestamps."""
         doc = json.loads(text)
+        # XSIAM signals application errors INSIDE a 200 — {"reply": {"err_code":
+        # .., "err_msg": ..}} — so a permissions problem, a bad tenant or an
+        # expired key arrives looking exactly like a successful query that
+        # observed nothing. Reading that as zero alerts turns an auth failure
+        # into "the customer's stack detected nothing", which is the manufactured
+        # false negative in its most damaging form: it is the number that goes in
+        # the report. Raise instead, so the caller degrades to pending.
+        if isinstance(doc, dict):
+            err = doc.get("reply") if isinstance(doc.get("reply"), dict) else doc
+            if isinstance(err, dict) and (err.get("err_code") or err.get("err_msg")):
+                raise ConnectorError(
+                    f"XSIAM_APPLICATION_ERROR: tenant returned an error inside a "
+                    f"200 response (err_code={err.get('err_code')}, "
+                    f"err_msg={str(err.get('err_msg'))[:200]!r}). This is NOT an "
+                    f"absence of alerts — no observation was made, so the run "
+                    f"stays pending rather than being scored."
+                )
         reply = doc.get("reply", doc)
-        alerts = reply.get("alerts", reply.get("data", [])) if isinstance(reply, dict) else []
+        if isinstance(reply, dict):
+            alerts = reply.get("alerts", reply.get("data", []))
+        else:
+            alerts = []
+        if not isinstance(alerts, list):
+            # A dict where a list belongs means the envelope is not what we
+            # think it is. Guessing is how `len({"data": []}) == 1` happened.
+            raise ConnectorError(
+                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a list of alerts, got "
+                f"{type(alerts).__name__}. Refusing to infer an alert count from "
+                f"an envelope this connector does not recognise."
+            )
         out: list[ObservedAlert] = []
+        dropped = 0
         for a in alerts:
             if not isinstance(a, dict):
                 continue
-            out.append(self._normalize_alert(a))
-        return out
+            alert = self._normalize_alert(a)
+            if alert is None:
+                dropped += 1
+                continue
+            out.append(alert)
+        return out, dropped
 
-    def _normalize_alert(self, a: dict[str, Any]) -> ObservedAlert:
+    def _normalize_alert(self, a: dict[str, Any]) -> Optional[ObservedAlert]:
+        """One alert → :class:`ObservedAlert`, or None if its time is unreadable.
+
+        A ``None`` here used to be ``utcnow()``, which produced an MTTD of
+        "however long ago the run executed" and failed the customer's 300 s
+        threshold on the strength of a timestamp format CortexSim could not read.
+        """
         ts = a.get("detection_timestamp") or a.get("creation_time") or a.get("local_insert_ts")
+        observed_at = coerce_utc(ts)
+        if observed_at is None:
+            logger.warning("xsiam alert %s has an unreadable timestamp %r — dropped, "
+                           "not dated to now", a.get("alert_id", "?"), ts)
+            return None
         techs = self._extract_techniques(a)
         sev_raw = str(a.get("severity", ""))
         severity = _SEVERITY_MAP.get(sev_raw, sev_raw.lower() or None)
@@ -193,7 +239,7 @@ class XsiamConnector(Connector):
                 or (a.get("hosts") or [None])[0] if a.get("hosts") else a.get("host_name"))
         return ObservedAlert(
             source=self.kind,
-            observed_at=_ms_to_dt(ts),
+            observed_at=observed_at,
             external_id=_s(a.get("alert_id") or a.get("internal_id") or a.get("event_id")),
             name=_s(a.get("name") or a.get("alert_name") or a.get("description")),
             severity=severity,
@@ -235,19 +281,9 @@ def _s(v: Any) -> Optional[str]:
     return s or None
 
 
-def _ms_to_dt(value: Any) -> datetime:
-    if isinstance(value, (int, float)):
-        seconds = value / 1000.0 if value > 1e12 else float(value)
-        return datetime.utcfromtimestamp(seconds)
-    if isinstance(value, str) and value.strip():
-        s = value.strip().replace("Z", "+00:00")
-        try:
-            dt = datetime.fromisoformat(s)
-            return dt.replace(tzinfo=None)
-        except ValueError:
-            pass
-    return datetime.utcnow()
-
+# `_ms_to_dt` lived here and disagreed with connectors.base._coerce_dt by up to
+# nine hours on the same input. There is now exactly one coercer
+# (``connectors.base.coerce_utc``) and this module imports it.
 
 _TECH_RE = __import__("re").compile(r"T\d{4}(?:\.\d{3})?")
 
