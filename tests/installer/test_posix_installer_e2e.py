@@ -57,6 +57,15 @@ def dist_dir(tmp_path):
     Using a stub instead of the real 5 MB Go binary keeps the test hermetic (no
     build step, no lingering process) while exercising the identical download →
     checksum → install → launch path.
+
+    The planted set MUST mirror scripts/build-agent-dist.sh's TARGETS, so the
+    shelf a test sees matches the shelf a DC gets. It did not: this fixture held
+    exactly the four targets the Dockerfile built, quietly encoding the WRONG
+    matrix as the expected one, and
+    test_windows_installer_goes_live_the_day_a_windows_beacon_is_shipped passed
+    against a shelf that no deployed image actually had. Parity between this
+    fixture and the real matrix is asserted in
+    test_agent_dist_matrix_parity.py.
     """
     d = tmp_path / "agent-dist"
     d.mkdir()
@@ -67,6 +76,8 @@ def dist_dir(tmp_path):
     (d / "cortexsim-agent-darwin-amd64").write_text(
         "#!/bin/sh\necho \"beacon-started $*\"\n")
     (d / "cortexsim-agent-darwin-arm64").write_text(
+        "#!/bin/sh\necho \"beacon-started $*\"\n")
+    (d / "cortexsim-agent-windows-amd64.exe").write_text(
         "#!/bin/sh\necho \"beacon-started $*\"\n")
     return d
 
