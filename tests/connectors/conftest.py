@@ -61,3 +61,20 @@ def neutral_uctc_registry(monkeypatch):
     from engine.uctc_registry import UcTcRegistry  # noqa: PLC0415
 
     monkeypatch.setattr("engine.uctc_registry.registry", UcTcRegistry())
+
+
+@pytest.fixture(autouse=True)
+def reset_tenant_quota_ledger():
+    """Clear the process-wide XQL quota ledger between tests.
+
+    ``integrations.xsiam.ledger.ledger`` is a module singleton by design — it is
+    the cross-CALL budget, so a per-call reset would defeat it. That also makes
+    it the one piece of connector state that survives a test, and a breaker
+    tripped by the quota test would silently zero out every later test's query
+    count. Reset here rather than weakening the singleton.
+    """
+    from integrations.xsiam.ledger import ledger
+
+    ledger.reset()
+    yield
+    ledger.reset()

@@ -173,7 +173,11 @@ def test_sweep_no_ops_without_a_tenant_integration(session_factory):
 
     stats = asyncio.run(_do())
     assert stats == {"runs_considered": 0, "runs_verified": 0, "queries_issued": 0,
-                     "quota_tripped": False, "tenant": None}
+                     "quota_tripped": False, "tenant": None,
+                     # WHY the sweep did nothing, not just THAT it did nothing.
+                     # A rotated master key and an unconfigured tenant produce
+                     # the same zero counts; only this field separates them.
+                     "reason": "no_tenant_integration"}
 
 
 def test_reconcile_sweep_does_not_verify_when_the_flag_is_off(session_factory, monkeypatch):

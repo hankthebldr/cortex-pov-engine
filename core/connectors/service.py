@@ -29,6 +29,7 @@ from config import settings
 from connectors import ConnectorConfig, get_connector, reconcile
 from connectors.base import HttpFetcher
 from events import event_bus
+from integrations.xsiam.codes import remediation_for
 from models import Result, Run, Scenario
 from security.credentials import CredentialStore
 
@@ -92,10 +93,17 @@ async def reconcile_run(
 
     pull = conn.pull(cfg, since=since, until=until)
     if not pull.ok:
+        # `pull.error` is persisted to IntegrationCredential.last_verified_error,
+        # which GET /api/credentials/integrations returns. The connector already
+        # keeps the tenant's response BODY out of that string (log only); this is
+        # the second half of that boundary.
         await store.mark_integration_verified(integ.name, ok=False, error=pull.error)
         await db.commit()
+        detail = dict(pull.detail or {})
+        detail["code"] = pull.code
+        detail["remediation"] = remediation_for(pull.code)
         raise ReconcileError("CONNECTOR_PULL_FAILED", pull.error or "pull failed",
-                             detail=pull.detail)
+                             detail=detail)
 
     await store.mark_integration_verified(integ.name, ok=True, error=None)
     verdicts = reconcile(results, pull.observations, window_seconds=window_seconds)
@@ -103,6 +111,16 @@ async def reconcile_run(
                                           source=f"{connector_kind}:{integ.name}")
     summary["pulled"] = len(pull.observations)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
+    if pull.dropped:
+        # Never absorbed into the coverage number: these alerts existed in the
+        # tenant and CortexSim could not date them, so they are NOT evidence
+        # that a detection failed to fire.
+        summary["dropped_unparseable_timestamps"] = pull.dropped
+        summary["warning"] = (
+            f"{pull.dropped} of {pull.dropped + len(pull.observations)} alerts had "
+            f"an unreadable timestamp and were not counted — coverage below is a "
+            f"floor, not a measurement."
+        )
     return ReconcileOutcome(summary=summary, newly_matched=newly)
 
 
@@ -256,6 +274,14 @@ async def score_run_for_run(
     carried = _bookkeeping(run)
     if carried:
         detail["verification"] = carried
+    # Same reason as `verification`: Tier 1 rebuilds tc_verdict_detail wholesale
+    # and runs far more often, so dropping the reconcile block here would reset
+    # `attempts` to 0 on every completion and let a run evade the sweep's cap
+    # forever — and would erase `stopped_reason`, which is the whole point of
+    # making a capped-out run visible instead of silent.
+    carried_reconcile = _reconcile_bookkeeping(run)
+    if carried_reconcile:
+        detail["reconciliation"] = carried_reconcile
     if extra_detail:
         detail.update(extra_detail)
 
@@ -334,6 +360,12 @@ class VerifyOutcome:
     queries_issued: int = 0
     reverified: bool = True
     reason: Optional[str] = None
+    #: What the DC should DO about ``reason``. A code with no remediation sends
+    #: them to guess; the audit's F-09 was exactly that failure.
+    remediation: Optional[str] = None
+    #: Set when the reason is a deliberate pause (backoff), so a caller can say
+    #: "try again in N seconds" instead of implying the run is finished.
+    retry_after_seconds: Optional[int] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -344,39 +376,139 @@ class VerifyOutcome:
             "queries_issued": self.queries_issued,
             "reverified": self.reverified,
             "reason": self.reason,
+            "remediation": self.remediation,
+            "retry_after_seconds": self.retry_after_seconds,
         }
+
+
+@dataclass
+class TenantRunner:
+    """Resolution of "can we query the tenant, and if not, WHY not?".
+
+    ``reason`` used to be a single string, ``"no_tenant_integration"``, for all
+    four outcomes below. Three of them are lies: the tenant IS registered, and
+    telling a DC to configure a tenant they already configured sends them to fix
+    the wrong thing. The verdict (``pending``) was always right; the explanation
+    was not.
+    """
+
+    runner: Optional[Any] = None
+    tenant: Optional[str] = None
+    reason: Optional[str] = None
+    remediation: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        return self.runner is not None
+
+    def __iter__(self):
+        """Unpack as ``(runner, tenant)``.
+
+        This function is a monkeypatch seam several test modules already use,
+        and its historical return type was a 2-tuple. Staying unpackable means
+        adding the diagnosis does not break a caller that only wanted the pair.
+        """
+        yield self.runner
+        yield self.tenant
+
+
+def _as_tenant_runner(value: Any) -> TenantRunner:
+    """Accept a :class:`TenantRunner` or the legacy ``(runner, tenant)`` tuple.
+
+    A stubbed ``resolve_tenant_runner`` (tests, and any caller written against
+    the old signature) returns the tuple; normalising here means the reason /
+    remediation fields degrade to None rather than raising AttributeError.
+    """
+    if isinstance(value, TenantRunner):
+        return value
+    runner, tenant = value
+    return TenantRunner(runner=runner, tenant=tenant,
+                        reason=None if runner is not None else "no_tenant_integration",
+                        remediation=(None if runner is not None
+                                     else TENANT_REMEDIATION["no_tenant_integration"]))
+
+
+#: reason -> what the DC should actually do. Deliberately the same shape as
+#: ``engine.assertions.REMEDIATION`` rather than a second vocabulary.
+TENANT_REMEDIATION: dict[str, str] = {
+    "no_tenant_integration": (
+        "No Cortex tenant is registered. Add one under Settings → Tenants "
+        "(kind 'xsiam_tenant'). Until then every verification resolves `pending`."
+    ),
+    "tenant_config_invalid": (
+        "The registered tenant's config is invalid — base_url must be "
+        "https://api-<sub>.(xdr|xsiam).<region>.paloaltonetworks.com and "
+        "api_key_id must be set. Re-register the tenant."
+    ),
+    "credential_undecryptable": (
+        "The stored API key cannot be decrypted: CORTEXSIM_SECRET was rotated or "
+        "the ciphertext is corrupt. Re-enter the tenant API key."
+    ),
+    "tenant_client_unavailable": (
+        "The tenant is registered but a client could not be built for it. See "
+        "the SimCore log for the underlying error."
+    ),
+    "xql_not_authorised": (
+        "This tenant is registered for alert read-back only. XQL verification is "
+        "a separate, explicit authorisation because it spends the customer's "
+        "query quota — add 'xql' to the tenant's capabilities to enable it."
+    ),
+}
 
 
 async def resolve_tenant_runner(
     db: AsyncSession, *, integration: Optional[str] = None,
     timeframe_seconds: int = 3600,
-) -> tuple[Optional[Any], Optional[str]]:
+) -> TenantRunner:
     """Build a read-only XQL row-count runner from a registered tenant credential.
 
-    Returns ``(None, None)`` when no ``xsiam_tenant`` integration exists at all
-    and ``(None, name)`` when one exists but its client cannot be built — in
-    both cases the caller resolves ``pending``. "No tenant wired" is an honest
-    verdict, not a server error, so neither raises. Only an explicitly *named*
-    integration that does not exist raises, because that is an operator typo.
+    Never raises for a missing/unusable tenant — the caller resolves ``pending``
+    and "no tenant wired" is an honest verdict, not a server error. Only an
+    explicitly *named* integration that does not exist raises, because that is
+    an operator typo rather than a state of the world.
     """
     from engine.verifier import xsiam_query_runner  # noqa: PLC0415
+    from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
     from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client  # noqa: PLC0415
+    from security.crypto import CryptoError  # noqa: PLC0415
 
     store = CredentialStore(db)
     integrations = await store.list_integrations(kind=XSIAM_KIND)
     if not integrations:
-        return None, None
+        return TenantRunner(reason="no_tenant_integration",
+                            remediation=TENANT_REMEDIATION["no_tenant_integration"])
     integ = (next((i for i in integrations if i.name == integration), None)
              if integration else integrations[0])
     if integ is None:
         raise VerifyError("INTEGRATION_NOT_FOUND",
                           f"no {XSIAM_KIND} integration named '{integration}'")
+
+    # Capabilities gate. Registering a tenant grants alert read-back; XQL is a
+    # SEPARATE authorisation because it spends a metered resource the customer's
+    # own analysts share. An absent list means the legacy default — read only —
+    # so migrating an existing record can never silently grant XQL.
+    caps = (integ.config or {}).get("capabilities")
+    if isinstance(caps, list) and "xql" not in {str(c).lower() for c in caps}:
+        return TenantRunner(tenant=integ.name, reason="xql_not_authorised",
+                            remediation=TENANT_REMEDIATION["xql_not_authorised"])
+
+    def _fail(reason: str, detail: str) -> TenantRunner:
+        logger.warning("tenant '%s' unusable for XQL (%s): %s", integ.name, reason, detail)
+        return TenantRunner(tenant=integ.name, reason=reason,
+                            remediation=TENANT_REMEDIATION[reason])
+
     try:
         client = await load_xsiam_client(db, integ.name)
+    except XsiamConfigError as exc:
+        return _fail("tenant_config_invalid", str(exc))
+    except CryptoError as exc:
+        return _fail("credential_undecryptable", str(exc))
     except Exception as exc:  # noqa: BLE001 — resolves to pending, not a 500
-        logger.warning("could not build XSIAM client for '%s': %s", integ.name, exc)
-        return None, integ.name
-    return xsiam_query_runner(client, {"relativeTime": timeframe_seconds * 1000}), integ.name
+        return _fail("tenant_client_unavailable", str(exc))
+    return TenantRunner(
+        runner=xsiam_query_runner(client, {"relativeTime": timeframe_seconds * 1000}),
+        tenant=integ.name,
+    )
 
 
 def _new_budget(max_queries: int) -> dict[str, Any]:
@@ -386,11 +518,20 @@ def _new_budget(max_queries: int) -> dict[str, Any]:
 def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
     """Wrap a query runner in a hard query cap + a quota circuit breaker.
 
+    Two budgets, deliberately: the per-sweep ``budget`` dict caps ONE invocation,
+    and :data:`integrations.xsiam.ledger.ledger` is the process-wide rolling-day
+    ceiling that survives across calls. The per-sweep cap alone was not enough —
+    ``POST /verify`` built a fresh one on every request, so it capped nothing.
+
     The cap lives here rather than inside ``verifier.verify_results`` so the
     verifier stays a pure function of (results, runner) — and so a tripped
     breaker stops further HTTP for the WHOLE sweep, not just the current run.
+
+    Every raise out of this wrapper is caught by ``verify_results`` and recorded
+    as ``pending``. A budget CortexSim spent is not evidence about the customer.
     """
     from integrations.xsiam.exceptions import XsiamQuotaError  # noqa: PLC0415
+    from integrations.xsiam.ledger import QuotaBreakerOpen  # noqa: PLC0415
 
     async def _run(query: str) -> int:
         if budget["tripped"] or budget["remaining"] <= 0:
@@ -399,12 +540,13 @@ def _budgeted(runner: Any, budget: dict[str, Any]) -> Any:
         budget["issued"] += 1
         try:
             return await runner(query)
-        except XsiamQuotaError:
-            # The customer's analysts share this quota. Stop issuing queries
-            # for the rest of the cycle and make sure the DC can see why.
+        except (XsiamQuotaError, QuotaBreakerOpen):
+            # The customer's analysts share this quota. Stop issuing queries for
+            # the rest of THIS sweep. The cross-cycle half — the per-tenant
+            # ledger and its breaker — is charged inside the runner itself
+            # (`verifier._tenant_budget`) so that assertion runs, which build a
+            # runner directly and never reach this wrapper, are bounded too.
             budget["tripped"] = True
-            logger.warning("XQL quota exhausted on tenant '%s' — verification "
-                           "circuit-broken for this cycle", budget.get("tenant"))
             raise
 
     return _run
@@ -435,11 +577,17 @@ _VERIFIABLE_STATUSES = frozenset({"complete", "failed", "staged"})
 
 
 def _verify_eligible(run: Run, *, max_attempts: int, backoff_seconds: int,
-                     now: datetime) -> Optional[str]:
-    """``None`` when the run should be verified, else why it was skipped."""
+                     now: datetime, ignore_terminal: bool = False) -> Optional[str]:
+    """``None`` when the run should be verified, else why it was skipped.
+
+    ``ignore_terminal`` is what ``?force=true`` buys: re-verifying a settled
+    verdict. It deliberately does NOT skip the attempt cap or the backoff below
+    — those protect the customer's query quota, not CortexSim's idempotence, and
+    an operator holding down a button is exactly the case they exist for.
+    """
     if run.status not in _VERIFIABLE_STATUSES:
         return "run_not_finished"
-    if run.tc_verdict in _TERMINAL_VERDICTS:
+    if run.tc_verdict in _TERMINAL_VERDICTS and not ignore_terminal:
         return "terminal_verdict"
     book = _bookkeeping(run)
     attempts = int(book.get("attempts") or 0)
@@ -457,6 +605,23 @@ def _verify_eligible(run: Run, *, max_attempts: int, backoff_seconds: int,
         if now < when + timedelta(seconds=delay):
             return "backoff"
     return None
+
+
+def _retry_after(run: Run, *, backoff_seconds: int,
+                 now: Optional[datetime] = None) -> Optional[int]:
+    """Seconds until this run's backoff expires, for a caller to report."""
+    book = _bookkeeping(run)
+    attempts = int(book.get("attempts") or 0)
+    last = book.get("last_attempt_at")
+    if not attempts or not last:
+        return None
+    try:
+        when = datetime.fromisoformat(last)
+    except (TypeError, ValueError):
+        return None
+    delay = min(backoff_seconds * (2 ** (attempts - 1)), 4 * 3600)
+    remaining = (when + timedelta(seconds=delay)) - (now or datetime.utcnow())
+    return max(0, int(remaining.total_seconds()))
 
 
 async def verify_run_now(
@@ -497,19 +662,56 @@ async def verify_run_now(
         return VerifyOutcome(run.run_id, score.verdict, detail=run.tc_verdict_detail or {},
                              reason="no_verification_xql")
 
+    # Attempt cap + backoff on the MANUAL path too. `_verify_eligible` owns both
+    # and was called only from the sweep, so `POST /verify` re-queried a stuck
+    # run on every request with a brand-new budget and no delay — a retry storm
+    # one shell loop away. `force=true` bypasses the TERMINAL check above (that
+    # is its documented job); it does not buy an exemption from the cap, because
+    # the cap protects the customer's quota, not CortexSim's idempotence.
+    if budget is None:
+        skip = _verify_eligible(
+            run,
+            max_attempts=settings.CORTEXSIM_AUTO_VERIFY_MAX_ATTEMPTS,
+            backoff_seconds=settings.CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS,
+            now=datetime.utcnow(), ignore_terminal=force,
+        )
+        if skip in ("attempt_cap", "backoff"):
+            # 200 with the verdict unchanged, never an error: the run is still
+            # `pending` and still owed. Reporting a 429 here would read as a
+            # failure of the run rather than a deliberate pause.
+            return VerifyOutcome(
+                run.run_id, run.tc_verdict, detail=run.tc_verdict_detail or {},
+                queries_issued=0, reverified=False, reason=skip,
+                retry_after_seconds=_retry_after(
+                    run, backoff_seconds=settings.CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS)
+                if skip == "backoff" else None,
+                remediation=(
+                    "This run has been verified the maximum number of times without "
+                    "the detection appearing in the tenant; it stays `pending`, not "
+                    "`fail`. Check ingestion for the datasets its queries name."
+                    if skip == "attempt_cap" else
+                    "Verification backs off exponentially to protect the tenant's "
+                    "query quota. The verdict is unchanged and still owed."
+                ),
+            )
+
     if runner is None:
-        runner, tenant = await resolve_tenant_runner(
+        resolved = _as_tenant_runner(await resolve_tenant_runner(
             db, integration=integration,
             timeframe_seconds=timeframe_seconds or settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS,
-        )
-    if runner is None:
-        # No credential -> pending, never pass. The 35 seeded results keep the
-        # `pending` kpi_verdict the orchestrator gave them, score_run's
-        # precedence yields `pending`, and there is no path to `pass` without
-        # a measurement.
-        score = await score_run_for_run(db, run, source=source, results=results)
-        return VerifyOutcome(run.run_id, score.verdict, detail=run.tc_verdict_detail or {},
-                             tenant=tenant, reason="no_tenant_integration")
+        ))
+        runner, tenant = resolved.runner, resolved.tenant
+        if runner is None:
+            # No usable credential -> pending, never pass. The seeded results
+            # keep the `pending` kpi_verdict the orchestrator gave them,
+            # score_run's precedence yields `pending`, and there is no path to
+            # `pass` without a measurement. The REASON is now specific: a
+            # rotated master key is not "no tenant configured".
+            score = await score_run_for_run(db, run, source=source, results=results)
+            return VerifyOutcome(run.run_id, score.verdict,
+                                 detail=run.tc_verdict_detail or {},
+                                 tenant=resolved.tenant, reason=resolved.reason,
+                                 remediation=resolved.remediation)
 
     from engine import verifier  # noqa: PLC0415
 
@@ -569,16 +771,25 @@ async def auto_verify_once(
                              "tenant": tenant}
     if runner is None:
         try:
-            runner, tenant = await resolve_tenant_runner(
-                db, timeframe_seconds=timeframe_seconds)
+            resolved = _as_tenant_runner(
+                await resolve_tenant_runner(db, timeframe_seconds=timeframe_seconds))
         except VerifyError as e:  # pragma: no cover — the sweep names no integration
             logger.debug("auto-verify skipped: %s", e.code)
             return stats
+        runner, tenant = resolved.runner, resolved.tenant
         stats["tenant"] = tenant
+        stats["reason"] = resolved.reason
     if runner is None:
-        # Same silence as auto_reconcile_once with no configured kinds: an
-        # operator who never wired a tenant should not get a log line a sweep.
-        logger.debug("auto-verify: no xsiam_tenant integration configured")
+        # "No tenant wired" stays at DEBUG — an operator who never configured one
+        # should not get a log line a sweep. But a tenant that IS wired and
+        # unusable (rotated master key, invalid config) is a real misconfiguration
+        # the DC needs to see, and it used to be indistinguishable from silence.
+        reason = stats.get("reason")
+        if reason and reason != "no_tenant_integration":
+            logger.warning("auto-verify cannot query the tenant (%s): %s",
+                           reason, TENANT_REMEDIATION.get(reason, ""))
+        else:
+            logger.debug("auto-verify: no xsiam_tenant integration configured")
         return stats
 
     cutoff = datetime.utcnow() - timedelta(seconds=lookback_seconds)
@@ -618,19 +829,92 @@ async def auto_verify_once(
 # Auto-reconcile sweep (opt-in background loop)
 # ---------------------------------------------------------------------------
 
+def _reconcile_bookkeeping(run: Run) -> dict[str, Any]:
+    """This run's reconcile bookkeeping out of ``tc_verdict_detail``.
+
+    Sibling of :func:`_bookkeeping` (which owns the ``verification`` block), in
+    the same JSON blob and for the same reason: adding ``runs`` columns is a
+    migration this change does not own.
+    """
+    detail = run.tc_verdict_detail
+    book = detail.get("reconciliation") if isinstance(detail, dict) else None
+    return dict(book) if isinstance(book, dict) else {}
+
+
+def _reconcile_eligible(run: Run, *, max_attempts: int, backoff_seconds: int,
+                        now: datetime) -> Optional[str]:
+    """``None`` when the run should be reconciled, else why it was skipped."""
+    book = _reconcile_bookkeeping(run)
+    attempts = int(book.get("attempts") or 0)
+    if attempts >= max_attempts:
+        return "attempt_cap"
+    last = book.get("last_attempt_at")
+    if attempts and last:
+        try:
+            when = datetime.fromisoformat(last)
+        except (TypeError, ValueError):
+            return None
+        delay = min(backoff_seconds * (2 ** (attempts - 1)), 4 * 3600)
+        if now < when + timedelta(seconds=delay):
+            return "backoff"
+    return None
+
+
+async def _record_reconcile_attempt(db: AsyncSession, run: Run, *, matched: int,
+                                    pulled: int, stopped_reason: Optional[str] = None,
+                                    increment: bool = True) -> None:
+    """Persist one reconcile attempt into ``tc_verdict_detail["reconciliation"]``.
+
+    A capped-out run MUST be visible. Silently stopping is how a DC watches
+    coverage plateau at 40 %, concludes the customer's detections are weak, and
+    never learns that CortexSim simply stopped asking. The verdict is untouched
+    — polling stopping is not evidence, so it never downgrades to `fail`.
+    """
+    detail = dict(run.tc_verdict_detail) if isinstance(run.tc_verdict_detail, dict) else {}
+    book = _reconcile_bookkeeping(run)
+    if increment:
+        book["attempts"] = int(book.get("attempts") or 0) + 1
+        book["last_attempt_at"] = datetime.utcnow().isoformat()
+    book["pulled"] = pulled
+    book["matched"] = int(book.get("matched") or 0) + matched
+    if stopped_reason:
+        book["stopped_reason"] = stopped_reason
+    else:
+        book.pop("stopped_reason", None)
+    detail["reconciliation"] = book
+    run.tc_verdict_detail = detail
+    await db.commit()
+
+
 async def auto_reconcile_once(
     db: AsyncSession, *, lookback_seconds: int, window_seconds: int,
     fetcher: Optional[HttpFetcher] = None,
+    max_attempts: Optional[int] = None,
+    backoff_seconds: Optional[int] = None,
+    max_pulls: Optional[int] = None,
 ) -> dict[str, Any]:
     """One sweep: for every configured connector kind, reconcile each recent run
     that still has unobserved detections. Returns counts for logging.
 
-    A run is a candidate when it finished recently (``completed_at`` within
-    ``lookback_seconds``, or no completion but started within it) and at least
-    one of its results is still unobserved. Connectors with no integration are
-    skipped silently.
+    A run is a candidate when it started within ``lookback_seconds`` and at
+    least one of its results is still unobserved. Connectors with no integration
+    are skipped silently.
+
+    **Bounded.** This loop used to have no budget, no attempt cap, no backoff and
+    no breaker: every unobserved run in a 24 h window was re-POSTed on every
+    300 s sweep, forever. 100 runs in a POV day is ~28,800 alert queries against
+    the customer's metered Public API, with the DC unaware. All four controls the
+    verify sweep already had now apply here too — they had been built and then
+    fitted only to the *cheaper* of the two loops.
     """
     from connectors.base import available_connectors  # noqa: PLC0415
+    from integrations.xsiam import codes  # noqa: PLC0415
+
+    from . import tuning  # noqa: PLC0415
+
+    max_attempts = tuning.reconcile_max_attempts(max_attempts)
+    backoff_seconds = tuning.reconcile_backoff_seconds(backoff_seconds)
+    max_pulls = tuning.reconcile_max_pulls_per_sweep(max_pulls)
 
     store = CredentialStore(db)
     configured_kinds = {i.kind for i in await store.list_integrations()}
@@ -641,9 +925,11 @@ async def auto_reconcile_once(
         # legitimate configuration.
         return await _with_verify_phase(
             db, {"runs_considered": 0, "runs_reconciled": 0, "newly_matched": 0,
-                 "kinds": []}, lookback_seconds=lookback_seconds)
+                 "kinds": [], "skipped": {}, "pulls_issued": 0},
+            lookback_seconds=lookback_seconds)
 
     cutoff = datetime.utcnow() - timedelta(seconds=lookback_seconds)
+    now = datetime.utcnow()
     runs = list((await db.execute(
         select(Run).where(Run.started_at >= cutoff)
     )).scalars().all())
@@ -651,35 +937,106 @@ async def auto_reconcile_once(
     runs_considered = 0
     runs_reconciled = 0
     newly_total = 0
+    pulls_issued = 0
+    # Why a candidate produced nothing, counted by code. `auto_reconcile_once`
+    # logged every skip at DEBUG, so a sweep that considered runs and matched
+    # zero was indistinguishable from a sweep that did nothing at all — in
+    # production that is a completely silent zero-coverage reconcile.
+    skipped: dict[str, int] = {}
+    breaker_tripped = False
+
+    def _note(code: str) -> None:
+        skipped[code] = skipped.get(code, 0) + 1
+
     for run in runs:
+        if pulls_issued >= max_pulls or breaker_tripped:
+            _note("sweep_budget_spent")
+            continue
         results = list((await db.execute(
             select(Result).where(Result.run_id == run.run_id)
         )).scalars().all())
         if not any((not r.observed) and r.executed_at for r in results):
             continue
+        skip = _reconcile_eligible(run, max_attempts=max_attempts,
+                                   backoff_seconds=backoff_seconds, now=now)
+        if skip:
+            _note(skip)
+            if skip == "attempt_cap":
+                # increment=False: recording WHY we stopped is not another
+                # attempt. Written every sweep so the reason cannot be lost to a
+                # later Tier-1 re-score.
+                await _record_reconcile_attempt(
+                    db, run, matched=0, pulled=0, increment=False,
+                    stopped_reason=(
+                        f"stopped polling after {max_attempts} attempts; no matching "
+                        f"alert appeared in the tenant. The verdict stays `pending` — "
+                        f"CortexSim stopped asking, the detection did not fail."),
+                )
+            continue
         runs_considered += 1
+        matched_here = 0
+        pulled_here = 0
         for kind in active_kinds:
+            if pulls_issued >= max_pulls or breaker_tripped:
+                _note("sweep_budget_spent")
+                break
+            pulls_issued += 1
             try:
                 outcome = await reconcile_run(
                     db, run, results, connector_kind=kind,
                     window_seconds=window_seconds, fetcher=fetcher,
                 )
             except ReconcileError as e:
-                logger.debug("auto-reconcile skip run=%s kind=%s: %s",
-                             run.run_id, kind, e.code)
+                _note(e.code)
+                # A 429 is the customer's shared quota talking. Stop the whole
+                # sweep rather than walking the remaining runs into the same wall.
+                if _is_quota_error(e):
+                    breaker_tripped = True
+                    logger.warning(
+                        "auto-reconcile: tenant reported quota exhaustion (%s) — "
+                        "sweep circuit-broken. %s", e.code,
+                        codes.remediation_for(codes.XSIAM_QUOTA_ERROR))
+                else:
+                    logger.debug("auto-reconcile skip run=%s kind=%s: %s",
+                                 run.run_id, kind, e.code)
                 continue
+            pulled_here += int(outcome.summary.get("pulled") or 0)
             if outcome.newly_matched:
-                runs_reconciled += 1
-                newly_total += outcome.newly_matched
+                matched_here += outcome.newly_matched
+        if matched_here:
+            runs_reconciled += 1
+            newly_total += matched_here
+        await _record_reconcile_attempt(db, run, matched=matched_here, pulled=pulled_here)
 
     stats: dict[str, Any] = {
         "runs_considered": runs_considered,
         "runs_reconciled": runs_reconciled,
         "newly_matched": newly_total,
         "kinds": active_kinds,
+        "skipped": skipped,
+        "pulls_issued": pulls_issued,
+        "quota_tripped": breaker_tripped,
     }
+    if runs_considered and not newly_total:
+        # A sweep that looked at runs and matched nothing is a SIGNAL, not a
+        # no-op: either the detections are not firing or CortexSim is querying
+        # the wrong window/tenant. Either way the DC should hear about it.
+        logger.warning(
+            "auto-reconcile considered %d run(s) and matched 0 detections "
+            "(kinds=%s, skipped=%s). Check the tenant credential and that the "
+            "run's datasets are ingested.",
+            runs_considered, active_kinds, skipped or "{}")
 
     return await _with_verify_phase(db, stats, lookback_seconds=lookback_seconds)
+
+
+def _is_quota_error(err: ReconcileError) -> bool:
+    """True when a reconcile failure was the tenant's quota, not our config."""
+    from integrations.xsiam import codes  # noqa: PLC0415
+
+    detail = err.detail if isinstance(err.detail, dict) else {}
+    return (detail.get("code") == codes.XSIAM_QUOTA_ERROR
+            or detail.get("status") == 429)
 
 
 async def _with_verify_phase(db: AsyncSession, stats: dict[str, Any], *,
