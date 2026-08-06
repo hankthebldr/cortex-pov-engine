@@ -113,7 +113,10 @@ def _guard(name: str, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
             "detail": (
                 f"the {name} probe raised {type(exc).__name__}: {exc}. This is a "
                 f"defect in SimCore, not in the deployment — capture the server log "
-                f"and report it."
+                f"and report it. "
+                f"Fix: capture the server log around this timestamp and open an "
+                f"issue; a probe that throws is a SimCore bug, so there is nothing "
+                f"to reconfigure on this host."
             ),
         }
 
@@ -687,7 +690,12 @@ async def component_health() -> dict[str, dict[str, Any]]:
                 "detail": (
                     f"the {name} probe raised {type(exc).__name__}: {exc}. When the "
                     f"db component is also failing this is a consequence of that, "
-                    f"not a separate fault."
+                    f"not a separate fault. "
+                    f"Fix: check the `db` component first — if it is failing, repair "
+                    f"that and re-check; the database at CORTEXSIM_BASE_DIR/data/ "
+                    f"must exist and be writable, and schema creation runs at "
+                    f"startup, so a missing table means SimCore never completed its "
+                    f"lifespan init."
                 ),
             }
 

@@ -548,3 +548,47 @@ def test_health_payload_survives_a_broken_db(monkeypatch):
     assert comp["status"] == "error"
     assert comp["code"] == "DB_UNREACHABLE"
     assert "load from disk" in comp["detail"]
+
+
+# ---------------------------------------------------------------------------
+# The guard paths — reached only when a probe THROWS
+# ---------------------------------------------------------------------------
+#
+# These fired for the first time in CI, where pytest runs in the prod image
+# against a database whose tables do not exist: every DB-backed probe raised,
+# and the resulting components carried a diagnosis with no remediation. Locally
+# the tables existed, so the exception branch was never taken and
+# test_non_ok_components_carry_a_remediation_line passed while the branch it was
+# written to police went unexercised.
+
+
+def test_a_throwing_sync_probe_still_names_a_remediation():
+    from api.health import ERROR, _guard
+
+    def boom():
+        raise RuntimeError("no such table: ttps")
+
+    comp = _guard("ttp_catalog", boom)
+    assert comp["status"] == ERROR
+    assert comp["code"] == "PROBE_FAILED"
+    assert "Fix:" in comp["detail"], (
+        "a failing component with no remediation is exactly what this health "
+        "surface must never emit — it tells a DC something is wrong and nothing "
+        "about what to do"
+    )
+
+
+def test_the_async_guard_routes_the_operator_to_the_db_component_first():
+    """The DB-backed probes all fail together when the schema is missing, and
+    chasing five independent-looking faults wastes the operator's time.
+
+    Asserted on the source because ``_aguard`` is a closure inside
+    ``component_health`` with no seam to inject through. A shallower check than the
+    sync case above, and honest about being one.
+    """
+    import inspect
+
+    from api import health
+
+    src = inspect.getsource(health.component_health)
+    assert "Fix: check the `db` component first" in src
