@@ -9,6 +9,18 @@
 > staged**, of **56 tier-4 packs** — so **48 of 56 tier-4 tools still fetch
 > from the public internet on the target host at run time**.
 >
+> **Tier-4 triage complete 2026-08-06 — the count did NOT move, and that is the
+> correct outcome (§11).** All 48 remaining packs now declare
+> `install.artifact_exempt` with a DC-facing reason, enforced by **TA-13**
+> (a tier-4 pack declaring neither an artifact nor an exemption is REJECTED, so
+> "nobody got to it" is structurally unrepresentable). **Zero packs were
+> wired**, because the measured finding is that *not one of the 48 is a bare
+> single file at a pinned URL* — the entire remaining opportunity is
+> archive-shaped, and `kind: archive` is rejected because **no consumer can
+> unpack one** (the beacon's `Artifact` struct has no `Kind` field at all).
+> Report this as "**8 of 56, 48 reasons, an 8-item backlog**", never as
+> coverage.
+>
 > **Three defects block the end-to-end path Henry asked for.** They are listed
 > here, not only in §9, because this file is the contract the other tracks read
 > and a stale "shipped" header is how this repo has shipped green-but-broken
@@ -83,8 +95,8 @@ below is downstream of that sentence.
 |---|---|
 | **The shelf serves the beacon, the K8s pod and the console. It does NOT serve bash/PowerShell bundles.** | Those carry the no-SimCore-at-runtime invariant that 169 scenarios depend on and that `tests/engine/test_push_generator_invariant.py` freezes byte-for-byte. `consumer="bundle"` is a hard `400 BAD_CONSUMER`. A bundle that needs a tool must EMBED its bytes. |
 | **`/api/k8s/*` stays mounted forever.** | Every manifest this engine has emitted hard-codes `$CORTEXSIM_SERVER/api/k8s/payloads` and `/api/k8s/payload/$PN` inside `k8s_manifest._SERVED_FETCH`. Those files live in customers' GitOps repos and tickets. `/api/shelf/*` is an **additional mount of the same handler functions** — not a move, not a redirect. A redirect would make a stale manifest silently keep working, so the drift would never be discovered. |
-| **Only single-file artifacts are stageable.** | `kind: archive` is REJECTED (TA-08). No consumer can unpack one: the Go beacon is stdlib-only by contract, the K8s init container is a busybox `wget`. Accepting the value would let a pack declare a tool that silently never lands. |
-| **~30 of the 50 tier-4 packs are not shelf-able at all.** | ~20 are `apt`/`yum`, ~15 are `pip`/`go install`/`cargo`, ~8 are `git clone` of a tree. They keep `runtime_install_command` and are reported as `unstaged_adapters[]` with a reason. **Making the gap legible is the deliverable.** Closing it for apt would mean hosting a Debian mirror. |
+| **Only single-file artifacts are stageable.** | `kind: archive` is REJECTED (TA-08). No consumer can unpack one — **re-verified 2026-08-06, see §11**. Accepting the value would let a pack declare a tool that silently never lands. |
+| **48 of the 56 tier-4 packs are not shelf-able, and each now says why.** | Counted, not estimated: 18 `apt`/`yum`, 12 `pip`/`gem`, 7 `git clone` of a tree, 6 archive-only, 2 that fetch a data feed at run time, and one each for licence, multi-file and size. They keep `runtime_install_command` and **must** declare `install.artifact_exempt` (TA-13). **Making the gap legible is the deliverable.** Closing the apt family would mean hosting a Debian mirror. |
 
 ---
 
@@ -241,6 +253,13 @@ same three handler functions on both routers).
 | GET | `/api/shelf/resolve/{scenario_id}` | shelf token | console preflight for one scenario |
 | POST | `/api/shelf/stage` | shelf token | pull a public tool onto **this SimCore** |
 | GET | `/api/k8s/bootstrap/{id}` (+`/sha256`), `/api/k8s/posture-findings` | open | genuinely K8s-specific; unchanged |
+| GET | `/api/tools/binaries` | open | prebuilt **Rust tool** inventory + `unsupported_targets[]` |
+| GET | `/api/tools/binary/{tool}` | open | the bytes (`X-CortexSim-Tool-SHA256`) |
+| GET | `/api/tools/binary/{tool}/sha256` | open | bare hex, for the consumer's verify step |
+
+The last three are a **third mount of this same idiom**, not a second shelf —
+see *The Rust tool shelf* below for why tier-2 built binaries cannot be
+`install.artifact` entries.
 
 ### The agent-binary idiom, transposed
 
@@ -301,6 +320,80 @@ time by `GET /api/agents/install`. **Never in the task JSON** —
 `delivery=served` produces a manifest that applies cleanly and 403s in the pod.
 That refusal belongs in `k8s_manifest.build_objects` at generation time — see
 §9, it is owed by that track.
+
+### The Rust tool shelf — a THIRD MOUNT of the same idiom, not a third idiom
+
+Added 2026-08-05. The three tier-2 Rust tools (`signalbench`, `ackbarx`,
+`xdrtop`) had **no distribution story at all**: `core/tools/registry.py` says
+`build_cmd: "cargo build --release"`, which means a Rust toolchain plus
+crates.io egress **on the jumpbox** — the same default-deny problem §"Why the
+shelf exists at all" is about, in a tier the shelf does not cover. They are now
+baked into the image by `core/Dockerfile`'s **`rust-builder`** stage
+(static-musl `linux/amd64`, ~34.6 MB of binaries) and served from
+`/app/rust-dist`:
+
+```
+/api/agents/binaries    /api/shelf/payloads          /api/tools/binaries
+/api/agents/binary      /api/shelf/payload/{name}    /api/tools/binary/{tool}
+/api/agents/binary/…    /api/shelf/payload/{name}/…  /api/tools/binary/{tool}/sha256
+```
+
+Same shape, same `FileResponse`, same `X-CortexSim-*-SHA256` header, same
+`Cache-Control: no-store`, same refusal-names-the-directory-and-the-command
+rule. **No new schema, no new pin model, no second integrity story** — the
+digest is computed on SimCore from the bytes on disk at request time, carried
+out by the consumer, and verified before execution; mismatch is a hard fail.
+
+**Why they are NOT `install.artifact` entries on the shelf.** The reasons are in
+this document's own schema, not in taste:
+
+1. **`install.artifact` describes a *download*, not a *build*.** It requires an
+   upstream `url` (TA-03 rejects non-http(s)), a `pin`, and a `sha256` that is
+   knowable *before* the fetch (TA-04). A locally-built binary has no upstream
+   URL and its digest is a function of the toolchain, not of a pin. The only
+   expressible form is `pin.type: none` + `waiver_reason`, which §3 calls a
+   **dev-only state, never valid in an image that goes to an engagement**.
+2. **Upstream releases cannot rescue it.** Only signalbench has a clean match
+   (tag == gitlink, bare single-file musl asset). xdrtop publishes `.deb` /
+   `.tar.gz` / `.zip` — **TA-08 rejects `kind: archive` outright, forever**.
+   ackbarx's gitlink is **untagged** and its published assets are glibc-only, so
+   no `pin` could honestly reference the source we ship. Putting 1 of 3 on the
+   shelf and 2 somewhere else is how you *get* a third idiom.
+3. **TA-01's rule is right; TA-01's stated reason is wrong.** It hard-rejects
+   `install.artifact` on `tier != 4` and explains that tier-1/2 trees "do not
+   fetch a tool at dispatch, so none of them has an egress problem for the shelf
+   to solve." **That sentence is false for these three** — `cargo build
+   --release` is an egress problem in every sense. Keep the rule (reason 1 is
+   sufficient on its own); the sentence should say the shelf's *schema* cannot
+   describe a locally-built artifact, and point here. Left as-is, it is how the
+   next reader concludes there is nothing to solve.
+
+**Provenance.** `rust-dist/MANIFEST.json` is the pin analogue, keyed on the
+**submodule commit** instead of a release tag: `builder_image`, `target`, and
+per-tool `version` / `sha256` / `size_bytes` / `static` / `verified_exec` /
+`submodule_commit`. It is rendered byte-deterministically (fixed key order, no
+timestamp, no hostname, no builder username). Commits arrive as
+`--build-arg <TOOL>_COMMIT`; **unset, they are recorded as `null` with
+`provenance: "unrecorded"`**, never as a plausible-looking value, and
+`/api/tools/binaries` reports `stale: null` with the reason rather than
+`stale: false`. An unprovable claim of currency is the silent-substitution
+failure §3 exists to prevent.
+
+**The `linux/amd64`-only matrix is legible, not silent.** Rust does not
+cross-compile for free the way Go does: every triple needs its own std plus a
+linker, and xdrtop is *structurally* blocked on arm64 because `openssl-sys`
+needs an aarch64 OpenSSL and the workaround (the openssl crate's `vendored`
+feature) would mean editing a submodule. `MANIFEST.json` carries
+`unsupported_targets[]` with that sentence, and a request for an unbuilt target
+returns **409 `TOOL_TARGET_UNSUPPORTED` quoting it verbatim** — the same class
+of refusal as the push generator's `BUNDLE_TARGET_UNSATISFIABLE`, and
+deliberately a *different* code from **404 `TOOL_BINARY_UNAVAILABLE`**, which
+means "this target IS built, this deployment's shelf is empty" and carries a fix
+that works.
+
+**Boundary, unchanged:** bundles still do not fetch. No scenario references
+these three tools in `external_tools[]`, `push_generator.py` is untouched, and
+its byte-frozen goldens do not move.
 
 ---
 
@@ -670,15 +763,13 @@ cannot be mistaken for shipped.
    `runtime_install_command` deliberately stays on `/raw/main/` — it is emitted
    verbatim into the byte-frozen bundles, so repointing it moves `SIM-CDR-001`'s
    golden digest for no integrity gain.)
-3. **The next tier-4 candidates are still owed.** Counted on this tree:
-   **8 of 56 tier-4 packs are shelf-backed; 48 are not.** The families and why,
-   per `docs/reference/adapter-catalog.md` §9.2 — ~20 `apt`/`yum`, ~15
-   `pip`/`gem`/`go install`/`cargo`, ~8 `git clone` of a tree, ~5 release
-   archives (TA-08 rejects `kind: archive`), plus `kubescape` at 262 MB against
-   a 64 MiB cap. Only the archive family is reachable without new machinery, and
-   only by adding an unpacker to two stdlib-constrained consumers. **Do not
-   report "linpeas is one of many" as done: it is one of eight, and the class
-   Henry named — Linux privesc enumerators — is the only one that is complete.**
+3. ~~The next tier-4 candidates are still owed.~~ **TRIAGED AND RECORDED
+   2026-08-06 — but the count did NOT move: still 8 of 56.** Every one of the
+   48 remaining packs was judged on its merits against measured evidence and
+   now declares `install.artifact_exempt` (TA-13). **Zero were wired, and that
+   is the correct outcome, not a shortfall** — see §11 for the finding that
+   forced it. Read "**8 of 56, with 48 reasons and an 8-item backlog**", never
+   "the shelf covers the tier-4 packs".
 
 **Scenario-loader track**
 
@@ -809,8 +900,166 @@ tools/packs/_schema.yml          the annotated install.artifact reference
 tests/tools/test_adapter_artifact_schema.py
 tests/engine/test_payload_shelf.py
 tests/api/test_payloads_shelf.py
+
+core/Dockerfile                  rust-builder stage → /app/rust-dist (the Rust tool shelf)
+core/api/tools_dist.py           GET /api/tools/binar{ies,y/{tool}[/sha256]}
+tests/tools/test_rust_dist_stage.py              recipe + bake guards
+tests/tools/test_rust_dist_route_registration.py the router-is-mounted guard
 ```
 
 **Explicitly NOT touched:** `core/engine/push_generator.py` (byte-frozen),
 `tests/engine/_golden/push_bundle_digests.json`,
 `k8s_manifest._SERVED_FETCH` (proven on a live kind cluster).
+
+---
+
+## 11 · Tier-4 triage (2026-08-06) — why the count did not move
+
+**Headline: 8 of 56 tier-4 packs are shelf-backed. 48 are exempt with a stated
+reason. 0 are undeclared. Zero packs were wired in this pass, deliberately.**
+
+Every one of the 48 was judged individually against evidence obtained by
+*querying upstream and downloading the artifact*, not by reading the install
+command. The verdicts live in the packs (`install.artifact_exempt`), enforced
+by TA-13..TA-17, so they cannot rot silently and cannot be skipped by the next
+author.
+
+### 11.1 · The finding that stopped the wiring
+
+The triage brief expected roughly five "release archive" packs to be
+convertible. The measured result is sharper, and it inverts the plan:
+
+> **Not one of the 48 remaining packs is a bare single file at a pinned URL.**
+> Every candidate that publishes releases at all ships `.tar.gz` / `.zip` /
+> `.deb` / `.rpm`. The one exception, `kubescape`, is a **262,032,010-byte**
+> bare binary — 249.9 MiB against a 64 MiB cap.
+
+So `kind: archive` is not a corner case, it is the *entire* remaining
+opportunity — and it is rejected at load (TA-08) because **no consumer can
+unpack one**. Re-verified on this tree, because the old comment in
+`_schema.yml` claimed the opposite and would have made wiring look cheap:
+
+| consumer | evidence | verdict |
+|---|---|---|
+| Go beacon | `agent/beacon/artifact.go::Artifact` has `Name`/`SHA256`/`SizeBytes`/`Path`/`Dest`/`Mode`/`Steps` — **no `Kind` field at all**. A `grep` for `archive/tar`, `archive/zip` and `compress/gzip` across `agent/` returns nothing. | cannot see `kind`, let alone branch on it |
+| K8s init container | `k8s_manifest._SERVED_FETCH` is `wget` → `sha256sum` → `chmod` → `mv`, no extraction branch; alpine busybox has `tar -z` but **no `unzip`** | cannot extract |
+| `scripts/build-payloads.sh` | hard-fails on `kind != file` | cannot stage |
+
+Wiring an archive-shaped artifact today would produce **exactly the failure
+this repo keeps re-shipping**: `compose()` would emit an artifact the beacon
+refuses with `ARTIFACT_SPEC_INVALID`, or worse, stage bytes no consumer can use
+while the console reported `air_gapped: true`. A pack whose artifact cannot be
+consumed is worse than one that honestly still uses `runtime_install_command`.
+
+**The unlock, when someone owns it, is single-member extraction on the DC's own
+SimCore** — download the pinned archive, verify the *archive* digest, extract
+one named member, verify the *member* digest, put that one file on the shelf.
+`compose()`'s wire output stays byte-identical (`kind: "file"`) and neither
+stdlib-constrained consumer learns a new word. That work spans
+`core/engine/payload_shelf.py` and `core/api/payloads.py`, **outside this
+pass's file scope**, which is the second reason nothing was wired.
+
+### 11.2 · The verdicts
+
+| reason_code | n | meaning | backlog? |
+|---|--:|---|:--:|
+| `DISTRO_PACKAGE` | 18 | apt/yum. Shelving = hosting a Debian mirror. | — |
+| `LANGUAGE_PACKAGE_MANAGER` | 12 | pip/gem + dependency trees. | — |
+| `SOURCE_TREE_REQUIRED` | 7 | the tool **is** a directory, not a file. | — |
+| `ARCHIVE_ONLY_NO_EXTRACTOR` | 6 | upstream ships only an archive. | **yes** |
+| `NEEDS_RUNTIME_DATA` | 2 | binary is inert without a feed it fetches at run time. | — |
+| `LICENCE_NO_REDISTRIBUTION` | 1 | no grant, so no right to serve it onto a customer host. | — |
+| `ARCHIVE_MEMBER_NOT_SELF_CONTAINED` | 1 | the binary alone does not run. | **yes** |
+| `ARTIFACT_TOO_LARGE` | 1 | over `CORTEXSIM_SHELF_MAX_BYTES`. | **yes** |
+| | **48** | | **8** |
+
+The backlog is **8 adapters**, each carrying a mandatory `revisit` line (TA-17)
+with the measured next action. Everything else is settled: **39 of the 48 will
+never be shelvable without hosting a mirror of someone else's package index.**
+
+Judgements worth reading rather than re-litigating:
+
+* **The two scanner packs that fetch a data feed are `NEEDS_RUNTIME_DATA`, not
+  "too big".** One clones its template repo on first run; the other pulls its
+  vulnerability DB every scan. Staging only the binary would remove the
+  *install* download and leave the *data* download — so the target would still
+  need egress while CortexSim reported the scenario as `air_gapped: true`. That
+  is a false-green the shelf would have manufactured itself, which is why size
+  is the lesser reason.
+* **`kube-bench` is the honest boundary of the one-file contract.** It is
+  *under* the size cap and looks shelvable on the release page. Opening
+  `kube-bench_0.10.3_linux_amd64.tar.gz` (sha256 `f4fc4d51…`) shows **205
+  entries**: the binary plus a `cfg/` CIS-benchmark tree. The binary alone
+  exits with a config error. Only opening the archive shows this.
+* **`credking` is `LICENCE_NO_REDISTRIBUTION`, and that outranks its other
+  disqualifiers.** Verified 2026-08-06: no `LICENSE` file, and GitHub reports
+  no licence. The shelf does not *cache* a tool, it **redistributes** it — the
+  bytes go into the image and out of `/api/shelf/payload/{name}` onto a
+  customer's endpoint, recorded in a `MANIFEST.json` a legal team may read.
+  The pack's `upstream.license: LicenseRef-ustayready` names a grant that does
+  not exist and should be corrected regardless of shelf work.
+* **`seclists` has no defensible subset.** The single corpus reference
+  (`mp-019`) reads `-w /usr/share/seclists/...`, the **Kali package path**, not
+  the adapter's clone path — and no scenario carries `adapter_ref:
+  TOOL-SECLISTS`. Shelving one `common.txt` would ship a 3.3 GB corpus's name
+  attached to 0.03 % of its content.
+* **`evil-winrm` was judged individually, and the gem is not the deciding
+  factor.** rubygems lists **8 runtime dependencies** (`winrm`, `winrm-fs`,
+  `logger`, `csv`, `stringio`, `syslog`, `fileutils`, `benchmark`) and the
+  GitHub release publishes no assets. There is no single file that runs.
+
+### 11.3 · Two dead upstream URLs, found by probing every pinned URL
+
+Neither is visible to any current gate, and both produce the manufactured false
+negative the shelf exists to prevent — the step runs with no tool, detects
+nothing, and the absent detection reads in a POV report as *"Cortex missed
+it"*.
+
+1. **`tools/packs/trivy.yml`** — `runtime_install_command` fetches the
+   `v0.55.2` release tarball. Measured: **`HTTP/2 404`**. Aqua prunes old
+   releases (v0.55.0 also 404s; v0.73.0 is live). `SIM-CDR-007`'s trivy step
+   therefore cannot install its tool on **any** target, with or without egress.
+   **NOT fixed in this pass, on purpose:** `runtime_install_command` is emitted
+   *verbatim* into the byte-frozen push bundles, so repointing it moves
+   `SIM-CDR-007`'s entry in `tests/engine/_golden/push_bundle_digests.json` —
+   a file outside this pass's scope. It is a legitimate golden update (the
+   frozen bytes currently freeze a broken URL) and belongs in a commit that can
+   regenerate it. Noted in the pack's exemption.
+2. **`tools/packs/bloodhound.yml`** (tier 3) — `content_library_entry.
+   download_url` points at the `v5.13.0` linux zip. Measured: **`HTTP/2 404`**.
+   BloodHound has moved to a v9 line that publishes **no release assets at
+   all**, so there is no drop-in replacement URL — the ITDR IaC module's
+   BloodHound install needs a new install strategy, not a version bump. Out of
+   this pass's scope to fix.
+
+The detector shipped with this pass:
+`tests/tools/test_tier4_artifact_declaration.py::test_every_pinned_release_url_still_resolves`
+HEADs every `/releases/download/` URL in the pack tree. It is **opt-in**
+(`CORTEXSIM_CHECK_UPSTREAM_URLS=1`), because a network failure in a unit-test
+job is indistinguishable from upstream rot and a flaky gate gets ignored —
+which is how the rot survives. Run it on a schedule, not per-PR.
+
+### 11.4 · Still owed by other tracks (this pass could not reach them)
+
+* **`payload_shelf.required_artifacts` should read the exemption.**
+  `compose().unstaged_adapters[]` still emits one generic sentence for all 48.
+  The pack data now exists — read `adapter.install.artifact_exempt` /
+  `adapter.artifact_exempt_reason_code` and surface `{adapter_id, reason_code,
+  reason, revisit}`. Until then the *durable declaration* is right and the
+  *console string* is still the old one.
+* **`GET /api/shelf/artifacts` should grow `exempt[]` + a `summary` block** so
+  the console can render "48 of 56 runtime-fetched tools are not staged, each
+  names why" without client-side counting. Style `ARCHIVE_*` /
+  `ARTIFACT_TOO_LARGE` rows as backlog and the rest as settled — **no red**: an
+  exemption is a correct state, and colouring 48 rows red trains a DC to ignore
+  the panel.
+* **`payloads/sources.json` cannot carry `exempt[]` yet** — the renderer lives
+  in `payload_shelf.py`. When added it must fall under the same
+  byte-determinism and `--check` drift rules, and `build-payloads.sh` must
+  **ignore** it: it is documentation, not a staging instruction.
+* **The beacon does not prepend the stage directory to `PATH`.** Every corpus
+  step invokes these tools by bare name, the staging allowlist correctly
+  forbids `/usr/local/bin`, and a `grep` for `PATH` across `agent/beacon/` and
+  `agent/executor/` finds only test files. **This is a hard dependency of the
+  archive-member work, not a follow-up:** without it those tools would stage
+  perfectly and every step would still fail `command not found`.

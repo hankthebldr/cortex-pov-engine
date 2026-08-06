@@ -9,12 +9,39 @@
 > [`docs/superpowers/specs/2026-05-19-tool-adapter-framework-design.md`](../superpowers/specs/2026-05-19-tool-adapter-framework-design.md);
 > for pack-authoring see [`tools/packs/README.md`](../../tools/packs/README.md).
 
-> **STALENESS WARNING (2026-08-05).** Every count in §0 and every table below
-> was enumerated on **2026-06-07, when there were 69 packs**. There are now
-> **91**. The Kali pass added 15 and the payload-shelf pass added 7. Treat the
-> per-tier tables as a snapshot, not ground truth; the counted ground truth is
-> `python3 -c "from tools.adapter_loader import load_adapters; …"` at boot and
-> `scripts/check-adapter-sources.sh`. §9 below is current.
+> **STALENESS WARNING (updated 2026-08-06).** Every count in §0 and every table
+> below was enumerated on **2026-06-07, when there were 69 packs**. There are now
+> **91**. Treat the per-tier tables as a snapshot, not ground truth. §9 is
+> current; §§0–8 are not.
+>
+> **Measured on the tree 2026-08-06 — this is the ground truth:**
+>
+> | tier | doc says | actually |
+> |---|---:|---:|
+> | 1 in-tree | 3 | **3** |
+> | 2 submodule | 8 | **1** (`TOOL-ATOMIC-RED-TEAM` only) |
+> | 3 IaC-provisioned | 20 | **20** |
+> | 4 runtime-fetched | 27 | **56** |
+> | 5 external/reference | 11 | **11** |
+> | **total** | 69 | **91** |
+>
+> The tier-4 table below therefore lists **27 of 56** packs, and none of the 8
+> shelf-backed ones (`TOOL-LINPEAS`, `TOOL-PSPY`, `TOOL-SUID3NUM`, `TOOL-LSE`,
+> `TOOL-LINENUM`, `TOOL-DEEPCE`, `TOOL-TRAITOR`, `TOOL-AMICONTAINED`) — see §9.1
+> for those. Individual rows have also drifted: `TOOL-CREDKING`'s licence is now
+> `LicenseRef-NONE`, not `LicenseRef-ustayready`, and `TOOL-TRIVY`'s pinned
+> release URL is **404 upstream** (see [`payload-shelf.md` §11.3](payload-shelf.md)).
+>
+> **Consequence worth naming: the tier 2 → 4 re-tiering weakened a CI gate.**
+> `scripts/check-adapter-sources.sh` **FAILs** on a missing tier-2 `source_path`
+> (the GAP-ADAPT-01 guard) but only **WARNs** on tier-4. With one tier-2 pack
+> left, that gate now hard-guards exactly one adapter and emits 51 warnings:
+> `Summary: PASS=7 WARN=51 FAIL=0`. That is a real reduction in enforcement, and
+> nothing announced it — the re-tiering was correct per pack, but the gate's
+> blast radius was never re-examined.
+>
+> Count, never quote — the snippet is in
+> [`tools/packs/README.md` § Counting](../../tools/packs/README.md).
 
 ## 0. TL;DR numbers (verified by enumeration, 2026-06-07 — SEE STALENESS WARNING)
 
@@ -448,8 +475,16 @@ POV report as *"Cortex missed it"*. A pack that declares `install.artifact`
 moves the fetch onto the DC's own SimCore, where egress is already accepted, and
 makes the bytes checksummable before they reach a customer host.
 
-Contract: [`payload-shelf.md`](payload-shelf.md). Schema and the `TA-01`..`TA-12`
+Contract: [`payload-shelf.md`](payload-shelf.md). Schema and the `TA-01`..`TA-17`
 rules: [`tools/packs/_schema.yml`](../../tools/packs/_schema.yml).
+
+Since 2026-08-06 a tier-4 pack must declare **exactly one** of
+`install.artifact` (the shelf serves it) or `install.artifact_exempt` (it does
+not, and here is why) — `TA-13` rejects neither, `TA-14` rejects both,
+`TA-15` keeps the exemption tier-4-only, `TA-16` rejects a placeholder reason,
+and `TA-17` requires a `revisit` on the three codes that describe a CortexSim
+limitation rather than a property of the tool. All are **structural** and are
+NOT gated by `CORTEXSIM_STRICT_REFS`.
 
 ### 9.1 The 8 packs that declare a staged artifact
 
@@ -490,20 +525,101 @@ Two licence notes worth carrying into a customer conversation:
   `tests/tools/test_adapter_artifact_schema.py::test_the_shipped_shelf_bindings_are_pinned_and_licensed`
   fails on an unlicensed or `"unknown"` binding.
 
-### 9.2 Why the other ~42 tier-4 packs have NO artifact — and must not fake one
+### 9.2 Why the other 48 tier-4 packs have NO artifact — and must not fake one
 
-This gap is meant to be **legible, not closed by guessing**. `compose()` reports
-each one in `unstaged_adapters[]` with a reason and flips `air_gapped` to
-`false`, so a DC learns it before the engagement rather than in it.
+This gap is meant to be **legible, not closed by guessing**. Since 2026-08-06 it
+is also **mandatory to state**: every tier-4 pack declares exactly one of
+`install.artifact` or `install.artifact_exempt`, and **TA-13 REJECTS a pack that
+declares neither**. A warning would have scrolled past in a boot log — which is
+precisely how 48 packs came to share one byte-identical non-explanation. The
+counts below are measured on the tree, not estimated.
 
-| family | ~count | why it is not shelf-able |
+| reason_code | count | why it is not shelf-able |
 |---|---:|---|
-| distro package manager | ~20 | An `apt-get install -y <pkg>` resolves a dependency graph, not a file. Closing this means hosting a Debian mirror — a different project. |
-| language package manager | ~15 | Same shape one layer up (pip / pipx / gem / `go install` / cargo): a resolver, not a file. A vendored wheel/gem set is a real option and a separate design. |
-| `git clone` of a tree | ~8 | Many files, not one. `kind: archive` is REJECTED by **TA-08** because no consumer can unpack one — the Go beacon is stdlib-only by contract and the K8s init container is a busybox `wget`. Accepting the value would let a pack declare a tool that silently never lands. |
-| release **archive** | ~5 | Single artifact, wrong container (`.zip` / `.tar.gz`). These are the **first candidates** when an unpack step lands on the consumers — until then, declaring them would be a claim TA-08 correctly refuses. |
-| oversized single file | 1 | `kubescape` is genuinely one binary, but the `v4.0.11` linux-amd64 asset is **262 MB** — four times the 64 MiB `CORTEXSIM_SHELF_MAX_BYTES` default. Raising the cap for one tool trades a hard limit for a 262 MB image layer. |
+| `DISTRO_PACKAGE` | 18 | An `apt-get install -y <pkg>` resolves a dependency graph, not a file. Closing this means hosting a Debian mirror — a different project. |
+| `LANGUAGE_PACKAGE_MANAGER` | 12 | Same shape one layer up (pip / pipx / gem / `go install` / cargo): a resolver, not a file. `evil-winrm` alone pulls 8 runtime gems. A vendored wheel/gem set is a real option and a separate design. |
+| `SOURCE_TREE_REQUIRED` | 7 | The tool **is** a directory. `seclists` is 3.3 GB of wordlists; `cmseek` needs its signature DB; `skyark` imports two sibling PowerShell modules; `chain-reactor` publishes no binaries and is built with `make` at run time. |
+| `ARCHIVE_ONLY_NO_EXTRACTOR` | 6 | Single artifact, wrong container (`.tar.gz` / `.zip`). `kind: archive` is REJECTED by **TA-08** because **no consumer can unpack one** — `agent/beacon/artifact.go::Artifact` has no `Kind` field at all, the K8s init container is a `wget`+`mv` loop on an image with no `unzip`, and `build-payloads.sh` hard-fails on it. These are the **first candidates** when single-member extraction lands; each carries the measured archive digest and member name in its `revisit` line. |
+| `NEEDS_RUNTIME_DATA` | 2 | The binary is inert without a feed it fetches at run time (a template repo; a vulnerability DB). Staging the binary would remove the *install* download and leave the *data* download — so the target still needs egress while CortexSim reported `air_gapped: true`. A false-green the shelf would manufacture itself. |
+| `LICENCE_NO_REDISTRIBUTION` | 1 | `credking` publishes no licence at all, so there is no right to serve its bytes onto a host the DC does not own. The shelf **redistributes**; it does not cache. |
+| `ARCHIVE_MEMBER_NOT_SELF_CONTAINED` | 1 | `kube-bench`'s archive holds **205 entries** — the binary plus a `cfg/` CIS-benchmark tree. It is *under* the size cap and looks shelvable on the release page; only opening the archive shows the binary alone exits with a config error. |
+| `ARTIFACT_TOO_LARGE` | 1 | `kubescape` is genuinely one binary, but the `v4.0.11` linux-amd64 asset is **262,032,010 bytes** — four times the 64 MiB `CORTEXSIM_SHELF_MAX_BYTES` default. Raising the cap for one tool trades a hard limit for a 250 MB image layer. |
 
-The honest summary: **8 of 50 tier-4 packs are air-gap-capable today.** The
-remaining 42 still need public-internet egress on the target, and the console
-says so per scenario at `GET /api/shelf/resolve/{scenario_id}`.
+The honest summary: **8 of 56 tier-4 packs are air-gap-capable today.** The
+remaining 48 still need public-internet egress on the target, and the console
+says so per scenario at `GET /api/shelf/resolve/{scenario_id}`. Of those 48,
+**40 are settled forever** — they would need a mirror of someone else's package
+index — and the real backlog is the **8 adapters** carrying a mandatory
+`revisit` line (TA-17). 40 + 8 = 48. Full triage, including two dead upstream
+URLs found by probing every pinned URL in the tree:
+[`payload-shelf.md` §11](payload-shelf.md).
+
+### 9.3 Where a DC actually SEES this — and where they do not yet
+
+| surface | shows the egress fact? | shows the exemption **reason**? |
+|---|---|---|
+| Launch → per-scenario preflight (`ScenarioPreflightCard`, `tools` row) | **yes** — names each tool that the *target* fetches at run time, and warns that the step runs without it on a default-deny network | no |
+| Readiness → *Payload shelf* component + Tools & Payloads nav badge | **yes** — declared vs staged, and the scenario IDs that will refuse at compose | no |
+| `GET /api/shelf/resolve/{scenario_id}` · `compose().unstaged_adapters[]` | yes | **no** — one generic sentence for all 48 |
+| `GET /api/tools/adapters` | no | **no** — `_adapter_summary()` omits `install.artifact` and `install.artifact_exempt` entirely |
+
+**The durable declaration is right; the operator-facing string is not yet wired.**
+A DC learns *that* a tool needs target egress at the moment it matters (the
+launch button). They cannot yet learn *why* it is not on the shelf, or whether
+that is a settled decision or an open backlog item, without opening the pack
+YAML. Closing this is two small changes in files this pass did not own:
+`_adapter_summary()` in `core/api/tools.py` should carry
+`artifact_exempt.{reason_code,reason,revisit}`, and `UnstagedAdapter` in
+`core/engine/payload_shelf.py` should carry `reason_code` so
+`unstaged_adapters[]` stops emitting one sentence for 48 different decisions.
+Console copy guidance is in [`payload-shelf.md` §11.4](payload-shelf.md).
+
+---
+
+## 10. The three tier-2 **Rust** tools — invisible to this catalog until 2026-08-05
+
+`signalbench`, `ackbarx` and `xdrtop` are tier-2 submodule tools that **have no
+`tools/packs/*.yml` at all**. `grep -rln` over `tools/packs/` for all three
+returns nothing, so §2's master table, §5's orphan list, `scripts/check-adapter-
+sources.sh`'s tier-2 loop and the CI `adapters` job **never looked at any of
+them**. Their only binding is `core/tools/registry.py::STATIC_TOOL_REGISTRY`,
+consumed by `core/tools/instantiator.py`.
+
+That blindness had a cost. Three defects were live and unnoticed:
+
+| # | defect | proven by |
+|---|---|---|
+| 1 | **`signalbench` has never been buildable with its declared `build_cmd`.** `src/techniques/software.rs:19` does `include_bytes!("../../embedded_binaries/pacemaker_helper")`; that file is not in the upstream tree and must be produced by building `helpers/pacemaker` first. `cargo build --release` fails rc=101. | executing it |
+| 2 | **`signalbench`'s `run_template` is rejected by its own CLI.** `--technique {mitre_id} --count {count} --output json` → `error: unexpected argument '--technique' found`. The real CLI is subcommand-based: `signalbench run <TECHNIQUES>...`. | executing it |
+| 3 | **`ackbarx`'s `run_template` is rejected by its own CLI.** `--listen-port 162 --forward-url {…}` → `error: unexpected argument '--listen-port' found`. `ackbarx` is config-file driven (`-c <FILE>`). | executing it |
+
+### Why they are NOT on the payload shelf
+
+The shelf's `install.artifact` describes a **download**: it requires an upstream
+`url`, a `pin`, and a `sha256` known *before* the fetch. A locally-built binary
+has no upstream URL and its digest is a function of the toolchain. **TA-01**
+already hard-rejects `install.artifact` on `tier != 4` — **keep that rule**, but
+note its stated rationale is **wrong for these three**: it says tier-1/2 trees
+"have no egress problem for the shelf to solve", and `cargo build --release` on
+a customer jumpbox needs rustup *and* crates.io, which is an egress problem in
+every sense. Fix the sentence, keep the rule.
+
+Upstream releases cannot rescue it either: `xdrtop` ships only `.deb`/`.tar.gz`/
+`.zip` and **TA-08 rejects `kind: archive` outright**, and `ackbarx`'s gitlink is
+**untagged**, so no `pin` could honestly reference the source we ship.
+
+### What replaced it
+
+A sibling shelf, `rust-dist/`, filled by `scripts/build-rust-dist.sh` (or
+`core/Dockerfile`'s `rust-builder` stage) and served with the **agent's** exact
+idiom — plural collection / singular artifact / `/sha256`, `FileResponse`, an
+`X-CortexSim-*-SHA256` header, and a 404 naming the directory and the command
+that fills it. Three static-musl `linux/amd64` binaries, each **executed** on
+clean ubuntu 22.04/24.04, debian 12-slim and alpine 3 with `--network none`
+before publication.
+
+A ~50 ms `--check-recipe` gate now runs inside `scripts/check-adapter-sources.sh`
+— so this catalog's own preflight finally sees all three — and asserts, among
+other things, that `sources/signalbench/helpers/pacemaker` still exists.
+
+**Full contract: [`rust-tools.md`](rust-tools.md).**

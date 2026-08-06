@@ -42,6 +42,43 @@
   staging — first TA0042 coverage); NDR=7. Every plane now carries IOC coverage
   (GAP-10 closed). See [`GAP-ANALYSIS.md`](GAP-ANALYSIS.md) "CLOSED in the 2026-06-15
   pass."
+- **Counted ground truth (verified 2026-08-06 — tier-4 triage + connector + hardening pass):**
+  All figures re-run in the prod image on this date; where they disagree with any
+  prose below, these win.
+  * **Corpus:** 170 loadable scenarios · 170 TTP cards · 15 planes · 21 EAL
+    plugins · 266 UC/TC index rows (v2.2, `strict_refs: true`) · 116 XSIAM
+    operation packs · **133 HTTP routes**.
+  * **Adapters:** `packs 91 · rejected 0 · per-tier {1:3, 2:1, 3:20, 4:56, 5:11}`.
+    Tier 4: **8 shelf-backed · 48 exempt · 0 undeclared** — every tier-4 pack now
+    declares exactly one of `install.artifact` or `install.artifact_exempt`
+    (TA-13 rejects neither). Exemptions: `DISTRO_PACKAGE` 18 ·
+    `LANGUAGE_PACKAGE_MANAGER` 12 · `SOURCE_TREE_REQUIRED` 7 ·
+    `ARCHIVE_ONLY_NO_EXTRACTOR` 6 · `NEEDS_RUNTIME_DATA` 2 ·
+    `LICENCE_NO_REDISTRIBUTION` 1 · `ARCHIVE_MEMBER_NOT_SELF_CONTAINED` 1 ·
+    `ARTIFACT_TOO_LARGE` 1. **40 settled · 8 backlog.** The shelf-backed count
+    **did not move this pass** and that is the correct outcome: not one of the 48
+    is a bare single file at a pinned URL, so the entire remaining opportunity is
+    archive-shaped and `kind: archive` is rejected because no consumer can unpack
+    one. See [`adapter-catalog.md` §9.2–9.3](adapter-catalog.md).
+  * **Gates:** backend **4651 passed / 241 skipped / 0 failed** · UI **619 passed**,
+    `vite build` ✓ · `validate.py` **346 pass / 0 warn / 0 fail** ·
+    `make check-refs` **6 passed** · `make coverage-strict` **exit 0** ·
+    shelf drift **OK (8 derived, 0 unbound)** ·
+    `test_push_generator_invariant` **5 passed** (byte-frozen bundles unmoved) ·
+    agent builds for `linux` / `darwin` / `windows`.
+  * ***tenant-verified: 0.*** Unchanged, and nothing in this pass moved it. No
+    run and no assertion has ever executed against a live Cortex tenant; every
+    connector result above came from an injected transport or
+    `httpx.MockTransport`. `POST /api/connectors/{kind}/preflight` reports
+    `queries_issued` and a `proves` string precisely so a mocked green cannot be
+    quoted as "connection validated".
+  * **Known open wire defect:** the console's Readiness surface calls
+    `POST /api/xsiam/tenants/{name}/preflight` for `kind: xsiam_tenant`; that
+    route does not exist and returns **405**, which the client's 404-only
+    fallback does not catch, so the DC sees `preflight failed: Method Not
+    Allowed`. The working route for both kinds is
+    `POST /api/connectors/{kind}/preflight`. Reproduced in a browser against a
+    live SimCore 2026-08-06.
 - **Counted ground truth (verified 2026-08-05 — payload-shelf content pass):**
   **170 loadable scenarios · 170 TTP cards** across **15 detection planes** ·
   **91 tool-adapter packs**, of which **8 declare a payload-shelf

@@ -376,6 +376,20 @@ manifest silently keep working, so the drift would never be discovered. New
 consumers (the Go beacon, the console) use `/api/shelf/*`; K8s keeps `/api/k8s/*`
 forever. Contract: [`payload-shelf.md`](payload-shelf.md).
 
+**The Rust tools are a separate mount, and no manifest fetches one — yet.**
+`GET /api/tools/binary/{tool}` (+ `/sha256`, + `/api/tools/binaries`) serves the
+static musl builds of `signalbench` / `ackbarx` / `xdrtop` that
+`core/Dockerfile`'s `rust-builder` stage bakes into `/app/rust-dist`. It is the
+same idiom as the table above — plural collection, singular artifact,
+`X-CortexSim-Tool-SHA256`, `no-store`, digest computed on SimCore and verified by
+the consumer before execution — so a pod could fetch one with the identical shim.
+It does not, because **no scenario references those three tools** in
+`external_tools[]` or `cluster_posture.payloads`; wiring a fetch nobody needs
+would be a path with no test and no user. Their consumer today is SimCore's own
+`tools/instantiator.py` (image path `/app/rust-dist/...`) plus a DC doing a
+verifiable manual fetch. Contract: [`payload-shelf.md`](payload-shelf.md)
+§"The Rust tool shelf".
+
 **`_resolve_payloads` now delegates to `payload_shelf.compose(consumer="k8s")`**
 rather than keeping its own shelf lookup, so there is exactly one integrity walk
 (two implementations of an integrity check drift, and the one that drifts is the

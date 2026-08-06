@@ -28,16 +28,38 @@
                                  DC downloads + runs offline
 ```
 
-- **No Cortex API connection.** SimCore generates signals *into* the customer
-  environment; it never reads alerts out. Detection confirmation is a manual DC
-  action via `PUT /api/results/{id}/validate`.
+- **The Cortex connection is OPT-IN, READ-ONLY, and no longer hypothetical**
+  *(corrected 2026-08-06 — this bullet previously read "No Cortex API
+  connection … it never reads alerts out", which has been false since the
+  measurement loop landed and directly contradicted `CLAUDE.md`)*. SimCore's
+  primary job is still to generate signal **into** the customer environment, and
+  it **never writes** to Cortex (`CORTEXSIM_XSIAM_ALLOW_WRITE` /
+  `_ALLOW_DESTRUCTIVE` default off). But when a credential is configured it
+  **does** read out: `core/connectors/` pulls observed alerts to auto-validate
+  seeded `Result` rows (evidence-backed MTTD), and `core/integrations/xsiam/`
+  runs read-only XQL for Tier-2 verification and assertion probes.
+  `PUT /api/results/{id}/validate` remains the manual, offline path — it is the
+  fallback, not the only mechanism. See §1.15.
 - **Transport is plain JSON over HTTP, plus Server-Sent Events for live updates.**
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **All 11 routers** are mounted under `/api` in `core/main.py` (the 11th is the
-  new `events` router). Plus one app-level route: `GET /api/health`, and a static
-  file mount at `/`. **65 HTTP routes total** (64 `@router` routes + `/api/health`).
+- **133 HTTP routes total** (counted 2026-08-06 against the built image, see
+  below). Routers under `/api`, plus the app-level `GET /api/health` and a static
+  file mount at `/`. Per-prefix: `runs` 17 · `agents` 14 · `eal` 13 ·
+  `credentials` 10 · `uctc` 9 · `tools` 8 · `ttps` 8 · `xsiam` 8 · `shelf` 7 ·
+  `k8s` 6 · `assertions` 6 · `scenarios` 5 · `infra` 4 · `results` 4 · `pov` 3 ·
+  `connectors` 2 · `mitre` 2 · `run` 1 · `events` 1 · `health` 1, plus 5
+  FastAPI-owned docs/openapi routes.
+
+> **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
+> here was two content passes stale. The command is the ground truth:
+>
+> ```bash
+> docker run --rm -v "$PWD:/app" -w /app -e CORTEXSIM_BASE_DIR=/app cortexsim:dev \
+>   python -c "import sys;sys.path.insert(0,'core');from main import app;\
+> print(len([r for r in app.routes if getattr(r,'methods',None)]))"
+> ```
 
 ---
 
@@ -183,7 +205,7 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 | GET | `/api/agents/binary/sha256` | Expected digest for a target | query: `os`, `arch` | `PlainTextResponse` hex digest; same 400/404 |
 | POST | `/api/agents/install/telemetry` | Installer reports its terminal stage/code | `InstallTelemetry` (length-capped, control chars stripped) | `{"status":"recorded"}`; also an `agent.install` SSE frame |
 | GET | `/api/agents/install/attempts` | Read recent install attempts | query: `limit` (default 25) | `{"attempts":[…],"total":N}` — in-memory deque (100), lost on restart |
-| POST | `/api/agents/enroll/tokens` | Mint a TTL / max-uses / revocable enrollment token | `{label?, ttl_minutes?, max_uses?}` | token (revealed once) |
+| POST | `/api/agents/enroll/tokens` | Mint a TTL / max-uses / revocable enrollment token | `{label?, ttl_seconds?, max_uses?}` (`ttl_seconds` default 3600, `ge=60`, `le=2_592_000`) | token (revealed once) |
 | GET | `/api/agents/enroll/tokens` | List token metadata (never the secret) | — | `{"tokens":[…]}` |
 | DELETE | `/api/agents/enroll/tokens/{token_id}` | Revoke a token | — | `{"status":"revoked"}` |
 | POST | `/api/agents/enroll` | Redeem a token; SimCore **assigns** the agent id | `EnrollRequest`: `{token, hostname, os, capabilities[], desired_name?}` | `{"status":"enrolled","agent_id"}`; 4xx `ENROLL_DENIED` |
@@ -205,7 +227,8 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 - **The installer needs no compiler and no public-internet egress on the target**
   (changed 2026-07-31; it previously ran `go install …@latest` against
   proxy.golang.org, which no hardened endpoint allows). SimCore *serves* the
-  beacon: `{linux,darwin}×{amd64,arm64}` are cross-compiled into `/app/agent-dist`
+  beacon: `{linux,darwin}×{amd64,arm64}` + `windows/amd64` are cross-compiled into
+  `/app/agent-dist`
   by the `agent-builder` stage of `core/Dockerfile` (baked into the image, and
   **not** shadowed by any compose mount) or on a host-run dev SimCore by
   `make agent-dist` → `scripts/build-agent-dist.sh`. `CORTEXSIM_AGENT_DIST` points
@@ -220,7 +243,20 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   `--user` unit otherwise (with the `runuser`/linger caveat printed), or a launchd
   `LaunchDaemon`/`LaunchAgent` on macOS. With no supervisor present it detaches via
   `setsid`+`nohup` and reports `DEGRADED_NO_SUPERVISOR` rather than claiming a
-  service exists. `?mode=foreground` keeps the old babysat behaviour;
+  service exists (verified on a bare `ubuntu:22.04` target: "no service manager
+  available — detaching the beacon with setsid/nohup", pid printed, exit 0).
+  **Caveat — that degrade only fires when `systemctl` is ABSENT.** On a host
+  where the `systemctl` *binary* exists but systemd is not PID 1 (Docker, WSL
+  without systemd, LXC, chroot), `cs_install_systemd()` probes
+  `command -v systemctl` alone, so it enters the systemd branch and hard-fails
+  `SERVICE_START_FAILED` (`cs_fail` calls `exit 1`, not `return 1`, so the nohup
+  fallback is unreachable). The DC is left with the binary installed, a unit file
+  written, **no beacon running**, an enrolled agent row that reads `online` for
+  ~30s before drifting stale, and a `fix:` line recommending `journalctl` on a
+  host with no journal. Fix is queued as a handoff patch against
+  `core/api/agents.py` (probe the live manager — `systemctl is-system-running ||
+  [ -d /run/systemd/system ]` — and make the residual failure `return 1` so it
+  degrades instead of dying). `?mode=foreground` keeps the old babysat behaviour;
   `?uninstall=1` returns an idempotent best-effort removal script.
   `CORTEXSIM_BIN_DIR` / `CORTEXSIM_LOG` relocate the install prefix and log.
 - Every stage exits with a stable code, printed as `stage= code= / what: / fix:`
@@ -229,21 +265,31 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   `NO_AGENT_ID` · `BINARY_FETCH_FAILED` · `BINARY_UNAVAILABLE` · `CHECKSUM_MISMATCH` ·
   `CHECKSUM_SKIPPED` · `BIN_NOT_EXECUTABLE` · `BIN_INSTALL_FAILED` ·
   `SOURCE_BUILD_FAILED` · `SERVICE_START_FAILED` · `DEGRADED_NO_SUPERVISOR`.
-- **Windows beacon: BUILDABLE, not yet SERVABLE (updated 2026-08-02).** The
-  beacon now compiles and vets clean for `GOOS=windows` — the POSIX-only
-  `syscall.SysProcAttr{Setpgid}` / `syscall.Kill` moved behind
-  `agent/executor/platform_unix.go` + `platform_windows.go`, and CI gates all
-  three host families (see the `agent` job in `ci.yml` / `make test-agent-cross`).
-  **However `scripts/build-agent-dist.sh` still omits `windows/amd64` from its
-  `TARGETS`**, so no windows binary reaches the shelf and `?os=windows` still
-  returns 200 PowerShell that hard-fails `WINDOWS_AGENT_UNAVAILABLE` *before*
-  enrolling (no phantom agent row). Two stale assertions must be corrected
-  together with that dist-matrix change, because both now state something false:
-  the comment at `scripts/build-agent-dist.sh:17-19` and the operator-facing
-  string `core/api/agents.py::_WINDOWS_PREFLIGHT_UNAVAILABLE`, which tells a DC
-  the executor "does not compile for GOOS=windows". Until the matrix is fixed,
-  **push mode is the working path for Windows targets** — and it is now a real
-  one (see §1.2 `format=powershell`).
+- **Windows beacon: SERVABLE (2026-08-05).** `scripts/build-agent-dist.sh` and the
+  `agent-builder` stage in `core/Dockerfile` both cross-compile `windows/amd64` to
+  `cortexsim-agent-windows-amd64.exe`, so a deployed image serves it from
+  `GET /api/agents/binary?os=windows` (verified: HTTP 200, `PE32+ executable
+  (console) x86-64`, 5,797,888 B, `X-CortexSim-Agent-SHA256` equal to the
+  in-image digest) and `?os=windows` returns a PowerShell installer with **no**
+  preflight refusal. `_WINDOWS_PREFLIGHT_UNAVAILABLE` remains, correctly, as a
+  statement about a deployment built without the agent-builder stage.
+  <br>The earlier note here blamed `scripts/build-agent-dist.sh` for omitting
+  `windows/amd64`. **That was the wrong cause with the right conclusion**: the
+  script has carried the target since the build-tag split; the omission was in
+  the `core/Dockerfile` agent-builder loop, so `make agent-dist` on a dev box
+  emitted 5 binaries while every *deployed image* shipped 4 and 404'd — with
+  remediation text advising the DC to rebuild the image, the one action that
+  provably could not fix it. Nothing caught it because CI's `agent` job proves
+  the beacon *compiles* for Windows and `make agent-dist` proves the *script*
+  emits it; no gate ever looked inside `/app/agent-dist`. Two now do:
+  `tests/installer/test_agent_dist_matrix_parity.py` (static, parses both files,
+  fails closed if either parser matches nothing) and `make check-agent-shelf`
+  (runs `sha256sum -c` against the **built image** with no host mount, so source
+  drift cannot fake it).
+  <br>**Still unproven: no Windows host has executed the beacon or the PowerShell
+  installer.** Serving, digesting and installer emission are verified; `sc.exe`
+  service creation and PS 5.1 execution are not. Push mode (§1.2
+  `format=powershell`) remains the path with end-to-end evidence behind it.
 - The Go beacon treats **SIGHUP** as a graceful shutdown; previously a hangup hit
   the default disposition and killed the beacon when the terminal went away.
 
@@ -494,9 +540,42 @@ note that `scripts/build-agent-dist.sh` and `GET /api/agents/install` do **not**
 yet bake it into the systemd unit, so shelf `token` mode + a beacon is currently
 unreachable in the field (it 403s with `ARTIFACT_FORBIDDEN` naming the fix).
 
-> **Still undocumented in this table:** `/api/connectors`, `/api/xsiam`, and the
-> `/api/runs/*` storyline + causality routes. Those predate this pass and are
-> covered by their own design docs.
+### 1.15 Cortex connector — the measurement loop (`core/api/connectors.py`, prefix `/connectors`)
+
+> Added to this table 2026-08-06. Every call below is **opt-in and read-only**;
+> none writes to Cortex. With no credential configured they answer **200 with a
+> `pending`-shaped result**, never an error and never a green.
+
+| method | path | purpose | notable response |
+|---|---|---|---|
+| GET | `/api/connectors` | List connector kinds and, per kind, whether a usable integration credential is **configured** and **verified** | includes `preflight_url`; reports **both** credential kinds (`xsiam` = alert read-back, `xsiam_tenant` = XQL) |
+| POST | `/api/connectors/{kind}/preflight` | **Staged tenant preflight** — "is my connection working?" answered *before* the POV | `{tenant, kind, base_url_host, overall, stages[], queries_issued, capabilities_confirmed[], capabilities_denied[], proves}` |
+| POST | `/api/runs/{run_id}/observations` | Manual batch ingest of alerts a DC exported from the console — no credential, fully offline | seeded `Result` rows gain `observed_at` → MTTD |
+| POST | `/api/runs/{run_id}/reconcile?connector=xsiam` | Credential-backed pull for the run's window | same funnel (`apply_verdicts`) as the manual path |
+| POST | `/api/runs/{run_id}/verify` | **Tier-2** verification via read-only XQL (see §1.3) | 200 + `pending` + `reason` when no credential |
+
+**Preflight stages**, in order, each with a stable `code` and a `remediation`
+naming the consequence *in verdict terms*: `config` → `dns_tls` → `auth` →
+`scope_alerts` (kind `xsiam`) / `scope_xql` (kind `xsiam_tenant`) → `datasets`
+(opt-in, priced one XQL query per dataset) → `clock`. **Every stage runs even
+when an earlier one degraded**, and a skipped stage is reported explicitly as
+`SKIPPED` / `PF_SKIPPED_UNREACHABLE` — an absent stage would read as "fine". Only
+an unreachable host short-circuits.
+
+`queries_issued` is in every response **on purpose**: a preflight driven by an
+injected transport reports `0`, and the `proves` string says so verbatim, so a
+mocked green can never be quoted as "connection validated".
+
+> **Wire caveat (open as of 2026-08-06).** The console's Readiness surface calls
+> `POST /api/xsiam/tenants/{name}/preflight` for `kind: xsiam_tenant`. **That
+> route does not exist** — it returns **405**, which the client's 404-only
+> fallback does not catch, so the DC sees `preflight failed: Method Not Allowed`.
+> The working route for both kinds is `POST /api/connectors/{kind}/preflight`.
+> See `ui/src/components/console/ReadinessView.jsx::TenantRow.runPreflight`.
+
+**Still undocumented in this table:** `/api/xsiam` (the ~116-operation read-only
+Cortex operation catalog) and the `/api/runs/*` storyline + causality routes.
+Both are covered by their own design docs.
 
 ---
 
