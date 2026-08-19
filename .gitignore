@@ -24,6 +24,8 @@ data/
 # Logs (including rotated logs: cortexsim.log.1, .2, ...)
 logs/*.log
 logs/*.log.*
+# PID file written by scripts/dev-up-native.sh
+logs/*.pid
 
 # IDE
 .idea/
