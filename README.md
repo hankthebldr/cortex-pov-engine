@@ -34,9 +34,26 @@ cd cortex-pov-engine
 build, Rust tool builds, React UI build, Docker Compose startup.
 
 ### Local dev (no Docker)
+
+One command — the Docker-free twin of `scripts/dev-up.sh`. Generates `.env`,
+creates the venv, builds the React UI into `core/static/`, launches SimCore, and
+polls `/api/health` until it reports ok. Use it when the Docker daemon is
+unavailable or the image registry is unreachable (sandboxed CI runners, cloud
+dev containers):
+
+```bash
+./scripts/dev-up-native.sh              # full bring-up
+./scripts/dev-up-native.sh --skip-ui    # reuse an existing core/static/ build
+./scripts/dev-up-native.sh --stop       # stop the running instance
+```
+
+Or by hand. Note the UI build step: SimCore serves the SPA from `core/static/`,
+so without it `/` returns 404 while the API still answers:
+
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r core/requirements.txt
+(cd ui && npm ci && npm run build) && rm -rf core/static && cp -r ui/dist core/static
 cd core && CORTEXSIM_ENV=development CORTEXSIM_BASE_DIR=$(pwd)/.. \
   uvicorn main:app --host 0.0.0.0 --port 8888 --reload
 ```
