@@ -92,5 +92,11 @@ agent-dist/
 # output, exactly like agent-dist/ above — never committed.
 rust-dist/
 
+# Local landing zone for inbound handoff packages (spreadsheet exports, plans).
+# Whatever survives triage is promoted into docs/ by hand — the drop itself is
+# never committed, because its payload duplicates what the promotion already
+# tracked (the v2.2 drop was 8 CSVs byte-identical to _v2.2-source/).
+handoff/
+
 # Built beacon binaries published by scripts/lab/publish-agent.sh
 dist/agent/

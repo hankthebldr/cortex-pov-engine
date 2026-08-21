@@ -163,7 +163,8 @@ can go red. It does not mean anyone watched it do so.
 
 | File | What it is |
 |---|---|
-| `_v2.2-source/` | the versioned snapshot — 8 tabs of the v2.2 patch pack |
+| `_v2.2-source/` | the versioned snapshot — 8 tabs of the v2.2 patch pack, plus the two `build_*.py` generators that emitted them (kept for provenance; they read their inputs from cwd and are not runnable in-tree) |
+| `IMPL-PLAN-pov-engine-index-reconciliation.md` | the 2026-07-31 handoff plan this reconciliation executed — history, not a live to-do list |
 | `VERSION` | version + source spreadsheet id |
 | `crosswalk-v2.2.csv` | scenario → index binding, one row per scenario, with rationale |
 | `proposed-tc-v2.3.csv` | 16 test cases the index does not yet carry |
