@@ -70,8 +70,8 @@ const TABS_CHEATSHEET = [
     body: 'Validate detections + export the POV report. KPI row shows coverage %, median MTTD, stitch count, pending. Scorecard rows have inline ✓ ✗ ○ buttons for per-detection validation and a detection-type chip (BIOC / XQL / Correlation / IOC). "Export POV report" produces a Cortex-branded markdown you can hand to the customer.',
   },
   {
-    name: 'Agents (More ▾)',
-    body: 'The beacon fleet, split out of Targets so agent lifecycle stands on its own. Shows every registered cortexsim-agent with live / stale liveness derived from last_seen, a deploy flow that hands you the one-line installer per OS, installer re-download, and confirm-gated retirement. Selecting an agent arms it as the launch target in pull mode — same as picking it from Targets used to be.',
+    name: 'Agents (Manage)',
+    body: 'The beacon fleet. Every registered cortexsim-agent with live / stale liveness derived from last_seen, a deploy flow that mints an enrollment token and hands you the one-line installer per OS (the token rides in an env var, not the URL, so it stays out of shell history and proxy logs), and confirm-gated retirement. Selecting an agent sets it as the ambient active agent AND arms it as the launch target in pull mode. Note the loopback warning: if you opened the console at localhost the one-liner is not safe to paste on a jumpbox.',
   },
   {
     name: 'Environments (More ▾)',

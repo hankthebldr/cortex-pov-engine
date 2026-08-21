@@ -93,6 +93,13 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   }, [refreshAgents])
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  // The one-liner is only as good as the address it carries. A DC on the
+  // control plane usually has the console open at localhost:8888 (dev-up.sh),
+  // and `localhost` pasted on a jumpbox resolves to the JUMPBOX — the beacon
+  // installs, calls itself, and the roster stays empty with nothing to read.
+  // The install endpoint refuses to bake a derived loopback, but say so here
+  // too: catching it before the copy beats catching it after the paste.
+  const originIsLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:|$)/i.test(origin)
 
   // Token-bearing installer (preferred) vs legacy explicit-id installer.
   // The token rides in an env var rather than the URL so it stays out of the
@@ -419,6 +426,17 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               serves a prebuilt, checksummed beacon — only <code>curl</code> and outbound
               reach to this SimCore.
             </p>
+            {originIsLoopback && (
+              <p className="deploy-warn" role="status" data-testid="deploy-loopback-warn">
+                ⚠ This console is open at <code className="mono">{origin}</code>, so the
+                one-liner below carries a loopback address. On the jumpbox that resolves to
+                the <strong>jumpbox itself</strong> — the beacon would install and call
+                nothing. Reopen the console on the control plane's reachable address (e.g.
+                <code className="mono">http://&lt;control-plane-ip&gt;:8888</code>) before
+                copying. The install endpoint refuses this too
+                (<code className="mono">INSTALLER_SERVER_LOOPBACK</code>).
+              </p>
+            )}
             {deployOS === 'windows' && (
               <p className="deploy-warn" role="status">
                 ⚠ No Windows beacon ships yet — this script refuses before it enrolls
