@@ -5,6 +5,7 @@ import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
 import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
+import { isRunUnproven } from '../DetectionStoryline.jsx'
 
 /**
  * EvidenceView — the Evidence tab.
@@ -32,6 +33,11 @@ export default function EvidenceView({
     || activeRun?.scenarioId
     || lastRun?.scenarioId
     || null
+
+  // Same run-status truth the Storyline uses: a run that never executed has no
+  // coverage to report, and "Validate all" on it would manufacture evidence.
+  const runStatus = pinnedRun?.status || activeRun?.status || lastRun?.status || null
+  const unproven = isRunUnproven(runStatus)
 
   const { rows, kpis, loading, validate, refresh } = useResultsData(targetRunId)
   const [selectedRowId, setSelectedRowId] = useState(null)
@@ -119,8 +125,10 @@ export default function EvidenceView({
               <button
                 className="btn"
                 onClick={handleValidateAll}
-                disabled={kpis.pending === 0}
-                title="Mark all pending detections as observed"
+                disabled={kpis.pending === 0 || unproven}
+                title={unproven
+                  ? `Run ${runStatus} — attesting detections on a run that never executed would fabricate evidence`
+                  : 'Mark all pending detections as observed'}
               >
                 Validate all
                 {kpis.pending > 0 && (
@@ -137,7 +145,7 @@ export default function EvidenceView({
         <MultiRunCompare />
       ) : (
         <>
-      <KpiRow kpis={kpis} />
+      <KpiRow kpis={kpis} unproven={unproven} runStatus={runStatus} />
 
       <MttdHistogram rows={rows} />
 
@@ -165,16 +173,24 @@ export default function EvidenceView({
 
 /* ─── KPI row ─────────────────────────────────────────────────────────── */
 
-function KpiRow({ kpis }) {
+function KpiRow({ kpis, unproven = false, runStatus = null }) {
   return (
     <div className="kpi-row">
-      <Kpi
-        label="Coverage"
-        value={kpis.coverage}
-        suffix="%"
-        valueClass="kpi__value--detected"
-        meta={`${kpis.detected} / ${kpis.total} detections confirmed`}
-      />
+      {unproven ? (
+        <Kpi
+          label="Coverage"
+          value="n/a"
+          meta={`run ${runStatus} — signal never generated`}
+        />
+      ) : (
+        <Kpi
+          label="Coverage"
+          value={kpis.coverage}
+          suffix="%"
+          valueClass="kpi__value--detected"
+          meta={`${kpis.detected} / ${kpis.total} detections confirmed`}
+        />
+      )}
       <Kpi
         label="MTTD · median"
         value={kpis.median != null ? kpis.median : '—'}

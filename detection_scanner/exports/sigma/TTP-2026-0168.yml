@@ -1,0 +1,29 @@
+title: "Intel-to-Enforcement Rollback \u2014 A Withdrawn Indicator Must Retract From the EDL and Restore Traffic Unattended \u2014 SIM-TIM-007 Feed-Matched Control FQDN Session Denied at the Enforcement Point"
+id: ttp-2026-0168-bioc-01
+status: experimental
+description: |
+  An estate host's session to the feed-matched control FQDN is denied, reset or dropped at the firewall while the indicator is promoted. Keying on the specific control FQDN rather than on a broad 'any EDL-blocked destination' predicate is deliberate: an unqualified rule fires on every legitimate EDL block in the estate and tells the DC nothing about this particular loop. This BIOC establishes the phase-A baseline that the rollback is measured against — without it, the phase-B allow proves nothing.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_fqdn contains "rollback-control."
+    | filter action in ("deny", "reset-both", "reset-client", "reset-server", "drop")
+    | comp count() as denied_sessions, earliest(_time) as first_deny, latest(_time) as last_deny by agent_hostname, src_host, dst_fqdn, action
+    | filter denied_sessions >= 1
+    | fields agent_hostname, src_host, dst_fqdn, action, denied_sessions, first_deny, last_deny
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

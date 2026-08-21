@@ -1,0 +1,127 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# One human, three identity providers, one query.
+#
+# The canary plant is what makes this a real claim rather than three unrelated
+# ingest checks: every identity emitter writes the SAME principal string —
+# csim-<token>@cortexsim-canary.invalid — into ITS OWN principal field
+# (EventData.TargetUserName on Windows, userPrincipalName on Entra,
+# actor.alternateId on Okta). A single query keyed on that one string either
+# returns a cross-provider timeline or it does not.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: PLT-ITDR-006
+name: One identity resolves across AD, Entra ID and Okta
+version: "1.0"
+status: active
+
+validation_class: PLT
+kind: state
+plane: ITDR
+
+uc_ref: UCS-ITDR-03
+tc_ref: TC-ITDR-06
+tc_refs: [TC-ITDR-06]
+uc_name: "Identity Threat Detection and Response"
+tc_name: "Demonstrate integration of identity sources via CIE and Marketplace for enriched risk context"
+
+moat_tier: LEAD
+methodology_family: F8
+primary_kpi: "Cross-Source Correlation Rate"
+success_criteria: |
+  One principal identifier, emitted into three identity providers' own
+  principal fields, is retrievable from all three normalized datasets by a
+  single query — a unified cross-provider timeline for one human.
+
+scope_limitations: >
+  Proves three identity providers' records land, normalize, and carry ONE
+  shared principal identifier that a single query joins into one time-ordered
+  cross-provider timeline. Does NOT prove that CIE's entity-resolution engine
+  merged them into a single entity OBJECT — no read API exposes the resolved
+  entity graph, so this evidences joinability by identifier, which is the
+  necessary condition for entity resolution and not the same as it. Does NOT
+  prove the records arrived via CIE or a Marketplace connector: the emitters
+  POST to an operator-supplied collector, and record provenance is not exposed
+  by any query surface. Does NOT prove resolution across DIFFERENT identifiers
+  for the same human (alias/UPN-change handling), which is the harder half of
+  entity resolution and is not machine-provable with a synthetic principal.
+
+stimulus:
+  kind: eal_campaign
+  campaign_id: plt-itdr-006-one-identity-3idp
+  detail: >
+    Run ad_windows_emitter, idp_signin_emulator (provider=microsoft) and
+    idp_signin_emulator (provider=okta) against the operator's collector with
+    the SAME fresh canary_token on all three steps. Each plants the canonical
+    principal csim-<token>@cortexsim-canary.invalid into its own provider's
+    principal field. Supply the token as context.canary.
+
+context_vars: [canary]
+
+checks:
+  - check_id: chk-01
+    title: The same principal is present in all three identity providers' datasets
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset in (msft_windows_security, msft_azure_ad_signin, okta_sso)
+        | filter TargetUserName contains "{{canary}}"
+              or userPrincipalName contains "{{canary}}"
+              or alternateId contains "{{canary}}"
+        | comp count() as events by _dataset
+      distinct_key: _dataset
+    threshold:
+      kpi: identity providers carrying the principal
+      op: ">="
+      value: 3
+      unit: ""
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-ITDR-06 "Qualitative pass" but names its providers
+        explicitly — "AD, Entra ID, and Okta". Three named providers is an
+        objectively countable floor, so the assertion sharpens to exactly the
+        three the test case asks for and no fewer.
+    negative_control:
+      description: >
+        Only Okta and Entra are onboarded; the on-prem AD forwarder is not
+        sending Security channel events yet, so the principal resolves across
+        two providers and the on-prem half of the timeline is missing — the
+        state most hybrid estates are actually in.
+      measured_value: 2
+
+  - check_id: chk-02
+    title: The cross-provider timeline has enough events to be an investigation
+    probe: xql_rows
+    weight: 1.0
+    params:
+      # Deliberately NOT a distinct count: the timeline claim is about having
+      # the events, in one place, in time order. One event per provider is the
+      # floor below which "unified timeline" is a slide, not a capability.
+      query: |
+        dataset in (msft_windows_security, msft_azure_ad_signin, okta_sso)
+        | filter TargetUserName contains "{{canary}}"
+              or userPrincipalName contains "{{canary}}"
+              or alternateId contains "{{canary}}"
+        | fields _time, _dataset, TargetUserName, userPrincipalName, alternateId
+        | sort asc _time
+        | limit 200
+    threshold:
+      kpi: cross-provider events for one principal
+      op: ">="
+      value: 3
+      unit: rows
+      source: authored_sharpening
+      rationale: >
+        One event per named provider is the minimum that can be called a
+        cross-provider timeline. A tenant returning two rows has a two-provider
+        timeline whatever the distinct count says.
+    negative_control:
+      description: >
+        The principal normalizes in all three datasets but retention or a
+        collector-side sampling policy has aged out everything except the two
+        most recent sign-ins, so the timeline cannot be reconstructed.
+      measured_value: 2
+
+tags: [identity, entity-resolution, cross-provider, round-trip]
+author: "CortexSim PLT pack"

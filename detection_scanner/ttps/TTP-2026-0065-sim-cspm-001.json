@@ -314,14 +314,14 @@
         "evidence_query": "Correlation CR-CSPM-0001 fuses the five per-class posture validation queries into a single cloud-posture coverage event; CR-CSPM-0002 promotes a flagged exposure to an incident when reached/abused at runtime."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CSPM-001",
+        "threat_scenario_id": "TS-CSPM-001",
         "name": "Cloud Security Posture Management — Misconfiguration Detection & Compliance",
         "description": "Cortex Cloud CSPM discovers and classifies every planted AWS misconfiguration in a single scan cycle and reconciles the finding set against the planted manifest for full coverage; runtime exploitation of a flagged exposure escalates to an incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CSPM-001A",
+            "threat_step_id": "TS-CSPM-001A",
             "objective": "Every planted misconfiguration surfaces as a Cortex Cloud CSPM finding within one scan cycle and reconciles to 9/9 coverage.",
             "preconditions": [
               "Cortex Cloud CSPM connected (read-only) to the AWS account.",
@@ -342,7 +342,7 @@
             "expected_score_weight": 0.7
           },
           {
-            "test_case_id": "TC-CSPM-001B",
+            "threat_step_id": "TS-CSPM-001B",
             "objective": "A flagged static exposure exercised at runtime promotes to an active incident (CSPM-to-runtime stitch).",
             "preconditions": [
               "At least one world-open SG or the over-privileged IAM principal is reachable/usable in the lab."

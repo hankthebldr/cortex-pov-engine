@@ -1,0 +1,64 @@
+title: "Leaked .env Credential to Self-Propagating Lambda Escalation \u2014 Large-Scale Cloud Extortion (SIM-CDR-017) \u2014 IAM Self-Escalation to AdministratorAccess by a Newly Observed Access Key"
+id: ttp-2026-0112-abioc-01
+status: experimental
+description: |
+  An access key whose learned Cortex profile is a narrow application identity that has never performed IAM writes suddenly issues iam:CreateRole immediately followed by iam:AttachRolePolicy attaching the managed AdministratorAccess policy. Every call is a legitimate AWS API; the ABIOC fires on the self-escalation deviation from the key's learned (non-admin) behavior and anchors it to the causality chain (leaked key -> CreateRole -> AttachRolePolicy AdministratorAccess) rather than to any known-bad signature.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source = "iam.amazonaws.com"
+    | filter identity_type = "IAMUser"
+    | filter operation_name in ("CreateRole", "AttachRolePolicy")
+    | alter admin_attach = if(operation_name = "AttachRolePolicy" and request_parameters.policyArn contains "AdministratorAccess", 1, 0)
+    | comp count_distinct(operation_name) as iam_verbs, sum(admin_attach) as admin_attaches by identity_name, access_key_id
+    | filter iam_verbs >= 2 and admin_attaches >= 1 and access_key_id not in user_baseline.iam_writers
+    | fields identity_name, access_key_id, iam_verbs, admin_attaches
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098.003
+    - attack.t1136.003
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Leaked .env Credential to Self-Propagating Lambda Escalation \u2014 Large-Scale Cloud Extortion (SIM-CDR-017) \u2014 Denied EC2 Compute Attempt Immediately Followed by Cross-Region Lambda Deployment"
+id: ttp-2026-0112-abioc-02
+status: experimental
+description: |
+  The signature behavioral tell of this campaign: the same access key is denied on ec2:RunInstances (Client.UnauthorizedOperation) and then, within minutes, succeeds at deploying lambda:CreateFunction across multiple enabled regions. Cortex has learned this identity never spins up compute; the ABIOC anchors the denied-EC2-then-succeed-on-Lambda pivot and the cross-region fan-out to the key's causality chain, catching victim-funded compute abuse that no static rule keyed on a single API name would flag.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS"
+    | filter (operation_name = "RunInstances" and error_code = "Client.UnauthorizedOperation") or (event_source = "lambda.amazonaws.com" and operation_name in ("CreateFunction20150331", "CreateFunction"))
+    | comp count_distinct(if(event_source = "lambda.amazonaws.com", region, null)) as lambda_regions, sum(if(operation_name = "RunInstances", 1, 0)) as denied_ec2 by identity_name, access_key_id
+    | filter denied_ec2 >= 1 and lambda_regions >= 3
+    | sort desc lambda_regions
+    | fields identity_name, access_key_id, denied_ec2, lambda_regions
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1651/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1651
+    - attack.t1078.004
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,393 @@
+{
+  "id": "TTP-2026-0171",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-02T00:00:00+00:00",
+    "updated_at": "2026-08-02T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane",
+      "encryption-less-extortion",
+      "exfiltration",
+      "data-staging",
+      "chunked-egress",
+      "no-t1486",
+      "benign-comparison-arm",
+      "f2",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 900,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Encryption-Less Extortion — Mass Staging, Chunked Egress and a Ransom Note With No Data-Encrypted-For-Impact Event",
+    "summary": "Runs the extortion lifecycle with the encryption crescendo deliberately removed: share enumeration from an abused remote-access session, mass staging, chunked egress held below the per-session volume floor, and a ransom note. No mass rename, no extension change, no T1486 anywhere in the run — so every detection must come from behavioural deviation against a learned baseline.",
+    "description": "Unit 42's 2026 extortion research puts encryption in a shrinking minority of cases, down roughly fifteen points year over year as actors skip it and go straight to theft plus pressure. Encryption is faster to skip, quieter, and — the part defenders feel — it removes the loud terminal event that most detection stacks are quietly relying on. Every impact scenario shipped in this library so far resolves on an encryption crescendo. This one deliberately does not, and that inversion is the entire test. Because there is no mass rename, no extension change and no T1486 anywhere in the run window, there is no BIOC fallback to hide behind: the alert has to come from staging tempo and egress shape measured against what this host and this identity normally do. Two design choices make the result mean something rather than merely fire. First, the egress is deliberately CHUNKED and rate-limited to sit under the per-session volume floor that static thresholds key on, so a stack tuned on 'more than N gigabytes in one session' stays silent by construction and the deviation must be found in the sustained aggregate instead. Second, a BENIGN COMPARISON ARM runs in the same window: a legitimate quarterly archive job with a similar I/O shape — bulk read, compress, upload — executed by an account whose learned envelope includes exactly that. Without the benign arm, an alert on the malicious arm proves only that the platform alerts on bulk file activity, which is not a capability anyone should pay for. With it, the claim becomes the one that matters: the platform separated two operations that look alike on volume and differ only in whose envelope they fall inside. The negative control is asserted explicitly and queried explicitly — the run window is checked for the ABSENCE of any encryption-for-impact event — because a scenario that silently permitted one would prove the opposite of what it claims.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Unit 42 — encryption-less extortion, in which actors exfiltrate and extort without deploying an encryptor, removing the terminal impact event defenders historically detected on"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2026-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1074",
+        "subtechnique_id": "T1074.001",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1030",
+        "name": "Data Transfer Size Limits",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "subtechnique_id": "T1567.002",
+        "name": "Exfiltration Over Web Service: Exfiltration to Cloud Storage",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1657",
+        "name": "Financial Theft",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1083",
+        "name": "File and Directory Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "File: File Access",
+      "File: File Creation",
+      "Network Traffic: Network Traffic Flow",
+      "Process: Process Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-022 — encryption-less extortion lifecycle with an explicit no-encryption negative control.",
+    "prerequisites": [
+      {
+        "description": "Behavioural baselining has been running long enough for the target host and the staging identity to have a learned file-access envelope. Without a baseline the ABIOC has nothing to deviate from and the run resolves pending, not fail.",
+        "check_command": "true"
+      },
+      {
+        "description": "Firewall session telemetry is ingested so the chunked egress aggregate is queryable across sessions rather than only per session.",
+        "check_command": "true"
+      }
+    ],
+    "privilege_required": "user",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: nothing is encrypted, nothing is exfiltrated. Files are created\n# and read inside a scratch directory; egress is modelled by markers against\n# RFC5737 documentation addresses. The ABSENCE of an encryption event is part\n# of the claim, so this payload must never rename or re-extension anything.\nset -euo pipefail\nD=/tmp/cortexsim-mp022\nRUN_TAG=\"${CORTEXSIM_RUN_TAG:-MP022}\"\nmkdir -p \"$D/stage\"\n# (1) high-value share enumeration from the abused remote-access session\nfor SHARE in finance-archive hr-records legal-hold board-minutes; do\n  printf '{\"run_tag\":\"%s\",\"event\":\"dir_list\",\"share\":\"/mnt/%s\",\"actor\":\"svc-helpdesk\"}\\n' \"$RUN_TAG\" \"$SHARE\"\ndone > \"$D/enum.ndjson\"\n# (2) mass staging — bulk copy into a local staging directory\nfor N in $(seq 1 40); do\n  printf 'cortexsim-mp022 staged record %s\\n' \"$N\" > \"$D/stage/doc-${N}.dat\"\ndone\n# (3) chunked egress deliberately held under the per-session volume floor\nfor CHUNK in 1 2 3 4 5 6 7 8; do\n  printf '{\"run_tag\":\"%s\",\"event\":\"egress\",\"dest\":\"198.51.100.90\",\"app\":\"cloud-storage\",\"bytes\":48000000,\"chunk\":%s}\\n' \"$RUN_TAG\" \"$CHUNK\"\ndone > \"$D/egress.ndjson\"\n# (4) ransom note — no rename, no extension change, no encryption\nprintf 'Your data has been copied. Contact us. [CortexSim SAFE-MODE marker, run %s]\\n' \"$RUN_TAG\" > \"$D/stage/README-RESTORE.txt\"\necho cortexsim-mp022-encryption-less-extortion-emitted",
+      "input_variables": [
+        {
+          "name": "CORTEXSIM_RUN_TAG",
+          "type": "string",
+          "default": "MP022",
+          "description": "Run-scoped tag stamped onto every emitted record."
+        },
+        {
+          "name": "CORTEXSIM_CHUNK_BYTES",
+          "type": "string",
+          "default": "48000000",
+          "description": "Per-chunk egress size, deliberately set below the per-session volume floor a static threshold would key on."
+        }
+      ],
+      "timeout_seconds": 900
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "A staging directory populated by bulk reads across multiple high-value shares, with no rename and no extension change on any source file.",
+        "expected_value": "action_file_path contains \"/stage/\" and rename_events = 0"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Sustained chunked egress to a cloud-storage destination, each chunk individually under the per-session volume floor.",
+        "expected_value": "app = \"cloud-storage\" and bytes_per_session < volume_floor and session_count >= 8"
+      },
+      {
+        "artifact_type": "file",
+        "description": "A ransom note written into the staged share set with no preceding mass-rename or encryption activity.",
+        "expected_value": "action_file_name contains \"README-RESTORE\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-mp022; echo '[CortexSim] SIM-MP-022 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "Ransom Note Written to Staged Shares With No Preceding Mass File Rename",
+        "description": "The extortion tell in an encryption-less operation. The note is the only overtly hostile artifact in the whole chain, and it arrives WITHOUT the mass rename or extension change that a ransomware BIOC keys on. Detecting it late is still detecting it late — this fires after the data is already gone, which is precisely why the behavioural staging and egress detections upstream are the ones that matter.",
+        "logic": "dataset = xdr_data\n| filter cortexsim_run_tag = \"MP022\"\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE_NEW\n| filter action_file_name contains \"README-RESTORE\" or action_file_name contains \"HOW-TO-RECOVER\" or action_file_name contains \"RESTORE-MY-FILES\"\n| comp count() as notes, count_distinct(action_file_path) as note_paths by agent_hostname, action_process_username, causality_id\n| filter notes >= 1\n| sort desc note_paths\n| fields agent_hostname, action_process_username, causality_id, note_paths, notes",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1657"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Mass Staging Tempo Deviating From a Host's Learned File-Access Envelope",
+        "description": "The primary claim. With no encryption event to key on, the signal is tempo and breadth against what this host and this identity normally read: distinct share roots touched, files read per minute, and the collection of those reads into one staging path. Keyed on the causality chain rather than on any file name, because file names are exactly what an encryption-less operation leaves untouched.",
+        "logic": "dataset = xdr_data\n| filter cortexsim_run_tag = \"MP022\"\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| comp count() as files_read, count_distinct(action_file_directory) as share_roots, min(_time) as first_read, max(_time) as last_read by agent_hostname, action_process_username, causality_id\n| alter window_seconds = timestamp_diff(last_read, first_read, \"SECOND\")\n| filter share_roots >= 3 and files_read >= 25\n| sort desc files_read\n| fields agent_hostname, action_process_username, causality_id, share_roots, files_read, window_seconds",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1074.001",
+          "T1083"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The abused remote-access tool session owns the chain: enumeration, staging, egress and the note all descend from it under one causality_id, which is what separates it from the benign archive job running in the same window under a different owner."
+      },
+      {
+        "name": "Sustained Chunked Egress Held Below the Per-Session Volume Alert Floor",
+        "description": "The counter to the obvious tuning. Each session is individually small enough that a static per-session byte threshold never trips; the deviation is only visible in the sustained aggregate for one host to one destination over the window. A stack that alerts here on the malicious arm but not on the benign archive job has demonstrated a learned baseline; a stack that alerts on both has demonstrated a threshold.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter cortexsim_run_tag = \"MP022\"\n| filter app in (\"ssl\", \"web-browsing\", \"cloud-storage\", \"webdav\")\n| comp sum(bytes_sent) as total_sent, count() as sessions, max(bytes_sent) as largest_session by source_ip, dest_ip, app\n| filter sessions >= 6 and total_sent >= 300000000\n| sort desc total_sent\n| fields source_ip, dest_ip, app, sessions, largest_session, total_sent",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1030",
+          "T1567.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The staging process's own network sessions, stitched to the endpoint chain on the host and the staging identity, so the egress is attributable to the collection that produced it rather than floating as an unowned flow."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "High-Value Share Enumeration Burst From a Remote-Access Tool Session",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP022\"\n| filter causality_actor_process_image_name in (\"anydesk.exe\", \"screenconnect.exe\", \"teamviewer.exe\", \"anydesk\")\n| comp count_distinct(action_file_directory) as enumerated_shares, count() as list_events by agent_hostname, action_process_username, causality_id\n| filter enumerated_shares >= 3\n| sort desc enumerated_shares\n| fields agent_hostname, action_process_username, causality_id, enumerated_shares, list_events",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Benign Quarterly Archive Arm Stays Inside Its Learned I/O Envelope",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP022\" and cortexsim_label = \"benign\"\n| filter action_process_username = \"svc-archive\"\n| comp count() as files_read, count_distinct(action_file_directory) as share_roots by agent_hostname, action_process_username, causality_id\n| filter files_read >= 20\n| sort desc files_read\n| fields agent_hostname, action_process_username, causality_id, share_roots, files_read",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Negative Control — No Data-Encrypted-For-Impact Event in the Run Window",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP022\"\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_RENAME\n| comp count() as rename_events, count_distinct(action_file_extension) as new_extensions by agent_hostname, causality_id\n| filter rename_events >= 1\n| fields agent_hostname, causality_id, rename_events, new_extensions",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "Staging-to-Egress Byte Accounting for the Deviating Identity",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP022\"\n| comp sum(bytes_sent) as egressed_bytes, count() as sessions, count_distinct(dest_ip) as destinations by source_ip\n| filter egressed_bytes >= 300000000\n| sort desc egressed_bytes\n| fields source_ip, destinations, sessions, egressed_bytes",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Cloud-Storage Egress Destinations First Seen for This Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"MP022\"\n| filter app in (\"cloud-storage\", \"webdav\", \"ssl\")\n| comp sum(bytes_sent) as sent, min(_time) as first_seen by source_ip, dest_ip, dest_fqdn\n| sort desc sent\n| limit 50\n| fields source_ip, dest_ip, dest_fqdn, first_seen, sent",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Encryption-Less Extortion Lifecycle Stitch",
+        "rule_id": "CR-MP-0022",
+        "logic": "ABIOC(Mass Staging Tempo Deviating From a Host's Learned File-Access Envelope) AND ABIOC(Sustained Chunked Egress Held Below the Per-Session Volume Alert Floor) AND BIOC(Ransom Note Written to Staged Shares With No Preceding Mass File Rename) observed on the same host and staging identity inside the correlation window — stitches enumeration, staging, chunked egress and the note into ONE extortion incident that contains no encryption event at all. Two assertions make the result meaningful rather than merely present. The NEGATIVE CONTROL asserts that no mass rename or extension change occurred anywhere in the run window: if one did, the scenario has quietly become an ordinary ransomware test and its claim is void. The BENIGN COMPARISON ARM asserts that the quarterly archive job, which has a similar bulk-read-compress-upload I/O shape in the same window under a different identity, did NOT raise this incident. Alerting on both arms means the platform matched on volume, which is a threshold, not a baseline — and it is the outcome a customer's incumbent stack usually produces here."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — per-host and per-identity file-access envelope baselining",
+      "Cortex XSIAM Analytics — sustained cross-session egress aggregation against a learned destination profile"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-MP022-STAGING",
+          "CR-MP-0022"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter cortexsim_run_tag = \"MP022\" | comp count() as files_read, count_distinct(action_file_directory) as share_roots by agent_hostname, action_process_username"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-022",
+        "name": "Encryption-Less Extortion — Detection Without a Terminal Impact Event",
+        "description": "Proves the platform detects a full extortion lifecycle when the encryption crescendo most stacks rely on is absent, and proves it by behaviour rather than volume by running a benign arm with a similar I/O shape alongside.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-022A",
+            "objective": "Mass staging is detected as a deviation from the host's learned file-access envelope, with no encryption event to key on.",
+            "preconditions": [
+              "A learned file-access envelope exists for the host and the staging identity."
+            ],
+            "steps": [
+              "Enumerate high-value shares from the abused remote-access session.",
+              "Bulk-read across the shares into one staging path.",
+              "Observe the staging-tempo ABIOC fire."
+            ],
+            "success_criteria": [
+              "ABIOC `Mass Staging Tempo Deviating From a Host's Learned File-Access Envelope` fires.",
+              "The negative-control query returns zero rename events."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-022B",
+            "objective": "Chunked egress held under the per-session volume floor is still detected in the sustained aggregate.",
+            "preconditions": [
+              "Firewall session telemetry is queryable across sessions."
+            ],
+            "steps": [
+              "Egress the staged set in chunks each below the per-session volume floor.",
+              "Observe the chunked-egress ABIOC fire on the aggregate."
+            ],
+            "success_criteria": [
+              "ABIOC `Sustained Chunked Egress Held Below the Per-Session Volume Alert Floor` fires.",
+              "No individual session exceeds the per-session floor."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "threat_step_id": "TS-MP-022C",
+            "objective": "The benign quarterly archive arm, with a similar I/O shape, does NOT raise the extortion incident.",
+            "preconditions": [
+              "The archive identity's learned envelope includes bulk read, compress and upload."
+            ],
+            "steps": [
+              "Run the archive job in the same window under svc-archive.",
+              "Confirm it produces its own benign rows and does not join CR-MP-0022."
+            ],
+            "success_criteria": [
+              "The benign arm query returns rows, proving the arm actually ran.",
+              "No benign-arm activity appears inside the extortion incident."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Cap and alert on per-identity aggregate egress across sessions, not per session — a per-session byte threshold is trivially defeated by chunking and is the control most often found already in place and already useless.",
+      "Give automation identities an explicit, narrow file-access envelope so a bulk-read operation outside it is separable from the ones inside it."
+    ],
+    "detection_engineering": [
+      "Do not make an encryption event a required element of any extortion correlation. Once encryption is optional for the adversary it cannot be mandatory for the detection.",
+      "Always run a benign arm with a similar I/O shape. An alert on the malicious arm alone proves the platform alerts on bulk file activity, which is not a capability worth buying.",
+      "Query the negative control explicitly. A scenario that claims 'no encryption occurred' without asserting it will eventually be run somewhere that encrypts, and will then prove the opposite of its claim."
+    ],
+    "response_playbook": "XSOAR-PB-EncryptionLessExtortionContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Out of the Crypt: The Evolving Cyber Extortion Economy",
+      "url": "https://unit42.paloaltonetworks.com/cyber-extortion-economy/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "AI, Automation and Attacks: Unpacking the Unit 42 2026 Global Incident Response Report",
+      "url": "https://unit42.paloaltonetworks.com/ai-incident-response-report/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK T1030 — Data Transfer Size Limits",
+      "url": "https://attack.mitre.org/techniques/T1030/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1657 — Financial Theft",
+      "url": "https://attack.mitre.org/techniques/T1657/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics alert reference (behavioural baselining for file access and egress)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

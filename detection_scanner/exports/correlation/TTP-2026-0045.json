@@ -7,7 +7,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate) OR BIOC(KOI-004 VSCode Extension Activate Beacons Outbound To Non Microsoft Domain)",
+      "logic": "BIOC(KOI-004 VSCode Extension Reads AWS Credentials And SSH Keys In Activate) OR BIOC(KOI-004 VSCode Extension Activate Beacons Outbound To Non Microsoft Domain) OR XQL(KOI-004 VSCode Marketplace VSIX Fetch From Non Canonical CDN) \u2014 stitched by shared agent_hostname + causality_id (CGO = code/node) so the .vsix marketplace fetch (endpoint_network_stitch), the activation credential read, and the outbound beacon (exploit_impact) collapse into ONE IDE-extension credential-theft incident",
       "name": "Agentic Supply Chain \u2014 Malicious IDE Extension Credential Theft",
       "rule_id": "CR-KOI-0004",
       "severity": "high"

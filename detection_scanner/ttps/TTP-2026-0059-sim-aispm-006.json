@@ -45,8 +45,8 @@
     }
   },
   "identity": {
-    "name": "AI Security Dashboard & Posture \u2014 Aggregate Rollup Across All AI Findings (T1526)",
-    "summary": "The closing scenario of the AI-SPM family verifies that the Cortex Cloud AI security dashboard aggregates everything AISP-01..05 surfaced: a total AI asset count matching the planted manifest, non-zero counts across the model_security / supply_chain / static_analysis / data_governance risk categories, and a populated trend series per category. Detections are framed as aggregate rollup queries (\u2026",
+    "name": "AI Security Dashboard & Posture — Aggregate Rollup Across All AI Findings (T1526)",
+    "summary": "The closing scenario of the AI-SPM family verifies that the Cortex Cloud AI security dashboard aggregates everything AISP-01..05 surfaced: a total AI asset count matching the planted manifest, non-zero counts across the model_security / supply_chain / static_analysis / data_governance risk categories, and a populated trend series per category. Detections are framed as aggregate rollup queries (…",
     "description": "The executive readout for AI Security Posture Management is a single dashboard that rolls up discovery, model-security, supply-chain, static-analysis, and data-governance findings into a prioritized posture view. This scenario closes the AISP family by verifying the dashboard's backing data is real and complete: the aggregate AI asset count matches the planted manifest, every risk category has a non-zero count, and the trend series returns at least one data point per category so charts are not empty. It must run after AISP-01..05 have planted and scanned, so the rollup has something to aggregate. Detection is posture-oriented and explicitly aggregate: validation queries summarize the findings produced by the other scenarios with comp count() by severity and by risk_category over the posture dataset, plus a time-bucketed rollup that proves a populated trend series. A correlation rule fires the executive posture-rollup event when the aggregate covers all four risk categories.",
     "severity": "medium",
     "confidence": "high"
@@ -83,7 +83,7 @@
   "execution": {
     "target_platform": "aws",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-AISPM-006 \u2014 Cortex Cloud AI-SPM dashboard summary + trend-series probe",
+    "framework_reference_id": "SIM-AISPM-006 — Cortex Cloud AI-SPM dashboard summary + trend-series probe",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -96,7 +96,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Posture validation \u2014 fetch AI-SPM dashboard summary + trends.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/dashboards/ai_spm/summary\" | jq '.total_ai_assets, .risk_categories'",
+      "code": "# Posture validation — fetch AI-SPM dashboard summary + trends.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" \"${CORTEX_CLOUD_API_BASE}/dashboards/ai_spm/summary\" | jq '.total_ai_assets, .risk_categories'",
       "input_variables": [],
       "timeout_seconds": 600
     },
@@ -145,14 +145,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "AI Posture Rollup \u2014 Executive Dashboard Covers All Risk Categories",
+        "name": "AI Posture Rollup — Executive Dashboard Covers All Risk Categories",
         "rule_id": "CR-AISPM-0006",
         "logic": "XQL(AISPM-006 Dashboard Summary Aggregate Across All Risk Categories) AND XQL(AISPM-006 Dashboard Trend Series Per Risk Category)"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud AI-SPM \u2014 Aggregate posture rollup and executive summary",
-      "Cortex Cloud Posture \u2014 Risk-category trend-series aggregation"
+      "Cortex Cloud AI-SPM — Aggregate posture rollup and executive summary",
+      "Cortex Cloud Posture — Risk-category trend-series aggregation"
     ]
   },
   "panw_mapping": {
@@ -179,14 +179,14 @@
         "evidence_query": "Correlation CR-AISPM-0006 fires the executive posture-rollup event when the aggregate covers all four AI risk categories."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-AISPM-006",
+        "threat_scenario_id": "TS-AISPM-006",
         "name": "AI Security Dashboard & Posture",
         "description": "Aggregate all AI findings into an executive posture view with per-category counts and trend series.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-AISP-006A",
+            "threat_step_id": "TS-AISP-006A",
             "objective": "Dashboard aggregates all four risk categories with populated trend series.",
             "preconditions": [
               "SIM-AISPM-001..005 executed and scanned.",
@@ -222,14 +222,14 @@
   },
   "references": [
     {
-      "title": "Unit42 \u2014 Unifying AI Security Telemetry for Executive Visibility",
+      "title": "Unit42 — Unifying AI Security Telemetry for Executive Visibility",
       "url": "https://unit42.paloaltonetworks.com/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1526 \u2014 Cloud Service Discovery",
+      "title": "MITRE ATT&CK T1526 — Cloud Service Discovery",
       "url": "https://attack.mitre.org/techniques/T1526/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

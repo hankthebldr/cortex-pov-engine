@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1552.001",
+    "T1078.004",
+    "T1087.004",
+    "T1098.003",
+    "T1530",
+    "T1485",
+    "T1657"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(CSPM-005 Exposed Long-Lived IAM Access Key Code-to-Cloud Finding) AND ( XQL(CSPM-005 Stolen Key Recon Burst From Off-Baseline Source) OR XQL(CSPM-005 Privilege Escalation CreateRole lambda-ex AttachRolePolicy Admin) ) AND ( XQL(CSPM-005 S3 Mass Export and Delete Impact) OR XQL(CSPM-005 Ransom Note PutObject Into Emptied Bucket) ) \u2014 the join is executable, not prose: every runtime leg (B and C) is scoped in-body to leg A's exposed key (user_identity_access_key_id = the posture finding's exposed_access_key_id, the documentation-range AKIAIOSFODNN7EXAMPLE in this lab), so the queries FUSE on the shared identity rather than merely co-firing on independent broad activity. Leg A binds to leg B on that accessKeyId, leg B binds to leg C on the same accessKeyId/user_identity_arn principal and the CortexSimExtortionTarget bucket, and the off-baseline Tor/VPN src_ip (also key-scoped) rides along as evidence. On a live tenant substitute the real exposed_access_key_id from the leg-A posture finding for the lab example value. Fires ONE code-to-cloud extortion incident that names the exposed key, the escalated principal, the anonymizing source, and the ransom-noted bucket \u2014 the exposure-to-extortion story in a single stitched event, with no coincidental co-firing from unrelated principals.",
+      "name": "Code-to-Cloud Extortion \u2014 Exposed Key Fused to Runtime Abuse and S3 Ransom",
+      "rule_id": "CR-CSPM-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0153"
+}

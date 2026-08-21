@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-MP-02
-tc_ref: TC-MP-02
-uc_name: "Cross-Plane Incident Stitching"
-tc_name: "Identity Attack Chain - Credential Theft to Lateral Movement"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-IR-04
+  - TC-ITDR-01
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"
@@ -78,6 +83,17 @@ required_planes_in_incident:
   - NDR
 stitching_key: user_principal
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The attacker's foothold process (an impacket/python runtime on the jump host)
+# is the Causality Group Owner. The recon→crack legs are a process_lineage
+# chain; the crack→lateral and lateral→DCSync legs are stitched on the shared
+# compromised service-account principal (user_principal = sql-svc), so XSIAM
+# folds ITDR + EDR + NDR signal into ONE incident keyed on that identity rather
+# than a star of independent alerts.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "root"
+
 external_tools:
   - name: impacket
     source: "https://github.com/fortra/impacket"
@@ -113,6 +129,7 @@ steps:
       echo '[*] ITDR should flag LDAP sweep querying servicePrincipalName attribute'
     identity: root
     mitre_technique: "T1558.003"
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: BIOC
@@ -139,6 +156,10 @@ steps:
       echo '[*] Simulated only - no actual cracking performed'
     identity: root
     mitre_technique: "T1110.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: ANALYTICS
         type: XQL
@@ -150,13 +171,16 @@ steps:
     name: "Use cracked credential for lateral SMB access"
     command: |
       echo '[MP-002] EDR+NDR: Pass-the-Hash to workstation via SMB';
-      DC_IP="${CORTEXSIM_DC_IP:-10.0.10.10}";
       WS_IP="${CORTEXSIM_WS_IP:-10.0.10.20}";
       DOMAIN="${CORTEXSIM_DOMAIN:-cortexsim.local}";
       impacket-smbclient "$DOMAIN/sql-svc:Summer2024@$WS_IP" -c "ls \\\\ADMIN\$" 2>&1 | head -10 || echo '[*] demo-mode';
       echo '[*] Detections fire at multiple planes simultaneously'
     identity: root
     mitre_technique: "T1021.002"
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -189,6 +213,16 @@ steps:
       echo '[*] DCSync replication triggers high-severity ITDR alert'
     identity: root
     mitre_technique: "T1003.006"
+    platforms: ["linux", "windows"]
+    # DCSync is host-agnostic: Impacket secretsdump (linux jump host) and Mimikatz
+    # lsadump::dcsync (windows) issue the same MS-DRSR GetNCChanges replication
+    # request. Both authenticate as the compromised sql-svc principal, so the leg
+    # stitches on the shared service-account identity regardless of OS.
+    platform_variants:
+      windows: 'mimikatz.exe "privilege::debug" "lsadump::dcsync /domain:$DOMAIN /user:krbtgt /dc:$DC_IP" "exit"'
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ITDR
         type: BIOC

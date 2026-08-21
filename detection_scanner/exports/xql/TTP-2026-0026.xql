@@ -32,6 +32,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
+| filter causality_actor_process_image_name in ("apache2", "nginx", "bash", "sh", "test_backdoor.elf")
 | filter actor_process_image_path contains "/tmp/"
 | filter actor_process_image_path contains_any (".elf", "test_backdoor", "wf_sim")
 
@@ -43,6 +44,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
+| filter causality_actor_process_image_name in ("apache2", "nginx", "bash", "sh")
 | filter actor_process_image_path contains "/tmp/"
 | filter actor_effective_username in ("www-data", "nobody", "node", "apache", "nginx")
 
@@ -66,6 +68,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
+| filter causality_actor_process_image_name in ("apache2", "nginx", "bash", "sh", "test_backdoor.elf")
 | filter actor_process_image_name = "curl"
 | filter action_process_image_command_line contains "192.0.2.1"
 | filter action_process_image_command_line contains_any ("beacon", "User-Agent", "-A ", "MSIE")
@@ -102,7 +105,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
 | filter actor_process_image_path contains "/tmp/" and actor_process_image_path contains_any (".elf", "wf_sim", "test_backdoor")
-| fields _time, agent_hostname, container_id, actor_effective_username, actor_process_image_path, action_process_image_command_line
+| fields _time, agent_hostname, container_id, causality_id, causality_actor_process_image_name, actor_process_instance_id, actor_effective_username, actor_process_image_path, action_process_image_command_line
 
 ## VALIDATION — CDR-005 Validate C2 Beacon To Test Net Endpoint
 # purpose: validation

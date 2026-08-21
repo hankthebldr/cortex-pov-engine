@@ -251,14 +251,14 @@
         "evidence_query": "Correlation CR-CDR-0013 fuses the ELF-fetch BIOC and the malware-repo egress XQL into one detonation incident; the three file-hash IOCs match the DeimosC2/Conti/BPFDoor binaries."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-013",
+        "threat_scenario_id": "TS-CLOUD-013",
         "name": "Insecure Deployment Runtime Detonation Detection",
         "description": "Cortex Cloud CDR + XSIAM detect an insecure multi-container deployment fetching malware ELFs from a public repository and the file-hash IOC match — covering the posture-to-runtime detonation chain without executing real malware.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-013A",
+            "threat_step_id": "TS-CLOUD-013A",
             "objective": "The in-container malware ELF retrieval and staging is detected.",
             "preconditions": [
               "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",
@@ -275,7 +275,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUD-013B",
+            "threat_step_id": "TS-CLOUD-013B",
             "objective": "The fetched ELF hashes match the IOC feed and stitch into one incident.",
             "preconditions": [
               "IOC feed enrichment active in XSIAM."

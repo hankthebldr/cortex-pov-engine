@@ -1,0 +1,147 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# The only assertion in this pack that can produce a machine-certified PASS.
+#
+# TC-XDL-01 is one of the 19 index rows that carries a real number (95%), so
+# verifier.score_run does NOT clamp its pass to not_applicable the way it does
+# for the three Qualitative-pass rows this pack also binds.
+#
+# What makes the 95% measurable rather than rhetorical: the emitter KNOWS what
+# it wrote. The canary token is planted into three of each source's own schema
+# fields, so field-level normalization fidelity is
+#
+#     records where all three fields survived  /  records that landed
+#
+# measured against the emitter's own ground truth, not against a proxy. A parser
+# that truncates a value, drops a column or coerces a type takes the ratio down.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: PLT-XDL-001
+name: Field-level normalization fidelity across dissimilar vendor schemas
+version: "1.0"
+status: active
+
+validation_class: PLT
+kind: state
+plane: ANALYTICS
+
+uc_ref: UCS-XDL-01
+tc_ref: TC-XDL-01
+tc_refs: [TC-XDL-01]
+uc_name: "Cortex Data Lake"
+tc_name: "Validate XDL ingests and normalizes telemetry from 1,100+ integrations at petabyte scale with consistent schema mapping"
+
+moat_tier: PARITY
+methodology_family: F8
+primary_kpi: "Detection Accuracy"
+success_criteria: |
+  At least 95% of the records that reach the lake carry EVERY one of the three
+  canary-bearing fields their source schema declared — no dropped column, no
+  truncation, no lossy coercion — across two structurally dissimilar vendor
+  schemas.
+
+scope_limitations: >
+  Proves field-level normalization fidelity against the emitter's own ground
+  truth for TWO source families (Microsoft 365 unified-audit, flat PascalCase;
+  PAN-OS NGFW EAL traffic, flat snake_case), three asserted fields each. Does
+  NOT prove the test case's breadth claims — 1,100+ integrations, 50 concurrent
+  sources, petabyte scale — none of which the engine can generate or measure.
+  Does NOT prove the "query-ready within 15 minutes" leg: no probe in this
+  substrate measures wall-clock query latency, and measuring it from the engine
+  would fold emitter, collector and ingest delay into the platform's number.
+  Fidelity is measured only over fields the canary was planted in, so it is a
+  sample of the schema, not the whole schema. A tenant whose parser exposes
+  different column names resolves PROBE_QUERY_FAILED -> pending, never a false
+  verdict.
+
+stimulus:
+  kind: eal_campaign
+  campaign_id: plt-xdl-001-fidelity-2src
+  detail: >
+    Run m365_activity_emitter (event_pattern=mailbox_enumeration_by_app, burst_count=6) and
+    ngfw_eal_emitter (event_pattern=large_upload_https, iterations=2) against the
+    operator's collector with the SAME fresh canary_token. That campaign shape
+    emits at least 8 records; chk-02's floor of 8 is bound to it, so a smaller
+    campaign must not be scored against this assertion.
+
+context_vars: [canary]
+
+checks:
+  - check_id: chk-01
+    title: 95% of landed records kept every field their schema declared
+    probe: xql_ratio
+    primary: true
+    weight: 1.0
+    params:
+      # The POPULATION is what the PLATFORM landed, read from the raw body — the
+      # engine does not get to assert how many records "should" be there, only
+      # to measure fidelity over the ones that arrived.
+      population_query: |
+        dataset in (msft_o365_audit, panw_ngfw_traffic_raw)
+        | filter _raw_log contains "{{canary}}"
+        | limit 2000
+      # The NUMERATOR requires ALL THREE of the source's own fields to have
+      # survived. Two-of-three is a normalization defect and must not count as
+      # a success — that is the whole difference between "the record arrived"
+      # and "the record is usable".
+      numerator_query: |
+        dataset in (msft_o365_audit, panw_ngfw_traffic_raw)
+        | filter _raw_log contains "{{canary}}"
+        | filter (UserId contains "{{canary}}"
+                  and UserKey contains "{{canary}}"
+                  and ObjectId contains "{{canary}}")
+              or (user contains "{{canary}}"
+                  and device_name contains "{{canary}}"
+                  and endpoint_device_name contains "{{canary}}")
+        | limit 2000
+      # Zero of zero is 100%, and reporting that green is the purest form of
+      # the inflation this substrate exists to prevent. The floor is the number
+      # of records the declared campaign emits.
+      min_population: 8
+    threshold:
+      kpi: field normalization fidelity
+      op: ">="
+      value: 95
+      unit: "%"
+      source: index
+      rationale: >
+        Transcribed from the index verbatim — TC-XDL-01 carries threshold "95%"
+        against a Detection Accuracy KPI and a success criterion of "95%+ field
+        normalization accuracy". Nothing was sharpened.
+    negative_control:
+      description: >
+        The PAN-OS parser maps user and device_name but drops
+        endpoint_device_name — the EAL enhanced-endpoint column that is exactly
+        what makes an EAL record more than a traffic log — so every NGFW record
+        fails the all-three predicate and fidelity lands at 6/9 = 66.7%.
+      measured_value: 66.7
+
+  - check_id: chk-02
+    title: The campaign's records actually reached the lake
+    probe: xql_rows
+    weight: 1.0
+    params:
+      query: |
+        dataset in (msft_o365_audit, panw_ngfw_traffic_raw)
+        | filter _raw_log contains "{{canary}}"
+        | limit 2000
+    threshold:
+      kpi: canary records landed
+      op: ">="
+      value: 8
+      unit: rows
+      source: authored_sharpening
+      rationale: >
+        The declared campaign emits at least 8 records. Without this floor a
+        tenant that landed one perfectly-normalized record would report 100%
+        fidelity, which is the ratio-over-a-tiny-population trap; min_population
+        turns that into pending, and this check turns partial delivery into a
+        stated red with the absolute number attached.
+    negative_control:
+      description: >
+        The collector accepted every POST but back-pressure at the ingestion
+        tier silently dropped most of the batch, so only three of the eight
+        records are in the lake.
+      measured_value: 3
+
+tags: [ingestion, normalization, fidelity, round-trip]
+author: "CortexSim PLT pack"

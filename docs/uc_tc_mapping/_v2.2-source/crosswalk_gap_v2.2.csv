@@ -1,0 +1,89 @@
+scenario_id,plane,yml_uc_ref,yml_tc_ref,yml_moat_tier,yml_methodology_family,index_tc_exists,index_use_case,index_tier,index_validation_class,verdict,detail
+SIM-AIACC-001,AI_ACCESS,UCS-AIACC-01,TC-AIACC-01,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-AIACC-01' does not exist in the v2.2 index
+SIM-AIACC-002,AI_ACCESS,UCS-AIACC-02,TC-AIACC-02,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-AIACC-02' does not exist in the v2.2 index
+SIM-AIACC-003,AI_ACCESS,UCS-AIACC-03,TC-AIACC-03,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-AIACC-03' does not exist in the v2.2 index
+SIM-AIACC-004,AI_ACCESS,UCS-AIACC-04,TC-AIACC-04,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-AIACC-04' does not exist in the v2.2 index
+SIM-AIACC-005,AI_ACCESS,UCS-AIACC-05,TC-AIACC-05,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-AIACC-05' does not exist in the v2.2 index
+SIM-AISPM-001,AI_SPM,UCS-AISPM-01,TC-AISPM-01,MOAT,F3,NO,—,—,—,DANGLING,tc_ref 'TC-AISPM-01' does not exist in the v2.2 index
+SIM-AISPM-002,AI_SPM,UCS-AISPM-01,TC-AISPM-02,MOAT,F4,NO,—,—,—,DANGLING,tc_ref 'TC-AISPM-02' does not exist in the v2.2 index
+SIM-AISPM-003,AI_SPM,UCS-AISPM-01,TC-AISPM-03,MOAT,F3,NO,—,—,—,DANGLING,tc_ref 'TC-AISPM-03' does not exist in the v2.2 index
+SIM-AISPM-004,AI_SPM,UCS-AISPM-01,TC-AISPM-04,MOAT,F4,NO,—,—,—,DANGLING,tc_ref 'TC-AISPM-04' does not exist in the v2.2 index
+SIM-AISPM-005,AI_SPM,UCS-AISPM-01,TC-AISPM-05,MOAT,F4,NO,—,—,—,DANGLING,tc_ref 'TC-AISPM-05' does not exist in the v2.2 index
+SIM-AISPM-006,AI_SPM,UCS-AISPM-01,TC-AISPM-06,MOAT,F3,NO,—,—,—,DANGLING,tc_ref 'TC-AISPM-06' does not exist in the v2.2 index
+SIM-AIRS-001,AIRS,UCS-AIRS-01,TC-AIRS-01,MOAT,F1,yes,AI Runtime Security (Prisma AIRS),PARITY,DET,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=MOAT) — different test case
+SIM-AIRS-002,AIRS,UCS-AIRS-02,TC-AIRS-02,MOAT,F1,yes,AI Runtime Security (Prisma AIRS),PARITY,POS,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=MOAT) — different test case
+SIM-AIRS-003,AIRS,UCS-AIRS-03,TC-AIRS-03,MOAT,F1,yes,AI Runtime Security (Prisma AIRS),PARITY,POS,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=MOAT) — different test case
+SIM-AIRS-004,AIRS,UCS-AIRS-04,TC-AIRS-04,MOAT,F1,yes,AI Runtime Security (Prisma AIRS),PARITY,POS,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=MOAT) — different test case
+SIM-AIRS-005,AIRS,UCS-AIRS-05,TC-AIRS-05,MOAT,F1,yes,AI Runtime Security (Prisma AIRS),PARITY,POS,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=MOAT) — different test case
+SIM-ASM-001,ASM,UCS-ASM-01,TC-ASM-01,MOAT,F3,yes,Attack Surface & Exposure Management,MOAT,POS,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-ASM-002,ASM,UCS-ASM-02,TC-ASM-02,MOAT,F3,yes,Attack Surface & Exposure Management,MOAT,POS,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-ASM-003,ASM,UCS-ASM-03,TC-ASM-03,MOAT,F3,yes,Attack Surface & Exposure Management,MOAT,HNT,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-ASM-004,ASM,UCS-ASM-04,TC-ASM-04,MOAT,F3,yes,Attack Surface & Exposure Management,MOAT,POS,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-BROWSER-001,BROWSER,UCS-BROWSER-01,TC-BROWSER-01,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-BROWSER-01' does not exist in the v2.2 index
+SIM-BROWSER-002,BROWSER,UCS-BROWSER-02,TC-BROWSER-02,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-BROWSER-02' does not exist in the v2.2 index
+SIM-BROWSER-003,BROWSER,UCS-BROWSER-03,TC-BROWSER-03,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-BROWSER-03' does not exist in the v2.2 index
+SIM-BROWSER-004,BROWSER,UCS-BROWSER-04,TC-BROWSER-04,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-BROWSER-04' does not exist in the v2.2 index
+SIM-BROWSER-005,BROWSER,UCS-BROWSER-05,TC-BROWSER-05,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-BROWSER-05' does not exist in the v2.2 index
+SIM-CDR-001,CDR,UCS-CDR-01,TC-CDR-01,LEAD,F1,yes,Cloud Detection & Response,LEAD,DET,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-CDR-002,CDR,UCS-CDR-02,TC-CDR-02,LEAD,F1,yes,Cloud Detection & Response,LEAD,DET,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-CDR-003,CDR,UCS-CDR-03,TC-CDR-03,LEAD,F1,yes,Cloud Detection & Response,LEAD,DET,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-CDR-004,CDR,UCS-CDR-04,TC-CDR-04,LEAD,F1,yes,Cloud Detection & Response,LEAD,POS,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-CDR-005,CDR,UCS-CDR-05,TC-CDR-05,LEAD,F1,yes,Cloud Detection & Response,LEAD,POS,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-CDR-006,CDR,UCS-CDR-06,TC-CDR-06,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-06' does not exist in the v2.2 index
+SIM-CDR-007,CDR,UCS-CDR-07,TC-CDR-07,LEAD,F4,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-07' does not exist in the v2.2 index
+SIM-CDR-008,CDR,UCS-CDR-08,TC-CDR-08,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-08' does not exist in the v2.2 index
+SIM-CDR-009,CDR,UCS-CDR-09,TC-CDR-09,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-09' does not exist in the v2.2 index
+SIM-CDR-010,CDR,UCS-CDR-10,TC-CDR-10,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-10' does not exist in the v2.2 index
+SIM-CDR-011,CDR,UCS-CDR-11,TC-CDR-11,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-11' does not exist in the v2.2 index
+SIM-CDR-012,CDR,UCS-CDR-12,TC-CDR-12,LEAD,F4,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-12' does not exist in the v2.2 index
+SIM-CDR-013,CDR,UCS-CDR-13,TC-CDR-13,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-13' does not exist in the v2.2 index
+SIM-CDR-014,CDR,UCS-CDR-14,TC-CDR-14,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-14' does not exist in the v2.2 index
+SIM-CDR-015,CDR,UCS-CDR-10,TC-CDR-10,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CDR-10' does not exist in the v2.2 index
+SIM-CLOUD-001,CLOUD_APP,UCS-CAPP-01,TC-CAPP-01,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CAPP-01' does not exist in the v2.2 index
+SIM-CLOUD-002,CLOUD_APP,UCS-CAPP-02,TC-CAPP-02,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CAPP-02' does not exist in the v2.2 index
+SIM-CLOUD-003,CLOUD_APP,UCS-CAPP-03,TC-CAPP-03,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CAPP-03' does not exist in the v2.2 index
+SIM-CLOUD-004,CLOUD_APP,UCS-CAPP-04,TC-CAPP-04,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CAPP-04' does not exist in the v2.2 index
+SIM-CLOUD-005,CLOUD_APP,UCS-CAPP-05,TC-CAPP-05,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-CAPP-05' does not exist in the v2.2 index
+SIM-CSPM-001,CSPM,UCS-CSPM-01,TC-CSPM-01,MOAT,F4,yes,Cloud Security Posture Management (CSPM),LEAD,POS,FALSE MATCH,string collides but tier disagrees (index=LEAD vs yml=MOAT) — different test case
+SIM-EDR-001,EDR,UCS-EDR-01,TC-EDR-01,LEAD,F1,yes,Endpoint Detection & Response,PARITY,DET,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=LEAD) — different test case
+SIM-EDR-002,EDR,UCS-EDR-02,TC-EDR-02,LEAD,F1,yes,Endpoint Detection & Response,PARITY,DET,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=LEAD) — different test case
+SIM-EDR-003,EDR,UCS-EDR-03,TC-EDR-03,LEAD,F1,yes,Endpoint Detection & Response,PARITY,DET,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=LEAD) — different test case
+SIM-EDR-004,EDR,UCS-EDR-04,TC-EDR-04,LEAD,F1,yes,Endpoint Detection & Response,PARITY,DET,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=LEAD) — different test case
+SIM-EDR-005,EDR,UCS-EDR-05,TC-EDR-05,LEAD,F1,yes,Endpoint Detection & Response,PARITY,DET,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=LEAD) — different test case
+SIM-EDR-006,EDR,UCS-EDR-06,TC-EDR-06,LEAD,F1,yes,Endpoint Detection & Response,PARITY,DET,FALSE MATCH,string collides but tier disagrees (index=PARITY vs yml=LEAD) — different test case
+SIM-EDR-007,EDR,UCS-EDR-07,TC-EDR-07,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-EDR-07' does not exist in the v2.2 index
+SIM-EDR-008,EDR,UCS-EDR-08,TC-EDR-08,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-EDR-08' does not exist in the v2.2 index
+SIM-EDR-009,EDR,UCS-EDR-09,TC-EDR-09,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-EDR-09' does not exist in the v2.2 index
+SIM-EMAIL-001,EMAIL,UC-EMAIL-001,TC-EMAIL-001A,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-EMAIL-001A' does not exist in the v2.2 index
+SIM-EMAIL-002,EMAIL,UC-EMAIL-002,TC-EMAIL-002A,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-EMAIL-002A' does not exist in the v2.2 index
+SIM-EMAIL-003,EMAIL,UC-EMAIL-003,TC-EMAIL-003A,MOAT,F2,NO,—,—,—,DANGLING,tc_ref 'TC-EMAIL-003A' does not exist in the v2.2 index
+SIM-EMAIL-004,EMAIL,UC-EMAIL-004,TC-EMAIL-004A,MOAT,F2,NO,—,—,—,DANGLING,tc_ref 'TC-EMAIL-004A' does not exist in the v2.2 index
+SIM-ITDR-001,ITDR,UCS-ITDR-01,TC-ITDR-01,LEAD,F1,yes,Identity Threat Detection & Response,LEAD,DET,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-ITDR-002,ITDR,UCS-ITDR-02,TC-ITDR-02,LEAD,F1,yes,Identity Threat Detection & Response,LEAD,DET,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-ITDR-003,ITDR,UCS-ITDR-03,TC-ITDR-03,LEAD,F1,yes,Identity Threat Detection & Response,LEAD,DET,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-ITDR-004,ITDR,UCS-ITDR-04,TC-ITDR-04,LEAD,F1,yes,Identity Threat Detection & Response,LEAD,PLT,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-ITDR-005,ITDR,UCS-ITDR-05,TC-ITDR-05,LEAD,F1,yes,Identity Threat Detection & Response,LEAD,DET,PROVISIONAL MATCH,string + tier agree; semantic equivalence still needs DC confirmation
+SIM-ITDR-006,ITDR,UCS-ITDR-06,TC-ITDR-06,MOAT,F1,yes,Identity Threat Detection & Response,LEAD,PLT,FALSE MATCH,string collides but tier disagrees (index=LEAD vs yml=MOAT) — different test case
+SIM-ITDR-007,ITDR,UCS-ITDR-07,TC-ITDR-07,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-ITDR-07' does not exist in the v2.2 index
+SIM-ITDR-008,ITDR,UCS-ITDR-08,TC-ITDR-08,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-ITDR-08' does not exist in the v2.2 index
+SIM-KOI-001,KOI,UCS-KOI-01,TC-KOI-01,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-KOI-01' does not exist in the v2.2 index
+SIM-KOI-002,KOI,UCS-KOI-02,TC-KOI-02,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-KOI-02' does not exist in the v2.2 index
+SIM-KOI-003,KOI,UCS-KOI-03,TC-KOI-03,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-KOI-03' does not exist in the v2.2 index
+SIM-KOI-004,KOI,UCS-KOI-04,TC-KOI-04,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-KOI-04' does not exist in the v2.2 index
+SIM-KOI-005,KOI,UCS-KOI-05,TC-KOI-05,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-KOI-05' does not exist in the v2.2 index
+SIM-KOI-006,KOI,UCS-KOI-06,TC-KOI-06,MOAT,F1,NO,—,—,—,DANGLING,tc_ref 'TC-KOI-06' does not exist in the v2.2 index
+SIM-MP-001,ANALYTICS,UCS-MP-01,TC-MP-01,MOAT,F2,NO,—,—,—,DANGLING,tc_ref 'TC-MP-01' does not exist in the v2.2 index
+SIM-MP-002,ANALYTICS,UCS-MP-02,TC-MP-02,MOAT,F2,NO,—,—,—,DANGLING,tc_ref 'TC-MP-02' does not exist in the v2.2 index
+SIM-MP-003,ANALYTICS,UCS-MP-03,TC-MP-03,MOAT,F2,NO,—,—,—,DANGLING,tc_ref 'TC-MP-03' does not exist in the v2.2 index
+SIM-MP-004,ANALYTICS,UCS-MP-04,TC-MP-04,MOAT,F2,NO,—,—,—,DANGLING,tc_ref 'TC-MP-04' does not exist in the v2.2 index
+SIM-MP-005,ANALYTICS,UCS-MP-05,TC-MP-05,MOAT,F2,NO,—,—,—,DANGLING,tc_ref 'TC-MP-05' does not exist in the v2.2 index
+SIM-MP-006,ANALYTICS,UCS-MP-06,TC-MP-06,MOAT,F2,NO,—,—,—,DANGLING,tc_ref 'TC-MP-06' does not exist in the v2.2 index
+SIM-NDR-001,NDR,UCS-NDR-01,TC-NDR-01,LEAD,F1,yes,Network Detection & Response,MOAT,DET,FALSE MATCH,string collides but tier disagrees (index=MOAT vs yml=LEAD) — different test case
+SIM-NDR-002,NDR,UCS-NDR-02,TC-NDR-02,LEAD,F1,yes,Network Detection & Response,MOAT,DET,FALSE MATCH,string collides but tier disagrees (index=MOAT vs yml=LEAD) — different test case
+SIM-NDR-003,NDR,UCS-NDR-03,TC-NDR-03,LEAD,F1,yes,Network Detection & Response,MOAT,DET,FALSE MATCH,string collides but tier disagrees (index=MOAT vs yml=LEAD) — different test case
+SIM-NDR-004,NDR,UCS-NDR-04,TC-NDR-04,LEAD,F1,yes,Network Detection & Response,MOAT,DET,FALSE MATCH,string collides but tier disagrees (index=MOAT vs yml=LEAD) — different test case
+SIM-NDR-005,NDR,UCS-NDR-05,TC-NDR-05,LEAD,F1,yes,Network Detection & Response,MOAT,PLT,FALSE MATCH,string collides but tier disagrees (index=MOAT vs yml=LEAD) — different test case
+SIM-NDR-006,NDR,UCS-NDR-06,TC-NDR-06,LEAD,F1,yes,Network Detection & Response,MOAT,DET,FALSE MATCH,string collides but tier disagrees (index=MOAT vs yml=LEAD) — different test case
+SIM-NDR-007,NDR,UCS-NDR-07,TC-NDR-07,LEAD,F1,NO,—,—,—,DANGLING,tc_ref 'TC-NDR-07' does not exist in the v2.2 index
+SIM-TIM-001,TIM,UCS-TIM-01,TC-TIM-01,MOAT,F2,yes,Threat Intelligence Management,LEAD,PLT,FALSE MATCH,string collides but tier disagrees (index=LEAD vs yml=MOAT) — different test case
+SIM-TIM-002,TIM,UCS-TIM-02,TC-TIM-02,LEAD,F8,yes,Threat Intelligence Management,MOAT,DET,FALSE MATCH,string collides but tier disagrees (index=MOAT vs yml=LEAD) — different test case

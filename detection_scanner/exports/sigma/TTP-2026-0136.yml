@@ -1,0 +1,179 @@
+title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 RSC Deserialization RCE App Container CGO Spawns an Interactive Shell"
+id: ttp-2026-0136-abioc-01
+status: experimental
+description: |
+  The internet-facing application process (node, next-server, java, python3, php-fpm, ruby) that owns the pod's causality chain spawns an interactive shell (sh, bash, dash, ash) — behaviour absent from its learned baseline. A web app that serves RSC responses never forks a shell in normal operation; the novelty gate (prior_shell_spawns = 0 from the baseline join) is the discriminator so a legitimate entrypoint/exec that routinely shells out does not fire. This is the endpoint root of the React2Shell chain: deserialization RCE turns the CGO app process into a shell parent. Anchored on causality_actor_process_image_name + causality_actor_process_instance_id so every downstream stage in the same pod lineage stitches back to this node.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter _time > to_timestamp(current_time() - 3600)
+    | filter causality_actor_process_image_name in ("node", "next-server", "java", "python3", "php-fpm", "ruby")
+    | filter actor_process_image_name in ("sh", "bash", "dash", "ash")
+    | comp count() as shell_spawns_now, min(_time) as first_seen by agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name
+    | join type=left (dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter _time < to_timestamp(current_time() - 3600)
+    | filter causality_actor_process_image_name in ("node", "next-server", "java", "python3", "php-fpm", "ruby")
+    | filter actor_process_image_name in ("sh", "bash", "dash", "ash")
+    | comp count() as prior_shell_spawns by container_id) as baseline baseline.container_id = container_id
+    | alter prior_shell_spawns = coalesce(prior_shell_spawns, 0)
+    | filter shell_spawns_now >= 1 and prior_shell_spawns = 0
+    | fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, shell_spawns_now, prior_shell_spawns, first_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+    - attack.t1059.004
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 Kubernetes Service Account Token Read by an Anomalous Descendant of the App Container CGO"
+id: ttp-2026-0136-abioc-02
+status: experimental
+description: |
+  A process whose causality group owner is the exposed app container reads the auto-mounted service-account token at /var/run/secrets/kubernetes.io/serviceaccount/token. A workload that legitimately uses its service account reads that file from its own runtime, not from a shell/curl/cat forked out of the web process after an RCE. The discriminator is the pairing of the sensitive SAT path with a CGO that is the web app AND a reader process in the shell family — the ABIOC keys on causality_actor_process_instance_id so it fuses to the same lineage as the RCE shell rather than alerting on every SAT access cluster-wide.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
+    | filter _time > to_timestamp(current_time() - 3600)
+    | filter action_file_path contains "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    | filter causality_actor_process_image_name in ("node", "next-server", "java", "python3", "php-fpm", "ruby")
+    | filter actor_process_image_name in ("sh", "bash", "dash", "cat", "curl", "wget", "head")
+    | comp count() as token_reads, min(_time) as first_seen by agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, action_file_path
+    | filter token_reads >= 1
+    | fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, action_file_path, token_reads, first_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.001
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 In-Pod Kubernetes API Secret Enumeration from an App-Rooted Process Lineage"
+id: ttp-2026-0136-abioc-03
+status: experimental
+description: |
+  A process descended from the exposed app CGO opens an outbound TLS session to the in-cluster Kubernetes API server (kubernetes.default.svc / the 10.x cluster-IP on 443) and pulls the secrets/RBAC surface with the stolen bearer token — the T1613 stage of the React2Shell chain. Application pods do talk to the API server via their SDK, so the discriminator is that the API reach originates from a shell/curl process (not the app runtime) whose CGO is the web app, and the container has no prior baseline of API calls from that process family. Anchored on the pod causality_id so the discovery node stitches to the token-read and IMDS nodes.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter _time > to_timestamp(current_time() - 3600)
+    | filter action_remote_port = 443
+    | filter dst_action_external_hostname contains "kubernetes.default" or action_remote_ip in ("10.96.0.1", "10.43.0.1")
+    | filter causality_actor_process_image_name in ("node", "next-server", "java", "python3", "php-fpm", "ruby")
+    | filter actor_process_image_name in ("sh", "bash", "dash", "curl", "wget", "kubectl")
+    | comp count() as api_calls, min(_time) as first_seen by agent_hostname, container_id, causality_id, causality_actor_process_instance_id, actor_process_image_name, action_remote_ip
+    | filter api_calls >= 1
+    | fields agent_hostname, container_id, causality_id, causality_actor_process_instance_id, actor_process_image_name, action_remote_ip, api_calls, first_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1613/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1613
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 SSRF-Driven Instance Metadata Node IAM Role Theft from a Container Process"
+id: ttp-2026-0136-abioc-04
+status: experimental
+description: |
+  A container process descended from the exposed app CGO reaches the instance metadata service IP (169.254.169.254) for the FIRST time to pull the node's attached IAM role credentials — the container-to-cloud bridge in the React2Shell chain. The host/pod's learned baseline shows no prior IMDS contact; the novelty gate (prior_imds_requests = 0) means a workload that routinely mints instance-role credentials does NOT fire. Anchored on the pod causality chain AND the node identity so the endpoint IMDS reach can be stitched to the cloud-plane stage where the stolen role is used.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter _time > to_timestamp(current_time() - 3600)
+    | filter action_remote_ip = "169.254.169.254"
+    | filter causality_actor_process_image_name in ("node", "next-server", "java", "python3", "php-fpm", "ruby")
+    | filter actor_process_image_name in ("sh", "bash", "dash", "curl", "wget")
+    | comp count() as imds_requests_now, min(_time) as first_seen by agent_hostname, container_id, causality_id, causality_actor_process_instance_id, actor_process_image_name
+    | join type=left (dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_remote_ip = "169.254.169.254"
+    | filter _time < to_timestamp(current_time() - 3600)
+    | comp count() as prior_imds_requests by agent_hostname) as baseline baseline.agent_hostname = agent_hostname
+    | alter prior_imds_requests = coalesce(prior_imds_requests, 0)
+    | filter imds_requests_now >= 1 and prior_imds_requests = 0
+    | fields agent_hostname, container_id, causality_id, causality_actor_process_instance_id, actor_process_image_name, imds_requests_now, prior_imds_requests, first_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.005
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182) \u2014 Cortex ABIOC \u2014 Stolen Node IAM Role Used in the Cloud Control Plane After Pod Compromise"
+id: ttp-2026-0136-abioc-05
+status: experimental
+description: |
+  The node's attached IAM role (an AssumedRole tied to the compromised instance) suddenly issues control-plane calls — sts:GetCallerIdentity followed by a broad set of distinct read/list operations against backend infrastructure (S3, Secrets Manager, RDS, DynamoDB) — from a session context that first appears right after the pod's IMDS reach. This is the cloud side of the React2Shell pivot and the shared entity that stitches the container plane to the cloud plane: the same node role that the pod stole. The discriminator is the burst of distinct backend operations by a node/instance role that normally only performs a narrow, stable set of workload calls, correlated in time with the endpoint IMDS theft.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "aws"
+    | filter _time > to_timestamp(current_time() - 3600)
+    | filter user_identity_type = "AssumedRole"
+    | filter user_identity_arn contains ":assumed-role/" and user_identity_arn contains "node"
+    | filter event_name in ("GetCallerIdentity", "ListBuckets", "GetObject", "GetSecretValue", "ListSecrets", "DescribeDBInstances", "Scan")
+    | comp count_distinct(event_name) as distinct_ops, count() as api_calls, min(_time) as first_call, max(_time) as last_call by user_identity_arn, source_ip_address
+    | alter burst_span_seconds = timestamp_diff(last_call, first_call, "SECOND")
+    | filter distinct_ops >= 3 and burst_span_seconds <= 300
+    | fields user_identity_arn, source_ip_address, distinct_ops, api_calls, burst_span_seconds
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical

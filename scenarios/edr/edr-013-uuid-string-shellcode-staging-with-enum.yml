@@ -1,0 +1,162 @@
+scenario_id: SIM-EDR-013
+name: "UUID-String Shellcode Staging with Enum-Callback Fileless Execution (Bookworm / ToneShell)"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1620"
+mitre_technique_name: "Reflective Code Loading"
+additional_techniques:
+  - technique: "T1574.002"
+    name: "Hijack Execution Flow: DLL Side-Loading"
+  - technique: "T1140"
+    name: "Deobfuscate/Decode Files or Information"
+  - technique: "T1106"
+    name: "Native API"
+  - technique: "T1027"
+    name: "Obfuscated Files or Information"
+
+threat_report: "Unit 42 — Bookworm to Stately Taurus Using the Unit 42 Attribution Framework"
+threat_report_url: "https://unit42.paloaltonetworks.com/bookworm-to-stately-taurus/"
+
+# This scenario is NON-DESTRUCTIVE. It models the ToneShell / Bookworm
+# UUID-string shellcode-staging chain (DLL side-load -> UuidFromStringA
+# reassembly -> private executable heap -> EnumSystemLocalesA callback) with
+# SAFE-MODE marker files. No shellcode is ever made executable or run; the
+# offensive detail and detection logic live in the anchor card TTP-2026-0109.
+
+execution_identity:
+  default: user
+  options:
+    - user
+    - administrator
+
+push_supported: true
+pull_supported: true
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The chain OWNER is the user-launched signed host application (delivered via a
+# phished archive extracted under explorer.exe), NOT the synthetic beacon. The
+# DLL side-load and the in-process UUID-shellcode execution both descend from
+# that signed host vehicle, so the graph roots on the phishing foothold instead
+# of hanging every stage off cortexsim-agent.
+cgo_anchor:
+  image_name: "explorer.exe"
+  primary_username: "user"
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the signed host application's per-application baseline
+  (loads only its signed modules; never transfers execution into an unbacked
+  private heap). The injected side-load stage and the fileless enum-callback
+  execution deviate from that baseline; both auto-tuned ABIOCs fire and the
+  correlation rule stitches them into a single UUID-string-staging intrusion
+  incident. This is the "behavioral-ML catches the fileless chain a static BIOC
+  misses" proof: there is no VirtualAlloc(RWX), no CreateThread, and no
+  injection to key on, so the catch comes from the causality chain. Mean time
+  from deviation to alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Stage a DLL side-load: unsigned module dropped in a user-writable path beside a signed host binary"
+    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-013'; New-Item -ItemType Directory -Force -Path $stage | Out-Null; Set-Content -Path (Join-Path $stage 'SAFE-MODE-sideloaded-module.dll.marker') -Value 'CortexSim SIM-EDR-013 SAFE-MODE marker: models an unsigned DLL side-loaded from a user-writable path into a signed host process. No executable code is present.'; Write-Host 'cortexsim-edr-013-dll-sideload-staged'"
+    identity: user
+    mitre_technique: "T1574.002"
+    platforms: ["windows"]
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A signed host binary whose learned per-application baseline loads only its signed modules from trusted paths side-loads an unsigned/unknown DLL from a user-writable directory — auto-tuned ABIOC fires on the deviation, anchored to the loading process. No known-bad DLL name is required."
+        ttp_ref: "TTP-2026-0109"
+        detection_id: "abioc-edr-013-dll-side-loaded-module-loads-from-a-user-writable-path-in-a-signed-host-process"
+      - plane: EDR
+        type: XQL
+        description: "Validation query surfaces the unsigned module-load from a user-writable path by a signed host binary in xdr_data within the run window."
+        ttp_ref: "TTP-2026-0109"
+        detection_id: "xql-edr-013-unsigned-dll-side-loaded-from-a-user-writable-path-by-a-signed-host-binary"
+
+  - id: step-02
+    name: "Reassemble shellcode from UUID strings into a private executable heap and transfer control via an enumeration callback"
+    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-013'; $uuids = @('00010203-0405-0607-0809-0a0b0c0d0e0f','10111213-1415-1617-1819-1a1b1c1d1e1f'); $bytes = foreach ($u in $uuids) { ([guid]$u).ToByteArray() }; Set-Content -Path (Join-Path $stage 'SAFE-MODE-decoded-blob.marker') -Value (\"CortexSim SIM-EDR-013 SAFE-MODE: reassembled {0} inert bytes from {1} benign UUID strings (models UuidFromStringA). Never placed on an executable heap and never run.\" -f $bytes.Count, $uuids.Count); Set-Content -Path (Join-Path $stage 'SAFE-MODE-enum-callback-exec.marker') -Value 'CortexSim SIM-EDR-013 SAFE-MODE marker: models control transfer into a private executable heap via an EnumSystemLocalesA / EnumChildWindows callback. Telemetry-shape marker only.'; Write-Host 'cortexsim-edr-013-uuid-reassembly-and-enum-callback-modeled'"
+    identity: user
+    mitre_technique: "T1620"
+    causality:
+      parent_step: "step-01"
+      pivot: process_lineage
+    platforms: ["windows"]
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The signed host process transfers execution into a private, executable, unbacked memory region reached through a locale/window enumeration callback (EnumSystemLocalesA/EnumChildWindows) — no VirtualAlloc(RWX), no CreateThread, no injection. Auto-tuned ABIOC fires on the in-process causality deviation the learned profile has never exhibited."
+        ttp_ref: "TTP-2026-0109"
+        detection_id: "abioc-edr-013-unbacked-private-heap-execution-reached-via-locale-or-window-enumeration-callback"
+      - plane: EDR
+        type: XQL
+        description: "Hunt query surfaces the unsigned, unbacked module load (no on-disk image) by the signed host process in xdr_data."
+        ttp_ref: "TTP-2026-0109"
+        detection_id: "xql-edr-013-fileless-unbacked-unsigned-module-loaded-by-a-signed-host-process"
+
+  - id: step-03
+    name: "Correlation stitches the side-load and fileless-execution deviations into one incident"
+    command: "Write-Host 'cortexsim-edr-013-cr-edr-0013-stitched-uuid-string-staging-incident'"
+    identity: user
+    mitre_technique: "T1106"
+    causality:
+      parent_step: "step-02"
+      pivot: shared_entity
+    platforms: ["windows"]
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Correlation rule fuses the DLL-side-load ABIOC and the unbacked enum-callback-execution ABIOC on the same host + causality process into a single UUID-string-staging intrusion incident anchored to the signed-host-binary causality chain."
+        ttp_ref: "TTP-2026-0109"
+        detection_id: "CR-EDR-0013"
+
+cleanup:
+  commands:
+    - "Remove-Item -Recurse -Force (Join-Path $env:TEMP 'cortexsim-edr-013') -ErrorAction SilentlyContinue"
+    - "Write-Host 'cortexsim-edr-013-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - defense-evasion
+  - reflective-code-loading
+  - dll-sideloading
+  - uuid-shellcode-staging
+  - enum-callback-execution
+  - fileless
+  - toneshell
+  - bookworm
+  - stately-taurus
+  - windows
+  - endpoint-security
+  - abioc

@@ -1,0 +1,70 @@
+adapter_id: TOOL-LSE
+name: linux-smart-enumeration
+version: "4.14nw"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/diego-treitos/linux-smart-enumeration
+  license: "GPL-3.0"
+  attribution: Diego Blanco (diego-treitos)
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1082  # System Information Discovery
+    - T1083  # File and Directory Discovery
+    - T1548.001  # Abuse Elevation Control Mechanism: Setuid and Setgid
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "test -x /tmp/lse.sh || (curl -fsSLo /tmp/lse.sh https://github.com/diego-treitos/linux-smart-enumeration/releases/download/4.14nw/lse.sh && chmod +x /tmp/lse.sh)"
+  binary: /tmp/lse.sh
+
+  artifact:
+    filename: lse.sh
+    # The `nw` suffix is upstream's "no wget" build. Chosen deliberately: the
+    # plain build pulls extra content from the internet AT RUN TIME on the
+    # target, which would re-open the exact egress dependency the shelf closes.
+    url: "https://github.com/diego-treitos/linux-smart-enumeration/releases/download/4.14nw/lse.sh"
+    kind: file
+    sha256: "ccb6a164caa590bc60615e7a4d5ecff9162b86dc8c782a15b1cccedee02ca095"
+    pin:
+      type: release-tag
+      ref: "4.14nw"
+    license: "GPL-3.0"
+    stage_path: /tmp/lse.sh
+    mode: "0755"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {flags}"
+  default_args:
+    # -l1 = "interesting" level, -i = non-interactive (never prompts for a
+    # password to test sudo). A prompt on a beacon-executed step blocks forever.
+    flags: "-l1 -i"
+  identity_required: www-data
+
+cleanup:
+  commands:
+    - "rm -f /tmp/lse.sh"
+
+ttp_refs:
+  - TTP-2026-0176
+
+equivalents:
+  - TOOL-LINPEAS
+  - TOOL-LINENUM
+
+author: Henry Reed
+created: "2026-08-05"
+last_updated: "2026-08-05"
+tags:
+  - privilege-escalation
+  - enumeration
+  - linux
+  - edr
+  - payload-shelf

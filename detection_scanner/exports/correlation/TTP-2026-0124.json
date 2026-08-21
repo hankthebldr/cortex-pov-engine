@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1528",
+    "T1078.004",
+    "T1087.004",
+    "T1069.003",
+    "T1526",
+    "T1580",
+    "T1071.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-014 Browser Session-Token and Cookie Theft by Non-Browser Process) AND ABIOC(MP-014 Non-Interactive Entra Sign-In from Unusual Geo Post Token Theft) AND ABIOC(MP-014 AzureHound Bulk Microsoft Graph Enumeration Burst) within a 30-minute window, joined on the shared session identity (endpoint actor_effective_username maps to Entra user_principal_name maps to cloud_audit_logs identity_name, correlated by signin_activity_id and caller_ip). Fuses the endpoint token-theft signal, the anomalous non-interactive cloud sign-in, and the AzureHound Graph enumeration burst into a single escalation incident spanning the endpoint, cloud-identity, and cloud-audit planes instead of three low-fidelity alerts.",
+      "name": "AzureHound Cloud-Identity Enumeration Chain \u2014 Token Theft to Graph Discovery Stitch",
+      "rule_id": "CR-MP-0014",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0124"
+}

@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1530"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Suspicious identity downloaded multiple objects from a bucket) AND ABIOC(An identity performed a suspicious download of multiple cloud storage objects) \u2014 fuses the two auto-tuned mass-download deviations on the same identity and bucket within the run window into a single S3 mass-object-exfiltration incident anchored to the suspicious-identity causality chain.",
+      "name": "Mass Object Exfiltration \u2014 Suspicious-Identity Download Stitch",
+      "rule_id": "CR-CDR-0019",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0154"
+}

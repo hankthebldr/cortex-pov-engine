@@ -1,60 +1,97 @@
 """
-idp_signin_emulator — synthetic IdP sign-in event emitter for ITDR.
+idp_signin_emulator — Identity-Provider (Okta / Microsoft Entra) sign-in
+analytics log-streamer, built on the ``analytics_emitter`` spine.
 
-Generates authentic-shape sign-in / authentication events against an
-**operator-supplied collector endpoint** (typically an HTTP log
-collector that the customer has already wired into Cortex ITDR / XSIAM
-as a third-party log source). The plugin never talks to a real Okta /
-Microsoft / Google identity tenant — every event is a JSON blob shaped
-*like* the IdP's audit-event schema and POSTed to the collector URL.
+Generates authentic-shape sign-in / authentication audit records against an
+**operator-supplied collector endpoint** (typically an HTTP log collector the
+customer has already wired into Cortex XSIAM / ITDR as a third-party IdP
+source) so a customer can validate that their Cortex **Analytics / ABIOC**
+identity detections fire. The plugin never talks to a real Okta / Microsoft
+Entra / Google tenant — every record is a JSON blob shaped *like* the IdP's
+audit schema and POSTed to the collector URL.
 
-Why this approach: ITDR detection looks at the raw IdP audit logs. By
-posting shape-true events into a collector the customer already trusts,
-we exercise the same parsing + behavioural rules without touching the
-real tenant or burning a real account lockout. The customer's NGFW
-EAL stack also sees the outbound POST and may correlate.
+Why this approach: ITDR / Analytics detection reads the raw IdP sign-in feed
+(``okta_sso`` for Okta, ``msft_azure_ad_signin`` for Entra ID,
+``google_workspace_audit`` for Google Workspace). By posting shape-true events
+into a collector the customer already trusts, we exercise the same parsing +
+behavioural / ML rules without touching the real tenant or burning a real
+account lockout. The customer's NGFW EAL stack also sees the outbound POST and
+may correlate.
 
-Event-shape presets (parameter ``event_pattern``):
+The plugin implements only ``build_events`` — the shared driver
+(``AnalyticsLogEmitter``) owns the injectable httpx client, the
+``ctx.authorise``-before-emit gate, the dry-run short-circuit, budget charging,
+per-event / NDJSON batch POST, gzip, ingestion-auth header and the
+``SimulationResult`` aggregation.
 
-  ============================ ========================================================
-  preset                       what it simulates
-  ============================ ========================================================
-  impossible_travel            two successful sign-ins from geographically distant IPs
-                                within an impossible interval
-  mfa_fatigue                  N MFA challenges in a short window followed by an
-                                approval (mfa-bombing pattern)
-  credential_stuffing          N failed password attempts across N user identifiers
-                                from the same source IP
-  token_replay                 reuse of the same session token from a different IP /
-                                user-agent than the original issuance
-  brute_force_lockout          repeated failures against a single account causing
-                                lockout state transition
-  ============================ ========================================================
+Event-shape presets (parameter ``event_pattern``) — each maps to a real
+XSIAM identity analytics / ABIOC alert:
 
-Each event carries ``cortexsim_run_id`` in its body and an
-``X-Simulation-Run-ID`` HTTP header so SOC analysts can filter the
-simulator traffic.
+  ================================ =====================================================
+  preset                           analytics / ABIOC alert it exercises
+  ================================ =====================================================
+  impossible_travel                Analytics — "Impossible travel by a cloud identity"
+                                    (two successful sign-ins from geographically distant
+                                    IPs within an impossible interval) — T1078.004
+  mfa_fatigue                      ABIOC — MFA push-bombing burst then an approval — T1621
+  credential_stuffing              Analytics — "Possible Brute-Force attempt" (failed
+                                    logins across many identities, one source IP) — T1110.004
+  token_replay                     Analytics — session-token reuse across geo / UA — T1539
+  brute_force_lockout              Analytics — "Possible Brute-Force attempt" against a
+                                    single account causing lockout — T1110.003
+  azure_risky_login                Analytics — "A possible risky login to Azure"
+                                    (Entra sign-in flagged atRisk / high risk from an
+                                    anonymised IP) — T1078.004
+  azure_ad_powershell_first_use    ABIOC — "First Azure AD PowerShell operation for a
+                                    user" (first sign-in via the Azure AD PowerShell app
+                                    for that principal) — T1526
+  entra_mfa_reported_suspicious    Analytics — "Suspicious MFA request reported by user
+                                    in Entra ID" (push challenges then a user fraud
+                                    report) — T1621
+  ================================ =====================================================
+
+Providers (parameter ``provider``): ``okta`` (System Log -> ``okta_sso``) |
+``microsoft`` (Entra ID signInLogs -> ``msft_azure_ad_signin``) | ``google``
+(Workspace login activity -> ``google_workspace_audit``). The Azure/Entra
+presets (``azure_risky_login`` / ``azure_ad_powershell_first_use`` /
+``entra_mfa_reported_suspicious``) are Entra-native and are normally driven
+with ``provider: microsoft``, but every preset is expressible against any
+provider's schema.
+
+Each record carries ``cortexsim_run_id`` in its body and a top-level
+``dataset`` hint (the provider's real XSIAM dataset), plus an
+``X-Simulation-Run-ID`` HTTP header so SOC analysts can filter simulator
+traffic.
 """
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
-import json
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Optional
-from urllib.parse import urlparse
 
-import httpx
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 
-from ..audit import ecs_event
-from ..base import BaseSimulation, SimulationContext, SimulationResult
+from ..analytics_emitter import AnalyticsEmitterParams, AnalyticsLogEmitter
 
 
 logger = logging.getLogger("cortexsim.eal.plugins.idp_signin_emulator")
+
+
+# --------------------------------------------------------------------------
+# Per-provider XSIAM dataset the sign-in feed normalises to.
+# --------------------------------------------------------------------------
+
+_PROVIDER_DATASET: dict[str, str] = {
+    "okta": "okta_sso",
+    "microsoft": "msft_azure_ad_signin",
+    "google": "google_workspace_audit",
+}
+
+# The canonical dataset for this data source (the plugin's assigned feed).
+_DATASET = "okta_sso"
 
 
 # --------------------------------------------------------------------------
@@ -77,12 +114,15 @@ class _SourceLocation:
         }
 
 
+# Documentation IP ranges (RFC 5737) so nothing here resolves on a real network.
 _LOCATIONS: dict[str, _SourceLocation] = {
     "us-west":      _SourceLocation("us-west",      "San Francisco", "US", "203.0.113.10"),
     "eu-central":   _SourceLocation("eu-central",   "Frankfurt",     "DE", "198.51.100.42"),
     "apac-east":    _SourceLocation("apac-east",    "Singapore",     "SG", "192.0.2.77"),
     "africa-south": _SourceLocation("africa-south", "Cape Town",     "ZA", "203.0.113.200"),
     "sa-east":      _SourceLocation("sa-east",      "Sao Paulo",     "BR", "198.51.100.150"),
+    # An anonymised / hosting-provider IP used by the Entra risky-login preset.
+    "anon-vpn":     _SourceLocation("anon-vpn",     "Unknown",       "XX", "192.0.2.202"),
 }
 
 
@@ -98,10 +138,12 @@ def _okta_event(
     source: _SourceLocation,
     user_agent: str,
     sim_run_id: str,
+    dataset: str = "okta_sso",
     extra: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Shape an Okta system-log event (subset of /api/v1/logs schema)."""
-    body = {
+    """Shape an Okta System-Log event (subset of the /api/v1/logs schema)."""
+    body: dict[str, Any] = {
+        "dataset": dataset,
         "eventType": event_type,
         "published": datetime.now(timezone.utc).isoformat(),
         "outcome": {"result": outcome.upper()},
@@ -132,10 +174,12 @@ def _microsoft_event(
     source: _SourceLocation,
     user_agent: str,
     sim_run_id: str,
+    dataset: str = "msft_azure_ad_signin",
     extra: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Shape a Microsoft Entra ID / AAD signInLogs event (subset)."""
-    body = {
+    """Shape a Microsoft Entra ID (AAD) signInLogs event (subset)."""
+    body: dict[str, Any] = {
+        "dataset": dataset,
         "id": secrets.token_hex(8),
         "createdDateTime": datetime.now(timezone.utc).isoformat(),
         "userPrincipalName": user_principal,
@@ -144,10 +188,15 @@ def _microsoft_event(
         "appId": "00000000-cortexsim-canary",
         "ipAddress": source.ip,
         "userAgent": user_agent,
+        "clientAppUsed": "Browser",
         "location": {
             "city": source.city,
             "countryOrRegion": source.country,
         },
+        # Entra ID Protection risk fields — benign baseline unless a preset
+        # overrides them via ``extra``.
+        "riskLevelDuringSignIn": "none",
+        "riskState": "none",
         "status": {
             "errorCode": 0 if outcome == "success" else 50053,
             "failureReason": None if outcome == "success" else event_type,
@@ -168,10 +217,12 @@ def _google_event(
     source: _SourceLocation,
     user_agent: str,
     sim_run_id: str,
+    dataset: str = "google_workspace_audit",
     extra: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Shape a Google Workspace login activity event (subset)."""
-    body = {
+    body: dict[str, Any] = {
+        "dataset": dataset,
         "kind": "admin#reports#activity",
         "id": {
             "time": datetime.now(timezone.utc).isoformat(),
@@ -219,6 +270,9 @@ _EVENT_PATTERNS = (
     "credential_stuffing",
     "token_replay",
     "brute_force_lockout",
+    "azure_risky_login",
+    "azure_ad_powershell_first_use",
+    "entra_mfa_reported_suspicious",
 )
 
 
@@ -226,53 +280,40 @@ def _list_event_patterns() -> list[str]:
     return sorted(_EVENT_PATTERNS)
 
 
+# The Azure AD PowerShell first-party app (the real Microsoft app id).
+_AZURE_AD_POWERSHELL_APP_ID = "1b730954-1685-4b74-9bfd-dac224a7b894"
+
+
 # --------------------------------------------------------------------------
-# Pydantic params
+# Params — subclass the shared base, add only provider + event_pattern +
+# target_user. The full transport field-set (collector_url + validator,
+# iterations, sleep_seconds, request_timeout, burst_count, user_agent,
+# auth_token, auth_header, auth_scheme, compress, batch) is inherited verbatim.
 # --------------------------------------------------------------------------
 
 
-class IdpSigninEmulatorParams(BaseModel):
-    collector_url: str = Field(
-        ...,
-        description="HTTP collector endpoint to POST synthetic IdP events to. "
-                    "Typically an in-customer log forwarder already wired into "
-                    "Cortex ITDR / XSIAM as a third-party source.",
-    )
+class IdpSigninEmulatorParams(AnalyticsEmitterParams):
     provider: str = Field(
         default="okta",
-        description="IdP audit-event shape: okta | microsoft | google.",
+        description="IdP audit-event shape: okta (okta_sso) | microsoft "
+                    "(msft_azure_ad_signin) | google (google_workspace_audit).",
     )
     event_pattern: str = Field(
         default="impossible_travel",
-        description="Behavioural pattern: impossible_travel | mfa_fatigue | "
-                    "credential_stuffing | token_replay | brute_force_lockout.",
+        description="Analytics / ABIOC alert to exercise: impossible_travel | "
+                    "mfa_fatigue | credential_stuffing | token_replay | "
+                    "brute_force_lockout | azure_risky_login | "
+                    "azure_ad_powershell_first_use | entra_mfa_reported_suspicious.",
     )
     target_user: str = Field(
         default="ada.lovelace@cortexsim-canary.invalid",
         description="User principal whose audit log gets the synthetic events.",
     )
-    iterations: int = Field(default=1, ge=1, le=200)
-    sleep_seconds: float = Field(default=0.0, ge=0.0, le=600.0)
-    request_timeout: float = Field(default=15.0, ge=1.0, le=300.0)
-    burst_count: int = Field(
-        default=8, ge=2, le=200,
-        description="Burst size for mfa_fatigue / credential_stuffing / "
-                    "brute_force_lockout patterns (events per iteration).",
-    )
-    user_agent: Optional[str] = Field(
-        default=None,
-        description="Override the outbound User-Agent header on POSTs to the collector.",
-    )
 
-    @field_validator("collector_url")
-    @classmethod
-    def _collector_url_safe(cls, v: str) -> str:
-        parsed = urlparse(v)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError("collector_url must use http or https")
-        if not parsed.hostname:
-            raise ValueError("collector_url must include a hostname")
-        return v
+    @property
+    def dataset(self) -> str:
+        """The real XSIAM dataset this provider's sign-in feed normalises to."""
+        return _PROVIDER_DATASET.get(self.provider, _DATASET)
 
     @field_validator("provider")
     @classmethod
@@ -307,156 +348,82 @@ class IdpSigninEmulatorParams(BaseModel):
 # --------------------------------------------------------------------------
 
 
-class IdpSigninEmulator(BaseSimulation):
+class IdpSigninEmulator(AnalyticsLogEmitter):
+    # Three provider shapes, one map — Okta nests the principal under actor,
+    # Entra carries it flat, Google nests it under actor.email. Each record
+    # only has one of them, and the rest are skipped.
+    CANARY_FIELDS = {
+        "actor.alternateId": "{principal}",
+        "actor.displayName": "{account}",
+        "actor.email": "{principal}",
+        "userPrincipalName": "{principal}",
+        "userDisplayName": "{account}",
+    }
+
     class Meta:
         name = "idp_signin_emulator"
-        version = "1.0.0"
+        version = "2.0.0"
         description = (
-            "Emits synthetic IdP sign-in audit events (Okta / Microsoft Entra / "
-            "Google Workspace shape) into an operator-supplied collector so "
-            "Cortex ITDR / XSIAM exercises its identity-behavioural detection "
-            "rules without touching the real tenant."
+            "Emits shape-true IdP sign-in audit records (Okta System Log / "
+            "Microsoft Entra ID signInLogs / Google Workspace shape) into an "
+            "operator-supplied collector so Cortex XSIAM / ITDR exercises its "
+            "identity Analytics / ABIOC detections (impossible travel, "
+            "brute-force, MFA push-bombing, risky Azure login, first Azure AD "
+            "PowerShell use, user-reported suspicious MFA) without touching the "
+            "real identity tenant."
         )
-        mitre_techniques = ["T1110.003", "T1110.004", "T1078.004", "T1556.006", "T1539"]
-        eal_targets = [
-            "ITDR — impossible-travel detection",
-            "ITDR — MFA fatigue / push-bombing detection",
-            "ITDR — credential-stuffing detection (failed-login burst)",
-            "ITDR — session-token replay across geo / user-agent",
-            "ITDR — account-lockout state transition",
-            "NGFW EAL — outbound POST to log-collector App-ID match",
+        # Drawn from the analytics / ABIOC alerts this plugin fires. None are
+        # TA0011 (Command-and-Control) techniques, so live campaigns need only
+        # simulation_authorized (not c2_authorized) per the SafetyPolicy
+        # classifier.
+        mitre_techniques = [
+            "T1110.003", "T1110.004", "T1078.004", "T1556.006", "T1539",
+            "T1621", "T1526",
         ]
+        eal_targets = [
+            "Analytics — impossible travel by a cloud identity (Okta / Entra sign-in)",
+            "Analytics — possible brute-force attempt (failed-login burst / lockout)",
+            "ABIOC — MFA push-bombing / fatigue burst then approval",
+            "Analytics — session-token replay across geo / user-agent",
+            "Analytics — a possible risky login to Azure (Entra atRisk sign-in)",
+            "ABIOC — first Azure AD PowerShell operation for a user",
+            "Analytics — suspicious MFA request reported by user in Entra ID",
+            "NGFW EAL — outbound POST to identity log-collector App-ID match",
+        ]
+        ecs_category = "iam"
         params_model = IdpSigninEmulatorParams
 
-    async def run(self, ctx: SimulationContext) -> SimulationResult:
-        params: IdpSigninEmulatorParams = ctx.params  # type: ignore[assignment]
-        started_at = self.utcnow()
+    # ------------------------------------------------------------------
+    # The ONLY method a source plugin implements.
+    # ------------------------------------------------------------------
 
-        host = urlparse(params.collector_url).hostname or ""
-        getattr(ctx, "authorise")(host)
-
-        if ctx.dry_run:
-            await ctx.emit_event(ecs_event(
-                action="idp_signin_emulator_dry_run",
-                outcome="success",
-                category="iam",
-                type_="info",
-                message=(
-                    f"DRY-RUN — would POST {params.iterations} {params.event_pattern} "
-                    f"event burst(s) for {params.target_user} to {host}"
-                ),
-                campaign_id=ctx.campaign_id,
-                run_id=ctx.run_id,
-                step_id=ctx.step_id,
-                plugin=self.Meta.name,
-                target=host,
-                extra={
-                    "provider": params.provider,
-                    "event_pattern": params.event_pattern,
-                    "iterations": params.iterations,
-                    "burst_count": params.burst_count,
-                    "target_user": params.target_user,
-                },
-            ))
-            return SimulationResult(
-                plugin=self.Meta.name,
-                step_id=ctx.step_id,
-                status="success",
-                started_at=started_at,
-                completed_at=self.utcnow(),
-                events_emitted=1,
-                bytes_sent=0,
-                detail={
-                    "dry_run": True,
-                    "provider": params.provider,
-                    "event_pattern": params.event_pattern,
-                    "iterations_planned": params.iterations,
-                },
-            )
-
-        events_emitted = 0
-        bytes_sent = 0
-        responses_seen: dict[int, int] = {}
-
-        # Stash verify_tls where _build_client reads it without changing its
-        # (monkeypatched-in-tests) signature.
-        self._verify_tls = ctx.verify_tls
-        client = self._build_client(params)
-        try:
-            for i in range(params.iterations):
-                events_in_iter, iter_bytes, iter_status = await self._emit_pattern(
-                    client, params, ctx, iteration=i + 1,
-                )
-                events_emitted += events_in_iter
-                bytes_sent += iter_bytes
-                for code, n in iter_status.items():
-                    responses_seen[code] = responses_seen.get(code, 0) + n
-                if i < params.iterations - 1 and params.sleep_seconds > 0:
-                    await asyncio.sleep(params.sleep_seconds)
-        finally:
-            await client.aclose()
-
-        return SimulationResult(
-            plugin=self.Meta.name,
-            step_id=ctx.step_id,
-            status="success",
-            started_at=started_at,
-            completed_at=self.utcnow(),
-            events_emitted=events_emitted,
-            bytes_sent=bytes_sent,
-            detail={
-                "provider": params.provider,
-                "event_pattern": params.event_pattern,
-                "iterations_completed": params.iterations,
-                "events_posted": events_emitted,
-                "response_status_counts": responses_seen,
-                "target": host,
-                "target_user": params.target_user,
-            },
-        )
-
-    # ----------------------------------------------------------------------
-    # Internals
-    # ----------------------------------------------------------------------
-
-    def _build_client(self, params: IdpSigninEmulatorParams) -> httpx.AsyncClient:
-        headers: dict[str, str] = {"content-type": "application/json"}
-        if params.user_agent:
-            headers["user-agent"] = params.user_agent
-        return httpx.AsyncClient(
-            timeout=params.request_timeout,
-            # default False (NGFW MitM friendly); opt back in per campaign via
-            # the verify_tls knob, read off the plugin instance (set in run()).
-            verify=getattr(self, "_verify_tls", False),
-            follow_redirects=False,
-            headers=headers,
-        )
-
-    def _build_events_for_pattern(
-        self, params: IdpSigninEmulatorParams, *, sim_run_id: str,
+    def build_events(
+        self, params: IdpSigninEmulatorParams, *, sim_run_id: str, iteration: int,
     ) -> list[dict[str, Any]]:
-        """Return the list of audit-event bodies the pattern should POST."""
+        """Return the shape-true sign-in records this iteration should POST."""
         builder = _PROVIDER_BUILDERS[params.provider]
+        dataset = _PROVIDER_DATASET[params.provider]
         ua_default = params.user_agent or \
-            "Mozilla/5.0 (X11; Linux x86_64) CortexSim/1.0"
+            "Mozilla/5.0 (X11; Linux x86_64) CortexSim/2.0"
+
+        def _emit(**kwargs: Any) -> dict[str, Any]:
+            return builder(sim_run_id=sim_run_id, dataset=dataset, **kwargs)
 
         if params.event_pattern == "impossible_travel":
             return [
-                builder(
+                _emit(
                     event_type="user.session.start",
                     outcome="success",
                     user_principal=params.target_user,
                     source=_LOCATIONS["us-west"],
                     user_agent=ua_default,
-                    sim_run_id=sim_run_id,
                 ),
-                builder(
+                _emit(
                     event_type="user.session.start",
                     outcome="success",
                     user_principal=params.target_user,
                     source=_LOCATIONS["apac-east"],
                     user_agent=ua_default,
-                    sim_run_id=sim_run_id,
                     extra={"impossible_travel_marker": True},
                 ),
             ]
@@ -464,22 +431,20 @@ class IdpSigninEmulator(BaseSimulation):
         if params.event_pattern == "mfa_fatigue":
             evs: list[dict[str, Any]] = []
             for _ in range(max(2, params.burst_count - 1)):
-                evs.append(builder(
+                evs.append(_emit(
                     event_type="user.mfa.attempt",
                     outcome="failure",
                     user_principal=params.target_user,
                     source=_LOCATIONS["africa-south"],
                     user_agent=ua_default,
-                    sim_run_id=sim_run_id,
                     extra={"mfa_factor": "push", "denied": True},
                 ))
-            evs.append(builder(
+            evs.append(_emit(
                 event_type="user.mfa.attempt",
                 outcome="success",
                 user_principal=params.target_user,
                 source=_LOCATIONS["africa-south"],
                 user_agent=ua_default,
-                sim_run_id=sim_run_id,
                 extra={"mfa_factor": "push", "denied": False, "fatigue_marker": True},
             ))
             return evs
@@ -487,13 +452,12 @@ class IdpSigninEmulator(BaseSimulation):
         if params.event_pattern == "credential_stuffing":
             evs = []
             for i in range(params.burst_count):
-                evs.append(builder(
+                evs.append(_emit(
                     event_type="user.session.start",
                     outcome="failure",
                     user_principal=f"user{i:03d}@cortexsim-canary.invalid",
                     source=_LOCATIONS["sa-east"],
                     user_agent=ua_default,
-                    sim_run_id=sim_run_id,
                     extra={"failure_reason": "INVALID_CREDENTIALS"},
                 ))
             return evs
@@ -501,22 +465,20 @@ class IdpSigninEmulator(BaseSimulation):
         if params.event_pattern == "token_replay":
             tx_id = secrets.token_hex(8)
             return [
-                builder(
+                _emit(
                     event_type="user.session.start",
                     outcome="success",
                     user_principal=params.target_user,
                     source=_LOCATIONS["us-west"],
                     user_agent="Chrome/124 (Windows NT 10.0)",
-                    sim_run_id=sim_run_id,
                     extra={"session_token_id": tx_id},
                 ),
-                builder(
+                _emit(
                     event_type="user.session.access_token",
                     outcome="success",
                     user_principal=params.target_user,
                     source=_LOCATIONS["eu-central"],
                     user_agent="curl/7.85.0",
-                    sim_run_id=sim_run_id,
                     extra={
                         "session_token_id": tx_id,
                         "replay_marker": True,
@@ -527,116 +489,100 @@ class IdpSigninEmulator(BaseSimulation):
         if params.event_pattern == "brute_force_lockout":
             evs = []
             for _ in range(params.burst_count):
-                evs.append(builder(
+                evs.append(_emit(
                     event_type="user.session.start",
                     outcome="failure",
                     user_principal=params.target_user,
                     source=_LOCATIONS["sa-east"],
                     user_agent=ua_default,
-                    sim_run_id=sim_run_id,
                     extra={"failure_reason": "INVALID_CREDENTIALS"},
                 ))
-            evs.append(builder(
+            evs.append(_emit(
                 event_type="user.account.lock",
                 outcome="success",
                 user_principal=params.target_user,
                 source=_LOCATIONS["sa-east"],
                 user_agent=ua_default,
-                sim_run_id=sim_run_id,
                 extra={"lockout_marker": True},
+            ))
+            return evs
+
+        if params.event_pattern == "azure_risky_login":
+            # A benign baseline sign-in, then the Entra-flagged risky sign-in
+            # from an anonymised IP that trips "A possible risky login to Azure".
+            return [
+                _emit(
+                    event_type="user.session.start",
+                    outcome="success",
+                    user_principal=params.target_user,
+                    source=_LOCATIONS["us-west"],
+                    user_agent=ua_default,
+                ),
+                _emit(
+                    event_type="user.session.start",
+                    outcome="success",
+                    user_principal=params.target_user,
+                    source=_LOCATIONS["anon-vpn"],
+                    user_agent=ua_default,
+                    extra={
+                        "risky_login_marker": True,
+                        "riskLevelDuringSignIn": "high",
+                        "riskState": "atRisk",
+                        "riskDetail": "none",
+                        "riskEventTypes": [
+                            "unfamiliarFeatures", "anonymizedIPAddress",
+                        ],
+                    },
+                ),
+            ]
+
+        if params.event_pattern == "azure_ad_powershell_first_use":
+            # First-ever sign-in for the principal via the Azure AD PowerShell
+            # first-party app — the ABIOC "first Azure AD PowerShell operation".
+            return [
+                _emit(
+                    event_type="user.session.start",
+                    outcome="success",
+                    user_principal=params.target_user,
+                    source=_LOCATIONS["eu-central"],
+                    user_agent="Mozilla/5.0 AzureADPowerShell/2.0",
+                    extra={
+                        "azure_ad_powershell_marker": True,
+                        "first_operation": True,
+                        "appDisplayName": "Azure Active Directory PowerShell",
+                        "appId": _AZURE_AD_POWERSHELL_APP_ID,
+                        "clientAppUsed": "Mobile Apps and Desktop clients",
+                    },
+                ),
+            ]
+
+        if params.event_pattern == "entra_mfa_reported_suspicious":
+            # A short MFA push burst, then a user "report suspicious" event —
+            # the "Suspicious MFA request reported by user in Entra ID" alert.
+            evs = []
+            for _ in range(max(2, params.burst_count - 1)):
+                evs.append(_emit(
+                    event_type="user.mfa.attempt",
+                    outcome="failure",
+                    user_principal=params.target_user,
+                    source=_LOCATIONS["anon-vpn"],
+                    user_agent=ua_default,
+                    extra={"mfa_factor": "push", "denied": True},
+                ))
+            evs.append(_emit(
+                event_type="user.mfa.reported_fraud",
+                outcome="failure",
+                user_principal=params.target_user,
+                source=_LOCATIONS["anon-vpn"],
+                user_agent=ua_default,
+                extra={
+                    "mfa_reported_suspicious_marker": True,
+                    "fraudReported": True,
+                    "authenticationRequirement": "multiFactorAuthentication",
+                },
             ))
             return evs
 
         raise ValueError(  # pragma: no cover — gated by the pydantic validator
             f"unknown event_pattern {params.event_pattern!r}"
         )
-
-    async def _emit_pattern(
-        self,
-        client: httpx.AsyncClient,
-        params: IdpSigninEmulatorParams,
-        ctx: SimulationContext,
-        *,
-        iteration: int,
-    ) -> tuple[int, int, dict[int, int]]:
-        per_request_sim_id = f"{ctx.simulation_run_id}-i{iteration}-{secrets.token_hex(2)}"
-        events = self._build_events_for_pattern(
-            params, sim_run_id=per_request_sim_id,
-        )
-
-        headers = {
-            **{k.lower(): v for k, v in ctx.telemetry_headers.items()},
-            "x-simulation-run-id": per_request_sim_id,
-            "content-type": "application/json",
-        }
-
-        events_posted = 0
-        bytes_sent = 0
-        status_counts: dict[int, int] = {}
-        host = urlparse(params.collector_url).hostname or ""
-
-        for evt in events:
-            body_bytes = json.dumps(evt).encode("utf-8")
-            bytes_sent += len(body_bytes)
-            # Charge the campaign-level cumulative budget per event POST
-            # (EAL-G06) before sending.
-            ctx.charge_request()
-            ctx.charge_bytes(len(body_bytes))
-            try:
-                resp = await client.post(
-                    params.collector_url, headers=headers, content=body_bytes,
-                )
-                events_posted += 1
-                status_counts[resp.status_code] = status_counts.get(resp.status_code, 0) + 1
-                await ctx.emit_event(ecs_event(
-                    action="idp_signin_emulator_event",
-                    outcome="success",
-                    category="iam",
-                    type_="user",
-                    message=(
-                        f"idp signin event provider={params.provider} "
-                        f"pattern={params.event_pattern} "
-                        f"user={params.target_user} -> {host} "
-                        f"status={resp.status_code}"
-                    ),
-                    campaign_id=ctx.campaign_id,
-                    run_id=ctx.run_id,
-                    step_id=ctx.step_id,
-                    plugin=self.Meta.name,
-                    target=host,
-                    bytes_sent=len(body_bytes),
-                    extra={
-                        "iteration": iteration,
-                        "provider": params.provider,
-                        "event_pattern": params.event_pattern,
-                        "event_type": evt.get("eventType")
-                                      or evt.get("status", {}).get("additionalDetails")
-                                      or (evt.get("events", [{}])[0].get("name")
-                                          if evt.get("events") else None),
-                        "status_code": resp.status_code,
-                        "simulation_request_id": per_request_sim_id,
-                    },
-                ))
-            except httpx.HTTPError as exc:
-                status_counts[0] = status_counts.get(0, 0) + 1
-                await ctx.emit_event(ecs_event(
-                    action="idp_signin_emulator_event",
-                    outcome="failure",
-                    category="iam",
-                    type_="error",
-                    message=f"idp signin event POST failed: {exc}",
-                    campaign_id=ctx.campaign_id,
-                    run_id=ctx.run_id,
-                    step_id=ctx.step_id,
-                    plugin=self.Meta.name,
-                    target=host,
-                    bytes_sent=len(body_bytes),
-                    extra={
-                        "iteration": iteration,
-                        "provider": params.provider,
-                        "error": str(exc),
-                        "simulation_request_id": per_request_sim_id,
-                    },
-                ))
-
-        return events_posted, bytes_sent, status_counts

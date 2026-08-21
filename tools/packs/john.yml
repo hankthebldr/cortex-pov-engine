@@ -1,0 +1,61 @@
+adapter_id: TOOL-JOHN
+name: "John the Ripper"
+version: "1.9.0-jumbo-1"
+
+tier: 4
+category: identity-credential
+
+upstream:
+  repo: https://github.com/openwall/john
+  license: "GPL-2.0"
+  attribution: "Openwall / Alexander Peslyak (Solar Designer)"
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1110.002   # Brute Force: Password Cracking
+
+safety_class: dual-use-lab-only
+
+install:
+  # Tier 4 (runtime-fetched): john (jumbo) is apt-provided on Kali/Debian.
+  runtime_install_command: "command -v john >/dev/null 2>&1 || apt-get install -y john"
+  binary: john
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: DISTRO_PACKAGE
+    reason: >-
+      John the Ripper installs from the operating system's package repository.
+      Staging it on the shelf would mean hosting a Debian mirror, so this tool
+      needs internet access on the target host. Plan the POV around that, or
+      have the customer pre-install it on the target.
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {flags} {hashfile}"
+  default_args:
+    # Offline cracking of a lab-seeded hash file only — no host access, no
+    # network. SAFE-MODE default points at a CortexSim-staged hash dump.
+    flags: "--wordlist=/usr/share/wordlists/rockyou.txt"
+    hashfile: "/tmp/cortexsim-john-hashes.txt"
+  identity_required: nobody
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-john-hashes.txt 2>/dev/null || true"
+    - "rm -f ~/.john/john.pot ~/.john/john.log 2>/dev/null || true"
+
+ttp_refs: []
+equivalents:
+  - TOOL-RUBEUS
+  - TOOL-IMPACKET
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - identity-credential
+  - runtime-fetched
+  - password-cracking
+  - dual-use

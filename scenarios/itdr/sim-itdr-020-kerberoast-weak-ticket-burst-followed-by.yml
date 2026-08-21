@@ -1,0 +1,202 @@
+scenario_id: SIM-ITDR-020
+name: "ITDR — Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash (Cortex ABIOC)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - ABIOC
+  - Analytics
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-IR-04
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1558.003"
+mitre_technique_name: "Steal or Forge Kerberos Tickets: Kerberoasting"
+additional_techniques:
+  - technique: "T1550.002"
+    name: "Use Alternate Authentication Material: Pass the Hash"
+
+threat_report: "Cortex XDR/XSIAM — Analytics Alert Reference (Active-Directory Kerberos & NTLM behavioral alerts)"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-Analytics-Alert-Reference-by-Alert-name"
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The Windows Security Event Log records (4769 weak-ticket burst, 4624 NTLM
+# Pass-the-Hash logon) are emitted by the ad_windows_emitter analytics
+# log-streamer — a python3 EAL process in the container harness (the Causality
+# Group Owner). The weak-ticket roast burst (step-01) is the root and links from
+# that CGO; the Pass-the-Hash logon (step-02) is the SAME identity's lateral
+# authentication, so it threads on shared_entity (same account, no process fork
+# between the roast and the NTLM logon), and the correlation (step-03) fuses the
+# weak-ticket ABIOC and the Pass-the-Hash ABIOC on that same identity →
+# shared_entity.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "container-runtime"
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Identity Behavioral-ML Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the account's Kerberos service-ticket-encryption profile
+  (AES-only), service-ticket request volume (few SPNs, human cadence) and
+  authentication-package baseline (Kerberos interactive). The injected RC4
+  weak-ticket burst across many SPNs and the subsequent NTLM Pass-the-Hash
+  network logon deviate from that learned baseline; the weak-ticket and
+  service-ticket-volume ABIOCs fire on the roast, the Pass-the-Hash ABIOC fires
+  on the lateral logon, and the correlation rule stitches the weak-ticket and
+  Pass-the-Hash deviations into a single Kerberoast-to-Pass-the-Hash
+  credential-abuse incident. This is the "behavioral-ML catches what a static
+  BIOC misses" proof: every 4769 ticket request and every 4624 logon is a valid
+  authentication event, so the catch comes from the deviation and its causality
+  chain, not a known-bad signature. Mean time from deviation to alert is within
+  the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Kerberoast weak-ticket burst on a learned identity (RC4 4769 across many SPNs)"
+    command: |
+      cat > /tmp/sim-itdr-020-roast.yml <<'YML'
+      campaign_id: CMP-ITDR-020
+      name: "ITDR — Kerberoast weak-ticket burst (SIM-ITDR-020)"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - collector.cortexsim-canary.invalid
+      dry_run: false
+      tags: [itdr, kerberoast, weak-ticket, active-directory]
+      steps:
+        - step_id: step-01
+          plugin: ad_windows_emitter
+          params:
+            collector_url: https://collector.cortexsim-canary.invalid/logs/v1/event
+            event_pattern: kerberoast_weak_ticket
+            target_account: cortexsim-canary
+            burst_count: 12
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-itdr-020-roast.yml --live
+    identity: svc-account
+    mitre_technique: "T1558.003"
+    # Root of the causality spine — links from the CGO (python3 emitter).
+    platforms: ["container"]
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "A single account receives an unusual burst of RC4-HMAC (0x17) Kerberos service tickets across many distinct SPNs — auto-tuned ABIOC fires on the weak-encryption-ticket-burst deviation from the account's learned AES-only service-ticket baseline, the offline-crackable roast material. No single 4769 is a known-bad IOC."
+        ttp_ref: "TTP-2026-0166"
+        detection_id: abioc-a-user-received-multiple-weakly-encrypted-service-tickets
+      - plane: ITDR
+        type: Analytics
+        description: "The same account requests service tickets across an anomalously large set of distinct SPNs in a short window — the Kerberoasting request-volume sweep — firing on ticket-request VOLUME via a statistical deviation from the learned baseline (independent of encryption strength)."
+        ttp_ref: "TTP-2026-0166"
+        detection_id: abioc-a-user-requested-multiple-service-tickets
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms the emitted 4769 / 4624 Windows Security Event Log records landed in msft_windows_security within the run window (the roast burst is observable in the telemetry)."
+        ttp_ref: "TTP-2026-0166"
+        detection_id: xql-sim-itdr-020-windows-security-kerberos-and-ntlm-logon-events-landed
+
+  - id: step-02
+    name: "NTLM Pass-the-Hash network logon on the same identity"
+    command: |
+      cat > /tmp/sim-itdr-020-pth.yml <<'YML'
+      campaign_id: CMP-ITDR-020
+      name: "ITDR — Pass-the-Hash NTLM network logon (SIM-ITDR-020)"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - collector.cortexsim-canary.invalid
+      dry_run: false
+      tags: [itdr, pass-the-hash, ntlm, active-directory]
+      steps:
+        - step_id: step-01
+          plugin: ad_windows_emitter
+          params:
+            collector_url: https://collector.cortexsim-canary.invalid/logs/v1/event
+            event_pattern: pass_the_hash
+            target_account: cortexsim-canary
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-itdr-020-pth.yml --live
+    identity: svc-account
+    mitre_technique: "T1550.002"
+    # Same identity's lateral authentication after the roast (same account, no
+    # process fork between the roast and the NTLM logon) → shared_entity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["container"]
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "An NTLM (NtLmSsp) network logon (4624, LogonType 3) presents a password-derived secret directly with no preceding Kerberos exchange — the Pass-the-Hash lateral-movement shape — for an account whose learned baseline is Kerberos interactive logon. Auto-tuned ABIOC fires on the out-of-baseline weak-NTLM network authentication deviation, anchored to the roasted identity."
+        ttp_ref: "TTP-2026-0166"
+        detection_id: abioc-a-user-authenticated-with-weak-ntlm-to-multiple-hosts
+
+  - id: step-03
+    name: "Correlation stitches the roast and Pass-the-Hash into one incident"
+    command: "echo cortexsim-itdr-020-cr-itdr-0009-stitched-kerberoast-pass-the-hash-incident"
+    identity: svc-account
+    mitre_technique: "T1550.002"
+    # Correlation fuses the weak-ticket ABIOC and the Pass-the-Hash ABIOC on the
+    # same account → shared_entity.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["container"]
+    expected_detections:
+      - plane: ITDR
+        type: Correlation
+        description: "Correlation rule fuses the weakly-encrypted-service-ticket ABIOC and the Pass-the-Hash ABIOC on the same target_user_name within a 60-minute window into a single Kerberoast-to-Pass-the-Hash credential-abuse incident anchored to the requesting-identity causality chain."
+        ttp_ref: "TTP-2026-0166"
+        detection_id: CR-ITDR-0009
+
+cleanup:
+  commands:
+    - "rm -f /tmp/sim-itdr-020-roast.yml /tmp/sim-itdr-020-pth.yml"
+    - "echo cortexsim-itdr-020-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - itdr
+  - active-directory
+  - kerberoast
+  - weak-service-ticket
+  - pass-the-hash
+  - ntlm
+  - abioc
+  - behavioral-ml

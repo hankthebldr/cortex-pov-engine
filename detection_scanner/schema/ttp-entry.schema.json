@@ -740,32 +740,32 @@
             }
           }
         },
-        "use_cases": {
+        "threat_scenarios": {
           "type": "array",
-          "description": "POV-level use cases this TTP supports. Lines up with the playbook the SE runs with the customer.",
+          "description": "Card-local threat narratives this TTP supports — the story the SE walks the customer through. These are NOT sales use cases: the canonical UC/TC namespace is the master index under docs/uc_tc_mapping/_v2.2-source/, joined from scenario YAML via uc_ref/tc_refs. Naming these UC-/TC- is what made the two namespaces collide.",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["use_case_id", "name", "test_cases"],
+            "required": ["threat_scenario_id", "name", "threat_steps"],
             "properties": {
-              "use_case_id": {
+              "threat_scenario_id": {
                 "type": "string",
-                "pattern": "^UC-[A-Z0-9]+-[0-9]{3}$",
-                "description": "Format: UC-<DOMAIN>-NNN. DOMAIN examples: RANSOM, IDENT, CLOUD, INSIDER, SUPPLY, OT."
+                "pattern": "^TS-[A-Z0-9]+-[0-9]{3}$",
+                "description": "Format: TS-<DOMAIN>-NNN. DOMAIN examples: RANSOM, IDENT, CLOUD, INSIDER, SUPPLY, OT."
               },
               "name": { "type": "string" },
               "description": { "type": "string" },
-              "test_cases": {
+              "threat_steps": {
                 "type": "array",
                 "minItems": 1,
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["test_case_id", "objective", "success_criteria"],
+                  "required": ["threat_step_id", "objective", "success_criteria"],
                   "properties": {
-                    "test_case_id": {
+                    "threat_step_id": {
                       "type": "string",
-                      "pattern": "^TC-[A-Z0-9]+-[0-9]{3}[A-Z]?$"
+                      "pattern": "^TS-[A-Z0-9]+-[0-9]{3}[A-Z]?$"
                     },
                     "objective": { "type": "string" },
                     "preconditions": { "type": "array", "items": { "type": "string" } },

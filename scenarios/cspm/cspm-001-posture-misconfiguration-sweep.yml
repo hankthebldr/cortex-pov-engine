@@ -12,10 +12,15 @@ detection_types:
 # ── UC/TC Alignment ─────────────────────────────────────────────────────────
 # Maps to the Cortex Use Case Index Master v2.0 Cloud/Posture family:
 #   Cloud Posture Management → TC-CSPM-01 (MOAT tier — F4 Posture & Compliance).
-uc_ref: UCS-CSPM-01
-tc_ref: TC-CSPM-01
-uc_name: "Cloud Security Posture Management"
-tc_name: "Misconfiguration Detection & Compliance Scoring"
+uc_ref: UCS-CSPM-02
+tc_ref: TC-CSPM-02
+tc_refs:
+  - TC-CSPM-02
+  - TC-CSPM-01
+  - TC-CSPM-04
+pov_scenario_id: POV-SC-007
+uc_name: "Cloud Security Posture Management (CSPM)"
+tc_name: "Validate Security Policy Enforcement — OOTB policies (CIS, NIST, SOC2) evaluate correctly against target resources"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 # CSPM findings are pre-attack posture, mapped to the techniques the
@@ -48,6 +53,16 @@ execution_identity:
 
 push_supported: true
 pull_supported: false
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# No intrusion process tree here — this is a read-only posture sweep. The CGO
+# root is the audit shell on the scanner host that owns the four sequential
+# enumeration passes (manifest capture → Prowler → ScoutSuite → reconcile),
+# NOT the synthetic cortexsim-agent node. The steps chain by shared_entity: one
+# audit session against one account via the cortexsim-lab read-only principal.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "root"
 
 # ── External Tools (adapter-backed posture scanners) ────────────────────────
 # Wires the previously-orphan CDR cloud scanners via adapter_ref (closes part of
@@ -119,6 +134,8 @@ steps:
       echo '[*] Expected planted finding classes: 9'
     identity: root
     mitre_technique: "T1580"
+    # Root of the causality spine — links from the CGO (audit shell).
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -142,6 +159,12 @@ steps:
       echo '[*] Prowler scan complete — Cortex Cloud CSPM should independently surface S3 + SG findings'
     identity: root
     mitre_technique: "T1530"
+    # Same audit session / cortexsim-lab read-only principal as the manifest
+    # capture (no fork — sequential control-plane enumeration) → shared_entity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -171,6 +194,11 @@ steps:
       echo '[*] ScoutSuite cross-check complete — Cortex Cloud CSPM should surface IAM + EBS + CloudTrail findings'
     identity: root
     mitre_technique: "T1098"
+    # Same audit session / principal as the Prowler pass (no fork) → shared_entity.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: XQL
@@ -214,6 +242,11 @@ steps:
       fi
     identity: root
     mitre_technique: "T1530"
+    # Final reconciliation pass in the same audit session (no fork) → shared_entity.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    platforms: ["linux"]
     expected_detections:
       - plane: CSPM
         type: XQL

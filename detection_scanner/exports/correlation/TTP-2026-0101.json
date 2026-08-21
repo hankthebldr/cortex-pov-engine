@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1071",
+    "T1571"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(NDR-008 Periodic Low-and-Slow Beacon Deviating from Host Egress Baseline) AND ABIOC(NDR-008 Jittered Beacon to Rare Destination With Non-Standard Port Deviation) \u2014 fuses the two auto-tuned network behavioral deviations for the same source host into a single low-and-slow C2 beacon incident anchored to the host egress causality chain, surviving destination/IP rotation that defeats any static IOC.",
+      "name": "Low-and-Slow C2 Beacon Behavioral Anomaly \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-NDR-0008",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0101"
+}

@@ -4,33 +4,33 @@
 ## ABIOC — CDR-014 In-Cluster TTP Chain Behavioral Causality (behavioral-ML, causality-anchored)
 # severity: high
 # behavioral_profile: machine-learning
-# causality_anchor: Learned per-container process baseline (single service process) -> exec-spawned shell -> a multi-stage sequence of discovery, C2, archive, and hijack children, anchored to the single originating shell as one causality chain.
+# causality_anchor: Learned per-container process baseline (single service process) -> containerd-shim/runc CGO -> exec-spawned shell (causality_actor_process_image_name) -> a multi-stage sequence of discovery, C2, archive, and hijack children, keyed on causality_id + container_id + causality_actor_process_instance_id so every stage attributes to the SAME originating shell as one causality chain rather than to any single action image.
 # A container whose learned baseline is a single long-running service process suddenly executes a multi-stage sequence — system discovery, outbound HTTP, data archival, and execution-flow modification — within one short window. ABIOC anchors the chain to its causality (one shell parent spawning discovery -> C2 -> archive -> hijack children) and fires on the deviating sequence as one story rather than on any single static process name.
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_container_info != null
-| filter actor_process_image_name in ("sh", "bash")
+| filter causality_actor_process_image_name in ("sh", "bash", "containerd-shim")
 | filter action_process_image_name in ("uname", "curl", "tar", "id", "lscpu", "hostname")
-| comp count_distinct(action_process_image_name) as distinct_stages by agent_hostname, actor_process_image_name
+| comp count_distinct(action_process_image_name) as distinct_stages, values(action_process_image_name) as stages by agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id
 | filter distinct_stages >= 3
 | sort desc distinct_stages
-| fields agent_hostname, actor_process_image_name, distinct_stages
+| fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, distinct_stages, stages
 
 ## ABIOC — CDR-014 Anomalous Multi-Stage Container Discovery and Exfil (behavioral-ML, causality-anchored)
 # severity: high
 # behavioral_profile: machine-learning
-# causality_anchor: Learned per-container baseline (no archival/exfil) -> exec-spawned shell -> tar archive creation -> outbound egress, anchored to the originating shell as a collection-then-exfil deviation.
+# causality_anchor: Learned per-container baseline (no archival/exfil) -> containerd-shim CGO -> exec-spawned shell (causality_actor_process_image_name) -> tar archive creation -> outbound egress, keyed on causality_id + container_id so the archive and the egress attribute to the SAME shell as one collection-then-exfil deviation.
 # A baselined container deviates by archiving collected data and then opening outbound connections — the collection-then-exfil shape of the in-cluster chain. ABIOC fires on the single deviation event (archive creation followed by egress from a container that never archived or exfiltrated in its learned baseline) with the causality chain that ties the egress back to the archive.
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_container_info != null
 | filter action_process_image_name in ("tar", "gzip", "curl", "wget", "scp")
-| comp count() as collect_exfil_events by agent_hostname, actor_process_image_name
+| comp count() as collect_exfil_events, values(action_process_image_name) as tools by agent_hostname, container_id, causality_id, causality_actor_process_image_name
 | filter collect_exfil_events >= 1
 | sort desc collect_exfil_events
-| fields agent_hostname, actor_process_image_name, collect_exfil_events
+| fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, collect_exfil_events, tools
 
 ## VALIDATION — CDR-014 Container Workload Projection
 # purpose: hunt
@@ -56,7 +56,7 @@ dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_container_info != null
 | filter action_process_image_name in ("uname", "curl", "tar", "id")
-| comp count_distinct(action_process_image_name) as stages by agent_hostname
+| comp count_distinct(action_process_image_name) as stages by agent_hostname, container_id, causality_id
 | filter stages >= 2
-| fields agent_hostname, stages
+| fields agent_hostname, container_id, causality_id, stages
 

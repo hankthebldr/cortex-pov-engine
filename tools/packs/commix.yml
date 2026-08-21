@@ -21,6 +21,14 @@ safety_class: dual-use-lab-only
 install:
   runtime_install_command: "command -v commix >/dev/null 2>&1 || pip install commix"
   binary: "commix"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: LANGUAGE_PACKAGE_MANAGER
+    reason: >-
+      Commix installs from the Python (pip) package index along with its
+      dependency tree. The shelf stages one file, and there is no single file
+      that runs. Staging it would mean hosting a package mirror, so this tool
+      needs internet access on the target host.
 
 invoke:
   target_platform: linux

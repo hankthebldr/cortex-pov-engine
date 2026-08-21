@@ -1,0 +1,32 @@
+title: "AWS IAM & S3 Enumeration Sequence \u2014 Cloud Discovery Recon (SIM-CDR-021) \u2014 AWS Cloud-Discovery Volume Anomaly on a Learned Identity Baseline"
+id: ttp-2026-0156-abioc-01
+status: experimental
+description: |
+  PANW-authored, auto-tuned behavioral-ML detection. Cortex learns each AWS principal's normal CloudTrail discovery-API profile (which enumeration calls it makes, how often, and how broad). This ABIOC fires when a principal's discovery-call volume and API breadth spike far above its learned baseline within a short window — the mass-enumeration deviation an attacker produces while mapping IAM trust and S3 exposure. No single ListRoles / ListBuckets call is a known-bad IOC; the catch is the deviation from the learned per-identity baseline, anchored to the identity's CloudTrail causality chain. The body below is the XQL-shaped proxy the ABIOC evaluates against the modeled baseline.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter eventType = "AwsApiCall"
+    | filter eventName in ("ListUsers", "ListRoles", "ListPolicies", "GetAccountAuthorizationDetails", "ListAttachedRolePolicies", "ListBuckets", "GetBucketAcl", "GetBucketPolicy", "ListObjects")
+    | filter _time > to_timestamp(current_time() - 1800)
+    | comp count() as discovery_calls, count_distinct(eventName) as distinct_apis by userIdentity.arn, sourceIPAddress
+    | filter discovery_calls >= 8 and distinct_apis >= 5
+    | fields userIdentity.arn, sourceIPAddress, discovery_calls, distinct_apis
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.004
+    - attack.t1580
+    - attack.t1619
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

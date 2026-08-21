@@ -10,6 +10,8 @@ description: |
     | filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
     | filter action_file_name = "mcp.json"
     | filter action_file_path contains "anthroopic-calculator"
+    | filter causality_actor_process_image_name in ("node", "claude", "code", "python3")
+    | fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, action_file_path
   ----
 references:
   - https://attack.mitre.org/techniques/T1195/

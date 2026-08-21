@@ -10,9 +10,10 @@ description: |
     | filter event_sub_type = ENUM.PROCESS_START
     | filter actor_process_image_name in ("bash", "sh")
     | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
-    | comp count() as proc_count by agent_hostname, action_local_ip, actor_effective_username
+    | filter causality_actor_process_image_name in ("apache2", "nginx", "httpd", "php-fpm")
+    | comp count() as proc_count by agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, causality_id
     | filter proc_count >= 1
-    | fields agent_hostname, action_local_ip, actor_effective_username, proc_count
+    | fields agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, causality_id, proc_count
   ----
 references:
   - https://attack.mitre.org/techniques/T1059/

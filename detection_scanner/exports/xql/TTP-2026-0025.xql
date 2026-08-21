@@ -31,6 +31,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
+| filter causality_actor_process_image_name in ("containerd-shim", "runc", "bash", "sh")
 | filter actor_process_image_name in ("cat", "cp", "bash", "sh")
 | filter action_process_image_command_line contains "serviceaccount/token"
 
@@ -76,6 +77,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
+| filter causality_actor_process_image_name in ("containerd-shim", "runc", "bash", "sh")
 | filter actor_process_image_name = "kubectl"
 | filter action_process_image_command_line contains "exec"
 | filter action_process_image_command_line contains_any ("-n ", "--namespace")
@@ -99,6 +101,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
+| filter causality_actor_process_image_name in ("containerd-shim", "runc", "bash", "sh")
 | filter actor_process_image_name = "kubectl"
 | filter action_process_image_command_line contains_any ("apply", "create")
 | filter action_process_image_command_line contains_any ("cronjob", ".yaml", "-f ")
@@ -122,7 +125,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
 | filter actor_process_image_name = "kubectl" and action_process_image_command_line contains "exec"
-| fields _time, agent_hostname, container_id, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, container_id, causality_id, causality_actor_process_image_name, actor_process_instance_id, actor_effective_username, action_process_image_command_line
 
 ## VALIDATION — CDR-004 Validate Pod Exec Or CronJob Create In K8s Audit
 # purpose: validation

@@ -4,6 +4,7 @@ import { downloadTtpLayer } from './exportNavigatorLayer.js'
 import TtpEditorView from './TtpEditorView.jsx'
 import DetectionTypeChip from './DetectionTypeChip.jsx'
 import { tokeniserFor } from './syntaxHighlight.js'
+import { runIdOf } from '../../api/ids.js'
 
 // Maps a card detection-family key to the canonical detection-type chip token
 // so Correlation (the XSIAM differentiator) and XQL render with their distinct
@@ -15,6 +16,7 @@ const DETECTION_KIND_CHIP = {
   iocs:              'IOC',
   analytics_modules: 'Analytics',
 }
+
 
 /**
  * TtpBrowserView — surface the TTP corpus that lives under
@@ -981,7 +983,7 @@ function LaunchAllModal({ ttpId, onClose }) {
         mode,
         identity: identity || undefined,
       })
-        .then((r) => ok.push({ scenario_id, run_id: r?.run_id || r?.id }))
+        .then((r) => ok.push({ scenario_id, run_id: runIdOf(r) }))
         .catch((e) => failed.push({ scenario_id, error: e?.message || String(e) }))
     )
     await Promise.all(calls)

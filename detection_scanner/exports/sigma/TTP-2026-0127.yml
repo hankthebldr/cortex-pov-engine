@@ -1,0 +1,96 @@
+title: "BadSuccessor dMSA Privilege Escalation (Windows Server 2025) \u2014 Create + Dual-Attribute Write + Privileged-TGT Lineage ABIOC \u2014 ITDR-013 Write-Property 4662 On dMSA Object-Type By Non-Admin"
+id: ttp-2026-0127-bioc-01
+status: experimental
+description: |
+  Deterministic audit-log catch: Windows Security event 4662 with access mask 0x20 (Write Property) against the msDS-DelegatedManagedServiceAccount object-type GUID 0feb936f-47b3-49f2-9386-1dedc2c23765, performed by a non-administrative subject. This is the direct signature of a low-privileged identity mutating dMSA attributes — the BadSuccessor write step — complementing the behavioral ABIOC with an evidence-grade rule keyed to the exact object type and access mask from the Unit 42 disclosure.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4662
+    | filter properties contains "0feb936f-47b3-49f2-9386-1dedc2c23765"
+    | filter access_mask = "0x20"
+    | filter subject_user_name not in ("Administrator", "SYSTEM")
+    | comp count() as write_property_events by host_name, subject_user_name, object_name
+    | filter write_property_events >= 1
+    | fields host_name, subject_user_name, object_name, write_property_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "BadSuccessor dMSA Privilege Escalation (Windows Server 2025) \u2014 Create + Dual-Attribute Write + Privileged-TGT Lineage ABIOC \u2014 ITDR-013 dMSA Created Outside Managed Service Accounts Container By Non-Privileged Identity"
+id: ttp-2026-0127-abioc-02
+status: experimental
+description: |
+  An identity whose learned Cortex profile never provisions managed-service accounts creates a delegated MSA (Security event 5137) outside the default CN=Managed Service Accounts container. The ABIOC anchors the deviation to the learned per-identity provisioning baseline rather than to any bad command — dMSA creation is a legitimate operation, so the catch comes from WHO is doing it and WHERE, the opening move of the BadSuccessor chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 5137
+    | filter object_class = "msDS-DelegatedManagedServiceAccount"
+    | filter object_dn not contains "CN=Managed Service Accounts"
+    | filter subject_user_name not in ("Administrator", "SYSTEM")
+    | comp count() as dmsa_creations by host_name, subject_user_name, subject_logon_id, object_dn
+    | filter dmsa_creations >= 1
+    | fields host_name, subject_user_name, subject_logon_id, object_dn, dmsa_creations
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1136/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1136.002
+    - attack.t1098
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "BadSuccessor dMSA Privilege Escalation (Windows Server 2025) \u2014 Create + Dual-Attribute Write + Privileged-TGT Lineage ABIOC \u2014 ITDR-013 dMSA Dual Privileged-Attribute Write Lineage In One Logon Session"
+id: ttp-2026-0127-abioc-03
+status: experimental
+description: |
+  Within one logon session the acting identity writes BOTH msDS-DelegatedMSAState=2 (migration complete) and msDS-ManagedAccountPrecededByLink pointing at a privileged DN on the freshly created dMSA (two Security event 5136 records on GUIDs 2f5c138a-bd38-4016-88b4-0ec87cbb4919 and a0945b2b-57a2-43bd-b327-4d112a4e8bd1). The ABIOC fires on this create-and-modify LINEAGE — a genuine dMSA migration is performed by an administrator over time, not by a non-admin who just created the object seconds earlier — anchoring the two attribute writes to the same subject_logon_id as the creation.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 5136
+    | filter attribute_ldap_display_name in ("msDS-DelegatedMSAState", "msDS-ManagedAccountPrecededByLink")
+    | filter (attribute_ldap_display_name = "msDS-DelegatedMSAState" and attribute_value = "2") or attribute_ldap_display_name = "msDS-ManagedAccountPrecededByLink"
+    | comp count_distinct(attribute_ldap_display_name) as attrs_written, values(attribute_value) as written_values by host_name, subject_logon_id, object_dn
+    | filter attrs_written >= 2
+    | fields host_name, subject_logon_id, object_dn, attrs_written, written_values
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098
+    - attack.t1078.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

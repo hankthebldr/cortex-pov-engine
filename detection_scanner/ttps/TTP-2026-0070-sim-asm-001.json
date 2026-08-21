@@ -274,14 +274,14 @@
         "evidence_query": "Playbook: open exposure-management ticket per finding, recommend closing the non-standard SSH port, removing world-bound Redis, replacing the weak self-signed cert, and restricting the public S3 website policy."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ASM-064",
+        "threat_scenario_id": "TS-ASM-064",
         "name": "Attack Surface Discovery & Enumeration via Cortex ASM",
         "description": "Validate that Cortex ASM/Xpanse discovers and enumerates a deliberately exposed public host + public S3 website, prioritises the high-risk exposures, and that NGFW telemetry detects the active scan that surfaced them.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ASM-064A",
+            "threat_step_id": "TS-ASM-064A",
             "objective": "Cortex ASM discovers and enumerates every exposed service on the host plus the public S3 website.",
             "preconditions": [
               "infra/modules/aws/asm bundle applied with a reachable public IP.",
@@ -298,7 +298,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ASM-064B",
+            "threat_step_id": "TS-ASM-064B",
             "objective": "The active scan that surfaced the exposures is detected and correlated into one exposure-management incident.",
             "steps": [
               "Run SIM-ASM-001 step-03 (nuclei exposure/misconfig/CVE scan).",

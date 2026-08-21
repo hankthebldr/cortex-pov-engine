@@ -1,0 +1,22 @@
+# Build artifacts that must never enter the build context.
+#
+# The rust-builder stage copies whole submodule directories (rather than named
+# files) so the image still BUILDS when the submodules are not checked out — a
+# missing file makes COPY fail, an empty directory does not. Copying the whole
+# directory would otherwise drag in ~300 MB of host-built target/ per tool: an
+# accidental cache-buster on every local build, and a pile of stale glibc
+# objects shipped into a musl builder for no reason.
+sources/*/target/
+sources/*/*/target/
+
+# Never useful in an image build, always large.
+**/node_modules/
+**/__pycache__/
+**/.pytest_cache/
+.git/modules/
+
+# Generated locally by `make rust-dist` / `make agent-dist`; the image builds
+# its own inside the builder stages and must not inherit a host copy, which
+# could be a different architecture or an older submodule commit.
+rust-dist/
+agent-dist/

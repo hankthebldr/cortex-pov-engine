@@ -7,10 +7,14 @@ plane: CDR
 detection_types:
   - BIOC
 
-uc_ref: UCS-CDR-04
-tc_ref: TC-CDR-04
-uc_name: "Kubernetes Lateral Movement Detection"
-tc_name: "kubectl Abuse and CronJob Persistence"
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+tc_refs:
+  - TC-CDR-01
+  - TC-IR-04
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0008"
 mitre_tactic_name: "Lateral Movement"
@@ -60,6 +64,46 @@ external_tools:
     type: binary
     install_inline: false
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The compromised pod's container runtime (containerd-shim) is the Causality
+# Group Owner. Token theft descends from the in-pod enumeration shell
+# (process_lineage); the first kubectl call authenticates with the stolen
+# service-account token copied in step-02 (shared_entity — credential reuse,
+# not a fork), and the exec/CronJob kubectl calls chain forward as one process
+# spine. The result is a single connected cross-namespace lateral-movement
+# incident instead of five independent steps hanging off the beacon. platforms
+# tag each step's container/k8s environment.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
+# ── Cluster posture — the over-permissioned deployment IS the premise ────────
+# RANK 3 of the first slice, and the fix for live FALSE-GREEN #2. Before this
+# block every step targeted https://kubernetes.default.svc with the namespace
+# DEFAULT service account, which has no API rights: step-01 curl → 403
+# (swallowed), step-03 `kubectl get pods --all-namespaces` → Forbidden, step-04
+# resolved TARGET_POD empty and the exec was a no-op, step-05's CronJob apply →
+# Forbidden. "Kubernetes Lateral Movement" moved nothing laterally.
+#
+# The wildcard ClusterRole is a DUAL artifact: it is the execution vehicle the
+# lateral-movement steps need to be non-vacuous AND the planted KSPM finding a
+# posture engine must surface. This is the canonical worked example in
+# docs/reference/k8s-delivery.md §9 — the same posture that yields 10 findings
+# (clusterrole-wildcard-verbs/-resources, secrets-read-cluster-wide, pod-exec,
+# token-mint, impersonate, the binding, token-automounted, run-as-root,
+# writable-rootfs). `auto` → Deployment (a Job reaped in minutes cannot be
+# discovered by a scan cycle measured in hours). Every object carries
+# cortexsim.io/posture-finding, joined by POS-CSPM-004. GATED: cluster_privilege
+# only — this touches no node. app_identity back-fills from cgo_anchor per S-17.
+cluster_posture:
+  workload: auto
+  service_account:
+    automount_token: true
+    cluster_role_rules:
+      - api_groups: ["*"]
+        resources: ["*"]
+        verbs: ["*"]
+
 steps:
   - id: step-01
     name: "Enumerate Kubernetes service accounts and RBAC permissions"
@@ -74,6 +118,7 @@ steps:
       echo '[*] Namespace enumeration complete'
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["container", "k8s"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -98,6 +143,10 @@ steps:
       echo '[*] Service account credential harvest complete'
     identity: container-runtime
     mitre_technique: "T1552.001"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -123,6 +172,10 @@ steps:
       echo '[*] Cross-namespace pod enumeration complete'
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -151,6 +204,10 @@ steps:
       echo '[!] Successfully executed command in adjacent pod' || echo '[-] Exec into adjacent pod failed — RBAC may restrict exec'
     identity: node
     mitre_technique: "T1021.001"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -194,6 +251,10 @@ steps:
       echo '[!] Malicious CronJob deployed for persistence' || echo '[-] CronJob creation failed — may require additional RBAC'
     identity: container-runtime
     mitre_technique: "T1053.005"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC

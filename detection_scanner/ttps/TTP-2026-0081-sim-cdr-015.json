@@ -194,14 +194,14 @@
         "evidence_query": "The modeling rule normalizes raw actor_container_info into XDM fields; the BIOC fires on the modeled privileged field, proving the raw-source to detection chain."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-010",
+        "threat_scenario_id": "TS-CLOUD-010",
         "name": "XDM Normalization Substrate Proof for Container Telemetry",
         "description": "A DC proves the full raw-source to detection chain: an XDM modeling rule maps raw container JSON into addressable fields, and a BIOC fires on the normalized privileged field.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-010A",
+            "threat_step_id": "TS-CLOUD-010A",
             "objective": "The modeling rule normalizes raw container telemetry and the privileged-container BIOC fires on the modeled field.",
             "preconditions": [
               "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",

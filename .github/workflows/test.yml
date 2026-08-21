@@ -135,7 +135,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: npm, cache-dependency-path: ui/package-lock.json }
       - name: Install Python smoke deps
-        run: pip install pytest httpx
+        # pyyaml is not optional: the smoke tests load the scenario corpus, and
+        # without it every one dies on `ModuleNotFoundError: No module named
+        # 'yaml'`. That went unnoticed because this job `needs: python-tests`,
+        # which was failing — so e2e was SKIPPED, and a skipped job reads the
+        # same as a passing one at a glance.
+        run: pip install pytest httpx pyyaml
       - name: Install UI deps
         working-directory: ui
         run: npm ci

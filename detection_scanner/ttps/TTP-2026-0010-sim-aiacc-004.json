@@ -1,7 +1,7 @@
 {
   "id": "TTP-2026-0010",
   "schema_version": "1.0.0",
-  "entry_version": "1.1.0",
+  "entry_version": "1.2.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:11+00:00",
@@ -228,14 +228,14 @@
         "evidence_query": "Correlation CR-AIACC-0004 fuses the jailbreak classifier hit with the DLP-circumvention policy-violation BIOC into one jailbreak-attempt incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-INSIDER-010",
+        "threat_scenario_id": "TS-INSIDER-010",
         "name": "Jailbreak Prompt Content Classification",
         "description": "Detect DAN-style jailbreak prompts that request DLP circumvention and confirm the detector fires consistently across providers.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-INSIDER-010A",
+            "threat_step_id": "TS-INSIDER-010A",
             "objective": "A jailbreak POST to OpenAI fires the content classifier and the DLP-circumvention policy BIOC.",
             "preconditions": [
               "Cortex AI Access Security inline with TLS decrypt and jailbreak classifier enabled.",
@@ -252,7 +252,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-INSIDER-010B",
+            "threat_step_id": "TS-INSIDER-010B",
             "objective": "The jailbreak fingerprint is detected consistently across OpenAI and Anthropic.",
             "success_criteria": [
               "XQL `AIACC-004 Jailbreak Detection Consistent Across Providers` returns >= 2 rows.",
@@ -310,6 +310,12 @@
       "date": "2026-06-08",
       "author": "Henry Reed",
       "change": "GAP-9: added MITRE ATLAS technique mappings (atlas_techniques[]) alongside the existing ATT&CK techniques so AI-plane coverage is no longer forced onto ATT&CK catch-alls (e.g. T1567). ATT&CK techniques[] unchanged — additive, no coverage regression."
+    },
+    {
+      "entry_version": "1.2.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract pass: scenario SIM-AIACC-004 now declares a cgo_anchor (containerd-shim/root) and a connected shared_entity step spine (step-01 payload render -> step-02 single jailbreak POST -> step-03 multi-provider replay), plus cross-OS platform_variants (Windows PowerShell / macOS curl) on the POST step so the DAN fingerprint is exercised from any client OS. Detection bodies intentionally NOT re-keyed to causality_actor_process_* fields: the classifier XQL and DLP-circumvention BIOC are prompt-content / policy signatures on panw_ngfw_traffic_raw keyed on request_body + source_user, where process-causality fields do not exist; re-keying would break them. Correlation CR-AIACC-0004 already fuses the hits into one jailbreak incident on the shared identity the spine models."
     }
   ]
 }

@@ -1,0 +1,73 @@
+title: "Identity-Weaponized MDM Mass Device Wipe \u2014 Compromised Intune Admin RemoteWipe at Tenant Scale (Cortex Identity ABIOC) \u2014 ITDR-011 Anomalous Bulk Remote-Wipe Broadcast from Privileged Intune Identity"
+id: ttp-2026-0107-abioc-01
+status: experimental
+description: |
+  An Intune/Global admin identity whose learned Cortex behavioral profile is config-and-read device governance suddenly issues a burst of native RemoteWipe/FactoryReset device actions across the managed estate at a volume that dwarfs its learned device-action cadence. Every action uses a legitimate Intune device-management API and is authenticated, authorized, and delivered from trusted Microsoft infrastructure, so no wiper signature exists to key on; the ABIOC fires on the burst-scale deviation from the account's learned behavior and anchors it to the causality chain (phished-admin risky sign-in -> MDM console access -> tenant-scale wipe broadcast) rather than to any known-bad principal.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_o365_audit
+    | filter category = "DeviceManagement" and activity_display_name in ("Remote Wipe device action", "RemoteWipe", "Factory reset device action", "RemoteFactoryReset")
+    | filter _time > to_timestamp(current_time() - 3600)
+    | comp count() as wipe_actions_now, count_distinct(target_device_id) as devices_targeted, earliest(_time) as first_wipe by initiating_user_principal_name
+    | join type=left (dataset = msft_o365_audit
+    | filter category = "DeviceManagement" and activity_display_name in ("Remote Wipe device action", "RemoteWipe", "Factory reset device action", "RemoteFactoryReset")
+    | filter _time < to_timestamp(current_time() - 3600)
+    | comp count() as learned_wipe_cadence by initiating_user_principal_name) as baseline baseline.initiating_user_principal_name = initiating_user_principal_name
+    | alter learned_wipe_cadence = coalesce(learned_wipe_cadence, 0)
+    | filter wipe_actions_now >= 25 and wipe_actions_now > learned_wipe_cadence * 5
+    | sort desc wipe_actions_now
+    | fields initiating_user_principal_name, wipe_actions_now, learned_wipe_cadence, devices_targeted, first_wipe
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1485/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1485
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Identity-Weaponized MDM Mass Device Wipe \u2014 Compromised Intune Admin RemoteWipe at Tenant Scale (Cortex Identity ABIOC) \u2014 ITDR-011 First-Seen Destructive Device Action on a Standing-Privilege Admin"
+id: ttp-2026-0107-abioc-02
+status: experimental
+description: |
+  A standing-privilege Global/Intune admin whose learned device-management history contains no destructive device actions issues a RemoteWipe/FactoryReset for the first time. Because Handala/Void Manticore abuse legitimate MDM commands rather than dropping malware, the first destructive action is itself the signal: the ABIOC fires on the first-seen deviation from the account's learned config-only device baseline, anchored to the standing-privilege identity, catching the destructive cloud action before a burst threshold is even reached.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_o365_audit
+    | filter category = "DeviceManagement" and activity_display_name in ("Remote Wipe device action", "RemoteWipe", "Factory reset device action", "RemoteFactoryReset")
+    | filter _time > to_timestamp(current_time() - 3600)
+    | comp count() as destructive_actions_now, earliest(_time) as first_seen_destructive by initiating_user_principal_name
+    | join type=left (dataset = msft_o365_audit
+    | filter category = "DeviceManagement" and activity_display_name in ("Remote Wipe device action", "RemoteWipe", "Factory reset device action", "RemoteFactoryReset")
+    | filter _time < to_timestamp(current_time() - 3600)
+    | comp count() as prior_destructive_actions by initiating_user_principal_name) as history history.initiating_user_principal_name = initiating_user_principal_name
+    | alter prior_destructive_actions = coalesce(prior_destructive_actions, 0)
+    | filter destructive_actions_now >= 1 and prior_destructive_actions = 0
+    | sort desc destructive_actions_now
+    | fields initiating_user_principal_name, destructive_actions_now, prior_destructive_actions, first_seen_destructive
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1485/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1485
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

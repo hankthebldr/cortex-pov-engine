@@ -1,0 +1,150 @@
+title: "ASPX Web Shell Reflectively Loads a Fileless .NET IIS Backdoor into w3wp.exe (Phantom Taurus NET-STAR) (T1505.003 / T1620 / T1071.001) \u2014 IIS Worker Process w3wp.exe Spawns a Command Interpreter"
+id: ttp-2026-0119-bioc-01
+status: experimental
+description: |
+  The IIS worker process w3wp.exe should never parent an interactive command interpreter under normal operation. When it does, it is the durable, non-fileless seam of a web shell running operator commands. Fires on w3wp.exe as the causality actor spawning cmd/powershell/net/whoami/sqlcmd/csc — the command lineage NET-STAR's run_code / executeSQLQuery / bypassPrecompiledApp commands produce even though the backdoor assembly itself is in memory.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = "w3wp.exe" or actor_process_image_name = "w3wp.exe"
+    | filter action_process_image_name in ("cmd.exe", "powershell.exe", "pwsh.exe", "net.exe", "net1.exe", "whoami.exe", "sqlcmd.exe", "csc.exe")
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, actor_process_instance_id, action_process_image_name, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1505/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1505.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ASPX Web Shell Reflectively Loads a Fileless .NET IIS Backdoor into w3wp.exe (Phantom Taurus NET-STAR) (T1505.003 / T1620 / T1071.001) \u2014 OutlookEN ASPX Web Shell Written to IIS Web Root"
+id: ttp-2026-0119-bioc-02
+status: experimental
+description: |
+  Creation of an .aspx file (OutlookEN.aspx and its kin) under the IIS web root by the worker process or an interactive shell — the on-disk delivery artifact that seeds the fileless chain. This is the one file NET-STAR must drop before everything else goes memory-resident, so it is the earliest reliable catch.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter action_file_extension = "aspx" or action_file_name contains ".aspx"
+    | filter action_file_path contains "inetpub" or action_file_path contains "wwwroot"
+    | filter actor_process_image_name in ("w3wp.exe", "cmd.exe", "powershell.exe", "pwsh.exe")
+    | fields agent_hostname, actor_process_image_name, action_file_name, action_file_path
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1505/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1505.003
+    - attack.t1027
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ASPX Web Shell Reflectively Loads a Fileless .NET IIS Backdoor into w3wp.exe (Phantom Taurus NET-STAR) (T1505.003 / T1620 / T1071.001) \u2014 Reflective Fileless .NET Assembly Load in IIS Worker Process"
+id: ttp-2026-0119-bioc-03
+status: experimental
+description: |
+  IIServerCore and the AssemblyExecuter helpers are reflectively loaded into w3wp.exe from memory, so the loaded module has no backing file on disk (unsigned / no module path) or carries the NET-STAR build names. Fires on module-load events in w3wp.exe whose module is unbacked or named ServerCore/ExecuteAssembly/AssemblyExecuter — the reflective code-loading seam.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD
+    | filter actor_process_image_name = "w3wp.exe"
+    | filter action_module_path = "" or action_module_signature_status = "UNSIGNED" or action_module_name contains "ServerCore" or action_module_name contains "ExecuteAssembly" or action_module_name contains "AssemblyExecuter"
+    | fields agent_hostname, actor_process_image_name, actor_process_instance_id, action_module_name, action_module_path, action_module_signature_status
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1620/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1620
+    - attack.t1027
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ASPX Web Shell Reflectively Loads a Fileless .NET IIS Backdoor into w3wp.exe (Phantom Taurus NET-STAR) (T1505.003 / T1620 / T1071.001) \u2014 AMSI and CLR In-Memory Execution Modules Co-Loaded in IIS Worker"
+id: ttp-2026-0119-bioc-04
+status: experimental
+description: |
+  In-memory .NET execution inside w3wp.exe co-loads the CLR (clr.dll / clrjit.dll) alongside amsi.dll, and AssemblyExecuter V2 patches AMSI/ETW to blind the scanner. An IIS worker that suddenly hosts the CLR plus amsi.dll is the fingerprint of reflectively executed .NET where none belongs. Fires when w3wp.exe loads two or more of these execution/evasion modules within one process instance.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD
+    | filter actor_process_image_name = "w3wp.exe"
+    | filter action_module_name in ("amsi.dll", "clr.dll", "clrjit.dll", "mscoree.dll", "coreclr.dll")
+    | comp count_distinct(action_module_name) as exec_modules by agent_hostname, actor_process_instance_id
+    | filter exec_modules >= 2
+    | fields agent_hostname, actor_process_instance_id, exec_modules
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+    - attack.t1620
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "ASPX Web Shell Reflectively Loads a Fileless .NET IIS Backdoor into w3wp.exe (Phantom Taurus NET-STAR) (T1505.003 / T1620 / T1071.001) \u2014 ASPX Web Root File Timestomped via changeLastModified"
+id: ttp-2026-0119-bioc-05
+status: experimental
+description: |
+  NET-STAR's changeLastModified command forges file modification times on web-root artifacts to match legitimate neighbours, and forges compile timestamps to random future dates. Fires when a web-root file's modification time predates its creation time or is set in the future — the timestomp anti-forensic seam.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_TIMES_MODIFIED
+    | filter action_file_extension = "aspx" or action_file_path contains "wwwroot" or action_file_path contains "inetpub"
+    | filter action_file_modification_time < action_file_creation_time or action_file_modification_time > current_time()
+    | fields agent_hostname, actor_process_image_name, action_file_name, action_file_path, action_file_creation_time, action_file_modification_time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.006
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

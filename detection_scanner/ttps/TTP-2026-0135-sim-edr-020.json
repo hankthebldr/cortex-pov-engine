@@ -1,0 +1,430 @@
+{
+  "id": "TTP-2026-0135",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T21:07:20+00:00",
+    "updated_at": "2026-07-24T21:07:20+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "actor-cl-unk-1068",
+      "web-shell",
+      "dll-side-loading",
+      "credential-access",
+      "in-memory-mimikatz",
+      "reg-hive-theft",
+      "frp-tunnel",
+      "causality-chain",
+      "living-off-the-land",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "CL-UNK-1068 Web-Shell w3wp CGO to python.exe Side-Load Mimikatz, SAM-Hive Theft and FRP Tunnel (T1505.003 / T1003 / T1574.001)",
+    "summary": "An IIS worker (w3wp.exe) web shell is the Causality Group Owner: it spawns cmd.exe, saves the SAM/SYSTEM hives, side-loads python20.dll into signed python.exe for in-memory Mimikatz, certutil-encodes the loot, and opens an FRP reverse tunnel. Every detection keys on the causality chain back to w3wp.exe, not the individual LOLBins, so Cortex stitches the whole intrusion into one incident.",
+    "description": "Reconstructs the CL-UNK-1068 intrusion Unit 42 documented against critical-infrastructure sectors. The adversary lands a GodZilla/AntSword web shell on an internet-facing IIS server; the IIS worker process w3wp.exe (running as 'iis apppool\\defaultapppool') becomes the Causality Group Owner (CGO) that owns every subsequent action. From that web shell they (1) spawn cmd.exe and run batch recon, (2) run 'reg save HKLM\\SAM sam.hiv' and 'reg save HKLM\\SYSTEM sys.hiv' via reg.exe to steal the credential hives for offline cracking (T1003.002), (3) drop a legitimately-signed python.exe alongside a malicious python20.dll so python.exe DLL-side-loads the loader, which deobfuscates and executes in-memory Mimikatz shellcode entirely inside the python.exe address space (T1574.001 + T1003.001) — the crucial detection nuance is that this LOLBin's actor_process_image_name is the trusted 'python.exe', so a naive rule keyed on the image name misses it; a causality-aware detection keys on causality_actor_process_image_name / causality_actor_process_instance_id tracing the python.exe back to the w3wp.exe web shell, (4) 'certutil -encode' the collected WinRAR archive for fileless exfil over the web shell (T1027), and (5) side-load and launch FRP (fast reverse proxy, auth token 'frpforzhangwei', client disguised as 32.exe / nginx) to open a reverse-proxy tunnel for lateral movement (T1572 / T1090.001), egressing to the C2 infrastructure. No single event is a known-bad IOC in isolation — the value proof is that Cortex XDR reconstructs the process causality (a real w3wp -> cmd.exe -> {reg.exe, python.exe -> python20.dll, certutil.exe, frpc} tree sharing one causality_id), the ABIOC surfaces the signed-binary side-load as an anomaly anchored to the web-shell owner, and a correlation rule fuses web-shell code execution, SAM-hive theft, in-memory credential dumping, fileless staging, and the FRP tunnel into ONE incident. Source scoping: the technique detail, tooling names, and FRP auth token are from the Unit 42 CL-UNK-1068 report (SRC-UNIT42); the specific XSIAM/XDR detection bodies, dataset field names, and the single-incident correlation stitch are POV-engine modeling authored against Cortex product documentation (SRC-PANW-TECHDOCS). Windows is the primary environment; a Linux FRP client variant is included because the report documents cross-compiled FRP for both.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "CL-UNK-1068",
+        "aliases": [
+          "Unit 42 uncategorized cluster CL-UNK-1068"
+        ]
+      }
+    ],
+    "campaigns": [
+      "CL-UNK-1068 web-shell-to-credential-theft intrusions against critical-infrastructure sectors (Unit 42, 2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "GodZilla web shell"
+      },
+      {
+        "name": "AntSword web shell"
+      },
+      {
+        "name": "Mimikatz"
+      },
+      {
+        "name": "FRP (fast reverse proxy)"
+      }
+    ],
+    "industries_targeted": [
+      "energy-utilities",
+      "government",
+      "manufacturing",
+      "telecommunications"
+    ],
+    "first_observed": "2026-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1190",
+        "name": "Exploit Public-Facing Application",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1505",
+        "subtechnique_id": "T1505.003",
+        "name": "Server Software Component: Web Shell",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.002",
+        "name": "OS Credential Dumping: Security Account Manager",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.001",
+        "name": "OS Credential Dumping: LSASS Memory",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1574",
+        "subtechnique_id": "T1574.001",
+        "name": "Hijack Execution Flow: DLL Search Order Hijacking / Side-Loading",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1027",
+        "name": "Obfuscated Files or Information (certutil encode)",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling (FRP reverse proxy)",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Module: Module Load",
+      "Windows Registry: Windows Registry Key Access",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-020 — CL-UNK-1068 web-shell-owned causality chain: hive theft + python.exe side-loaded in-memory Mimikatz + certutil staging + FRP tunnel",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the target so per-process, module-load, registry, and network telemetry reaches xdr_data with full causality-actor attribution.",
+        "check_command": "systemctl status cortex-agent || sc query cyserver || ls /opt/traps"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE emulation of the CL-UNK-1068 web-shell-owned causality chain. The\n# real intrusion runs on Windows (w3wp.exe -> cmd.exe -> reg.exe/python.exe/\n# certutil.exe/frpc); on the CortexSim jumpbox each stage is emulated so it is\n# non-destructive: no real hive save, no real Mimikatz, no real tunnel. The\n# process-lineage SHAPE is what XDR causality reconstructs.\nset -euo pipefail\necho '[CortexSim] EDR-020 CL-UNK-1068 web-shell CGO (w3wp.exe) spawns command shell'\n# (1) reg-hive theft emulation (T1003.002)\necho '[CortexSim] EDR-020 emulate: reg save HKLM\\\\SAM sam.hiv / HKLM\\\\SYSTEM sys.hiv'\n# (2) python.exe DLL side-load -> in-memory Mimikatz emulation (T1574.001/T1003.001)\necho '[CortexSim] EDR-020 emulate: python.exe side-loads python20.dll (in-memory credential theft)'\n# (3) certutil -encode fileless staging emulation (T1027)\nhead -c 4096 /dev/zero | tr '\\0' 'A' > /tmp/.cortexsim_edr020_loot\necho '[CortexSim] EDR-020 emulate: certutil -encode loot.rar loot.b64'\n# (4) FRP reverse tunnel emulation (T1572) — beacon an authorised internal stand-in\ncurl -s --max-time 5 \"${FRP_C2_URL:-http://127.0.0.1/frp-tunnel}\" -o /dev/null 2>&1 || true\necho '[CortexSim] EDR-020 chain complete — XDR should reconstruct one w3wp-owned causality tree'",
+      "input_variables": [
+        {
+          "name": "FRP_C2_URL",
+          "type": "string",
+          "default": "http://127.0.0.1/frp-tunnel",
+          "description": "Authorised internal endpoint approximating the FRP reverse-proxy C2 the tunnel client reaches (T1572). Never the public internet."
+        }
+      ],
+      "timeout_seconds": 420
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "A w3wp.exe-owned process tree: cmd.exe, reg.exe (hive save), python.exe, certutil.exe and the FRP client all share one causality_actor_process_instance_id.",
+        "expected_value": "causality_actor_process_image_name = \"w3wp.exe\" and action_process_image_name in (cmd.exe, reg.exe, python.exe, certutil.exe, frpc.exe, 32.exe)"
+      },
+      {
+        "artifact_type": "module-load",
+        "description": "Signed python.exe loading a non-standard python20.dll (the side-loaded loader that runs in-memory Mimikatz).",
+        "expected_value": "action_process_image_name = \"python.exe\" and action_module_name = \"python20.dll\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "An outbound FRP reverse-proxy session from the same web-shell causality reaching the C2 stand-in.",
+        "expected_value": "causality_actor_process_image_name = \"w3wp.exe\" and outbound session to the FRP endpoint"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/.cortexsim_edr020_loot; echo '[CortexSim] SIM-EDR-020 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "python20.dll",
+        "context": "Malicious side-loaded loader placed next to a signed python.exe to run in-memory Mimikatz (CL-UNK-1068).",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "CL-UNK-1068 IIS Worker w3wp Spawns Command Shell Web Shell CGO",
+        "description": "The IIS worker process w3wp.exe spawns an interactive command shell (cmd.exe / powershell.exe) — the web-shell code-execution event that makes w3wp.exe the Causality Group Owner of the intrusion. A legitimate IIS app pool almost never shells out; this is the root node every downstream detection stitches back to.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"w3wp.exe\"\n| filter actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"pwsh.exe\")\n| comp count() as shell_spawns by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_name\n| filter shell_spawns >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_name, shell_spawns",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1505.003",
+          "T1059"
+        ],
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "CL-UNK-1068 SAM and SYSTEM Registry Hive Save Under Web Shell Causality",
+        "description": "reg.exe writes the HKLM\\SAM and HKLM\\SYSTEM hives to disk ('reg save') for offline credential cracking, and the process is owned by the w3wp.exe web-shell causality rather than an admin console. Keying on causality_actor_process_instance_id ties the hive theft to the same web shell that spawned the shell, distinguishing malicious offline-cracking prep from legitimate backup tooling.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name = \"reg.exe\"\n| filter action_process_command_line contains \"save\" and (action_process_command_line contains \"hklm\\\\sam\" or action_process_command_line contains \"hklm\\\\system\")\n| comp count() as hive_saves by agent_hostname, causality_actor_process_instance_id, actor_process_image_name, action_process_command_line\n| filter hive_saves >= 1\n| fields agent_hostname, causality_actor_process_instance_id, actor_process_image_name, action_process_command_line, hive_saves",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1003.002"
+        ],
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "CL-UNK-1068 certutil Encode Fileless Loot Staging Under Web Shell Causality",
+        "description": "certutil.exe is abused with '-encode' to base64 the collected WinRAR loot archive for fileless exfil back through the web shell. The staging process is owned by the w3wp.exe causality, so this is not an admin using certutil for certificate work — it is the collection/exfil-prep stage of the same intrusion.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name = \"certutil.exe\"\n| filter action_process_command_line contains \"encode\"\n| comp count() as encode_ops by agent_hostname, causality_actor_process_instance_id, actor_process_image_name, action_process_command_line\n| filter encode_ops >= 1\n| fields agent_hostname, causality_actor_process_instance_id, actor_process_image_name, action_process_command_line, encode_ops",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1027"
+        ],
+        "suppression_window_seconds": 0
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "CL-UNK-1068 python DLL Side Load In Memory Credential Theft Under Web Shell Causality",
+        "description": "A legitimately-signed python.exe / pythonw.exe loads a non-standard python20.dll from a web-writable path (inetpub / temp / programdata) rather than its own install tree — the DLL-side-load that deobfuscates and runs Mimikatz shellcode entirely in memory. This is the crucial causality nuance: the LOLBin's actor_process_image_name is the trusted 'python.exe', so an image-name rule misses it; the ABIOC anchors the anomaly to causality_actor_process_image_name / causality_actor_process_instance_id tracing python.exe back to the w3wp.exe web shell, and to the learned baseline that this host's python.exe never loads python20.dll. Auto-tuned behavioral ML, not a static signature.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD\n| filter causality_actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name in (\"python.exe\", \"pythonw.exe\")\n| filter action_module_name = \"python20.dll\"\n| filter action_module_path contains \"\\\\inetpub\" or action_module_path contains \"\\\\temp\" or action_module_path contains \"\\\\programdata\"\n| comp count() as sideloads by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_name, action_module_path\n| filter sideloads >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_name, action_module_path, sideloads",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1574.001",
+          "T1003.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host module baseline (this python.exe only ever loads its own install-tree DLLs) -> a python20.dll load from a web-writable path -> the loading python.exe's causality_actor_process chain resolves to the w3wp.exe web shell, anchoring the side-load as web-shell-owned in-memory credential theft rather than benign Python use.",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CL-UNK-1068 FRP Reverse Tunnel Endpoint Network Egress Stitch",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter causality_actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name in (\"32.exe\", \"frpc.exe\", \"nginx.exe\", \"httpd\")\n| comp count() as tunnel_sessions, sum(action_total_download) as bytes_in by agent_hostname, causality_actor_process_instance_id, action_process_image_name, action_remote_ip\n| filter tunnel_sessions >= 1\n| sort desc bytes_in\n| fields agent_hostname, causality_actor_process_instance_id, action_process_image_name, action_remote_ip, tunnel_sessions, bytes_in",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "CL-UNK-1068 Web Shell Causality Chain Full Reconstruction",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter causality_actor_process_image_name = \"w3wp.exe\"\n| filter action_process_image_name in (\"cmd.exe\", \"reg.exe\", \"python.exe\", \"pythonw.exe\", \"certutil.exe\", \"32.exe\", \"frpc.exe\")\n| comp count_distinct(action_process_image_name) as chain_stages by agent_hostname, causality_actor_process_instance_id\n| filter chain_stages >= 3\n| sort desc chain_stages\n| fields agent_hostname, causality_actor_process_instance_id, chain_stages",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "CL-UNK-1068 Web Shell to Credential Theft to FRP Tunnel Incident Stitch",
+        "rule_id": "CR-EDR-0020",
+        "logic": "BIOC(CL-UNK-1068 IIS Worker w3wp Spawns Command Shell Web Shell CGO) AND (BIOC(CL-UNK-1068 SAM and SYSTEM Registry Hive Save Under Web Shell Causality) OR ABIOC(CL-UNK-1068 python DLL Side Load In Memory Credential Theft Under Web Shell Causality)) AND (BIOC(CL-UNK-1068 certutil Encode Fileless Loot Staging Under Web Shell Causality) OR XQL(CL-UNK-1068 FRP Reverse Tunnel Endpoint Network Egress Stitch)) that share the same agent_hostname and causality_actor_process_instance_id (the w3wp.exe web-shell CGO) within a 1800-second window fuse into ONE incident spanning web-shell code execution, SAM/SYSTEM hive theft, in-memory credential dumping, fileless staging, and the FRP reverse tunnel. The single stitched incident is keyed on the shared causality_id so the endpoint process lineage and the outbound tunnel session are the same causality group, not five independent alerts."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XDR — Causality Analytics Engine (process causality reconstruction)",
+        "validated": true,
+        "note": "CR-EDR-0020 plus the three BIOCs, the side-load ABIOC and the two causality-keyed XQLs are the deployable signals; the causality engine is what resolves the shared causality_actor_process_instance_id into one w3wp.exe-owned tree."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-EDR-0020"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter causality_actor_process_image_name = \"w3wp.exe\" | comp count_distinct(action_process_image_name) as stages by agent_hostname, causality_actor_process_instance_id | filter stages >= 3"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-EDR-0020"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD | filter action_module_name = \"python20.dll\" | filter causality_actor_process_image_name = \"w3wp.exe\""
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-020",
+        "name": "Web-Shell-Owned Living-off-the-Land Credential Theft Reconstructed as One Causality Incident",
+        "description": "Prove that Cortex XDR reconstructs the process causality of a web-shell intrusion — SAM-hive theft, a signed-binary DLL side-load running in-memory Mimikatz, certutil fileless staging, and an FRP reverse tunnel — as a single w3wp.exe-owned incident, where each stage is a legitimate LOLBin that only becomes malicious in the context of its causality chain.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-020A",
+            "objective": "The web-shell code execution, SAM-hive theft, python.exe side-load in-memory credential theft, certutil staging, and FRP tunnel all resolve to one causality_actor_process_instance_id and stitch into a single incident.",
+            "preconditions": [
+              "Windows IIS target with the Cortex agent installed and module-load + registry telemetry enabled.",
+              "The python.exe side-load ABIOC has a learned per-host module baseline to deviate from."
+            ],
+            "steps": [
+              "Run the CL-UNK-1068 chain so w3wp.exe spawns cmd.exe and the reg/python/certutil/frp stages follow.",
+              "Confirm the three BIOCs and the side-load ABIOC fire and key on causality_actor_process_image_name = w3wp.exe.",
+              "Confirm CR-EDR-0020 raises exactly one incident and the full-reconstruction XQL returns chain_stages >= 3 for one causality_actor_process_instance_id."
+            ],
+            "success_criteria": [
+              "Correlation CR-EDR-0020 raises exactly one incident keyed on the shared w3wp.exe causality_actor_process_instance_id.",
+              "The python.exe side-load is detected via causality_actor_process, not action_process_image_name (an image-name-only rule would miss it).",
+              "The full-chain reconstruction XQL shows >= 3 distinct malicious child processes under one causality group."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "threat_step_id": "TS-EDR-020B",
+            "objective": "The FRP reverse-tunnel endpoint process is stitched to its outbound network session under the same web-shell causality, proving the endpoint↔network pivot.",
+            "preconditions": [
+              "TS-EDR-020A executed on the same target with NGFW / network telemetry ingested."
+            ],
+            "steps": [
+              "Run the FRP endpoint-network egress-stitch XQL over the run window.",
+              "Confirm the tunnel session's process resolves to causality_actor_process_image_name = w3wp.exe."
+            ],
+            "success_criteria": [
+              "The FRP egress-stitch XQL returns the tunnel session tied to the w3wp.exe causality_actor_process_instance_id.",
+              "The outbound session and the endpoint process share the same causality_id."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Patch and virtual-patch internet-facing IIS/web applications and constrain the IIS app-pool identity so w3wp.exe cannot spawn cmd.exe/powershell.exe or write to system paths — this blocks the web-shell foothold that owns the whole chain.",
+      "Enforce DLL search-order hardening (safe DLL search mode, application-directory pinning, WDAC/AppLocker) so signed binaries like python.exe cannot side-load an attacker-planted python20.dll from a web-writable path.",
+      "Restrict reg.exe hive-save and certutil -encode via attack-surface-reduction / application-control policy, and enforce egress filtering so an FRP reverse tunnel to unknown infrastructure is blocked, not merely detected."
+    ],
+    "detection_engineering": [
+      "Key credential-access and defense-evasion detections on causality_actor_process_image_name / causality_actor_process_instance_id (the CGO) rather than action_process_image_name, so signed-binary abuse (python.exe side-load, certutil, reg.exe) is caught by its ownership, not its image name.",
+      "Let Cortex auto-tune the module-load ABIOC against each host's learned DLL baseline so a python20.dll side-load surfaces as an anomaly instead of requiring a static per-DLL rule.",
+      "Stitch web-shell execution, hive theft, in-memory dumping, staging, and the tunnel into one incident on the shared causality_id within a breakout-length window so the SOC triages one causality group, not five disjoint LOLBin alerts."
+    ]
+  },
+  "references": [
+    {
+      "title": "CL-UNK-1068 Targets Critical Sectors: Web Shell to In-Memory Mimikatz, Reg-Hive Theft and FRP Lateral Tunnel",
+      "url": "https://unit42.paloaltonetworks.com/cl-unk-1068-targets-critical-sectors/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1574.001 — Hijack Execution Flow: DLL Side-Loading",
+      "url": "https://attack.mitre.org/techniques/T1574/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1003.002 — OS Credential Dumping: Security Account Manager",
+      "url": "https://attack.mitre.org/techniques/T1003/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XDR — Causality Analytics Engine and Analytics Alert Reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

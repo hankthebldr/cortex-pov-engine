@@ -10,10 +10,14 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UCS-ASM-03
-tc_ref: TC-ASM-03
-uc_name: "Pre-Intrusion Reconnaissance Detection via Cortex ASM"
-tc_name: "Open-Source Subdomain / Cert / Identity Harvesting"
+uc_ref: UCS-ASM-01
+tc_ref: TC-ASM-01
+tc_refs:
+  - TC-ASM-01
+  - TC-ASM-05
+pov_scenario_id: POV-SC-025
+uc_name: "Attack Surface & Exposure Management"
+tc_name: "Validate XPANSE asset inventory feeds unmanaged asset data into XSIAM incident context"
 
 mitre_tactic: "TA0043"
 mitre_tactic_name: "Reconnaissance"
@@ -39,6 +43,16 @@ execution_identity:
 push_supported: true
 pull_supported: true
 
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# Passive OSINT recon: the subdomain DNS burst, the crt.sh / theHarvester
+# harvest, and the ASM reconcile call are sequential execs off ONE operator
+# shell, not the beacon. Anchoring the CGO on that shell (bash) gives a
+# connected operator-tooling spine. The card's detections are NGFW DNS/egress
+# signatures (no process-actor fields), so no per-step lineage retuning applies.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "root"
+
 infra_modules_needed:
   - base
   - asm
@@ -60,6 +74,12 @@ steps:
       done
     identity: root
     mitre_technique: "T1590.002"
+    platforms: ["linux", "windows", "macos"]
+    # The subdomain brute is a DNS-resolution loop; the high-cardinality DNS
+    # burst the NGFW BIOC keys on is OS-agnostic. Windows uses Resolve-DnsName
+    # over the same label list; macOS uses the same host(1) loop.
+    platform_variants:
+      windows: "'www','mail','vpn','dev','staging','api','admin','portal','test','git','jenkins','gitlab','autodiscover' | ForEach-Object { Resolve-DnsName -Name ($_ + '.' + $env:TARGET_DOMAIN) -ErrorAction SilentlyContinue }"
     expected_detections:
       - plane: NDR
         type: BIOC
@@ -84,6 +104,18 @@ steps:
         || echo '[CortexSim] theHarvester not installed — DNS+CT recon footprint already emitted'
     identity: root
     mitre_technique: "T1592"
+    platforms: ["linux", "windows", "macos"]
+    # The cert-transparency / OSINT-aggregator egress with a tooling user-agent
+    # is OS-agnostic; PowerShell's Invoke-WebRequest against crt.sh with the same
+    # UA emits the identical NGFW aggregator-egress signature.
+    platform_variants:
+      windows: "Invoke-WebRequest -UseBasicParsing -UserAgent 'cortexsim-osint/1.0 (amass-like)' -Uri (\"https://crt.sh/?q=%25.\" + $env:TARGET_DOMAIN + \"&output=json\") | Select-Object -ExpandProperty Content"
+    # The harvest step and the step-01 subdomain burst are sibling execs off the
+    # same operator shell (CGO) enumerating the same org footprint — shared_entity
+    # (host + operator + target domain), not a fork.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: BIOC
@@ -117,6 +149,13 @@ steps:
         --query 'ResourceTagMappingList[].ResourceARN' --output text || true
     identity: root
     mitre_technique: "T1592"
+    platforms: ["linux"]
+    # The reconcile call is a sibling exec off the same operator shell (CGO) as
+    # the harvest, comparing the harvested footprint against Xpanse's independent
+    # discovery for the same org — shared_entity keeps the spine connected.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ASM
         type: XQL

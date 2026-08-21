@@ -18,10 +18,15 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UCS-EDR-06
-tc_ref: TC-EDR-06
-uc_name: "Endpoint Credential Theft Detection (LSASS)"
-tc_name: "Windows LSASS Memory Dump via LOLBin"
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+  - TC-EDR-05
+  - TC-ITDR-01
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"
@@ -43,6 +48,18 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The Atomic Red Team tests are launched from an interactive administrator
+# powershell.exe session, which is the Causality Group Owner (CGO): the first
+# untrusted ancestor after the signed shell (explorer.exe terminates the chain).
+# Both credential-dump tools (ProcDump handle-open, rundll32 comsvcs MiniDump)
+# are direct children of that CGO, so the graph is CGO(powershell) → step-01
+# (process_lineage), with the sibling tool runs threaded on shared host/account
+# entity rather than a false parent→child fork between them.
+cgo_anchor:
+  image_name: "powershell.exe"
+  primary_username: "Administrator"
 
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # Rolled out per the S-07 per-plane convention
@@ -77,6 +94,7 @@ steps:
     command: "Invoke-AtomicTest T1003.001 -TestNumbers 1 -GetPrereqs; Invoke-AtomicTest T1003.001 -TestNumbers 1"
     identity: administrator
     mitre_technique: "T1003.001"
+    platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -94,6 +112,13 @@ steps:
     command: "Invoke-AtomicTest T1003.001 -TestNumbers 3"
     identity: administrator
     mitre_technique: "T1218.011"
+    platforms: ["windows"]
+    # rundll32(comsvcs MiniDump) and the step-01 ProcDump handle-open are both
+    # direct children of the same powershell CGO on the same host/account — not a
+    # fork of each other — so they thread on shared_entity, not process_lineage.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -116,6 +141,12 @@ steps:
     command: "Get-ChildItem \"$env:TEMP\\lsass-*.dmp\" -ErrorAction SilentlyContinue | Select-Object FullName, Length; Write-Host '[*] LSASS dump sequence complete — validating XSIAM correlation'"
     identity: administrator
     mitre_technique: "T1003.001"
+    platforms: ["windows"]
+    # Validation step reads the dump artifact step-02 wrote, on the same host and
+    # under the same powershell CGO — shared_entity (host + dump file), not a fork.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: Correlation

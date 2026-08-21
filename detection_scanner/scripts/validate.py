@@ -39,8 +39,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 ID_PATTERN          = re.compile(r"^TTP-\d{4}-\d{4}$")
 TECHNIQUE_PATTERN   = re.compile(r"^T\d{4}(\.\d{3})?$")
-UC_PATTERN          = re.compile(r"^UC-[A-Z0-9]+-\d{3}$")
-TC_PATTERN          = re.compile(r"^TC-[A-Z0-9]+-\d{3}[A-Z]?$")
+TS_PATTERN          = re.compile(r"^TS-[A-Z0-9]+-\d{3}$")
+TS_STEP_PATTERN     = re.compile(r"^TS-[A-Z0-9]+-\d{3}[A-Z]?$")
+# A card-local id written with the master-index prefix, anywhere in prose.
+_STALE_NS_TOKEN     = re.compile(r"\b(?:UCS?|TC)-[A-Z0-9]+-\d{3}[A-Z]?\b")
 SOURCE_ID_PATTERN   = re.compile(r"^SRC-[A-Z0-9-]+$")
 
 
@@ -129,6 +131,30 @@ KNOWN_DATASETS = frozenset({
     # Plan 04 — EMAIL plane ingestion sources (Proofpoint TAP / M365 / Defender
     # for Office 365 message + threat telemetry).
     "proofpoint_tap_raw", "msft_o365_email", "msft_defender_o365",
+    # Unit 42 2026 expansion (TTP-2026-0106/0116/0118) — edge-appliance and
+    # VPN raw sources for the ArcaneDoor (Cisco ASA/FTD), Ivanti Connect Secure,
+    # and GlobalProtect cards. Convention-named (<vendor>_<product>_raw); the
+    # exact tenant dataset string still needs live-tenant field confirmation per
+    # RUNBOOK ("BIOC XQL dialects drift"), but these are real ingested products,
+    # not invented sources, so they should not WARN as typos.
+    "cisco_asa_raw", "ivanti_ics_raw", "panw_ngfw_globalprotect_raw",
+    # Unit 42 2026 F5 closed-loop expansion (TTP-2026-0142/0143/0152) — the
+    # XSIAM incidents store, queried to prove an XSOAR Response & Remediation
+    # playbook fired and closed a precursor incident (the correlation-terminal
+    # / SLA-measurement metric). Real first-party XSIAM dataset, not invented.
+    "xsiam_incidents",
+    # Analytics log-streamer EAL family (TTP-2026-0154..0167) — real XSIAM
+    # ingestion datasets for the analytics/ABIOC streamer cards:
+    #   msft_azure_audit      — Azure Activity / Audit Log (control-plane), the
+    #                           source azure_audit_emitter POSTs and the Azure
+    #                           Conditional-Access / service-principal ABIOC +
+    #                           Analytics alerts key on (TTP-2026-0160/0161).
+    #   kubernetes_audit_logs — Kubernetes audit source (audit.k8s.io/v1), the
+    #                           source k8s_audit_emitter POSTs and the pod-exec /
+    #                           service-account ABIOC + Analytics alerts key on
+    #                           (TTP-2026-0162/0163). Live-tenant string to be
+    #                           confirmed against a real Kubernetes-audit ingest.
+    "msft_azure_audit", "kubernetes_audit_logs",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain
@@ -406,15 +432,30 @@ def main():
                 report.err(rel, f"subtechnique {sid} not under technique {tid}")
 
         # 4h. Use case / test case IDs + weight sums
-        for uc in d.get("panw_mapping", {}).get("use_cases", []):
-            uc_id = uc.get("use_case_id", "")
-            if not UC_PATTERN.match(uc_id):
-                report.err(rel, f"use_case_id {uc_id!r} does not match {UC_PATTERN.pattern}")
+        for uc in d.get("panw_mapping", {}).get("threat_scenarios", []):
+            uc_id = uc.get("threat_scenario_id", "")
+            if not TS_PATTERN.match(uc_id):
+                report.err(rel, f"threat_scenario_id {uc_id!r} does not match {TS_PATTERN.pattern}")
             weight_sum = 0.0
-            for tc in uc.get("test_cases", []):
-                tc_id = tc.get("test_case_id", "")
-                if not TC_PATTERN.match(tc_id):
-                    report.err(rel, f"test_case_id {tc_id!r} does not match {TC_PATTERN.pattern}")
+            for tc in uc.get("threat_steps", []):
+                tc_id = tc.get("threat_step_id", "")
+                if not TS_STEP_PATTERN.match(tc_id):
+                    report.err(rel, f"threat_step_id {tc_id!r} does not match {TS_STEP_PATTERN.pattern}")
+                # The id fields were re-prefixed TS-* when namespace C was
+                # demoted, but the PROSE that cross-references sibling steps was
+                # not — 42 stale `TC-<X>-NNNA` tokens survived across 28 cards
+                # and read as master-index refs to anyone skimming a card. The
+                # index namespace is docs/uc_tc_mapping/, never a card.
+                for field in ("objective", "preconditions", "steps", "success_criteria"):
+                    val = tc.get(field)
+                    for text in ([val] if isinstance(val, str) else (val or [])):
+                        for stale in _STALE_NS_TOKEN.findall(text or ""):
+                            report.err(
+                                rel,
+                                f"threat step {tc_id} {field} contains {stale!r} — "
+                                f"card-local ids use the TS- prefix; UC-/TC- is "
+                                f"the master index namespace",
+                            )
                 weight_sum += float(tc.get("expected_score_weight", 0.0))
             if weight_sum > 1.0001:
                 report.err(rel, f"use case {uc_id} weights sum to {weight_sum:.3f} > 1.0")

@@ -1,0 +1,24 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1564.006",
+    "T1003.003",
+    "T1087.002",
+    "T1136.001",
+    "T1550.003",
+    "T1021.001",
+    "T1021.002",
+    "T1572",
+    "T1537"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(MP-013 Rogue vSphere VM Creation with Local Administrator Login) AND ABIOC(MP-013 NTDS.dit Extraction from Mounted Domain Controller VMDK) AND ABIOC(MP-013 ADRecon Domain Enumeration Burst) AND ABIOC(MP-013 Rogue Local Administrator Account Creation (gooner)) AND ABIOC(MP-013 Forged Kerberos Ticket Pass-the-Ticket Authentication) AND ABIOC(MP-013 Chisel SSH-over-HTTPS Persistent C2 Tunnel) AND ABIOC(MP-013 Bulk Cloud Exfiltration to S3 and Snowflake) within 54000s on the same resolved endpoint entity (agent_hostname \u2014 every ABIOC projects it; hostname-native bodies emit it directly, IP-native bodies (vSphere source_address, Kerberos client_address, NGFW source_address) normalize their raw identifier into it, and XSIAM XDM endpoint entity resolution reconciles hostname<->IP) -> fuse the seven medium/low behavioral alerts into ONE critical hands-on-keyboard-intrusion incident whose summary names the domain-controller compromise (NTDS.dit copied from the mounted DC VMDK) and the exfiltration channel (Chisel 443 tunnel + S3/Snowflake). Ground truth is one incident, not seven; the AI SOC analyst passes F7 when it produces a single correctly-summarized critical incident rather than an un-grouped alert storm.",
+      "name": "Muddled Libra Rogue-VM Intrusion \u2014 Seven-Signal AI-Triage Incident Grouping",
+      "rule_id": "CR-MP-0013",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0123"
+}

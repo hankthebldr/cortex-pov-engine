@@ -24,6 +24,13 @@ install:
   # release at dispatch into /tmp. Produces the chain_reactor binary in-tree.
   runtime_install_command: "test -x /tmp/chain-reactor/chain_reactor || (test -d /tmp/chain-reactor || git clone --depth 1 https://github.com/redcanaryco/chain-reactor /tmp/chain-reactor && make -C /tmp/chain-reactor)"
   binary: "/tmp/chain-reactor/chain_reactor"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: SOURCE_TREE_REQUIRED
+    reason: >-
+      Chain Reactor publishes no prebuilt binaries at all — it is compiled
+      from source with make at run time. There is nothing to stage. This tool
+      needs internet access and a C toolchain on the target host.
 
 invoke:
   target_platform: linux

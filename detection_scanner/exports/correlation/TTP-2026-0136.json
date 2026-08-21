@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1190",
+    "T1059.004",
+    "T1552.001",
+    "T1613",
+    "T1552.005",
+    "T1078.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(RSC Deserialization RCE App Container CGO Spawns an Interactive Shell) AND ABIOC(Kubernetes Service Account Token Read by an Anomalous Descendant of the App Container CGO) AND ABIOC(In-Pod Kubernetes API Secret Enumeration from an App-Rooted Process Lineage) AND ABIOC(SSRF-Driven Instance Metadata Node IAM Role Theft from a Container Process) AND ABIOC(Stolen Node IAM Role Used in the Cloud Control Plane After Pod Compromise) within 600 seconds. The four endpoint ABIOCs share ONE join key \u2014 the pod causality chain (causality_id / causality_actor_process_instance_id, all rooted at the app-container CGO) \u2014 so the shell spawn, token read, K8s API enumeration, and IMDS theft fuse into one pod incident. The cloud ABIOC emits a node IAM role ARN (an AssumedRole), not the pod causality_id \u2014 the stolen credential is discarded on the endpoint and never carried in xdr_data \u2014 so it is bridged to the endpoint stages NOT on a shared process field but via the cloud asset-inventory mapping agent_hostname -> instance -> attached node IAM role (the shared entity), correlated on that host/instance-to-role bridge plus the tight window immediately following the endpoint IMDS reach. This fuses the RSC deserialization RCE, the service-account-token theft, the in-cluster secret enumeration, the node-role theft, and the cloud control-plane reuse into ONE React2Shell pod-RCE-to-cloud incident.",
+      "name": "React2Shell Pod-RCE to Cloud Control-Plane Pivot \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-MP-0017",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0136"
+}

@@ -74,7 +74,7 @@ class TtpEntry:
     status: str
     safety_class: Optional[str]
     destructive: bool
-    score_weights: dict[str, float]   # use_case_id -> sum of expected_score_weight
+    score_weights: dict[str, float]   # threat_scenario_id -> sum of expected_score_weight
     detections: list[DetectionCard]
     panw_products: list[str]
 
@@ -113,6 +113,19 @@ class TtpCatalog:
         self._by_ttp: dict[str, TtpEntry] = {}
         self._by_pair: dict[tuple[str, str], DetectionCard] = {}
         self._raw_by_ttp: dict[str, dict[str, Any]] = {}
+        # Derived views of the raw corpus. The corpus is frozen once loaded, so
+        # re-deriving these per request (the coverage heatmap asks for all three
+        # on every scenario/card pair) is pure waste. Filled lazily rather than
+        # in load() so a catalog populated by any other route still resolves;
+        # load() drops them so a reload can never serve a stale card.
+        self._techniques_memo: dict[str, list[dict[str, str]]] = {}
+        self._atlas_memo: dict[str, list[dict[str, str]]] = {}
+        self._kind_counts_memo: dict[str, dict[str, int]] = {}
+
+    def _invalidate_memos(self) -> None:
+        self._techniques_memo.clear()
+        self._atlas_memo.clear()
+        self._kind_counts_memo.clear()
 
     # ---- public API ----------------------------------------------------
 
@@ -123,6 +136,7 @@ class TtpCatalog:
         self._by_ttp.clear()
         self._by_pair.clear()
         self._raw_by_ttp.clear()
+        self._invalidate_memos()
 
         if not os.path.isdir(ttps_dir):
             logger.warning(
@@ -208,6 +222,12 @@ class TtpCatalog:
         card corpus (82 techniques) into the otherwise scenario-thin view —
         see ``core/api/mitre.py`` (GAP-6).
         """
+        memo = self._techniques_memo.get(ttp_ref)
+        if memo is None:
+            memo = self._techniques_memo[ttp_ref] = self._derive_techniques(ttp_ref)
+        return list(memo)
+
+    def _derive_techniques(self, ttp_ref: str) -> list[dict[str, str]]:
         raw = self._raw_by_ttp.get(ttp_ref)
         if not raw:
             return []
@@ -238,6 +258,12 @@ class TtpCatalog:
         home. Each item is normalized to ``{atlas_id, name, atlas_tactic}``.
         Returns ``[]`` for an unknown card or a card with no ATLAS mappings.
         """
+        memo = self._atlas_memo.get(ttp_ref)
+        if memo is None:
+            memo = self._atlas_memo[ttp_ref] = self._derive_atlas_techniques(ttp_ref)
+        return list(memo)
+
+    def _derive_atlas_techniques(self, ttp_ref: str) -> list[dict[str, str]]:
         raw = self._raw_by_ttp.get(ttp_ref)
         if not raw:
             return []
@@ -272,6 +298,12 @@ class TtpCatalog:
         callers must NOT fold it into validated-detection depth. Returns
         all-zero for an unknown card.
         """
+        memo = self._kind_counts_memo.get(ttp_ref)
+        if memo is None:
+            memo = self._kind_counts_memo[ttp_ref] = self._derive_kind_counts(ttp_ref)
+        return dict(memo)
+
+    def _derive_kind_counts(self, ttp_ref: str) -> dict[str, int]:
         raw = self._raw_by_ttp.get(ttp_ref)
         counts = {
             "bioc": 0, "xql": 0, "correlation": 0, "ioc": 0, "analytics": 0,
@@ -328,14 +360,14 @@ def _parse_entry(raw: dict[str, Any]) -> Optional[TtpEntry]:
             products.append(p["module"])
 
     score_weights: dict[str, float] = {}
-    for uc in panw_mapping.get("use_cases") or []:
+    for uc in panw_mapping.get("threat_scenarios") or []:
         if not isinstance(uc, dict):
             continue
-        uc_id = uc.get("use_case_id")
+        uc_id = uc.get("threat_scenario_id")
         if not isinstance(uc_id, str):
             continue
         total = 0.0
-        for tc in uc.get("test_cases") or []:
+        for tc in uc.get("threat_steps") or []:
             if not isinstance(tc, dict):
                 continue
             w = tc.get("expected_score_weight")

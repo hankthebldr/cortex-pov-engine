@@ -1,0 +1,95 @@
+title: "NGFW EAL Rare-Domain Beacon then Large/Massive HTTPS Upload Exfil \u2014 Cortex Network Analytics / ABIOC (T1071.001 / T1048 / T1567) \u2014 NGFW EAL \u2014 Abnormal Recurring Communications to a Rare Domain"
+id: ttp-2026-0167-abioc-01
+status: experimental
+description: |
+  A source host produces a tight, recurring burst of small HTTPS (ssl/443) sessions to a single domain that is rare across the fleet (few distinct sources ever contact it) — the rare-domain C2-beacon shape. Every destination is legitimate-looking and rotates, so no IOC matches; the ABIOC fires on the recurring-cadence-plus-destination-rarity deviation from the host's learned NGFW EAL egress baseline, anchored to the source host (src) and the rare destination domain rather than to a known-bad indicator.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter log_source_type = "eal" and app = "ssl" and dst_port = 443
+    | filter action = "allow"
+    | comp count() as recurring_sessions, avg(bytes_sent) as avg_bytes by src, url_domain
+    | windowcomp count_distinct(src) as fleet_src_prevalence by url_domain
+    | filter recurring_sessions >= 6 and avg_bytes < 8192 and fleet_src_prevalence <= 2
+    | sort desc recurring_sessions
+    | fields src, url_domain, recurring_sessions, avg_bytes, fleet_src_prevalence
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "NGFW EAL Rare-Domain Beacon then Large/Massive HTTPS Upload Exfil \u2014 Cortex Network Analytics / ABIOC (T1071.001 / T1048 / T1567) \u2014 NGFW EAL \u2014 Large Upload (HTTPS) to a Rare Domain"
+id: ttp-2026-0167-abioc-02
+status: experimental
+description: |
+  A single HTTPS (ssl/443) session carries a bytes_sent volume that is anomalously large versus the host's learned outbound-volume baseline, to a domain that is rare across the fleet. The statistical ABIOC fires on the outbound-byte-volume deviation, the first stage of the exfiltration that follows the rare-domain beacon, anchored to the source host (src) and the rare destination domain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter log_source_type = "eal" and app = "ssl" and dst_port = 443 and action = "allow"
+    | filter bytes_sent > 1073741824
+    | comp sum(bytes_sent) as uploaded_bytes, count() as sessions by src, url_domain
+    | windowcomp count_distinct(src) as fleet_src_prevalence by url_domain
+    | filter uploaded_bytes > 1073741824 and fleet_src_prevalence <= 2
+    | sort desc uploaded_bytes
+    | fields src, url_domain, uploaded_bytes, sessions, fleet_src_prevalence
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "NGFW EAL Rare-Domain Beacon then Large/Massive HTTPS Upload Exfil \u2014 Cortex Network Analytics / ABIOC (T1071.001 / T1048 / T1567) \u2014 NGFW EAL \u2014 Massive Upload to a Rare Storage or Mail Domain"
+id: ttp-2026-0167-abioc-03
+status: experimental
+description: |
+  The same source host uploads a massive bytes_sent volume to a storage / mail domain that is rare across the fleet over HTTPS — the exfiltration terminal of the beacon-then-exfil chain. The ABIOC fires on the massive-outbound-volume-to-a-rare-domain deviation from the learned baseline, anchored to the same source host (src) that carried the earlier recurring beacon.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter log_source_type = "eal" and dst_port = 443 and action = "allow"
+    | filter bytes_sent > 10737418240
+    | comp sum(bytes_sent) as uploaded_bytes, count() as sessions by src, url_domain
+    | windowcomp count_distinct(src) as fleet_src_prevalence by url_domain
+    | filter uploaded_bytes > 10737418240 and fleet_src_prevalence <= 2
+    | sort desc uploaded_bytes
+    | fields src, url_domain, uploaded_bytes, fleet_src_prevalence
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

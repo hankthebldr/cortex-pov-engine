@@ -1,0 +1,68 @@
+adapter_id: TOOL-LINENUM
+name: LinEnum
+version: "0.982"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/rebootuser/LinEnum
+  license: "MIT"
+  attribution: rebootuser (Owen Shearing)
+
+cortex_signal:
+  planes:
+    - EDR
+  expected_techniques:
+    - T1082  # System Information Discovery
+    - T1083  # File and Directory Discovery
+    - T1087.001  # Account Discovery: Local Account
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "test -x /tmp/LinEnum.sh || (curl -fsSLo /tmp/LinEnum.sh https://raw.githubusercontent.com/rebootuser/LinEnum/master/LinEnum.sh && chmod +x /tmp/LinEnum.sh)"
+  binary: /tmp/LinEnum.sh
+
+  artifact:
+    filename: LinEnum.sh
+    # The repository is ARCHIVED upstream, so `master` will not move again in
+    # practice — but "in practice" is not an integrity model. A commit sha costs
+    # nothing and makes the claim checkable.
+    url: "https://raw.githubusercontent.com/rebootuser/LinEnum/c47f9b226d3ce2848629f25fe142c1b2986bc427/LinEnum.sh"
+    kind: file
+    sha256: "bdefadb0a866f3e289711afccb46fa2fa1081ccfa3e89c22fdddbd57e48dda5b"
+    pin:
+      type: commit
+      ref: "c47f9b226d3ce2848629f25fe142c1b2986bc427"
+    license: "MIT"
+    stage_path: /tmp/LinEnum.sh
+    mode: "0755"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {flags}"
+  default_args:
+    flags: "-q"
+  identity_required: www-data
+
+cleanup:
+  commands:
+    - "rm -f /tmp/LinEnum.sh"
+
+ttp_refs:
+  - TTP-2026-0176
+
+equivalents:
+  - TOOL-LINPEAS
+  - TOOL-LSE
+
+author: Henry Reed
+created: "2026-08-05"
+last_updated: "2026-08-05"
+tags:
+  - privilege-escalation
+  - enumeration
+  - linux
+  - edr
+  - payload-shelf

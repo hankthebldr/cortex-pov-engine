@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1071.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "GATE XQL(SIM-TIM-007 Control Indicator Promoted to the EDL) \u2014 a promote-leg precondition, not a join participant. Without it a tenant that never enforced anything would satisfy the allow half on its steady state and score a vacuous pass. JOIN BIOC(SIM-TIM-007 Feed-Matched Control FQDN Session Denied at the Enforcement Point) with XQL(SIM-TIM-007 Phase B Sessions to the Same FQDN Allowed After Withdrawal) on the shared dst_fqdn within the correlation window, and require the ORDERING to hold: last_deny < withdrawn_at (from XQL(SIM-TIM-007 Indicator Withdrawal Recorded in the Intel Audit Trail)) < first_allow. The rule raises exactly ONE enforcement-rollback transition per destination. It does NOT raise on an allow with no preceding deny, on a deny with no subsequent allow (the stale-EDL failure \u2014 the rollback did not land), or on an allow that precedes the recorded withdrawal (a timing artefact rather than a retraction). The measured share of post-withdrawal allows comes from XQL(SIM-TIM-007 Enforcement Rollback Completeness), which returns the number unfiltered so a partial retraction reports its percentage instead of returning nothing.",
+      "name": "SIM-TIM-007 Enforcement Rollback Transition \u2014 One Deny to Allow on a Withdrawn Indicator",
+      "rule_id": "CR-TIM-0007",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0168"
+}

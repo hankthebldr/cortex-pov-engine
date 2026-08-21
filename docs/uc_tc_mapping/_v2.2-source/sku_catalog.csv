@@ -1,0 +1,39 @@
+capability,sku_part_number,attaches_to,meter,note
+Cortex XSIAM — NG-SIEM,PAN-XSIAM-BASE-SIEM,base,per employee,No endpoints included.
+Cortex XSIAM — Enterprise,PAN-XSIAM-BASE-ENT,base,per employee tier,Includes 1 EP per employee.
+Cortex XSIAM — Premium,PAN-XSIAM-BASE-ENT-PREMIUM,base,per employee tier,"Includes 1 EP, XTI, ASM, 30d hot retention."
+Cortex XDR,(XDR base — support/uplift SKUs only in library),base,per endpoint,Base EP SKUs are quoted via XSIAM ADV-EP lines.
+Cortex Cloud,(Cortex Cloud base — PAN-CLOUD-* uplift only in library),base,per workload,Cloud add-ons below attach here.
+Endpoint Protection,PAN-XSIAM-ADV-EP,XSIAM · XDR,per endpoint,Includes 30d retention + standard success.
+Cloud Host Protection,PAN-XSIAM-ADV-EP-CLOUD,XSIAM · Cortex Cloud,per host,Includes 30d retention.
+Cloud Runtime,PAN-XSIAM-ADV-EP-CLOUD-CRS,Cortex Cloud · XSIAM,per workload/yr,Cloud runtime security.
+Cloud Posture,PAN-XSIAM-CLOUD-POSTURE,Cortex Cloud · XSIAM,per workload/yr,Price-book text still says 'Prisma Cloud Posture Security' — stale name.
+Cloud AppSec,PAN-XSIAM-APPSEC,Cortex Cloud · XSIAM,per developer/yr,"Its own SKU. Covers IaC, SCA, Secrets Security."
+ASM,PAN-XSIAM-ASM,XSIAM · XDR,—,Also inside PAN-XSIAM-ADV-SOC and XSIAM Premium.
+EM,PAN-XSIAM-EM,XSIAM,—,Exposure Management. Separate from ASM.
+XTI,PAN-XSIAM-ADV-SOC,XSIAM,per user/yr,Advanced SOC Data bundle = XTI + ASM. No standalone XTI SKU in the library.
+TIM,PAN-XSIAM-TIM,XSIAM,—,Threat Intelligence Management. Distinct from XTI.
+ITDR,PAN-XSIAM-ITDR,XSIAM · XDR,—,Identity Threat Detection and Response module.
+Host Insights,PAN-XSIAM-HOST-INST,XSIAM · XDR,—,
+Forensics,PAN-XSIAM-FRNS,XSIAM · XDR,per endpoint/yr,Monthly variant PAN-XSIAM-FRNS-MNT.
+XTH,PAN-XSIAM-XTH,XSIAM · XDR,per endpoint,Extended Threat Hunting. Includes 30d retention.
+Email Security,PAN-XSIAM-EMAIL,XSIAM,—,
+Endpoint DLP,PAN-XSIAM-EP-DLP,XSIAM · XDR,—,
+FIM,PAN-XSIAM-FIM,XSIAM,—,File Integrity Monitoring. NOT previously in the index.
+Data Ingestion — GB/day,PAN-XSIAM-BASE-GB,XSIAM,per GB/day,Base ingestion line.
+Data Lake Ingestion — GB/day,PAN-XSIAM-BASE-GB-LAKE,XSIAM,per GB/day,
+Compute Units,PAN-XSIAM-COMP-UNT,XSIAM · AgentiX,per unit,
+Retention,PAN-XSIAM-DATASET-RTN,XSIAM,per GB,Also EP/GB hot+cold and incident-retention SKUs.
+GB Forwarding,PAN-XSIAM-GB-FRWRD,XSIAM,per GB/day,
+Endpoint Forwarding,PAN-XSIAM-EP-FRWRD,XSIAM,per endpoint/yr,
+Agentic Endpoint Security (AES) ⚠,— NO SKU IN PRICE BOOK,?,?,Absent from the SKU library AND from all public license tables.
+Cortex Data Security ⚠,— NO SKU IN PRICE BOOK,?,?,Public docs describe it; no part number in the FY27 library.
+Unit 42 MDR,PAN-XSIAM-U42-MDR-EP / -GB,service,—,
+Unit 42 Managed XSIAM,PAN-XSIAM-U42-MXSIAM / -PRO,service,—,Pro adds MDR + MTH + Extended Response.
+Unit 42 MTH,PAN-XSIAM-MTH / PAN-XDR-MTH,service,—,Managed Threat Hunting service.
+Cortex AgentiX,PAN-AGENTIX-BASE / -ENTERPRISE,base product,per user/yr,$150k base (2 users) / $300k ent (4 users + XTI).
+Cortex XSOAR,PAN-CORTEXXSOAR-ENTERPRISE,base product,per tenant,"$250k (XSOAR + TIM, 4 users)."
+Cortex Xpanse,PAN-EXP-EXPNDR + PAN-EXP-EXPNDR-AUM,base product,platform + per asset,"$60k platform + $7/asset. Modules: BHV, LINK, ILI."
+Prisma AIRS,(Prisma line — not in the Cortex SKU library),adjacent,—,
+PAN-OS NGFW,(Network line),adjacent,—,Telemetry source only.
+Chronosphere,(3rd party),adjacent,—,

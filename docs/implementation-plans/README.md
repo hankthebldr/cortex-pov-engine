@@ -27,4 +27,9 @@ points, schema edits, validation criteria). Authored 2026-06-16.
 - Deep-research run 2 (open questions): `wf_483218a4-9d7` — **rate-limited / inconclusive**,
   see brainstorm doc §6 for status + captured leads to re-verify.
 
-> These are plans, not yet built. Nothing here has been merged into the engine.
+> **All five plans shipped.** ABIOC is a first-class `detection_type`, the XDM
+> modeling-rule substrate is modelled and exported, the CDR/K8s lab is ported,
+> the EMAIL plane is active, and the KOI runtime-poisoning scenario is authored.
+> Kept as the design record for how each was built — see
+> [`docs/reference/scenario-catalog.md`](../reference/scenario-catalog.md) for
+> what actually landed.

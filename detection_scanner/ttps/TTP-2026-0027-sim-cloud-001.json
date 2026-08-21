@@ -44,9 +44,9 @@
     }
   },
   "identity": {
-    "name": "Cloud App \u2014 Okta Risky OAuth Drive-Scope Grant (T1550.001)",
+    "name": "Cloud App — Okta Risky OAuth Drive-Scope Grant (T1550.001)",
     "summary": "An OAuth authorize request is sent to an Okta org authorize endpoint (/oauth2/v1/authorize) carrying a drive-wide third-party scope. Cortex Cloud App Security tags the broad scope on the okta_sso audit event, the in-path NGFW EAL flags the outbound /authorize request shape, and an analytics rule recognises three risky-grant attempts inside 60s as a consent-phishing enumeration burst.",
-    "description": "OAuth application-consent phishing is the dominant initial-access vector against SaaS-first enterprises: an attacker registers a third-party app, lures a user to the IdP authorize endpoint, and harvests a long-lived access/refresh token instead of a password \u2014 bypassing MFA entirely. This scenario drives the oauth_grant_emulator plugin against an Okta org authorize endpoint with the risky_drive scope preset, which plants a drive-wide third-party scope (okta.users.read.self plus a broad files/Drive scope) into the authorize request. The detection approach is twofold: Cortex Cloud App Security parses the okta_sso OAuth grant audit event and flags any third-party (non-first-party client_id) app that requests a drive/files-wide scope, while a Cortex XSIAM analytics layer correlates repeated risky-grant attempts from one user/source into an enumeration-burst signal. The NGFW EAL plane independently sees the outbound HTTPS /oauth2/v1/authorize request to *.okta.com and contributes a network-side corroboration. A correlation rule fuses the CASB grant detection and the burst detection into one OAuth-consent-phishing incident. All requests carry a bogus canary client_id and resolve against a canary tenant, so no real token is ever issued \u2014 detection is on the outbound request and audit-event shape, not on a successful grant.",
+    "description": "OAuth application-consent phishing is the dominant initial-access vector against SaaS-first enterprises: an attacker registers a third-party app, lures a user to the IdP authorize endpoint, and harvests a long-lived access/refresh token instead of a password — bypassing MFA entirely. This scenario drives the oauth_grant_emulator plugin against an Okta org authorize endpoint with the risky_drive scope preset, which plants a drive-wide third-party scope (okta.users.read.self plus a broad files/Drive scope) into the authorize request. The detection approach is twofold: Cortex Cloud App Security parses the okta_sso OAuth grant audit event and flags any third-party (non-first-party client_id) app that requests a drive/files-wide scope, while a Cortex XSIAM analytics layer correlates repeated risky-grant attempts from one user/source into an enumeration-burst signal. The NGFW EAL plane independently sees the outbound HTTPS /oauth2/v1/authorize request to *.okta.com and contributes a network-side corroboration. A correlation rule fuses the CASB grant detection and the burst detection into one OAuth-consent-phishing incident. All requests carry a bogus canary client_id and resolve against a canary tenant, so no real token is ever issued — detection is on the outbound request and audit-event shape, not on a successful grant.",
     "severity": "high",
     "confidence": "high"
   },
@@ -109,7 +109,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Drive-wide third-party OAuth grant against the canary Okta authorize endpoint \u2014 bogus client_id, no token issued.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-001.yml --live\n# Repeat x3 within 60s to exercise the enumeration-burst analytics.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-001-burst.yml --live",
+      "code": "# Drive-wide third-party OAuth grant against the canary Okta authorize endpoint — bogus client_id, no token issued.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-001.yml --live\n# Repeat x3 within 60s to exercise the enumeration-burst analytics.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-001-burst.yml --live",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -190,14 +190,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Okta Risky OAuth Drive-Scope Consent Phishing \u2014 Same Identity",
+        "name": "Okta Risky OAuth Drive-Scope Consent Phishing — Same Identity",
         "rule_id": "CR-CLOUDAPP-0001",
-        "logic": "XQL(CLOUD-001 Okta Risky Drive-Wide OAuth Scope Grant) OR XQL(CLOUD-001 NGFW Okta OAuth Authorize Risky-Scope Egress) OR XQL(CLOUD-001 Okta Repeated Risky Grant Enumeration Burst)"
+        "logic": "XQL(CLOUD-001 Okta Risky Drive-Wide OAuth Scope Grant) OR XQL(CLOUD-001 NGFW Okta OAuth Authorize Risky-Scope Egress) OR XQL(CLOUD-001 Okta Repeated Risky Grant Enumeration Burst) GROUPED BY user, source_ip, app_name WITHIN 60s"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud App Security \u2014 Third-party app requests drive-wide OAuth scope",
-      "Cortex XSIAM Analytics \u2014 Repeated risky OAuth consent attempts from one identity"
+      "Cortex Cloud App Security — Third-party app requests drive-wide OAuth scope",
+      "Cortex XSIAM Analytics — Repeated risky OAuth consent attempts from one identity"
     ]
   },
   "panw_mapping": {
@@ -223,14 +223,14 @@
         "evidence_query": "Correlation CR-CLOUDAPP-0001 fuses the CASB risky-scope grant, NGFW authorize egress, and enumeration burst into one consent-phishing incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUDAPP-027",
+        "threat_scenario_id": "TS-CLOUDAPP-027",
         "name": "Risky OAuth Scope Grant Detection",
         "description": "Detect a third-party app soliciting a drive-wide OAuth scope at the Okta authorize endpoint and correlate repeated attempts into a consent-phishing incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUDAPP-027A",
+            "threat_step_id": "TS-CLOUDAPP-027A",
             "objective": "A single risky_drive grant fires the Cloud App risky-scope detection.",
             "preconditions": [
               "oauth_grant_emulator registered and Okta audit logs ingested.",
@@ -247,7 +247,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUDAPP-027B",
+            "threat_step_id": "TS-CLOUDAPP-027B",
             "objective": "Three risky grants in <60s stitch into one enumeration-burst incident.",
             "success_criteria": [
               "XQL `CLOUD-001 Okta Repeated Risky Grant Enumeration Burst` returns >= 1 row.",
@@ -281,7 +281,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1550.001 \u2014 Application Access Token",
+      "title": "MITRE ATT&CK T1550.001 — Application Access Token",
       "url": "https://attack.mitre.org/techniques/T1550/001/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

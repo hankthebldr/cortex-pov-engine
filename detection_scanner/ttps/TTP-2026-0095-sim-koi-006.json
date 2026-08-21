@@ -176,14 +176,14 @@
       {
         "purpose": "validation",
         "name": "KOI-006 agent process consumed poisoned tool result",
-        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_name contains \"runtime-poisoned-response.json\" or action_file_path contains \"pa-firewall-mcp\"\n| filter actor_process_image_name in (\"python3\", \"node\", \"claude\", \"cursor\", \"mcp-host\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_file_path",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_name contains \"runtime-poisoned-response.json\" or action_file_path contains \"pa-firewall-mcp\"\n| filter actor_process_image_name in (\"python3\", \"node\", \"claude\", \"cursor\", \"mcp-host\")\n| filter causality_actor_process_image_name in (\"python3\", \"node\", \"claude\", \"cursor\", \"mcp-host\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "KOI-006 stitch tool result injection with followon credential access",
-        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter (action_file_path contains \"pa-firewall-mcp\" or action_file_name contains \"runtime-poisoned-response.json\") or (action_file_path contains \".aws/credentials\" or action_file_path contains \".ssh/id_rsa\")\n| comp count_distinct(action_file_path) as touched_paths by agent_hostname, actor_process_image_name\n| filter touched_paths >= 2",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter (action_file_path contains \"pa-firewall-mcp\" or action_file_name contains \"runtime-poisoned-response.json\") or (action_file_path contains \".aws/credentials\" or action_file_path contains \".ssh/id_rsa\")\n| comp count_distinct(action_file_path) as touched_paths by agent_hostname, actor_process_instance_id, causality_actor_process_image_name\n| filter touched_paths >= 2\n| fields agent_hostname, actor_process_instance_id, causality_actor_process_image_name, touched_paths",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -233,14 +233,14 @@
         "evidence_query": "Correlation CR-KOI-0006 fuses the poisoned tool-result content hit with the agent's follow-on credential-file read into one runtime-injection incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-SUPPLY-095",
+        "threat_scenario_id": "TS-SUPPLY-095",
         "name": "MCP Runtime Tool-Response Content Inspection",
         "description": "Detect indirect prompt injection delivered through an MCP tool RESULT at runtime (the connect-time↔runtime trust gap), across runtime content inspection, NGFW result-body inspection, and XSIAM correlation, and stitch into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-SUPPLY-095A",
+            "threat_step_id": "TS-SUPPLY-095A",
             "objective": "Runtime content inspection flags the injection inside the MCP tools/call result body.",
             "preconditions": [
               "cortex-malicious-agentic-pack content present.",
@@ -257,7 +257,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-SUPPLY-095B",
+            "threat_step_id": "TS-SUPPLY-095B",
             "objective": "The runtime result injection and the follow-on credential access stitch into one incident.",
             "success_criteria": [
               "XQL `KOI-006 agent process consumed poisoned tool result` returns >= 1 row.",

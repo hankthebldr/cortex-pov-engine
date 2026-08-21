@@ -1,9 +1,10 @@
 # Tool Adapter Framework
 
-> **Status (2026-06-15):** Framework + **69 adapters across all 5 tiers**
-> (Phase A/B/C complete). **35 scenarios reference adapters / 34 distinct adapters
-> wired** (up from 17 — the CDR cluster-posture, ASM web-app-enumeration, and ITDR
-> AD-privesc bundles wired 17 high-value orphans); all 10 source submodules are
+> **Status (2026-07-24):** Framework + **84 adapters across all 5 tiers**
+> (Phase A/B/C complete + the Kali-toolkit pass). **42 scenarios reference adapters /
+> 45 distinct adapters wired**; the 2026-07-24 pass added 15 tier-4 Kali adapters
+> chained through `SIM-MP-019`/`SIM-ITDR-015` (see `docs/reference/kali-toolkit.md`);
+> all 10 source submodules are
 > provisioned (`check-adapter-sources.sh` green). Push bundles self-install tier-4
 > tools; the launch consent gate is wired end-to-end. The
 > remaining design-spec work is operational (per-adapter CI version canary) and
@@ -143,11 +144,12 @@ adapter_catalog  (in-memory singleton)
 
 **Shipped & verified**
 - Schema + Pydantic loader + in-memory catalog (Phase A).
-- **69 packs across all 5 tiers (Phase A/B/C complete).** Phase A landed the
-  schema + loader + the first reference pack; Phase B grew the catalog to 22
+- **84 packs across all 5 tiers (Phase A/B/C complete + Kali-toolkit pass).** Phase A
+  landed the schema + loader + the first reference pack; Phase B grew the catalog to 22
   reference packs across tiers 1–4; Phase C fanned out to the remaining 🟢/🟡
   verdicts from the design spec's 100-tool inventory plus the tier-5
-  analyst-workbench / RE / sandbox references, for a verified total of **69**.
+  analyst-workbench / RE / sandbox references (verified total 69); the 2026-07-24
+  Kali-toolkit pass added 15 tier-4 offensive adapters, for a verified total of **84**.
 - Boot load with dangling-ref warnings; `GET /api/tools/adapters[/{id}]` (live: 69).
 - Scenario `adapter_ref` resolution; orchestrator `run_template` inlining.
 - IaC auto-pull (`adapter_refs[]` → `iac_module`).

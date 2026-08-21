@@ -1,0 +1,409 @@
+{
+  "id": "TTP-2026-0149",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:25:57+00:00",
+    "updated_at": "2026-07-25T04:25:57+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-tim",
+      "threat-intel-management",
+      "resource-development",
+      "code-signing-certificate",
+      "authenticode",
+      "rogue-signer",
+      "vidar-stealer",
+      "xmrig",
+      "malvertising",
+      "ioc-feed-match",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "windows",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "TIM Rogue Authenticode Code-Signing Certificate IOC — Vidar+XMRig Malvertising Loader (T1587.002 / T1036.001)",
+    "summary": "The Vidar+XMRig malvertiser signs its loader with fabricated Authenticode certs (CN=justwatch.com/*.bleacherreport.com, CA:TRUE, untrusted chain). TIM arms the rogue thumbprint, serial, and four C2 IPs; XSIAM raises the rogue-signer match (untrusted-chain status + fabricated issuer), matches the C2 IP on NGFW, and pivots on the shared signer — the code-signing axis of Resource Development.",
+    "description": "Resource Development (TA0042) is the tactic where an adversary builds the capability it will later deploy; developing and abusing code-signing certificates (T1587.002) is one of its highest-leverage moves, because a signed binary is trusted by users and by many controls until the signature is actually verified. This card is the code-signing axis of that tactic, grounded in the Unit 42 Vidar-stealer / XMRig-miner malvertising campaign. The operator lures victims searching for cracked software, delivers a password-protected archive, and executes a Go-compiled loader signed with a FABRICATED Authenticode certificate. Two cert variants were observed: Variant A carries subject CN=justwatch.com, a self-signed issuer 'WR3', serial 2f:7e:f0:15:7d:17:62:5c:09:86:91:ce:f1:ff:7d:63, SHA1 thumbprint ab92f731ab20774dfdb95664ee41a2fbafe2a284, validity 2026-03-09 to 2026-06-07, the CA:TRUE basic-constraint set, and a chain that does not build to a Microsoft-trusted root; Variant B rotates the subject to CN=*.bleacherreport.com under a cloned issuer name 'GlobalSign Atlas R3 DV TLS CA 2026 Q1', again untrusted. The signed loader drops Vidar (MicrosoftUpdate.exe) which exfiltrates browser credentials, cookies, and crypto-wallet data over HTTPS to 136.243.203.109:443, and an XMRig launcher (MicrosoftEdgeUpdate.exe) that mines Monero; the operator is notified per-victim via the Telegram channel ci0iiif. The TIM value is the pivot the operator's own tradecraft creates: the operator ROTATED the cert subject (JustWatch to BleacherReport) but the underlying capability — a self-signed / cloned-CA cert with CA:TRUE and an untrusted chain — persists, so the fabricated thumbprint and issuer pattern become a durable indicator that stitches otherwise-distinct signed loader samples into ONE campaign. The detection surface: (1) an IOC feed arms the rogue thumbprint, serial, and the four C2 IPs; (2) a BIOC raises the rogue-signer match when a process executes carrying the fabricated thumbprint / untrusted-chain status; (3) an XQL matches the outbound C2 session to the Vidar exfil IP on the NGFW; (4) an XQL pivots on the shared rogue signer (issuer/vendor) to enumerate every co-signed loader and affected host; (5) a correlation rule fuses the rogue-signer execution match and the C2 session into a single Vidar+XMRig malvertising-loader incident anchored to the certificate. Modeled safely: the simulation emits telemetry markers for the rogue-signer execution and the C2 destination without contacting the real (sinkhole-class) infrastructure.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Unattributed financially-motivated malvertiser",
+        "aliases": [
+          "Vidar+XMRig malvertising operator",
+          "X3D MINER operator"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Vidar stealer + XMRig miner malvertising campaign (cracked-software lures, rogue Authenticode signing) 2026"
+    ],
+    "malware_families": [
+      {
+        "name": "Vidar"
+      },
+      {
+        "name": "XMRig"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2026-03-09"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1587",
+        "name": "Develop Capabilities",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ],
+        "subtechnique_id": "T1587.002"
+      },
+      {
+        "technique_id": "T1608",
+        "name": "Stage Capabilities",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1036",
+        "name": "Masquerading",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1036.001"
+      },
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ],
+        "subtechnique_id": "T1071.001"
+      }
+    ],
+    "kill_chain_phase": "weaponization",
+    "data_sources": [
+      "Certificate: Certificate Registration",
+      "Process: Process Metadata",
+      "Process: Process Creation",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-TIM-005 — TIM rogue-code-signing-certificate IOC feed match + C2 stitch, modeled from the Unit 42 Vidar+XMRig malvertising campaign (telemetry-marker simulation, no live egress).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "XSIAM TIM feed armed with the rogue Authenticode thumbprint / serial and the four Vidar C2 IPs so the indicators land in the threat_intel dataset.",
+        "check_command": "echo 'verify threat_intel contains indicator ab92f731ab20774dfdb95664ee41a2fbafe2a284 and 136.243.203.109'"
+      },
+      {
+        "description": "Cortex XDR / XSIAM agent forwarding process + signature telemetry (xdr_data) and NGFW forwarding session telemetry (panw_ngfw_traffic_raw) into the tenant.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: emit telemetry markers for the rogue-signer execution and the C2\n# destination WITHOUT contacting the real (sinkhole-class) infrastructure.\nset -euo pipefail\nCERT_THUMBPRINT=\"${CERT_THUMBPRINT:-ab92f731ab20774dfdb95664ee41a2fbafe2a284}\"\nC2_IP=\"${C2_IP:-136.243.203.109}\"\necho \"[CortexSim][SAFE-MODE] SIM-TIM-005 rogue-signer execution marker: MicrosoftUpdate.exe signed by rogue cert (thumbprint ${CERT_THUMBPRINT}, CA:TRUE, chain untrusted)\"\necho \"[CortexSim][SAFE-MODE] SIM-TIM-005 outbound C2 marker: Vidar exfil to ${C2_IP}:443 (destination NOT contacted; telemetry-only)\"\n",
+      "input_variables": [
+        {
+          "name": "CERT_THUMBPRINT",
+          "type": "string",
+          "default": "ab92f731ab20774dfdb95664ee41a2fbafe2a284",
+          "description": "SHA1 thumbprint of the fabricated Authenticode code-signing certificate the TIM feed arms and the rogue-signer BIOC matches."
+        },
+        {
+          "name": "C2_IP",
+          "type": "string",
+          "default": "136.243.203.109",
+          "description": "Vidar HTTPS exfiltration C2 IP the TIM feed arms and the NGFW C2-match XQL keys on. SAFE-MODE never contacts it."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "A process executes carrying the fabricated Authenticode signer (self-signed 'WR3' / cloned 'GlobalSign Atlas R3 DV TLS CA 2026 Q1' issuer) with a signature status that is not validly SIGNED because the chain never builds to a trusted root.",
+        "expected_value": "action_process_signature_status != ENUM.SIGNED and action_process_signature_vendor in (\"justwatch.com\", \"*.bleacherreport.com\", \"WR3\", \"GlobalSign Atlas R3 DV TLS CA 2026 Q1\")"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS session to a Vidar C2 IP on port 443 (feed-listed indicator).",
+        "expected_value": "dst_ip in (\"136.243.203.109\", \"136.243.203.111\", \"138.199.246.13\", \"116.203.243.208\") and dst_port = 443"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-TIM-005 cleanup complete — telemetry-marker simulation, no persistent artifacts.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "136.243.203.109",
+        "context": "Primary Vidar HTTPS exfiltration C2 (port 443) for Variant A of the campaign. Browser credentials, cookies, and crypto-wallet data are posted here by MicrosoftUpdate.exe.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "136.243.203.111",
+        "context": "Vidar C2 IP observed with Variant B (BleacherReport-signed) samples.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "138.199.246.13",
+        "context": "Vidar C2 IP observed with Variant B samples.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "116.203.243.208",
+        "context": "Vidar C2 IP observed with Variant B samples.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "7ed4a256e1d281cb4f194d13ff554fd4fb280dafde0a67a18115ea038ea6c87d",
+        "context": "Vidar core payload dropped by the rogue-signed loader. Atomic hash IOC complementing the durable rogue-signer thumbprint pivot.",
+        "reputation_required": "malicious"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "TIM — Rogue Authenticode Code-Signing Certificate Match on Signed-Binary Execution",
+        "description": "A process executes carrying the fabricated Authenticode signer the campaign uses to sign its loader — the self-signed 'WR3' or cloned 'GlobalSign Atlas R3 DV TLS CA 2026 Q1' issuer (subject justwatch.com / *.bleacherreport.com) with a signature status that is not validly SIGNED because the chain never builds to a trusted root (CA:TRUE, self-signed / cloned-CA). This is the TIM rogue-signer match: it fires on the certificate capability the operator DEVELOPED (T1587.002 / T1036.001), independent of the loader filename, so subject rotation across variants does not evade it. The atomic thumbprint/serial themselves are armed as certificate indicators in the TIM threat_intel feed (validated by the pre-flight XQL), because xdr_data process telemetry exposes signer status/vendor, not a per-certificate SHA1 thumbprint column.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_signature_status != ENUM.SIGNED\n| filter action_process_signature_vendor in (\"justwatch.com\", \"*.bleacherreport.com\", \"WR3\", \"GlobalSign Atlas R3 DV TLS CA 2026 Q1\")\n| comp count() as rogue_signed_executions by agent_hostname, action_process_image_name, action_process_signature_vendor, action_process_signature_status\n| filter rogue_signed_executions >= 1\n| fields agent_hostname, action_process_image_name, action_process_signature_vendor, action_process_signature_status, rogue_signed_executions",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1036.001",
+          "T1587.002"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "TIM Pre-flight — Rogue Code-Signing Cert IOCs Ingested Into Threat Intel",
+        "query": "dataset = threat_intel\n| filter _time > to_timestamp(current_time() - 86400)\n| filter indicator_value in (\"ab92f731ab20774dfdb95664ee41a2fbafe2a284\", \"2f7ef0157d17625c098691cef1ff7d63\", \"136.243.203.109\", \"136.243.203.111\", \"138.199.246.13\", \"116.203.243.208\")\n| comp count() as armed_indicators, count_distinct(indicator_type) as indicator_types by feed_source\n| filter armed_indicators >= 1\n| fields feed_source, indicator_types, armed_indicators",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "TIM IOC Match — Outbound C2 Session to Vidar Exfil IP",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 3600)\n| filter dst_ip in (\"136.243.203.109\", \"136.243.203.111\", \"138.199.246.13\", \"116.203.243.208\")\n| filter dst_port = 443\n| comp count() as c2_sessions, sum(bytes_sent) as bytes_exfiltrated by src_ip, dst_ip\n| filter c2_sessions >= 1\n| fields src_ip, dst_ip, c2_sessions, bytes_exfiltrated",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "TIM Pivot — Distinct Signed Loaders Sharing the Rogue Signer",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 604800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_signature_status != ENUM.SIGNED\n| filter action_process_signature_vendor in (\"justwatch.com\", \"*.bleacherreport.com\", \"WR3\", \"GlobalSign Atlas R3 DV TLS CA 2026 Q1\")\n| comp count_distinct(action_process_sha256) as distinct_loaders, count_distinct(agent_hostname) as affected_hosts by action_process_signature_vendor\n| filter distinct_loaders >= 1\n| fields action_process_signature_vendor, distinct_loaders, affected_hosts",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "TIM — Rogue-Signer Execution Match Stitched to Vidar C2 Session",
+        "rule_id": "CR-TIM-0005",
+        "logic": "BIOC(TIM — Rogue Authenticode Code-Signing Certificate Match on Signed-Binary Execution) AND XQL(TIM IOC Match — Outbound C2 Session to Vidar Exfil IP) -> join on agent_hostname = src_host (endpoint_network_stitch pivot) within 600s. Fuses the rogue-signer execution match and the outbound Vidar C2 session into a single malvertising-loader incident anchored to the fabricated code-signing certificate, so the DC sees one incident driven by the subscribed cert IOC rather than two unrelated signals."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Threat Intel Management — code-signing thumbprint / serial + IP indicator matching",
+      "Cortex XSIAM Correlation Engine — rogue-signer execution stitched to C2 session on host"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "threat-intel-management",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-TIM-001",
+          "TBD-TIM-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = threat_intel | filter indicator_value in (\"ab92f731ab20774dfdb95664ee41a2fbafe2a284\", \"136.243.203.109\") | comp count() as hits by feed_source, indicator_type | fields feed_source, indicator_type, hits"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_process_signature_status != ENUM.SIGNED and action_process_signature_vendor in (\"justwatch.com\", \"*.bleacherreport.com\", \"WR3\", \"GlobalSign Atlas R3 DV TLS CA 2026 Q1\") | fields agent_hostname, action_process_image_name, action_process_signature_status, action_process_signature_vendor"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id-enhanced-application-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NGFW-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_ip in (\"136.243.203.109\", \"136.243.203.111\", \"138.199.246.13\", \"116.203.243.208\") and dst_port = 443 | fields _time, src_ip, dst_ip, app, bytes_sent"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "TBD-XSOAR-001"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: enrich the rogue thumbprint from TIM, block the cert thumbprint/serial and C2 IPs, isolate hosts that executed the rogue-signed loader, and pivot on the shared thumbprint to scope every co-signed sample."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-TIM-005",
+        "name": "Threat Intel Management — Rogue Code-Signing Certificate IOC Match + C2 Stitch",
+        "description": "Validate that XSIAM TIM arms the fabricated Authenticode thumbprint / serial and the Vidar C2 IPs, raises the rogue-signer match on signed-binary execution, matches the outbound C2 session on the NGFW, and stitches the two into a single malvertising-loader incident anchored to the certificate the operator developed (Resource Development, T1587.002).",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-TIM-005A",
+            "objective": "The rogue code-signing cert + C2 IOCs are armed in TIM and the rogue-signer match fires on signed-binary execution.",
+            "preconditions": [
+              "XSIAM TIM feed armed with the rogue thumbprint / serial and the four Vidar C2 IPs.",
+              "Cortex agent forwarding process + signature telemetry into xdr_data."
+            ],
+            "steps": [
+              "Run SIM-TIM-005 step-01 (arm/confirm the cert + C2 indicators in the feed).",
+              "Run SIM-TIM-005 step-02 (emit the rogue-signer execution marker).",
+              "Inspect threat_intel and the rogue-signer BIOC output."
+            ],
+            "success_criteria": [
+              "XQL `TIM Pre-flight — Rogue Code-Signing Cert IOCs Ingested Into Threat Intel` returns >= 1 row.",
+              "BIOC `TIM — Rogue Authenticode Code-Signing Certificate Match on Signed-Binary Execution` fires on the fabricated thumbprint with an untrusted-chain status."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "threat_step_id": "TS-TIM-005B",
+            "objective": "The outbound C2 session matches a feed IOC and the correlation rule stitches the rogue-signer match to the C2 session into one incident.",
+            "preconditions": [
+              "NGFW forwarding session telemetry into panw_ngfw_traffic_raw."
+            ],
+            "steps": [
+              "Run SIM-TIM-005 step-03 (emit the Vidar C2 destination marker).",
+              "Run SIM-TIM-005 step-04 (correlation stitch).",
+              "Inspect the correlated incident and the thumbprint pivot."
+            ],
+            "success_criteria": [
+              "XQL `TIM IOC Match — Outbound C2 Session to Vidar Exfil IP` returns >= 1 row.",
+              "Correlation `CR-TIM-0005` raises one incident stitching the rogue-signer match and the C2 session on the host.",
+              "XQL `TIM Pivot — Distinct Signed Loaders Sharing the Rogue Cert Thumbprint` enumerates the co-signed samples sharing the thumbprint."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce Authenticode signature VERIFICATION (chain-to-trusted-root, not merely 'is signed') in application-control and WildFire verdicts so a CA:TRUE self-signed / cloned-CA cert is treated as unsigned.",
+      "Block execution of binaries whose signer chain does not build to a Microsoft-trusted root via WDAC / application allow-listing.",
+      "Apply Advanced URL Filtering + DNS Security to the malvertising delivery chain and deny direct server-subnet egress to non-sanctioned destinations."
+    ],
+    "detection_engineering": [
+      "Arm TIM with the fabricated cert thumbprint AND serial (not just the subject CN) so subject rotation across campaign variants does not evade the indicator.",
+      "Pivot on the shared code-signing thumbprint/issuer to enumerate every co-signed loader sample and affected host, treating the certificate as the durable campaign key.",
+      "Stitch the rogue-signer execution match to the outbound C2 session on the same host within a tight window rather than alerting on either signal alone."
+    ],
+    "response_playbook": "XSOAR-PB-RogueCodeSigningCertTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Vidar Stealer & XMRig Miner Malvertising Campaign Analysis",
+      "url": "https://unit42.paloaltonetworks.com/vidar-stealer-xmrig-miner-campaign-analysis/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1587.002 — Develop Capabilities: Code Signing Certificates",
+      "url": "https://attack.mitre.org/techniques/T1587/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1036.001 — Masquerading: Invalid Code Signature",
+      "url": "https://attack.mitre.org/techniques/T1036/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Threat Intel Management indicator matching reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-25",
+      "author": "Henry Reed",
+      "change": "Promoted the SIM-TIM-005 research-intake scaffold to an authored card grounded in the Unit 42 Vidar+XMRig malvertising campaign. Fills the RESOURCE-DEV (TA0042) gap via T1587.002 code-signing-certificate development: 5 IOCs (4 Vidar C2 IPs + Vidar SHA256), a rogue-signer BIOC keyed on the fabricated Authenticode thumbprint/serial/issuer with untrusted-chain status, a threat_intel feed-ingest preflight XQL, an NGFW C2-IP-match XQL, a shared-thumbprint pivot XQL, and correlation CR-TIM-0005 stitching the rogue-signer execution match to the C2 session. IOC-emphasis, F1. Promoted to active."
+    }
+  ]
+}

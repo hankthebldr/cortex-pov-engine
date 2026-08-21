@@ -21,6 +21,7 @@ applies the verdicts to the ORM and emits SSE.
 """
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Optional
@@ -28,6 +29,13 @@ from typing import Any, Optional
 from .base import ObservedAlert
 
 DEFAULT_WINDOW_SECONDS = 3600
+
+# Tokens too generic to carry evidence — a shared "alert" or "cortex" must
+# never be one of the two overlapping words that credits a detection.
+_STOPWORDS = frozenset({
+    "the", "and", "for", "from", "with", "that", "this", "via", "into",
+    "alert", "detection", "cortex", "xsiam", "xdr",
+})
 
 
 @dataclass
@@ -58,15 +66,22 @@ def _norm(s: Optional[str]) -> str:
     return (s or "").strip().lower()
 
 
+def _evidence_tokens(s: str) -> set[str]:
+    """The stopword-filtered, length->=4 token set used for name overlap.
+
+    Hoisted out of :func:`_name_overlap` because it is loop-invariant: the same
+    result description used to be re-tokenized once per candidate alert, making
+    reconcile O(results x alerts x len(text)). ``reconcile`` now computes this
+    once per string.
+    """
+    return {t for t in _split_words(s) if len(t) >= 4 and t not in _STOPWORDS}
+
+
 def _name_overlap(result_desc: str, alert_name: str) -> bool:
     """True when the alert name shares a meaningful multi-word span with the
     expected-detection description. Requires >=2 shared tokens of length >=4 to
     avoid spurious single-word matches."""
-    stop = {"the", "and", "for", "from", "with", "that", "this", "via", "into",
-            "alert", "detection", "cortex", "xsiam", "xdr"}
-    rt = {t for t in _split_words(result_desc) if len(t) >= 4 and t not in stop}
-    at = {t for t in _split_words(alert_name) if len(t) >= 4 and t not in stop}
-    return len(rt & at) >= 2
+    return len(_evidence_tokens(result_desc) & _evidence_tokens(alert_name)) >= 2
 
 
 def _split_words(s: str) -> list[str]:
@@ -82,33 +97,79 @@ def _split_words(s: str) -> list[str]:
     return out
 
 
-def _correlation_keys(result: Any, alert: ObservedAlert) -> list[str]:
-    """Return the list of identity dimensions on which ``result`` and ``alert``
-    agree. Empty list ⇒ no identity match (time alone is insufficient)."""
+@dataclass(frozen=True)
+class _ResultSide:
+    """Loop-invariant projection of a Result's identity dimensions."""
+
+    technique: str          # normalized, "" when absent
+    technique_base: str     # technique with the sub-id stripped
+    detection_id: str       # normalized, "" when absent
+    tokens: set[str]        # evidence tokens of expected_detection
+
+
+@dataclass(frozen=True)
+class _AlertSide:
+    """Loop-invariant projection of an ObservedAlert's identity dimensions."""
+
+    techniques: set[str]        # normalized
+    technique_bases: set[str]   # sub-id stripped, empties dropped
+    detection_id: str           # normalized, "" when absent
+    has_name: bool
+    tokens: set[str]            # evidence tokens of the alert name
+
+
+def _prepare_result(result: Any) -> _ResultSide:
+    technique = _norm(getattr(result, "mitre_technique", None))
+    return _ResultSide(
+        technique=technique,
+        technique_base=technique.split(".")[0] if technique else "",
+        detection_id=_norm(getattr(result, "detection_id", None)),
+        tokens=_evidence_tokens(getattr(result, "expected_detection", "") or ""),
+    )
+
+
+def _prepare_alert(alert: ObservedAlert) -> _AlertSide:
+    techniques = {_norm(t) for t in alert.techniques}
+    return _AlertSide(
+        techniques=techniques,
+        technique_bases={t.split(".")[0] for t in techniques if t},
+        detection_id=_norm(alert.detection_id),
+        has_name=bool(alert.name),
+        tokens=_evidence_tokens(alert.name) if alert.name else set(),
+    )
+
+
+def _keys_for(rs: _ResultSide, als: _AlertSide) -> list[str]:
+    """The identity dimensions on which a prepared result and alert agree.
+
+    Single source of truth for the correlation rules — :func:`_correlation_keys`
+    is a thin adapter over it so the object and prepared paths can never drift.
+    """
     keys: list[str] = []
 
     # MITRE technique (exact, or base technique without sub-id).
-    r_tech = _norm(getattr(result, "mitre_technique", None))
-    if r_tech:
-        a_techs = {_norm(t) for t in alert.techniques}
-        if r_tech in a_techs:
+    if rs.technique:
+        if rs.technique in als.techniques:
             keys.append("technique")
-        else:
-            r_base = r_tech.split(".")[0]
-            if any(t.split(".")[0] == r_base for t in a_techs if t):
-                keys.append("technique-base")
+        elif rs.technique_base in als.technique_bases:
+            keys.append("technique-base")
 
     # Source rule / detection id.
-    r_det = _norm(getattr(result, "detection_id", None))
-    a_det = _norm(alert.detection_id)
+    r_det, a_det = rs.detection_id, als.detection_id
     if r_det and a_det and (r_det == a_det or r_det in a_det or a_det in r_det):
         keys.append("detection_id")
 
     # Name/description overlap.
-    if alert.name and _name_overlap(getattr(result, "expected_detection", "") or "", alert.name):
+    if als.has_name and len(rs.tokens & als.tokens) >= 2:
         keys.append("name")
 
     return keys
+
+
+def _correlation_keys(result: Any, alert: ObservedAlert) -> list[str]:
+    """Return the list of identity dimensions on which ``result`` and ``alert``
+    agree. Empty list ⇒ no identity match (time alone is insufficient)."""
+    return _keys_for(_prepare_result(result), _prepare_alert(alert))
 
 
 def reconcile(
@@ -125,9 +186,11 @@ def reconcile(
     False to re-evaluate every result. Each verdict names the earliest matching
     alert and the keys it matched on.
     """
-    verdicts: list[MatchVerdict] = []
     window = timedelta(seconds=window_seconds)
 
+    # Candidates first, so a caller with nothing to reconcile does no alert
+    # work at all (and cannot trip over a malformed observation list).
+    candidates: list[tuple[int, Any, _ResultSide]] = []
     for result in results:
         executed_at = getattr(result, "executed_at", None)
         rid = getattr(result, "id", None)
@@ -135,35 +198,48 @@ def reconcile(
             continue
         if only_unobserved and getattr(result, "observed", False):
             continue
+        candidates.append((rid, executed_at, _prepare_result(result)))
 
-        best: Optional[tuple[Any, list[str], ObservedAlert]] = None
-        for alert in observations:
-            if alert.observed_at is None:
-                continue
-            # 1. Time window: alert at/after execution, within window.
-            delta = (alert.observed_at - executed_at).total_seconds()
-            if delta < 0 or delta > window.total_seconds():
-                continue
-            # 2. Identity correlation.
-            keys = _correlation_keys(result, alert)
-            if not keys:
-                continue
-            if best is None or alert.observed_at < best[0]:
-                best = (alert.observed_at, keys, alert)
+    if not candidates:
+        return []
 
-        if best is None:
-            verdicts.append(MatchVerdict(result_id=rid, matched=False))
-        else:
-            observed_at, keys, alert = best
-            mttd = (observed_at - executed_at).total_seconds()
-            verdicts.append(MatchVerdict(
-                result_id=rid,
-                matched=True,
-                observed_at=observed_at,
-                mttd_seconds=round(mttd, 1),
-                matched_on=keys,
-                alert_external_id=alert.external_id,
-                alert_name=alert.name,
-            ))
+    # Tokenize each alert ONCE, then order by fire time. The sort is stable, so
+    # alerts sharing a timestamp keep their original relative order — which is
+    # exactly the alert the old "strictly-earlier wins" scan would have kept.
+    # Ordering also lets each result bisect straight to its window instead of
+    # rescanning the whole feed.
+    timed = [a for a in observations if a.observed_at is not None]
+    timed.sort(key=lambda a: a.observed_at)
+    alert_times = [a.observed_at for a in timed]
+    prepared = [_prepare_alert(a) for a in timed]
+
+    verdicts: list[MatchVerdict] = []
+    for rid, executed_at, rs in candidates:
+        # Window is [executed_at, executed_at + window]; anything earlier can't
+        # be evidence and anything later is out of scope.
+        upper = executed_at + window
+        idx = bisect_left(alert_times, executed_at)
+
+        verdict = MatchVerdict(result_id=rid, matched=False)
+        while idx < len(timed):
+            observed_at = alert_times[idx]
+            if observed_at > upper:
+                break
+            keys = _keys_for(rs, prepared[idx])
+            if keys:
+                alert = timed[idx]
+                verdict = MatchVerdict(
+                    result_id=rid,
+                    matched=True,
+                    observed_at=observed_at,
+                    mttd_seconds=round((observed_at - executed_at).total_seconds(), 1),
+                    matched_on=keys,
+                    alert_external_id=alert.external_id,
+                    alert_name=alert.name,
+                )
+                break  # ascending order ⇒ first hit is the earliest (lowest MTTD)
+            idx += 1
+
+        verdicts.append(verdict)
 
     return verdicts

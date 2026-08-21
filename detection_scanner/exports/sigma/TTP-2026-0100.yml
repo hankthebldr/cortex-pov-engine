@@ -1,0 +1,65 @@
+title: "Anomalous Privileged Role / Consent Grant Deviating from Admin Learned Baseline \u2014 Cortex Identity ABIOC (T1098 / T1484) \u2014 ITDR-010 Anomalous Privileged Directory Role Assignment by Non-Governance Identity"
+id: ttp-2026-0100-abioc-01
+status: experimental
+description: |
+  A directory-sync / identity-automation account whose learned Cortex behavioral profile is read-and-sync governance suddenly assigns a privileged directory role (Global Administrator / Privileged Role Administrator). ABIOC anchors the deviation to the causality chain (compromised sync account -> privileged role assignment) rather than to any known-bad principal or role id, catching hybrid-cloud identity abuse that a static rule keyed on a specific bad actor would miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter category = "RoleManagement" and activity_display_name in ("Add member to role", "Add eligible member to role", "Add member to role in PIM requested (permanent)")
+    | filter initiating_user_principal_name in ("svc-backup@cortexsim-canary.invalid", "sync_svc@cortexsim-canary.invalid", "adconnect@cortexsim-canary.invalid")
+    | filter target_role in ("Global Administrator", "Privileged Role Administrator", "Application Administrator")
+    | comp count() as privileged_grants by initiating_user_principal_name, target_role
+    | filter privileged_grants >= 1
+    | sort desc privileged_grants
+    | fields initiating_user_principal_name, target_role, privileged_grants
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098.003
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Anomalous Privileged Role / Consent Grant Deviating from Admin Learned Baseline \u2014 Cortex Identity ABIOC (T1098 / T1484) \u2014 ITDR-010 High-Risk OAuth Consent and App Credential Grant Deviating from Baseline"
+id: ttp-2026-0100-abioc-02
+status: experimental
+description: |
+  A sync/automation identity whose learned baseline never consents to tenant-wide application scopes grants a high-risk OAuth consent or adds service-principal credentials carrying Directory.ReadWrite.All-class scopes. Every action uses legitimate Entra ID application APIs; the ABIOC fires on the deviation from the account's learned consent behavior, anchored to the privileged-role grant that preceded it in the same identity causality chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter category in ("ApplicationManagement", "UserManagement") and activity_display_name in ("Consent to application", "Add app role assignment grant to user", "Add service principal credentials", "Update application - Certificates and secrets management")
+    | filter initiating_user_principal_name in ("svc-backup@cortexsim-canary.invalid", "sync_svc@cortexsim-canary.invalid", "adconnect@cortexsim-canary.invalid")
+    | filter oauth_scope contains "Directory.ReadWrite.All" or oauth_scope contains "RoleManagement.ReadWrite.Directory" or oauth_scope contains "full_access_as_app"
+    | comp count() as risky_grants by initiating_user_principal_name, oauth_scope
+    | filter risky_grants >= 1
+    | sort desc risky_grants
+    | fields initiating_user_principal_name, oauth_scope, risky_grants
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098.001
+    - attack.t1528
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

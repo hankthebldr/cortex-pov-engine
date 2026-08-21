@@ -47,9 +47,9 @@
     }
   },
   "identity": {
-    "name": "Cloud App \u2014 Google Full-Mailbox + Offline Token Replay Risk (T1114.002)",
-    "summary": "An OAuth authorize request to the Google Identity endpoint (accounts.google.com/o/oauth2/v2/auth) requests https://mail.google.com/ full-mailbox scope, and a parallel Microsoft grant requests Mail.ReadWrite + offline_access. Cortex Cloud App Security flags full-mailbox scopes, treats offline_access (refresh token) as a token-replay risk, and an analytics layer stitches the same identity targeti\u2026",
-    "description": "Granting a third-party app the full Gmail scope (https://mail.google.com/) or the Microsoft Mail.ReadWrite scope together with offline_access hands an attacker durable, MFA-independent remote access to a victim's mailbox \u2014 the long-lived refresh token can be replayed for months to read, exfiltrate, and send mail. This is the precise grant shape seen in commodity OAuth mailbox-hijack phishing campaigns. This scenario drives oauth_grant_emulator with the full_mailbox preset against Google (requesting https://mail.google.com/ and gmail.modify) and then against Microsoft (requesting Mail.ReadWrite, Mail.Send, offline_access). Cortex Cloud App Security fires on the full-mailbox scope on the google_workspace_audit event and, separately, on the Mail.ReadWrite + offline_access combination on the msft_o365_audit event \u2014 the offline_access scope being the token-replay primitive. A cross-provider analytics rule recognises the same identity soliciting mailbox access at two providers inside the rotation window, and a XSIAM stitching rule fuses both grants into one mailbox-collection incident. All requests use bogus client_ids against canary endpoints, so no token is ever issued \u2014 detection is on the requested-scope shape, not a granted token.",
+    "name": "Cloud App — Google Full-Mailbox + Offline Token Replay Risk (T1114.002)",
+    "summary": "An OAuth authorize request to the Google Identity endpoint (accounts.google.com/o/oauth2/v2/auth) requests https://mail.google.com/ full-mailbox scope, and a parallel Microsoft grant requests Mail.ReadWrite + offline_access. Cortex Cloud App Security flags full-mailbox scopes, treats offline_access (refresh token) as a token-replay risk, and an analytics layer stitches the same identity targeti…",
+    "description": "Granting a third-party app the full Gmail scope (https://mail.google.com/) or the Microsoft Mail.ReadWrite scope together with offline_access hands an attacker durable, MFA-independent remote access to a victim's mailbox — the long-lived refresh token can be replayed for months to read, exfiltrate, and send mail. This is the precise grant shape seen in commodity OAuth mailbox-hijack phishing campaigns. This scenario drives oauth_grant_emulator with the full_mailbox preset against Google (requesting https://mail.google.com/ and gmail.modify) and then against Microsoft (requesting Mail.ReadWrite, Mail.Send, offline_access). Cortex Cloud App Security fires on the full-mailbox scope on the google_workspace_audit event and, separately, on the Mail.ReadWrite + offline_access combination on the msft_o365_audit event — the offline_access scope being the token-replay primitive. A cross-provider analytics rule recognises the same identity soliciting mailbox access at two providers inside the rotation window, and a XSIAM stitching rule fuses both grants into one mailbox-collection incident. All requests use bogus client_ids against canary endpoints, so no token is ever issued — detection is on the requested-scope shape, not a granted token.",
     "severity": "high",
     "confidence": "high"
   },
@@ -121,7 +121,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Full Gmail mailbox scope grant against the canary Google authorize endpoint \u2014 bogus client_id, no token issued.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-003.yml --live\n# Parallel Microsoft Mail.ReadWrite + offline_access grant \u2014 same identity, second mail provider.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-003-ms.yml --live",
+      "code": "# Full Gmail mailbox scope grant against the canary Google authorize endpoint — bogus client_id, no token issued.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-003.yml --live\n# Parallel Microsoft Mail.ReadWrite + offline_access grant — same identity, second mail provider.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-003-ms.yml --live",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -209,15 +209,15 @@
     ],
     "correlation_rules": [
       {
-        "name": "Cross-Provider OAuth Mailbox Takeover Token Replay \u2014 Same Identity",
+        "name": "Cross-Provider OAuth Mailbox Takeover Token Replay — Same Identity",
         "rule_id": "CR-CLOUDAPP-0003",
         "logic": "XQL(CLOUD-003 Google Full Mailbox Scope Grant Attempt) OR XQL(CLOUD-003 Microsoft Mail ReadWrite Offline Access Token-Replay Grant) OR XQL(CLOUD-003 Cross-Provider Mailbox Collection Same Identity Stitch)"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud App Security \u2014 Third-party app requests full-mailbox scope",
-      "Cortex Cloud App Security \u2014 offline_access refresh-token grant flagged as token-replay risk",
-      "Cortex XSIAM Analytics \u2014 Same identity solicits mailbox access at two providers"
+      "Cortex Cloud App Security — Third-party app requests full-mailbox scope",
+      "Cortex Cloud App Security — offline_access refresh-token grant flagged as token-replay risk",
+      "Cortex XSIAM Analytics — Same identity solicits mailbox access at two providers"
     ]
   },
   "panw_mapping": {
@@ -244,14 +244,14 @@
         "evidence_query": "Correlation CR-CLOUDAPP-0003 fuses the Google full-mailbox grant, the Microsoft Mail.ReadWrite+offline_access grant, and the cross-provider same-identity stitch into one mailbox-collection incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUDAPP-029",
+        "threat_scenario_id": "TS-CLOUDAPP-029",
         "name": "Mailbox Takeover via OAuth Detection",
         "description": "Detect full-mailbox and offline-access OAuth grants and stitch a single identity targeting two mail providers into one mailbox-collection incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUDAPP-029A",
+            "threat_step_id": "TS-CLOUDAPP-029A",
             "objective": "Full-mailbox and offline-access grants fire their Cloud App detections.",
             "preconditions": [
               "oauth_grant_emulator google provider available and Workspace + M365 audit logs ingested.",
@@ -268,7 +268,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUDAPP-029B",
+            "threat_step_id": "TS-CLOUDAPP-029B",
             "objective": "Same identity at two mail providers stitches into one incident.",
             "success_criteria": [
               "XQL `CLOUD-003 Cross-Provider Mailbox Collection Same Identity Stitch` returns >= 1 row.",
@@ -302,7 +302,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1114.002 \u2014 Remote Email Collection",
+      "title": "MITRE ATT&CK T1114.002 — Remote Email Collection",
       "url": "https://attack.mitre.org/techniques/T1114/002/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

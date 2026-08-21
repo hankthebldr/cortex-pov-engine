@@ -8,10 +8,11 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-ITDR-05
-tc_ref: TC-ITDR-05
-uc_name: "Account-Lockout State Transition"
-tc_name: "Repeated Failed Sign-Ins Trigger Lockout, Lockout Event Logged"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"
@@ -56,6 +57,18 @@ success_criteria: |
   injected identity events that raise the expected alert (target ≥ 90%).
 moat_tier: "LEAD"
 
+# ── Causality contract: connected CGO→process spine + identity-entity reuse ──
+# The idp_signin_emulator runs as the container entrypoint (python3) that OWNS
+# the emission chain — the CGO root, NOT the synthetic beacon. Step-01 (the
+# capability probe) links from the CGO; step-02 (10-failure burst that locks
+# the account) descends from it as the emulator process spine; step-03 (spray
+# from a second source IP against the SAME identity) re-uses the target Entra
+# principal, so it stitches via shared_entity — the same key the repeat-lockout
+# XSIAM grouping stitches the password-spray incident on.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "container-runtime"
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -76,6 +89,7 @@ steps:
         description: "Pre-flight: idp_signin_emulator metadata visible to operator"
         ttp_ref: "TTP-2026-0041"
         detection_id: bioc-itdr-005-pre-flight-idp-signin-emulator-metadata-visible
+    platforms: ["linux", "container"]
 
   - id: step-02
     name: "10 failed sign-ins triggering account lockout — Microsoft shape"
@@ -116,6 +130,33 @@ steps:
         description: "ITDR — user.account.lock state-transition event recorded"
         ttp_ref: "TTP-2026-0041"
         detection_id: bioc-itdr-005-account-lock-state-transition-recorded
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["linux", "container", "windows"]
+    platform_variants:
+      windows: |
+        $env:COLLECTOR_URL = 'https://collector.cortexsim-canary.invalid/idp/events'
+        @'
+        campaign_id: CMP-ITDR-005
+        name: "ITDR — Microsoft brute-force lockout"
+        authorized_by: "domain-consultant@paloaltonetworks.com"
+        simulation_authorized: true
+        target_allowlist:
+          - "collector.cortexsim-canary.invalid"
+        dry_run: false
+        steps:
+          - step_id: step-01
+            plugin: idp_signin_emulator
+            params:
+              collector_url: "https://collector.cortexsim-canary.invalid/idp/events"
+              provider: microsoft
+              event_pattern: brute_force_lockout
+              target_user: "alice.singh@cortexsim-canary.invalid"
+              iterations: 1
+              burst_count: 10
+        '@ | Set-Content -Encoding utf8 $env:TEMP\itdr-005.yml
+        python -m scripts.eal_simulator.cli run $env:TEMP\itdr-005.yml --live
 
   - id: step-03
     name: "Same target user, second source IP — password spray pattern"
@@ -155,6 +196,10 @@ steps:
         description: "XSIAM stitching — repeat-lockout pattern grouped under single password-spray incident"
         ttp_ref: "TTP-2026-0041"
         detection_id: xql-itdr-005-xsiam-repeat-lockout-grouped-password-spray
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux", "container"]
 
 cleanup:
   commands:

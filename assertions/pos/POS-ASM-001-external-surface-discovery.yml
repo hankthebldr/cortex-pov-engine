@@ -1,0 +1,97 @@
+# POS-ASM-001 — external attack-surface discovery.
+#
+# ASM is the one plane in this pack where the tag join does NOT work. Xpanse
+# discovers from the internet inward; it never reads the AWS tagging API, so a
+# `CortexSimASMFinding` tag is invisible to it. The join therefore runs on the
+# fixture's externally observable identity — the public IP and the website
+# bucket name — which the operator supplies from `terraform output`.
+#
+# The lookback is a hardcoded 86400 rather than the `{{lookback_seconds}}`
+# builtin because external discovery runs on a daily cadence: evaluating a
+# one-hour window against a once-a-day scanner would report zero and paint a
+# correct platform red for a reason that has nothing to do with its capability.
+assertion_id: POS-ASM-001
+name: External attack-surface discovery — two planted internet-facing assets
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: ASM
+
+uc_ref: UCS-ASM-03
+tc_ref: TC-ASM-05
+tc_refs: [TC-ASM-05]
+uc_name: "Attack Surface & Exposure Management"
+tc_name: "Validate External Attack Surface Discovery"
+
+moat_tier: MOAT
+methodology_family: F4
+primary_kpi: "Asset Discovery Coverage"
+success_criteria: |
+  Both internet-facing assets the asm module plants — the multi-service EC2 host
+  and the public S3 website — are discovered as external assets.
+
+scope_limitations: >
+  Proves that two known internet-facing assets are discovered. It does NOT prove
+  the index row's coverage claim ("discovery covers all registered IP ranges and
+  domains") — the engine has no register of the customer's ranges to compare
+  against, and asserting coverage without a denominator is the zero-of-zero
+  inflation this substrate exists to prevent. It does NOT prove certificate
+  mapping, does NOT prove shadow-IT identification (the fixture's assets are
+  known to the operator by construction, which is the opposite of shadow IT),
+  and it identifies the host by public IP, so an ASM product that discovered the
+  asset only by DNS name would read FAIL. Dataset `asm_findings` and the
+  `asset_external_ip` / `asset_domain` / `resource_id` fields are
+  convention-named and unconfirmed against a live tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/asm
+  detail: >
+    terraform apply the `asm` module, then evaluate with
+    `context.asm_target_ip = terraform output exposed_host_public_ip` and
+    `context.asm_website_bucket` = the bucket id inside
+    `terraform output public_website_url`. Allow one full external discovery
+    cycle (up to 24 h) before reading the result — this is the slowest fixture
+    in the pack.
+
+context_vars: [asm_target_ip, asm_website_bucket]
+
+checks:
+  - check_id: chk-01
+    title: Both planted internet-facing assets appear in the external inventory
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = asm_findings
+        | filter _time > to_timestamp(current_time() - 86400)
+        | filter asset_external_ip = "{{asm_target_ip}}" or asset_domain contains "{{asm_website_bucket}}"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: external assets discovered
+      op: ">="
+      value: 2
+      unit: assets
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-ASM-05 "Qualitative pass". The asm module plants
+        exactly two independently addressable internet-facing assets — an EC2
+        host with six listening services and an S3 static website — and both are
+        named in `terraform output findings_summary`, so "internet-facing assets
+        discovered" has an objective floor of two.
+    negative_control:
+      description: >
+        Discovery is seeded from the customer's registered domains only, so the
+        EC2 host is found through its public DNS record but the S3 website bucket,
+        which lives on an amazonaws.com domain nobody registered, is never
+        attributed to the organisation — one of two.
+      measured_value: 1
+
+tags: [posture, asm, aws, external-surface, planted-fixture]
+author: "Henry Reed"

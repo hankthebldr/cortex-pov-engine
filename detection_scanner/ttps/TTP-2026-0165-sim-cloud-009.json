@@ -1,0 +1,278 @@
+{
+  "id": "TTP-2026-0165",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T15:31:49+00:00",
+    "updated_at": "2026-07-25T15:31:49+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "m365",
+      "sharepoint",
+      "onedrive",
+      "enumeration",
+      "cloud-service-discovery",
+      "abioc",
+      "analytics",
+      "severity-medium"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "saas-m365"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Microsoft SharePoint & OneDrive Enumeration (SIM-CLOUD-009)",
+    "summary": "An actor with a valid Microsoft 365 session rapidly sweeps SharePoint sites and a OneDrive library — many SearchQueryPerformed/PageViewed and FileAccessed operations — to enumerate the accessible cloud repositories. XSIAM ML analytics baseline each identity and raise the SharePoint and OneDrive enumeration ABIOC alerts on the unusual breadth in the msft_o365_audit unified audit log.",
+    "description": "This card exercises the Cortex XSIAM data-source analytics for the Microsoft 365 SharePoint Online and OneDrive for Business workloads (ingested as msft_o365_audit unified-audit records). Both headline alerts — 'Microsoft SharePoint enumeration activity' and 'Microsoft OneDrive enumeration activity' — are ML-based (is_ml=true) behavioral analytics: they baseline each user's typical repository-access breadth and velocity and fire when a session enumerates an unusually large, distinct set of pages/searches/files in a short window. Per the XSIAM Analytics Alert Reference these enumeration alerts map to MITRE T1526 Cloud Service Discovery (Discovery tactic) — the same family as the sibling 'Cloud infrastructure enumeration activity' alert. The simulation is signal-only: the m365_activity_emitter EAL plugin POSTs shape-true O365 unified-audit records to an operator-supplied collector already wired into XSIAM as an msft_o365_audit source, so the customer validates the analytics fire without touching a real tenant, reading a real mailbox, or downloading a real file.",
+    "severity": "medium",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1526",
+        "name": "Cloud Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Cloud Service: Cloud Service Enumeration",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "saas-m365",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CLOUD-009 — m365_activity_emitter (sharepoint_enumeration + onedrive_enumeration presets).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "An operator-supplied HTTP log collector reachable from the jumpbox and already registered in Cortex XSIAM as a Microsoft 365 unified-audit-log (msft_o365_audit) source.",
+        "check_command": "curl -sf -o /dev/null -w '%{http_code}' \"${COLLECTOR_URL}\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "#!/usr/bin/env bash\n# Drive the m365_activity_emitter EAL plugin to emit shape-true Microsoft 365\n# unified-audit-log enumeration records (SharePoint + OneDrive) into the\n# operator-supplied collector XSIAM ingests as msft_o365_audit.\nset -euo pipefail\ncat > /tmp/sim-cloud-009.yml <<'YML'\ncampaign_id: CMP-CLOUDAPP-009\nname: \"Microsoft SharePoint & OneDrive enumeration\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - ${COLLECTOR_HOST}\ndry_run: false\nsteps:\n  - step_id: sharepoint-enum\n    plugin: m365_activity_emitter\n    params:\n      collector_url: ${COLLECTOR_URL}\n      event_pattern: sharepoint_enumeration\n      burst_count: 24\n  - step_id: onedrive-enum\n    plugin: m365_activity_emitter\n    params:\n      collector_url: ${COLLECTOR_URL}\n      event_pattern: onedrive_enumeration\n      burst_count: 30\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/sim-cloud-009.yml --live\n",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "url",
+          "default": "https://collector.cortexsim-canary.invalid/logs/v1/event",
+          "description": "Full HTTP collector URL the synthetic O365 audit records are POSTed to (the customer's XSIAM msft_o365_audit ingestion door)."
+        },
+        {
+          "name": "COLLECTOR_HOST",
+          "type": "string",
+          "default": "collector.cortexsim-canary.invalid",
+          "description": "Hostname of the collector, added to the campaign target_allowlist the SafetyPolicy enforces before any emit."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "A burst of SharePoint SearchQueryPerformed / PageViewed unified-audit records for one UserId across a site.",
+        "expected_value": "Workload=SharePoint, Operation in (SearchQueryPerformed, PageViewed)"
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "A burst of OneDrive FileAccessed unified-audit records for one UserId across distinct files.",
+        "expected_value": "Workload=OneDrive, Operation=FileAccessed"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sim-cloud-009.yml\necho '[CortexSim] SIM-CLOUD-009 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Microsoft SharePoint enumeration activity",
+        "description": "ML analytic (is_ml=true) that baselines each identity's normal SharePoint access breadth and velocity and raises an alert when one UserId/ClientIP performs an unusually large burst of search/page operations spanning many distinct search terms across a site in a short window — the cloud-service-discovery shape of repository enumeration ahead of collection.",
+        "logic": "dataset = msft_o365_audit\n| filter Workload = \"SharePoint\"\n| filter Operation in (\"SearchQueryPerformed\", \"PageViewed\")\n| comp count() as page_events, count_distinct(SearchQueryText) as distinct_searches by UserId, ClientIP\n| filter page_events >= 20 and distinct_searches >= 5\n| fields UserId, ClientIP, page_events, distinct_searches",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1526"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity SharePoint access baseline (typical search/page volume and distinct search-term breadth per session); the alert anchors the burst to the same UserId + ClientIP that broke that baseline."
+      },
+      {
+        "name": "Microsoft OneDrive enumeration activity",
+        "description": "ML analytic (is_ml=true) that baselines each identity's normal OneDrive for Business file-access breadth and raises an alert when one UserId/ClientIP rapidly enumerates an unusually large, distinct set of files (FileAccessed / FileDownloaded sweep) — cloud-service discovery of the repository ahead of bulk collection.",
+        "logic": "dataset = msft_o365_audit\n| filter Workload = \"OneDrive\"\n| filter Operation in (\"FileAccessed\", \"FileDownloaded\", \"FileSyncDownloadedFull\")\n| comp count() as file_events, count_distinct(ObjectId) as distinct_files by UserId, ClientIP\n| filter file_events >= 25 and distinct_files >= 8\n| fields UserId, ClientIP, file_events, distinct_files",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1526"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity OneDrive file-access baseline (typical distinct files touched per session); the alert anchors the enumeration burst to the same UserId + ClientIP that deviated from it."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Microsoft 365 audit enumeration landing validation",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 900)\n| filter Workload in (\"SharePoint\", \"OneDrive\")\n| filter Operation in (\"SearchQueryPerformed\", \"PageViewed\", \"FileAccessed\", \"FileDownloaded\", \"FileSyncDownloadedFull\")\n| comp count() as observed_events, count_distinct(ObjectId) as distinct_objects by UserId, ClientIP, Workload\n| filter observed_events >= 1\n| fields UserId, ClientIP, Workload, observed_events, distinct_objects",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "SharePoint + OneDrive cloud-repository enumeration discovery stitch",
+        "rule_id": "CR-CLOUD-0009",
+        "logic": "Fires when abioc `Microsoft SharePoint enumeration activity` and abioc `Microsoft OneDrive enumeration activity` both observe the same UserId and ClientIP within a 30-minute window, stitching the SharePoint page/search sweep and the OneDrive file sweep into one Discovery-stage cloud-repository enumeration incident rather than two independent alerts."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Microsoft SharePoint enumeration activity",
+        "validated": true,
+        "note": "Backed by the logic-bearing ABIOC of the same name on this card."
+      },
+      {
+        "module": "Microsoft OneDrive enumeration activity",
+        "validated": true,
+        "note": "Backed by the logic-bearing ABIOC of the same name on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-CLOUD-0009"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_o365_audit | filter Workload in (\"SharePoint\", \"OneDrive\") | filter Operation in (\"SearchQueryPerformed\", \"PageViewed\", \"FileAccessed\") | comp count() as events, count_distinct(ObjectId) as distinct_objects by UserId, ClientIP, Workload | sort desc events"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CLOUD-009",
+        "name": "Microsoft 365 cloud-repository enumeration detection",
+        "description": "Validate that Cortex XSIAM's ML analytics for the Microsoft 365 SharePoint Online and OneDrive for Business workloads raise the SharePoint and OneDrive enumeration alerts when an identity enumerates the accessible cloud repositories (Discovery — Cloud Service Discovery), and that the two bursts stitch into one incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CLOUD-009A",
+            "objective": "The SharePoint enumeration ABIOC fires on a search/page sweep across a site.",
+            "preconditions": [
+              "Collector registered in XSIAM as an msft_o365_audit source."
+            ],
+            "steps": [
+              "Emit the sharepoint_enumeration preset via m365_activity_emitter.",
+              "Observe the 'Microsoft SharePoint enumeration activity' analytic raise."
+            ],
+            "success_criteria": [
+              "ABIOC `Microsoft SharePoint enumeration activity` fires for the canary UserId within the run window."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CLOUD-009B",
+            "objective": "The OneDrive enumeration ABIOC fires on a rapid file-access sweep.",
+            "preconditions": [
+              "Collector registered in XSIAM as an msft_o365_audit source."
+            ],
+            "steps": [
+              "Emit the onedrive_enumeration preset via m365_activity_emitter.",
+              "Observe the 'Microsoft OneDrive enumeration activity' analytic raise."
+            ],
+            "success_criteria": [
+              "ABIOC `Microsoft OneDrive enumeration activity` fires for the canary UserId within the run window."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CLOUD-009C",
+            "objective": "The two enumeration bursts stitch into one cloud-repository enumeration discovery incident.",
+            "preconditions": [
+              "Both enumeration ABIOCs fired for the same UserId + ClientIP."
+            ],
+            "steps": [
+              "Run both enumeration presets in one campaign against the same canary identity.",
+              "Observe the correlation raise a single incident."
+            ],
+            "success_criteria": [
+              "Correlation `CR-CLOUD-0009` raises exactly one incident for the shared UserId + ClientIP.",
+              "XQL `Microsoft 365 audit enumeration landing validation` returns >= 1 row confirming the records landed in msft_o365_audit."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Constrain broad SharePoint/OneDrive access with sensitivity labels, least-privilege site permissions, and conditional-access on unmanaged devices.",
+      "Enable and tune Microsoft 365 audit logging so SharePoint/OneDrive file and page operations are fully captured for the analytics."
+    ],
+    "detection_engineering": [
+      "Keep the Cortex XSIAM Microsoft 365 analytics enabled and let them baseline per-identity repository-access breadth; treat the SharePoint/OneDrive enumeration alerts as discovery precursors and correlate with any subsequent bulk-download or external-share activity.",
+      "Alert on the same UserId enumerating both SharePoint and OneDrive within a short window (the CR-CLOUD-0009 stitch) as a higher-confidence collection signal."
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM Analytics Alert Reference by data source — Microsoft SharePoint & OneDrive enumeration activity",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1526 Cloud Service Discovery",
+      "url": "https://attack.mitre.org/techniques/T1526/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

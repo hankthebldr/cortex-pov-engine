@@ -10,9 +10,9 @@ description: |
     | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE, ENUM.FILE_RENAME)
     | filter action_file_extension in ("cortexlock", "akira", "locked", "crypt", "encrypted")
     | bin _time span=1m
-    | comp count() as files_rewritten by actor_process_instance_id, actor_process_image_name, agent_hostname, _time
+    | comp count() as files_rewritten by actor_process_instance_id, causality_actor_process_image_name, actor_process_image_name, container_id, agent_hostname, _time
     | filter files_rewritten >= 20
-    | fields _time, agent_hostname, actor_process_image_name, files_rewritten
+    | fields _time, agent_hostname, container_id, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, files_rewritten
   ----
 references:
   - https://attack.mitre.org/techniques/T1486/
@@ -41,9 +41,9 @@ description: |
     | filter agent_os_type = ENUM.AGENT_OS_LINUX
     | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)
     | filter action_file_name contains_any ("READ_ME", "RANSOM", "_DECRYPT_", "HOW_TO_RESTORE", "akira_readme")
-    | comp count_distinct(action_file_directory) as note_dirs by actor_process_instance_id, agent_hostname
+    | comp count_distinct(action_file_directory) as note_dirs by actor_process_instance_id, causality_actor_process_image_name, container_id, agent_hostname
     | filter note_dirs >= 1
-    | fields agent_hostname, actor_process_instance_id, note_dirs
+    | fields agent_hostname, container_id, causality_actor_process_image_name, actor_process_instance_id, note_dirs
   ----
 references:
   - https://attack.mitre.org/techniques/T1486/
@@ -73,7 +73,7 @@ description: |
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter actor_process_image_name in ("rm", "lvremove", "btrfs", "zfs", "rsnapshot", "shred")
     | filter action_process_image_command_line contains_any ("snapshot", "backup", ".img", ".tar", "--delete", "destroy")
-    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line
+    | fields _time, agent_hostname, container_id, causality_actor_process_image_name, causality_id, actor_process_image_name, action_process_image_command_line
   ----
 references:
   - https://attack.mitre.org/techniques/T1490/

@@ -169,9 +169,12 @@ def test_reference_aispm_scenario_parses_cleanly() -> None:
     assert schema.methodology_family == "F3"
     assert schema.primary_kpi == "Asset Discovery Coverage"
     assert schema.threshold is not None and schema.threshold.value == 100
-    # S-15 — AI_SPM tc_ref family normalized from TC-AISP-* to TC-AISPM-* so it
-    # matches the uc_ref family (UCS-AISPM-01). See the gap-analysis S-15 fix.
-    assert schema.tc_ref == "TC-AISPM-01"
+    # The ref was once normalized to TC-AISPM-* for internal consistency with
+    # uc_ref (UCS-AISPM-01). That made it dangle: the v2.2 master index carries
+    # this test case as TC-AISP-01. The crosswalk re-keyed it onto the real id,
+    # which is the whole point of validating refs as a foreign key.
+    assert schema.tc_ref == "TC-AISP-01"
+    assert schema.tc_refs == ["TC-AISP-01"]
     # Sanity: at least one step has an expected_detection with verification_xql.
     has_xql = any(
         det.verification_xql

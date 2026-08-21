@@ -1,0 +1,383 @@
+{
+  "id": "TTP-2026-0105",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-13T00:00:00+00:00",
+    "updated_at": "2026-07-13T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cspm",
+      "vector-configuration-drift",
+      "posture-drift",
+      "impair-defenses",
+      "disable-cloud-logs",
+      "industry-all",
+      "severity-high",
+      "cspm",
+      "posture-to-runtime",
+      "aws"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1800,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Cloud Posture Drift Correlated to Runtime Cause — Cortex Cloud CSPM (T1562 / T1578 / T1530)",
+    "summary": "A compliant resource drifts out of baseline: an S3 bucket's Block Public Access is removed and a CloudTrail trail's logging is stopped. Cortex Cloud CSPM flags the drift and correlates each finding with the control-plane action that caused it and the external access that followed — posture-to-runtime stitching, not a static snapshot.",
+    "description": "A single point-in-time posture snapshot tells you a resource is misconfigured; it does not tell you a resource that was compliant yesterday is exposed today, who changed it, or whether the exposure was reached. Configuration drift — the silent regression of a resource away from an approved compliant baseline — is the failure mode behind a large share of real cloud breaches, and Unit 42's Cloud Threat Report repeatedly names misconfiguration and drift as the top cloud risk. This scenario exercises Cortex Cloud CSPM's drift-and-correlation capability rather than its flat-scan capability. A drift-target S3 bucket (tagged CortexSimDriftTarget) starts in a known-compliant state: account-level Block Public Access enabled, versioning on, SSE-KMS, and a dedicated CloudTrail trail actively logging. The scenario then injects two authorized, reversible drifts against a disposable lab resource: (a) DeletePublicAccessBlock plus a public bucket policy, flipping the bucket from private to world-readable (the precondition for T1530 Data from Cloud Storage), and (b) StopLogging on the trail, blinding audit capture (T1562.008 Impair Defenses: Disable or Modify Cloud Logs). Both are captured in cloud_audit_logs before the trail goes dark, and both regress the resource's compliance_state from compliant to drifted in cortex_cloud_posture. Detection is deliberately Analytics/XQL/Correlation, not behavioral-ML: posture is configuration state, so the validation queries assert the baseline was compliant, that each resource drifted, that the drift-causing control-plane API call is attributable to a principal, and that external data access reached the now-public bucket. A correlation rule fuses the two drift findings with their runtime cause and the post-drift access into one posture-drift incident, so a DC can show Cortex catching not just an exposed bucket but the moment it became exposed, the identity responsible, and the exploitation that followed — the whole drift chain in a single stitched event. This closes the CSPM plane-floor gap (the plane previously shipped only one flat-scan scenario) with the correlation-forward posture story that differentiates Cortex Cloud from a checkbox compliance scanner.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Cloud insiders and credential-abusing intruders who weaken guardrails before acting (misconfiguration/drift exploitation)"
+      }
+    ],
+    "campaigns": [
+      "Guardrail-weakening and configuration drift preceding cloud data theft"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1562",
+        "name": "Impair Defenses",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1578",
+        "name": "Modify Cloud Compute Infrastructure",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1619",
+        "name": "Cloud Storage Object Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Modification",
+      "Cloud Storage: Cloud Storage Access",
+      "User Account: User Account Metadata",
+      "Instance: Instance Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CSPM-002 — Inject reversible posture drift + reconcile drift findings against their CloudTrail cause",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud CSPM enabled and connected (read-only) to the target AWS account with drift tracking on.",
+        "check_command": "aws sts get-caller-identity --profile cortexsim-lab"
+      },
+      {
+        "description": "A disposable drift-target S3 bucket and a dedicated CloudTrail trail exist in a known-compliant baseline (Block Public Access on, versioning on, SSE-KMS, trail logging enabled), tagged CortexSimDriftTarget.",
+        "check_command": "aws s3api get-public-access-block --bucket cortexsim-drift-target --profile cortexsim-lab"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Posture drift injection (authorized, reversible) — flip a compliant resource\n# out of baseline and let Cortex Cloud CSPM correlate the drift to its cause.\nset -euo pipefail\naws s3api delete-public-access-block --bucket \"${DRIFT_BUCKET:-cortexsim-drift-target}\" --profile \"${AWS_PROFILE:-cortexsim-lab}\" || true\naws cloudtrail stop-logging --name \"${DRIFT_TRAIL:-cortexsim-trail}\" --profile \"${AWS_PROFILE:-cortexsim-lab}\" || true\ncurl -fsS --max-time 8 \"https://${DRIFT_BUCKET:-cortexsim-drift-target}.s3.amazonaws.com/\" | head -c 400 || true",
+      "input_variables": [
+        {
+          "name": "DRIFT_BUCKET",
+          "type": "string",
+          "default": "cortexsim-drift-target",
+          "description": "Disposable lab S3 bucket that drifts from compliant to public."
+        },
+        {
+          "name": "DRIFT_TRAIL",
+          "type": "string",
+          "default": "cortexsim-trail",
+          "description": "Dedicated CloudTrail trail whose logging is stopped to model T1562.008."
+        },
+        {
+          "name": "AWS_PROFILE",
+          "type": "string",
+          "default": "cortexsim-lab",
+          "description": "Named AWS CLI profile scoped to the disposable drift-target resources."
+        }
+      ],
+      "timeout_seconds": 1800
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Control-plane action that causes the drift — public-access-block removal or CloudTrail StopLogging attributed to a principal.",
+        "expected_value": "event_name in (DeletePublicAccessBlock, PutBucketPolicy, StopLogging) and user_identity_arn contains \"cortexsim-lab\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "The drift-target resource regresses from compliant to drifted in the posture inventory.",
+        "expected_value": "compliance_state = \"drifted\" and tags contains \"CortexSimDriftTarget\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "aws s3api put-public-access-block --bucket \"${DRIFT_BUCKET:-cortexsim-drift-target}\" --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true --profile \"${AWS_PROFILE:-cortexsim-lab}\" || true; aws cloudtrail start-logging --name \"${DRIFT_TRAIL:-cortexsim-trail}\" --profile \"${AWS_PROFILE:-cortexsim-lab}\" || true; echo '[CortexSim] SIM-CSPM-002 cleanup complete — compliant baseline restored (Block Public Access on, trail logging on).'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "198.51.100.77",
+        "context": "External (non-RFC1918, documentation-range stand-in) source that reads the drift-target bucket once its account-level Block Public Access is removed — the post-drift GetObject/ListBucket the 'Public Bucket Data Access Post Drift' query surfaces. Represents the constant background scanning that finds a newly-public bucket within minutes of the drift.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CSPM-002 Compliant Baseline Posture Snapshot",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and resource_type in (\"aws_s3_bucket\", \"aws_cloudtrail\")\n| filter tags contains \"CortexSimDriftTarget\"\n| filter compliance_state = \"compliant\"\n| comp count_distinct(resource_id) as compliant_baseline by resource_type\n| fields resource_type, compliant_baseline",
+        "expected_rows_min": 0,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-002 S3 Public Access Block Removed Drift",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and resource_type = \"aws_s3_bucket\"\n| filter tags contains \"CortexSimDriftTarget\"\n| filter compliance_state = \"drifted\" and finding_class in (\"public-access-block-removed\", \"bucket-policy-public\")\n| comp count_distinct(resource_id) as drifted_buckets by finding_class\n| filter drifted_buckets >= 1\n| fields finding_class, drifted_buckets",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-002 CloudTrail Logging Disabled Drift",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and resource_type = \"aws_cloudtrail\"\n| filter tags contains \"CortexSimDriftTarget\"\n| filter compliance_state = \"drifted\" and finding_class = \"cloudtrail-logging-disabled\"\n| comp count_distinct(resource_id) as drifted_trails by finding_class\n| filter drifted_trails >= 1\n| fields finding_class, drifted_trails",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-002 Runtime Control Plane Action Causing Drift",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source in (\"s3.amazonaws.com\", \"cloudtrail.amazonaws.com\")\n| filter event_name in (\"DeletePublicAccessBlock\", \"PutBucketPolicy\", \"PutBucketAcl\", \"StopLogging\", \"UpdateTrail\")\n| comp count() as drift_actions by event_name, user_identity_arn\n| filter drift_actions >= 1\n| sort desc drift_actions\n| fields event_name, user_identity_arn, drift_actions",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-002 Public Bucket Data Access Post Drift",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source = \"s3.amazonaws.com\"\n| filter event_name in (\"GetObject\", \"ListObjects\", \"ListBucket\")\n| filter not incidr(src_ip, \"10.0.0.0/8\") and not incidr(src_ip, \"172.16.0.0/12\") and not incidr(src_ip, \"192.168.0.0/16\")\n| comp count() as external_reads by bucket_name, src_ip\n| filter external_reads >= 1\n| fields bucket_name, src_ip, external_reads",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-002 Posture Drift Coverage Reconciliation",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\"\n| filter tags contains \"CortexSimDriftTarget\"\n| filter compliance_state = \"drifted\"\n| filter finding_class in (\"public-access-block-removed\", \"bucket-policy-public\", \"cloudtrail-logging-disabled\")\n| comp count_distinct(finding_class) as drift_classes\n| filter drift_classes >= 2\n| fields drift_classes",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Posture Drift Correlated to Runtime Cause and Exploitation",
+        "rule_id": "CR-CSPM-0003",
+        "logic": "( XQL(CSPM-002 S3 Public Access Block Removed Drift) OR XQL(CSPM-002 CloudTrail Logging Disabled Drift) ) AND XQL(CSPM-002 Runtime Control Plane Action Causing Drift) — fuses each posture-drift finding on a CortexSimDriftTarget resource with the CloudTrail control-plane action that caused it (and, when present, the post-drift external bucket access) into a single posture-drift incident that names the drifted resource, the responsible principal, and the exploitation window."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud CSPM — configuration drift detection against an approved compliant baseline",
+      "Cortex Cloud Posture — drift-to-runtime correlation (posture inventory joined to cloud_audit_logs)",
+      "Cortex XSIAM Analytics — attribution of the drift-causing control-plane action to a principal"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CSPM-DRIFT-S3-PUBLIC-ACCESS-BLOCK-REMOVED",
+          "CSPM-DRIFT-S3-BUCKET-POLICY-PUBLIC",
+          "CSPM-DRIFT-CLOUDTRAIL-LOGGING-DISABLED"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter tags contains \"CortexSimDriftTarget\" and compliance_state = \"drifted\" | comp count_distinct(resource_id) by finding_class | fields finding_class, resource_id"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CSPM-0003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CSPM-0003 stitches each posture-drift finding to its CloudTrail control-plane cause and the post-drift external access into one posture-drift incident."
+      },
+      {
+        "module": "prisma-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "PC-AWS-S3-PUBLIC-DRIFT",
+          "PC-AWS-CLOUDTRAIL-DISABLED"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Prisma Cloud Compliance dashboard — drift events on CortexSim-tagged resources against the CIS AWS Foundations baseline."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CSPM-002",
+        "name": "Cloud Posture Drift Detection & Runtime Correlation",
+        "description": "Cortex Cloud CSPM detects when a previously-compliant resource drifts out of baseline (public-access-block removed, CloudTrail logging disabled) and correlates each drift finding with the control-plane action that caused it and any post-drift exploitation, surfacing the whole drift chain as one incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CSPM-002A",
+            "objective": "An injected, reversible drift regresses a compliant resource to drifted and both drift classes surface within one scan cycle.",
+            "preconditions": [
+              "Cortex Cloud CSPM connected (read-only) with drift tracking enabled.",
+              "Drift-target bucket + trail exist in a known-compliant baseline tagged CortexSimDriftTarget."
+            ],
+            "steps": [
+              "Snapshot the compliant baseline.",
+              "Remove the bucket's Block Public Access and stop the trail's logging.",
+              "Observe both drift findings surface and the coverage reconciliation return drift_classes >= 2."
+            ],
+            "success_criteria": [
+              "XQL `CSPM-002 S3 Public Access Block Removed Drift` returns >= 1.",
+              "XQL `CSPM-002 CloudTrail Logging Disabled Drift` returns >= 1.",
+              "XQL `CSPM-002 Posture Drift Coverage Reconciliation` returns drift_classes >= 2."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "threat_step_id": "TS-CSPM-002B",
+            "objective": "Each drift finding is correlated to the CloudTrail control-plane action that caused it (and post-drift access) into one incident.",
+            "preconditions": [
+              "The drift-causing API calls (DeletePublicAccessBlock / StopLogging) are captured in cloud_audit_logs before the trail goes dark."
+            ],
+            "steps": [
+              "Read the now-public bucket from an external source.",
+              "Observe CR-CSPM-0003 raise one posture-drift incident naming the resource, the principal, and the exploitation window."
+            ],
+            "success_criteria": [
+              "XQL `CSPM-002 Runtime Control Plane Action Causing Drift` returns >= 1 attributed to a principal.",
+              "Correlation CR-CSPM-0003 raises a posture-drift incident stitching the drift finding to its runtime cause."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce account-level S3 Block Public Access and prohibit its removal via SCP so a bucket cannot drift to public.",
+      "Protect CloudTrail with an SCP denying StopLogging/DeleteTrail/UpdateTrail except to a break-glass role, and enable log-file validation.",
+      "Require change tickets and drift-guardrail policy (Prisma Cloud / AWS Config rules) that auto-revert unauthorized configuration changes on the compliant baseline."
+    ],
+    "detection_engineering": [
+      "Track compliance_state transitions (compliant -> drifted) per resource rather than only point-in-time misconfiguration snapshots.",
+      "Join the posture inventory to cloud_audit_logs so every drift finding names the control-plane action and principal that caused it.",
+      "Escalate a drift finding to an incident when the drifted exposure is reached at runtime (external GetObject on the newly-public bucket)."
+    ],
+    "response_playbook": "XSOAR-PB-CloudPostureDriftTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 Cloud Threat Report — Misconfigurations Remain the Top Cloud Risk",
+      "url": "https://unit42.paloaltonetworks.com/cloud-threat-report-misconfigurations/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1562.008 — Impair Defenses: Disable or Modify Cloud Logs",
+      "url": "https://attack.mitre.org/techniques/T1562/008/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1578 — Modify Cloud Compute Infrastructure",
+      "url": "https://attack.mitre.org/techniques/T1578/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1530 — Data from Cloud Storage",
+      "url": "https://attack.mitre.org/techniques/T1530/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex Cloud — Posture Management and Configuration Drift Detection",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-CLOUD/Cortex-Cloud-Posture-Security",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-13",
+      "author": "Henry Reed",
+      "change": "Initial CSPM posture-drift-and-correlation card for SIM-CSPM-002 (CSPM plane-floor rescue). Real cloud-posture XQL against cortex_cloud_posture / cloud_audit_logs validating a compliant->drifted transition (S3 Block-Public-Access removed + CloudTrail StopLogging), attribution of the drift-causing control-plane action to a principal, post-drift external bucket access, and correlation CR-CSPM-0003 stitching drift findings to their runtime cause. Analytics/XQL/Correlation only (posture, not behavioral-ML): no ABIOCs. Promoted to active."
+    }
+  ]
+}

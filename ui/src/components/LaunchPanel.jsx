@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { postRun, getAgents, downloadScenario } from '../api/client.js'
+import { agentIdOf } from '../api/ids.js'
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
         const list = Array.isArray(data) ? data : []
         setAgents(list)
         if (list.length > 0 && !selectedAgent) {
-          setSelectedAgent(list[0].id || list[0].agent_id || '')
+          setSelectedAgent(agentIdOf(list[0]) || '')
         }
       })
       .catch(() => setAgents([]))
@@ -185,8 +186,8 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
                     disabled={disabled}
                   >
                     {agents.map(agent => (
-                      <option key={agent.id || agent.agent_id} value={agent.id || agent.agent_id}>
-                        {agent.hostname || agent.id || agent.agent_id}
+                      <option key={agentIdOf(agent)} value={agentIdOf(agent)}>
+                        {agent.hostname || agentIdOf(agent)}
                         {agent.os ? ` (${agent.os})` : ''}
                       </option>
                     ))}

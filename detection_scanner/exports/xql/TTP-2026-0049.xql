@@ -11,6 +11,7 @@ preset = xdr_data
 | filter actor_process_image_name in ("grep", "egrep", "rg", "find")
 | filter action_process_image_command_line contains_any ("AKIA", "aws_secret_access_key", ".aws/credentials")
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
 
 ## BIOC — MP-004 AWS CLI Invoked By www-data With Inline Access Key Env
 # severity: high
@@ -21,6 +22,7 @@ preset = xdr_data
 | filter event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = "aws"
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
 | filter action_process_image_command_line contains_any ("sts", "get-caller-identity", "ec2", "s3", "iam")
 
 ## BIOC — MP-004 Cloud Multi Service Describe List Burst From Single Principal

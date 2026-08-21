@@ -1,0 +1,65 @@
+title: "AI SOC Summarization Accuracy & Latency \u2014 72-Minute Identity-to-Exfil Narrative Reconstruction (T1078 / T1059.001 / T1567.002 / T1041) \u2014 AI-SOC-72 Valid-Account Reuse From Anomalous Endpoint Context"
+id: ttp-2026-0131-abioc-01
+status: experimental
+description: |
+  A valid service account whose learned Cortex profile is scheduled, non-interactive automation is driven interactively from an endpoint context that deviates from its baseline — the identity-driven initial-access phase (65% of intrusions per Unit 42). ABIOC anchors the deviation to the causality chain (service-account authentication -> interactive shell) rather than any known-bad binary, so hands-on-keyboard reuse of a legitimate account surfaces as the first signal the AI must name as initial access.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username in ("svc-backup", "svc-identity")
+    | filter action_process_image_name in ("bash", "sh", "zsh")
+    | filter action_process_command_line contains "sh -i"
+    | filter causality_actor_process_image_name in ("sshd", "su", "runuser", "sudo", "login", "systemd")
+    | comp count() as interactive_sessions by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id
+    | filter interactive_sessions >= 1
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id, interactive_sessions
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AI SOC Summarization Accuracy & Latency \u2014 72-Minute Identity-to-Exfil Narrative Reconstruction (T1078 / T1059.001 / T1567.002 / T1041) \u2014 AI-SOC-72 Rapid Privilege Escalation After Valid-Account Compromise"
+id: ttp-2026-0131-abioc-02
+status: experimental
+description: |
+  Within minutes of the anomalous valid-account session, the account runs a scripted-interpreter escalation burst (sudo / pkexec / PowerShell-style encoded execution) at a cadence and privilege-seeking shape its learned baseline never exhibits. Every binary is legitimate; the ABIOC fires on the escalation-diversity deviation, anchored to the interactive shell that spawned it — the privilege-escalation phase the AI narrative must name second.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username in ("svc-backup", "svc-identity")
+    | filter action_process_image_name in ("sudo", "su", "pkexec", "pwsh", "powershell")
+    | filter causality_actor_process_image_name in ("bash", "sh", "zsh", "sshd", "su", "runuser")
+    | comp count_distinct(action_process_image_name) as escalation_tools by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id
+    | filter escalation_tools >= 2
+    | sort desc escalation_tools
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id, escalation_tools
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,300 @@
+{
+  "id": "TTP-2026-0162",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T15:31:32+00:00",
+    "updated_at": "2026-07-25T16:20:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "kubernetes-audit",
+      "vector-container-exec",
+      "vector-service-account-abuse",
+      "detection-abioc",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "kubernetes",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "kubernetes"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Unusual exec Into a Kubernetes Pod + Unusual Service-Account API Call (SIM-CDR-025)",
+    "summary": "A compromised in-cluster identity opens an interactive exec session into a running pod, then the pod's service account issues an RBAC-write API call it has never made in baseline. The k8s_audit_emitter streams shape-true audit.k8s.io/v1 records into the kubernetes_audit_logs data source so two XSIAM behavioral-ML (ABIOC) alerts fire: unusual pod exec, and an unusual service-account API call.",
+    "description": "Post-compromise Kubernetes tradecraft: an attacker who has landed in the cluster (leaked SA token, exposed dashboard, or a compromised sidecar) runs `kubectl exec` to get an interactive shell inside a running workload pod (Container Administration Command, T1609), then rides the pod's mounted service-account token to perform an API operation the account never performs in normal operation — creating a ClusterRoleBinding to escalate (Valid Accounts: Cloud Accounts, T1078.004). Both actions land in the Kubernetes API-server audit log. Cortex XSIAM's Kubernetes-audit analytics learn a per-principal baseline of who execs into which pods and which verbs/resources each service account touches; a deviation raises the ABIOC alerts 'Unusual exec into a Kubernetes Pod' and 'A Kubernetes service account executed an unusual API call'. This card drives the k8s_audit_emitter EAL plugin (event_pattern pod_exec then unusual_sa_api_call) to emit the exact records that exercise those detections without touching a real cluster or issuing any real API call.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "containers",
+    "techniques": [
+      {
+        "technique_id": "T1609",
+        "name": "Container Administration Command",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0005",
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Privilege Escalation"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Kubernetes Audit Log",
+      "Command: Command Execution",
+      "User Account: User Account Authentication"
+    ]
+  },
+  "execution": {
+    "target_platform": "kubernetes",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "core/eal_simulator/plugins/k8s_audit_emitter.py (event_pattern: pod_exec, unusual_sa_api_call)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Kubernetes API-server audit logging is enabled at RequestResponse level and forwarded into the XSIAM kubernetes_audit_logs data source (Broker VM / HTTP collector).",
+        "check_command": "kubectl get --raw /apis/audit.k8s.io/v1 >/dev/null 2>&1 && echo audit-api-present"
+      },
+      {
+        "description": "The operator-supplied HTTP log collector is reachable and on the campaign target_allowlist.",
+        "check_command": "curl -sk -o /dev/null -w '%{http_code}' \"$COLLECTOR_URL\""
+      }
+    ],
+    "payload": {
+      "interpreter": "python",
+      "code": "# Drive the k8s_audit_emitter EAL plugin to stream shape-true Kubernetes\n# API-server audit records into the operator's collector. NO real cluster\n# is touched; every record is a synthetic audit.k8s.io/v1 Event.\nset -euo pipefail\n: \"${COLLECTOR_URL:?set COLLECTOR_URL to the operator HTTP collector}\"\n: \"${COLLECTOR_HOST:?set COLLECTOR_HOST to the collector hostname}\"\ncat > /tmp/sim-cdr-025.yml <<YML\ncampaign_id: CMP-CDR-025\nname: \"CDR — unusual pod exec + unusual SA API call\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"${COLLECTOR_HOST}\"\ndry_run: false\nsteps:\n  - step_id: exec\n    plugin: k8s_audit_emitter\n    params:\n      collector_url: \"${COLLECTOR_URL}\"\n      event_pattern: pod_exec\n      iterations: 1\n  - step_id: sa-api\n    plugin: k8s_audit_emitter\n    params:\n      collector_url: \"${COLLECTOR_URL}\"\n      event_pattern: unusual_sa_api_call\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-025.yml --live\n",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "url",
+          "default": "https://collector.cortexsim-canary.invalid/logs/v1/event",
+          "description": "Operator HTTP collector the shape-true kubernetes_audit_logs records POST to."
+        },
+        {
+          "name": "COLLECTOR_HOST",
+          "type": "string",
+          "default": "collector.cortexsim-canary.invalid",
+          "description": "Collector hostname added to the campaign target_allowlist for the authorise gate."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "pods/exec create audit record (verb=create, subresource=exec, response 101) in kubernetes_audit_logs."
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "clusterrolebindings create audit record by a service-account principal (verb=create, response 201) in kubernetes_audit_logs."
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sim-cdr-025.yml; echo '[CortexSim] SIM-CDR-025 cleanup complete (synthetic audit stream only; no cluster state changed).'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Unusual exec into a Kubernetes Pod",
+        "description": "PANW-authored behavioral-ML detection over the Kubernetes API-server audit feed. It learns, per principal, the pods that identity normally execs into and raises when a create pods/exec subresource request deviates from that baseline (a principal execing into a pod it has never touched, or a service-account principal execing at all). Keyed on the kubernetes_audit_logs dataset.",
+        "logic": "dataset = kubernetes_audit_logs\n| filter verb = \"create\" and objectRef_resource = \"pods\" and objectRef_subresource = \"exec\"\n| comp count() as exec_events by user_username, objectRef_name, sourceIPs\n| filter exec_events >= 1\n| fields user_username, objectRef_name, sourceIPs, exec_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1609"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-principal exec baseline: which user/service-account normally opens pods/exec into which pod (objectRef.name) from which sourceIP. The deviation anchors to the pod's container image and the acting identity's exec history."
+      },
+      {
+        "name": "A Kubernetes service account executed an unusual API call",
+        "description": "PANW-authored behavioral-ML detection over the Kubernetes API-server audit feed. It learns, per service account, the verb+resource pairs that account exercises in baseline and raises when a service-account principal issues an out-of-profile RBAC-write (creating a ClusterRoleBinding / ClusterRole it never touches). Keyed on the kubernetes_audit_logs dataset.",
+        "logic": "dataset = kubernetes_audit_logs\n| filter user_username contains \"system:serviceaccount:\"\n| filter verb in (\"create\", \"update\", \"patch\") and objectRef_resource in (\"clusterrolebindings\", \"rolebindings\", \"clusterroles\")\n| comp count() as rbac_writes by user_username, verb, objectRef_resource, objectRef_name\n| filter rbac_writes >= 1\n| fields user_username, verb, objectRef_resource, objectRef_name, rbac_writes",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-service-account API baseline: the verb+resource pairs (user.username -> verb/objectRef.resource) the account exercises normally. The deviation anchors to the compromised service account identity and the RBAC-write resource it has no baseline for."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SIM-CDR-025 Kubernetes Audit Emission Validation",
+        "query": "dataset = kubernetes_audit_logs\n| filter _time > to_timestamp(current_time() - 900)\n| filter cortexsim_run_id != null\n| filter pod_exec_marker = true or unusual_sa_api_call_marker = true\n| comp count() as audit_records by user_username, verb, objectRef_resource, objectRef_subresource\n| filter audit_records >= 1\n| fields user_username, verb, objectRef_resource, objectRef_subresource, audit_records",
+        "expected_rows_min": 1,
+        "dataset": "kubernetes_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "SIM-CDR-025 Exec Then Unusual SA API Correlation",
+        "rule_id": "CR-CDR-0025",
+        "logic": "Fires when abioc `Unusual exec into a Kubernetes Pod` and abioc `A Kubernetes service account executed an unusual API call` both observe activity attributable to the same service-account principal (user.username) within a 15-minute window, stitching the interactive-exec foothold and the follow-on RBAC-write escalation into one Kubernetes intrusion incident."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Unusual exec into a Kubernetes Pod",
+        "validated": true,
+        "note": "Backed by the ABIOC of the same name on this card (kubernetes_audit_logs pods/exec deviation)."
+      },
+      {
+        "module": "A Kubernetes service account executed an unusual API call",
+        "validated": true,
+        "note": "Backed by the ABIOC of the same name on this card (service-account out-of-baseline RBAC-write)."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-CDR-0025"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = kubernetes_audit_logs | filter pod_exec_marker = true or unusual_sa_api_call_marker = true | fields _time, user_username, verb, objectRef_resource, objectRef_subresource, objectRef_name, sourceIPs"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CDR-025",
+        "name": "Kubernetes audit — unusual pod exec and service-account API abuse",
+        "description": "Validate that Cortex XSIAM's Kubernetes-audit behavioral analytics detect an interactive exec into a running pod and a follow-on out-of-baseline service-account RBAC-write, and stitch them into one incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CDR-025A",
+            "objective": "An interactive create pods/exec by an out-of-baseline principal raises the unusual-pod-exec ABIOC.",
+            "preconditions": [
+              "Kubernetes audit logging forwarded into kubernetes_audit_logs.",
+              "Operator collector reachable and allowlisted."
+            ],
+            "steps": [
+              "Run the k8s_audit_emitter with event_pattern pod_exec.",
+              "Observe the ABIOC 'Unusual exec into a Kubernetes Pod' fire."
+            ],
+            "success_criteria": [
+              "ABIOC `Unusual exec into a Kubernetes Pod` fires within the run window."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-CDR-025B",
+            "objective": "A service-account RBAC-write it never performs in baseline raises the unusual-SA-API-call ABIOC and the correlation stitches both alerts.",
+            "preconditions": [
+              "The unusual-pod-exec ABIOC has already fired for the same run."
+            ],
+            "steps": [
+              "Run the k8s_audit_emitter with event_pattern unusual_sa_api_call.",
+              "Observe the second ABIOC and correlation CR-CDR-0025 fire."
+            ],
+            "success_criteria": [
+              "ABIOC `A Kubernetes service account executed an unusual API call` fires.",
+              "Correlation `CR-CDR-0025` raises one incident stitching both ABIOCs."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict pods/exec via RBAC — grant the create pods/exec permission only to break-glass admin roles, never to workload service accounts.",
+      "Disable automatic service-account token mounting (automountServiceAccountToken: false) on workload pods that do not call the Kubernetes API.",
+      "Scope service-account RBAC to least privilege; deny cluster-scoped RBAC-write (clusterrolebindings/clusterroles) to namespaced workload identities."
+    ],
+    "detection_engineering": [
+      "Enable API-server audit at RequestResponse level for the pods/exec subresource and for rbac.authorization.k8s.io write verbs, and forward to the kubernetes_audit_logs dataset.",
+      "Baseline, per principal, which identities exec into which pods and which verb+resource pairs each service account exercises; alert on first-seen deviations.",
+      "Correlate an interactive exec foothold with a follow-on service-account RBAC-write attributable to the same principal within a short window."
+    ]
+  },
+  "references": [
+    {
+      "title": "Mitigating RBAC-Based Privilege Escalation in Popular Kubernetes Platforms",
+      "url": "https://unit42.paloaltonetworks.com/kubernetes-privilege-escalation/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1609 Container Administration Command",
+      "url": "https://attack.mitre.org/techniques/T1609/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1078.004 Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM Analytics Alert Reference — Kubernetes audit (Unusual exec into a Kubernetes Pod; A Kubernetes service account executed an unusual API call)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-25",
+      "author": "Henry Reed",
+      "change": "Promote SIM-CDR-025 from research-intake scaffold: author two ABIOC detections (unusual pod exec, unusual service-account API call) over kubernetes_audit_logs, an emission-validation XQL, and the CR-CDR-0025 stitch; wire to the k8s_audit_emitter EAL plugin."
+    }
+  ]
+}

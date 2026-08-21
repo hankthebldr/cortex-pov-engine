@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getRuns, getResultsForRun } from '../../api/client.js'
+import { runIdOf } from '../../api/ids.js'
 
 /**
  * MultiRunCompare — side-by-side scorecard for 2-N runs.
@@ -95,7 +96,7 @@ export default function MultiRunCompare() {
         ) : (
           <div className="multirun__run-list">
             {availableRuns.slice(0, 16).map((r) => {
-              const id = r.id || r.run_id
+              const id = runIdOf(r)
               const picked = selectedIds.includes(id)
               const order = picked ? selectedIds.indexOf(id) + 1 : null
               return (
@@ -252,7 +253,7 @@ export default function MultiRunCompare() {
 function buildComparison(selectedIds, availableRuns, resultsByRun) {
   if (selectedIds.length < 2) return { columns: [], rows: [], kpis: {} }
 
-  const runById = new Map(availableRuns.map((r) => [r.id || r.run_id, r]))
+  const runById = new Map(availableRuns.map((r) => [runIdOf(r), r]))
 
   // Build per-run columns with summary stats.
   const columns = selectedIds.map((id, idx) => {

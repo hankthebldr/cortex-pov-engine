@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-CDR-10
-tc_ref: TC-CDR-10
-uc_name: "XDM Normalization Substrate Proof for Container Telemetry"
-tc_name: "Raw Container Telemetry to Modeled Field to BIOC Chain"
+uc_ref: UCS-BYOML-01
+tc_ref: TC-BYOML-02
+tc_refs:
+  - TC-BYOML-02
+  - TC-TH-03
+pov_scenario_id: POV-SC-027
+uc_name: "Advanced Analytics & BYOML"
+tc_name: "Demonstrate datamodel customization for industry-specific correlation rules"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"
@@ -32,6 +36,35 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
+# ── Cluster posture — a non-privileged DRIVER that spawns a privileged PROBE ──
+# RANK 2 of the first slice. The driver Deployment itself is compliant
+# (non-privileged); its step-02 `kubectl run … securityContext.privileged=true`
+# is the privileged workload. Splitting the two arms honestly is the whole point
+# of the conversion: on a cluster WITHOUT admission enforcement the probe is
+# ADMITTED and the modeling-rule BIOC (step-03) fires on the normalized
+# `privileged` field; on a cluster WITH enforcement the probe CREATE is REFUSED
+# (403) and that refusal is POS-KSPM-003's passing evidence. The driver needs a
+# namespace-scoped Role to `create` the probe pod — namespace-scoped, not a
+# cluster grant, so the driver stays UNGATED. app_identity back-fills from
+# cgo_anchor per S-17. NOTE: the driver image must carry `kubectl`; on the
+# default debian:12-slim the require_bin preflight exits 78 LOUDLY (never a
+# silent green) — supply a kubectl-bearing image or served payloads.
+cluster_posture:
+  workload: deployment
+  service_account:
+    automount_token: true
+    namespace_role_rules:
+      - api_groups: [""]
+        resources: ["pods"]
+        verbs: ["create", "get", "list", "watch", "delete"]
 
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # This scenario proves the XDM normalization SUBSTRATE beneath detections: an
@@ -73,6 +106,7 @@ steps:
         description: "The XDM modeling rule (normalization substrate) maps the raw actor_container_info blob into addressable XDM container fields — the gating step that makes the source analytics-grade. Resolves to the card's modeling_rules[] object."
         ttp_ref: "TTP-2026-0081"
         detection_id: modeling-container-telemetry-xdm-normalization
+    platforms: ["k8s", "container"]
 
   - id: step-02
     name: "Start a privileged container so raw telemetry is emitted and modeled"
@@ -83,12 +117,16 @@ steps:
       echo "[*] Privileged container started — raw actor_container_info now flowing"
     identity: container-runtime
     mitre_technique: "T1610"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: XQL
         description: "Validation that the modeled container fields (pod_namespace, privileged) are populated from the raw blob — confirms the modeling rule normalized the telemetry"
         ttp_ref: "TTP-2026-0081"
         detection_id: xql-cdr-xdm-modeled-container-fields-populated
+    platforms: ["k8s", "container", "linux"]
 
   - id: step-03
     name: "BIOC fires on the normalized privileged field"
@@ -97,12 +135,16 @@ steps:
       echo "[*] This detection only works because the modeling rule made privileged addressable"
     identity: container-runtime
     mitre_technique: "T1613"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
         description: "Privileged-container-start BIOC fires on the normalized privileged field — proving the raw-source to modeled-field to detection chain end-to-end"
         ttp_ref: "TTP-2026-0081"
         detection_id: bioc-cdr-xdm-privileged-container-start-on-modeled-field
+    platforms: ["k8s", "container"]
 
 cleanup:
   commands:

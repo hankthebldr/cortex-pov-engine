@@ -17,10 +17,14 @@ detection_types:
 # master-sheet row remains TC-IR-05 ("Demonstrate correlation-based detections
 # across endpoint + network + identity telemetry" — MOAT tier across
 # CrowdStrike/MSFT/S1); that linkage is preserved in the `tc-ir-05` tag below.
-uc_ref: UCS-MP-05
-tc_ref: TC-MP-05
-uc_name: "Cross-Plane Incident Stitching"
-tc_name: "Correlation-Based Detections Across EDR + NDR + ITDR (master-sheet TC-IR-05)"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-IR-13
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 # ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
 mitre_tactic: "TA0008"
@@ -115,6 +119,17 @@ required_planes_in_incident:
   - ITDR
 stitching_key: src_host
 
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# The chain is OWNED by the compromised web service, not the beacon. Initial
+# access is a web-app foothold: apache2 (running as www-data) is the CGO that
+# spawns the curl beacon, the interactive bash, and — through that shell — the
+# Kerberos spray. Every raw event in this incident shares the causality_id
+# whose head is apache2/www-data, so XSIAM folds NDR + EDR + ITDR signal into
+# ONE incident keyed on that ownership rather than a star of independent alerts.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
 # ── Steps ───────────────────────────────────────────────────────────────────
 # Three coordinated signals from one src_host. Order matters — the NDR
 # beacon precedes the EDR process anomaly which precedes the ITDR
@@ -133,6 +148,7 @@ steps:
       echo '[*] NGFW should record 5 outbound HTTP sessions to testmynids.org'
     identity: www-data
     mitre_technique: "T1071.001"
+    platforms: ["linux"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -160,6 +176,16 @@ steps:
       echo '[*] XDR BIOC: bash invoked under www-data with interactive shell semantics'
     identity: www-data
     mitre_technique: "T1059.004"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "powershell -NoProfile -Command \"whoami; hostname; Get-CimInstance Win32_OperatingSystem | Select-Object Caption; (Get-Command curl.exe).Version\""
+    causality:
+      # Sibling of the beacon: both the curl beacon (step-01) and this
+      # interactive shell descend from the same apache2/www-data CGO on the
+      # same host — no direct fork BETWEEN them, so the edge is shared_entity
+      # (same host + service identity), not process_lineage.
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -170,8 +196,9 @@ steps:
           dataset = xdr_data
           | filter event_sub_type = "Process"
           | filter actor_process_image_name = "bash"
-          | filter actor_effective_user_name = "www-data"
-          | comp count() as proc_count by action_local_ip
+          | filter actor_effective_username = "www-data"
+          | filter causality_actor_process_image_name in ("apache2", "nginx", "httpd", "php-fpm")
+          | comp count() as proc_count by action_local_ip, causality_actor_process_image_name, causality_id
           | filter proc_count >= 1
         kpi_contribution:
           kpi: "Cross-Source Correlation Rate"
@@ -186,7 +213,6 @@ steps:
       # Targets a known seeded service account in the ITDR module (which
       # plants 5 Kerberoast-vulnerable accounts). Wrong password on purpose —
       # XSIAM ITDR should record the pre-auth failure burst.
-      ITDR_DC=${CORTEXSIM_ITDR_DC_HOST:-dc.corp.local}
       ITDR_REALM=${CORTEXSIM_ITDR_REALM:-CORP.LOCAL}
       for svc in svc-sql svc-backup svc-webapp svc-jenkins svc-monitor; do
         echo "Wrong-Password!" | timeout 5 kinit "${svc}@${ITDR_REALM}" 2>&1 | head -2 || true
@@ -195,6 +221,13 @@ steps:
       echo '[*] AD Security 4768 (TGT failure) burst recorded from this host'
     identity: www-data
     mitre_technique: "T1110.003"
+    platforms: ["linux"]
+    causality:
+      # The Kerberos spray is driven FROM the interactive shell: bash spawns
+      # kinit as a real child exec, so eBPF sched_process_exec records the
+      # apache2 → bash → kinit lineage — a genuine process_lineage edge.
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: ITDR
         type: XQL
@@ -228,6 +261,14 @@ steps:
       echo '    - mttd > 60s → causality timing fails'
     identity: root
     mitre_technique: "T1078"
+    platforms: ["linux"]
+    causality:
+      # The correlation node fuses the three per-plane signals into one
+      # incident by joining on src_host (stitching_key). It is not a process
+      # descendant of the identity spray — it is the cross-plane stitch that
+      # folds NDR + EDR + ITDR together on the shared source host.
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: ANALYTICS
         type: Correlation
@@ -238,7 +279,7 @@ steps:
           // F2 canonical verifier — distinct planes under one incident_id
           dataset = xdr_data
           | filter _time > timeago(10m)
-          | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by action_local_ip
+          | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count, count_distinct(causality_id) as chains by action_local_ip
           | filter plane_count >= 3 and incident_count = 1
         kpi_contribution:
           kpi: "Cross-Source Correlation Rate"

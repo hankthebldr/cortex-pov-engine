@@ -1,0 +1,210 @@
+scenario_id: SIM-AISPM-007
+name: "GCP Vertex AI Double Agent — Deployed Reasoning-Engine Steals P4SA Token for Cross-Project GCS Read + Image Exfil"
+version: "1.0"
+status: active
+
+plane: AI_SPM
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CITH-04
+tc_ref: TC-CITH-04
+tc_refs:
+  - TC-CITH-04
+  - TC-CIEM-03
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate AI Runtime Security Analytics — AI-powered runtime analytics detect anomalous cloud workload behavior without signature dependency"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1552.005"
+mitre_technique_name: "Unsecured Credentials: Cloud Instance Metadata API"
+additional_techniques:
+  - technique: "T1199"
+    name: "Trusted Relationship"
+  - technique: "T1550.001"
+    name: "Use Alternate Authentication Material: Application Access Token"
+  - technique: "T1530"
+    name: "Data from Cloud Storage"
+  - technique: "T1526"
+    name: "Cloud Service Discovery"
+
+threat_report: "Unit 42 — Double Agents: Exploiting the Trust in Vertex AI Agents"
+threat_report_url: "https://unit42.paloaltonetworks.com/double-agents-vertex-ai/"
+
+execution_identity:
+  default: vertex-agent
+  options:
+    - vertex-agent
+    - svc-account
+    - www-data
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ai-spm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Cloud AI-Agent Causality Stitching & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  Cortex attributes the recursive-IMDS P4SA token harvest to the reasoning-engine
+  agent container that owns the chain (causality_actor_process), then follows the
+  stolen P4SA identity as it crosses the project boundary to read Cloud Storage and
+  pull the private reasoning-engine image from the cloud-aiplatform-private Artifact
+  Registry repo. Both auto-tuned ABIOCs fire — the in-cluster recursive-metadata
+  harvest and the cross-project GCS read — and CR-AISPM-0007 stitches them, the
+  Artifact Registry pull, and the over-privileged-P4SA posture finding into ONE
+  Vertex AI double-agent incident keyed on the agent causality actor and the P4SA
+  principal, not four disconnected cloud audit lines. Mean time from the recursive
+  metadata query to the stitched incident is within the MTTD budget.
+moat_tier: "LEAD"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The deployed reasoning-engine Vertex AI agent container is the Causality Group
+# Owner — a trusted managed workload (ADK / Agent Engine) that OWNS the whole
+# double-agent chain. The recursive-IMDS harvest is anchored to that agent
+# (causality_actor_process); the P4SA OAuth token it extracts is the single
+# shared entity that stitches the in-cluster process node to the cloud-plane GCS
+# and Artifact Registry API calls. Declaring the CGO + parent_step pivots
+# collapses the star (four independent signals off the beacon) into a connected
+# process->exposure->identity->impact spine.
+cgo_anchor:
+  image_name: "reasoning-engine"
+  primary_username: "vertex-agent"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Deploy the reasoning-engine Vertex AI agent (trusted relationship / initial access)"
+    command: "echo 'cortexsim-aispm-007-reasoning-engine-agent-deployed-via-adk-agent-engine'"
+    identity: vertex-agent
+    mitre_technique: "T1199"
+    platforms: ["container", "k8s", "linux"]
+    expected_detections:
+      - plane: AI_SPM
+        type: XQL
+        description: "Posture surface — Cortex Cloud AI-SPM has already flagged the Vertex AI P4SA (service-<project>@gcp-sa-aiplatform-re.iam.gserviceaccount.com) as an over-privileged service agent whose default grant carries excessive Cloud Storage scope, the misconfiguration that makes the double-agent pivot possible."
+        ttp_ref: "TTP-2026-0139"
+        detection_id: "xql-aispm-007-over-privileged-vertex-ai-p4sa-default-grant-posture-finding"
+
+  - id: step-02
+    name: "Recursive IMDS query harvests the P4SA service-agent OAuth token"
+    command: "curl -s --max-time 3 -H 'Metadata-Flavor: Google' \"http://127.0.0.1/computeMetadata/v1/instance/?recursive=true\" || true; echo 'cortexsim-aispm-007-p4sa-token-harvested-from-metadata-service'"
+    identity: vertex-agent
+    mitre_technique: "T1552.005"
+    platforms: ["container", "k8s", "linux"]
+    platform_variants:
+      linux: "python3 -c \"import urllib.request as u; r=u.Request('http://127.0.0.1/computeMetadata/v1/instance/?recursive=true', headers={'Metadata-Flavor':'Google'}); u.urlopen(r, timeout=3).read()\" || true"
+    causality:
+      # The recursive-metadata harvest descends from the reasoning-engine agent
+      # container (the CGO/root). Its product — the P4SA OAuth token — is the
+      # single entity that will stitch this in-cluster node to every cloud-plane
+      # step that follows, so the pivot is shared_entity, not a bare lineage edge.
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: AI_SPM
+        type: ABIOC
+        description: "A process owned by the reasoning-engine agent container queries the recursive whole-instance metadata endpoint to harvest the P4SA OAuth token. The auto-tuned ABIOC keys on causality_actor_process (the agent container that OWNS the chain) and its process-instance id, anchoring the token theft to the deployed agent rather than treating it as an isolated metadata read; deviates from the learned agent-container process baseline that never issues a recursive metadata query."
+        ttp_ref: "TTP-2026-0139"
+        detection_id: "abioc-aispm-007-reasoning-engine-agent-container-recursive-imds-p4sa-token-harvest"
+      - plane: AI_SPM
+        type: XQL
+        description: "Validation query confirms the recursive metadata query surfaced within the run window, attributed to the reasoning-engine causality actor and its process-instance id in xdr_data."
+        ttp_ref: "TTP-2026-0139"
+        detection_id: "xql-aispm-007-recursive-metadata-query-from-agent-container-surfaced"
+
+  - id: step-03
+    name: "P4SA identity reads Cloud Storage across the project boundary"
+    command: "curl -s --max-time 3 \"http://127.0.0.1/storage/v1/b?project=consumer-project&prefix=models\" || true; echo 'cortexsim-aispm-007-p4sa-cross-project-gcs-list-and-get-emitted'"
+    identity: vertex-agent
+    mitre_technique: "T1530"
+    platforms: ["container", "k8s", "linux"]
+    causality:
+      # The GCS list/get is performed under the P4SA identity harvested in
+      # step-02 — a cloud-plane API session keyed on that stolen identity. The
+      # network_session pivot carries the token from the in-cluster node to the
+      # cross-project storage reads.
+      parent_step: step-02
+      pivot: network_session
+    expected_detections:
+      - plane: AI_SPM
+        type: ABIOC
+        description: "The P4SA service-agent identity lists and reads Cloud Storage objects in a project other than the one it was issued for, breaking tenant isolation. The auto-tuned ABIOC anchors on the P4SA principal (the shared entity carried from the IMDS harvest) and the crossed project boundary, firing on the deviation from the service agent's learned same-project access baseline; the Google-managed identity defeats reputation matching, so the catch is the boundary crossing."
+        ttp_ref: "TTP-2026-0139"
+        detection_id: "abioc-aispm-007-p4sa-service-agent-cross-project-cloud-storage-read-deviation"
+      - plane: AI_SPM
+        type: XQL
+        description: "Validation query confirms cross-project Cloud Storage list/get under the P4SA principal surfaced in cloud_audit_logs within the run window."
+        ttp_ref: "TTP-2026-0139"
+        detection_id: "xql-aispm-007-p4sa-cross-project-gcs-list-and-get-surfaced"
+
+  - id: step-04
+    name: "P4SA identity pulls the private reasoning-engine image, exposing internal topology"
+    command: "curl -s --max-time 3 \"http://127.0.0.1/v2/cloud-aiplatform-private/reasoning-engine/manifests/prod\" || true; echo 'cortexsim-aispm-007-private-artifact-registry-reasoning-engine-image-pulled'"
+    identity: vertex-agent
+    mitre_technique: "T1526"
+    platforms: ["container", "k8s", "linux"]
+    causality:
+      # Same stolen P4SA identity pulls the private reasoning-engine image from
+      # the cloud-aiplatform-private Artifact Registry repo, exposing the
+      # Dockerfile.zip topology — the impact of the credential theft.
+      parent_step: step-03
+      pivot: exploit_impact
+    expected_detections:
+      - plane: AI_SPM
+        type: XQL
+        description: "Validation query confirms the P4SA principal pulled a private reasoning-engine container image from the cloud-aiplatform-private Artifact Registry repo within the run window (artifactregistry.dockerimages.get in cloud_audit_logs)."
+        ttp_ref: "TTP-2026-0139"
+        detection_id: "xql-aispm-007-p4sa-artifact-registry-private-reasoning-engine-image-pull"
+
+  - id: step-05
+    name: "Correlation stitches the token theft, cross-project GCS read, and image exfil into one incident"
+    command: "echo 'cortexsim-aispm-007-cr-aispm-0007-stitched-vertex-ai-double-agent-incident'"
+    identity: vertex-agent
+    mitre_technique: "T1550.001"
+    platforms: ["container", "k8s", "linux"]
+    causality:
+      # CR-AISPM-0007 fuses the in-cluster IMDS-harvest ABIOC and the cloud-plane
+      # P4SA activity on the shared P4SA principal + the reasoning-engine
+      # causality actor into a single double-agent incident.
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: AI_SPM
+        type: Correlation
+        description: "Correlation rule joins the recursive-IMDS P4SA token harvest, the cross-project Cloud Storage read, and the private Artifact Registry image pull on the shared P4SA principal and the reasoning-engine causality_actor_process into one Vertex AI double-agent incident — attributing the cross-project exfil to the deployed agent that owns the chain rather than surfacing four disconnected cloud audit lines."
+        ttp_ref: "TTP-2026-0139"
+        detection_id: "CR-AISPM-0007"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/aispm-007-*"
+    - "echo 'cortexsim-aispm-007-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - ai-spm
+  - abioc
+  - gcp
+  - vertex-ai
+  - p4sa
+  - cloud-metadata-abuse
+  - cross-project-exfil
+  - double-agent
+  - causality-stitch

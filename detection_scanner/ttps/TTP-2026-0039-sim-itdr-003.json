@@ -45,9 +45,9 @@
     }
   },
   "identity": {
-    "name": "ITDR \u2014 Credential Stuffing (failed-login burst across many users)",
-    "summary": "The idp_signin_emulator emits a burst of FAILURE sign-ins from one source IP/ASN against many distinct user identifiers \u2014 the credential-stuffing shape where an attacker replays a stolen credential dump against an IdP. Cortex ITDR groups failed authentications by source IP, counts distinct targeted users in the window, and alerts when one origin sprays many accounts, with severity scaling as th\u2026",
-    "description": "Credential stuffing is the highest-volume identity attack in the Verizon DBIR: an actor takes a breach-corpus of username/password pairs and replays them en masse against a login surface, accepting a low hit rate. The IdP-log signature is unmistakable \u2014 a single source IP (often one ASN / hosting provider) producing a wall of authentication FAILUREs across dozens of distinct usernames in a tight window, with the occasional SUCCESS where a reused password lands. This scenario drives CortexSim's idp_signin_emulator to POST a 20-identity failed-login burst from one source IP (Okta shape) and then a wider 50-identity burst (Microsoft Entra shape) into the identity collector. Detection is IdP-log analytics in Cortex ITDR: an XQL rule groups FAILURE authentications by source IP, counts distinct actor identifiers, and raises a credential-stuffing anomaly when the distinct-user count from one origin crosses threshold; severity escalates with the 50-identity burst. An NGFW EAL query corroborates the sustained outbound POST burst to the collector so the network plane confirms the volume. A correlation rule fuses the two-shape stuffing analytics into one identity-attack incident keyed on the source IP.",
+    "name": "ITDR — Credential Stuffing (failed-login burst across many users)",
+    "summary": "The idp_signin_emulator emits a burst of FAILURE sign-ins from one source IP/ASN against many distinct user identifiers — the credential-stuffing shape where an attacker replays a stolen credential dump against an IdP. Cortex ITDR groups failed authentications by source IP, counts distinct targeted users in the window, and alerts when one origin sprays many accounts, with severity scaling as th…",
+    "description": "Credential stuffing is the highest-volume identity attack in the Verizon DBIR: an actor takes a breach-corpus of username/password pairs and replays them en masse against a login surface, accepting a low hit rate. The IdP-log signature is unmistakable — a single source IP (often one ASN / hosting provider) producing a wall of authentication FAILUREs across dozens of distinct usernames in a tight window, with the occasional SUCCESS where a reused password lands. This scenario drives CortexSim's idp_signin_emulator to POST a 20-identity failed-login burst from one source IP (Okta shape) and then a wider 50-identity burst (Microsoft Entra shape) into the identity collector. Detection is IdP-log analytics in Cortex ITDR: an XQL rule groups FAILURE authentications by source IP, counts distinct actor identifiers, and raises a credential-stuffing anomaly when the distinct-user count from one origin crosses threshold; severity escalates with the 50-identity burst. An NGFW EAL query corroborates the sustained outbound POST burst to the collector so the network plane confirms the volume. A correlation rule fuses the two-shape stuffing analytics into one identity-attack incident keyed on the source IP.",
     "severity": "high",
     "confidence": "high"
   },
@@ -84,7 +84,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin \u2014 event_pattern=credential_stuffing",
+    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin — event_pattern=credential_stuffing",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -176,14 +176,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Credential Stuffing Identity Attack \u2014 Single Origin Spray",
+        "name": "Credential Stuffing Identity Attack — Single Origin Spray",
         "rule_id": "CR-ITDR-0003",
         "logic": "XQL(ITDR-003 Credential Stuffing Many Users One Source IP) OR XQL(ITDR-003 Credential Stuffing Severity Escalates 50 Event Burst)"
       }
     ],
     "analytics_modules": [
-      "Cortex ITDR Analytics \u2014 Distinct-user failure spray per source IP",
-      "Cortex XSIAM Identity Analytics \u2014 Credential-stuffing origin detection"
+      "Cortex ITDR Analytics — Distinct-user failure spray per source IP",
+      "Cortex XSIAM Identity Analytics — Credential-stuffing origin detection"
     ]
   },
   "panw_mapping": {
@@ -209,14 +209,14 @@
         "evidence_query": "Correlation CR-ITDR-0003 fuses the Okta and Microsoft Entra credential-stuffing analytics into one identity-attack incident keyed on source IP."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IDENT-039",
+        "threat_scenario_id": "TS-IDENT-039",
         "name": "Credential-Stuffing Detection",
         "description": "Detect a single source IP attempting many distinct user identifiers in a short window across Okta and Microsoft Entra, with severity scaling to distinct-user volume.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IDENT-039A",
+            "threat_step_id": "TS-IDENT-039A",
             "objective": "A 20-identity failed-login burst from one IP raises a credential-stuffing anomaly.",
             "preconditions": [
               "Cortex ITDR ingesting okta_sso and msft_azure_ad_signin datasets.",
@@ -234,7 +234,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-IDENT-039B",
+            "threat_step_id": "TS-IDENT-039B",
             "objective": "Okta and Microsoft stuffing analytics stitch into one identity-attack incident.",
             "success_criteria": [
               "Correlation `CR-ITDR-0003` groups both shapes under one incident keyed on source IP."
@@ -254,20 +254,20 @@
     "detection_engineering": [
       "Group authentication FAILUREs by source IP and alert when the distinct-user count crosses threshold in a window.",
       "Scale severity to distinct-user volume so wide sprays escalate automatically.",
-      "Watch for the rare SUCCESS inside a failure spray \u2014 that account is now compromised."
+      "Watch for the rare SUCCESS inside a failure spray — that account is now compromised."
     ],
     "response_playbook": "XSOAR-PB-CredentialStuffingResponse-v1"
   },
   "references": [
     {
-      "title": "Verizon DBIR 2024 \u2014 Stolen Credential Reuse",
+      "title": "Verizon DBIR 2024 — Stolen Credential Reuse",
       "url": "https://www.verizon.com/business/resources/reports/dbir/",
       "publisher": "Verizon",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1110.004 \u2014 Credential Stuffing",
+      "title": "MITRE ATT&CK T1110.004 — Credential Stuffing",
       "url": "https://attack.mitre.org/techniques/T1110/004/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

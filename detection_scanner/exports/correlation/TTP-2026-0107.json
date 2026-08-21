@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1566",
+    "T1078.004",
+    "T1485"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(ITDR-011 Anomalous Bulk Remote-Wipe Broadcast from Privileged Intune Identity) AND ABIOC(ITDR-011 First-Seen Destructive Device Action on a Standing-Privilege Admin) \u2014 fuses the burst-scale and first-seen behavioral deviations on the same tenant and admin identity, correlated with that identity's preceding risky / impossible-travel sign-in, into a single identity-weaponized mass-device-wipe incident anchored to the phished-admin causality chain (phished-admin risky sign-in -> MDM console access -> tenant-scale RemoteWipe/FactoryReset broadcast).",
+      "name": "Identity-Weaponized Mass Device Wipe \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-ITDR-0011",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0107"
+}

@@ -11,6 +11,8 @@ preset = xdr_data
 | filter target_process_name = "lsass.exe"
 | filter requested_access bitand 0x0410 != 0
 | filter actor_process_image_name not in ("MsMpEng.exe", "cyserver.exe", "WmiPrvSE.exe")
+| filter causality_actor_process_image_name not in ("MsMpEng.exe", "cyserver.exe", "WmiPrvSE.exe")
+| fields _time, agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, causality_id, requested_access
 
 ## BIOC — comsvcs.dll MiniDump LOLBin Execution
 # severity: critical
@@ -21,6 +23,7 @@ preset = xdr_data
 | filter event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = "rundll32.exe"
 | filter action_process_image_command_line contains_any ("comsvcs.dll MiniDump", "comsvcs.dll, MiniDump", "comsvcs MiniDump")
+| fields _time, agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, causality_id, action_process_image_command_line
 
 ## VALIDATION — Confirm LSASS access from non-allowlisted process
 # purpose: validation
@@ -31,7 +34,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS
 | filter target_process_name = "lsass.exe"
 | filter requested_access bitand 0x0410 != 0
-| fields _time, agent_hostname, actor_process_image_name, actor_process_command_line, requested_access
+| fields _time, agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, causality_id, actor_process_command_line, requested_access
 
 ## VALIDATION — Confirm comsvcs.dll MiniDump invocation
 # purpose: validation

@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1580",
+    "T1526",
+    "T1552.005",
+    "T1078.004",
+    "T1548.005",
+    "T1537"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(SSRF-Driven Instance Metadata Token Theft from an Anomalous Workload Process) AND ABIOC(Machine-Tempo Multi-Stage Cloud Attack Chain Under a Single Derived Identity) AND ABIOC(Autonomous IAM Self-Escalation via storage.objectAdmin Grant Following IMDS Token Theft) within 300 seconds, bridged host -> instance -> attached-service-account. The two cloud ABIOCs share one join key (the service-account identity_name, which both emit from cloud_audit_logs). The endpoint ABIOC emits agent_hostname (an OS host identity) and carries no service-account email \u2014 the SSRF-minted token is discarded and never appears in endpoint telemetry \u2014 so it is stitched to the cloud stages NOT on a shared identity field but via the cloud asset-inventory mapping agent_hostname -> GCP instance -> attached service account, correlating on that host/instance-to-identity_name bridge plus the tight 300-second window. This fuses the SSRF/IMDS token theft, the machine-speed cross-stage fan-out, and the self-granted storage.objectAdmin escalation into one machine-tempo autonomous-agent cloud-attack incident.",
+      "name": "Machine-Tempo Autonomous-Agent Cloud Attack Chain \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-MP-0015",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0113"
+}

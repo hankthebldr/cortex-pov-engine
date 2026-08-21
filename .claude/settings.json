@@ -1,0 +1,49 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__cortexsim-db__read_query",
+      "mcp__cortexsim-db__list_tables",
+      "mcp__cortexsim-db__describe_table"
+    ],
+    "deny": [
+      "mcp__cortexsim-db__write_query",
+      "mcp__cortexsim-db__create_table"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-paths.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/validate-corpus.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/gofmt-go.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-api-envelope.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/terraform-fmt.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

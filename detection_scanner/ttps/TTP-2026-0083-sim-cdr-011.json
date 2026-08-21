@@ -220,14 +220,14 @@
         "evidence_query": "Correlation CR-CDR-0011 fuses the escape-primitive BIOC and the host-process-activity XQL into one container-escape-chain incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-011",
+        "threat_scenario_id": "TS-CLOUD-011",
         "name": "Kubernetes Container Escape Chain Detection",
         "description": "Cortex Cloud CDR + XSIAM detect the breadth of container-escape primitives a Kubernetes-Goat-style cluster exposes — DIND/docker.sock abuse, nsenter into host namespaces, host-path access — and the resulting host-process activity.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-011A",
+            "threat_step_id": "TS-CLOUD-011A",
             "objective": "The escape primitives (nsenter / docker.sock / host-path) are detected.",
             "preconditions": [
               "cdr EKS fixture applied with the Cortex Linux agent daemonset deployed.",
@@ -244,7 +244,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUD-011B",
+            "threat_step_id": "TS-CLOUD-011B",
             "objective": "The host-namespace process activity after escape is detected and stitched.",
             "preconditions": [
               "Cortex agent ingestion active so host-namespace process events reach xdr_data."

@@ -1,0 +1,316 @@
+{
+  "id": "TTP-2026-0097",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-13T00:00:00+00:00",
+    "updated_at": "2026-07-13T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "vector-behavioral-anomaly",
+      "actor-howling-scorpius",
+      "ransomware",
+      "akira",
+      "pre-encryption",
+      "entropy-spike",
+      "inhibit-recovery",
+      "severity-high",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "endpoint"
+    ],
+    "source_refs": [
+      "SRC-PANW-TECHDOCS",
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Ransomware Pre-Encryption Behavioral Anomaly on a Host — Cortex Analytics Behavioral IOC (ABIOC) (T1486 / T1490 / T1083)",
+    "summary": "A host process shows an anomalous file rewrite rate, per-file entropy spike, and snapshot/backup inhibition that deviate from the host's learned Cortex baseline — the pre-encryption fingerprint of Akira (Howling Scorpius). No single write is a known-bad IOC, so signature BIOCs miss it; the deviation plus causality chain is what an auto-tuned ABIOC fires on.",
+    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the endpoint, user, and network behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the ENDPOINT plane against the earliest, cheapest-to-catch phase of a ransomware intrusion — the moment BEFORE bulk encryption completes and while recovery is being inhibited. It models the tradecraft attributed to Howling Scorpius (the Akira ransomware operation), whose Linux/ESXi encryptors enumerate a target file set, rewrite files at a rate and entropy no legitimate workload produces, and delete snapshots/backups so victims cannot roll back. Cortex has learned this host's normal file-I/O profile: a small, stable set of processes writing at a modest, low-entropy cadence (log rotation, package updates, scheduled tar/rsync jobs) and a backup routine that CREATES snapshots on a schedule, never bulk-DELETES them. The scenario injects two behavioral deviations from that learned baseline: (a) a single process producing a rapid burst of high-entropy file writes/renames with a uniform new extension at a rate far above the host's learned file-modification profile, and (b) a recovery-inhibition burst that deletes snapshot/backup artefacts a routine backup job never removes. A hand-authored BIOC keyed on a specific encryptor hash, ransom-note string, or known extension would miss a fresh Akira build — which is exactly the point: the auto-tuned ABIOC fires on the deviation from the host's learned behavior and anchors it to the causality chain (file enumeration -> high-entropy mass rewrite -> snapshot/backup deletion). Two ABIOCs cover the two deviation shapes; supporting validation XQL confirms the learned file-I/O baseline and surfaces the pre-encryption burst; a correlation rule stitches the two ABIOCs into a single pre-encryption-ransomware incident the DC presents as proof that Cortex's behavioral analytics caught a novel encryptor no static signature was written for. Fully SAFE-MODE: writes land only in an isolated /tmp victim directory, nothing outside it is touched, and cleanup restores the directory.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Howling Scorpius",
+        "aliases": [
+          "Akira",
+          "Akira Ransomware Group",
+          "Storm-1567"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Akira ransomware double-extortion intrusions against enterprise Linux/ESXi and Windows estates (2023-2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "Akira"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2023-03-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1490",
+        "name": "Inhibit System Recovery",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1083",
+        "name": "File and Directory Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "File: File Modification",
+      "File: File Creation",
+      "Process: Process Creation",
+      "Command: Command Execution"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-011 — Ransomware pre-encryption behavioral deviation on a learned host file-I/O baseline for Cortex ABIOC validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM Linux agent installed on the target host so per-process file-I/O and command telemetry reaches xdr_data.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "A baseline window has elapsed during which the host produced only its normal file-I/O (log rotation, package updates, scheduled tar/rsync) so Cortex learned the endpoint file-modification profile.",
+        "check_command": "test -d /tmp/cortexsim_preenc || echo baseline-window"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No known-bad payloads, no real encryption. Reproduce the pre-encryption\n# telemetry shape: enumerate an isolated victim set, rewrite it at a high\n# rate with high-entropy content and a uniform new extension, then inhibit\n# recovery by deleting snapshot/backup artefacts. All writes stay in /tmp.\nset -euo pipefail\nVDIR=/tmp/cortexsim_preenc; mkdir -p $VDIR\nfor i in $(seq 1 60); do echo baseline-content-$i > $VDIR/doc_$i.dat; done\nfind $VDIR -type f > /tmp/cortexsim_preenc_targets.txt\nwhile read -r f; do head -c 4096 /dev/urandom > $f.locked && rm -f $f; done < /tmp/cortexsim_preenc_targets.txt\nrm -f /tmp/cortexsim_snapshot_baseline.img /tmp/cortexsim_backup_baseline.tar 2>/dev/null || true",
+      "input_variables": [
+        {
+          "name": "VICTIM_FILE_COUNT",
+          "type": "string",
+          "default": "60",
+          "description": "Number of isolated victim files seeded then rewritten to produce the high-rate, high-entropy pre-encryption burst."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "A single process producing a rapid burst of high-entropy file rewrites with a uniform new extension at a rate above the host's learned file-modification baseline.",
+        "expected_value": "event_type = FILE and action_file_extension = \".locked\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "A recovery-inhibition process deleting snapshot/backup artefacts a routine backup job never removes.",
+        "expected_value": "action_process_image_name = \"rm\" and action_process_command_line contains \"snapshot\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim_preenc /tmp/cortexsim_preenc_targets.txt; echo '[CortexSim] SIM-EDR-011 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "EDR-011 Anomalous Pre-Encryption File-Modification Burst Deviating from Host Baseline",
+        "description": "A single process produces a rapid burst of high-entropy file writes/renames with a uniform new extension at a rate far above the host's learned file-modification profile. Every write uses legitimate syscalls and the encryptor may be a fresh, unhashed Akira build, so a signature BIOC misses it; the ABIOC fires on the rate-and-entropy deviation from the learned endpoint baseline, anchored to the enumeration-then-mass-rewrite causality chain rather than any known-bad extension or hash.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_RENAME)\n| filter actor_process_image_name not in (\"tar\", \"gzip\", \"rsync\", \"dpkg\", \"apt\", \"logrotate\")\n| comp count() as file_ops, count_distinct(action_file_extension) as ext_spread by agent_hostname, actor_process_instance_id, actor_process_image_name, causality_actor_process_image_name\n| filter file_ops >= 200\n| sort desc file_ops\n| fields agent_hostname, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, file_ops, ext_spread",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1486",
+          "T1083"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned host file-I/O baseline (few processes, modest low-entropy cadence) -> file enumeration -> single-process high-entropy mass rewrite whose rate exceeds the learned profile, anchored to the enumerating process lineage."
+      },
+      {
+        "name": "EDR-011 Recovery-Inhibition Snapshot Deletion Deviating from Host Baseline",
+        "description": "A process deletes snapshot/backup artefacts on a host whose learned backup routine only CREATES snapshots on a schedule and never bulk-deletes them. The deletion co-occurs with the high-entropy file-modification burst. The ABIOC fires on the recovery-inhibition deviation from the host's learned backup behavior, anchored to the mass-rewrite that immediately precedes it.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"rm\", \"shred\", \"btrfs\", \"lvremove\", \"vgremove\", \"unlink\", \"vssadmin\", \"wbadmin\")\n| filter action_process_command_line contains \"snapshot\" or action_process_command_line contains \"backup\" or action_process_command_line contains \".img\" or action_process_command_line contains \"shadows\"\n| comp count() as recovery_inhibit_ops by agent_hostname, actor_effective_username, actor_process_instance_id, causality_actor_process_image_name\n| filter recovery_inhibit_ops >= 1\n| fields agent_hostname, actor_effective_username, actor_process_instance_id, causality_actor_process_image_name, recovery_inhibit_ops",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1490"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "High-entropy mass-rewrite burst on the host -> deletion of snapshot/backup artefacts the learned backup routine never removes, anchored to the co-occurring encryptor process."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-011 Host File-Modification Baseline Learned",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.FILE\n| comp count() as file_ops by agent_hostname, actor_process_image_name\n| filter file_ops >= 1\n| sort desc file_ops\n| fields agent_hostname, actor_process_image_name, file_ops",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-011 Pre-Encryption File Burst Surfaced on Host",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_RENAME)\n| comp count() as burst_ops by agent_hostname, actor_process_image_name\n| filter burst_ops >= 50\n| sort desc burst_ops\n| fields agent_hostname, actor_process_image_name, burst_ops",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Pre-Encryption Ransomware on Host — ABIOC Causality Stitch",
+        "rule_id": "CR-EDR-0011",
+        "logic": "ABIOC(EDR-011 Anomalous Pre-Encryption File-Modification Burst Deviating from Host Baseline) AND ABIOC(EDR-011 Recovery-Inhibition Snapshot Deletion Deviating from Host Baseline) — fuses the two auto-tuned behavioral deviations on the same host into a single pre-encryption-ransomware incident anchored to the enumeration -> mass-rewrite -> recovery-inhibition causality chain, catching the Akira encryptor before bulk encryption completes."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-endpoint file-I/O rate, write entropy, and backup/recovery behavior"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-ABIOC-EDR-0011-PREENC-BURST",
+          "XSIAM-ABIOC-EDR-0011-RECOVERY-INHIBIT"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Two ABIOCs fire on the host file-I/O behavioral deviation; CR-EDR-0011 stitches them into one pre-encryption-ransomware incident anchored to the enumeration -> mass-rewrite -> recovery-inhibition causality chain."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BEHAVIORAL-PREENCRYPTION-FILE-BURST"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_RENAME) | comp count() as burst_ops by agent_hostname, actor_process_image_name | filter burst_ops >= 50"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-011",
+        "name": "Ransomware Pre-Encryption Behavioral Anomaly Detection via Cortex ABIOC",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a host's normal file-I/O and backup profile and detect the pre-encryption phase of a ransomware intrusion — a single process rewriting files at anomalous rate and entropy while deleting snapshots — anchored to its causality chain, where no static signature was written for a fresh encryptor build.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-011A",
+            "objective": "Cortex learns the host file-I/O baseline and an injected pre-encryption burst plus recovery inhibition fires both ABIOCs.",
+            "preconditions": [
+              "EDR target with the Cortex Linux agent installed.",
+              "Baseline window elapsed with the host producing only normal file-I/O."
+            ],
+            "steps": [
+              "Let the file-I/O baseline window elapse.",
+              "Seed an isolated victim set, run a high-entropy mass rewrite, and delete snapshot/backup artefacts.",
+              "Observe both ABIOCs fire and CR-EDR-0011 raise a pre-encryption-ransomware incident."
+            ],
+            "success_criteria": [
+              "ABIOC `EDR-011 Anomalous Pre-Encryption File-Modification Burst Deviating from Host Baseline` fires.",
+              "ABIOC `EDR-011 Recovery-Inhibition Snapshot Deletion Deviating from Host Baseline` fires.",
+              "Correlation CR-EDR-0011 raises one stitched pre-encryption-ransomware incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce immutable/offline backups and snapshot retention locks so recovery cannot be inhibited by a compromised host, turning a T1490 attempt into a non-event.",
+      "Restrict which accounts and processes may delete snapshot/backup artefacts; require change control for bulk snapshot removal.",
+      "Deploy canary files whose modification triggers immediate isolation so a mass-rewrite is contained before it spreads."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned per-endpoint file-I/O rate and write-entropy baseline rather than hand-authoring static rules for individual encryptor hashes or extensions.",
+      "Alert on a single process whose file-modification rate or write entropy exceeds the host's learned baseline.",
+      "Alert on snapshot/backup deletion co-occurring with an anomalous file-modification burst."
+    ],
+    "response_playbook": "XSOAR-PB-PreEncryptionRansomwareBehavioralAnomalyTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "Threat Assessment: Howling Scorpius (Akira Ransomware)",
+      "url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK T1486 — Data Encrypted for Impact",
+      "url": "https://attack.mitre.org/techniques/T1486/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1490 — Inhibit System Recovery",
+      "url": "https://attack.mitre.org/techniques/T1490/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

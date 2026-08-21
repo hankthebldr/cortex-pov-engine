@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getRuns, getResultsForRun, validateResult, downloadReport } from '../api/client.js'
+import { runIdOf } from '../api/ids.js'
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -451,7 +452,7 @@ export default function ResultsViewer({ runs: propRuns, onClose }) {
                 {runs.map(run => {
                   const isExpanded = expandedRun?.run_id === run.run_id
                   return (
-                    <React.Fragment key={run.run_id || run.id}>
+                    <React.Fragment key={runIdOf(run)}>
                       <tr
                         onClick={() => handleRowClick(run)}
                         className={isExpanded ? 'row-selected' : ''}

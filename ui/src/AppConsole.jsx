@@ -1,256 +1,73 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from './components/console/AppShell.jsx'
-import OperationsView from './components/console/OperationsView.jsx'
-import InflightView from './components/console/InflightView.jsx'
-import EvidenceView from './components/console/EvidenceView.jsx'
-import CoverageView from './components/console/CoverageView.jsx'
-import LabView from './components/console/LabView.jsx'
-import TenantManager from './components/console/TenantManager.jsx'
-import TargetsView from './components/console/TargetsView.jsx'
-import LaunchView from './components/console/LaunchView.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
-import usePinnedScenarios from './components/console/usePinnedScenarios.js'
-import { isRunTerminal } from './components/console/runStatus.js'
-import { getHealth, getRuns, getScenarios, getScenario, downloadReportBundle } from './api/client.js'
+import { SurfaceBoundary } from './components/console/SurfaceError.jsx'
+import ReadinessBanner from './components/console/ReadinessBanner.jsx'
+import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.jsx'
+import useConsoleRouter from './app/useConsoleRouter.js'
+import {
+  DESTINATIONS,
+  DEFAULT_DESTINATION,
+  getDestination,
+  isValidDestination,
+  navGroups,
+} from './app/destinations.jsx'
+import { downloadReportBundle, getToolAdapters } from './api/client.js'
+import useShelf from './components/console/useShelf.js'
+import { agentIdOf } from './api/ids.js'
 
 /**
  * AppConsole — Mission Ops Console root.
  *
- * The default shell. Legacy light-themed App.jsx remains reachable via
- * `?theme=legacy` as an escape hatch during the soak period — see
- * docs/design/console-redesign.md for the deprecation schedule.
+ * Thin router shell. The 678-line monolith's state has been lifted into the
+ * EnvironmentProvider (tenant/agent/health/scenarios/planes/runs/activeRun/
+ * pins) and the 12-branch if/else replaced by a destination registry mounted
+ * through a zero-dep hash router. Each destination is a self-contained surface
+ * that reads ambient scope from the provider.
  *
- * Migration: all 9 steps shipped + extensive enterprise-grade
- * enhancements layered on top.
- *
- * Migration plan (complete):
- *   [x] 1 · tokens + Google Fonts + .theme-console scope
- *   [x] 2 · AppShell chrome (header, telemetry, rail, tabs, strip)
- *   [x] 3 · modes-as-buttons → proper tabs (Ops/In-Flight/Evidence/Lab/Coverage)
- *   [x] 4 · Inspector drawer with pinned launch CTA
- *   [x] 5 · TelemetryStrip (always-visible live run state)
- *   [x] 6 · Attack Narrative Timeline (animated SVG stitch arcs — the hero)
- *   [x] 7 · Evidence redesign + Screenshot PNG + POV report markdown export
- *   [x] 8 · CoverageView (ATT&CK matrix + PANW Stack toggle) + LabView (IaC)
- *   [x] 9 · console is the default; ?theme=legacy is the opt-out
- *
- * Enterprise-grade enhancements:
- *   • ⌘K command palette — fuzzy scenario search + jump-to-tab + actions
- *   • ⌘F filter palette — multi-criteria slicing across 7 facet groups
- *   • ⌘L global quick-launch — preempts browser default
- *   • ⌘E global POV report export from any tab
- *   • ⌘/ help overlay — keyboard reference + tab cheatsheet + PANW stack
- *     map; surfaces automatically on first browser visit
- *   • Pinned scenarios — localStorage-backed, cross-tab sync, rail + palette
- *   • Detection drill-down — click any scorecard row → side panel with
- *     timing, alert ID copy, operator notes, validate-with-notes
- *   • PANW Stack Coverage view — product × kill chain matrix; "wow"
- *     visualization for security architects
- *   • A11y: skip link, ARIA landmarks, aria-live regions on telemetry +
- *     ticker, role=progressbar with valuenow, prefers-reduced-motion
- *     respect, focus-visible outlines
- *   • Tier A + Tier B static analysis CI gates (every TTP script +
- *     every generated push bundle)
+ * The legacy light-themed App.jsx remains reachable via `?theme=legacy`.
  */
-
-// All 11 detection planes present in the scenario library. Keep this in sync
-// with the planes that actually load (the rail must reconcile with the Library
-// total — previously only 6 of 11 were listed, so the rail summed to ~32 while
-// the Library showed 58). Names map Cortex codes → human labels.
-const PLANE_META = [
-  { code: 'EDR',       name: 'Endpoint'    },
-  { code: 'CDR',       name: 'Cloud'       },
-  { code: 'NDR',       name: 'Network'     },
-  { code: 'ITDR',      name: 'Identity'    },
-  { code: 'CLOUD_APP', name: 'Cloud App'   },
-  { code: 'AI_ACCESS', name: 'AI Access'   },
-  { code: 'AIRS',      name: 'AI Runtime'  },
-  { code: 'AI_SPM',    name: 'AI Posture'  },
-  { code: 'BROWSER',   name: 'Browser'     },
-  { code: 'KOI',       name: 'Agentic'     },
-  { code: 'ANALYTICS', name: 'Multi-plane' },
-]
-
 export default function AppConsole() {
-  const [activeTab, setActiveTab]                       = useState('operations')
-  const [selectedPlane, setSelectedPlane]               = useState(null)
-  const [techniqueFilter, setTechniqueFilter]           = useState(null)
-  const [runs, setRuns]                                 = useState([])
-  const [scenarioList, setScenarioList]                 = useState([])
-  const [health, setHealth]                             = useState({})
-  const [toast, setToast]                               = useState(null)
-  const [requestOpenScenarioId, setRequestOpenScenarioId] = useState(null)
-  // Pinned run override for Evidence tab — set when a DC drills in from
-  // a history row. Cleared when a fresh run starts or the user explicitly
-  // returns to the active-run view.
-  const [pinnedRun, setPinnedRun]                       = useState(null)
+  return (
+    <EnvironmentProvider>
+      <ConsoleShell />
+    </EnvironmentProvider>
+  )
+}
 
-  // Redesign v2 — guided workflow shared state:
-  //   selectedTarget — chosen in ① Targets, consumed by ③ Launch
-  //   armedScenarioId/armedScenario — armed in ② Library, consumed by ③ Launch
-  const [selectedTarget, setSelectedTarget]   = useState(null)
-  const [armedScenarioId, setArmedScenarioId] = useState(null)
-  const [armedScenario, setArmedScenario]     = useState(null)
+function ConsoleShell() {
+  const env = useEnvironment()
+  const router = useConsoleRouter({
+    defaultDestination: DEFAULT_DESTINATION,
+    isValid: isValidDestination,
+  })
 
-  // Pinned scenarios — localStorage-backed
-  const { pinnedIds, isPinned, toggle: togglePin, unpin } = usePinnedScenarios()
-
-  // Resolve the armed scenario's full detail (execution identity, push/pull
-  // flags) for the Launch step. Summary from the list isn't enough.
+  const [toast, setToast] = useState(null)
+  const [abortConfirmOpen, setAbortConfirmOpen] = useState(false)
+  // The adapter catalog is the denominator for the shelf badge. Fetched once
+  // here; a failure leaves it empty and the badge simply does not render — a
+  // missing badge is honest, a badge of "0" would read as "nothing to worry
+  // about" when we could not check.
+  const [toolAdapters, setToolAdapters] = useState([])
   useEffect(() => {
-    if (!armedScenarioId) { setArmedScenario(null); return }
     let cancelled = false
-    getScenario(armedScenarioId)
-      .then((d) => { if (!cancelled) setArmedScenario(d || null) })
-      .catch(() => { if (!cancelled) setArmedScenario(null) })
-    return () => { cancelled = true }
-  }, [armedScenarioId])
-
-  // ── Health fetch ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    getHealth()
-      .then((d) => {
-        if (!d) return
-        setHealth({
-          hostname: d.hostname || window.location.hostname,
-          version:  d.version ? `v${d.version}` : 'v1.0',
-          // The /api/health endpoint doesn't yet expose sensor status — filled
-          // with placeholders; the env pill will show muted until we wire the
-          // aggregated health endpoint (see open question #2 in design doc).
-          sensors: { xdr: 'healthy', cdr: 'healthy', ndr: 'healthy' },
-        })
-      })
-      .catch(() => {
-        setHealth({ hostname: window.location.hostname, version: 'v1.0', sensors: {} })
-      })
-  }, [])
-
-  // ── Runs fetch (poll every 10s while on inflight/evidence) ────────────────
-  const refreshRuns = useCallback(() => {
-    getRuns()
-      .then((data) => setRuns(Array.isArray(data) ? data : []))
+    getToolAdapters()
+      .then((d) => { if (!cancelled) setToolAdapters(Array.isArray(d?.adapters) ? d.adapters : []) })
       .catch(() => {})
+    return () => { cancelled = true }
   }, [])
 
-  useEffect(() => {
-    refreshRuns()
-  }, [refreshRuns])
-
-  useEffect(() => {
-    const needsPoll = activeTab === 'inflight' || activeTab === 'evidence'
-    if (!needsPoll) return undefined
-    const t = setInterval(refreshRuns, 10_000)
-    return () => clearInterval(t)
-  }, [activeTab, refreshRuns])
-
-  // ── Scenarios (for plane counts + palette items) ──────────────────────────
-  useEffect(() => {
-    getScenarios({})
-      .then((data) => {
-        // API shape varies — accept either array or { scenarios: [...] }
-        const list = Array.isArray(data) ? data : (data && data.scenarios) || []
-        setScenarioList(list)
-      })
-      .catch(() => setScenarioList([]))
+  const surfaceToast = useCallback((message, type = 'info', ms = 3000) => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), ms)
   }, [])
 
-  // ── Derive active run (most recent truly in-flight run) ──────────────────
-  // Only 'running' counts as active. Push runs sit at 'pending' forever (the
-  // bundle executes offline), so treating 'pending' as active produced a
-  // phantom telemetry strip for stale runs. Pending pull runs surface once the
-  // beacon picks them up and flips them to 'running'.
-  const activeRun = useMemo(() => {
-    const running = runs.find((r) => r && r.status === 'running')
-    if (!running) return null
-    const totalSteps = running.total_steps ?? running.steps?.length ?? 0
-    const currentStep = running.current_step ?? running.step ?? 0
-    const elapsedSec = running.started_at
-      ? Math.floor((Date.now() - new Date(running.started_at).getTime()) / 1000)
-      : running.elapsed_seconds ?? 0
-    const detected = running.detected_count ?? 0
-    const total = running.expected_detections ?? 0
-    const nextStep = running.next_technique ?? running.next_step ?? null
-    return {
-      runId: running.id || running.run_id,
-      scenarioId: running.scenario_id,
-      step: currentStep,
-      totalSteps,
-      elapsed: elapsedSec,
-      detected,
-      total,
-      nextStep,
-    }
-  }, [runs])
-
-  // ── Derive last completed run (fallback for InflightView) ───────────────
-  // Backend emits terminal status 'complete' (not 'completed'); isRunTerminal
-  // also matches 'failed'/'aborted' so a finished run always surfaces here.
-  const lastRun = useMemo(() => {
-    const finished = runs.find((r) => r && isRunTerminal(r.status))
-    if (!finished) return null
-    return {
-      runId: finished.id || finished.run_id,
-      scenarioId: finished.scenario_id,
-      status: finished.status,
-    }
-  }, [runs])
-
-  // ── Rail data ────────────────────────────────────────────────────────────
-  const planes = useMemo(() => {
-    const counts = scenarioList.reduce((acc, s) => {
-      const p = (s.plane || '').toUpperCase()
-      acc[p] = (acc[p] || 0) + 1
-      return acc
-    }, {})
-    return PLANE_META.map((p) => ({
-      ...p,
-      count: counts[p.code] || 0,
-      isActive: selectedPlane === p.code,
-    }))
-  }, [scenarioList, selectedPlane])
-
-  // Resolve pinned IDs against the live scenario list. If a scenario was
-  // pinned but is no longer present in the list (e.g. plane filter or
-  // deletion), fall back to a name derived from the ID.
-  const pinned = useMemo(() => {
-    if (!pinnedIds.length) return []
-    const byId = new Map(
-      scenarioList.map((s) => [s.scenario_id || s.id, s])
-    )
-    return pinnedIds.map((id) => {
-      const s = byId.get(id)
-      return { id, name: s?.name || id }
-    })
-  }, [pinnedIds, scenarioList])
-
-  // ── Open-scenario helper (used by rail and palette) ──────────────────────
-  const handleOpenScenario = useCallback((scenarioId) => {
-    if (!scenarioId) return
-    setActiveTab('operations')
-    // Bump a fresh value so the same scenario re-opens if clicked twice.
-    setRequestOpenScenarioId(`${scenarioId}::${Date.now()}`)
-  }, [])
-
-  const requestOpenIdForView = useMemo(() => {
-    if (!requestOpenScenarioId) return null
-    const idx = requestOpenScenarioId.indexOf('::')
-    return idx > 0 ? requestOpenScenarioId.slice(0, idx) : requestOpenScenarioId
-  }, [requestOpenScenarioId])
-
-  // ⌘E — global POV briefing export. Picks the most relevant run: active
-  // if any, else last completed. Downloads the full bundle (narrative +
-  // matrix + Navigator layer + manifest) — the artifact a DC actually
-  // hands the customer at the end of a POV. Friendly toast if no run.
-  //
-  // Declared BEFORE the command-palette useMemo below so the memo's body
-  // can reference it without hitting the temporal dead zone — a regression
-  // that left the entire AppConsole rendering as a blank #root once the
-  // export action was wired into the palette (PR #43).
+  // ⌘E — global POV briefing export. Picks the active run, else the last
+  // completed run. Downloads the full bundle.
   const handleExportPOV = useCallback(async () => {
-    const targetRunId = activeRun?.runId || lastRun?.runId || null
+    const targetRunId = env.activeRun?.runId || env.lastRun?.runId || null
     if (!targetRunId) {
-      setToast({ message: 'No run to export — launch a scenario first', type: 'warn' })
-      setTimeout(() => setToast(null), 3000)
+      surfaceToast('No run to export — launch a scenario first', 'warn')
       return
     }
     try {
@@ -263,314 +80,210 @@ export default function AppConsole() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      setToast({ message: `Exported POV briefing for ${targetRunId}`, type: 'success' })
-      setTimeout(() => setToast(null), 3000)
+      surfaceToast(`Exported POV briefing for ${targetRunId}`, 'success')
     } catch (err) {
-      setToast({ message: err.message || 'Export failed', type: 'error' })
-      setTimeout(() => setToast(null), 4000)
+      surfaceToast(err.message || 'Export failed', 'error', 4000)
     }
-  }, [activeRun, lastRun])
+  }, [env.activeRun, env.lastRun, surfaceToast])
 
-  // ── Command palette items ────────────────────────────────────────────────
+  // Abort flow — confirmation → POST /api/runs/:id/abort.
+  const handleAbortConfirmed = useCallback(async () => {
+    setAbortConfirmOpen(false)
+    const runId = env.activeRun?.runId
+    if (!runId) return
+    try {
+      const r = await fetch(`/api/runs/${runId}/abort`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      })
+      if (r.ok) {
+        surfaceToast(`Run ${runId} aborted`, 'success')
+        env.refreshRuns()
+      } else if (r.status === 404) {
+        surfaceToast('Abort endpoint not yet implemented on this SimCore', 'warn', 4000)
+      } else {
+        surfaceToast(`Abort failed: HTTP ${r.status}`, 'error', 4000)
+      }
+    } catch (err) {
+      surfaceToast(err.message || 'Abort failed', 'error', 4000)
+    }
+  }, [env, surfaceToast])
+
+  // ── Nav badges ────────────────────────────────────────────────────────────
+  // The Tools & Payloads badge counts adapters whose tool the TARGET must fetch
+  // from the internet mid-run. A number on the nav is the only thing that makes
+  // a DC open that surface BEFORE the customer meeting rather than during it.
+  const shelf = useShelf({ adapters: toolAdapters })
+  const degradedCount = env.healthModel ? env.healthModel.degraded.length : 0
+  const badges = useMemo(() => ({
+    scenarioCount: env.scenarios.length ? String(env.scenarios.length) : null,
+    live: env.activeRun ? { text: 'LIVE', variant: 'live' } : null,
+    targetEgress: shelf.counts.target_egress > 0 ? String(shelf.counts.target_egress) : null,
+    // A count, never a dot: "3" sends a DC to the page, a coloured pip does not.
+    degraded: degradedCount > 0 ? String(degradedCount) : null,
+  }), [env.scenarios.length, env.activeRun, shelf.counts.target_egress, degradedCount])
+
+  const groups = useMemo(() => navGroups(badges), [badges])
+
+  // ── Command palette items (destinations + context switches + scenario jumps) ─
   const paletteItems = useMemo(() => {
-    const scenarios = scenarioList.slice(0, 12).map((s) => ({
-      section: 'Scenarios',
-      id: s.scenario_id || s.id,
-      title: s.name || '(unnamed)',
-      meta: `${s.scenario_id || s.id} \u00b7 ${s.plane || '?'}${
-        s.steps ? ' \u00b7 ' + s.steps.length + ' steps' : ''
-      }${isPinned(s.scenario_id || s.id) ? ' \u00b7 \u25fc pinned' : ''}`,
-      icon: '\u25b8',
-      onSelect: () => handleOpenScenario(s.scenario_id || s.id),
-    }))
-    const actions = [
+    const pinnedLaunch = env.pinnedIds
+      .map((pid) => {
+        const s = env.scenarios.find((x) => (x.scenario_id || x.id) === pid)
+        if (!s) return null
+        return {
+          section: 'Pinned · launch',
+          id: `launch-${pid}`,
+          title: `Arm ${s.name || pid}`,
+          meta: `${pid} · ${s.plane || '?'}`,
+          icon: '◼',
+          shortcut: ['⌘', 'L'],
+          onSelect: () => router.navigate('guided', { arm: pid }),
+        }
+      })
+      .filter(Boolean)
+
+    const scenarios = env.scenarios.map((s) => {
+      const id = s.scenario_id || s.id
+      return {
+        section: 'Scenarios',
+        id: `scn-${id}`,
+        title: s.name || '(unnamed)',
+        meta: `${id} · ${s.plane || '?'}${s.steps ? ' · ' + s.steps.length + ' steps' : ''}`,
+        icon: '▸',
+        onSelect: () => router.navigate('library', { open: id }),
+      }
+    })
+
+    const tenantSwitches = env.tenants.map((t) => {
+      const id = t.name || t.id
+      return {
+        section: 'Switch tenant',
+        id: `tenant-${id}`,
+        title: `Point at ${id}`,
+        meta: t.config?.region || t.region || 'XSIAM tenant',
+        icon: '⬡',
+        onSelect: () => { env.setTenant(id); surfaceToast(`Tenant: ${id}`, 'success', 2000) },
+      }
+    })
+
+    const agentSwitches = env.agents.map((a) => {
+      const id = agentIdOf(a)
+      return {
+        section: 'Switch agent',
+        id: `agent-${id}`,
+        title: `Use ${a.hostname || id}`,
+        meta: [a.os, a.status].filter(Boolean).join(' · ') || 'beacon',
+        icon: '◉',
+        onSelect: () => { env.setAgent(id); surfaceToast(`Agent: ${a.hostname || id}`, 'success', 2000) },
+      }
+    })
+
+    const destinationActions = DESTINATIONS
+      .filter((d) => !d.hidden && d.group)
+      .map((d) => ({
+        section: 'Go to',
+        id: `go-${d.id}`,
+        title: `Go to ${d.label}`,
+        meta: d.group,
+        icon: d.icon || '⚡',
+        onSelect: () => router.navigate(d.id),
+      }))
+
+    const utility = [
       {
         section: 'Actions',
-        id: 'tab-targets',
-        title: 'Go to Targets',
-        meta: 'pick agent \u00b7 push bundle \u00b7 IaC lab',
-        icon: '\u26a1',
-        shortcut: ['G', 'T'],
-        onSelect: () => setActiveTab('targets'),
+        id: 'new-pov',
+        title: 'New POV run',
+        meta: 'guided target → launch flow',
+        icon: '▸',
+        onSelect: () => router.navigate('guided'),
       },
       {
         section: 'Actions',
-        id: 'tab-operations',
-        title: 'Go to Library',
-        meta: 'browse and arm scenarios',
-        icon: '\u26a1',
-        shortcut: ['G', 'O'],
-        onSelect: () => setActiveTab('operations'),
-      },
-      {
-        section: 'Actions',
-        id: 'tab-launch',
-        title: 'Go to Launch',
-        meta: 'arm a target + fire the run',
-        icon: '\u26a1',
-        shortcut: ['G', 'A'],
-        onSelect: () => setActiveTab('launch'),
-      },
-      {
-        section: 'Actions',
-        id: 'tab-inflight',
-        title: 'Go to Live',
-        meta: 'attack narrative timeline',
-        icon: '\u26a1',
-        shortcut: ['G', 'I'],
-        onSelect: () => setActiveTab('inflight'),
-      },
-      {
-        section: 'Actions',
-        id: 'tab-evidence',
-        title: 'Go to Evidence',
-        meta: 'scorecard · validate · export',
-        icon: '\u26a1',
-        shortcut: ['G', 'E'],
-        onSelect: () => setActiveTab('evidence'),
-      },
-      {
-        section: 'Actions',
-        id: 'tab-lab',
-        title: 'Go to Environments',
-        meta: 'IaC bundle generator',
-        icon: '\u26a1',
-        shortcut: ['G', 'L'],
-        onSelect: () => setActiveTab('lab'),
-      },
-      {
-        section: 'Actions',
-        id: 'tab-coverage',
-        title: 'Go to ATT&CK Coverage',
-        meta: 'MITRE + PANW Stack matrix',
-        icon: '\u26a1',
-        shortcut: ['G', 'C'],
-        onSelect: () => setActiveTab('coverage'),
-      },
-      {
-        section: 'Actions',
-        id: 'tab-tenants',
-        title: 'Go to Tenants',
-        meta: 'XSIAM tenant health & config',
-        icon: '\u26a1',
-        shortcut: ['G', 'T'],
-        onSelect: () => setActiveTab('tenants'),
+        id: 'stage-tool',
+        title: 'Stage a tool payload',
+        meta: 'pull a public tool onto this SimCore',
+        icon: '⇩',
+        onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
       },
       {
         section: 'Actions',
         id: 'global-export',
         title: 'Export POV report',
-        meta: 'markdown \u00b7 active or most recent run',
-        icon: '\u2197',
-        shortcut: ['\u2318', 'E'],
+        meta: 'active or most recent run',
+        icon: '↗',
+        shortcut: ['⌘', 'E'],
         onSelect: handleExportPOV,
       },
     ]
 
-    // Pinned quick-launch actions appear FIRST in Actions when present.
-    const pinnedActions = pinnedIds
-      .map((pid) => {
-        const s = scenarioList.find((x) => (x.scenario_id || x.id) === pid)
-        if (!s) return null
-        return {
-          section: 'Pinned \u00b7 launch',
-          id: `quick-launch-${pid}`,
-          title: `Open ${s.name || pid}`,
-          meta: `${pid} \u00b7 ${s.plane || '?'}`,
-          icon: '\u25fc',
-          shortcut: ['\u2318', 'L'],
-          onSelect: () => handleOpenScenario(pid),
-        }
-      })
-      .filter(Boolean)
+    return [
+      ...pinnedLaunch,
+      ...destinationActions,
+      ...scenarios,
+      ...tenantSwitches,
+      ...agentSwitches,
+      ...utility,
+    ]
+  }, [env, router, handleExportPOV, surfaceToast])
 
-    return [...pinnedActions, ...scenarios, ...actions]
-  }, [scenarioList, pinnedIds, isPinned, handleOpenScenario, handleExportPOV])
-
-  // ── Tab badges ──────────────────────────────────────────────────────────
-  const tabBadges = useMemo(() => {
-    const b = {
-      operations: scenarioList.length ? String(scenarioList.length) : null,
-      inflight:   activeRun ? { text: 'LIVE', variant: 'live' } : null,
-      evidence:   activeRun ? `${activeRun.detected}/${activeRun.total}` : null,
-      lab:        null,
-      coverage:   null,
-      tenants:    null,
-    }
-    return b
-  }, [scenarioList, activeRun])
-
-  // ── Ticker (most recent event) ──────────────────────────────────────────
+  // ── Ticker (most recent event) ────────────────────────────────────────────
   const ticker = useMemo(() => {
-    const latest = runs[0]
+    const latest = env.runs[0]
     if (!latest) return 'idle'
     const ts = latest.last_event_at || latest.updated_at || latest.started_at
-    return `${ts ? new Date(ts).toISOString().substring(11, 19) + 'Z' : 'now'} \u00b7 ${
+    return `${ts ? new Date(ts).toISOString().substring(11, 19) + 'Z' : 'now'} · ${
       latest.scenario_id || latest.id
-    } \u00b7 ${latest.status || 'unknown'}`
-  }, [runs])
+    } · ${latest.status || 'unknown'}`
+  }, [env.runs])
 
-  // ── Callbacks ───────────────────────────────────────────────────────────
-  const handleSelectPlane = useCallback((planeCode) => {
-    setSelectedPlane((prev) => (prev === planeCode ? null : planeCode))
-  }, [])
-
-  const handleRunComplete = useCallback((run) => {
-    setToast({ message: `Run ${run?.id || ''} started`, type: 'success' })
-    refreshRuns()
-    setActiveTab('inflight')
-    setTimeout(() => setToast(null), 4000)
-  }, [refreshRuns])
-
-  // Abort flow — confirmation dialog → POST /api/runs/:id/abort with
-  // graceful fallback when the backend doesn't yet implement the
-  // endpoint (older SimCore builds). Friendly toast in either case.
-  const [abortConfirmOpen, setAbortConfirmOpen] = useState(false)
-
-  const handleAbortRun = useCallback(() => {
-    setAbortConfirmOpen(true)
-  }, [])
-
-  const handleAbortConfirmed = useCallback(async () => {
-    setAbortConfirmOpen(false)
-    if (!activeRun?.runId) return
-    try {
-      const r = await fetch(`/api/runs/${activeRun.runId}/abort`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      if (r.ok) {
-        setToast({ message: `Run ${activeRun.runId} aborted`, type: 'success' })
-        refreshRuns()
-      } else if (r.status === 404) {
-        setToast({
-          message: 'Abort endpoint not yet implemented on this SimCore — escalate to lab admin',
-          type: 'warn',
-        })
-      } else {
-        setToast({ message: `Abort failed: HTTP ${r.status}`, type: 'error' })
-      }
-    } catch (err) {
-      setToast({ message: err.message || 'Abort failed', type: 'error' })
-    }
-    setTimeout(() => setToast(null), 4000)
-  }, [activeRun, refreshRuns])
-
-  // ── Render tab content ──────────────────────────────────────────────────
-  let tabContent = null
-  if (activeTab === 'targets') {
-    tabContent = (
-      <TargetsView
-        selectedTarget={selectedTarget}
-        onSelectTarget={(t) => {
-          setSelectedTarget(t)
-          setToast({ message: `Target set: ${t.label || t.id} (${t.kind})`, type: 'success' })
-          setTimeout(() => setToast(null), 2500)
-        }}
-        onGoToLab={() => setActiveTab('lab')}
-      />
-    )
-  } else if (activeTab === 'launch') {
-    tabContent = (
-      <LaunchView
-        scenario={armedScenario}
-        selectedTarget={selectedTarget}
-        onRunComplete={handleRunComplete}
-        onError={(msg) => setToast({ message: msg, type: 'error' })}
-        onGoLibrary={() => setActiveTab('operations')}
-        onGoTargets={() => setActiveTab('targets')}
-      />
-    )
-  } else if (activeTab === 'operations') {
-    tabContent = (
-      <OperationsView
-        selectedPlane={selectedPlane}
-        onClearPlane={() => setSelectedPlane(null)}
-        techniqueFilter={techniqueFilter}
-        onClearTechniqueFilter={() => setTechniqueFilter(null)}
-        requestOpenScenarioId={requestOpenIdForView}
-        pinnedIds={pinnedIds}
-        isPinned={isPinned}
-        togglePin={togglePin}
-        onArmScenario={(sid) => setArmedScenarioId(sid)}
-        onContinueToLaunch={() => setActiveTab('launch')}
-        onRunComplete={handleRunComplete}
-        onOpenRunEvidence={(run) => {
-          // Pin the run + switch to Evidence so the DC lands on
-          // exactly the historical row they clicked.
-          setPinnedRun({
-            runId: run.id || run.run_id,
-            scenarioId: run.scenario_id,
-          })
-          setActiveTab('evidence')
-        }}
-        onError={(msg) => setToast({ message: msg, type: 'error' })}
-        onSurfaceMessage={(msg, type = 'info') => {
-          setToast({ message: msg, type })
-          setTimeout(() => setToast(null), 3000)
-        }}
-      />
-    )
-  } else if (activeTab === 'inflight') {
-    tabContent = (
-      <InflightView
-        activeRun={activeRun}
-        lastRun={lastRun}
-        onError={(msg) => setToast({ message: msg, type: 'error' })}
-      />
-    )
-  } else if (activeTab === 'evidence') {
-    tabContent = (
-      <EvidenceView
-        activeRun={activeRun}
-        lastRun={lastRun}
-        pinnedRun={pinnedRun}
-        onError={(msg) => setToast({ message: msg, type: 'error' })}
-      />
-    )
-  } else if (activeTab === 'lab') {
-    tabContent = (
-      <LabView
-        onError={(msg) => setToast({ message: msg, type: 'error' })}
-      />
-    )
-  } else if (activeTab === 'tenants') {
-    tabContent = <TenantManager />
-  } else if (activeTab === 'coverage') {
-    tabContent = (
-      <CoverageView
-        onFilterByTechnique={(tid, scenarioIds) => {
-          setTechniqueFilter({ tid, scenarioIds: scenarioIds || [] })
-          setActiveTab('operations')
-          setToast({
-            message: `Filtered Operations to ${tid} (${(scenarioIds || []).length} scenarios)`,
-            type: 'info',
-          })
-          setTimeout(() => setToast(null), 3000)
-        }}
-      />
-    )
-  }
+  // ── Resolve + mount the current destination surface ───────────────────────
+  const dest = getDestination(router.destination) || getDestination(DEFAULT_DESTINATION)
+  const Surface = dest.Component
 
   return (
     <>
       <AppShell
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        activeRun={activeRun}
-        health={health}
-        planes={planes}
-        onSelectPlane={handleSelectPlane}
-        pinned={pinned}
-        onSelectPinned={handleOpenScenario}
-        onUnpinScenario={unpin}
-        onAbortRun={handleAbortRun}
+        destination={router.destination}
+        onNavigate={router.navigate}
+        navGroups={groups}
+        activeRun={env.activeRun}
+        health={env.health}
+        onAbortRun={() => setAbortConfirmOpen(true)}
         onExportPOV={handleExportPOV}
-        tabBadges={tabBadges}
         paletteItems={paletteItems}
         ticker={ticker}
       >
-        {tabContent}
+        {/* Every fetcher below swallows its failure into an empty list, so a
+            dead SimCore reads as "nothing configured" on all ten destinations.
+            Say it once, globally, above whichever surface is mounted. */}
+        {env.apiError && (
+          <div className="api-down" role="alert" data-testid="api-down-banner">
+            <span className="api-down__tag">SIMCORE UNREACHABLE</span>
+            <span className="api-down__msg mono">{env.apiError}</span>
+            <span className="api-down__hint">
+              Views below may look empty because nothing could be loaded — not because
+              nothing exists. Retrying automatically.
+            </span>
+            <button type="button" className="btn btn--xs" onClick={env.refreshHealth}>↻ Retry now</button>
+          </div>
+        )}
+
+        {/* SimCore answered, but is not whole. The two deployments that break
+            hardest — booted without tools/ or without scenarios/ — both report
+            `status: "ok"`, so the first signal a DC gets today is an empty
+            Library that reads as "this product has no content". */}
+        {router.destination !== 'readiness' && (
+          <ReadinessBanner model={env.healthModel} onNavigate={router.navigate} />
+        )}
+
+        <SurfaceBoundary resetKey={router.destination} title={dest.label}>
+          <Surface
+            params={router.params}
+            setParams={router.setParams}
+            onNavigate={router.navigate}
+          />
+        </SurfaceBoundary>
       </AppShell>
 
       <ConfirmDialog
@@ -579,11 +292,11 @@ export default function AppConsole() {
         onConfirm={handleAbortConfirmed}
         title="Abort active run?"
         body={
-          activeRun ? (
+          env.activeRun ? (
             <>
               <p>
-                Aborting <strong className="mono">{activeRun.scenarioId}</strong>{' '}
-                (step {activeRun.step} of {activeRun.totalSteps}) will:
+                Aborting <strong className="mono">{env.activeRun.scenarioId}</strong>{' '}
+                (step {env.activeRun.step} of {env.activeRun.totalSteps}) will:
               </p>
               <ul>
                 <li>Stop the agent from executing remaining steps</li>
@@ -621,6 +334,3 @@ export default function AppConsole() {
     </>
   )
 }
-
-// In-flight rendering moved to components/console/InflightView.jsx (step 6).
-// Empty-state handling is now intrinsic to InflightView when no run is active.

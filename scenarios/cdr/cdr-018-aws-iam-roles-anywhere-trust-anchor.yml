@@ -1,0 +1,185 @@
+scenario_id: SIM-CDR-018
+name: "AWS IAM Roles Anywhere Trust-Anchor Abuse for Certificate-Backed Persistence"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-CDR-01
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1098.001"
+mitre_technique_name: "Account Manipulation: Additional Cloud Credentials"
+additional_techniques:
+  - technique: "T1552.004"
+    name: "Unsecured Credentials: Private Keys"
+  - technique: "T1580"
+    name: "Cloud Infrastructure Discovery"
+  - technique: "T1550.001"
+    name: "Use Alternate Authentication Material: Application Access Token"
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+
+threat_report: "Unit 42 — Roles Here? Roles There? Roles Anywhere: Exploring the Security of AWS IAM Roles Anywhere"
+threat_report_url: "https://unit42.paloaltonetworks.com/aws-roles-anywhere/"
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Causality Graph Stitching"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  A Roles Anywhere posture finding (unconditioned trust policy), the runtime
+  trust-anchor write, and the certificate-minted CreateSession stitch into a
+  single certificate-backed-persistence incident. Correlation CR-CDR-0018 links
+  the CA registration to the first minted session; CR-CDR-0018-PIVOT links the
+  CSPM finding to the runtime CreateSession against the same role ARN. This is
+  the "posture misconfiguration to runtime abuse" pivot the corpus did not model.
+moat_tier: "MOAT"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+    - www-data
+
+push_supported: true
+pull_supported: true
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The AWS CLI process the attacker drives from the compromised hybrid host
+# (running as the container-runtime identity) is the Causality Group Owner — it
+# owns the Roles Anywhere enumeration and the trust-anchor write, and the
+# aws_signing_helper CreateSession minting descends from the same session. The
+# chain is a cloud-control-plane spine: enumeration -> anchor registration
+# (shared cloud principal) -> the newly-registered substrate exercised at
+# runtime (exposure_exploit) -> correlation stitch. CloudTrail detections key on
+# user_identity.arn / role ARN, so these are single-actor cloud-audit signatures
+# left intact; the causality is expressed at the scenario/graph level.
+cgo_anchor:
+  image_name: "aws"
+  primary_username: "container-runtime"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Enumerate Roles Anywhere trust anchors and profiles (read-only)"
+    command: "aws rolesanywhere list-trust-anchors --region us-east-1 2>/dev/null || echo cortexsim-cdr-018-rolesanywhere-recon-noauth; aws rolesanywhere list-profiles --region us-east-1 2>/dev/null || true"
+    identity: container-runtime
+    mitre_technique: "T1580"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "A rolesanywhere ListTrustAnchors/ListProfiles enumeration burst maps the certificate-federation surface before the anchor write — reconnaissance that precedes trust-anchor abuse."
+        ttp_ref: "TTP-2026-0117"
+        detection_id: "bioc-roles-anywhere-trust-anchor-and-profile-enumeration-burst"
+
+  - id: step-02
+    name: "Register attacker self-signed CA as a trust anchor (SAFE-MODE marker)"
+    command: "mkdir -p /tmp/cortexsim-cdr-018 && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout /tmp/cortexsim-cdr-018/attacker-ca.key -out /tmp/cortexsim-cdr-018/attacker-ca.pem -subj '/CN=cortexsim-rolesanywhere-safe-marker' 2>/dev/null || true; printf 'aws rolesanywhere create-trust-anchor --name cortexsim-safe-anchor --source sourceType=CERTIFICATE_BUNDLE\\n' > /tmp/cortexsim-cdr-018/SAFE-MODE-createtrustanchor.marker; echo cortexsim-cdr-018-safe-mode-trust-anchor-marked"
+    identity: container-runtime
+    mitre_technique: "T1098.001"
+    platforms: ["linux", "container"]
+    causality:
+      # Same compromised cloud principal (user_identity.arn) as the enumeration:
+      # the trust-anchor write follows the recon that mapped the anchor/profile
+      # surface. No process fork — one cloud identity acting on the control
+      # plane, so the join is the shared cloud-principal entity.
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "CreateTrustAnchor/UpdateTrustAnchor registers an inline attacker-supplied certificate bundle (sourceType CERTIFICATE_BUNDLE) rather than an AWS-managed ACM-PCA CA — the persistence-substrate write any chaining certificate can later mint credentials from."
+        ttp_ref: "TTP-2026-0117"
+        detection_id: "bioc-roles-anywhere-trust-anchor-created-or-repointed-to-external-ca"
+
+  - id: step-03
+    name: "Mint STS credentials via CreateSession with the attacker certificate (SAFE-MODE marker)"
+    command: "printf 'aws_signing_helper credential-process --role-arn %s --trust-anchor-arn ARN --profile-arn ARN\\n' \"${TARGET_ROLE_ARN:-arn:aws:iam::000000000000:role/cortexsim-rolesanywhere-target}\" > /tmp/cortexsim-cdr-018/SAFE-MODE-createsession.marker; echo cortexsim-cdr-018-safe-mode-createsession-marked"
+    identity: container-runtime
+    mitre_technique: "T1550.001"
+    platforms: ["linux", "container"]
+    causality:
+      # The runtime abuse: aws_signing_helper mints STS credentials from the
+      # trust anchor registered in step-02 against the role whose unconditioned
+      # trust policy is the posture finding — the CSPM-to-runtime pivot where a
+      # posture misconfiguration is exercised at runtime (exposure_exploit).
+      parent_step: step-02
+      pivot: exposure_exploit
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "A rolesanywhere CreateSession mints STS credentials via the aws_signing_helper credential helper; the event record exposes the trust anchor, profile, and role ARNs — certificate-backed credential use a static IAM-key rule never sees."
+        ttp_ref: "TTP-2026-0117"
+        detection_id: "bioc-roles-anywhere-createsession-minting-sts-credentials-from-unmanaged-trust-anchor"
+      - plane: CDR
+        type: XQL
+        description: "Validation query confirms a Roles Anywhere CreateSession occurred in the run window and returns the trust anchor, profile, and role ARN triangle from the CloudTrail record."
+        ttp_ref: "TTP-2026-0117"
+        detection_id: "xql-confirm-roles-anywhere-createsession-occurred-in-run-window"
+      - plane: CDR
+        type: XQL
+        description: "Hunt query surfaces the trust anchor, profile, and role ARNs across CreateSession records so the SE can see which roles are reachable through the abused anchor."
+        ttp_ref: "TTP-2026-0117"
+        detection_id: "xql-surface-trust-anchor-profile-and-role-arns-from-createsession-records"
+
+  - id: step-04
+    name: "Correlation stitches the certificate-backed persistence chain and CSPM-to-runtime pivot"
+    command: "echo cortexsim-cdr-018-cr-cdr-0018-certificate-backed-persistence-stitched"
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    platforms: ["linux", "container"]
+    causality:
+      # CR-CDR-0018 links the trust-anchor registration to the first minted
+      # session (same AWS account, 60m); CR-CDR-0018-PIVOT links the posture
+      # finding to the runtime CreateSession against the same role ARN. Both
+      # stitch on the shared cloud entity (account / role ARN).
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: Correlation
+        description: "Correlation stitches the trust-anchor registration to the first certificate-minted STS session on the same AWS account within 60m — evidencing a durable persistence substrate, not a one-off key use."
+        ttp_ref: "TTP-2026-0117"
+        detection_id: "CR-CDR-0018"
+      - plane: CDR
+        type: Correlation
+        description: "Correlation links the unconditioned-trust-policy posture finding to the runtime CreateSession against the same role ARN within 24h — the CSPM-to-runtime pivot proving the misconfiguration was exercised, not merely present."
+        ttp_ref: "TTP-2026-0117"
+        detection_id: "CR-CDR-0018-PIVOT"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-cdr-018"
+    - "echo cortexsim-cdr-018-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-23"
+last_updated: "2026-07-23"
+tags:
+  - cloud
+  - aws
+  - roles-anywhere
+  - iam-abuse
+  - certificate-backed-persistence
+  - cspm-to-runtime

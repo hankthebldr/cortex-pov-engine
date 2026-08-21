@@ -1,0 +1,525 @@
+{
+  "id": "TTP-2026-0116",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:36:58+00:00",
+    "updated_at": "2026-07-24T01:36:58+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane-stitch",
+      "xdm",
+      "modeling-rules",
+      "normalization-substrate",
+      "ivanti-connect-secure",
+      "cve-2025-0282",
+      "spawn-malware",
+      "cl-unk-0979",
+      "vpn-gateway",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "windows",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Ivanti Connect Secure Pre-Auth IF-T Overflow to Internal Windows Pivot (SPAWN / CL-UNK-0979)",
+    "summary": "A pre-auth Ivanti Connect Secure IF-T overflow (CVE-2025-0282), appliance log-wipe, and pivot to an internal Windows host (DcomSrv service, /mail scheduled task, LSASS dump via hollowed svchost). The card's value: XDM modeling rules normalize the appliance IF-T telemetry so a correlation stitches the appliance source IP to the first internal host — a chain an EDR-only stack cannot produce.",
+    "description": "Modeled on Unit 42's CVE-2025-0282 / CVE-2025-0283 Ivanti Connect Secure exploitation reporting (activity cluster CL-UNK-0979, tactical overlap with Mandiant UNC5337). An unauthenticated attacker exploits a stack-based buffer overflow in Ivanti Connect Secure's IF-T (IF-T binding to TLS) handling to gain RCE on the VPN appliance with no credentials, then deploys the SPAWN malware family (SPAWNMOLE tunneler, SPAWNSNAIL SSH backdoor, SPAWNSLOTH log-tamperer), runs the ldap.pl Perl script to decrypt appliance-stored credentials, and pivots via RDP to an internal Windows host. On that host the operator establishes persistence with a service named DcomSrv (vixDiskLib.dll side-loaded by the legitimate vmdisk.exe, its embedded description carrying the misspelled string DCOMLIENT) and a scheduled task named /mail (deelevator64.dll side-loaded by DeElevate64.exe), dumps LSASS memory with package.dll (built via MSBuild.exe compiling mini.xml, XOR-encoded output written to C:\\Users\\Public\\Downloads\\VM.txt), injects into a suspended svchost.exe via process hollowing, and beacons to 168.100.8[.]144 and 193.149.180[.]128. The appliance side is scrubbed: log.events.vc0 and debuglog deleted, /var/cores emptied. The detection emphasis is the XDM modeling-rule SUBSTRATE: an EDR-only stack sees the Windows persistence but has no appliance telemetry, so it cannot know the DcomSrv host was reached from a pre-auth VPN exploit. This card authors two modeling rules that normalize the raw Ivanti appliance IF-T debug/syslog and log-tampering file-audit telemetry into addressable XDM fields (xdm.source.ipv4, xdm.event.description, xdm.target.file.path); those modeled fields make the pre-auth 'Invalid IFT packet received from unauthenticated client' tell and the anonymization-infrastructure source IPs (185.219.141[.]95 NordVPN node, 185.195.71[.]244 Tor exit) searchable, and a correlation rule then stitches the modeled appliance-plane signal to the endpoint-plane Windows-persistence BIOCs into one incident — the cross-source stitch that is the whole point of an analytics platform over a single-plane EDR. A modeling rule does not itself fire; it ENABLES firing, so it is counted informationally, not as a seventh detection_type.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "CL-UNK-0979",
+        "aliases": [
+          "UNC5337"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Ivanti Connect Secure CVE-2025-0282 pre-auth exploitation (December 2024 onward)"
+    ],
+    "malware_families": [
+      {
+        "name": "SPAWNMOLE"
+      },
+      {
+        "name": "SPAWNSNAIL"
+      },
+      {
+        "name": "SPAWNSLOTH"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2024-12-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1190",
+        "name": "Exploit Public-Facing Application",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1133",
+        "name": "External Remote Services",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.004",
+        "name": "Indicator Removal: File Deletion",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.001",
+        "name": "OS Credential Dumping: LSASS Memory",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1543",
+        "subtechnique_id": "T1543.003",
+        "name": "Create or Modify System Process: Windows Service",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.005",
+        "name": "Scheduled Task/Job: Scheduled Task",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1574",
+        "subtechnique_id": "T1574.002",
+        "name": "Hijack Execution Flow: DLL Side-Loading",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Network Traffic: Network Connection Creation",
+      "Process: Process Creation",
+      "Service: Service Creation",
+      "Scheduled Job: Scheduled Job Creation",
+      "File: File Deletion"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-010 — Ivanti pre-auth IF-T overflow to internal Windows pivot, XDM modeling-rule substrate + appliance-to-endpoint correlation stitch",
+    "privilege_required": "none",
+    "prerequisites": [
+      {
+        "description": "The Ivanti Connect Secure appliance forwards syslog/debug telemetry to Cortex XSIAM as a raw source (ivanti_ics_raw) so the modeling rules have raw events to normalize.",
+        "check_command": "test -d /tmp/cortexsim-mp-010 || mkdir -p /tmp/cortexsim-mp-010"
+      },
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the internal Windows pivot host so DcomSrv service creation and LSASS-dump telemetry reaches xdr_data.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE emulation. No real overflow, no memory read, no deletion.\n# Emit SAFE-MODE marker artifacts that mirror the observable shapes the\n# Ivanti appliance and the internal Windows pivot host would produce, so the\n# modeling rules, BIOCs, and the appliance-to-endpoint correlation can be\n# exercised in a lab without any appliance or Windows target.\nset -euo pipefail\nWORK=\"${WORK_DIR:-/tmp/cortexsim-mp-010}\"\nmkdir -p \"$WORK\"\n# (1) appliance IF-T pre-auth exploitation tell + anonymization source IP\nprintf '%s\\n' 'Invalid IFT packet received from unauthenticated client src=185.219.141.95' > \"$WORK/ivanti-debug.log\"\n# (2) Windows persistence: DcomSrv service via vixDiskLib.dll side-load (marker)\nprintf '%s\\n' 'service=DcomSrv binary=vmdisk.exe module=vixDiskLib.dll desc=DCOMLIENT' > \"$WORK/dcomsrv-service.marker\"\n# (3) /mail scheduled task launching DeElevate64.exe (marker)\nprintf '%s\\n' 'schtask=/mail action=DeElevate64.exe module=deelevator64.dll' > \"$WORK/mail-task.marker\"\n# (4) LSASS dump SAFE-MODE marker (no memory is read)\nprintf '%s\\n' 'SAFE-MODE marker only — package.dll VM.txt dump NOT performed' > \"$WORK/VM.txt\"\necho '[CortexSim] SIM-MP-010 safe-mode emulation complete.'",
+      "input_variables": [
+        {
+          "name": "WORK_DIR",
+          "type": "string",
+          "default": "/tmp/cortexsim-mp-010",
+          "description": "Directory the SAFE-MODE marker artifacts are written to."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Appliance debug-log line carrying the pre-auth IF-T exploitation tell and an anonymization-infrastructure source IP, normalized by the modeling rule into xdm.event.description + xdm.source.ipv4.",
+        "expected_value": "message contains \"Invalid IFT packet received from unauthenticated client\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Internal Windows host: a service named DcomSrv created via vixDiskLib.dll side-loaded by vmdisk.exe.",
+        "expected_value": "action_process_image_command_line contains \"DcomSrv\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf \"${WORK_DIR:-/tmp/cortexsim-mp-010}\"; echo '[CortexSim] SIM-MP-010 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "7144b8c77d261985205ae2621eb6242f43d6244e18b8d01d05048337346b6efd",
+        "context": "ldap.pl — custom Perl credential-harvesting script that decrypts Ivanti appliance-stored passwords, used for RDP lateral movement (T1003 / T1133).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "1dc0a3a5904ec35103538a018ef069fbe95b0a3c26cb0ff9ba0d1c268d1aaf98",
+        "context": "package.dll — memory-dumping tool built via MSBuild.exe compiling mini.xml; XOR-encodes the LSASS dump (key 0x27) to C:\\Users\\Public\\Downloads\\VM.txt (T1003.001).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "43363aa0d1fdab0174d94bd5a9e16d47cbb08b4b089c5a12e370133ab8e640a6",
+        "context": "vixDiskLib.dll — DLL side-loading backdoor loaded by the legitimate vmdisk.exe; creates the DcomSrv service and process-hollows a suspended svchost.exe (T1574.002 / T1543.003).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "a6b24fcef2e018c9ef634aa21e26a74ff94ea508a8b132fad38d48f5ab10fcd3",
+        "context": "deelevator64.dll — DLL side-loading backdoor loaded by DeElevate64.exe, triggered by the /mail scheduled task (T1053.005 / T1574.002).",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "168.100.8.144",
+        "context": "C2 endpoint the injected svchost.exe beacons to after process hollowing on the internal Windows host.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "193.149.180.128",
+        "context": "Second C2 endpoint the hollowed svchost.exe beacons to.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "185.219.141.95",
+        "context": "NordVPN node seen in Ivanti appliance debug logs sourcing 'Invalid IFT packet received from unauthenticated client' pre-auth exploitation attempts.",
+        "reputation_required": "suspicious"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "185.195.71.244",
+        "context": "Tor exit node seen in Ivanti appliance debug logs sourcing the pre-auth IF-T exploitation attempts.",
+        "reputation_required": "suspicious"
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "C:\\Users\\Public\\Music\\package.dll",
+        "context": "Drop path of the package.dll memory-dumping tool on the internal Windows pivot host.",
+        "reputation_required": "malicious"
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "C:\\Users\\Public\\Downloads\\VM.txt",
+        "context": "XOR-encoded (key 0x27) LSASS memory-dump output written by package.dll.",
+        "reputation_required": "suspicious"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "ldap.pl",
+        "context": "Custom Perl credential-harvesting script name dropped on the Ivanti appliance.",
+        "reputation_required": "malicious"
+      }
+    ],
+    "modeling_rules": [
+      {
+        "name": "Ivanti Connect Secure Appliance IF-T Telemetry Normalization",
+        "dataset": "ivanti_ics_raw",
+        "description": "Normalizes the raw Ivanti Connect Secure appliance debug/syslog stream (ivanti_ics_raw) into addressable XDM fields so the pre-auth IF-T exploitation tell and the attacker source IP become searchable and stitchable. Raw vendor fields map as: source_address -> xdm.source.ipv4, client_hostname -> xdm.source.host.hostname, appliance_hostname -> xdm.target.host.hostname, message -> xdm.event.description, auth_result -> xdm.event.outcome. This modeling rule is the normalization SUBSTRATE beneath the appliance-to-endpoint correlation — it enables firing, it does not itself fire.",
+        "logic": "[MODEL: dataset = ivanti_ics_raw]\n| alter xdm.source.ipv4 = source_address\n| alter xdm.source.host.hostname = client_hostname\n| alter xdm.target.host.hostname = appliance_hostname\n| alter xdm.event.description = message\n| alter xdm.event.outcome = auth_result\n| alter xdm.observer.type = \"vpn-gateway\"\n| filter xdm.event.description contains \"IFT\" or xdm.event.description contains \"IF-T\"",
+        "vendor": "Ivanti",
+        "product": "Connect Secure",
+        "content_id": "MODEL-MP-IVANTI-IFT",
+        "xdm_fields": [
+          "xdm.source.ipv4",
+          "xdm.source.host.hostname",
+          "xdm.target.host.hostname",
+          "xdm.event.description",
+          "xdm.event.outcome",
+          "xdm.observer.type"
+        ]
+      },
+      {
+        "name": "Ivanti Appliance Log-Tampering File-Event Normalization",
+        "dataset": "ivanti_ics_raw",
+        "description": "Normalizes the Ivanti appliance file-audit sub-stream so the SPAWNSLOTH log-tampering deletions become addressable XDM file events. Raw vendor fields map as: file_path -> xdm.target.file.path, file_operation -> xdm.event.operation, source_address -> xdm.source.ipv4. Filters to the specific appliance logs the intrusion wipes (log.events.vc0, debuglog) and the emptied /var/cores. Substrate only — enables the defense-evasion detection, does not fire itself.",
+        "logic": "[MODEL: dataset = ivanti_ics_raw]\n| filter event_type = \"file_audit\"\n| alter xdm.target.file.path = file_path\n| alter xdm.target.file.filename = arrayindex(split(file_path, \"/\"), -1)\n| alter xdm.event.operation = file_operation\n| alter xdm.source.ipv4 = source_address\n| filter xdm.target.file.path in (\"/data/runtime/logs/log.events.vc0\", \"/data/var/dlogs/debuglog\", \"/var/cores\")\n| filter xdm.event.operation in (\"DELETE\", \"TRUNCATE\")",
+        "vendor": "Ivanti",
+        "product": "Connect Secure",
+        "content_id": "MODEL-MP-IVANTI-LOGWIPE",
+        "xdm_fields": [
+          "xdm.target.file.path",
+          "xdm.target.file.filename",
+          "xdm.event.operation",
+          "xdm.source.ipv4"
+        ]
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Ivanti-to-Windows Pivot: DcomSrv Service Created via vixDiskLib DLL Sideload",
+        "description": "Fires on the internal Windows pivot host only when BOTH SPAWN-family signals are present on the same host: (1) vixDiskLib.dll is side-loaded by the legitimate vmdisk.exe as an UNSIGNED module or from outside Program Files — the anomaly that distinguishes the attacker-supplied DLL from the legitimate VMware VDDK library that vmdisk.exe normally loads — modeled on a MODULE_LOAD event; and (2) a service named DcomSrv is created. Requiring the load anomaly AND the DcomSrv persistence together avoids firing on normal VMware/Veeam backup activity, and keying on module + service name rather than a hash survives repacking.",
+        "logic": "dataset = xdr_data\n| filter (event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD and action_module_name contains \"vixDiskLib.dll\" and actor_process_image_name = \"vmdisk.exe\" and (action_module_signature_status = \"UNSIGNED\" or action_module_path not contains \"Program Files\")) or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name in (\"sc.exe\", \"services.exe\", \"vmdisk.exe\") and action_process_image_command_line contains \"DcomSrv\")\n| alter dcom_signal = if(event_type = ENUM.MODULE, \"vixdisklib_anomalous_sideload\", \"dcomsrv_service_create\")\n| comp count_distinct(dcom_signal) as dcom_signals by agent_hostname\n| filter dcom_signals >= 2\n| fields agent_hostname, dcom_signals",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1543.003",
+          "T1574.002"
+        ]
+      },
+      {
+        "name": "Ivanti-to-Windows Pivot: /mail Scheduled Task Launching DeElevate64",
+        "description": "Fires when a scheduled task named /mail launches DeElevate64.exe (which side-loads deelevator64.dll) on the internal Windows pivot host — the second SPAWN-family persistence mechanism. Keys on the /mail task name plus the DeElevate64 launcher.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"schtasks.exe\" or actor_process_image_name = \"svchost.exe\"\n| filter action_process_image_command_line contains \"/mail\" and action_process_image_command_line contains \"DeElevate64\"\n| comp count() as sched_task_events by agent_hostname\n| filter sched_task_events >= 1\n| fields agent_hostname, sched_task_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1053.005"
+        ]
+      },
+      {
+        "name": "Ivanti-to-Windows Pivot: LSASS Memory Dump via Hollowed svchost",
+        "description": "Fires when at least two of the credential-dump observables are seen on one host, each modeled on its real event type: (1) an LSASS handle opened with read/query rights (PROCESS_ACCESS against lsass.exe with PROCESS_VM_READ|PROCESS_QUERY_INFORMATION); (2) process hollowing into a suspended svchost.exe (PROCESS_ACCESS against svchost.exe with PROCESS_VM_WRITE|PROCESS_CREATE_THREAD rights); and (3) the XOR-encoded dump written to C:\\Users\\Public\\Downloads\\VM.txt (FILE write). Requiring two distinct real observables avoids the dead PROCESS_START/action_file_path match the earlier body degraded to.",
+        "logic": "dataset = xdr_data\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = \"lsass.exe\" and requested_access bitand 0x0410 != 0) or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_ACCESS and target_process_name = \"svchost.exe\" and requested_access bitand 0x0022 != 0 and causality_actor_process_image_name not in (\"services.exe\", \"svchost.exe\")) or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains \"C:\\Users\\Public\\Downloads\\VM.txt\")\n| alter dump_signal = if(event_type = ENUM.FILE, \"vm_txt_dump_write\", if(target_process_name = \"lsass.exe\", \"lsass_handle_open\", \"svchost_hollow_inject\"))\n| comp count_distinct(dump_signal) as dump_signals, values(causality_actor_process_image_name) as injector_images by agent_hostname\n| filter dump_signals >= 2\n| fields agent_hostname, dump_signals, injector_images",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1003.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Ivanti IF-T Pre-Auth Exploitation Tell Modeled from Appliance Telemetry",
+        "query": "dataset = ivanti_ics_raw\n| filter _time > to_timestamp(current_time() - 3600)\n| filter message contains \"Invalid IFT packet received from unauthenticated client\"\n| alter src_ip = source_address\n| filter src_ip in (\"185.219.141.95\", \"185.195.71.244\")\n| comp count() as preauth_tells by src_ip\n| filter preauth_tells >= 1\n| fields src_ip, preauth_tells",
+        "expected_rows_min": 1,
+        "dataset": "ivanti_ics_raw"
+      },
+      {
+        "purpose": "investigation",
+        "name": "Appliance Source IP Stitched to Internal Windows Pivot Host",
+        "query": "dataset = ivanti_ics_raw\n| filter message contains \"Invalid IFT packet received from unauthenticated client\"\n| alter signal = \"appliance_preauth_exploit\", entity = source_address\n| fields signal, entity, _time\n| union (\n    dataset = xdr_data\n    | filter action_process_image_command_line contains \"DcomSrv\" or action_process_image_command_line contains \"DeElevate64\"\n    | alter signal = \"internal_windows_persistence\", entity = agent_hostname\n    | fields signal, entity, _time\n)\n| comp count() as observations by signal\n| filter observations >= 1\n| fields signal, observations",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Ivanti Pre-Auth Compromise Stitched to Internal Windows Persistence",
+        "rule_id": "CR-MP-0014",
+        "logic": "XQL(Ivanti IF-T Pre-Auth Exploitation Tell Modeled from Appliance Telemetry) AND (BIOC(Ivanti-to-Windows Pivot: DcomSrv Service Created via vixDiskLib DLL Sideload) OR BIOC(Ivanti-to-Windows Pivot: /mail Scheduled Task Launching DeElevate64) OR BIOC(Ivanti-to-Windows Pivot: LSASS Memory Dump via Hollowed svchost)) — fires when the modeled Ivanti appliance pre-auth exploitation tell (source IP from anonymization infrastructure) is observed within a 24h window of any internal Windows persistence BIOC, stitching the appliance-plane and endpoint-plane signal into one incident an EDR-only stack cannot assemble because it has no appliance telemetry."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — cross-source causality stitching (appliance-plane to endpoint-plane)",
+        "validated": true,
+        "note": "Backed by correlation CR-MP-0014, which fuses the modeled Ivanti IF-T appliance tell (XQL) with the internal-Windows persistence BIOCs."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xpanse",
+        "submodule": "attack-surface-rules",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "TBD-XPANSE-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "In Xpanse / XSIAM ASM, filter Attack Surface Rules to 'Insecure Pulse Secure Pulse Connect Secure VPN' to enumerate internet-exposed Ivanti/Pulse appliances that are candidate CVE-2025-0282 targets before the exploit lands."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001",
+          "TBD-XDR-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START | filter action_process_image_command_line contains \"DcomSrv\" or action_module_path contains \"vixDiskLib.dll\" | fields agent_hostname, action_process_image_name, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "data-modeling",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "MODEL-MP-IVANTI-IFT",
+          "MODEL-MP-IVANTI-LOGWIPE",
+          "CR-MP-0014"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = ivanti_ics_raw | filter message contains \"Invalid IFT packet received from unauthenticated client\" | alter src_ip = source_address | union (dataset = xdr_data | filter action_process_image_command_line contains \"DcomSrv\" | alter src_ip = agent_hostname) | fields src_ip, _time"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-010",
+        "name": "Appliance-to-Endpoint Stitch via XDM Modeling — Ivanti Pre-Auth to Internal Windows Pivot",
+        "description": "A DC proves that normalizing raw VPN-appliance telemetry into XDM is what lets Cortex stitch a pre-auth appliance compromise to the first internal Windows host — the cross-plane chain a single-plane EDR cannot produce. Modeling rules make the Ivanti IF-T tell addressable; endpoint BIOCs catch the SPAWN-family persistence; a correlation rule fuses them.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-010A",
+            "objective": "The XDM modeling rules normalize raw Ivanti appliance telemetry and the validation XQL surfaces the pre-auth IF-T exploitation tell with an anonymization-infrastructure source IP.",
+            "preconditions": [
+              "Ivanti Connect Secure appliance forwarding syslog/debug telemetry to XSIAM as ivanti_ics_raw.",
+              "The IF-T telemetry modeling rule applied."
+            ],
+            "steps": [
+              "Apply MODEL-MP-IVANTI-IFT to normalize ivanti_ics_raw into XDM fields.",
+              "Emit / observe the 'Invalid IFT packet received from unauthenticated client' debug line.",
+              "Run the validation XQL and confirm the modeled source IP is returned."
+            ],
+            "success_criteria": [
+              "Validation XQL `Ivanti IF-T Pre-Auth Exploitation Tell Modeled from Appliance Telemetry` returns >= 1 row.",
+              "The returned src_ip is one of the anonymization-infrastructure IPs (185.219.141.95 / 185.195.71.244)."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-010B",
+            "objective": "The internal-Windows persistence BIOCs fire on the pivot host for the SPAWN-family DcomSrv service, /mail scheduled task, and LSASS dump.",
+            "preconditions": [
+              "Cortex agent installed on the internal Windows pivot host.",
+              "The DcomSrv / /mail / LSASS-dump observables present in xdr_data."
+            ],
+            "steps": [
+              "Observe DcomSrv service creation via vixDiskLib.dll side-load.",
+              "Observe the /mail scheduled task launching DeElevate64.exe.",
+              "Observe the MSBuild/mini.xml LSASS dump to VM.txt."
+            ],
+            "success_criteria": [
+              "BIOC `Ivanti-to-Windows Pivot: DcomSrv Service Created via vixDiskLib DLL Sideload` fires.",
+              "BIOC `Ivanti-to-Windows Pivot: /mail Scheduled Task Launching DeElevate64` fires.",
+              "BIOC `Ivanti-to-Windows Pivot: LSASS Memory Dump via Hollowed svchost` fires."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-MP-010C",
+            "objective": "The correlation rule stitches the modeled appliance-plane tell to the endpoint-plane persistence into one incident — the EDR-only-can't-do-this proof.",
+            "preconditions": [
+              "TS-MP-010A and TS-MP-010B observables present within the correlation window."
+            ],
+            "steps": [
+              "Let both the modeled appliance tell and an internal Windows persistence BIOC land within 24h.",
+              "Observe CR-MP-0014 raise one stitched incident linking the appliance source IP to the internal pivot host."
+            ],
+            "success_criteria": [
+              "Correlation `CR-MP-0014` raises exactly one stitched appliance-to-endpoint incident.",
+              "The incident links the appliance source IP to the internal Windows pivot hostname."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Patch Ivanti Connect Secure to 22.7R2.5+ (Policy Secure 22.7R1.2+, Neurons for ZTA 22.7R2.3+) to close CVE-2025-0282 / CVE-2025-0283; run the Ivanti Integrity Checker Tool on any appliance exposed before patching.",
+      "Front internet-facing VPN appliances with NGFW Advanced Threat Prevention (signature 95948 covers the IF-T exploitation) and restrict management-plane exposure.",
+      "Deny interactive/RDP lateral movement from appliance-adjacent segments and require phishing-resistant MFA on internal Windows hosts.",
+      "Enforce DLL-load allow-listing so legitimate binaries (vmdisk.exe, DeElevate64.exe) cannot side-load attacker DLLs from writable paths."
+    ],
+    "detection_engineering": [
+      "Author XDM modeling rules for VPN-appliance syslog/debug sources BEFORE relying on any appliance detection — un-modeled appliance logs are searchable but not analytics-grade or stitchable.",
+      "Alert on the pre-auth 'Invalid IFT packet received from unauthenticated client' tell, especially from anonymization infrastructure (NordVPN / Tor exit nodes).",
+      "Alert on deletion/truncation of appliance logs (log.events.vc0, debuglog, /var/cores) as a log-tampering indicator.",
+      "Correlate appliance-plane compromise signal with endpoint-plane persistence (DcomSrv service, /mail scheduled task, LSASS dump) to reconstruct the appliance-to-host pivot an EDR-only stack misses."
+    ],
+    "response_playbook": "XSOAR-PB-IvantiPreAuthPivotTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Threat Brief: Ivanti Connect Secure CVE-2025-0282 and CVE-2025-0283",
+      "url": "https://unit42.paloaltonetworks.com/threat-brief-ivanti-cve-2025-0282-cve-2025-0283/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1190 — Exploit Public-Facing Application",
+      "url": "https://attack.mitre.org/techniques/T1190/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1543.003 — Create or Modify System Process: Windows Service",
+      "url": "https://attack.mitre.org/techniques/T1543/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — XDM data modeling rules (parsing and modeling)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Documentation/Data-modeling-rules",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

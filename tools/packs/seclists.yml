@@ -23,6 +23,15 @@ install:
   # into /tmp. SecLists is wordlist data only — no build step.
   runtime_install_command: "test -d /tmp/SecLists || git clone --depth 1 https://github.com/danielmiessler/SecLists /tmp/SecLists"
   binary: "ls"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: SOURCE_TREE_REQUIRED
+    reason: >-
+      SecLists is a 3.3 GB collection of wordlists, not a program — the shelf
+      stages one file at a time, and no single file is 'SecLists'. It is
+      cloned onto the target host, or supplied by the content-library IaC
+      module, so the target needs internet access unless that module is
+      deployed.
 
 invoke:
   target_platform: linux

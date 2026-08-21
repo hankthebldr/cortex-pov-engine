@@ -9,7 +9,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(EDR-003 Cron Job Creation With Suspicious Command Path) OR BIOC(EDR-003 Systemd Unit With Suspicious ExecStart) OR BIOC(EDR-003 Local Account Created With Sudo Group) OR BIOC(EDR-003 SSH Key Generation Then Authorized Keys Write) OR BIOC(EDR-003 Shell Profile Modified With Background Execution)",
+      "logic": "BIOC(EDR-003 Cron Job Creation With Suspicious Command Path) OR BIOC(EDR-003 Systemd Unit With Suspicious ExecStart) OR BIOC(EDR-003 Local Account Created With Sudo Group) OR BIOC(EDR-003 SSH Key Generation Then Authorized Keys Write) OR BIOC(EDR-003 Shell Profile Modified With Background Execution) STITCH BY agent_hostname, causality_actor_process_instance_id WITHIN 900s",
       "name": "Linux Multi-Mechanism Persistence Installation",
       "rule_id": "CR-EDR-0003",
       "severity": "high"

@@ -1,9 +1,9 @@
 import { test as base, expect, type Page } from '@playwright/test'
 
 /**
- * Shared Playwright fixtures + nav helpers for the Mission Ops Console
- * (redesign v2 — guided stepper). Each test gets API helpers so we can
- * pre-seed runs/agents without leaning on UI clicks for setup.
+ * Shared Playwright fixtures + nav helpers for the Mission Ops Console.
+ * Each test gets API helpers so we can pre-seed runs/agents without leaning on
+ * UI clicks for setup.
  */
 
 type Helpers = {
@@ -16,25 +16,72 @@ type Helpers = {
 }
 
 /**
- * Navigate to a console view. Primary workflow steps (Targets / Library /
- * Launch / Live / Evidence) are stepper tabs (role=tab). Secondary views
- * (ATT&CK Coverage / Environments) live behind the "More ▾" menu
- * (role=menuitem). This helper handles both.
+ * Navigate to a console view by its historical spec name.
+ *
+ * These specs were written against the guided STEPPER, which
+ * `ui/src/app/destinations.jsx` replaced with a persistent destination rail —
+ * ConsoleStepper is no longer mounted anywhere, so `.step--more` waited forever
+ * and every spec timed out identically.
+ *
+ * The names below are kept as the specs' vocabulary rather than renamed, because
+ * they describe what a DC is trying to DO ("go look at Evidence"), which the
+ * redesign did not change. What changed is where each one lives:
+ *
+ *   - most are now first-class destinations in the rail;
+ *   - "Launch" moved inside the guided flow (a hidden destination reachable
+ *     from Library and ⌘K), so it is addressed by route rather than by rail;
+ *   - "Live" / "Evidence" became TABS of a run, not top-level views.
+ *
+ * Destination-level views navigate by CLICKING the rail, so the nav itself stays
+ * under test. Tab-scoped views go through the hash router, since there is no rail
+ * entry to click.
  */
-export async function gotoView(page: Page, name: RegExp | string): Promise<void> {
-  // Non-anchored: stepper tab accessible names include the step number and
-  // any badge (e.g. "5Evidence0/0"), so we match on a substring.
-  const re = typeof name === 'string'
-    ? new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    : name
-  const step = page.getByRole('tab', { name: re })
-  if (await step.count()) {
-    await step.first().click()
+const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string> }> = {
+  'Targets': { dest: 'agents' },
+  'Library': { dest: 'library' },
+  'ATT&CK Coverage': { dest: 'coverage' },
+  'Environments': { dest: 'environments' },
+  'Launch': { dest: 'guided' },
+  'Live': { dest: 'runs', params: { tab: 'live' } },
+  'Evidence': { dest: 'runs', params: { tab: 'evidence' } },
+  'EAL Plugins': { dest: 'eal' },
+  // The tool-adapter catalog, relabelled "Tools & Payloads" when the payload
+  // shelf landed on it. The destination id is unchanged, which is the point of
+  // keeping it: routes, testids and ⌘K entries all derive from the id.
+  'Tools & Payloads': { dest: 'adapters' },
+  'Payload Shelf': { dest: 'adapters', params: { supply: 'unstaged' } },
+}
+
+export async function gotoView(
+  page: Page,
+  name: RegExp | string,
+  extra: Record<string, string> = {},
+): Promise<void> {
+  const key = typeof name === 'string' ? name : String(name).replace(/^\/|\/[a-z]*$/g, '')
+  const route = VIEW_ROUTES[key]
+  if (!route) {
+    throw new Error(
+      `gotoView: no route for "${key}". Add it to VIEW_ROUTES in _fixtures.ts — ` +
+      `an unmapped name used to fall through to a selector that silently timed out.`,
+    )
+  }
+
+  const params = { ...(route.params ?? {}), ...extra }
+  const hidden = route.dest === 'guided'   // not in the rail by design
+  if (hidden || Object.keys(params).length) {
+    const qs = new URLSearchParams(params).toString()
+    await page.goto(`/#/${route.dest}${qs ? `?${qs}` : ''}`)
   } else {
-    // The More button relabels to the active secondary view once one is
-    // selected, so match it structurally (aria-haspopup) not by name.
-    await page.locator('.step--more').click()
-    await page.getByRole('menuitem', { name: re }).first().click()
+    // Load the app first if this is the spec's opening action. Every other
+    // spec happens to `page.goto('/')` before calling gotoView; 06 did not, so
+    // it looked for the rail on about:blank and each test burned the full 10 s
+    // timeout on a button that was never going to appear. Making gotoView
+    // self-sufficient is better than adding a goto to one spec — the next
+    // author will assume it works as a first call too.
+    if (!/#\//.test(page.url())) await page.goto('/')
+    const btn = page.getByTestId(`dest-button-${route.dest}`)
+    await btn.waitFor({ state: 'visible', timeout: 10_000 })
+    await btn.click()
   }
   await page.waitForLoadState('networkidle')
 }

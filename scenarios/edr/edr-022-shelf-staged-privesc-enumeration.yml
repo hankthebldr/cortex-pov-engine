@@ -1,0 +1,333 @@
+scenario_id: SIM-EDR-022
+name: "Shelf-Staged Privilege-Escalation Enumeration Under a Service Identity"
+version: "1.0"
+status: active
+
+# ── WHAT MAKES THIS SCENARIO DIFFERENT FROM SIM-CDR-001 ─────────────────────
+# SIM-CDR-001 curls its enumeration tooling from github.com INSIDE the target.
+# That works on a DC's laptop and is the first thing a customer's default-deny
+# egress policy blocks — and a step whose tool never arrived RUNS ANYWAY,
+# produces no detection, and the absent detection reads in the POV report as
+# "Cortex missed it". This scenario is the same TTP class delivered the other
+# way round: the DC's own SimCore staged the tool (checksummed, licence-known,
+# commit/tag-pinned), the console composed a digest-bound plan, and the enrolled
+# beacon fetches it from SimCore and verifies it before running it. NOTHING on
+# the customer's endpoint talks to the public internet.
+#
+# ── THE DETECTION POINT (Henry's standing note) ─────────────────────────────
+# The value is NOT "Cortex recognised a tool called linpeas". Renaming the file
+# kills a name-keyed detection and proves nothing about the customer's coverage.
+# The detections this scenario is built to exercise are BEHAVIOURAL: a
+# non-interactive service account (www-data) spawning an interpreter at all, a
+# burst of distinct discovery binaries from one causality chain, a fan-out of
+# reads across /etc, /proc and SUID binaries, and a cron/process-table snoop.
+# TWO detections on the bound card are deliberately filename-keyed and are
+# labelled as such — they are the target of the rename negative control
+# (`FILENAME_KEYED_DETECTIONS_SUPPRESSED`), not evidence of coverage.
+#
+# ── WHY THERE IS NO `|| echo demo-mode` FALLBACK IN THESE STEPS ─────────────
+# Almost every other scenario in this corpus degrades gracefully when its tool
+# is missing. This one MUST NOT. A graceful degradation here is precisely the
+# manufactured false negative the payload shelf exists to prevent, so step-01
+# is a hard preflight that exits non-zero with a distinct marker when the
+# staged artifact is not on disk.
+#
+# ── HONEST STATE, 2026-08-05 ───────────────────────────────────────────────
+# PUSH mode works today end-to-end: the bash bundle emits each adapter's
+# `install.runtime_install_command` verbatim, so the target fetches the tool
+# from the internet and the preflight passes.
+# PULL mode intentionally FAILS at step-01 until the orchestrator/beacon track
+# lands artifact fetch (docs/reference/payload-shelf.md §9 items 5-8). That is
+# the correct behaviour and this scenario is its acceptance test: a beacon that
+# skipped the step instead would report a green run with no detections.
+
+plane: EDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UCS-EDR-03
+tc_ref: TC-EDR-05
+tc_refs:
+  - TC-EDR-05
+  - TC-EDR-03
+pov_scenario_id: POV-SC-045
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate causality graph provides full process chain and causality owner attribution"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1082"
+mitre_technique_name: "System Information Discovery"
+additional_techniques:
+  - technique: "T1083"
+    name: "File and Directory Discovery"
+  - technique: "T1057"
+    name: "Process Discovery"
+  - technique: "T1548.001"
+    name: "Abuse Elevation Control Mechanism: Setuid and Setgid"
+  - technique: "T1518.001"
+    name: "Software Discovery: Security Software Discovery"
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+
+threat_report: "Unit42 - Hildegard: New TeamTNT Cryptojacking Malware Targeting Kubernetes"
+threat_report_url: "https://unit42.paloaltonetworks.com/hildegard-malware-teamtnt/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - nobody
+
+push_supported: true
+pull_supported: true
+
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# The web server owns the chain. The whole causality claim of TC-EDR-05 is that
+# XDR can walk back from the enumeration burst to the process that LET IT RUN —
+# if the CGO is `cortexsim-agent` the graph proves nothing a customer cares
+# about.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
+external_tools:
+  - name: linpeas
+    source: "https://github.com/carlospolop/PEASS-ng"
+    type: script
+    adapter_ref: TOOL-LINPEAS
+  - name: pspy
+    source: "https://github.com/DominicBreuker/pspy"
+    type: binary
+    adapter_ref: TOOL-PSPY
+  - name: suid3num
+    source: "https://github.com/Anon-Exploiter/SUID3NUM"
+    type: script
+    adapter_ref: TOOL-SUID3NUM
+
+# NOTE — the rename negative control is NOT declared here yet, on purpose.
+# `external_tools[].stage_as` is owed by the scenario-loader track
+# (docs/reference/payload-shelf.md §9 item 4). `ExternalToolSchema` is a plain
+# Pydantic model with the default `extra="ignore"`, so a `stage_as:` key written
+# today is SILENTLY DROPPED before `compose()` ever sees the scenario — the
+# rename would not happen and the run record would claim it did. Authoring it
+# now would be a false claim in a committed file, which is the exact failure
+# mode this scenario exists to prevent. `tests/tools/test_stage_as_tripwire.py`
+# fails the moment the loader starts preserving the field, at which point the
+# control gets added here in that same commit.
+
+validation_methodology: "Timeline Completeness"
+methodology_family: "F1"
+primary_kpi: "Causality Chain Completeness"
+threshold:
+  kpi: "Causality Chain Completeness"
+  op: "≥"
+  value: 95
+  unit: "%"
+success_criteria: |
+  Cortex XDR walks the causality chain from the enumeration burst back to the
+  apache2 causality group owner, with the www-data effective username, the
+  interpreter spawn, the staged-tool process, and the file-read fan-out all
+  present and in correct temporal order. Behavioural detections
+  (service-account interpreter spawn, discovery-binary breadth, SUID sweep,
+  /proc + /etc read fan-out, process-table snoop) fire on the tool's BEHAVIOUR.
+  The two filename-keyed detections on TTP-2026-0176 are recorded separately:
+  they fire on the canonical run and are EXPECTED NOT TO FIRE under a renamed
+  run. If only the filename-keyed detections fire, the finding is that the
+  customer's endpoint coverage is name-keyed, not that the TTP did not run.
+moat_tier: "MOAT"
+
+steps:
+  - id: step-01
+    name: "Shelf preflight — refuse to proceed without the staged tooling (fail loudly)"
+    command: |
+      # This step exists to convert a silent no-op into a loud failure. If the
+      # artifacts are absent, every later step would still "run", produce no
+      # detection, and the run would read as a Cortex miss.
+      MISSING=""
+      for f in /tmp/linpeas.sh /tmp/pspy64 /tmp/suid3num.py; do
+        [ -s "$f" ] || MISSING="$MISSING $f"
+      done
+      if [ -n "$MISSING" ]; then
+        echo "[SIM-EDR-022][FATAL] PAYLOAD_NOT_STAGED_ON_TARGET:$MISSING" >&2
+        echo "[SIM-EDR-022] The TTP did NOT run. Do not read the absent detections as a Cortex miss." >&2
+        echo "[SIM-EDR-022] pull mode: SimCore must compose and the beacon must fetch+verify from /api/shelf/payload/<name>." >&2
+        echo "[SIM-EDR-022] push mode: the bundle's adapter install section should have fetched these." >&2
+        exit 1
+      fi
+      # The tool is present and verified. Record WHAT was staged, by digest, so
+      # the run output can be reconciled against the composition the console
+      # produced. sha256sum is in coreutils on every supported target.
+      sha256sum /tmp/linpeas.sh /tmp/pspy64 /tmp/suid3num.py
+      id; echo "[SIM-EDR-022] staged tooling verified under $(id -un)"
+    identity: www-data
+    platforms: [linux, container]
+    mitre_technique: "T1082"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — a non-interactive service account (www-data/nobody/apache) spawns a shell interpreter under a web-server causality owner. Behavioural: fires regardless of what the interpreter goes on to run."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-service-account-spawns-interpreter-under-web-server-cgo
+
+  - id: step-02
+    name: "Run the shelf-staged privilege-escalation enumerator (T1082/T1083)"
+    # The literal command is the exact string `{adapter:TOOL-LINPEAS}` would
+    # render (`{binary} {flags}` = "/tmp/linpeas.sh -q"). The placeholder is NOT
+    # used here because it is PULL-ONLY: `orchestrator._resolve_adapter_placeholders`
+    # substitutes it, `push_generator.generate_bash` does not, so a bundle for
+    # this scenario would ship a step whose command is the four-character-plus
+    # literal "{adapter:TOOL-LINPEAS}". No shipped scenario used the placeholder
+    # before this one, which is why that has never been caught. See the report
+    # accompanying this commit — the fix belongs to the push-generator track,
+    # and until it lands a scenario that needs BOTH delivery modes must inline.
+    command: |
+      /tmp/linpeas.sh -q
+    identity: www-data
+    platforms: [linux, container]
+    mitre_technique: "T1082"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — one causality chain reads across >= 4 distinct privilege-escalation-relevant paths (/etc/passwd, /etc/shadow, /etc/sudoers, /proc/*/cmdline, /root, cron dirs) inside a short window. Behavioural: keys on the READ FAN-OUT, not on any binary name."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-privilege-escalation-read-fan-out-from-one-causality-chain
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — a burst of >= 6 distinct discovery binaries (id, uname, hostname, ps, find, mount, getcap, sudo) from one causality_actor_process_instance_id. Behavioural: an automated enumerator has a breadth signature no human session has."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-automated-discovery-binary-breadth-burst
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — a script under /tmp, /var/tmp or /dev/shm is executed by a service account. FILENAME-KEYED VARIANT IS DELIBERATELY EXCLUDED: this keys on the execution of a staging-directory script by a non-interactive identity, which a rename does not change."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-staging-directory-script-executed-by-service-account
+      - plane: EDR
+        type: BIOC
+        description: "NEGATIVE-CONTROL TARGET — Cortex XDR — command line contains the literal string 'linpeas'. Fires on the canonical run and is EXPECTED NOT TO FIRE under a renamed run. Presence alone is not coverage."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-filename-keyed-linpeas-command-line-negative-control
+      - plane: EDR
+        type: IOC
+        description: "NEGATIVE-CONTROL TARGET — Cortex XDR — filename IOC linpeas.sh. Recorded so the rename control has a second name-keyed detection to darken; never counted as behavioural evidence."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: ioc-filename-linpeas-sh
+      - plane: EDR
+        type: XQL
+        description: "Cortex XDR — validation: a service-account-owned enumeration burst with a web-server causality owner in the last 30m."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: xql-edr-022-validate-service-account-enumeration-burst-in-last-30m
+
+  - id: step-03
+    name: "Snoop the process table and cron for credentials in command lines (T1057)"
+    # Renders TOOL-PSPY's `timeout 20 {binary} {flags}` — see step-02's note on
+    # why the placeholder is inlined. The `timeout` wrapper is load-bearing:
+    # pspy runs until killed, and a step that never returns is indistinguishable
+    # from a beacon that died.
+    #
+    # 124 is `timeout` reporting that it killed the command — the DESIGNED
+    # outcome here, and the beacon's fail-fast would otherwise abort the run
+    # after a step that did exactly what it was asked to. It is enumerated
+    # explicitly rather than swallowed with `|| true`: 126 (not executable) and
+    # 127 (not found) are precisely the codes a missing or corrupt staged
+    # artifact produces, and those must still fail the run loudly.
+    command: |
+      timeout 20 /tmp/pspy64 -pf -i 1000
+      rc=$?
+      if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ]; then
+        echo "[SIM-EDR-022][FATAL] pspy exited $rc (not 0, not 124=timeout-as-designed)" >&2
+        exit "$rc"
+      fi
+      echo "[SIM-EDR-022] process-table snoop completed (rc=$rc; 124 = timeout reached, as designed)"
+    identity: www-data
+    platforms: [linux, container]
+    mitre_technique: "T1057"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — sustained high-rate /proc/<pid>/cmdline and /proc/<pid>/stat reads across many distinct pids from one non-root process. Behavioural: this is what a process-table snooper looks like in file telemetry, whatever it is called."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-high-rate-proc-cmdline-sweep-across-distinct-pids
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — a service account reads cron scheduling paths (/etc/crontab, /etc/cron.d, /var/spool/cron) it has no operational reason to read."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-service-account-reads-cron-scheduling-paths
+      - plane: EDR
+        type: XQL
+        description: "Cortex XDR — validation: a /proc cmdline sweep observed from a non-root identity in the last 30m."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: xql-edr-022-validate-proc-cmdline-sweep-from-non-root-identity
+
+  - id: step-04
+    name: "Enumerate SUID/SGID escalation candidates (T1548.001)"
+    # Renders TOOL-SUID3NUM's `python3 {binary} {flags}` — see step-02's note.
+    # No --exploit flag: this enumerates escalation candidates, it does not take
+    # them.
+    command: |
+      python3 /tmp/suid3num.py
+    identity: www-data
+    platforms: [linux, container]
+    mitre_technique: "T1548.001"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — a filesystem-wide SUID/SGID sweep (find with -perm -4000/-2000 or an equivalent stat walk) from a non-root service account. Behavioural: keys on the sweep, not the tool."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-filesystem-wide-suid-sgid-sweep-by-service-account
+      - plane: EDR
+        type: BIOC
+        description: "Cortex XDR — a service account executes a Python interpreter from a staging directory. Behavioural: an interpreter running a script out of /tmp under a web identity is the shape, not the script's name."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: bioc-edr-022-interpreter-executes-staging-directory-script-as-service-account
+      - plane: EDR
+        type: XQL
+        description: "Cortex XDR — validation: a SUID/SGID enumeration sweep observed from a service account in the last 30m."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: xql-edr-022-validate-suid-sweep-from-service-account-in-last-30m
+
+  - id: step-05
+    name: "Validate the full chain stitches back to the web-server causality owner"
+    command: |
+      echo '[SIM-EDR-022] Chain validation — apache2 (CGO) -> shell -> staged enumerator -> proc sweep -> SUID sweep, all under www-data'
+      echo '[SIM-EDR-022] XSIAM correlation CR-EDR-0022 should fuse the enumeration stages from one causality chain into a single Discovery incident'
+      echo '[SIM-EDR-022] Read the incident against the CANONICAL run first, then re-run with a stage_as rename and diff which detections darken'
+    identity: www-data
+    platforms: [linux, container]
+    mitre_technique: "T1082"
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "XSIAM — service-account interpreter spawn + discovery-binary breadth burst + /proc sweep + SUID sweep from one causality chain within 15m, stitched into a single Discovery incident rooted at the apache2 causality group owner."
+        ttp_ref: "TTP-2026-0176"
+        detection_id: CR-EDR-0022
+
+cleanup:
+  commands:
+    - "rm -f /tmp/linpeas.sh /tmp/linpeas_output.txt /tmp/pspy64 /tmp/suid3num.py"
+    - "echo '[CortexSim] SIM-EDR-022 cleanup complete — read-only enumeration only, nothing was exploited'"
+
+author: "Henry Reed"
+created: "2026-08-05"
+last_updated: "2026-08-05"
+tags:
+  - edr
+  - privilege-escalation
+  - discovery
+  - payload-shelf
+  - behavioural-not-name-keyed

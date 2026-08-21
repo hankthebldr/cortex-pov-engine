@@ -1,0 +1,62 @@
+adapter_id: TOOL-DNSRECON
+name: "DNSRecon"
+version: "1.1.5"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/darkoperator/dnsrecon
+  license: "GPL-2.0-only"
+  attribution: "Carlos Perez (darkoperator)"
+
+cortex_signal:
+  # TIM (threat-intel management) is not a distinct signal plane in the
+  # loader enum; DNS-enumeration telemetry lands on NDR, consistent with the
+  # other reconnaissance scanners (recon-ng, whatweb).
+  planes:
+    - NDR
+  expected_techniques:
+    - T1590      # Gather Victim Network Information
+    - T1590.002  # Gather Victim Network Information: DNS
+
+safety_class: safe
+
+install:
+  # Tier 4 (runtime-fetched): apt on Kali/Debian, pip fallback elsewhere.
+  runtime_install_command: "command -v dnsrecon >/dev/null 2>&1 || (apt-get install -y dnsrecon 2>/dev/null || pip3 install --no-input dnsrecon)"
+  binary: dnsrecon
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: DISTRO_PACKAGE
+    reason: >-
+      dnsrecon installs from the operating system's package repository.
+      Staging it on the shelf would mean hosting a Debian mirror, so this tool
+      needs internet access on the target host. Plan the POV around that, or
+      have the customer pre-install it on the target.
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -d {domain} {flags}"
+  default_args:
+    domain: "lab.local"
+    flags: "-t std"
+  identity_required: nobody
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-dnsrecon-*.json 2>/dev/null || true"
+    - "rm -f /tmp/cortexsim-dnsrecon-*.xml 2>/dev/null || true"
+
+ttp_refs: []
+equivalents:
+  - TOOL-AMASS  # DNS/subdomain reconnaissance equivalent
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - network-scan
+  - dns-enumeration
+  - reconnaissance
+  - runtime-fetched

@@ -1,0 +1,200 @@
+scenario_id: SIM-CDR-016
+name: "Cloud Workload IAM Usage Anomaly — Cortex ABIOC"
+version: "1.0"
+status: active
+
+# Detection-validation scenario (defensive QA) for post-compromise cloud
+# credential abuse. Cortex Cloud / CDR learns a workload identity's (an EC2
+# instance role's) narrow, low-rate CloudTrail usage baseline; this scenario
+# injects two deviations against a sandboxed lab role — an API-call-rate spike
+# and a Discovery/IAM new-action-set burst — that an auto-tuned Analytics
+# Behavioral IOC (ABIOC) fires on. Every API call is legitimate, so the catch
+# comes from the deviation and its causality chain, not a known-bad signature.
+# Read-only: only Discovery/enumeration calls; no cloud resource is modified.
+# LAB ONLY — run against the sandboxed lab workload role the cdr/cspm IaC
+# modules seed. Each step has a demo-mode fallback so the bundle runs safely
+# where the lab account is absent.
+
+plane: CDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-CITH-04
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1580"
+mitre_technique_name: "Cloud Infrastructure Discovery"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+
+threat_report: "Unit 42 — IAM: Your First Line of Defense Against Cloud Threats"
+threat_report_url: "https://unit42.paloaltonetworks.com/iam-cloud-threat-research/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - cdr
+  - cspm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# Validates Cortex Analytics Behavioral IOCs (ABIOC) — PANW's auto-tuned,
+# causality-anchored behavioral-ML detection type — on the cloud/CDR plane.
+# Cortex learns a workload identity's CloudTrail usage baseline (rate + action
+# set), then a controlled deviation drives a behavioral detection no static rule
+# was authored for. Signal Injection & Detection Accuracy family (F1).
+validation_methodology: "Cloud Behavioral Anomaly Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the lab workload role's IAM usage baseline (a narrow,
+  low-rate set of application API calls). The injected API-call-rate spike and
+  Discovery/IAM new-action-set burst deviate from that learned baseline; both
+  auto-tuned ABIOCs fire and the correlation rule stitches them into a single
+  compromised-workload-credential incident within the MTTD budget. This is the
+  "behavioral-ML catches what a static BIOC misses" proof: every API call is a
+  legitimate AWS action, so the catch comes from the deviation and its
+  causality chain (assumed-role session -> anomalous rate + new actions from a
+  source new for this identity), not a known-bad signature.
+moat_tier: "LEAD"
+
+external_tools:
+  - name: aws-cli
+    source: "https://aws.amazon.com/cli/"
+    type: binary
+    install_inline: false
+
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# The workload identity is an EC2 instance role driven from the foothold
+# container: the containerd-shim runtime OWNS the aws-CLI process tree and is
+# the Causality Group Owner XDR blames for the chain — NOT the beacon. Every
+# step is an aws-CLI exec under the SAME assumed-role session; CloudTrail
+# observes no process fork between them, only the shared identity_name /
+# assumed-role entity, so the deviations thread on that shared-identity chain
+# (see the shared_entity pivots) instead of hanging as a star off the agent.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
+steps:
+  - id: step-01
+    name: "New-action-set deviation — invoke Discovery/IAM actions the workload role never uses"
+    command: |
+      echo '[CDR-016] Cloud workload IAM new-action-set deviation (T1580 / T1078.004)'
+      AWS_PROFILE_ARG="${AWS_PROFILE:+--profile $AWS_PROFILE}"
+      LAB_REGION="${LAB_REGION:-us-east-1}"
+      if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity $AWS_PROFILE_ARG >/dev/null 2>&1; then
+        aws sts get-caller-identity $AWS_PROFILE_ARG >/dev/null 2>&1 || true
+        aws iam list-users $AWS_PROFILE_ARG >/dev/null 2>&1 || true
+        aws iam list-roles $AWS_PROFILE_ARG >/dev/null 2>&1 || true
+        aws ec2 describe-instances --region "$LAB_REGION" $AWS_PROFILE_ARG >/dev/null 2>&1 || true
+        aws s3api list-buckets $AWS_PROFILE_ARG >/dev/null 2>&1 || true
+      else
+        echo '[*] demo-mode: aws cli not configured — CDR should still flag Discovery/IAM actions new for this workload identity'
+      fi
+      echo '[*] Cortex Cloud / CDR should flag Discovery/IAM actions absent from this identity learned action set'
+    identity: container-runtime
+    mitre_technique: "T1580"
+    platforms: ["linux", "container", "macos"]
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "A workload role whose learned action set is a small, stable list of application API calls invokes Discovery/IAM actions it has never used — auto-tuned ABIOC fires on the new-action-set deviation, anchored to the assumed-role causality chain. No single action is a known-bad IOC."
+        ttp_ref: "TTP-2026-0103"
+        detection_id: abioc-cdr-016-new-action-set-deviation-from-learned-iam-usage-baseline
+      - plane: CDR
+        type: XQL
+        description: "Validation query confirms the Discovery/IAM new-action deviation surfaced for the workload identity in the cloud audit log within the run window."
+        ttp_ref: "TTP-2026-0103"
+        detection_id: xql-cdr-016-new-action-deviation-surfaced-in-cloud-audit-log
+
+  - id: step-02
+    name: "API-call-rate spike — many calls in a short window vs a few-per-hour baseline"
+    command: |
+      echo '[CDR-016] Cloud workload IAM call-rate spike (T1078.004)'
+      AWS_PROFILE_ARG="${AWS_PROFILE:+--profile $AWS_PROFILE}"
+      if command -v aws >/dev/null 2>&1 && aws sts get-caller-identity $AWS_PROFILE_ARG >/dev/null 2>&1; then
+        for i in $(seq 1 40); do aws sts get-caller-identity $AWS_PROFILE_ARG >/dev/null 2>&1 || true; done
+        echo '[*] 40 assumed-role API calls issued in a short window'
+      else
+        echo '[*] demo-mode: aws cli not configured — CDR should still flag a call-rate spike above the role learned baseline'
+      fi
+      echo '[*] Cortex Cloud / CDR should flag an API-call-rate spike above the identity learned per-hour baseline'
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # The call-rate spike and the new-action-set burst (step-01) are aws-CLI
+      # execs under the SAME assumed-role session on the SAME workload. CloudTrail
+      # carries no process-actor fields — both ABIOCs anchor on the shared
+      # identity_name / assumed-role entity, so the edge is a shared_entity join
+      # (same identity, no observed fork), not a process fork.
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "The workload identity issues a burst of API calls well above its learned low, steady rate — auto-tuned ABIOC fires on the call-rate deviation from the learned baseline, anchored to the assumed-role session and a source new for this identity."
+        ttp_ref: "TTP-2026-0103"
+        detection_id: abioc-cdr-016-anomalous-iam-api-call-rate-spike-from-baselined-workload-role
+
+  - id: step-03
+    name: "Correlation stitches the two behavioral deviations into one incident"
+    command: |
+      echo '[CDR-016] Chain validation — call-rate spike + new-action-set deviation on the same identity'
+      echo '[*] XSIAM correlation CR-CDR-0016 should fuse the two ABIOC deviations into one compromised-workload-credential incident'
+    identity: container-runtime
+    mitre_technique: "T1078.004"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # Correlation terminal — CR-CDR-0016 fuses the call-rate-spike ABIOC and
+      # the new-action-set ABIOC on the SAME workload identity into one
+      # compromised-workload-credential incident. The join is the shared
+      # assumed-role identity the two ABIOCs share, so the edge is shared_entity.
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation rule CR-CDR-0016 fuses the call-rate-spike ABIOC and the new-action-set-deviation ABIOC on the same workload identity into a single compromised-workload-credential incident anchored to the assumed-role causality chain."
+        ttp_ref: "TTP-2026-0103"
+        detection_id: CR-CDR-0016
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-CDR-016 cleanup complete — read-only Discovery calls only; rotate the lab role credential between runs'"
+
+author: "Henry Reed"
+created: "2026-07-13"
+last_updated: "2026-07-13"
+tags:
+  - cdr
+  - cloud
+  - aws
+  - iam
+  - abioc
+  - behavioral-analytics
+  - credential-theft

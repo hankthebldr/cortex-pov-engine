@@ -45,9 +45,9 @@
     }
   },
   "identity": {
-    "name": "ITDR \u2014 Impossible Travel (Okta + Entra sign-ins from US-West and APAC-East)",
-    "summary": "The idp_signin_emulator emits two SUCCESS sign-in events for one user from geographically distant source IPs (US-West then APAC-East) within an interval shorter than any feasible flight. Cortex ITDR analyzes the IdP sign-in stream \u2014 Okta system log and Microsoft Entra signInLogs \u2014 and raises an impossible-travel anomaly on the same identity, then proves the rule fires identically across both pr\u2026",
-    "description": "Impossible travel is the canonical session-hijack / stolen-credential tell in identity telemetry: the same principal authenticates successfully from two locations whose great-circle distance cannot be covered in the elapsed time between logins. Adversaries who phish credentials or replay an AiTM-stolen session cookie trip this signal because their infrastructure sits in a different geo than the legitimate user. This scenario drives CortexSim's idp_signin_emulator to POST two SUCCESS authentication events for ada.lovelace \u2014 first from a US-West source IP/city, then seconds later from an APAC-East source IP/city \u2014 into the identity log collector, in both Okta system-log shape and Microsoft Entra signInLogs shape. Detection is pure IdP-log analytics in Cortex ITDR: an XQL rule windows successful authentications per user, computes distinct source-geo count inside a travel-infeasibility window, and alerts when one user logs in successfully from two far-apart countries inside it. A second validation query proves the same logic resolves over the Microsoft Entra dataset, and an NGFW EAL query confirms the outbound POST burst to the collector so the network plane corroborates the identity signal. A correlation rule fuses the Okta and Microsoft anomalies for one identity into a single account-compromise incident.",
+    "name": "ITDR — Impossible Travel (Okta + Entra sign-ins from US-West and APAC-East)",
+    "summary": "The idp_signin_emulator emits two SUCCESS sign-in events for one user from geographically distant source IPs (US-West then APAC-East) within an interval shorter than any feasible flight. Cortex ITDR analyzes the IdP sign-in stream — Okta system log and Microsoft Entra signInLogs — and raises an impossible-travel anomaly on the same identity, then proves the rule fires identically across both pr…",
+    "description": "Impossible travel is the canonical session-hijack / stolen-credential tell in identity telemetry: the same principal authenticates successfully from two locations whose great-circle distance cannot be covered in the elapsed time between logins. Adversaries who phish credentials or replay an AiTM-stolen session cookie trip this signal because their infrastructure sits in a different geo than the legitimate user. This scenario drives CortexSim's idp_signin_emulator to POST two SUCCESS authentication events for ada.lovelace — first from a US-West source IP/city, then seconds later from an APAC-East source IP/city — into the identity log collector, in both Okta system-log shape and Microsoft Entra signInLogs shape. Detection is pure IdP-log analytics in Cortex ITDR: an XQL rule windows successful authentications per user, computes distinct source-geo count inside a travel-infeasibility window, and alerts when one user logs in successfully from two far-apart countries inside it. A second validation query proves the same logic resolves over the Microsoft Entra dataset, and an NGFW EAL query confirms the outbound POST burst to the collector so the network plane corroborates the identity signal. A correlation rule fuses the Okta and Microsoft anomalies for one identity into a single account-compromise incident.",
     "severity": "high",
     "confidence": "high"
   },
@@ -97,7 +97,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin \u2014 event_pattern=impossible_travel",
+    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin — event_pattern=impossible_travel",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -196,14 +196,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Impossible Travel Account Compromise \u2014 Cross-Provider Identity",
+        "name": "Impossible Travel Account Compromise — Cross-Provider Identity",
         "rule_id": "CR-ITDR-0001",
         "logic": "XQL(ITDR-001 Impossible Travel Two Distant Geos Within Window) OR XQL(ITDR-001 Impossible Travel Microsoft SignInLogs Shape)"
       }
     ],
     "analytics_modules": [
-      "Cortex ITDR Analytics \u2014 Impossible travel between successful authentications",
-      "Cortex XSIAM Identity Analytics \u2014 Geo-velocity anomaly per principal"
+      "Cortex ITDR Analytics — Impossible travel between successful authentications",
+      "Cortex XSIAM Identity Analytics — Geo-velocity anomaly per principal"
     ]
   },
   "panw_mapping": {
@@ -229,14 +229,14 @@
         "evidence_query": "Correlation CR-ITDR-0001 fuses Okta and Microsoft Entra impossible-travel anomalies for one identity into one account-compromise incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IDENT-037",
+        "threat_scenario_id": "TS-IDENT-037",
         "name": "Geo-Anomaly Sign-In Detection",
         "description": "Detect a single identity authenticating successfully from geographically impossible locations within a travel-infeasibility window, across both Okta and Microsoft Entra log shapes.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IDENT-037A",
+            "threat_step_id": "TS-IDENT-037A",
             "objective": "Two SUCCESS sign-ins from distant geos within 5 minutes raise an impossible-travel anomaly.",
             "preconditions": [
               "Cortex ITDR ingesting okta_sso and msft_azure_ad_signin datasets.",
@@ -254,7 +254,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-IDENT-037B",
+            "threat_step_id": "TS-IDENT-037B",
             "objective": "Okta and Microsoft anomalies for one identity stitch into a single incident.",
             "success_criteria": [
               "Correlation `CR-ITDR-0001` groups both provider anomalies under one account-compromise incident."
@@ -287,7 +287,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1078.004 \u2014 Valid Accounts: Cloud Accounts",
+      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
       "url": "https://attack.mitre.org/techniques/T1078/004/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

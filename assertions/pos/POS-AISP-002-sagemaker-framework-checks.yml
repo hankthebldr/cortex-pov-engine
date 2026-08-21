@@ -1,0 +1,91 @@
+# POS-AISP-002 — framework-specific assessment, narrowly and honestly.
+#
+# TC-AISP-02's headline claim is "AI models assessed for data poisoning vectors,
+# model extraction exposure, prompt injection surfaces". NONE of those is
+# provable from this fixture, and no query in this file pretends otherwise. What
+# IS provable is the row's second clause — "supported frameworks (SageMaker,
+# Bedrock, Vertex, Azure OpenAI) evaluated with framework-specific checks" — for
+# SageMaker only: the module plants three SageMaker-typed resources whose
+# misconfigurations (an AdministratorAccess execution role, an endpoint
+# configuration with no KMS key) are only visible to a SageMaker-aware check. A
+# generic EC2/S3/IAM scanner produces nothing here.
+assertion_id: POS-AISP-002
+name: SageMaker framework-specific assessment — three typed resources evaluated
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: AI_SPM
+
+uc_ref: UCS-AISP-02
+tc_ref: TC-AISP-02
+tc_refs: [TC-AISP-02]
+uc_name: "AI Security Posture Management"
+tc_name: "Validate AI Model Security Assessment"
+
+moat_tier: MOAT
+methodology_family: F4
+primary_kpi: "Posture Finding Coverage"
+success_criteria: |
+  All three planted SageMaker-typed resources — model, endpoint configuration
+  and endpoint — are assessed by SageMaker-aware posture checks.
+
+scope_limitations: >
+  Proves ONLY that SageMaker-typed resources are reached by framework-specific
+  posture assessment. It does NOT prove assessment for data-poisoning vectors,
+  model-extraction exposure or prompt-injection surfaces — the fixture plants no
+  poisoned dataset, no extraction-permissive endpoint policy and no live
+  inference path, so those three clauses of the index row remain entirely
+  unevidenced. It covers ONE of the four named frameworks: Bedrock, Vertex AI
+  and Azure OpenAI have no fixture at all. The over-privileged execution role is
+  counted through POS-AISP-001, not here, because an IAM role is not a
+  SageMaker-typed resource and counting it would inflate this bar to four.
+  Dataset and field names are convention-named and unconfirmed against a live
+  tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/ai-spm
+  detail: >
+    terraform apply the `ai-spm` module. The three SageMaker resources are
+    `aws_sagemaker_model.poisoning_candidate`,
+    `aws_sagemaker_endpoint_configuration.canary` and
+    `aws_sagemaker_endpoint.canary`. Wait one AI-SPM scan cycle.
+
+checks:
+  - check_id: chk-01
+    title: All three SageMaker-typed resources reached by posture assessment
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = ai_spm_findings
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter tags contains "CortexSimAISPMFinding"
+        | filter resource_type contains "sagemaker"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: SageMaker resources assessed
+      op: ">="
+      value: 3
+      unit: resources
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-AISP-02 "Qualitative pass". The module plants exactly
+        three SageMaker-typed resources, countable from its Terraform, so
+        "framework-specific checks evaluated" has an objective floor of three.
+    negative_control:
+      description: >
+        The AI-SPM scanner enumerates SageMaker endpoints but not endpoint
+        CONFIGURATIONS, so the unencrypted endpoint-config — the resource that
+        actually carries the KMS gap — is never assessed and two of three
+        SageMaker resources are reached.
+      measured_value: 2
+
+tags: [posture, ai-spm, aws, sagemaker, planted-fixture]
+author: "Henry Reed"

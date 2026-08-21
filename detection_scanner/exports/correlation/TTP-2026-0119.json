@@ -1,0 +1,22 @@
+{
+  "mitre_techniques": [
+    "T1505.003",
+    "T1620",
+    "T1071.001",
+    "T1027",
+    "T1132.001",
+    "T1573.001",
+    "T1070.006",
+    "T1562.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when BIOC(OutlookEN ASPX Web Shell Written to IIS Web Root) or BIOC(IIS Worker Process w3wp.exe Spawns a Command Interpreter) is followed on the same agent_hostname by BIOC(Reflective Fileless .NET Assembly Load in IIS Worker Process) and by XQL(Cookie-Based STAR-Delimited C2 to IIS Host) within a 30-minute window. Stitches web-shell install, in-memory .NET load, AMSI/CLR co-load, and STAR-delimited cookie C2 into a single NET-STAR IIS-backdoor incident anchored to the w3wp.exe process instance.",
+      "name": "NET-STAR Fileless IIS Backdoor \u2014 Web Shell to STAR Cookie C2 Stitch",
+      "rule_id": "CR-EDR-0014",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0119"
+}

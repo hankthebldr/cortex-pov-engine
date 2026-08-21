@@ -1,0 +1,374 @@
+scenario_id: SIM-ITDR-015
+name: "ITDR — Internal AD Kill-Chain: Enumeration → LLMNR/NBT-NS Poisoning → Offline Crack → Credential Validation → WinRM Lateral (Chained Causality)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - BIOC
+  - XQL
+  - ABIOC
+  - Correlation
+  - IOC
+
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-ITDR-03
+  - TC-IR-04
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1557.001"
+mitre_technique_name: "Adversary-in-the-Middle: LLMNR/NBT-NS Poisoning and SMB Relay"
+additional_techniques:
+  - technique: "T1087.002"
+    name: "Account Discovery: Domain Account"
+  - technique: "T1135"
+    name: "Network Share Discovery"
+  - technique: "T1110.002"
+    name: "Brute Force: Password Cracking"
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1021.006"
+    name: "Remote Services: Windows Remote Management"
+
+threat_report: "SpecterOps — Active Directory Attack Paths (LLMNR/NBT-NS Poisoning to Lateral Movement)"
+threat_report_url: "https://posts.specterops.io/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# One connected internal-AD kill-chain, NOT a star of isolated tests. The CGO is
+# the operator's recon shell (bash) on the attacker foothold — it forks every
+# tool, so each stage inherits the same causality lineage / source identity.
+# The spine is: enumerate (enum4linux-ng → smbmap, process_lineage from the
+# recon shell) → poison (Responder, process_lineage) → crack (john → hashcat,
+# shared_entity = the captured NetNTLMv2 hash) → validate (netexec, shared_entity
+# = the cracked credential) → lateral (evil-winrm, endpoint_network_stitch = the
+# inbound WinRM session lands wsmprovhost.exe → a shell on the domain host).
+# step-01 is the single root; every later step wires causality.parent_step.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "root"
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Identity Credential-Access & Lateral-Movement Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  Cortex detects each stage of the connected internal AD compromise — the
+  SMB/RPC/LDAP enumeration fan-out, the rogue LLMNR/NBT-NS responder + NetNTLMv2
+  capture, the offline crack (with recon-shell causality lineage), the
+  cracked-credential validation across domain hosts, and the WinRM lateral
+  landing — and correlation CR-ITDR-0015 stitches them into a single incident
+  tied to one attacker source_ip / recon-shell CGO.
+moat_tier: "MOAT"
+
+# ── Consent / safety ────────────────────────────────────────────────────────
+# Every tool in this chain (enum4linux-ng, smbmap, Responder, john, hashcat,
+# netexec, evil-winrm) is a dual-use-lab-only adapter, so the orchestrator's
+# adapter-consent gate (core/engine/orchestrator.py::_check_adapter_consent)
+# REFUSES to launch without consent.simulation_authorized=true. No c2-framework
+# adapters are referenced, so no c2_authorized is required. SAFE-MODE: Responder
+# runs in analyze posture, the credential is a seeded itdr-lab account, the WinRM
+# step runs only a benign whoami, and every target is the itdr lab.
+consent:
+  simulation_authorized: true
+  authorized_by: "domain-consultant@paloaltonetworks.com"
+  target_allowlist:
+    - "${CORTEXSIM_DC_TARGET}"
+    - "${CORTEXSIM_AD_TARGET}"
+
+external_tools:
+  - name: enum4linux-ng
+    source: "https://github.com/cddmp/enum4linux-ng"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-ENUM4LINUX-NG
+  - name: smbmap
+    source: "https://github.com/ShawnDEvans/smbmap"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-SMBMAP
+  - name: Responder
+    source: "https://github.com/lgandx/Responder"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-RESPONDER
+  - name: john
+    source: "https://github.com/openwall/john"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-JOHN
+  - name: hashcat
+    source: "https://github.com/hashcat/hashcat"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-HASHCAT
+  - name: netexec
+    source: "https://github.com/Pennyw0rth/NetExec"
+    type: binary
+    install_inline: false
+    adapter_ref: TOOL-NETEXEC
+  - name: evil-winrm
+    source: "https://github.com/Hackplayers/evil-winrm"
+    type: script
+    install_inline: false
+    adapter_ref: TOOL-EVIL-WINRM
+
+steps:
+  - id: step-01
+    name: "enum4linux-ng SAMR/LSARPC AD enumeration against the lab DC (T1087.002)"
+    command: |
+      # SAFE-MODE: read-only Active Directory enumeration (users, groups, domain
+      # policy) over SMB/RPC/LDAP against the itdr-lab Domain Controller ONLY.
+      enum4linux-ng -A "${CORTEXSIM_DC_TARGET:-127.0.0.1}" \
+        -oJ /tmp/cortexsim-itdr-015-enum4linux || true
+    identity: root
+    mitre_technique: "T1087.002"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "NGFW/NDR — single-source SMB/RPC/LDAP enumeration fan-out (dst_port 135/139/389/445/636) to the Domain Controller"
+        ttp_ref: TTP-2026-0141
+        detection_id: xql-itdr-015-smb-rpc-ldap-enumeration-fan-out-to-domain-controller
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — null-session SAMR/LSARPC directory-object read burst against the DC (enum4linux-ng account discovery)"
+        ttp_ref: TTP-2026-0141
+        detection_id: bioc-itdr-015-null-session-directory-enumeration-against-domain-controller
+
+  - id: step-02
+    name: "smbmap SMB share + permission enumeration on the lab DC (T1135)"
+    command: |
+      # SAFE-MODE: enumerate SMB shares and read/write permissions on the lab DC
+      # (no file writes, no downloads). Forked from the same recon shell.
+      smbmap -H "${CORTEXSIM_DC_TARGET:-127.0.0.1}" -u guest -p '' 2>&1 \
+        | tee /tmp/cortexsim-itdr-015-smbmap.txt || true
+    identity: root
+    mitre_technique: "T1135"
+    platforms: ["linux"]
+    # smbmap is forked by the same operator recon shell (CGO) that ran
+    # enum4linux-ng — process_lineage threads the two discovery tools together.
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "ITDR — single-source SMB share-enumeration fan-out (many distinct shares accessed) on the lab DC"
+        ttp_ref: TTP-2026-0141
+        detection_id: xql-itdr-015-smb-share-enumeration-fan-out-from-single-source
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — SMB share enumeration and permission mapping burst from a single source (smbmap)"
+        ttp_ref: TTP-2026-0141
+        detection_id: bioc-itdr-015-smb-share-enumeration-and-permission-mapping
+
+  - id: step-03
+    name: "Responder LLMNR/NBT-NS name-resolution poisoning + NetNTLMv2 capture (T1557.001)"
+    command: |
+      # SAFE-MODE: run Responder in ANALYZE posture (-A) on the lab segment —
+      # observe LLMNR (UDP 5355) / NBT-NS (UDP 137) / mDNS broadcast name queries
+      # and log NetNTLMv2 material to the session log WITHOUT actively poisoning
+      # responses. Lab-only interface. Full poisoning is a lab-escalation variant.
+      responder -I "${CORTEXSIM_RESPONDER_IFACE:-eth0}" -A 2>&1 \
+        | tee /tmp/cortexsim-itdr-015-responder.log || true
+    identity: root
+    mitre_technique: "T1557.001"
+    platforms: ["linux"]
+    # The recon shell (CGO) forks Responder — process_lineage keeps the poisoning
+    # stage on the same lineage as the enumeration that preceded it.
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "ITDR — rogue host authoritatively answering LLMNR/NBT-NS for names outside its learned baseline + inbound NetNTLMv2 (Responder poisoning)"
+        ttp_ref: TTP-2026-0141
+        detection_id: abioc-itdr-015-rogue-llmnr-and-nbt-ns-responder-with-netntlmv2-capture
+      - plane: NDR
+        type: XQL
+        description: "NGFW/NDR — inbound NetNTLMv2 authentication (UDP 137 / TCP 139,445 / UDP 5355) to the attacker/responder host"
+        ttp_ref: TTP-2026-0141
+        detection_id: xql-itdr-015-inbound-netntlmv2-authentication-to-rogue-responder-host
+      - plane: ITDR
+        type: IOC
+        description: "Responder session/capture log artifact written on the attacker foothold (Responder-Session.log)"
+        ttp_ref: TTP-2026-0141
+        detection_id: ioc-filename-responder-session-log
+
+  - id: step-04
+    name: "john offline crack of the captured NetNTLMv2 hash (T1110.002)"
+    command: |
+      # SAFE-MODE: crack the NetNTLMv2 hash captured to the local session log with
+      # a bounded wordlist. Purely local CPU work on the foothold — no network,
+      # no target contact. EDR sees a cracking-tool process forked by the recon shell.
+      john --format=netntlmv2 \
+        --wordlist="${CORTEXSIM_WORDLIST:-/usr/share/wordlists/rockyou.txt}" \
+        /tmp/cortexsim-itdr-015-netntlmv2.txt 2>&1 \
+        | tee /tmp/cortexsim-itdr-015-john.txt || true
+    identity: root
+    mitre_technique: "T1110.002"
+    platforms: ["linux"]
+    # The captured NetNTLMv2 hash (Responder output) is now cracked offline —
+    # shared_entity (the captured credential material) threads the crack onto the
+    # chain; EDR keys the process on the recon-shell causality lineage.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "EDR — offline credential-cracking binary (john) executed with a recon-shell causality lineage on the foothold"
+        ttp_ref: TTP-2026-0141
+        detection_id: bioc-itdr-015-offline-credential-cracking-tool-execution-with-recon-shell-lineage
+      - plane: EDR
+        type: XQL
+        description: "EDR — cracking-tool process (john) whose causality_actor_process roots in the recon shell"
+        ttp_ref: TTP-2026-0141
+        detection_id: xql-itdr-015-offline-cracking-tool-process-with-recon-shell-causality
+
+  - id: step-05
+    name: "hashcat GPU/CPU crack of the same NetNTLMv2 capture (T1110.002)"
+    command: |
+      # SAFE-MODE: crack the same NetNTLMv2 capture with hashcat (hash-mode 5600),
+      # local only. Second cracker over the same captured hash material.
+      hashcat -m 5600 -a 0 /tmp/cortexsim-itdr-015-netntlmv2.txt \
+        "${CORTEXSIM_WORDLIST:-/usr/share/wordlists/rockyou.txt}" \
+        --potfile-path=/tmp/cortexsim-itdr-015-hashcat.pot --quiet || true
+    identity: root
+    mitre_technique: "T1110.002"
+    platforms: ["linux"]
+    # Same captured NetNTLMv2 hash, second cracker — shared_entity continues the
+    # offline-crack leg (both john and hashcat consume the one captured credential).
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "EDR — offline credential-cracking binary (hashcat) executed with a recon-shell causality lineage on the foothold"
+        ttp_ref: TTP-2026-0141
+        detection_id: bioc-itdr-015-offline-credential-cracking-tool-execution-with-recon-shell-lineage
+      - plane: EDR
+        type: XQL
+        description: "EDR — cracking-tool process (hashcat) whose causality_actor_process roots in the recon shell"
+        ttp_ref: TTP-2026-0141
+        detection_id: xql-itdr-015-offline-cracking-tool-process-with-recon-shell-causality
+
+  - id: step-06
+    name: "netexec (nxc) validation of the cracked credential across the lab subnet (T1078)"
+    command: |
+      # SAFE-MODE: validate the cracked credential against the itdr-lab subnet with
+      # an SMB auth check ONLY (no command execution). The cracked lab account is
+      # replayed from the foothold, producing single-account logons across hosts.
+      nxc smb "${CORTEXSIM_AD_TARGET:-127.0.0.1}" \
+        -u "${CORTEXSIM_AD_USER:-svc-lab}" -p "${CORTEXSIM_AD_PASS:-LabPassw0rd!}" 2>&1 \
+        | tee /tmp/cortexsim-itdr-015-nxc.txt || true
+    identity: root
+    mitre_technique: "T1078"
+    platforms: ["linux"]
+    # The cracked plaintext credential (john/hashcat output) is now replayed —
+    # shared_entity (the reused credential) moves the chain from crack to
+    # validation; the single account fans out across hosts from the attacker IP.
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "ITDR — single account (logon_type 3) validated across two or more domain hosts from the attacker source IP"
+        ttp_ref: TTP-2026-0141
+        detection_id: xql-itdr-015-compromised-account-validation-across-domain-hosts
+      - plane: ITDR
+        type: BIOC
+        description: "ITDR — cracked domain credential replayed from the attacker foothold, fanning out across multiple hosts"
+        ttp_ref: TTP-2026-0141
+        detection_id: bioc-itdr-015-compromised-account-authentication-from-attacker-foothold
+
+  - id: step-07
+    name: "evil-winrm WinRM lateral shell landing on the lab host (T1021.006)"
+    command: |
+      # SAFE-MODE: open a WinRM session to the lab host with the validated lab
+      # credential and run a single benign whoami/hostname to prove lateral access,
+      # then exit. Lab DC/workstation ONLY. No payload, no persistence.
+      echo 'whoami; hostname; exit' \
+        | evil-winrm -i "${CORTEXSIM_AD_TARGET:-127.0.0.1}" \
+            -u "${CORTEXSIM_AD_USER:-svc-lab}" -p "${CORTEXSIM_AD_PASS:-LabPassw0rd!}" 2>&1 \
+        | tee /tmp/cortexsim-itdr-015-winrm.txt || true
+    identity: root
+    mitre_technique: "T1021.006"
+    platforms: ["linux"]
+    # The validated credential opens an inbound WinRM (5985/5986) session that
+    # lands wsmprovhost.exe → an interactive shell on the domain host —
+    # endpoint_network_stitch bridges the network hop to the endpoint process.
+    # CR-ITDR-0015 folds this landing with the poisoning capture, offline crack,
+    # and credential validation into one incident from the same source_ip / CGO.
+    causality:
+      parent_step: step-06
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "EDR — wsmprovhost.exe (WinRM service host) spawning cmd/powershell on the domain host (WinRM landing)"
+        ttp_ref: TTP-2026-0141
+        detection_id: xql-itdr-015-winrm-remote-shell-session-landing-on-domain-host
+      - plane: EDR
+        type: BIOC
+        description: "EDR — WinRM lateral movement: wsmprovhost.exe lands an interactive remote shell on the domain host"
+        ttp_ref: TTP-2026-0141
+        detection_id: bioc-itdr-015-winrm-lateral-movement-landing-remote-shell
+      - plane: NDR
+        type: IOC
+        description: "NDR — evil-winrm default WSMan/HTTP user-agent (Ruby WinRM Client) on the lateral WinRM session"
+        ttp_ref: TTP-2026-0141
+        detection_id: ioc-user-agent-ruby-winrm-client
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Analytics — CR-ITDR-0015 stitches poisoning capture + offline crack + credential validation + WinRM landing into one credential-access-to-lateral-movement incident"
+        ttp_ref: TTP-2026-0141
+        detection_id: CR-ITDR-0015
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-itdr-015-enum4linux* /tmp/cortexsim-itdr-015-smbmap.txt"
+    - "rm -f /tmp/cortexsim-itdr-015-responder.log /tmp/cortexsim-itdr-015-netntlmv2.txt /tmp/cortexsim-itdr-015-john.txt"
+    - "rm -f /tmp/cortexsim-itdr-015-hashcat.pot* /tmp/cortexsim-itdr-015-nxc.txt /tmp/cortexsim-itdr-015-winrm.txt"
+    - "echo '[CortexSim] SIM-ITDR-015 cleanup complete — itdr lab resources owned by terraform destroy.'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - itdr
+  - active-directory
+  - kill-chain
+  - llmnr-poisoning
+  - credential-access
+  - lateral-movement
+  - winrm
+  - kali
+  - chained-causality

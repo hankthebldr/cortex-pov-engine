@@ -1,0 +1,151 @@
+scenario_id: SIM-CDR-025
+name: "Unusual exec Into a Kubernetes Pod + Unusual Service-Account API Call"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+tc_refs:
+  - TC-CDR-01
+  - TC-CITH-04
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
+
+mitre_tactic: "TA0002"
+mitre_tactic_name: "Execution"
+mitre_technique: "T1609"
+mitre_technique_name: "Container Administration Command"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+
+threat_report: "Mitigating RBAC-Based Privilege Escalation in Popular Kubernetes Platforms"
+threat_report_url: "https://unit42.paloaltonetworks.com/kubernetes-privilege-escalation/"
+
+# The scenario DRIVES the k8s_audit_emitter analytics streamer for the
+# "Kubernetes audit" data source: it POSTs shape-true audit.k8s.io/v1 Event
+# records into the operator's collector (kubernetes_audit_logs dataset) so the
+# two XSIAM behavioral-ML (ABIOC) alerts fire. No real cluster is touched.
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── Causality contract: connected CGO -> API-server spine ────────────────────
+# The compromised pod's container image + the mounted service-account identity
+# are the causality anchor. Step-01 (interactive exec) is the CGO root; step-02
+# (the service-account RBAC-write) descends from it via a shared_entity pivot —
+# the SAME service-account principal XSIAM stitches the two audit signals on.
+cgo_anchor:
+  image_name: "web-frontend"
+  primary_username: "svc-account"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# methodology_family was absent, so this scenario was silently missing from the
+# coverage analyzer's Section 4 family table — invisible rather than uncovered.
+validation_methodology: "Kubernetes Audit-Log Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+
+steps:
+  - id: step-01
+    name: "Interactive exec into a running pod (create pods/exec)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/sim-cdr-025-exec.yml <<YML
+      campaign_id: CMP-CDR-025
+      name: "CDR — unusual exec into a Kubernetes pod"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, kubernetes, pod-exec]
+      steps:
+        - step_id: exec
+          plugin: k8s_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: pod_exec
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-025-exec.yml --live
+    identity: svc-account
+    mitre_technique: "T1609"
+    platforms: ["container", "k8s"]
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "Behavioral-ML alert — a principal opens an interactive create pods/exec session into a pod outside its learned exec baseline."
+        ttp_ref: "TTP-2026-0162"
+        detection_id: "abioc-unusual-exec-into-a-kubernetes-pod"
+
+  - id: step-02
+    name: "Compromised service account issues an out-of-baseline RBAC-write"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/sim-cdr-025-sa.yml <<YML
+      campaign_id: CMP-CDR-025
+      name: "CDR — unusual service-account API call"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, kubernetes, service-account]
+      steps:
+        - step_id: sa-api
+          plugin: k8s_audit_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: unusual_sa_api_call
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-025-sa.yml --live
+    identity: svc-account
+    mitre_technique: "T1078.004"
+    platforms: ["container", "k8s"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "Behavioral-ML alert — the pod's service account creates a ClusterRoleBinding, a verb+resource pair absent from its learned API baseline."
+        ttp_ref: "TTP-2026-0162"
+        detection_id: "abioc-a-kubernetes-service-account-executed-an-unusual-api-call"
+      - plane: CDR
+        type: XQL
+        description: "Validation — the emitted kubernetes_audit_logs records (pod_exec + unusual_sa_api_call markers) landed with the run's cortexsim_run_id within the window."
+        ttp_ref: "TTP-2026-0162"
+        detection_id: "xql-sim-cdr-025-kubernetes-audit-emission-validation"
+      - plane: CDR
+        type: Correlation
+        description: "Stitch — the interactive-exec foothold and the follow-on service-account RBAC-write attributable to the same principal raise one Kubernetes intrusion incident."
+        ttp_ref: "TTP-2026-0162"
+        detection_id: "CR-CDR-0025"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/sim-cdr-025-exec.yml /tmp/sim-cdr-025-sa.yml"
+    - "echo 'cortexsim-cdr-025-cleanup-complete (synthetic audit stream only; no cluster state changed)'"

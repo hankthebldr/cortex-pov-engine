@@ -12,6 +12,7 @@ preset = xdr_data
 | filter rpc_opnum in (0,3)  // DRSBind, DRSGetNCChanges
 | filter dst_host in (active_directory.domain_controllers)
 | filter src_host not in (active_directory.domain_controllers)
+| fields _time, src_host, dst_host, rpc_opnum, causality_actor_process_image_name, actor_process_instance_id, causality_id, actor_effective_username
 
 ## BIOC — Windows Event 4662 — Replicating Directory Changes by Non-DC Principal
 # severity: critical
@@ -30,6 +31,7 @@ dataset = msft_windows_security
 preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter action_process_image_command_line contains_any ("dcsync", "lsadump::dcsync")
+| fields _time, agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, causality_id, actor_effective_username, action_process_image_command_line
 
 ## VALIDATION — Confirm DRSUAPI replication request seen from non-DC in last 30m
 # purpose: validation
@@ -39,7 +41,7 @@ preset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_RPC
 | filter rpc_interface_uuid = "e3514235-4b06-11d1-ab04-00c04fc2dcd2"
-| fields _time, src_host, dst_host, rpc_opnum, src_user_name
+| fields _time, src_host, dst_host, rpc_opnum, src_user_name, causality_actor_process_image_name, actor_process_instance_id, causality_id
 
 ## VALIDATION — Confirm 4662 replication event on DC
 # purpose: validation

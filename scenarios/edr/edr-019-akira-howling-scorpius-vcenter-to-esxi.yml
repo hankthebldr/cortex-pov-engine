@@ -1,0 +1,221 @@
+scenario_id: SIM-EDR-019
+name: "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain — VMDK-Copy Offline Credential Theft to Akira_v2 Encryption"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - BIOC
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-04
+tc_refs:
+  - TC-EDR-04
+  - TC-EDR-03
+  - TC-EDR-05
+  - TC-IR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Demonstrate auto-containment triggers on confirmed malware execution"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1486"
+mitre_technique_name: "Data Encrypted for Impact"
+additional_techniques:
+  - technique: "T1059"
+    name: "Command and Scripting Interpreter"
+  - technique: "T1006"
+    name: "Direct Volume Access"
+  - technique: "T1003.003"
+    name: "OS Credential Dumping: NTDS"
+  - technique: "T1562.006"
+    name: "Impair Defenses: Indicator Blocking"
+  - technique: "T1529"
+    name: "System Shutdown/Reboot"
+
+threat_report: "Threat Assessment: Howling Scorpius (Akira Ransomware)"
+threat_report_url: "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+    - svc-account
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+  - itdr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Causality Graph Stitching"
+methodology_family: "F2"
+primary_kpi: "Causality Chain Completeness"
+threshold:
+  kpi: "Causality Chain Completeness"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  The vCenter-initiated ESXi shell (esxcli/vim-cmd) is the Causality Group
+  Owner; DC power-off, VMDK clone, offline credential theft, syslog blinding,
+  mass power-off, and Akira_v2 encryption stitch into ONE incident on the shared
+  causality_actor_process_instance_id and the cloned-VMDK entity within 6h.
+moat_tier: "MOAT"
+
+correlation_window_seconds: 300
+required_planes_in_incident:
+  - EDR
+stitching_key: src_host
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# CGO = the ESXi shell reached from a vCenter-initiated session (esxcli/vim-cmd),
+# NOT the CortexSim beacon. The root step (step-01) links from this cgo_anchor;
+# every later step declares causality.parent_step so the graph is a CONNECTED
+# hypervisor spine instead of a star hanging off the beacon.
+cgo_anchor:
+  image_name: "esxcli"
+  primary_username: "root"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "vCenter-initiated ESXi shell established (Causality Group Owner)"
+    command: "echo '[SAFE-MODE SIM-EDR-019] esxcli shell from vCenter session (CGO)' && (esxcli --version 2>/dev/null || true)"
+    identity: root
+    mitre_technique: "T1059"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "The vCenter-initiated esxcli/vim-cmd shell is the CGO owning the downstream chain."
+        ttp_ref: "TTP-2026-0132"
+        detection_id: "bioc-akira-esxi-interactive-shell-from-vcenter-initiated-session"
+
+  - id: step-02
+    name: "Power off the Domain Controller VM to unlock its VMDK"
+    command: "echo '[SAFE-MODE SIM-EDR-019] vim-cmd vmsvc/power.off 42 (DC VM)'"
+    identity: root
+    mitre_technique: "T1529"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — DC-VM power-off and VMDK copy sequence observable on the ESXi host."
+        ttp_ref: "TTP-2026-0132"
+        detection_id: "xql-confirm-esxi-dc-vm-power-off-and-vmdk-copy-sequence"
+
+  - id: step-03
+    name: "Clone the powered-off DC VMDK to an attacker-created VM folder"
+    command: "echo '[SAFE-MODE SIM-EDR-019] vmkfstools -i /vmfs/volumes/datastore1/DC/DC.vmdk /vmfs/volumes/datastore1/attacker/dc-clone.vmdk'"
+    identity: root
+    mitre_technique: "T1006"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "vmkfstools/cp of a .vmdk within /vmfs/volumes/ — offline disk clone carrying DC credentials off-host."
+        ttp_ref: "TTP-2026-0132"
+        detection_id: "bioc-akira-esxi-dc-vm-vmdk-cloned-to-attacker-datastore-path"
+
+  - id: step-04
+    name: "Offline NTDS.dit + SYSTEM hive extraction on the cloned disk (evades on-host EDR)"
+    command: "echo '[SAFE-MODE SIM-EDR-019] secretsdump.py -ntds ntds.dit -system SYSTEM LOCAL (offline on cloned VMDK)'"
+    identity: root
+    mitre_technique: "T1003.003"
+    platforms: ["windows", "linux"]
+    platform_variants:
+      windows: "echo '[SAFE-MODE SIM-EDR-019] mimikatz lsadump::dcsync against mounted clone'"
+      linux: "echo '[SAFE-MODE SIM-EDR-019] impacket-secretsdump -ntds ntds.dit -system SYSTEM LOCAL'"
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "Offline credential-theft pivot — NTDS/SYSTEM access from the attacker VM reading the cloned DC VMDK (shared entity)."
+        ttp_ref: "TTP-2026-0132"
+        detection_id: "abioc-akira-esxi-offline-vmdk-credential-theft-pivot"
+
+  - id: step-05
+    name: "Blind the ESXi host by redirecting syslog to ephemeral /tmp"
+    command: "echo '[SAFE-MODE SIM-EDR-019] esxcli system syslog config set --logdir=/tmp && esxcli system syslog reload'"
+    identity: root
+    mitre_technique: "T1562.006"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "ESXi syslog redirected to /tmp (wiped on reboot) to blind the host before encryption."
+        ttp_ref: "TTP-2026-0132"
+        detection_id: "bioc-akira-esxi-syslog-redirected-to-ephemeral-tmp-for-log-blinding"
+
+  - id: step-06
+    name: "Mass power-off all guests via vim-cmd getallvms fan-out"
+    command: "echo '[SAFE-MODE SIM-EDR-019] vim-cmd vmsvc/getallvms | awk power.off fan-out across all guests'"
+    identity: root
+    mitre_technique: "T1529"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-05
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "Mass guest power-off fan-out from a single ESXi shell lineage, immediately after syslog blinding."
+        ttp_ref: "TTP-2026-0132"
+        detection_id: "abioc-akira-esxi-mass-guest-power-off-fan-out-from-blinded-host"
+
+  - id: step-07
+    name: "Detonate Akira_v2 --vmonly encryption across datastore VM files"
+    command: "echo '[SAFE-MODE SIM-EDR-019] ./akira --id <key> --vmonly --stopvm (encrypt .vmdk/.vmx, drop akiranew.txt)'"
+    identity: root
+    mitre_technique: "T1486"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-06
+      pivot: exploit_impact
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Akira_v2 --vmonly encryption impact — .akiranew markers / akiranew.txt on /vmfs/volumes/."
+        ttp_ref: "TTP-2026-0132"
+        detection_id: "bioc-akira-v2-vm-only-encryption-impact-on-esxi-datastore"
+      - plane: EDR
+        type: Correlation
+        description: "Correlation stitches shell + syslog-blind + offline cred theft + mass power-off + encryption into one P1 incident."
+        ttp_ref: "TTP-2026-0132"
+        detection_id: "CR-EDR-0019"
+
+cleanup:
+  commands:
+    - "echo '[SAFE-MODE SIM-EDR-019] cleanup: no artifacts created; nothing to remove.'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - edr
+  - esxi
+  - hypervisor
+  - ransomware
+  - akira
+  - howling-scorpius
+  - causality

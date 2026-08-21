@@ -107,7 +107,19 @@ Weights drive prioritization when the scraper queues backlogs.
 
 ## What's here today
 
-Six entries — the three POV pillars plus a chained BlackSuit Blitz kill chain (Unit 42's flagship 2025 IR narrative) decomposed into individual TTPs. The chained entries (0002 → 0004 → 0005 → 0006) carry correlation rules that fuse them into a single P1 incident via `CR-RANSOM-0002`, letting the POV engine grade against a real end-to-end scenario rather than isolated tests.
+**161 cards** (`TTP-2026-0001` … `TTP-2026-0167`) resolving **1356 catalog detection
+objects** across BIOC / XQL / Analytics / Correlation / IOC / ABIOC plus the XDM
+modeling-rule substrate. The authoritative inventory is
+[`docs/reference/scenario-catalog.md`](../docs/reference/scenario-catalog.md); counted
+ground truth lives in [`docs/reference/README.md`](../docs/reference/README.md). Run
+`make validate` for the live count.
+
+The first six entries are reproduced below as the **worked example** — the three POV
+pillars plus a chained BlackSuit Blitz kill chain (Unit 42's flagship 2025 IR narrative)
+decomposed into individual TTPs. The chained entries (0002 → 0004 → 0005 → 0006) carry
+correlation rules that fuse them into a single P1 incident via `CR-RANSOM-0002`, letting
+the POV engine grade against a real end-to-end scenario rather than isolated tests. This
+is the shape every card since has followed.
 
 | ID | Pillar | Stage in chain | Anchor (Unit 42) | Primary Cortex module(s) | MITRE |
 |---|---|---|---|---|---|
@@ -124,7 +136,21 @@ Six entries — the three POV pillars plus a chained BlackSuit Blitz kill chain 
 - **Identity-led ransomware** — TTP-2026-0001 (help-desk MFA reset) → TTP-2026-0004 → TTP-2026-0005 → TTP-2026-0006. The Muddled Libra variant of the same chain.
 - **Cloud-native exfil** — TTP-2026-0003 standalone. Mirrors the AWS-only attack pattern Unit 42's IAM research describes.
 
-Next backlog from `sources/unit42-index.json` P0 set: Phantom Taurus IIS web shell, TeamPCP supply-chain compromise, Payroll Pirates BEC, Boggy Serpens AI-assisted spear-phishing.
+That P0 backlog has since been authored — Phantom Taurus (`SIM-MP-011`), TeamPCP (`SIM-MP-018`), and the email/BEC set (`SIM-EMAIL-001..005`) all ship today.
+
+## Engine load contract
+
+The `cortex-pov-engine` enumerates the corpus by **globbing `ttps/*.json`
+directly** (non-recursive, skipping `_drafts/`) — there is no manifest file and
+no manifest-diff CI gate. See `core/engine/ttp_catalog.py:load()`. Each card is
+parsed in place; `metadata.pov_engine.auto_load`, `status`, `destructive`, and
+`safety_class` are read per card. `scripts/build-manifest.py` still exists for
+ad-hoc human reporting, but its `manifest.json` output is **gitignored** and is
+not consumed by the engine or by CI.
+
+CI runs two gates: `scripts/validate.py` (must exit 0) and a sync check on the
+generated `exports/` tree (`git diff --exit-code detection_scanner/exports/`
+after `scripts/export_artifacts.py --clean`).
 
 ## Engine load contract
 

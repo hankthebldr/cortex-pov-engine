@@ -1,0 +1,31 @@
+title: "Cloud Instance-Credential (IMDS) Theft and Off-Instance Reuse \u2014 Cloud Storage & Compute (SIM-CDR-023) \u2014 Cloud Unusual Instance Metadata Service (IMDS) access"
+id: ttp-2026-0158-abioc-01
+status: experimental
+description: |
+  PANW behavioral-ML ABIOC. Learns the per-instance baseline that an EC2 instance-profile role session (roleSessionName == instance_id) is normally exercised only from that instance's own egress. Fires when that instance role session appears on API calls (GetCallerIdentity, ListAttachedRolePolicies) from a source IP outside the learned egress set within the causality window — the CloudTrail-observable footprint of an IMDS-harvested credential being reused off-instance. The learned anchor is the instance role session (assumed-role ARN + instance_id); the deviation is the source-IP set diverging from the instance's own egress. The IMDS read itself is not in CloudTrail, so the ABIOC keys on the credential's use, not on a phantom fetch event.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and management_event = true
+    | filter identity_type = "AssumedRole" and role_session_name = instance_id
+    | filter event_name in ("GetCallerIdentity", "ListAttachedRolePolicies")
+    | comp count() as api_calls, values(event_name) as api_actions, values(source_ip) as source_ips by role_session_name, instance_id
+    | filter api_calls >= 1
+    | fields role_session_name, instance_id, source_ips, api_actions, api_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.005
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

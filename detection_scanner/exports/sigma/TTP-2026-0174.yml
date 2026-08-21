@@ -1,0 +1,31 @@
+title: "Compromise Infrastructure \u2014 A Dangling-DNS Subdomain Takeover Weaponized as Allowlisted C2 \u2014 Periodic Low-Variance Egress to an Owned Subdomain Whose Resolution Target Left the Estate"
+id: ttp-2026-0174-abioc-01
+status: experimental
+description: |
+  The behavioural half of the claim, and the half that cannot be replaced by any reputation lookup. Internal hosts hold a steady, low-jitter session cadence to a name inside the customer's own namespace whose resolution target is outside their address space. Beaconing alone would be indistinguishable from an internal service the analyst has not heard of — the name looks like theirs, because it is theirs — which is exactly why the resolution-target condition is part of the detection rather than context beside it.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter cortexsim_run_tag = "TIM008"
+    | filter app in ("ssl", "web-browsing") and dest_fqdn contains "corp-demo.example"
+    | comp count() as sessions, count_distinct(source_ip) as internal_hosts, avg(bytes_sent) as avg_sent, count_distinct(bytes_sent) as size_variants by dest_fqdn, dest_ip
+    | filter sessions >= 10 and size_variants <= 3
+    | sort desc sessions
+    | fields dest_fqdn, dest_ip, internal_hosts, sessions, avg_sent, size_variants
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+    - attack.t1584.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

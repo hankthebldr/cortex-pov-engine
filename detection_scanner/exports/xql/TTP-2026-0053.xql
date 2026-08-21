@@ -45,8 +45,8 @@ preset = network_story
 | filter dst_ip in ("10.50.10.0/24")
 | join type=inner (xdr_data
     | filter event_type = ENUM.NETWORK
-    | fields agent_hostname, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip
-| comp count_distinct(dst_ip) as swept_hosts by src_ip, ep.agent_hostname
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip
+| comp count_distinct(dst_ip) as swept_hosts by src_ip, ep.agent_hostname, ep.causality_actor_process_image_name, ep.causality_actor_process_instance_id
 | filter swept_hosts >= 8
-| fields src_ip, ep.agent_hostname, swept_hosts
+| fields src_ip, ep.agent_hostname, ep.causality_actor_process_image_name, ep.causality_actor_process_instance_id, swept_hosts
 

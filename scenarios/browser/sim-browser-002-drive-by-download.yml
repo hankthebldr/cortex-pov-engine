@@ -8,10 +8,14 @@ detection_types:
   - Analytics
   - BIOC
 
-uc_ref: UCS-BROWSER-02
-tc_ref: TC-BROWSER-02
-uc_name: "Browser-Initiated Malware Download"
-tc_name: "Auto-Download Triggered by Phishing Landing Page"
+uc_ref: UCS-AES-03
+tc_ref: TC-AES-06
+tc_refs:
+  - TC-AES-06
+  - TC-DLP-01
+pov_scenario_id: POV-SC-064
+uc_name: "Advanced Email Security"
+tc_name: "Demonstrate link-based payload detection identifies malicious URLs, drive-by downloads, and delayed weaponization (links that become malicious post-delivery)"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"
@@ -57,6 +61,18 @@ success_criteria: |
   injected browser events that raise the expected alert (target ≥ 90%).
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The managed Prisma Browser (Chromium-based) is the Causality Group Owner — the
+# initial-access process that OWNS the drive-by chain in XSIAM's causality view,
+# NOT the synthetic beacon. The pre-flight, the gesture-less auto-download, and
+# the WildFire-submission confirmation descend as one connected process spine
+# rooted at the browser. The browser download event and the NGFW file-type
+# policy hit are the two ends of one egress; the engine stitches them across the
+# BROWSER↔NDR alert nodes.
+cgo_anchor:
+  image_name: "chrome"
+  primary_username: "corp-user"
+
 external_tools:
   - name: Cortex Browser Attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -76,6 +92,7 @@ steps:
         | jq -e '.params_schema.properties.campaign_path'
     identity: container-runtime
     mitre_technique: "T1566"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: BROWSER
         type: Analytics
@@ -108,6 +125,13 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-002-eal.yml --live
     identity: container-runtime
     mitre_technique: "T1189"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["linux", "container", "windows", "macos"]
+    platform_variants:
+      windows: "python -m scripts.eal_simulator.cli run %TEMP%\\sim-browser-002-eal.yml --live  # browser_channel: prisma -> managed Prisma Browser on Windows (application/x-msdownload)"
+      macos: "python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-002-eal.yml --live  # browser_channel: prisma -> managed Prisma Browser on macOS (application/x-mach-binary)"
     expected_detections:
       - plane: BROWSER
         type: BIOC
@@ -132,6 +156,10 @@ steps:
       echo "[CortexSim] Confirm in XSIAM (manual): WildFire verdict appears within MTTD target."
     identity: container-runtime
     mitre_technique: "T1189"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: BROWSER
         type: Analytics

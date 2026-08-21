@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - IOC
 
-uc_ref: UCS-AIACC-02
-tc_ref: TC-AIACC-02
-uc_name: "Cloud Credential Disclosure to External LLM"
-tc_name: "AWS Access Key in Prompt Body to api.anthropic.com"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-SSCAN-01
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0006"
 mitre_tactic_name: "Credential Access"
@@ -33,6 +37,13 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "developer"
 
 infra_modules_needed:
   - base
@@ -123,6 +134,9 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-002.yml --live
     identity: container-runtime
     mitre_technique: "T1552"
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: AI_ACCESS
         type: IOC
@@ -163,6 +177,9 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-002-burst.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: AI_ACCESS
         type: XQL

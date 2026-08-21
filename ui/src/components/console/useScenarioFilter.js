@@ -40,6 +40,7 @@ const SET_FIELDS = [
 const EMPTY_FILTER = () => ({
   plane:      null,
   technique:  null,
+  query:      '',            // free-text search (name / id / technique / report)
   tactics:      new Set(),
   techniques:   new Set(),
   actors:       new Set(),
@@ -63,6 +64,12 @@ export default function useScenarioFilter() {
     }))
   }, [])
 
+  // Free-text search — the inline Library search box. Matches scenario name,
+  // id, MITRE technique, threat report, and tags (case-insensitive substring).
+  const setQuery = useCallback((q) => {
+    setFilter((prev) => ({ ...prev, query: q || '' }))
+  }, [])
+
   // Toggle a value in one of the Set-shaped fields. No-ops for fields outside SET_FIELDS.
   const toggle = useCallback((field, value) => {
     if (!SET_FIELDS.includes(field)) return
@@ -81,6 +88,7 @@ export default function useScenarioFilter() {
     setFilter((prev) => {
       if (field === 'plane')     return { ...prev, plane: null }
       if (field === 'technique') return { ...prev, technique: null }
+      if (field === 'query')     return { ...prev, query: '' }
       if (SET_FIELDS.includes(field)) return { ...prev, [field]: new Set() }
       return prev
     })
@@ -90,6 +98,7 @@ export default function useScenarioFilter() {
   const activeCount = useMemo(() => {
     let n = 0
     if (filter.technique) n += 1
+    if (filter.query && filter.query.trim()) n += 1
     for (const f of SET_FIELDS) n += filter[f].size > 0 ? 1 : 0
     return n
   }, [filter])
@@ -115,6 +124,7 @@ export default function useScenarioFilter() {
     filter,
     setPlane,
     setTechnique,
+    setQuery,
     toggle,
     clearAll,
     clearOne,
@@ -127,6 +137,18 @@ export default function useScenarioFilter() {
 /* ─── matchers ─────────────────────────────────────────────────────── */
 
 function scenarioMatches(s, f) {
+  // free-text query — case-insensitive substring across the fields a DC scans by
+  if (f.query && f.query.trim()) {
+    const q = f.query.trim().toLowerCase()
+    const hay = [
+      s.name, s.scenario_id, s.id, s.mitre_technique, s.mitre_tactic_name,
+      s.threat_report, s.uc_name, s.tc_name,
+      ...collectTechniques(s),
+      ...(s.tags || []),
+    ].filter(Boolean).join(' ').toLowerCase()
+    if (!hay.includes(q)) return false
+  }
+
   // plane (single)
   if (f.plane && (s.plane || '').toUpperCase() !== f.plane.toUpperCase()) {
     return false

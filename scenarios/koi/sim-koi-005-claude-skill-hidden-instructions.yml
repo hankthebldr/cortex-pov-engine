@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-KOI-05
-tc_ref: TC-KOI-05
-uc_name: "Agentic Skill-Bundle Content Inspection"
-tc_name: "Claude Skill .zip Embeds Adversarial Instructions in skill.md"
+uc_ref: UCS-AIRS-04
+tc_ref: TC-AIRS-07
+tc_refs:
+  - TC-AIRS-07
+  - TC-AGTX-11
+pov_scenario_id: POV-SC-033
+uc_name: "AI Runtime Security (Prisma AIRS)"
+tc_name: "Validate real-time detection and blocking of prompt injection, jailbreak attempts, and malicious agent behaviors in production AI systems"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"
@@ -59,6 +63,19 @@ success_criteria: |
   product equivalent.
 moat_tier: "MOAT"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The agentic coding client (a node/Claude runtime on the dev container) is the
+# Causality Group Owner: it is the process that pulls, reads, fetches and then
+# invokes the malicious skill — NOT the synthetic cortexsim-agent beacon. The
+# three legs (on-disk skill.md scan → skill-bundle fetch → first-invocation AIRS
+# score) all execute on the same agentic host under that client, so they form a
+# CONNECTED process_lineage chain rather than a star of independent findings,
+# and XSIAM folds the KOI artifact finding + the network fetch + the AIRS
+# detection into ONE agentic-supply-chain incident.
+cgo_anchor:
+  image_name: "node"
+  primary_username: "root"
+
 external_tools:
   - name: Cortex Malicious Agentic Pack
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -84,6 +101,7 @@ steps:
         "$SKILL_ROOT"/skill.md || true
     identity: container-runtime
     mitre_technique: "T1656"
+    platforms: ["linux", "macos"]
     expected_detections:
       - plane: KOI
         type: BIOC
@@ -120,6 +138,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/koi-005.yml --live
     identity: container-runtime
     mitre_technique: "T1195"
+    platforms: ["linux", "macos"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL
@@ -140,6 +162,10 @@ steps:
       echo "[CortexSim] should fire on the embedded 'Ignore previous' marker."
     identity: container-runtime
     mitre_technique: "T1656"
+    platforms: ["linux", "macos"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: AIRS
         type: XQL

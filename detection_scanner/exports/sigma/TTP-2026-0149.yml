@@ -1,0 +1,31 @@
+title: "TIM Rogue Authenticode Code-Signing Certificate IOC \u2014 Vidar+XMRig Malvertising Loader (T1587.002 / T1036.001) \u2014 TIM \u2014 Rogue Authenticode Code-Signing Certificate Match on Signed-Binary Execution"
+id: ttp-2026-0149-bioc-01
+status: experimental
+description: |
+  A process executes carrying the fabricated Authenticode signer the campaign uses to sign its loader — the self-signed 'WR3' or cloned 'GlobalSign Atlas R3 DV TLS CA 2026 Q1' issuer (subject justwatch.com / *.bleacherreport.com) with a signature status that is not validly SIGNED because the chain never builds to a trusted root (CA:TRUE, self-signed / cloned-CA). This is the TIM rogue-signer match: it fires on the certificate capability the operator DEVELOPED (T1587.002 / T1036.001), independent of the loader filename, so subject rotation across variants does not evade it. The atomic thumbprint/serial themselves are armed as certificate indicators in the TIM threat_intel feed (validated by the pre-flight XQL), because xdr_data process telemetry exposes signer status/vendor, not a per-certificate SHA1 thumbprint column.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_signature_status != ENUM.SIGNED
+    | filter action_process_signature_vendor in ("justwatch.com", "*.bleacherreport.com", "WR3", "GlobalSign Atlas R3 DV TLS CA 2026 Q1")
+    | comp count() as rogue_signed_executions by agent_hostname, action_process_image_name, action_process_signature_vendor, action_process_signature_status
+    | filter rogue_signed_executions >= 1
+    | fields agent_hostname, action_process_image_name, action_process_signature_vendor, action_process_signature_status, rogue_signed_executions
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.001
+    - attack.t1587.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -55,6 +55,8 @@ preset = xdr_data
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
 | filter actor_process_image_name = "xmrig" or action_process_image_command_line contains_any ("xmrig", "--config", "stratum+tcp", "--max-threads-hint")
+| filter causality_actor_process_image_name in ("bash", "sh", "runc", "containerd-shim", "cron", "crond")
+| fields _time, container_id, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## BIOC — CDR-002 Sustained High CPU Mining Workload In Container
 # severity: high
@@ -75,7 +77,9 @@ preset = xdr_data
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
 | filter actor_process_image_name = "crontab"
+| filter causality_actor_process_image_name in ("bash", "sh", "runc", "containerd-shim")
 | filter action_process_image_command_line contains_any ("xmrig", "-", "/tmp/.xmr")
+| fields _time, container_id, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## BIOC — CDR-002 Cryptominer Added To Cron Schedule In Container
 # severity: high

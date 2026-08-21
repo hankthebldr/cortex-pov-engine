@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1580"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(CDR-016 Anomalous IAM API-Call Rate Spike from Baselined Workload Role) AND ABIOC(CDR-016 New-Action-Set Deviation from Learned IAM Usage Baseline) \u2014 fuses the two auto-tuned behavioral deviations on the same identity into a single compromised-workload-credential incident anchored to the assumed-role causality chain.",
+      "name": "Compromised Workload Credential \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-CDR-0016",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0103"
+}

@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1595",
+    "T1046",
+    "T1190",
+    "T1059",
+    "T1110",
+    "T1021"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Anchors on BIOC(MP-019 Web-Service Process Spawns Interactive Shell After Injection Exploit) \u2014 the exploit foothold whose causality_actor_process is the www-data web service \u2014 and groups on agent_hostname + causality_id + causality_actor_process_instance_id. Within a 1800s window it requires the chain to bind to that SAME causality actor: upstream the NDR recon burst BIOC(MP-019 External Port-and-Service Scan Burst Against Exposed Host) and the web content-discovery fan-out XQL from the same source, then downstream BIOC(MP-019 Credential Brute-Force Child Spawned From Web-Service Shell) and ABIOC(MP-019 Anomalous Lateral Authentication Burst From Web Host) \u2014 the shared_entity credential pivot that carries the incident from the web host to the Domain Controller. Fires exactly ONE ANALYTICS incident that reconstructs the full lineage operator-recon(CGO) -> web-enum -> injection-shell(www-data) -> hydra/netexec brute -> impacket lateral, so five planes of individually low-severity tool signal surface as one external-to-internal intrusion instead of a disconnected star of scanner alerts.",
+      "name": "MP-019 Kali External-to-Internal Kill-Chain Stitch",
+      "rule_id": "CR-MP-0019",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0140"
+}

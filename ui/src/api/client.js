@@ -6,10 +6,88 @@
 const BASE_URL = window.location.origin
 
 /**
+ * Render FastAPI's *validation* error body (422) as operator-readable text.
+ *
+ * Pydantic emits `detail: [{loc: ["body","target_agent_id"], msg: "Input
+ * should be a valid string", ...}]`. Collapsing that to "HTTP 422 —
+ * Unprocessable Entity" throws away the only part that tells the DC what to
+ * fix, so name the offending field and quote the validator verbatim.
+ *
+ * @param {Array} detail  FastAPI `detail` array
+ * @returns {string|null} e.g. "target_agent_id: Input should be a valid string"
+ */
+function formatValidationDetail(detail) {
+  if (!Array.isArray(detail) || detail.length === 0) return null
+  const parts = detail
+    .map((d) => {
+      if (!d || typeof d !== 'object') return String(d ?? '')
+      // Drop the leading "body"/"query" segment — the operator cares about the field.
+      const loc = Array.isArray(d.loc) ? d.loc.filter((s) => s !== 'body' && s !== 'query') : []
+      const field = loc.join('.')
+      const msg = d.msg || d.type || 'invalid value'
+      return field ? `${field}: ${msg}` : msg
+    })
+    .filter(Boolean)
+  return parts.length ? parts.join('; ') : null
+}
+
+/**
+ * Build an Error that CARRIES the project's structured error contract
+ * (`{error, code, detail}`) instead of flattening it to a status line.
+ *
+ * `err.message` stays the human sentence a toast renders, and `err.code` /
+ * `err.detail` / `err.status` ride along so a caller that wants to explain the
+ * failure precisely (the launch panel) can, without re-parsing prose.
+ */
+function apiError(message, { code = null, detail = null, status = null } = {}) {
+  const err = new Error(message)
+  err.code = code
+  err.detail = detail
+  err.status = status
+  return err
+}
+
+/**
+ * How long the console waits for SimCore before calling it a failure.
+ *
+ * WHY THIS EXISTS: `fetch` has no default timeout, so a SimCore that accepts the
+ * connection and never answers hangs the calling surface FOREVER — a spinner
+ * that spins for the length of a customer meeting. That is not hypothetical
+ * here: a blocking tenant call inside an async handler was measured stalling
+ * `/api/health` for 28 seconds, during which every console request queued behind
+ * it. A spinner and a blank screen are the same outcome to the operator, and
+ * neither says which one it is. A named REQUEST_TIMEOUT does.
+ */
+export const REQUEST_TIMEOUT_MS = 20_000
+/** Reports and bundles are generated on demand and legitimately take longer. */
+export const DOWNLOAD_TIMEOUT_MS = 60_000
+
+/**
+ * Attach an abort signal unless the caller brought their own.
+ *
+ * A caller-supplied signal WINS — `useShelf` owns a 180 s staging deadline and
+ * a 20 s default would cut a legitimate large download in half.
+ */
+function armTimeout(options, ms) {
+  if (options.signal) return { signal: options.signal, cleanup: () => {}, timedOut: () => false }
+  if (typeof AbortController === 'undefined') {
+    return { signal: undefined, cleanup: () => {}, timedOut: () => false }
+  }
+  const controller = new AbortController()
+  let fired = false
+  const timer = setTimeout(() => { fired = true; controller.abort() }, ms)
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timer),
+    timedOut: () => fired,
+  }
+}
+
+/**
  * Core fetch wrapper — handles JSON parsing and structured error extraction.
  * On non-2xx response, throws Error with the message from JSON body.
  */
-async function request(path, options = {}) {
+export async function request(path, options = {}) {
   const url = `${BASE_URL}${path}`
   const defaults = {
     headers: {
@@ -23,27 +101,58 @@ async function request(path, options = {}) {
     headers: { ...defaults.headers, ...(options.headers || {}) },
   }
 
-  const response = await fetch(url, config)
+  const budgetMs = options._timeoutMs
+    ?? (options._returnBlob ? DOWNLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS)
+  const timeout = armTimeout(options, budgetMs)
+  if (timeout.signal) config.signal = timeout.signal
+
+  let response
+  try {
+    response = await fetch(url, config)
+  } catch (err) {
+    if (timeout.timedOut()) {
+      throw apiError(
+        `SimCore did not answer ${path} in ${Math.round(budgetMs / 1000)}s. `
+        + 'Check /api/health — a blocked event loop or an unreachable dependency stalls every '
+        + 'request behind it.',
+        { code: 'REQUEST_TIMEOUT', detail: { path, timeout_ms: budgetMs }, status: null },
+      )
+    }
+    throw err
+  } finally {
+    timeout.cleanup()
+  }
 
   if (!response.ok) {
-    let errorMessage = `HTTP ${response.status} — ${response.statusText}`
+    const fallback = `HTTP ${response.status} — ${response.statusText}`
+    let errorMessage = fallback
+    let code = null
+    let detail = null
     try {
       const errorBody = await response.json()
-      // FastAPI returns errors as { detail: ... } where detail may be a
-      // plain string OR a structured object {error, code, detail, ...}.
-      // Stringifying an object error to "[object Object]" loses the code,
-      // so unpack it here.
-      if (errorBody.detail && typeof errorBody.detail === 'object') {
+      // FastAPI returns errors as { detail: ... } where detail is one of:
+      //   • an ARRAY  — Pydantic request-validation failures (422)
+      //   • an OBJECT — this project's {error, code, detail} contract
+      //   • a STRING  — a plain HTTPException message
+      // All three carry the actionable part; only the status line does not.
+      if (Array.isArray(errorBody.detail)) {
+        detail = errorBody.detail
+        errorMessage = formatValidationDetail(errorBody.detail) || fallback
+        code = 'VALIDATION_ERROR'
+      } else if (errorBody.detail && typeof errorBody.detail === 'object') {
         const d = errorBody.detail
-        const code = d.code ? ` [${d.code}]` : ''
-        errorMessage = `${d.error || d.detail || errorMessage}${code}`
+        code = d.code || null
+        detail = d.detail ?? null
+        errorMessage = `${d.error || d.detail || fallback}${d.code ? ` [${d.code}]` : ''}`
       } else {
-        errorMessage = errorBody.detail || errorBody.error || errorBody.message || errorMessage
+        code = errorBody.code || null
+        detail = errorBody.detail ?? null
+        errorMessage = errorBody.detail || errorBody.error || errorBody.message || fallback
       }
     } catch {
       // Response body was not JSON — keep the HTTP status message
     }
-    throw new Error(errorMessage)
+    throw apiError(errorMessage, { code, detail, status: response.status })
   }
 
   // For blob responses (downloads), return raw Response
@@ -350,6 +459,22 @@ export async function downloadReportBundle(runId) {
 }
 
 /**
+ * GET /api/runs/:runId/report?format=scorecard | scorecard-html
+ * Executive efficacy scorecard (the CISO one-pager) as a downloadable blob.
+ * Markdown (text/plain) by default; pass { html: true } for the HTML render.
+ * @param {string} runId
+ * @param {{ html?: boolean }} [opts]
+ * @returns {Promise<Blob>}
+ */
+export async function downloadReportScorecard(runId, { html = false } = {}) {
+  const format = html ? 'scorecard-html' : 'scorecard'
+  const response = await request(`/api/runs/${runId}/report?format=${format}`, {
+    _returnBlob: true,
+  })
+  return response.blob()
+}
+
+/**
  * GET /api/runs/:runId/report?format=json
  * Returns structured report data.
  * @param {string} runId
@@ -443,11 +568,58 @@ export async function deleteAgent(agentId) {
 /**
  * Build the installer download URL for an agent (bash .sh / PowerShell .ps1).
  * Server URL is auto-derived server-side from the request.
- * @param {{os?:string, id?:string, interval?:number}} opts
+ *
+ * Pass `token` to get the ENROLLMENT installer (SimCore assigns the agent id);
+ * pass `id` for the legacy self-asserted path. Prefer the token: an operator
+ * who invents ids produces duplicates and typos, and the token is revocable.
+ *
+ * @param {{os?:string, id?:string, interval?:number, token?:string}} opts
  */
-export function agentInstallUrl({ os = 'linux', id = 'jumpbox-01', interval = 10 } = {}) {
-  const q = new URLSearchParams({ os, id, interval: String(interval) })
+export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token = null } = {}) {
+  const q = new URLSearchParams({ os, interval: String(interval) })
+  if (token) q.set('token', token)
+  if (id) q.set('id', id)
   return `/api/agents/install?${q.toString()}`
+}
+
+// ─── Agent enrollment tokens ─────────────────────────────────────────────────
+// The documented front door for onboarding: mint a TTL/max-uses/revocable
+// token, hand the jumpbox ONE line, and let SimCore assign the agent id.
+
+/**
+ * POST /api/agents/enroll/tokens — mint an enrollment token.
+ *
+ * The full token value is returned EXACTLY once, here; every later read shows
+ * only its tail. Callers must surface it immediately or it is unrecoverable.
+ *
+ * @param {{label?:string, ttl_seconds?:number, max_uses?:number}} opts
+ * @returns {Promise<{id:number, token:string, label:?string, expires_at:?string,
+ *                    max_uses:number, used_count:number, remaining_uses:number}>}
+ */
+export async function mintEnrollmentToken({ label = null, ttl_seconds = 3600, max_uses = 1 } = {}) {
+  return request('/api/agents/enroll/tokens', {
+    method: 'POST',
+    body: JSON.stringify({ label, ttl_seconds, max_uses }),
+  })
+}
+
+/**
+ * GET /api/agents/enroll/tokens — list minted tokens (tails only, with a
+ * server-derived `valid` flag folding revoked/expired/exhausted into one bit).
+ * @returns {Promise<Array>}
+ */
+export async function listEnrollmentTokens() {
+  const data = await request('/api/agents/enroll/tokens')
+  return Array.isArray(data) ? data : data?.tokens ?? []
+}
+
+/**
+ * DELETE /api/agents/enroll/tokens/:id — revoke a token so it can no longer
+ * be redeemed. Already-enrolled agents are unaffected.
+ * @param {number|string} tokenId
+ */
+export async function revokeEnrollmentToken(tokenId) {
+  return request(`/api/agents/enroll/tokens/${encodeURIComponent(tokenId)}`, { method: 'DELETE' })
 }
 
 // ─── TTP browser (detection_scanner/ttps/*.json) ────────────────────────────
@@ -545,6 +717,204 @@ export async function promoteTtp(ttpId) {
  */
 export async function reloadTtpCatalog() {
   return request('/api/ttps/_reload', { method: 'POST' })
+}
+
+// ─── UC / TC Index ───────────────────────────────────────────────────────────
+//
+// Read-only browser over the FY27 v2.2 master Use-Case / Test-Case index
+// (docs/uc_tc_mapping/_v2.2-source/), joined to the engine's own evidence
+// (Scenario.tc_refs → Run.tc_verdict). See core/api/uctc.py.
+//
+// Every response carries the envelope { index_loaded, index_version, … }.
+// When the snapshot is missing from a deploy the API returns 200 with
+// ``index_loaded: false`` and empty collections — callers MUST render that
+// as a degraded state, never as "0 test cases".
+//
+// All list helpers return the RAW wrapper object (like getTtps), not a bare
+// array, so the envelope survives to the surface.
+
+/** Build a querystring from a filter bag, dropping empty values. */
+function _qs(filters = {}) {
+  const qs = new URLSearchParams()
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== '') qs.append(k, String(v))
+  }
+  const s = qs.toString()
+  return s ? `?${s}` : ''
+}
+
+/**
+ * GET /api/uctc/summary
+ *
+ * Header numbers in one call — index totals, per-validation-class /
+ * tier / priority / sheet breakdowns, and the evidence rollup.
+ *
+ * @returns {Promise<{index_loaded: boolean, index_version: ?string,
+ *                    totals: Object, by_validation_class: Object,
+ *                    by_tier: Object, by_priority: Object,
+ *                    by_sheet: Object, evidence: Object}>}
+ */
+export async function getUcTcSummary() {
+  return request('/api/uctc/summary')
+}
+
+/**
+ * GET /api/uctc/use-cases
+ *
+ * The 49 use cases with per-UC counts + coverage percentages.
+ *
+ * @param {Object} [filters]
+ * @param {string} [filters.sheet]            'SecOps' | 'Cloud'
+ * @param {string} [filters.subdomain]        FY27 subdomain
+ * @param {string} [filters.evidenced]        'all' | 'yes' | 'no' | 'partial'
+ * @param {boolean} [filters.include_inactive]
+ * @returns {Promise<{use_cases: Array<Object>, total: number}>}
+ */
+export async function getUcTcUseCases(filters = {}) {
+  return request(`/api/uctc/use-cases${_qs(filters)}`)
+}
+
+/**
+ * GET /api/uctc/use-cases/:uc_id
+ *
+ * One use case + its UCS groups + every child test case (TCSummary).
+ *
+ * @param {string} ucId  e.g. 'UC-EDR'
+ */
+export async function getUcTcUseCase(ucId) {
+  return request(`/api/uctc/use-cases/${encodeURIComponent(ucId)}`)
+}
+
+/**
+ * GET /api/uctc/test-cases
+ *
+ * The main table — all 266 TCSummary rows. Filters compose with logical
+ * AND server-side; unknown values quietly return an empty list. There is
+ * no pagination: the surface fetches once and filters client-side.
+ *
+ * @param {Object} [filters]
+ * @param {string}  [filters.uc_id]
+ * @param {string}  [filters.ucs_id]
+ * @param {string}  [filters.validation_class]  comma-list, e.g. 'DET,HNT'
+ * @param {string}  [filters.tier]
+ * @param {string}  [filters.priority]
+ * @param {string}  [filters.sheet]
+ * @param {string}  [filters.pov_scenario_id]
+ * @param {boolean} [filters.evidenced]
+ * @param {boolean} [filters.scoreable]
+ * @param {string}  [filters.plane]            implies evidenced
+ * @param {boolean} [filters.include_inactive]
+ * @returns {Promise<{test_cases: Array<Object>, total: number, index_total: number}>}
+ */
+export async function getUcTcTestCases(filters = {}) {
+  return request(`/api/uctc/test-cases${_qs(filters)}`)
+}
+
+/**
+ * GET /api/uctc/test-cases/:tc_id
+ *
+ * Full test-case detail — measurement contract, entitlements, parent UC +
+ * UCS siblings, POV payload, the scenarios that evidence it, and the run
+ * verdict rollup. This is the endpoint that turns "mapped" into "proven".
+ *
+ * @param {string} tcId  e.g. 'TC-EDR-03'
+ */
+export async function getUcTcTestCase(tcId) {
+  return request(`/api/uctc/test-cases/${encodeURIComponent(tcId)}`)
+}
+
+/**
+ * GET /api/uctc/coverage
+ *
+ * Every rollup in one payload — by use case (sorted worst-first), by
+ * plane, by validation class, by tier, by priority, by sheet.
+ *
+ * @param {Object} [opts]
+ * @param {boolean} [opts.include_inactive]
+ */
+export async function getUcTcCoverage(opts = {}) {
+  return request(`/api/uctc/coverage${_qs(opts)}`)
+}
+
+/**
+ * GET /api/uctc/gaps
+ *
+ * The UNEVIDENCED test cases — the gap is the point of the surface.
+ * Defaults to the actionable DET/HNT slice.
+ *
+ * @param {Object} [filters]
+ * @param {string}  [filters.validation_class]     default 'DET,HNT'
+ * @param {string}  [filters.priority]
+ * @param {string}  [filters.uc_id]
+ * @param {boolean} [filters.include_unscoreable]  default true
+ * @param {boolean} [filters.include_inactive]
+ * @returns {Promise<{gaps: Array<Object>, total: number,
+ *                    by_use_case: Array, by_priority: Object, scope: Object}>}
+ */
+export async function getUcTcGaps(filters = {}) {
+  return request(`/api/uctc/gaps${_qs(filters)}`)
+}
+
+/**
+ * GET /api/uctc/by-scenario/:scenario_id
+ *
+ * Forward view for a Library-inspector deep link — the test cases one
+ * engine scenario claims to evidence, plus its derived entitlements.
+ *
+ * @param {string} scenarioId  e.g. 'SIM-EDR-001'
+ */
+export async function getUcTcByScenario(scenarioId) {
+  return request(`/api/uctc/by-scenario/${encodeURIComponent(scenarioId)}`)
+}
+
+// ─── Assertions — the POS / PLT / AUT proof mechanism ────────────────────────
+//
+// Scenarios prove DET/HNT rows of the UC/TC index. POS/PLT/AUT rows are not
+// detections — a posture finding must be discovered, a platform capability
+// must be present, an automation outcome must occur inside a budget — so they
+// are proven by ``assertions/{pos,plt,aut}/*.yml`` instead. See
+// core/api/assertions.py and docs/uc_tc_mapping/assertions.md.
+
+/**
+ * GET /api/assertions
+ *
+ * Every loaded assertion, PLUS every artifact the loader refused and why
+ * (``rejected[]``). The falsifiability guard is only worth something if the
+ * artifacts it blocked are visible, so callers must render that list.
+ *
+ * The endpoint is optional: a SimCore built before the router landed answers
+ * 404, which callers treat as "mechanism not deployed" — never as zero
+ * coverage.
+ *
+ * @param {Object} filters  {validation_class, tc_ref, kind, status, probe}
+ * @returns {Promise<{assertions: Array, count: number, total: number,
+ *                    by_validation_class: Object, rejected: Array,
+ *                    warnings: Array, probes: Array}>}
+ */
+export async function getAssertions(filters = {}) {
+  return request(`/api/assertions${_qs(filters)}`)
+}
+
+/**
+ * GET /api/assertions/:assertion_id
+ * @param {string} assertionId  e.g. 'PLT-IR-008'
+ */
+export async function getAssertion(assertionId) {
+  return request(`/api/assertions/${encodeURIComponent(assertionId)}`)
+}
+
+/**
+ * GET /api/assertions/runs
+ *
+ * Recorded evaluations. An AUTHORED assertion is a claim; only a run carries a
+ * ``tc_verdict``, and only a credential-backed non-dry run can carry anything
+ * other than ``pending``. Callers must not present authorship as measurement.
+ *
+ * @param {Object} filters  {assertion_id, limit}
+ * @returns {Promise<{runs: Array, count: number}>}
+ */
+export async function getAssertionRuns(filters = {}) {
+  return request(`/api/assertions/runs${_qs(filters)}`)
 }
 
 // ─── EAL Traffic Simulator ───────────────────────────────────────────────────
@@ -724,4 +1094,98 @@ export async function startXsiamXql(name, body) {
  */
 export async function getXsiamXqlResults(name, queryId) {
   return request(`/api/xsiam/tenants/${encodeURIComponent(name)}/xql/${encodeURIComponent(queryId)}`)
+}
+
+// ─── Readiness ───────────────────────────────────────────────────────────────
+//
+// The surface that answers "am I ready to run this in front of a customer?"
+// BEFORE the customer is watching. Every helper below is OPTIONAL on the
+// server: a SimCore that predates the endpoint answers 404, and the caller
+// renders that as a NAMED CAPABILITY GAP — never as a zero, and never as ok.
+
+/**
+ * GET /api/credentials/integrations[?kind=…]
+ *
+ * ALL integration credentials, not just `xsiam_tenant`. The console has to show
+ * both Cortex credential kinds side by side: `xsiam` buys alert read-back and
+ * `xsiam_tenant` buys XQL, and configuring the first does not authorise the
+ * second. A surface that lists only one lets a DC believe they have a capability
+ * they never registered.
+ *
+ * @param {string|null} kind
+ * @returns {Promise<Array>}
+ */
+export async function listIntegrations(kind = null) {
+  const suffix = kind ? `?kind=${encodeURIComponent(kind)}` : ''
+  const data = await request(`/api/credentials/integrations${suffix}`)
+  return Array.isArray(data) ? data : data?.integrations ?? []
+}
+
+/**
+ * GET /api/connectors — the read-back connector kinds and whether each has a
+ * usable credential. Returns the RAW body so `connectors[]` keeps its envelope.
+ */
+export async function getConnectors() {
+  return request('/api/connectors')
+}
+
+/**
+ * POST /api/xsiam/tenants/:name/preflight — the staged, read-only connection
+ * check (config → dns → tls → auth → scope → datasets → quota → clock).
+ *
+ * Resolves `{ _unavailable: true }` on 404 rather than throwing: a SimCore
+ * without the endpoint has not FAILED preflight, it cannot RUN one, and the two
+ * must not render the same.
+ */
+/**
+ * Preflight ONE registered xsiam_tenant integration by name.
+ *
+ * There is no `/api/xsiam/tenants/{name}/preflight` — that path was never
+ * implemented, and because `/api/xsiam/...` has other routes it answers 405
+ * rather than 404, so the `_unavailable` fallback below never fired and the
+ * button just threw. The real surface is the same connector preflight every
+ * other kind uses; it takes the integration name as a query param.
+ */
+export async function preflightXsiamTenant(name) {
+  const qs = name ? `?integration=${encodeURIComponent(name)}` : ''
+  try {
+    return await request(`/api/connectors/xsiam_tenant/preflight${qs}`, { method: 'POST' })
+  } catch (err) {
+    // A deploy that predates the connector preflight router answers 404. That
+    // is "this tenant CANNOT be checked", not "this tenant FAILED a check", and
+    // collapsing the two would let an unverifiable credential read as a broken
+    // one. Note the old code caught 404 on a path that never existed at all —
+    // which answers 405, so this branch could never fire.
+    if (err && (err.status === 404 || err.status === 405)) {
+      return { _unavailable: true, tenant: name }
+    }
+    throw err
+  }
+}
+
+/**
+ * POST /api/connectors/:kind/preflight — same staged check for the reconcile
+ * credential, whose first exercise is otherwise a live run mid-demo.
+ */
+export async function preflightConnector(kind) {
+  try {
+    return await request(`/api/connectors/${encodeURIComponent(kind)}/preflight`, { method: 'POST' })
+  } catch (err) {
+    if (err && err.status === 404) return { _unavailable: true, kind }
+    throw err
+  }
+}
+
+/**
+ * GET /api/agents/install/attempts — enrolment telemetry, so "ran the one-liner,
+ * nothing appeared" has an answer on the readiness surface.
+ */
+export async function getInstallAttempts() {
+  try {
+    const data = await request('/api/agents/install/attempts')
+    return Array.isArray(data) ? data : data?.attempts ?? []
+  } catch (err) {
+    if (err && err.status === 404) return null
+    throw err
+  }
 }

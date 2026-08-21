@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1609",
+    "T1078.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when abioc `Unusual exec into a Kubernetes Pod` and abioc `A Kubernetes service account executed an unusual API call` both observe activity attributable to the same service-account principal (user.username) within a 15-minute window, stitching the interactive-exec foothold and the follow-on RBAC-write escalation into one Kubernetes intrusion incident.",
+      "name": "SIM-CDR-025 Exec Then Unusual SA API Correlation",
+      "rule_id": "CR-CDR-0025",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0162"
+}

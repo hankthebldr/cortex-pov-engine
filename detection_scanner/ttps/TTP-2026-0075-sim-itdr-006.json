@@ -296,14 +296,14 @@
         "evidence_query": "Playbook: disable the targeted roastable accounts, force a long random password / gMSA rotation, and enable Kerberos pre-auth."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CRED-075",
+        "threat_scenario_id": "TS-CRED-075",
         "name": "Active Directory Offline Roasting — AS-REP Roast + Kerberoast Harvest",
         "description": "Detect both offline-roasting credential-access families (AS-REP Roasting and Kerberoasting) when harvested from a single source against the seeded AD lab, and group them into one Credential Access incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CRED-075A",
+            "threat_step_id": "TS-CRED-075A",
             "objective": "AS-REP Roast and Kerberoast each fire their ITDR detection during SIM-ITDR-006.",
             "preconditions": [
               "Cortex ITDR connected to AD with the seeded pre-auth-disabled and SPN-bearing accounts.",
@@ -321,7 +321,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CRED-075B",
+            "threat_step_id": "TS-CRED-075B",
             "objective": "Both roasting techniques stitch into one Credential Access incident.",
             "success_criteria": [
               "Correlation `CR-ITDR-0006` groups the AS-REP + Kerberoast signals from one source into a single incident.",

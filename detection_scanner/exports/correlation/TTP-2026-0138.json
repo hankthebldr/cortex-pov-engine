@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1195.002",
+    "T1059",
+    "T1552.001",
+    "T1567",
+    "T1078",
+    "T1543"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(KOI-008 npm Install Hook Spawns Detached Node Child Outliving Install) FOLLOWED_BY BIOC(KOI-008 TruffleHog Credential File Harvest Under npm Node CGO) FOLLOWED_BY BIOC(KOI-008 npm Worm Exfil To webhook site And git Push To New Public Repo) FOLLOWED_BY ABIOC(KOI-008 Stolen npm Token Republishes To Sibling Packages Self Replication) FOLLOWED_BY BIOC(KOI-008 Self Hosted GitHub Actions Runner Registration SHA1HULUD) \u2014 all stitched by shared agent_hostname and causality_id (CGO = the node/npm install) so the detached install-hook child (process_lineage + temporal), the TruffleHog credential harvest (shared_entity over the harvested secret files), the webhook.site plus git-push exfil (network_session), the stolen-token sibling-package republish (exposure_exploit self-replication edge), and the self-hosted-runner registration (endpoint_network_stitch) collapse into ONE Shai-Hulud npm-worm incident.",
+      "name": "Shai-Hulud npm Worm \u2014 Install-Hook Scrape, Exfil, Self-Replicate, Runner Persistence",
+      "rule_id": "CR-KOI-0008",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0138"
+}

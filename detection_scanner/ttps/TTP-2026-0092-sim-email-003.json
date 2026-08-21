@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0092",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-06-17T00:00:00+00:00",
-    "updated_at": "2026-06-17",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "Henry Reed",
@@ -163,7 +163,7 @@
       {
         "purpose": "hunt",
         "name": "EMAIL-003 BEC Recipient Endpoint Follow-On Stitch",
-        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.PROCESS\n| comp count() as endpoint_events, values(action_process_image_name) as procs by actor_effective_username\n| filter endpoint_events >= 1\n| fields actor_effective_username, endpoint_events, procs",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.PROCESS\n| comp count() as endpoint_events, values(action_process_image_name) as procs, values(causality_actor_process_image_name) as cgo_procs by actor_effective_username, causality_actor_effective_username, causality_id\n| filter endpoint_events >= 1\n| fields actor_effective_username, causality_actor_effective_username, causality_id, endpoint_events, procs, cgo_procs",
         "expected_rows_min": 0,
         "dataset": "xdr_data"
       }
@@ -172,7 +172,7 @@
       {
         "name": "BEC Executive Impersonation — Email to Identity Stitch",
         "rule_id": "CR-EMAIL-0003",
-        "logic": "XQL(EMAIL-003 BEC Executive Impersonation Display-Name Spoof) FOLLOWED_BY msft_o365 mailbox-rule change OR xdr_data endpoint activity for the same recipient within 4h"
+        "logic": "XQL(EMAIL-003 BEC Executive Impersonation Display-Name Spoof) FOLLOWED_BY msft_o365 mailbox-rule change OR xdr_data endpoint activity (causality_actor_effective_username) for the same recipient GROUPED BY user_principal WITHIN 4h — a shared_entity stitch on the recipient user_principal that fuses the email impostor signal and the identity/endpoint follow-on into ONE BEC incident."
       }
     ],
     "analytics_modules": [
@@ -203,14 +203,14 @@
         "evidence_query": "Correlation CR-EMAIL-0003 fuses the BEC impersonation lure with the recipient's identity follow-on into one BEC incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EMAIL-003",
+        "threat_scenario_id": "TS-EMAIL-003",
         "name": "BEC / Executive Impersonation Detection",
         "description": "Detect an executive display-name spoof from an external sender across both Proofpoint TAP and Microsoft 365 email log shapes, stitched to the recipient identity follow-on.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EMAIL-003A",
+            "threat_step_id": "TS-EMAIL-003A",
             "objective": "An impostor-classified message with an executive display-name spoof raises a BEC alert.",
             "preconditions": [
               "Cortex XSIAM ingesting proofpoint_tap_raw and msft_o365 datasets.",
@@ -226,7 +226,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-EMAIL-003B",
+            "threat_step_id": "TS-EMAIL-003B",
             "objective": "The BEC lure stitches to the recipient identity follow-on.",
             "success_criteria": [
               "Correlation `CR-EMAIL-0003` groups the impersonation lure with the recipient identity follow-on under one incident."
@@ -277,6 +277,12 @@
       "date": "2026-06-17",
       "author": "Henry Reed",
       "change": "Initial EMAIL-plane card: BEC / executive impersonation (T1656 + T1534) over Proofpoint TAP + Microsoft 365 with CR-EMAIL-0003 email-to-identity stitch."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality contract: retuned the BEC endpoint follow-on hunt to key on causality_actor_process_image_name + causality_actor_effective_username + causality_id (the CGO/ownership side of the stitch, not only actor_effective_username), and made CR-EMAIL-0003 stitch GROUPED BY user_principal so the impostor lure and the identity/endpoint follow-on land in ONE BEC incident. Pairs with SIM-EMAIL-003 gaining a documented no-cgo_anchor decision (email_emitter is the beacon; email datasets carry no causality_actor_process_* fields) + a shared_entity step spine on the recipient user_principal (Proofpoint TAP -> Microsoft 365) + per-step platforms (linux/container). The email-log XQL/BIOC signatures are legitimately single-source and were left unweakened."
     }
   ]
 }

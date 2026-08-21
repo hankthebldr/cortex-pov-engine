@@ -1,0 +1,65 @@
+title: "Lateral Tool Transfer + Chisel Tunnel + PsExec Fan-Out (Muddled Libra Playbook) \u2014 First T1570 ABIOC (SIM-EDR-015) \u2014 Lateral Tool Transfer to Never-Before-Seen Tunneler over HTTPS"
+id: ttp-2026-0125-abioc-01
+status: experimental
+description: |
+  An HTTPS downloader process (curl / certutil / powershell / s3browser) is the direct causality parent of a never-before-seen tunneler or remote-exec binary (chisel / psexec) written to disk and executed — the T1570 lateral-tool-transfer signal. Every tool is legitimate/dual-use, so a hash- or string-keyed BIOC is brittle; the ABIOC fires on the download -> first-seen-tool-execution deviation from the host's learned software baseline and anchors it to the downloader causality parent, not to any known-bad indicator. This is the corpus's first T1570 ABIOC.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("chisel.exe", "chisel", "psexec.exe", "psexec")
+    | filter causality_actor_process_image_name in ("curl.exe", "curl", "certutil.exe", "powershell.exe", "s3browser-12-6-1.exe")
+    | comp count() as first_seen_tool_execs by agent_hostname, actor_effective_username, action_process_image_name
+    | filter first_seen_tool_execs >= 1
+    | sort desc first_seen_tool_execs
+    | fields agent_hostname, actor_effective_username, action_process_image_name, first_seen_tool_execs
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1570/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1570
+    - attack.t1021.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Lateral Tool Transfer + Chisel Tunnel + PsExec Fan-Out (Muddled Libra Playbook) \u2014 First T1570 ABIOC (SIM-EDR-015) \u2014 Anomalous Remote-Service Fan-Out from Newly-Written Tool"
+id: ttp-2026-0125-abioc-02
+status: experimental
+description: |
+  A newly-transferred tool (chisel / psexec) opens remote-service connections (SMB/445, RDP/3389, WinRM/5985) to two or more distinct internal peers within a short window — the PsExec/RDP fan-out stage. The ABIOC fires on the peer-diversity deviation from the host's learned peer-connection baseline (a workstation rarely initiates admin-protocol connections to several servers at once) and anchors it to the tool that spawned them, catching remote-service lateral movement that reuses legitimate protocols.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_port in (445, 3389, 5985)
+    | filter causality_actor_process_image_name in ("psexec.exe", "psexec", "chisel.exe", "chisel")
+    | comp count_distinct(action_remote_ip) as peer_targets by agent_hostname, actor_effective_username
+    | filter peer_targets >= 2
+    | sort desc peer_targets
+    | fields agent_hostname, actor_effective_username, peer_targets
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.001
+    - attack.t1021.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

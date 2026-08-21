@@ -1,0 +1,79 @@
+adapter_id: TOOL-PSPY
+name: pspy
+version: "1.2.1"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/DominicBreuker/pspy
+  license: "GPL-3.0"
+  attribution: Dominic Breuker
+
+cortex_signal:
+  planes:
+    - EDR
+    - CDR
+  expected_techniques:
+    - T1057  # Process Discovery
+    - T1053.003  # Scheduled Task/Job: Cron
+    - T1552.001  # Unsecured Credentials: Credentials In Files
+
+safety_class: dual-use-lab-only
+
+install:
+  # pspy has no distro package and no install script upstream; the ONLY
+  # supported acquisition is downloading the release binary. Before the shelf
+  # existed the only way to run it on a customer host was a curl to github.com.
+  runtime_install_command: "test -x /tmp/pspy64 || (curl -fsSLo /tmp/pspy64 https://github.com/DominicBreuker/pspy/releases/download/v1.2.1/pspy64 && chmod +x /tmp/pspy64)"
+  binary: /tmp/pspy64
+
+  artifact:
+    filename: pspy64
+    url: "https://github.com/DominicBreuker/pspy/releases/download/v1.2.1/pspy64"
+    kind: file
+    sha256: "c93f29a5cc1347bdb90e14a12424e6469c8cfea9a20b800bc249755f0043a3bb"
+    pin:
+      type: release-tag
+      ref: "v1.2.1"
+    license: "GPL-3.0"
+    stage_path: /tmp/pspy64
+    mode: "0755"
+
+invoke:
+  target_platform: linux
+  run_template: "timeout 20 {binary} {flags}"
+  default_args:
+    # -pf: print commands AND file-system events. -i 1000: 1s procfs poll.
+    # Wrapped in `timeout` in the template because pspy runs until killed and a
+    # step that never returns is indistinguishable, from the console, from a
+    # beacon that died.
+    #
+    # CALLER CONTRACT: this template exits **124** on the happy path — that is
+    # `timeout` reporting it killed the command, which is the designed outcome.
+    # A scenario step invoking this adapter must treat 0 and 124 as success and
+    # every other code as a failure (126/127 are exactly what a missing or
+    # non-executable staged artifact produces). See SIM-EDR-022 step-03 for the
+    # idiom; do NOT reach for `|| true`, which would swallow those two.
+    flags: "-pf -i 1000"
+  identity_required: www-data
+
+cleanup:
+  commands:
+    - "rm -f /tmp/pspy64"
+
+ttp_refs:
+  - TTP-2026-0176
+
+equivalents:
+  - TOOL-LINPEAS
+
+author: Henry Reed
+created: "2026-08-05"
+last_updated: "2026-08-05"
+tags:
+  - process-discovery
+  - enumeration
+  - linux
+  - edr
+  - payload-shelf

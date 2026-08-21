@@ -1,0 +1,82 @@
+# POS-AISP-003 — the third-party AI integration is inventoried.
+#
+# The fixture plants one: a Lambda that proxies to OpenAI, tagged
+# `CortexSimAISPMFinding = "third-party-ai-integration"` plus `AIProvider =
+# openai`. The bar is one because one is planted. That is a thin claim and the
+# scope block says so — but it is a claim that can go red, and today the index
+# row is backed by nothing at all.
+assertion_id: POS-AISP-003
+name: AI supply chain — third-party AI integration inventoried
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: AI_SPM
+
+uc_ref: UCS-AISP-03
+tc_ref: TC-AISP-03
+tc_refs: [TC-AISP-03]
+uc_name: "AI Security Posture Management"
+tc_name: "Validate AI Ecosystem & Supply Chain Risk"
+
+moat_tier: MOAT
+methodology_family: F4
+primary_kpi: "Asset Discovery Coverage"
+success_criteria: |
+  The Lambda function that egresses to a third-party AI provider is inventoried
+  as a third-party AI dependency.
+
+scope_limitations: >
+  Proves ONE third-party AI integration (an AWS Lambda calling OpenAI) is
+  inventoried. It does NOT prove model-weight provenance or compromised-weight
+  detection, does NOT prove plugin risk assessment (no plugin is planted), and
+  does NOT prove EU AI Act risk classification — that is a compliance-mapping
+  claim with no fixture behind it anywhere in this repo. It is a presence check
+  on a single asset: a platform that inventories the Lambda but assesses nothing
+  about it passes. Treat it as the floor of the supply-chain claim, not the
+  claim. Dataset and field names are convention-named and unconfirmed against a
+  live tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/ai-spm
+  detail: >
+    terraform apply the `ai-spm` module; the integration is
+    `terraform output lambda_openai_proxy_arn`. Wait one AI-SPM scan cycle.
+
+checks:
+  - check_id: chk-01
+    title: The third-party AI proxy function appears in the AI supply-chain inventory
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = ai_spm_findings
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter tags contains "third-party-ai-integration"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: third-party AI integrations inventoried
+      op: ">="
+      value: 1
+      unit: integrations
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-AISP-03 "Qualitative pass". The module plants exactly
+        one third-party AI integration, tagged
+        `CortexSimAISPMFinding = "third-party-ai-integration"`, so the objective
+        floor is one. Authoring a higher bar would fail a correct platform.
+    negative_control:
+      description: >
+        AI inventory is built from managed AI services only (SageMaker, Bedrock),
+        so a plain Lambda that reaches api.openai.com is never classified as an
+        AI dependency and the supply-chain inventory is empty.
+      measured_value: 0
+
+tags: [posture, ai-spm, aws, supply-chain, planted-fixture]
+author: "Henry Reed"

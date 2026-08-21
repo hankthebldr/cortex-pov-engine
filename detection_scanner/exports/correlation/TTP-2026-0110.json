@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1656",
+    "T1059",
+    "T1496",
+    "T1204",
+    "T1005",
+    "T1552"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(KOI-007 Unattended MCP Tool Invocation with No User Interaction) AND ABIOC(KOI-007 Sampling-Request Token Consumption Anomaly from MCP Host) on the same agent_hostname and actor_effective_username within a 15-minute window \u2014 fuses the covert writeFile deviation and the quota-theft consumption anomaly into a single MCP-sampling-abuse incident anchored to the MCP-server session that drove the createMessage calls.",
+      "name": "MCP Sampling Abuse \u2014 Quota Theft plus Covert Tool Invocation Stitch",
+      "rule_id": "CR-KOI-0007",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0110"
+}

@@ -1,0 +1,28 @@
+id: cortexsim-ttp-2026-0143-response
+version: 1
+name: "CortexSim — ITDR — Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly → SOAR Suspend + Session Revoke)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0143.
+  Triggered by Cortex correlation rules: CR-ITDR-0016, CR-ITDR-0017.
+  Reference playbook in panw_mapping: XSOAR-PB-ITDR-ClosedLoopAutoDisable-SuspendAndRevoke-v1
+triggers:
+  - correlation_rule_id: CR-ITDR-0016
+  - correlation_rule_id: CR-ITDR-0017
+  - playbook_rule_id: TBD-SOAR-0016-IDENTITY-AUTODISABLE
+  - playbook_rule_id: TBD-SOAR-0016-SESSION-REVOKE
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0143
+  cortexsim_version: 1.0

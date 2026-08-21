@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0078",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-06-15T00:00:00+00:00",
-    "updated_at": "2026-06-15T00:00:00+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
     "authors": [
       {
         "name": "Henry Reed",
@@ -223,7 +223,7 @@
       {
         "name": "ITDR-007 LSASS Process Handle Open By Non-System Process",
         "description": "XDR - a non-system process opens a process handle to lsass.exe with credential-read access rights. Reading LSASS memory is the canonical credential-dumping primitive (T1003.001); pypykatz parses the resulting dump offline.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_HANDLE\n| filter lower(target_process_image_name) = \"lsass.exe\"\n| filter actor_effective_username not in (\"NT AUTHORITY\\\\SYSTEM\", \"NT AUTHORITY\\\\LOCAL SERVICE\")\n| filter requested_access_mask contains \"0x10\"\n| fields _time, src_host, actor_process_image_name, actor_effective_username, requested_access_mask",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_HANDLE\n| filter lower(target_process_image_name) = \"lsass.exe\"\n| filter actor_effective_username not in (\"NT AUTHORITY\\\\SYSTEM\", \"NT AUTHORITY\\\\LOCAL SERVICE\")\n| filter requested_access_mask contains \"0x10\"\n| fields _time, src_host, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, causality_id, actor_effective_username, requested_access_mask",
         "severity": "high",
         "mitre_technique_ids": [
           "T1003.001"
@@ -252,7 +252,7 @@
       {
         "name": "ITDR-007 SeImpersonate Named-Pipe Privilege Escalation To SYSTEM",
         "description": "XDR - a service account holding SeImpersonatePrivilege (IIS w3wp.exe, MSSQL sqlservr.exe, or a 'potato' tool) spawns a child process running as NT AUTHORITY\\SYSTEM via named-pipe token impersonation. This is the PrintSpoofer / potato-family local escalation (T1134).",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"NT AUTHORITY\\\\SYSTEM\"\n| filter lower(causality_actor_process_image_name) in (\"w3wp.exe\", \"sqlservr.exe\", \"printspoofer64.exe\", \"printspoofer.exe\")\n| fields _time, src_host, causality_actor_process_image_name, action_process_image_name, actor_effective_username",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"NT AUTHORITY\\\\SYSTEM\"\n| filter lower(causality_actor_process_image_name) in (\"w3wp.exe\", \"sqlservr.exe\", \"printspoofer64.exe\", \"printspoofer.exe\")\n| fields _time, src_host, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_name, actor_process_instance_id, actor_effective_username",
         "severity": "high",
         "mitre_technique_ids": [
           "T1134",
@@ -262,7 +262,7 @@
       {
         "name": "ITDR-007 Access Token Theft And Impersonation Via Token Duplication",
         "description": "XDR - a process duplicates and impersonates the access token of a privileged/SYSTEM process (e.g. winlogon.exe) so it runs in that security context. DuplicateTokenEx + ImpersonateLoggedOnUser against a high-privilege parent is the access-token-theft fingerprint (T1134); Tokenvator automates it.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_TOKEN\n| filter lower(target_process_image_name) in (\"winlogon.exe\", \"lsass.exe\", \"services.exe\")\n| filter actor_effective_username not in (\"NT AUTHORITY\\\\SYSTEM\")\n| fields _time, src_host, actor_process_image_name, actor_effective_username, target_process_image_name",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter action_type = ENUM.PROCESS_TOKEN\n| filter lower(target_process_image_name) in (\"winlogon.exe\", \"lsass.exe\", \"services.exe\")\n| filter actor_effective_username not in (\"NT AUTHORITY\\\\SYSTEM\")\n| fields _time, src_host, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, causality_id, actor_effective_username, target_process_image_name",
         "severity": "high",
         "mitre_technique_ids": [
           "T1134"
@@ -374,14 +374,14 @@
         "evidence_query": "Playbook: isolate the host, revoke the foothold account, revert the malicious DACL ACE, rotate the machine account and any exposed service-account credentials, and hunt for RBCD edits."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IDENT-078",
+        "threat_scenario_id": "TS-IDENT-078",
         "name": "Active Directory Privilege Escalation & Token Manipulation",
         "description": "Detect the post-compromise local-to-domain escalation chain — LSASS credential dumping, privileged DACL abuse, Kerberos relay, SeImpersonate escalation, and access-token theft — on a domain workstation and group it into one Privilege Escalation incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IDENT-078A",
+            "threat_step_id": "TS-IDENT-078A",
             "objective": "Each escalation step fires its expected Cortex ITDR/XDR detection during SIM-ITDR-007.",
             "preconditions": [
               "Cortex ITDR + XDR connected to the AD domain and the domain-joined workstation.",
@@ -401,7 +401,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-IDENT-078B",
+            "threat_step_id": "TS-IDENT-078B",
             "objective": "The escalation steps stitch into one Privilege Escalation incident.",
             "success_criteria": [
               "Correlation `CR-ITDR-0007` groups the chain from one host into a single incident.",
@@ -474,6 +474,12 @@
       "date": "2026-06-15",
       "author": "Henry Reed",
       "change": "Initial AD privilege-escalation & token-manipulation card for SIM-ITDR-007 — LSASS dumping (T1003.001), privileged DACL abuse (T1098), Kerberos relay (T1550/T1068), SeImpersonate escalation (T1134), and access-token theft (T1134) against the itdr-module AD lab. Real BIOCs+XQL on xdr_data / ad_audit / msft_windows_security, correlation CR-ITDR-0007, GAP-11 validated/unvalidated analytics split. Wired to the adapter-gated SIM-ITDR-007 scenario (TOOL-PYPYKATZ / TOOL-BLOODYAD / TOOL-KRBRELAYUP / TOOL-PRINTSPOOFER / TOOL-TOKENVATOR)."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality-contract tuning. Retuned the LSASS-access, SeImpersonate-escalation, and token-theft BIOCs to surface causality-actor ownership: their field projections now carry causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_instance_id, and causality_id so the Causality Analysis Engine's CGO/actor split is traceable (the SeImpersonate BIOC keeps its actor≠causality_actor service-account tell). Paired with SIM-ITDR-007's new cgo_anchor (powershell.exe / helpdesk-admin foothold shell) and per-step causality spine — LSASS harvest → credential-reuse DACL write → same-session KrbRelayUp/PrintSpoofer escalation → Tokenvator running in PrintSpoofer's SYSTEM context (process_lineage). No dataset/ENUM/technique changes."
     }
   ]
 }

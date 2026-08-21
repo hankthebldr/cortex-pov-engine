@@ -1,0 +1,379 @@
+{
+  "id": "TTP-2026-0175",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-02T00:00:00+00:00",
+    "updated_at": "2026-08-02T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-tim",
+      "resource-development",
+      "develop-capabilities",
+      "obtain-capabilities",
+      "pre-weaponization",
+      "taxii",
+      "sequencing-proof",
+      "confidence-scoring-control",
+      "f1",
+      "severity-medium"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Adversary Capability Development — Phishing-Kit and LLM Prompt-Farm Staging Detected Before Weaponization",
+    "summary": "Intel about adversary capability-development infrastructure lands via TAXII BEFORE any estate contact with it, and a later first contact matches that pre-landed intel with campaign attribution attached. The sequencing is the whole test: an indicator that arrives after the traffic proves nothing, and this card asserts the ordering rather than assuming it.",
+    "description": "Everything in this scenario happens on infrastructure the customer does not own and cannot instrument, which makes it a genuinely awkward thing to prove and is exactly why it is worth proving carefully. The adversary acquires a domain, stages a phishing-kit builder on it, and separately obtains an off-the-shelf prompt-farm tool to mass-produce lures. None of that touches the customer. The only honest proof available is a SEQUENCING proof: intel describing that staging infrastructure must land in the platform BEFORE the estate ever contacts it, and the later first contact must match the already-present indicator. Get the ordering backwards and the demonstration proves nothing at all — an indicator ingested after the traffic it 'detected' is a retrospective lookup dressed up as prevention, and it is an easy mistake to make convincingly in front of a customer. So the ordering is asserted with a real comparison of the intel-landed timestamp against the first-contact timestamp, not narrated. Two further controls make the result honest rather than merely favourable. A LOW-CONFIDENCE CONTROL indicator ships inside the same TAXII batch and must NOT reach detection: a platform that promotes everything in a feed has no confidence scoring, it has a pipe, and the difference is invisible unless something in the batch is supposed to be suppressed. And a RETRO-HUNT leg fires when the capability intel lands, sweeping historical telemetry for prior contact — because the realistic case is that somebody in the estate touched the staging infrastructure days before anyone thought to look. This is also the corpus's first T1588 and its second T1587, both of which stood at zero steps corpus-wide.",
+    "severity": "medium",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Adversary capability development staged ahead of weaponization — phishing-kit builders on acquired infrastructure and commodity prompt-farm tooling for lure mass-production"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2026-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1587",
+        "subtechnique_id": "T1587.001",
+        "name": "Develop Capabilities: Malware",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1588",
+        "subtechnique_id": "T1588.002",
+        "name": "Obtain Capabilities: Tool",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1583",
+        "subtechnique_id": "T1583.001",
+        "name": "Acquire Infrastructure: Domains",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.002",
+        "name": "Phishing: Spearphishing Link",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Internet Scan: Response Content",
+      "Domain Name: Active DNS",
+      "Network Traffic: Network Traffic Flow",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-TIM-009 — pre-weaponization capability-development intel with an asserted sequencing proof.",
+    "prerequisites": [
+      {
+        "description": "A TAXII 2.1 collection (mocktaxii or the customer's own feed) is wired so an intel bundle can be landed with a recorded ingest timestamp.",
+        "check_command": "true"
+      },
+      {
+        "description": "Confidence scoring is enabled on intel ingestion, or the low-confidence control arm cannot be distinguished from the promoted indicators and that leg resolves pending.",
+        "check_command": "true"
+      }
+    ],
+    "privilege_required": "user",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: no domain is acquired, no kit is staged and no real host is\n# contacted. All names are in the reserved .example documentation TLD and every\n# request targets 127.0.0.1.\nset -euo pipefail\nD=/tmp/cortexsim-tim009\nRUN_TAG=\"${CORTEXSIM_RUN_TAG:-TIM009}\"\nSTAGING=\"${CORTEXSIM_STAGING_FQDN:-kit-builder-stage.adversary-dev.example}\"\nmkdir -p \"$D\"\n# (1) adversary stages a phishing-kit builder on acquired infrastructure\nprintf '{\"run_tag\":\"%s\",\"event\":\"capability_staging\",\"fqdn\":\"%s\",\"capability\":\"phishing_kit_builder\",\"stage\":\"pre_weaponization\"}\\n' \"$RUN_TAG\" \"$STAGING\" > \"$D/kit-staging.json\"\n# (2) adversary obtains a commodity prompt-farm tool for lure mass-production\nprintf '{\"run_tag\":\"%s\",\"event\":\"capability_obtained\",\"tool\":\"prompt-farm\",\"source\":\"commodity_marketplace\",\"purpose\":\"lure_generation\"}\\n' \"$RUN_TAG\" > \"$D/tool-obtained.json\"\n# (3) intel lands FIRST — with a deliberate low-confidence control in the batch\nprintf '{\"run_tag\":\"%s\",\"event\":\"intel_ingest\",\"indicator\":\"%s\",\"confidence\":90,\"promoted\":true,\"feed\":\"taxii\"}\\n' \"$RUN_TAG\" \"$STAGING\" > \"$D/intel-bundle.ndjson\"\nprintf '{\"run_tag\":\"%s\",\"event\":\"intel_ingest\",\"indicator\":\"low-conf-control.adversary-dev.example\",\"confidence\":15,\"promoted\":false,\"feed\":\"taxii\"}\\n' \"$RUN_TAG\" >> \"$D/intel-bundle.ndjson\"\n# (4) ONLY NOW does the estate contact the staging infrastructure\ncurl -s --max-time 3 -o /dev/null \"https://127.0.0.1/kit\" 2>/dev/null || true\nprintf '{\"run_tag\":\"%s\",\"event\":\"session\",\"dest_fqdn\":\"%s\",\"first_contact\":true,\"app\":\"ssl\"}\\n' \"$RUN_TAG\" \"$STAGING\" > \"$D/first-contact.json\"\necho cortexsim-tim009-pre-weaponization-sequence-emitted",
+      "input_variables": [
+        {
+          "name": "CORTEXSIM_STAGING_FQDN",
+          "type": "string",
+          "default": "kit-builder-stage.adversary-dev.example",
+          "description": "The adversary's capability-staging host. Reserved .example TLD so nothing resolvable is ever contacted."
+        },
+        {
+          "name": "CORTEXSIM_RUN_TAG",
+          "type": "string",
+          "default": "TIM009",
+          "description": "Run-scoped tag stamped onto every emitted record."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "dns-query",
+        "description": "A TAXII-landed indicator for the capability-staging host with an ingest timestamp that precedes any estate contact with it.",
+        "expected_value": "indicator_source = \"taxii\" and confidence >= 70"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "The estate's first contact with the staging host, occurring after the indicator landed.",
+        "expected_value": "dest_fqdn = \"kit-builder-stage.adversary-dev.example\" and first_contact = true"
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "A low-confidence control indicator in the same TAXII batch that is scored and NOT promoted to detection.",
+        "expected_value": "confidence < 30 and promoted = false"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-tim009; echo '[CortexSim] SIM-TIM-009 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "kit-builder-stage.adversary-dev.example",
+        "context": "The adversary's phishing-kit staging host, delivered by TAXII during capability development and BEFORE it was ever pointed at the customer. Its value in a POV is entirely a function of when it arrived: as a pre-landed indicator it is prevention, and as a post-hoc lookup it is a retrospective search wearing prevention's clothes. The sequencing query is what tells those apart.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "First Estate Contact With Pre-Weaponization Staging Infrastructure",
+        "description": "The match, and the only leg of this scenario that involves the customer's own telemetry at all. First-ever contact from the estate to a host that the platform already held intel on before the contact happened. Anchored on first-contact rather than on volume because capability-development infrastructure is touched once, quietly, by whoever clicks first — there is no beacon cadence to profile yet, and waiting for one means waiting for weaponization.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter cortexsim_run_tag = \"TIM009\"\n| filter dest_fqdn contains \"adversary-dev.example\" and intel_match = true\n| comp count() as sessions, min(_time) as first_contact_time, count_distinct(source_ip) as internal_hosts by dest_fqdn, indicator_confidence\n| filter sessions >= 1 and indicator_confidence >= 70\n| sort desc sessions\n| fields dest_fqdn, indicator_confidence, internal_hosts, sessions, first_contact_time",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1566.002",
+          "T1583.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The client process making first contact owns the endpoint chain; it is joined to the intel record on the shared FQDN, which is the only entity the feed and the session have in common."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Adversary Obtained a Commodity Prompt-Farm Tool for Lure Mass-Production",
+        "query": "dataset = threat_intel\n| filter _time > to_timestamp(current_time() - 86400)\n| filter cortexsim_run_tag = \"TIM009\"\n| filter capability_class = \"tool\" and acquisition = \"commodity_marketplace\"\n| comp count() as reports by tool_name, capability_purpose, indicator_source\n| filter reports >= 1\n| sort desc reports\n| fields tool_name, capability_purpose, indicator_source, reports",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "Capability Intel Landed Strictly Before Any Estate Contact With the Staging Host",
+        "query": "dataset = threat_intel\n| filter _time > to_timestamp(current_time() - 86400)\n| filter cortexsim_run_tag = \"TIM009\" and indicator_source = \"taxii\"\n| alter lead_seconds = timestamp_diff(first_estate_contact_time, indicator_ingest_time, \"SECOND\")\n| filter lead_seconds > 0\n| comp min(lead_seconds) as smallest_lead, max(lead_seconds) as largest_lead, count() as indicators by indicator_value\n| sort desc smallest_lead\n| fields indicator_value, indicators, smallest_lead, largest_lead",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "Campaign Attribution and Actor Context Attach to the Live Match",
+        "query": "dataset = threat_intel\n| filter _time > to_timestamp(current_time() - 86400)\n| filter cortexsim_run_tag = \"TIM009\" and attached_to_case = true\n| comp count() as attributed_matches, count_distinct(campaign_name) as campaigns by indicator_value, actor_context_present\n| filter attributed_matches >= 1 and actor_context_present = true\n| sort desc attributed_matches\n| fields indicator_value, campaigns, actor_context_present, attributed_matches",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "Retro-Hunt Swept Historical Telemetry When the Capability Intel Landed",
+        "query": "dataset = threat_intel\n| filter _time > to_timestamp(current_time() - 86400)\n| filter cortexsim_run_tag = \"TIM009\" and retro_hunt_triggered = true\n| comp count() as sweeps, sum(historical_matches_found) as historical_matches, max(retention_days_searched) as days_searched by indicator_value\n| filter sweeps >= 1\n| sort desc historical_matches\n| fields indicator_value, sweeps, days_searched, historical_matches",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "Low-Confidence Control Indicator From the Same Batch Was Scored and Not Promoted",
+        "query": "dataset = threat_intel\n| filter _time > to_timestamp(current_time() - 86400)\n| filter cortexsim_run_tag = \"TIM009\" and indicator_source = \"taxii\"\n| filter confidence < 30 and promoted_to_detection = false\n| comp count() as suppressed_indicators by indicator_value, confidence, feed_batch_id\n| filter suppressed_indicators >= 1\n| fields indicator_value, confidence, feed_batch_id, suppressed_indicators",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Estate Contact With Any Pre-Weaponization Staging Indicator in the Retention Window",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 604800)\n| filter intel_match = true and intel_kill_chain_phase = \"resource-development\"\n| comp count() as sessions, min(_time) as first_seen by dest_fqdn, source_ip, indicator_confidence\n| sort desc sessions\n| limit 200\n| fields dest_fqdn, source_ip, indicator_confidence, first_seen, sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Pre-Weaponization Capability Intel Matched on First Estate Contact",
+        "rule_id": "CR-TIM-0009",
+        "logic": "XQL(Capability Intel Landed Strictly Before Any Estate Contact With the Staging Host) AND ABIOC(First Estate Contact With Pre-Weaponization Staging Infrastructure) AND XQL(Campaign Attribution and Actor Context Attach to the Live Match) on the same indicator value — one 'we saw it before it was pointed at you' case. The SEQUENCING assertion is the rule's spine and not a nicety: lead_seconds must be strictly positive, comparing the indicator's ingest timestamp against the estate's first-contact timestamp. An indicator ingested AFTER the traffic it appears to have caught is a retrospective lookup wearing prevention's clothes, it is easy to present convincingly, and the only thing separating the two in a readout is this comparison. Two controls sit alongside. The LOW-CONFIDENCE CONTROL from the same TAXII batch must be scored and NOT promoted: a platform that promotes everything in a feed has a pipe rather than a confidence model, and that is invisible unless something in the batch was supposed to be suppressed. The RETRO-HUNT leg must fire on intel arrival and report what it found, because the realistic case is that someone in the estate touched the staging infrastructure days before anyone thought to look."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XTI — TAXII intel ingestion with confidence scoring and promotion control",
+      "Cortex XTI — retro-hunt sweep on indicator arrival",
+      "Cortex XSIAM Analytics — first-contact detection against pre-landed resource-development indicators"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-TIM009-PREWEAPON",
+          "CR-TIM-0009"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = threat_intel | filter cortexsim_run_tag = \"TIM009\" and indicator_source = \"taxii\" | comp count() as indicators by indicator_value, confidence, promoted_to_detection"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-TIM-009",
+        "name": "Capability Development Detected Before Weaponization",
+        "description": "Proves the platform held intel on adversary staging infrastructure BEFORE the estate ever touched it, by asserting the ordering rather than narrating it — and proves the intel pipeline scores confidence rather than merely forwarding a feed.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-TIM-009A",
+            "objective": "Capability-development intel lands via TAXII before any estate contact with the staging host.",
+            "preconditions": [
+              "A TAXII collection is wired with recorded ingest timestamps."
+            ],
+            "steps": [
+              "Land the intel bundle describing the staging host and the obtained tooling.",
+              "Confirm the ingest timestamp is recorded.",
+              "Confirm no estate contact with the host precedes it."
+            ],
+            "success_criteria": [
+              "The sequencing query returns lead_seconds strictly greater than zero.",
+              "The obtained-tool query returns the commodity prompt-farm record."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-TIM-009B",
+            "objective": "First estate contact matches the pre-landed indicator and carries campaign attribution.",
+            "preconditions": [
+              "TS-TIM-009A completed."
+            ],
+            "steps": [
+              "Make first contact with the staging host from the estate.",
+              "Observe the first-contact ABIOC fire against the pre-landed indicator.",
+              "Confirm campaign and actor context attach to the resulting case."
+            ],
+            "success_criteria": [
+              "ABIOC `First Estate Contact With Pre-Weaponization Staging Infrastructure` fires.",
+              "The attribution query returns the match with actor context present."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "threat_step_id": "TS-TIM-009C",
+            "objective": "Confidence scoring suppresses the low-confidence control, and retro-hunt reports what it swept.",
+            "preconditions": [
+              "Confidence scoring is enabled on intel ingestion."
+            ],
+            "steps": [
+              "Confirm the low-confidence control from the same batch was scored and not promoted.",
+              "Confirm the retro-hunt fired on intel arrival and reported its historical-match count."
+            ],
+            "success_criteria": [
+              "The control indicator appears with confidence below the promotion floor and promoted_to_detection false.",
+              "The retro-hunt query returns a sweep with a reported retention window."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Subscribe to capability-development and infrastructure-acquisition intel, not only to weaponized-indicator feeds. By the time an indicator is labelled active it has already been pointed at somebody.",
+      "Set a promotion floor on intel confidence and review what falls below it on a cadence, so suppression is a decision with an owner rather than a default."
+    ],
+    "detection_engineering": [
+      "Assert the ORDERING. Compare the indicator's ingest timestamp against the first-contact timestamp and report the lead. Without that comparison a retrospective lookup and a pre-landed block are indistinguishable in a readout, and the flattering interpretation is the one that gets presented.",
+      "Put a deliberate low-confidence indicator in the test batch. A pipeline that promotes everything looks identical to one that scores well until something is supposed to be suppressed.",
+      "Fire a retro-hunt on indicator arrival, not only on a schedule. The realistic case is that the estate touched the infrastructure days before anyone looked."
+    ],
+    "response_playbook": "XSOAR-PB-PreWeaponizationIntelMatchAndRetroHunt-v1"
+  },
+  "references": [
+    {
+      "title": "Strategically Aged Domain Detection: Capture APT Attacks With DNS Traffic Trends",
+      "url": "https://unit42.paloaltonetworks.com/strategically-aged-domain-detection/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1587.001 — Develop Capabilities: Malware",
+      "url": "https://attack.mitre.org/techniques/T1587/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1588.002 — Obtain Capabilities: Tool",
+      "url": "https://attack.mitre.org/techniques/T1588/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1583.001 — Acquire Infrastructure: Domains",
+      "url": "https://attack.mitre.org/techniques/T1583/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XTI — TAXII ingestion, confidence scoring and retro-hunt on indicator arrival",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

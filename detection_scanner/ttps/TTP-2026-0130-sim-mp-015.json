@@ -1,0 +1,370 @@
+{
+  "id": "TTP-2026-0130",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T02:50:16+00:00",
+    "updated_at": "2026-07-24T02:50:16+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "vector-ai-triage-discrimination",
+      "identity-driven-intrusion",
+      "impossible-travel",
+      "abnormal-powershell",
+      "privilege-escalation",
+      "decoy-suppression",
+      "abioc",
+      "correlation",
+      "methodology-f7",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "windows",
+        "saas-m365"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AI SOC Triage Discrimination Under Decoy Noise — True-Positive Elevation + False-Positive Suppression (SIM-MP-015)",
+    "summary": "One malicious identity-driven chain (impossible-travel privileged sign-in -> abnormal PowerShell -> rapid privilege escalation) is interleaved with benign-but-anomalous decoys (cron backups, sanctioned admin PowerShell, scanner sweeps). The F7 test: XSIAM AI triage must stitch and rank the real incident #1 while deprioritizing the decoys it MUST NOT merge.",
+    "description": "This is an ANALYTICS-plane, correlation-terminal POV scenario built around Cortex XSIAM's AI-driven triage (methodology family F7 — AI Triage & Summarization). The threat model is the identity-driven intrusion Unit 42 profiles in 'Inside the Modern SOC: The 72-Minute Race': 65% of initial access is identity-based, attackers frequently attempt privilege escalation and administrative-account abuse within minutes to hours of gaining access, and — in the fastest observed cases — reach confirmed data exfiltration in ~72 minutes (a 4X year-over-year acceleration). Unit 42 also profiles the defensive answer as AI-driven correlation and integrated response; the incident-ranking, summarization, and false-positive suppression tested here are the documented Cortex XSIAM AI-triage capability (SRC-PANW-TECHDOCS), which this POV validates against that threat pattern. The genuinely malicious causality chain is three signals from ONE compromised privileged principal, in order: (1) an impossible-travel privileged sign-in — two geographies inside a single login window (T1078.004, Valid Accounts: Cloud Accounts); (2) an abnormal parent-child process chain — an Office/scripting parent spawning encoded/downloading PowerShell (T1059.001); and (3) rapid escalation to an elevated administrative context — the compromised valid account abused to add itself to local administrators within minutes of first access (T1078.004 / T1078, administrative-account abuse under Valid Accounts). Cortex learns each account's behavioral baseline, so three auto-tuned ABIOCs fire on the deviations and a correlation rule fuses them — joined on a shared normalized principal (normalized_user) within a bounded window, the access->elevation delta asserted inside that window — into a single identity-driven-intrusion incident whose causality chain spans the identity (sign-in) and endpoint (process) planes. The DISCRIMINATION test is the point: interleaved in the same window are benign-but-anomalous decoys the AI must NOT escalate or merge — a scheduled cron backup job (tar/rsync/gzip) under an automation account, a sanctioned admin PowerShell module load (Import-Module ActiveDirectory), and an authenticated vulnerability-scanner sweep. Each decoy is a singleton that shares neither the compromised principal nor the malicious causality chain, so the correlation MUST leave them un-merged and the AI triage layer MUST rank them below the true positive and summarize them as benign. F7 pass = the stitched malicious incident ranks #1 AND every decoy is correctly deprioritized. This proves Cortex's AI triage elevates the true positive and suppresses false positives under realistic alert noise — the SOC-analyst-hours differentiator versus a queue where every anomaly looks equally urgent.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Identity-driven intrusions where, in the fastest observed cases, attackers moved from initial access to confirmed data exfiltration in ~72 minutes — a 4X year-over-year acceleration (Unit 42, 2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0004",
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.001",
+        "name": "Command and Scripting Interpreter: PowerShell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "User Account: User Account Authentication",
+      "Logon Session: Logon Session Creation",
+      "Process: Process Creation",
+      "Command: Command Execution"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-015 — AI-triage discrimination: emit one malicious identity-driven chain plus benign decoys, assert the AI ranks the true positive #1 and suppresses the decoys.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM tenant ingesting identity sign-in telemetry (Azure AD / IdP) and endpoint process telemetry (xdr_data) so the three malicious signals and the decoys land in queryable datasets.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "A baseline window has elapsed so Cortex has learned each principal's sign-in geography and each account's process baseline, letting the ABIOCs anchor deviations.",
+        "check_command": "id"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE, non-destructive. Emit telemetry markers for one malicious\n# identity-driven chain plus benign decoys; no real PowerShell / cloud auth is\n# performed. All IPs are RFC5737 documentation ranges. Marker files are removed\n# at cleanup.\nset -euo pipefail\nP=\"${COMPROMISED_PRINCIPAL:-jdoe-admin@corp.local}\"\nD=/tmp/cortexsim-mp015\nmkdir -p \"$D\"\n# (1) impossible-travel privileged sign-in (two geographies, one window)\nprintf '{\"event\":\"signin\",\"user_principal\":\"%s\",\"country\":\"US\",\"source_ip\":\"203.0.113.10\",\"result\":\"success\",\"privileged\":true}\\n' \"$P\" > \"$D/signin-us.json\"\nprintf '{\"event\":\"signin\",\"user_principal\":\"%s\",\"country\":\"DE\",\"source_ip\":\"198.51.100.20\",\"result\":\"success\",\"privileged\":true}\\n' \"$P\" > \"$D/signin-de.json\"\n# (2) abnormal PowerShell chain (Office parent -> encoded/downloading child)\nprintf '{\"event\":\"process\",\"parent\":\"winword.exe\",\"child\":\"powershell.exe\",\"cmdline\":\"powershell.exe -nop -enc SQBFAFgA\",\"user\":\"%s\"}\\n' \"$P\" > \"$D/ps-chain.json\"\n# (3) rapid escalation: compromised valid account abused to add itself to local admins (integrity medium->high) within minutes of access\nprintf '{\"event\":\"process\",\"parent\":\"cmd.exe\",\"parent_integrity\":\"medium\",\"integrity\":\"high\",\"cmdline\":\"net localgroup administrators jdoe-admin /add\",\"principal\":\"%s\",\"effective_username\":\"CORP\\\\jdoe-admin\"}\\n' \"$P\" > \"$D/privesc.json\"\n# benign decoys the AI must NOT merge into the incident above\ntar -cf \"$D/backup.tar\" /etc/hostname 2>/dev/null || true\nprintf '{\"event\":\"process\",\"parent\":\"explorer.exe\",\"child\":\"powershell.exe\",\"cmdline\":\"Import-Module ActiveDirectory\",\"user\":\"admin-sanctioned@corp.local\"}\\n' > \"$D/decoy-ps.json\"\nprintf '{\"event\":\"signin\",\"user_principal\":\"svc-scanner@corp.local\",\"country\":\"US\",\"source_ip\":\"198.51.100.77\",\"result\":\"success\",\"privileged\":false}\\n' > \"$D/decoy-scan.json\"\necho '[CortexSim] SIM-MP-015 telemetry emitted (1 malicious chain + 3 decoys).'\n",
+      "input_variables": [
+        {
+          "name": "COMPROMISED_PRINCIPAL",
+          "type": "string",
+          "default": "jdoe-admin@corp.local",
+          "description": "The privileged principal whose three malicious signals must stitch into one incident."
+        }
+      ],
+      "timeout_seconds": 420
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "Two successful privileged sign-ins for one principal from two geographies inside a single login window (impossible travel).",
+        "expected_value": "user_principal_name = \"jdoe-admin@corp.local\" and count_distinct(location_country) >= 2"
+      },
+      {
+        "artifact_type": "process",
+        "description": "An Office/scripting parent spawning encoded or downloading PowerShell under the compromised principal.",
+        "expected_value": "action_process_image_name = \"powershell.exe\" and actor_process_image_name in (winword.exe, excel.exe, wscript.exe)"
+      },
+      {
+        "artifact_type": "process",
+        "description": "An administrative-account escalation ACTION — the compromised principal added to local administrators (integrity medium->high) — reached within minutes of the impossible-travel sign-in for the same principal.",
+        "expected_value": "action_process_command_line contains \"net localgroup administrators\" and action_process_command_line contains \"/add\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-mp015; echo '[CortexSim] SIM-MP-015 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "MP-015 Impossible-Travel Privileged Sign-In",
+        "description": "A privileged principal authenticates successfully from two distinct geographies inside a single short login window — physically impossible travel. The ABIOC anchors the deviation to the account's learned sign-in-geography baseline, not to any single bad IP, so it fires on the first genuinely anomalous privileged session rather than on a static allow/deny list. This is malicious signal 1 of 3 in the identity-driven chain.",
+        "logic": "dataset = msft_azure_ad_signin\n| filter auth_result = \"success\"\n| filter user_type = \"privileged\" or is_privileged = true\n| comp count_distinct(location_country) as countries, count_distinct(source_ip) as ips, min(_time) as first_seen, max(_time) as last_seen by user_principal_name\n| filter countries >= 2\n| alter travel_window_seconds = last_seen - first_seen\n| alter normalized_user = lowercase(arrayindex(split(user_principal_name, \"@\"), 0))\n| filter travel_window_seconds <= 3600\n| fields user_principal_name, normalized_user, countries, ips, travel_window_seconds",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004",
+          "T1078"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-principal sign-in-geography baseline -> a privileged success from a second country inside one login window that diverges from that baseline, anchored to the originating identity and emitted as a shared normalized_user (UPN local-part) so the endpoint deviations can be equi-joined to it across planes."
+      },
+      {
+        "name": "MP-015 Abnormal PowerShell Execution Chain from Office Parent",
+        "description": "An Office or scripting-host parent spawns PowerShell with encoded, no-profile, or download-cradle arguments — the parent-child lineage a benign PowerShell session never exhibits. The ABIOC fires on the abnormal process-chain shape under the compromised principal, not on the PowerShell binary itself (which is legitimate). This is malicious signal 2 of 3, anchored to the same principal as the impossible-travel sign-in.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"powershell.exe\", \"pwsh.exe\")\n| filter causality_actor_process_image_name in (\"winword.exe\", \"excel.exe\", \"outlook.exe\", \"wscript.exe\", \"mshta.exe\") or actor_process_image_name in (\"winword.exe\", \"excel.exe\", \"outlook.exe\", \"wscript.exe\", \"mshta.exe\", \"cmd.exe\")\n| filter action_process_command_line contains \"-enc\" or action_process_command_line contains \"-EncodedCommand\" or action_process_command_line contains \"DownloadString\" or action_process_command_line contains \"IEX\" or action_process_command_line contains \"-nop\"\n| alter normalized_user = lowercase(arrayindex(split(actor_effective_username, \"\\\\\"), -1))\n| comp count() as suspicious_ps by agent_hostname, actor_effective_username, normalized_user, causality_actor_process_image_name, causality_id\n| filter suspicious_ps >= 1\n| fields agent_hostname, actor_effective_username, normalized_user, causality_actor_process_image_name, causality_id, suspicious_ps",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Compromised-principal session -> Office/scripting parent (the winword.exe CGO) -> encoded/downloading PowerShell child, an anomalous process lineage keyed on causality_actor_process_image_name (the Causality Group Owner the CAE blames, not merely the immediate actor) and stamped with causality_id so every raw event in the chain shares one join key. Emitted as the same normalized_user (domain-stripped effective username) so it equi-joins the identity-plane sign-in across planes."
+      },
+      {
+        "name": "MP-015 Rapid Privilege Escalation Within Minutes of First Access",
+        "description": "The same principal performs an escalation ACTION — adding itself to the local administrators group (net localgroup administrators ... /add, Add-LocalGroupMember) or a medium->high process-integrity TRANSITION — within minutes of the impossible-travel sign-in. The ABIOC keys on the escalation action (not on steady-state high-integrity/root processes, which are the admin/daemon norm on every host) and joins the endpoint event to the identity-plane sign-in on the shared normalized_user, asserting the access->elevation delta is <= 900s. Firing therefore requires the rapid, anomalous escalation the name claims — not a bare elevated process. This is malicious signal 3 of 3.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_command_line contains \"net localgroup administrators\" and action_process_command_line contains \"/add\") or action_process_command_line contains \"Add-LocalGroupMember\" or (actor_process_integrity_level = \"medium\" and action_process_integrity_level = \"high\")\n| alter normalized_user = lowercase(arrayindex(split(actor_effective_username, \"\\\\\"), -1))\n| comp min(_time) as first_elevation, count() as elevation_actions by agent_hostname, normalized_user, causality_actor_process_image_name, causality_id\n| join type = inner (dataset = msft_azure_ad_signin | filter auth_result = \"success\" | filter user_type = \"privileged\" or is_privileged = true | alter normalized_user = lowercase(arrayindex(split(user_principal_name, \"@\"), 0)) | comp min(_time) as signin_time by normalized_user) as signin on normalized_user = signin.normalized_user\n| alter access_to_elevation_seconds = first_elevation - signin.signin_time\n| filter access_to_elevation_seconds >= 0 and access_to_elevation_seconds <= 900\n| fields agent_hostname, normalized_user, causality_actor_process_image_name, causality_id, signin.signin_time, first_elevation, access_to_elevation_seconds, elevation_actions",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004",
+          "T1078"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Impossible-travel privileged sign-in (identity plane) -> admin-group-membership add / integrity transition (endpoint plane) equi-joined on normalized_user AND anchored to causality_actor_process_image_name + causality_id (the same winword.exe CGO chain that spawned the abnormal PowerShell), with the access->elevation delta bounded to <= 900s. The escalation is therefore provably lineage-linked to the same principal's originating access AND to the same process causality chain, not a standalone elevated process time-coincident with the sign-in."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-015 Malicious Endpoint Chain Present for Compromised Principal",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"powershell.exe\", \"pwsh.exe\") or (action_process_command_line contains \"net localgroup administrators\" and action_process_command_line contains \"/add\") or action_process_command_line contains \"Add-LocalGroupMember\"\n| comp count_distinct(action_process_image_name) as malicious_stages, count() as events by agent_hostname, actor_effective_username\n| filter malicious_stages >= 1\n| fields agent_hostname, actor_effective_username, malicious_stages, events",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-015 Impossible-Travel Sign-In Surfaced",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 3600)\n| filter auth_result = \"success\"\n| comp count_distinct(location_country) as countries, count_distinct(source_ip) as ips by user_principal_name\n| filter countries >= 2\n| fields user_principal_name, countries, ips",
+        "expected_rows_min": 0,
+        "dataset": "msft_azure_ad_signin"
+      },
+      {
+        "purpose": "metric",
+        "name": "MP-015 Benign Decoy Singletons Not Merged",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter actor_effective_username in (\"svc-backup\", \"svc-scanner\", \"admin-sanctioned\")\n| comp count_distinct(incident_id) as incidents, count() as events by actor_effective_username\n| filter incidents <= 1\n| fields actor_effective_username, incidents, events",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AI-Triage Identity-Driven Intrusion Stitch Under Decoy Noise",
+        "rule_id": "CR-MP-0015",
+        "logic": "ABIOC(MP-015 Impossible-Travel Privileged Sign-In) AND ABIOC(MP-015 Abnormal PowerShell Execution Chain from Office Parent) AND ABIOC(MP-015 Rapid Privilege Escalation Within Minutes of First Access), stitched across two declared causality edges: (1) a shared_entity pivot joining the identity-plane sign-in to the endpoint chain on normalized_user — the cross-plane identity key every ABIOC emits (UPN local-part on the identity plane, domain-stripped effective username on the endpoint plane); and (2) a process_lineage pivot binding the abnormal PowerShell and the escalation cmd.exe to the SAME winword.exe CGO via shared causality_actor_process_image_name + causality_id, so the escalation is a lineage descendant of the initial-access process, not a time-coincident elevated process. Joined within a 3600s window, with the escalation ABIOC additionally asserting the access->elevation delta is bounded to <= 900s of the sign-in. The three fuse into ONE identity-driven-intrusion incident anchored to that principal's causality chain (impossible-travel sign-in -> abnormal PowerShell -> administrative-account escalation reached within minutes of first access), spanning the identity and endpoint planes. The benign-but-anomalous decoys observed in the same window (temporal co-occurrence only) — a cron backup job (tar/rsync/gzip) under an automation account, a sanctioned admin PowerShell module load, and an authenticated scanner sweep — share neither the normalized principal, the CGO, nor the causality_id, so the rule MUST NOT merge them; the Cortex XSIAM AI triage layer ranks them below the true positive and summarizes them as benign singletons. F7 pass = the stitched malicious incident ranks first AND every decoy is correctly deprioritized."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — auto-tuned per-identity sign-in and per-account process baselines feeding AI-driven incident triage",
+        "validated": true,
+        "note": "Backed by the three ABIOCs and CR-MP-0015 on this card, which stitch the malicious chain and leave the decoys un-merged."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0015",
+          "TBD-XSIAM-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter _time > to_timestamp(current_time() - 3600) | comp count_distinct(_product) as planes, count_distinct(incident_id) as incidents by user_principal_name | filter planes >= 2 and incidents = 1"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "ai-triage",
+        "coverage_tier": "investigation",
+        "rule_ids": [
+          "TBD-XSIAM-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Open the AI-triaged incident queue; confirm the identity-driven-intrusion incident (CR-MP-0015) ranks #1 and the three decoys are summarized as benign, not escalated."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_process_image_name in (\"powershell.exe\", \"pwsh.exe\") | filter actor_process_image_name in (\"winword.exe\", \"excel.exe\", \"wscript.exe\")"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-015",
+        "name": "AI SOC Triage Discrimination — True-Positive Elevation + False-Positive Suppression",
+        "description": "Prove Cortex XSIAM's AI triage stitches and elevates a genuine identity-driven intrusion above realistic decoy noise while suppressing the benign-but-anomalous alerts, cutting analyst hours versus a flat queue where every anomaly looks equally urgent.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-015A",
+            "objective": "The three malicious signals stitch into one incident that the AI triage layer ranks #1 (true-positive elevation).",
+            "preconditions": [
+              "XSIAM ingesting identity sign-in + endpoint process telemetry.",
+              "Per-principal and per-account baselines learned."
+            ],
+            "steps": [
+              "Emit the impossible-travel sign-in, abnormal PowerShell chain, and rapid privesc for one principal.",
+              "Observe the three ABIOCs fire and CR-MP-0015 raise a single incident.",
+              "Confirm the incident ranks first in the AI-triaged queue."
+            ],
+            "success_criteria": [
+              "ABIOC `MP-015 Impossible-Travel Privileged Sign-In` fires.",
+              "ABIOC `MP-015 Abnormal PowerShell Execution Chain from Office Parent` fires.",
+              "ABIOC `MP-015 Rapid Privilege Escalation Within Minutes of First Access` fires.",
+              "Correlation CR-MP-0015 raises exactly one incident spanning the identity + endpoint planes, ranked #1."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-MP-015B",
+            "objective": "The benign decoys are NOT merged into the malicious incident and are deprioritized as benign (false-positive suppression).",
+            "preconditions": [
+              "The malicious chain from TS-MP-015A is present in the same window.",
+              "Cron backup, sanctioned admin PowerShell, and authenticated scanner decoys emitted."
+            ],
+            "steps": [
+              "Emit the three benign decoy singletons alongside the malicious chain.",
+              "Run the decoy-discrimination metric query.",
+              "Confirm each decoy stays its own singleton and none joins CR-MP-0015."
+            ],
+            "success_criteria": [
+              "No decoy principal (svc-backup / svc-scanner / admin-sanctioned) appears in the CR-MP-0015 incident.",
+              "Each decoy is summarized as benign and ranked below the true positive."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-MP-015C",
+            "objective": "The impossible-travel and privilege-escalation timing fall inside the correlation window, proving the causality chain (access -> elevation) is bounded.",
+            "preconditions": [
+              "Sign-in and process telemetry carry usable timestamps."
+            ],
+            "steps": [
+              "Confirm the two privileged sign-ins span two countries within the 3600s window.",
+              "Confirm the elevation occurs within minutes of the sign-in."
+            ],
+            "success_criteria": [
+              "Impossible-travel query returns the principal with countries >= 2 inside the window.",
+              "The elevation timestamp follows the sign-in and lands inside the correlation window."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce phishing-resistant MFA and conditional-access (impossible-travel / risky-sign-in) policies on privileged principals so a second-geography session is blocked, not merely detected.",
+      "Constrain PowerShell with Constrained Language Mode, script-block logging, and application control so Office-parented encoded PowerShell cannot run.",
+      "Apply just-in-time privileged access so elevation within minutes of a fresh sign-in requires an approved, time-boxed request."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned per-identity sign-in geography and per-account process baselines rather than hand-authoring static rules per IP or per command.",
+      "Stitch identity + endpoint signals on the principal within a bounded window so the true positive surfaces as one incident, not three unranked alerts.",
+      "Tune the AI triage layer to summarize benign-but-anomalous singletons (scheduled backups, sanctioned admin tooling, authenticated scanners) as benign so they never crowd out the true positive."
+    ],
+    "response_playbook": "XSOAR-PB-IdentityDrivenIntrusionTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Inside the Modern SOC: The 72-Minute Race",
+      "url": "https://unit42.paloaltonetworks.com/soc-72-minute-race/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1059.001 — Command and Scripting Interpreter: PowerShell",
+      "url": "https://attack.mitre.org/techniques/T1059/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Incident Scoring, and Alert & Incident Grouping (AI-driven triage ranking + summarization)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Administrator-Guide/Cortex-XSIAM-Incident-Scoring",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

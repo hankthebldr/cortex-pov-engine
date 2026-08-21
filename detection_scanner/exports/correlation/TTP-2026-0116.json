@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1190",
+    "T1133",
+    "T1070.004",
+    "T1003.001",
+    "T1543.003",
+    "T1053.005",
+    "T1574.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(Ivanti IF-T Pre-Auth Exploitation Tell Modeled from Appliance Telemetry) AND (BIOC(Ivanti-to-Windows Pivot: DcomSrv Service Created via vixDiskLib DLL Sideload) OR BIOC(Ivanti-to-Windows Pivot: /mail Scheduled Task Launching DeElevate64) OR BIOC(Ivanti-to-Windows Pivot: LSASS Memory Dump via Hollowed svchost)) \u2014 fires when the modeled Ivanti appliance pre-auth exploitation tell (source IP from anonymization infrastructure) is observed within a 24h window of any internal Windows persistence BIOC, stitching the appliance-plane and endpoint-plane signal into one incident an EDR-only stack cannot assemble because it has no appliance telemetry.",
+      "name": "Ivanti Pre-Auth Compromise Stitched to Internal Windows Persistence",
+      "rule_id": "CR-MP-0014",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0116"
+}

@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1087.004",
+    "T1580",
+    "T1619"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(AWS IAM Enumeration Sequence) AND XQL(AWS S3 Buckets Enumeration Activity) observed for the same userIdentity.arn within a 15-minute window, stitched into one cloud-reconnaissance-sequence incident anchored to the caller-ARN causality chain.",
+      "name": "Cloud Reconnaissance Sequence \u2014 IAM Then S3 Enumeration by One Principal",
+      "rule_id": "CR-CDR-0021",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0156"
+}

@@ -16,6 +16,9 @@ services:
       - ./scenarios:/app/scenarios:ro
       - ./detection_scanner:/app/detection_scanner:ro
       - ./tools:/app/tools:ro
+      # UC/TC master index — same reason: the registry (and therefore strict ref
+      # validation, /api/uctc and /api/pov) reads it from <base>/docs/uc_tc_mapping.
+      - ./docs/uc_tc_mapping:/app/docs/uc_tc_mapping:ro
       - ./sources:/app/sources:ro
       - ./scripts:/app/scripts
       - simcore_db:/app/data

@@ -1,0 +1,64 @@
+title: "GCP Vertex AI Double Agent \u2014 Deployed Reasoning-Engine Steals P4SA Token for Cross-Project GCS Read + Image Exfil \u2014 AISPM-007 Reasoning-Engine Agent Container Recursive IMDS P4SA Token Harvest"
+id: ttp-2026-0139-abioc-01
+status: experimental
+description: |
+  A process owned by the reasoning-engine Vertex AI agent container queries the recursive instance-metadata endpoint (metadata.google.internal … ?recursive=true) to harvest the P4SA service-agent OAuth token. The auto-tuned ABIOC keys on the causality_actor_process (the agent container that OWNS the chain) and its process-instance id, not on the transient curl/python child, so the recursive-metadata harvest is anchored to the deployed agent rather than treated as an isolated metadata read. Deviates from the learned agent-container process baseline, which never includes a recursive whole-instance metadata query.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = "reasoning-engine" and causality_actor_effective_username = "vertex-agent"
+    | filter action_process_image_command_line contains "metadata.google.internal" and action_process_image_command_line contains "recursive=true"
+    | comp count() as imds_harvests by agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name, action_process_image_name
+    | filter imds_harvests >= 1
+    | fields agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name, action_process_image_name, imds_harvests
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.005
+    - attack.t1199
+logsource:
+  product: gcp
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "GCP Vertex AI Double Agent \u2014 Deployed Reasoning-Engine Steals P4SA Token for Cross-Project GCS Read + Image Exfil \u2014 AISPM-007 P4SA Service Agent Cross-Project Cloud Storage Read Deviation"
+id: ttp-2026-0139-abioc-02
+status: experimental
+description: |
+  The P4SA service-agent identity (service-<project>@gcp-sa-aiplatform-re.iam.gserviceaccount.com) — the token just harvested from the metadata service — lists and reads Cloud Storage objects in a project other than the one it was issued for, breaking tenant isolation. The auto-tuned ABIOC anchors on the P4SA principal (the shared entity that stitches the in-cluster agent node to the cloud plane) and fires on the cross-project-read deviation from the service agent's learned same-project access baseline; the allowlisted Google-managed identity defeats reputation matching, so the catch is the boundary-crossing behavior.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "GCP"
+    | filter principal_email contains "gcp-sa-aiplatform-re.iam.gserviceaccount.com"
+    | filter method_name in ("storage.objects.list", "storage.objects.get", "storage.buckets.list")
+    | filter resource_project != caller_project
+    | comp count() as cross_project_reads by principal_email, caller_project, resource_project, resource_name
+    | filter cross_project_reads >= 1
+    | fields principal_email, caller_project, resource_project, resource_name, cross_project_reads
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.001
+    - attack.t1530
+logsource:
+  product: gcp
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

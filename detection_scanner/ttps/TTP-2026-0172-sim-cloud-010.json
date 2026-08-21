@@ -1,0 +1,376 @@
+{
+  "id": "TTP-2026-0172",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-02T00:00:00+00:00",
+    "updated_at": "2026-08-02T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "casb",
+      "trusted-relationship",
+      "third-party-integration",
+      "oauth",
+      "vendor-compromise",
+      "behavioural-baseline",
+      "no-signin-anomaly",
+      "f2",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Trusted-Relationship Abuse — A Compromised Vendor's Consented Integration Pivots Into the Tenant With No Sign-In Anomaly",
+    "summary": "A third-party integration the tenant legitimately consented to is compromised upstream and used to read mail and exfiltrate. There is no credential theft, no impossible travel and no interactive sign-in to alert on — every identity signal the library already detects is absent by construction, so the only detectable thing is the app's behavioural delta against its OWN learned baseline.",
+    "description": "Unit 42's 2026 supply-chain finding is that risk has moved from vulnerable CODE to the misuse of trusted CONNECTIVITY: SaaS integrations, vendor management planes and identity-brokered access that reach the tenant at scale without touching the perimeter. The Salesloft Drift compromise is the canonical shape — a stolen integration token that bypassed MFA entirely and provided legitimate, persistent access to hundreds of downstream tenants. This card models the general case, and it is deliberately the hardest detection in the corpus to get right, because everything a detection engineer normally reaches for is missing. The consent event is old and legitimate; it happened months ago and was approved by a real administrator. There is no credential-theft event, because no credential was stolen from this tenant. There is no impossible travel and no anomalous interactive sign-in, because the integration never signs in interactively at all — it presents an app-only token. Blocking the app is not an option either: it is load-bearing for a business process, which is why it was granted the scopes in the first place. What remains is the app's behaviour measured against the app's own history. Three deltas carry the claim, and they are chosen because each is meaningless alone and specific together: call-RATE against the integration's learned request profile; scope-USAGE BREADTH, meaning the integration begins exercising consented scopes it has never actually used (a scope granted is not a scope used, and the gap between the two is the most under-instrumented surface in a SaaS tenant); and OBJECT-CLASS novelty, the integration touching record types it has never touched in its operating history. A blast-radius control runs alongside: peer integrations with comparable scopes must stay inside their own baselines and must NOT be swept into the incident, because the failure mode here is not a missed alert but a platform that flags every vendor app the moment one of them misbehaves. The negative control is queried explicitly and is the sharpest part of the card: the run window is checked for the absence of any credential-theft, impossible-travel or anomalous interactive sign-in event, so nobody can claim the detection came from a signal that was never there.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Unit 42 — Trusted Connections, Hidden Risks: token management in the third-party supply chain, and the Salesloft Drift integration compromise that reached hundreds of downstream tenants through consented OAuth access"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2025-08-08"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1199",
+        "name": "Trusted Relationship",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "subtechnique_id": "T1550.001",
+        "name": "Use Alternate Authentication Material: Application Access Token",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1114",
+        "subtechnique_id": "T1114.002",
+        "name": "Email Collection: Remote Email Collection",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Cloud Service: Cloud Service Metadata",
+      "Logon Session: Logon Session Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CLOUD-010 — consented third-party integration abused after upstream vendor compromise.",
+    "prerequisites": [
+      {
+        "description": "A SaaS/CASB collector is ingesting tenant audit telemetry so per-application call volume, scope usage and object classes are queryable per AppId.",
+        "check_command": "true"
+      },
+      {
+        "description": "The consented-integration inventory has enough operating history for a per-application behavioural baseline to exist. A first-week tenant has no baseline and the measurement resolves pending, not fail.",
+        "check_command": "true"
+      }
+    ],
+    "privilege_required": "user",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: all calls target 127.0.0.1 and write local markers; no real tenant\n# is touched and no mail is read. Models the trusted-integration pivot in which\n# NO sign-in, consent or credential-theft event exists to alert on.\nset -euo pipefail\nD=/tmp/cortexsim-cloud010\nRUN_TAG=\"${CORTEXSIM_RUN_TAG:-CLOUD010}\"\nAPP_ID=\"${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}\"\nmkdir -p \"$D\"\n# (1) app-only token presented — no interactive sign-in, no new consent\nprintf '{\"run_tag\":\"%s\",\"event\":\"token_auth\",\"app_id\":\"%s\",\"auth_type\":\"app_only\",\"interactive\":false,\"consent_age_days\":214}\\n' \"$RUN_TAG\" \"$APP_ID\" > \"$D/token-auth.json\"\n# (2) call-rate deviation against the integration's own learned profile\nfor N in $(seq 1 60); do\n  printf '{\"run_tag\":\"%s\",\"event\":\"api_call\",\"app_id\":\"%s\",\"operation\":\"MailItemsAccessed\",\"seq\":%s}\\n' \"$RUN_TAG\" \"$APP_ID\" \"$N\"\ndone > \"$D/call-rate.ndjson\"\n# (3) scope-usage breadth — scopes long consented but never previously exercised\nfor SCOPE in Mail.Read Files.Read.All Sites.Read.All User.Read.All; do\n  printf '{\"run_tag\":\"%s\",\"event\":\"scope_use\",\"app_id\":\"%s\",\"scope\":\"%s\",\"first_use\":true}\\n' \"$RUN_TAG\" \"$APP_ID\" \"$SCOPE\"\ndone > \"$D/scope-use.ndjson\"\n# (4) object-class novelty + egress to a non-publisher destination\nprintf '{\"run_tag\":\"%s\",\"event\":\"egress\",\"app_id\":\"%s\",\"dest\":\"198.51.100.77\",\"publisher_declared\":false}\\n' \"$RUN_TAG\" \"$APP_ID\" > \"$D/egress.json\"\n# (5) blast-radius control — a peer integration behaving normally\nprintf '{\"run_tag\":\"%s\",\"cortexsim_label\":\"benign\",\"event\":\"api_call\",\"app_id\":\"peer-ticketing-sync\",\"operation\":\"MailItemsAccessed\",\"within_baseline\":true}\\n' \"$RUN_TAG\" > \"$D/peer-control.json\"\necho cortexsim-cloud010-trusted-integration-pivot-emitted",
+      "input_variables": [
+        {
+          "name": "VENDOR_APP_ID",
+          "type": "string",
+          "default": "a1b2c3d4-vendor-crm-sync",
+          "description": "The consented third-party integration whose upstream vendor was compromised."
+        },
+        {
+          "name": "CORTEXSIM_RUN_TAG",
+          "type": "string",
+          "default": "CLOUD010",
+          "description": "Run-scoped tag stamped onto every emitted record."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "An app-only token authentication with no interactive sign-in and no new consent grant — the entry point that leaves no identity anomaly behind.",
+        "expected_value": "auth_type = \"app_only\" and interactive = false and consent_age_days > 30"
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "A burst of mail-item access by one AppId across many distinct mailboxes, far above that integration's learned request profile.",
+        "expected_value": "operation = \"MailItemsAccessed\" and app_id = \"a1b2c3d4-vendor-crm-sync\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "First-ever exercise of consented scopes the integration has never used, plus egress to a destination outside the publisher's declared endpoints.",
+        "expected_value": "first_use = true and publisher_declared = false"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-cloud010; echo '[CortexSim] SIM-CLOUD-010 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Consented Integration Deviating From Its Own Learned Call-Rate and Scope-Usage Baseline",
+        "description": "The primary claim, and the only thing left to detect on. No consent event, no interactive sign-in and no credential theft exists in this chain, so the anomaly must be the integration's behaviour against the integration's own history: request volume above its learned profile combined with the first-ever exercise of scopes it was granted long ago and never used. A scope granted is not a scope used, and the gap between the two is the most under-instrumented surface in a SaaS tenant.",
+        "logic": "dataset = msft_o365_audit\n| filter cortexsim_run_tag = \"CLOUD010\"\n| filter auth_type = \"app_only\" and is_interactive = false\n| comp count() as api_calls, count_distinct(scope_used) as scopes_exercised, count_distinct(target_mailbox) as mailboxes by app_id, app_display_name\n| filter api_calls >= 40 and scopes_exercised >= 3\n| sort desc api_calls\n| fields app_id, app_display_name, scopes_exercised, mailboxes, api_calls",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1199",
+          "T1550.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The consented application identity (app_id) owns this chain. There is no process to anchor on and no interactive principal to blame — the integration IS the actor, which is exactly why per-application baselining rather than per-user baselining is the only workable frame here."
+      },
+      {
+        "name": "Vendor Integration Touching Object Classes It Has Never Touched Before",
+        "description": "The second delta, chosen because it survives the obvious evasion of the first. An adversary who paces the call rate to stay inside the learned profile still has to read record types the integration never read, because the point of the pivot is to reach data the vendor's own function never needed. Object-class novelty is therefore the harder-to-evade half of the pair, and it is meaningless without the call-rate half — together they are specific, apart they are noise.",
+        "logic": "dataset = msft_o365_audit\n| filter cortexsim_run_tag = \"CLOUD010\"\n| filter object_class_first_seen = true\n| comp count_distinct(object_class) as novel_classes, count() as accesses by app_id, app_display_name, publisher_name\n| filter novel_classes >= 2\n| sort desc novel_classes\n| fields app_id, app_display_name, publisher_name, novel_classes, accesses",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1114.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Same consented application identity, joined to the call-rate deviation on app_id so the two deltas form one incident rather than two unrelated anomalies."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Negative Control — No Credential Theft, Impossible Travel or Anomalous Interactive Sign-In Precedes the Integration Activity",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"CLOUD010\"\n| filter is_interactive = true or risk_event_type in (\"impossibleTravel\", \"leakedCredentials\", \"anonymizedIPAddress\")\n| comp count() as identity_anomalies by user_principal_name, risk_event_type\n| fields user_principal_name, risk_event_type, identity_anomalies",
+        "expected_rows_min": 0,
+        "dataset": "msft_azure_ad_signin"
+      },
+      {
+        "purpose": "validation",
+        "name": "Bulk Mailbox Item Access by the Vendor Integration Across Distinct Mailboxes",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"CLOUD010\"\n| filter operation = \"MailItemsAccessed\" and auth_type = \"app_only\"\n| comp count() as accesses, count_distinct(target_mailbox) as mailboxes by app_id, app_display_name\n| filter mailboxes >= 5\n| sort desc mailboxes\n| fields app_id, app_display_name, mailboxes, accesses",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "Integration Egress to a Destination Outside Its Publisher's Declared Endpoints",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"CLOUD010\"\n| filter publisher_declared_endpoint = false\n| comp count() as transfers, sum(bytes_sent) as bytes_out, count_distinct(dest_ip) as destinations by app_id, publisher_name\n| filter transfers >= 1\n| sort desc bytes_out\n| fields app_id, publisher_name, destinations, transfers, bytes_out",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "Blast-Radius Control — Peer Integrations With Comparable Scopes Stay Inside Their Baselines",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"CLOUD010\" and cortexsim_label = \"benign\"\n| filter auth_type = \"app_only\" and within_baseline = true\n| comp count() as api_calls, count_distinct(scope_used) as scopes_exercised by app_id, app_display_name\n| filter api_calls >= 1\n| sort desc api_calls\n| fields app_id, app_display_name, scopes_exercised, api_calls",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Consented Application Inventory Ranked by Baseline Deviation",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 86400)\n| filter auth_type = \"app_only\"\n| comp count() as api_calls, count_distinct(scope_used) as scopes_exercised, count_distinct(object_class) as object_classes by app_id, app_display_name, publisher_name\n| sort desc api_calls\n| limit 100\n| fields app_id, app_display_name, publisher_name, scopes_exercised, object_classes, api_calls",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Trusted-Relationship Integration Pivot Stitch",
+        "rule_id": "CR-CLOUD-0010",
+        "logic": "ABIOC(Consented Integration Deviating From Its Own Learned Call-Rate and Scope-Usage Baseline) AND ABIOC(Vendor Integration Touching Object Classes It Has Never Touched Before) AND XQL(Bulk Mailbox Item Access by the Vendor Integration Across Distinct Mailboxes) AND XQL(Integration Egress to a Destination Outside Its Publisher's Declared Endpoints) observed on the SAME app_id inside the correlation window — one trusted-relationship incident attributed to the integration identity rather than to any user. Two controls decide whether the result means anything. The NEGATIVE CONTROL asserts that no credential-theft, impossible-travel or anomalous interactive sign-in event exists in the run window: if one does, the detection may have come from that signal instead and the scenario's central claim — that this is detectable with every conventional identity signal absent — is unproven. The BLAST-RADIUS CONTROL asserts that peer integrations with comparable scopes stayed inside their own baselines and were NOT swept into the incident; for a tenant with hundreds of consented apps, a platform that flags them all the moment one misbehaves has produced an outage, not a detection."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — per-application call-rate and scope-usage baselining for consented integrations",
+      "Cortex Cloud App Security — consented-application inventory and publisher endpoint attestation"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-CLOUD010-INTEGRATION",
+          "CR-CLOUD-0010"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_o365_audit | filter cortexsim_run_tag = \"CLOUD010\" and auth_type = \"app_only\" | comp count() as api_calls, count_distinct(scope_used) as scopes_exercised by app_id"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CLOUD-010",
+        "name": "Trusted-Relationship Abuse Through a Consented Third-Party Integration",
+        "description": "Proves the platform detects a compromised vendor integration pivoting into the tenant when every conventional identity signal — consent event, interactive sign-in, credential theft, impossible travel — is absent by construction, and proves it without flagging the tenant's other consented apps.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CLOUD-010A",
+            "objective": "The integration's call-rate and scope-usage deviation is detected against its own learned baseline, with no identity anomaly present.",
+            "preconditions": [
+              "A per-application behavioural baseline exists for the integration.",
+              "No credential-theft or sign-in-risk event exists in the run window."
+            ],
+            "steps": [
+              "Present the app-only token with no new consent and no interactive sign-in.",
+              "Drive the call-rate burst and exercise long-consented, never-used scopes.",
+              "Observe the call-rate / scope-usage ABIOC fire."
+            ],
+            "success_criteria": [
+              "ABIOC `Consented Integration Deviating From Its Own Learned Call-Rate and Scope-Usage Baseline` fires.",
+              "The negative-control query returns zero identity-anomaly rows."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CLOUD-010B",
+            "objective": "Object-class novelty and non-publisher egress corroborate the pivot and are stitched to the same app_id.",
+            "preconditions": [
+              "The integration's object-class history is queryable.",
+              "The publisher's declared endpoints are known to the tenant."
+            ],
+            "steps": [
+              "Access record types the integration has never touched.",
+              "Egress to a destination outside the publisher's declared endpoints.",
+              "Confirm CR-CLOUD-0010 stitches both to the same app_id."
+            ],
+            "success_criteria": [
+              "ABIOC `Vendor Integration Touching Object Classes It Has Never Touched Before` fires.",
+              "The non-publisher egress query returns rows.",
+              "Both join one incident keyed on app_id."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "threat_step_id": "TS-CLOUD-010C",
+            "objective": "Blast-radius control — peer integrations with comparable scopes are not swept into the incident.",
+            "preconditions": [
+              "At least one peer integration with comparable scopes is active in the window."
+            ],
+            "steps": [
+              "Run normal in-baseline activity on the peer integration.",
+              "Confirm the peer produced telemetry.",
+              "Confirm the peer is absent from the incident."
+            ],
+            "success_criteria": [
+              "The peer-integration query returns rows, proving the control arm ran.",
+              "No peer app_id appears inside CR-CLOUD-0010."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Inventory consented applications by scopes GRANTED versus scopes USED, and revoke the difference on a cadence. An unused consented scope is a standing grant with no owner and no alarm attached to it.",
+      "Require publisher endpoint attestation for integrations holding read scopes over mail or files, so egress outside the declared endpoint set is a policy violation rather than an anomaly someone has to notice.",
+      "Cap per-application request rates at the vendor's stated operating profile rather than at the platform maximum."
+    ],
+    "detection_engineering": [
+      "Baseline per APPLICATION, not per user. The integration is the actor; there is no interactive principal to attribute to, and a per-user model has nothing to say about an app-only token.",
+      "Pair call-rate deviation with object-class novelty. Rate alone is evaded by pacing; novelty alone is noisy on a growing integration; together they are specific.",
+      "Always run a peer-integration control. In a tenant with hundreds of consented apps, a detection that flags them all when one misbehaves has produced an outage."
+    ],
+    "response_playbook": "XSOAR-PB-TrustedIntegrationScopeRevoke-v1"
+  },
+  "references": [
+    {
+      "title": "Trusted Connections, Hidden Risks: Token Management in the Third-Party Supply Chain",
+      "url": "https://unit42.paloaltonetworks.com/third-party-supply-chain-token-management/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "AI, Automation and Attacks: Unpacking the Unit 42 2026 Global Incident Response Report",
+      "url": "https://unit42.paloaltonetworks.com/ai-incident-response-report/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK T1199 — Trusted Relationship",
+      "url": "https://attack.mitre.org/techniques/T1199/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1114.002 — Email Collection: Remote Email Collection",
+      "url": "https://attack.mitre.org/techniques/T1114/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics alert reference (per-application behavioural baselining)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

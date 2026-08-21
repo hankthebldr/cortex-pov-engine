@@ -1,0 +1,227 @@
+scenario_id: SIM-EDR-020
+name: "CL-UNK-1068 Web-Shell (w3wp) to python.exe DLL Side-Load In-Memory Mimikatz, SAM-Hive Theft and FRP Lateral Tunnel"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - BIOC
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-WAAS-04
+tc_ref: TC-WAAS-04
+tc_refs:
+  - TC-WAAS-04
+  - TC-EDR-03
+  - TC-ITDR-01
+  - TC-EDR-05
+pov_scenario_id: POV-SC-002
+uc_name: "Web API & Application Security"
+tc_name: "Validate Agent-Based Threat Detection (Runtime) — Cortex Agent detects web application attacks at runtime (in-process)"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1003.002"
+mitre_technique_name: "OS Credential Dumping: Security Account Manager"
+additional_techniques:
+  - technique: "T1505.003"
+    name: "Server Software Component: Web Shell"
+  - technique: "T1059"
+    name: "Command and Scripting Interpreter"
+  - technique: "T1574.001"
+    name: "Hijack Execution Flow: DLL Side-Loading"
+  - technique: "T1003.001"
+    name: "OS Credential Dumping: LSASS Memory"
+  - technique: "T1027"
+    name: "Obfuscated Files or Information (certutil encode)"
+  - technique: "T1572"
+    name: "Protocol Tunneling (FRP reverse proxy)"
+
+threat_report: "CL-UNK-1068 Targets Critical Sectors: Web Shell to In-Memory Mimikatz, Reg-Hive Theft and FRP Lateral Tunnel"
+threat_report_url: "https://unit42.paloaltonetworks.com/cl-unk-1068-targets-critical-sectors/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - svc-account
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── Consent / safety ────────────────────────────────────────────────────────
+# NON-DESTRUCTIVE. The real CL-UNK-1068 chain detonates on Windows (w3wp.exe ->
+# cmd.exe -> reg.exe/python.exe/certutil.exe/frpc). On the CortexSim jumpbox each
+# stage is EMULATED via an echo describing the intent (no real hive save, no real
+# Mimikatz, no real tunnel), and the FRP step beacons only an authorised internal
+# stand-in. What the POV proves is the process-lineage SHAPE that XDR causality
+# reconstructs — a single w3wp.exe-owned tree — not live tradecraft.
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The Causality Group Owner is the IIS worker process w3wp.exe running the
+# GodZilla/AntSword web shell as the app-pool identity — NOT the cortexsim beacon.
+# step-01 is the root (w3wp -> cmd.exe web-shell code execution). Every later
+# stage descends from that web shell and declares causality.parent_step = step-01
+# via process_lineage, forming a CONNECTED tree that shares one
+# causality_actor_process_instance_id: the SAM/SYSTEM hive save (step-02), the
+# python.exe side-loaded in-memory Mimikatz (step-03), and the certutil fileless
+# staging (step-04) are the three process-lineage branches off cmd.exe; the FRP
+# reverse tunnel (step-05) stitches the endpoint process to its outbound network
+# session (endpoint_network_stitch); step-06 correlates the chain into one
+# incident within the run window (temporal). The lineage/credential detections key
+# on causality_actor_process_* / *_instance_id (back to w3wp.exe), NOT on the
+# signed LOLBin's actor_process_image_name.
+cgo_anchor:
+  image_name: "w3wp.exe"
+  primary_username: "iis apppool\\defaultapppool"
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# methodology_family was absent, so this scenario was silently missing from the
+# coverage analyzer's Section 4 family table — invisible rather than uncovered.
+validation_methodology: "Endpoint Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+
+steps:
+  - id: step-01
+    name: "Web-shell code execution — IIS worker w3wp.exe spawns a command shell (CGO root)"
+    command: |
+      echo '[EDR-020] CL-UNK-1068 web-shell CGO: w3wp.exe (GodZilla/AntSword) spawns cmd.exe (T1505.003 / T1059)';
+      echo '[*] emulate: iis apppool\defaultapppool w3wp.exe -> cmd.exe (interactive web-shell command execution)';
+      echo '[*] XDR should flag an IIS worker process spawning a command shell and make w3wp.exe the Causality Group Owner'
+    identity: www-data
+    mitre_technique: "T1505.003"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR — IIS worker w3wp.exe spawns cmd.exe/powershell.exe (web-shell code execution), establishing the w3wp.exe Causality Group Owner"
+        ttp_ref: "TTP-2026-0135"
+        detection_id: "bioc-cl-unk-1068-iis-worker-w3wp-spawns-command-shell-web-shell-cgo"
+    platforms: ["windows"]
+
+  - id: step-02
+    name: "SAM/SYSTEM registry hive theft — reg save HKLM\\SAM + HKLM\\SYSTEM under the web-shell causality"
+    command: |
+      echo '[EDR-020] SAM/SYSTEM hive theft via reg.exe under w3wp causality (T1003.002)';
+      echo '[*] emulate: reg save HKLM\SAM sam.hiv  &&  reg save HKLM\SYSTEM sys.hiv (offline credential cracking prep)';
+      echo '[*] XDR should flag reg.exe hive save owned by the w3wp.exe causality_actor_process_instance_id'
+    identity: www-data
+    mitre_technique: "T1003.002"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR — reg.exe saves HKLM\\SAM and HKLM\\SYSTEM hives, owned by the w3wp.exe web-shell causality (offline credential-dump prep)"
+        ttp_ref: "TTP-2026-0135"
+        detection_id: "bioc-cl-unk-1068-sam-and-system-registry-hive-save-under-web-shell-causality"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["windows"]
+
+  - id: step-03
+    name: "python.exe DLL side-load — signed python.exe loads python20.dll for in-memory Mimikatz"
+    command: |
+      echo '[EDR-020] python.exe side-loads malicious python20.dll -> in-memory Mimikatz (T1574.001 / T1003.001)';
+      echo '[*] emulate: signed python.exe loads python20.dll from a web-writable path, deobfuscates + runs Mimikatz shellcode in-memory';
+      echo '[*] detection nuance: actor_process_image_name is the trusted python.exe — XDR must key on causality_actor_process back to w3wp.exe'
+    identity: www-data
+    mitre_technique: "T1574.001"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "XDR — signed python.exe side-loads a non-standard python20.dll (in-memory credential theft), anchored to the w3wp.exe causality rather than the python.exe image name"
+        ttp_ref: "TTP-2026-0135"
+        detection_id: "abioc-cl-unk-1068-python-dll-side-load-in-memory-credential-theft-under-web-shell-causality"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["windows"]
+
+  - id: step-04
+    name: "certutil fileless staging — certutil -encode of the WinRAR loot under the web-shell causality"
+    command: |
+      echo '[EDR-020] certutil -encode of the collected WinRAR loot for fileless exfil (T1027)';
+      echo '[*] emulate: certutil -encode web.rar web.b64 (base64 staging exfiltrated back through the web shell)';
+      echo '[*] XDR should flag certutil -encode owned by the w3wp.exe causality_actor_process_instance_id'
+    identity: www-data
+    mitre_technique: "T1027"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "XDR — certutil.exe -encode staging of loot, owned by the w3wp.exe web-shell causality (fileless exfil prep)"
+        ttp_ref: "TTP-2026-0135"
+        detection_id: "bioc-cl-unk-1068-certutil-encode-fileless-loot-staging-under-web-shell-causality"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["windows"]
+
+  - id: step-05
+    name: "FRP reverse tunnel — endpoint FRP client egress stitched to its network session"
+    command: |
+      echo '[EDR-020] FRP reverse-proxy tunnel (token frpforzhangwei, client disguised as 32.exe) (T1572 / T1090.001)';
+      echo '[*] emulate: FRP client opens a reverse-proxy tunnel to the C2; beacon an authorised internal stand-in only';
+      curl -s --max-time 5 "${FRP_C2_URL:-http://127.0.0.1/frp-tunnel}" -o /dev/null 2>&1 || true;
+      echo '[*] XDR should stitch the FRP client endpoint process to its outbound session under the w3wp.exe causality'
+    identity: www-data
+    mitre_technique: "T1572"
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "XDR — validation: the FRP reverse-tunnel endpoint process resolves to the w3wp.exe causality_actor_process_instance_id (endpoint↔network stitch)"
+        ttp_ref: "TTP-2026-0135"
+        detection_id: "xql-cl-unk-1068-frp-reverse-tunnel-endpoint-network-egress-stitch"
+    causality:
+      parent_step: step-01
+      pivot: endpoint_network_stitch
+    platforms: ["windows", "linux"]
+    platform_variants:
+      linux: "echo '[EDR-020] Linux FRP variant: cross-compiled frpc disguised as nginx/httpd opens the reverse tunnel'; curl -s --max-time 5 \"${FRP_C2_URL:-http://127.0.0.1/frp-tunnel}\" -o /dev/null 2>&1 || true"
+
+  - id: step-06
+    name: "Validate the full web-shell causality chain stitched into one incident"
+    command: |
+      echo '[EDR-020] Chain validation — web shell -> hive theft -> side-load Mimikatz -> certutil staging -> FRP tunnel';
+      echo '[*] XSIAM correlation CR-EDR-0020 should fuse the stages sharing one w3wp.exe causality_actor_process_instance_id into a single incident';
+      echo '[*] Full-reconstruction XQL confirms >= 3 distinct malicious child processes under one causality group'
+    identity: www-data
+    mitre_technique: "T1003.002"
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "XDR — validation: >= 3 distinct malicious child processes share one w3wp.exe causality_actor_process_instance_id (connected chain reconstruction)"
+        ttp_ref: "TTP-2026-0135"
+        detection_id: "xql-cl-unk-1068-web-shell-causality-chain-full-reconstruction"
+      - plane: EDR
+        type: Correlation
+        description: "XSIAM — web-shell execution + SAM-hive theft + in-memory Mimikatz + certutil staging + FRP tunnel from one causality group stitched into a single incident"
+        ttp_ref: "TTP-2026-0135"
+        detection_id: "CR-EDR-0020"
+    causality:
+      parent_step: step-05
+      pivot: temporal
+    platforms: ["windows"]
+
+cleanup:
+  commands:
+    - "rm -f /tmp/.cortexsim_edr020_loot"
+    - "echo '[CortexSim] SIM-EDR-020 cleanup complete — no persistent state changed (emulated chain).'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - edr
+  - cl-unk-1068
+  - web-shell
+  - dll-side-loading
+  - in-memory-mimikatz
+  - reg-hive-theft
+  - certutil
+  - frp-tunnel
+  - causality-chain
+  - living-off-the-land

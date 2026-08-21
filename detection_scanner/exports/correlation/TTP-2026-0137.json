@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1195",
+    "T1059",
+    "T1003",
+    "T1552",
+    "T1613",
+    "T1610",
+    "T1485"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Anchors on BIOC(MP-018 CI-Runner Weaponized-Scanner Action Spawns Credential-Harvest Child) \u2014 the CGO = the trivy/kics scanner action running as runner \u2014 and groups on agent_hostname + causality_id + causality_actor_process_instance_id. Within a 3600s window it requires the downstream chain to bind to that SAME causality actor: BIOC(MP-018 /proc PID mem Scrape of runner.worker Bypasses GitHub Secret Masking), XQL(MP-018 CI Runner Steals Cloud IAM Credentials via IMDS 169.254.169.254), ABIOC(MP-018 Kubernetes Secrets Enumeration Burst from CI-Runner Process) \u2014 which joins the cloud_audit_logs k8s-secrets access on service-account + cluster, the ANALYTICS<->CDR pivot \u2014 then BIOC(MP-018 Privileged DaemonSet Applied from Compromised CI Credentials) and ABIOC(MP-018 Recursive Destructive Wipe Across Cluster Nodes). Fires exactly ONE incident spanning the ANALYTICS and CDR planes that reconstructs the full lineage trivy(CGO) -> kamikaze.sh -> /proc-mem scrape -> IMDS theft -> k8s secrets sweep -> privileged DaemonSet -> recursive wipe, so a low-severity signed-scanner run and an anonymous burst of API calls are surfaced as one cluster-brick intrusion instead of six disconnected events.",
+      "name": "MP-018 TeamPCP Weaponized-Scanner Supply-Chain Cluster-Brick Stitch",
+      "rule_id": "CR-MP-0018",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0137"
+}

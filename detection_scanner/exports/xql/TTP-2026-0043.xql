@@ -32,7 +32,8 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter action_process_image_command_line contains "pa-firewall-mcp"
 | filter action_process_image_command_line contains_any ("SYSTEM_OVERRIDE", "Ignore previous", "exfiltrate")
-| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_command_line
+| filter causality_actor_process_image_name in ("node", "claude", "code", "python3")
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_effective_username, actor_process_image_name, actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — KOI-002 AIRS Indirect Injection Scorer On MCP Result In Prompt
 # purpose: validation
@@ -43,7 +44,7 @@ preset = xdr_data
 | filter event_type = ENUM.NETWORK
 | filter action_external_url contains_any ("/v1/chat/completions", "/v1/messages", "generateContent") or action_app_id_transitions contains "airs"
 | filter dst_action_external_hostname contains_any ("openai", "anthropic", "googleapis", "cortexsim-canary")
-| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_url
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, action_external_url
 
 ## VALIDATION — KOI-002 XSIAM Stitch MCP Injection Artifact With AIRS Detection
 # purpose: validation

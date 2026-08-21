@@ -1,0 +1,271 @@
+{
+  "id": "TTP-2026-0154",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T15:30:55+00:00",
+    "updated_at": "2026-07-25T15:30:55+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "vector-behavioral-anomaly",
+      "industry-all",
+      "severity-high",
+      "cloud",
+      "aws",
+      "s3",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "data-exfiltration"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "aws",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AWS S3 Mass-Object Exfiltration by a Suspicious Identity — Cortex Analytics Behavioral IOC (ABIOC) (T1530)",
+    "summary": "One IAM identity issues a high-volume burst of s3:GetObject calls reading objects from a bucket from a new source — the CloudTrail shape of bulk cloud-storage theft. No single GetObject is known-bad; the auto-tuned ABIOC fires on the mass-download deviation from the identity's learned object-access baseline, anchored to the suspicious-identity causality chain.",
+    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the user, endpoint, and network behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the CLOUD / CDR plane against S3 mass-object exfiltration — the bulk data-theft pattern where a stolen, exposed, or over-privileged identity reads a bucket's objects wholesale. Cortex XSIAM / Cortex Cloud ingests the AWS CloudTrail audit stream (normalised to cloud_audit_logs, with S3 data events enabled) and learns each identity's object-access baseline — which principals read which buckets, how many reads, at what rate. This scenario streams shape-true CloudTrail S3 data-event records via the cloud_audit_emitter analytics log-streamer (provider=aws, event_pattern storage_object_download): a high-volume burst of s3:GetObject calls on one bucket, all from a single suspicious identity and an anomalous source IP. Two ABIOCs — named for the exact Cortex XSIAM analytics alerts they exercise ('Suspicious identity downloaded multiple objects from a bucket' and 'An identity performed a suspicious download of multiple cloud storage objects') — fire on the mass-download deviation. A hand-authored BIOC keyed on a single API name would miss this: every s3:GetObject is a legitimate call an application makes constantly. The catch comes from the read-volume deviation from the identity's learned object-access baseline plus the causality chain (one identity -> high-volume GetObject read burst on one bucket from a new source), not a known-bad signature. Supporting validation XQL confirms the emitted S3 read events landed in cloud_audit_logs and surfaces the per-identity GetObject read burst; a correlation rule stitches the two ABIOCs into a single mass-object-exfiltration incident the DC presents as proof that Cortex behavioral analytics caught bulk cloud-storage theft no static rule was written for.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Opportunistic cloud intruders abusing stolen, exposed, or over-privileged identities to bulk-download S3 data"
+      }
+    ],
+    "campaigns": [
+      "Cloud data-exfiltration via suspicious-identity S3 mass download — high-volume GetObject read burst (2022-2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2022-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Storage: Cloud Storage Access"
+    ]
+  },
+  "execution": {
+    "target_platform": "aws",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CDR-019 — AWS S3 mass-object exfiltration by a suspicious identity (GetObject download fan-out) for Cortex ABIOC validation via the cloud_audit_emitter analytics log-streamer",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM / Cortex Cloud CDR ingesting the AWS CloudTrail audit stream (with S3 data events enabled) into cloud_audit_logs so per-identity object access is profiled.",
+        "check_command": "aws cloudtrail get-event-selectors --trail-name <trail> --query 'EventSelectors[].DataResources'"
+      },
+      {
+        "description": "An operator-supplied HTTP collector (XSIAM Broker VM HTTP applet / native collector / Cribl or nginx forwarder) already wired into Cortex as a CloudTrail source, reachable at COLLECTOR_URL and on the campaign target_allowlist.",
+        "check_command": "curl -sk -o /dev/null -w '%{http_code}' \"$COLLECTOR_URL\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No real AWS mutation. Stream shape-true CloudTrail S3 data-event records via the\n# cloud_audit_emitter analytics log-streamer: a high-volume burst of s3:GetObject\n# calls on one bucket, all from a single suspicious identity and an anomalous\n# source IP.\nset -euo pipefail\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/cdr-019-s3-exfil.yml <<YML\ncampaign_id: CMP-CDR-019\nname: \"CDR — AWS S3 mass-object exfiltration by a suspicious identity\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\nsteps:\n  - step_id: step-01\n    plugin: cloud_audit_emitter\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: aws\n      event_pattern: storage_object_download\n      burst_count: 60\n      iterations: 1\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/cdr-019-s3-exfil.yml --live",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "string",
+          "default": "https://collector.cortexsim-canary.invalid/logs/v1/event",
+          "description": "Operator-supplied HTTP collector URL already wired into Cortex as a CloudTrail source."
+        },
+        {
+          "name": "COLLECTOR_HOST",
+          "type": "string",
+          "default": "collector.cortexsim-canary.invalid",
+          "description": "Hostname of the collector, added to the campaign target_allowlist."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "A high-volume burst of CloudTrail s3:GetObject data events from one identity on a single bucket.",
+        "expected_value": "eventName = \"GetObject\" and count() of GetObject calls within 5m exceeds the identity learned object-access baseline"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cdr-019-s3-exfil.yml; echo '[CortexSim] SIM-CDR-019 cleanup complete — synthetic CloudTrail records only; no real AWS object was read or moved.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Suspicious identity downloaded multiple objects from a bucket",
+        "description": "A single IAM identity whose learned Cortex object-access baseline is a small, steady read of a handful of S3 objects suddenly issues a high-volume burst of s3:GetObject calls on one bucket, from a source new for that identity. The ABIOC anchors the mass-download deviation to the causality chain (suspicious identity -> GetObject read burst on one bucket) rather than to any single API name, catching bulk cloud-storage theft a static rule keyed on GetObject would drown in noise on.",
+        "logic": "dataset = cloud_audit_logs\n| filter eventSource = \"s3.amazonaws.com\"\n| filter eventName = \"GetObject\"\n| filter isnull(errorCode)\n| filter _time > to_timestamp(current_time() - 300)\n| comp count() as object_downloads by userIdentityArn, bucket_name, sourceIPAddress\n| filter object_downloads >= 50\n| sort desc object_downloads\n| fields userIdentityArn, bucket_name, sourceIPAddress, object_downloads",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1530"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity S3 object-access baseline (a few reads on known buckets) -> suspicious identity -> high-volume s3:GetObject read burst on one bucket from a source IP/user-agent new for this identity, anchored to that identity."
+      },
+      {
+        "name": "An identity performed a suspicious download of multiple cloud storage objects",
+        "description": "An identity issues an anomalously high volume of s3:GetObject reads on one bucket, far above its learned per-bucket access volume. Every read is a legitimate call; the ABIOC fires on the read-volume deviation from the identity's learned cloud-storage behavior, anchored to the high-volume download burst on the same bucket.",
+        "logic": "dataset = cloud_audit_logs\n| filter eventSource = \"s3.amazonaws.com\"\n| filter eventName = \"GetObject\"\n| filter isnull(errorCode)\n| filter _time > to_timestamp(current_time() - 600)\n| comp count() as objects_read by userIdentityArn, bucket_name\n| filter objects_read >= 50\n| sort desc objects_read\n| fields userIdentityArn, bucket_name, objects_read",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1530"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Assumed/IAM identity -> high-volume s3:GetObject read burst on one bucket, anchored to the identity that first exhibited the mass download."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SIM-CDR-019 S3 GetObject Burst Surfaced in Cloud Audit Log",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 900)\n| filter eventSource = \"s3.amazonaws.com\"\n| filter eventName = \"GetObject\"\n| comp count() as s3_read_events by userIdentityArn, bucket_name\n| filter s3_read_events >= 1\n| sort desc s3_read_events\n| fields userIdentityArn, bucket_name, s3_read_events",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "SIM-CDR-019 Suspicious-Identity Download Fan-Out By Bucket",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 900)\n| filter eventSource = \"s3.amazonaws.com\"\n| filter eventName = \"GetObject\"\n| comp count() as object_downloads by userIdentityArn, bucket_name, sourceIPAddress\n| filter object_downloads >= 1\n| sort desc object_downloads\n| fields userIdentityArn, bucket_name, sourceIPAddress, object_downloads",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Mass Object Exfiltration — Suspicious-Identity Download Stitch",
+        "rule_id": "CR-CDR-0019",
+        "logic": "ABIOC(Suspicious identity downloaded multiple objects from a bucket) AND ABIOC(An identity performed a suspicious download of multiple cloud storage objects) — fuses the two auto-tuned mass-download deviations on the same identity and bucket within the run window into a single S3 mass-object-exfiltration incident anchored to the suspicious-identity causality chain."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-identity cloud-storage object-access volume and fan-out"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-ABIOC-CDR-0019-BUCKET-MASS-DOWNLOAD",
+          "XSIAM-ABIOC-CDR-0019-CLOUD-STORAGE-MASS-READ"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Two ABIOCs fire on the per-identity S3 mass-download deviation; CR-CDR-0019 stitches them into one mass-object-exfiltration incident anchored to the suspicious-identity causality chain."
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-posture",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CDR-S3-MASS-OBJECT-EXFIL"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter eventSource = \"s3.amazonaws.com\" and eventName = \"GetObject\" | comp count() as object_downloads by userIdentityArn, bucket_name | filter object_downloads >= 50"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CDR-019",
+        "name": "AWS S3 Mass-Object Exfiltration Detection via Cortex ABIOC",
+        "description": "Cortex auto-tuned Analytics Behavioral IOCs learn each identity's per-bucket S3 object-access baseline and detect bulk cloud-storage theft — a suspicious identity issuing a high-volume s3:GetObject read burst on a bucket — anchored to the suspicious-identity mass-download causality chain, where no static rule was written for the legitimate GetObject calls involved.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CDR-019A",
+            "objective": "Cortex learns the per-identity S3 object-access baseline and an injected mass-download burst fires both ABIOCs and the correlation.",
+            "preconditions": [
+              "Cortex Cloud / CDR ingesting the AWS CloudTrail audit stream with S3 data events enabled.",
+              "Baseline window elapsed with identities reading only their narrow, known object set."
+            ],
+            "steps": [
+              "Stream a high-volume burst of s3:GetObject calls on one bucket from a single suspicious identity via cloud_audit_emitter (event_pattern storage_object_download).",
+              "Observe both ABIOCs fire on the mass-download deviation.",
+              "Observe CR-CDR-0019 raise one stitched mass-object-exfiltration incident."
+            ],
+            "success_criteria": [
+              "ABIOC `Suspicious identity downloaded multiple objects from a bucket` fires.",
+              "ABIOC `An identity performed a suspicious download of multiple cloud storage objects` fires.",
+              "Correlation CR-CDR-0019 raises one stitched S3 mass-object-exfiltration incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scope S3 access to least privilege with bucket policies and IAM conditions so a single identity cannot bulk-read an entire bucket.",
+      "Enable S3 data events in CloudTrail (or S3 server-access logging) so per-object GetObject reads are observable to Cortex.",
+      "Prefer short-lived credentials and rotate aggressively; apply an SCP / permissions boundary denying broad s3:GetObject to workload identities that need only a fixed key set.",
+      "Enable S3 Block Public Access and require VPC-endpoint or known-source access so downloads from anomalous IPs are denied outright."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned per-identity per-bucket object-access baseline rather than hand-authoring static rules on GetObject.",
+      "Alert on an identity whose s3:GetObject read count on a bucket spikes above its learned baseline within a short window.",
+      "Alert on an identity issuing a high-volume s3:GetObject read burst on a single bucket from a source new for that identity."
+    ],
+    "response_playbook": "XSOAR-PB-S3MassObjectExfiltrationTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM Analytics Alert Reference by data source — AWS Audit Log (CloudTrail) (cloud storage mass-download behavioral alerts)",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1530 — Data from Cloud Storage",
+      "url": "https://attack.mitre.org/techniques/T1530/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

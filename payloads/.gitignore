@@ -1,0 +1,14 @@
+# The payload shelf. `./scripts/build-payloads.sh` stages third-party tool
+# artifacts here (linpeas.sh alone is ~800 KB) and SimCore serves them from
+# GET /api/k8s/payload/{name}.
+#
+# Nothing staged is tracked, for two independent reasons: size, and licence —
+# these are third-party GPL/MIT artifacts and vendoring them into git history is
+# a redistribution posture this repo has not taken. Provenance travels with the
+# artifact instead, via MANIFEST.json -> the inventory endpoint -> the manifest
+# banner. The image gets its copy because core/Dockerfile COPYs this directory
+# at build time, so run the staging script BEFORE `docker build`.
+*
+!.gitignore
+!README.md
+!sources.json

@@ -10,7 +10,7 @@ preset = xdr_data
 | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_WRITE)
 | filter action_file_path contains ".service"
 | filter action_file_path contains_any ("/etc/systemd/system", "/usr/lib/systemd/system", "/run/systemd/system", "/.config/systemd")
-| fields _time, agent_hostname, container_id, actor_process_image_name, action_file_path
+| fields _time, agent_hostname, container_id, actor_process_image_name, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_file_path
 
 ## BIOC — CDR-006 Systemd Daemon-Reload Then Enable New Unit Sequence
 # severity: high
@@ -21,9 +21,9 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = "systemctl"
 | filter action_process_image_command_line contains_any ("daemon-reload", "enable", "--now", "start")
-| comp count() as systemctl_calls, values(action_process_image_command_line) as cmds by agent_hostname, causality_actor_process_instance_id
+| comp count() as systemctl_calls, values(action_process_image_command_line) as cmds, values(causality_actor_process_image_name) as cgo_image by agent_hostname, causality_actor_process_instance_id, causality_id
 | filter systemctl_calls >= 2
-| fields agent_hostname, causality_actor_process_instance_id, systemctl_calls, cmds
+| fields agent_hostname, causality_actor_process_instance_id, causality_id, cgo_image, systemctl_calls, cmds
 
 ## BIOC — CDR-006 Cron Watchdog Re-Enabling Systemd Unit
 # severity: high
@@ -33,7 +33,7 @@ preset = xdr_data
 | filter agent_os_type = ENUM.AGENT_OS_LINUX
 | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_image_name = "crontab" and action_process_image_command_line contains "systemctl") or (event_type = ENUM.FILE and action_file_path contains_any ("/var/spool/cron", "/etc/cron"))
 | filter action_process_image_command_line contains_any ("systemctl", "enable", "is-enabled", ".service") or action_file_path contains "cron"
-| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line, action_file_path
+| fields _time, agent_hostname, actor_process_image_name, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_command_line, action_file_path
 
 ## VALIDATION — CDR-006 Validate Systemd Persistence Unit Write
 # purpose: validation

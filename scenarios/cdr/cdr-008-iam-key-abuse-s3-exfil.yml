@@ -19,10 +19,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CDR-08
-tc_ref: TC-CDR-08
-uc_name: "Leaked Cloud Credentials → Data Exfiltration Defense"
-tc_name: "IAM Access Key Discovery Burst + S3 Bulk-Read Exfiltration"
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-DSPM-04
+  - TC-CDR-02
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"
@@ -47,6 +52,19 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# Cloud-only scenario: the detection telemetry is AWS CloudTrail (cloud_audit_
+# logs), which carries no endpoint process-causality tree. The chain is stitched
+# on the SHARED CLOUD IDENTITY — the leaked IAM principal / access key
+# (user_identity.arn) that threads the discovery burst → S3 bulk-read exfil →
+# correlation. That single-identity reuse is how Cortex Cloud / CDR folds the two
+# legs into one IAM-key-compromise-with-exfiltration incident (CR-CLOUD-0001).
+# The CGO is the aws-cli client on the attacker host running under the harness
+# container runtime; steps 2..n pivot on shared_entity (the IAM ARN), not a fork.
+cgo_anchor:
+  image_name: "aws"
+  primary_username: "container-runtime"
 
 infra_modules_needed:
   - base
@@ -100,6 +118,7 @@ steps:
       echo '[*] Cortex Cloud / CDR should flag ≥4 distinct Discovery API calls within 60s from a sourceIP/user-agent new for this IAM identity'
     identity: container-runtime
     mitre_technique: "T1580"
+    platforms: ["container"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -135,6 +154,12 @@ steps:
       echo '[*] CDR should flag a bulk S3 GetObject read (≥50 calls / 5m) by an IAM user with no prior read pattern on this bucket'
     identity: container-runtime
     mitre_technique: "T1530"
+    platforms: ["container"]
+    # Same leaked IAM access key that ran the discovery burst now bulk-reads S3 —
+    # shared_entity on the IAM ARN ties enumeration and exfil to one identity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -155,6 +180,13 @@ steps:
       echo '[*] Hunt XQL confirms one IAM ARN with both a discovery burst and a >50-object S3 read inside the same hour'
     identity: container-runtime
     mitre_technique: "T1567.002"
+    platforms: ["container"]
+    # Correlation/validation leg — the same IAM identity carries both the
+    # discovery burst and the bulk S3 read, so CR-CLOUD-0001 stitches them into a
+    # single incident (shared_entity on the IAM ARN).
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: CDR
         type: XQL

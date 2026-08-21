@@ -1,0 +1,30 @@
+title: "Certificate-Fingerprint Infrastructure Pivot \u2014 GNN Surfaces a Self-Signed TLS Cert Reused Across Trident Ursa IPs (T1587.003) \u2014 SIM-TIM-004 Estate Handshake to a TIM-Armed Self-Signed Certificate"
+id: ttp-2026-0146-bioc-01
+status: experimental
+description: |
+  An estate host completes a TLS handshake to a destination presenting the mocktaxii-armed self-signed certificate — server-certificate fingerprint equals the feed-armed value 07eee6e893766e8bcc4a711abfdf201ee2920799. Keying on the armed fingerprint (not a broad self-signed-cert predicate and not any single domain) is what seeds the fingerprint fan-out; a default/snakeoil self-signed cert cannot match, so there is no false-positive breadth.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "ssl" or app = "web-browsing"
+    | filter tls_cert_self_signed = true and tls_cert_fingerprint_sha1 = "07eee6e893766e8bcc4a711abfdf201ee2920799"
+    | comp count() as handshakes by agent_hostname, src_host, dst_ip, dst_host, tls_cert_fingerprint_sha1
+    | filter handshakes >= 1
+    | fields agent_hostname, src_host, dst_ip, dst_host, tls_cert_fingerprint_sha1, handshakes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1608/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1608.003
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

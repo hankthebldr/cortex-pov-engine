@@ -21,10 +21,14 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UCS-EDR-09
-tc_ref: TC-EDR-09
-uc_name: "Double-Extortion Defense — Pre-Encryption Exfiltration Detection"
-tc_name: "Rclone-Pattern Tool Execution + Large Egress to Non-Corporate Cloud Storage"
+uc_ref: UCS-DLP-01
+tc_ref: TC-DLP-01
+tc_refs:
+  - TC-DLP-01
+  - TC-EDR-05
+pov_scenario_id: POV-SC-059
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP detects sensitive data (PII/PCI/PHI) exfiltration attempts across email, web upload, and USB channels in real time"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"
@@ -47,6 +51,13 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "root"
 
 external_tools:
   - name: rclone
@@ -118,6 +129,9 @@ steps:
       echo '[*] XDR BIOC should fire on the rclone flag pattern even when the binary is named svchost'
     identity: container-runtime
     mitre_technique: "T1567.002"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -151,6 +165,9 @@ steps:
       echo '[*] XDR should flag the *.mega.nz resolution from a non-sanctioned host and the sustained high byte-out/byte-in egress to a non-corporate ASN'
     identity: container-runtime
     mitre_technique: "T1048.003"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -180,6 +197,9 @@ steps:
       echo '[*] XSIAM correlation CR-EXFIL-0001 should fuse the rclone flag-pattern process and the large non-corporate egress into a single exfiltration incident'
     identity: container-runtime
     mitre_technique: "T1567.002"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: Correlation

@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1048",
+    "T1071",
+    "T1572"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(NDR-009 DNS Query-Volume Flood Deviating from Learned Host Baseline) AND ABIOC(NDR-009 High-Entropy Subdomain Labels Deviating from Learned DNS Baseline) \u2014 fuses the two auto-tuned behavioral deviations from the same source host into a single DNS-tunnel-exfiltration incident anchored to the host + base-domain causality chain.",
+      "name": "DNS-Tunnel Exfiltration on a Host \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-NDR-0009",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0102"
+}

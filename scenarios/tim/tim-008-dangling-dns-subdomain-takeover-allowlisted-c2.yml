@@ -1,0 +1,326 @@
+scenario_id: SIM-TIM-008
+name: "Compromise Infrastructure — A Dangling-DNS Subdomain Takeover Weaponized as Allowlisted C2"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: TIM
+detection_types:
+  - ABIOC
+  - XQL
+  - Analytics
+  - IOC
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# TC-XTI-03 is the primary, and it is a genuine claim here rather than a re-run
+# of SIM-TIM-006's: the indicator promoted to the EDL is MINTED LOCALLY from an
+# ASM inventory fact plus NDR behaviour, because no threat feed will ever carry
+# the customer's own subdomain. That local minting is the leg TC-XTI-03 has not
+# previously been exercised on.
+#
+# TC-XTI-09 ("exposure prioritization re-ranks when intel shows active
+# exploitation") was examined and DELIBERATELY NOT BOUND, even though it is
+# unevidenced, carries a real >=90% threshold and would have raised the
+# coverage count by one. Two reasons, in order of weight:
+#
+#   1. Its validation_class is POS. The DET-by-scenario / POS-by-assertion
+#      split exists precisely so a scenario cannot take credit for a state
+#      property it merely provokes. Binding it would be the inflation this
+#      engine refuses.
+#   2. This scenario genuinely cannot prove the queue reordered. It emits the
+#      telemetry that should CAUSE the reorder; observing the reorder needs a
+#      live exposure queue and the assertion substrate's pending-versus-fail
+#      taxonomy, so that a tenant without a queue resolves pending rather than
+#      quietly passing.
+#
+# It is a good candidate for an assertion under assertions/pos/ — outside this
+# pass's file scope, and recorded here so nobody re-litigates it from scratch.
+uc_ref: UCS-XTI-02
+tc_ref: TC-XTI-03
+tc_refs:
+  - TC-XTI-03
+  - TC-NDR-06
+  - TC-ASM-05
+pov_scenario_id: POV-SC-075
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate automated intel-to-EDL push blocks a live indicator at the NGFW"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# First T1584 in the corpus. Resource Development (TA0042) had 3 scenarios
+# before this one against a floor of 5, and it was the coverage analyzer's only
+# strict breach. Both sub-techniques are exercised for a reason: T1584.001 is
+# the DOMAIN half (the record survives its resource) and T1584.006 is the WEB
+# SERVICE half (the released provider endpoint is claimed). Neither alone is
+# the technique.
+mitre_tactic: "TA0042"
+mitre_tactic_name: "Resource Development"
+mitre_technique: "T1584.001"
+mitre_technique_name: "Compromise Infrastructure: Domains"
+additional_techniques:
+  - technique: "T1584.006"
+    name: "Compromise Infrastructure: Web Services"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1590.002"
+    name: "Gather Victim Network Information: DNS"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Dangling Domains: Security Threats, Detection and Prevalence"
+threat_report_url: "https://unit42.paloaltonetworks.com/dangling-domains/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+required_content:
+  - repo: "PaloAltoNetworks/mocktaxii"
+
+infra_modules_needed:
+  - tim
+  - asm
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "TI-ASM Correlation (inventory + behaviour, with reputation deliberately unavailable)"
+methodology_family: "F1"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  CR-TIM-0008 stitches an ASM inventory fact, an NDR behavioural signal and a
+  TIM enforcement action on ONE shared FQDN — the customer's own subdomain —
+  and the exposure queue then RE-RANKS the dangling record above findings with
+  a higher base severity that are not being exploited.
+
+  Everything the TIM plane usually leans on is unavailable here by
+  construction, and the negative control asserts it rather than assuming it:
+
+    * domain AGE is wrong — the parent has been registered for years;
+    * CATEGORY is wrong — it is the customer's own corporate category;
+    * REPUTATION is wrong — it is clean, because the domain is theirs;
+    * newly-registered-domain logic never fires — nothing was registered;
+    * a FEED MATCH is impossible — no feed has ever seen this name.
+
+  If any reputation-based control DOES flag the takeover host, the detection
+  may have come from that signal and the central claim is unproven, not merely
+  weakened. That is why the negative control is part of the verdict.
+
+  Two signals carry the detection and NEITHER is sufficient alone:
+
+    * INVENTORY — a resource record in the customer's zone whose resolution
+      target is an unclaimed provider endpoint outside their address space.
+      Alone, this is a posture item that sits in a queue for a quarter.
+    * BEHAVIOUR — periodic, low-variance sessions from internal hosts to that
+      name. Alone, this is indistinguishable from an internal service the
+      analyst has not heard of, precisely because the name looks like theirs.
+
+  The indicator that comes out is MINTED LOCALLY from the customer's own
+  inventory and traffic, not consumed from a feed. That is the part that
+  generalises: it works for a name no threat feed will ever carry.
+moat_tier: "MOAT"
+
+# ── F2-Style Stitch Fields ──────────────────────────────────────────────────
+# Three planes, joined on the FQDN — the only entity ASM inventory, NDR
+# sessions and TIM enforcement have in common here.
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - ASM
+  - NDR
+  - TIM
+stitching_key: session_id
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The beaconing client process on the internal host owns the endpoint chain —
+# the same convention SIM-TIM-006/007 use for this plane. The ASM inventory
+# finding and the intel promotion have no process of their own and are joined
+# on the shared FQDN (shared_entity) rather than being given a fictional one.
+cgo_anchor:
+  image_name: "curl"
+  primary_username: "container-runtime"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# SAFE-MODE: no domain is registered, no provider endpoint is claimed and no
+# real name is resolved. The takeover host is a name in the reserved .example
+# documentation TLD and every request targets 127.0.0.1.
+steps:
+  - id: step-01
+    name: "The dangling record — an abandoned CNAME in the customer's own zone still points at a released provider endpoint"
+    command: |
+      set -u
+      D=/tmp/cortexsim-tim008; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM008}"
+      FQDN="${CORTEXSIM_DANGLING_FQDN:-assets-legacy.corp-demo.example}"
+      printf '{"run_tag":"%s","event":"dns_record","rrname":"%s","rrtype":"CNAME","rdata":"legacy-bucket.provider-cdn.example","target_claimed":false,"parent_domain_age_days":3100}\n' "$RUN_TAG" "$FQDN" > "$D/dangling-record.json"
+      echo cortexsim-tim008-dangling-record-surfaced
+    identity: container-runtime
+    mitre_technique: "T1590.002"
+    # ROOT — links from the curl CGO. A DNS record is a pointer; when the
+    # resource it points at is released, the pointer survives. That survival is
+    # the whole technique and it is where the chain starts.
+    platforms: ["linux", "windows", "macos"]
+    expected_detections:
+      - plane: ASM
+        type: Analytics
+        description: "INVENTORY HALF of the claim — a resource record inside the customer's own zone whose resolution target is an unclaimed third-party provider endpoint. Alone this is a posture item that sits in a queue for a quarter, which is exactly why it is stitched to behaviour rather than shipped as a finding."
+        ttp_ref: "TTP-2026-0174"
+        detection_id: "xql-owned-subdomain-resolving-to-an-unclaimed-third-party-provider-endpoint"
+
+  - id: step-02
+    name: "Takeover — the adversary claims the released provider endpoint and serves C2 from the customer's own name"
+    command: |
+      set -u
+      D=/tmp/cortexsim-tim008; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM008}"
+      printf '{"run_tag":"%s","event":"endpoint_claim","provider_endpoint":"legacy-bucket.provider-cdn.example","claimed_by":"adversary","serves":"c2"}\n' "$RUN_TAG" > "$D/endpoint-claim.json"
+      echo cortexsim-tim008-provider-endpoint-claimed
+    identity: container-runtime
+    mitre_technique: "T1584.006"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: IOC
+        description: "The takeover FQDN as an indicator. Its reputation is clean, its category is corporate and its parent has been registered for years — so this indicator cannot come from a feed and did not. It is minted LOCALLY from the inventory finding plus the beaconing behaviour, which is the part of this that generalises to names no feed will ever carry."
+        ttp_ref: "TTP-2026-0174"
+        detection_id: "ioc-domain-assets-legacy-corp-demo-example"
+
+  - id: step-03
+    name: "Allowlisted C2 — internal hosts beacon to the customer's own subdomain over HTTPS"
+    command: |
+      set -u
+      D=/tmp/cortexsim-tim008; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM008}"
+      FQDN="${CORTEXSIM_DANGLING_FQDN:-assets-legacy.corp-demo.example}"
+      for N in $(seq 1 12); do
+        printf '{"run_tag":"%s","event":"session","dest_fqdn":"%s","dest_ip":"198.51.100.120","app":"ssl","bytes_sent":4096,"interval_seconds":60,"seq":%s}\n' "$RUN_TAG" "$FQDN" "$N"
+        curl -s --max-time 2 -o /dev/null "https://127.0.0.1/beacon" 2>/dev/null || true
+      done > "$D/beacon.ndjson"
+      echo cortexsim-tim008-beacon-sessions-emitted
+    identity: www-data
+    mitre_technique: "T1071.001"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command \"1..12 | ForEach-Object { Write-Output 'cortexsim-tim008 SAFE-MODE: 60s-cadence beacon marker to assets-legacy.corp-demo.example' }\""
+    causality:
+      parent_step: step-02
+      pivot: network_session
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "BEHAVIOURAL HALF of the claim, and the half no reputation lookup can replace. Steady, low-jitter sessions to a name inside the customer's own namespace whose resolution target is outside their address space. Beaconing alone would look like an internal service the analyst has not heard of — the name looks like theirs, because it is — so the resolution-target condition is part of the detection, not context beside it."
+        ttp_ref: "TTP-2026-0174"
+        detection_id: "abioc-periodic-low-variance-egress-to-an-owned-subdomain-whose-resolution-target-left-the-estate"
+
+  - id: step-04
+    name: "NEGATIVE CONTROL — reputation, category, domain age and feed match are evaluated and all pass the takeover host"
+    command: |
+      set -u
+      D=/tmp/cortexsim-tim008; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-TIM008}"
+      FQDN="${CORTEXSIM_DANGLING_FQDN:-assets-legacy.corp-demo.example}"
+      printf '{"run_tag":"%s","event":"reputation_eval","fqdn":"%s","category":"corporate","reputation":"clean","newly_registered":false,"feed_match":false,"parent_domain_age_days":3100}\n' "$RUN_TAG" "$FQDN" > "$D/reputation-eval.json"
+      echo cortexsim-tim008-reputation-controls-evaluated-and-silent
+    identity: container-runtime
+    mitre_technique: "T1584.001"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "The control that decides whether the whole scenario means anything. Every reputation-based signal must return BENIGN for the takeover host — clean reputation, corporate category, aged parent domain, no feed match. If one of them flags it, the detection upstream may have come from that signal and the central claim is unproven, not merely weakened."
+        ttp_ref: "TTP-2026-0174"
+        detection_id: "xql-negative-control-reputation-category-domain-age-and-feed-match-all-pass-the-takeover-host"
+
+  - id: step-05
+    name: "Intel to enforcement — the locally-minted indicator is promoted to the EDL and the exposure queue re-ranks"
+    command: |
+      set -u
+      echo '[TIM-008] Promoting the locally-minted indicator and re-reading the exposure queue'
+      sleep "${CORTEXSIM_INTEL_WAIT_SECONDS:-90}"
+      echo '[*] Indicator source must be local ASM+NDR correlation, NOT a feed — no feed carries the customer own subdomain'
+      echo '[*] Exposure queue is compared BEFORE and AFTER the exploitation intel lands'
+      echo cortexsim-tim008-intel-promoted-and-queue-reread
+    identity: root
+    mitre_technique: "T1584.001"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "Enforcement — the locally-minted indicator reaches the EDL inside the push budget, sourced from local correlation rather than from a feed."
+        ttp_ref: "TTP-2026-0174"
+        detection_id: "xql-locally-minted-indicator-promoted-to-the-enforcement-list-within-the-push-budget"
+      - plane: ASM
+        type: XQL
+        description: "THE KPI — the dangling record re-ranks above findings with a higher base severity that carry no active-exploitation intel. This is the measurable claim: a queue that does not move has understood the finding and done nothing with it."
+        ttp_ref: "TTP-2026-0174"
+        detection_id: "xql-exposure-queue-re-ranks-the-dangling-record-above-higher-severity-unexploited-findings"
+
+  - id: step-06
+    name: "TERMINAL — one ASM-to-TIM-to-NDR incident on the shared FQDN, with the reputation negative control asserted"
+    command: |
+      set -u
+      echo '[TIM-008] Terminal stitch'
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-90}"
+      echo '[*] CR-TIM-0008 asserts ONE incident across ASM inventory + NDR behaviour + TIM enforcement on one FQDN'
+      echo '[*] NEGATIVE CONTROL asserted: reputation, category, domain age and feed match all benign'
+      echo '[*] Neither contributing signal is sufficient alone and the rule is written so neither can carry it'
+      echo cortexsim-tim008-terminal-stitch-verified
+    identity: root
+    mitre_technique: "T1071.001"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: Correlation
+        description: "Terminal — CR-TIM-0008 stitches the inventory finding, the beaconing ABIOC and the enforcement promotion on one shared FQDN into a single incident, carrying the reputation negative control as part of the verdict."
+        ttp_ref: "TTP-2026-0174"
+        detection_id: "CR-TIM-0008"
+      - plane: ASM
+        type: XQL
+        description: "Hunt — every dangling resource record in the estate pointing at an unclaimed provider endpoint, wildcards included. This is the artifact the DC leaves behind, and for most enterprises it is the first time anyone has looked."
+        ttp_ref: "TTP-2026-0174"
+        detection_id: "xql-estate-wide-dangling-resource-records-pointing-at-unclaimed-provider-endpoints"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-tim008"
+    - "echo 'cortexsim-tim008-cleanup-complete'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-08-02"
+last_updated: "2026-08-02"
+tags:
+  - tim
+  - threat-intel
+  - compromise-infrastructure
+  - dangling-dns
+  - subdomain-takeover
+  - allowlisted-c2
+  - asm-inventory
+  - exposure-reprioritization
+  - negative-control
+  - f1
+  - moat
