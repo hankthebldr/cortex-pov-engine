@@ -16,6 +16,9 @@ ui/dist/
 bin/cortexsim-agent
 core/static/assets/
 core/static/index.html
+# Beacon artifacts published into the static mount by
+# scripts/lab/publish-agent.sh (native mode). Build output, never source.
+core/static/agent/
 
 # Data
 data/
