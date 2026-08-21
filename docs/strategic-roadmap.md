@@ -389,6 +389,8 @@ Three rules CortexSim development should observe to stay best-of-class:
 
 ## Pointers
 
+- `docs/strategy/caldera-parity-and-next-generation-strategy.md` — source-level Caldera teardown, capability parity matrix, and the
+  next-generation architecture thesis (detection-objective planning)
 - `docs/design/console-redesign.md` — UI architecture + tokens
 - `docs/design/e2e-execution-methodology.md` — test methodology
 - `docs/operator-runbook.md` — DC workflow
