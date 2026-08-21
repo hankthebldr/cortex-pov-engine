@@ -19,6 +19,9 @@ bin/cortexsim-agent
 agent-dist/
 core/static/assets/
 core/static/index.html
+# Beacon artifacts published into the static mount by
+# scripts/lab/publish-agent.sh (native mode). Build output, never source.
+core/static/agent/
 
 # Data
 data/
@@ -94,3 +97,6 @@ rust-dist/
 # never committed, because its payload duplicates what the promotion already
 # tracked (the v2.2 drop was 8 CSVs byte-identical to _v2.2-source/).
 handoff/
+
+# Built beacon binaries published by scripts/lab/publish-agent.sh
+dist/agent/

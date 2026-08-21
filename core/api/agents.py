@@ -24,6 +24,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -305,10 +306,33 @@ async def list_install_attempts(limit: int = 25):
     return {"attempts": items, "total": len(_install_attempts), "retained_max": _INSTALL_ATTEMPTS_MAX}
 
 
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"}
+
+
+def _is_loopback(url: str) -> bool:
+    """True when `url`'s host would resolve to the BEACON's own machine."""
+    host = urlparse(url).hostname
+    return (host or "").strip().lower() in _LOOPBACK_HOSTS
+
+
 def _resolve_server(request: Request, override: Optional[str]) -> str:
     """Server URL the agent beacons back to. Prefer an explicit override
     (the DC knows the jumpbox's reachable address); else derive from the
-    request so `curl <host>/api/agents/install | bash` just works."""
+    request so `curl <host>/api/agents/install | bash` just works.
+
+    A loopback address here is NOT refused. Installing the beacon on the
+    SimCore host itself is a real flow (local dev, and the installer e2e
+    suite, which serves uvicorn on 127.0.0.1 and installs against it), and
+    from this side the server cannot tell that case apart from a one-liner
+    the DC is about to paste on a jumpbox. Refusing would break the honest
+    use to guess at the dishonest one.
+
+    Instead the loopback is carried forward and diagnosed where the answer
+    is actually knowable: the console warns before the copy (it knows the
+    operator is reading it on the control plane), and the generated script
+    names loopback as the likely cause if — and only if — the preflight to
+    SERVER fails on the target. See `_loopback_banner`.
+    """
     if override:
         return override.rstrip("/")
     return str(request.base_url).rstrip("/")
@@ -352,6 +376,11 @@ INTERVAL="${CORTEXSIM_INTERVAL:-@@INTERVAL@@}"
 MODE="${CORTEXSIM_MODE:-@@MODE@@}"
 TOKEN="${CORTEXSIM_TOKEN:-@@TOKEN@@}"
 HOSTN="$(hostname 2>/dev/null || echo unknown)"
+# Non-empty only when the baked SERVER is a loopback address. Appended to the
+# unreachable-server remediation: on the SimCore host loopback is correct and
+# nothing here fires, but on a jumpbox it is the single likeliest cause and
+# the generic "check routing / proxy / firewall" sends you the wrong way.
+CS_LOOPBACK_HINT="@@LOOPBACK_HINT@@"
 OS_ID="unknown"; ARCH_ID="unknown"; BIN_SRC=""
 SVC="cortexsim-agent"
 PLIST_LABEL="com.paloaltonetworks.cortexsim.agent"
@@ -418,7 +447,7 @@ if [ -n "$TOKEN" ]; then
   if [ -z "$ECODE" ] || [ "$ECODE" = "000" ]; then
     cs_fail enroll SERVER_UNREACHABLE \
       "cannot reach $SERVER — $(head -c 300 "$EERR" 2>/dev/null || true)" \
-      "check routing / proxy / firewall from this host to SimCore, then re-run"
+      "check routing / proxy / firewall from this host to SimCore, then re-run$CS_LOOPBACK_HINT"
   fi
   if [ "$ECODE" != "200" ]; then
     # Surface the server's own structured {error,code,detail} body verbatim —
@@ -457,7 +486,7 @@ cs_try_download() {
   if [ -z "$DCODE" ] || [ "$DCODE" = "000" ]; then
     cs_fail download SERVER_UNREACHABLE \
       "cannot reach $SERVER — $(head -c 300 "$WORKDIR/dl.err" 2>/dev/null || true)" \
-      "check routing / proxy / firewall from this host to SimCore"
+      "check routing / proxy / firewall from this host to SimCore$CS_LOOPBACK_HINT"
   fi
   if [ "$DCODE" = "404" ]; then
     cs_say "WARN: SimCore serves no beacon for $OS_ID/$ARCH_ID"
@@ -858,12 +887,26 @@ def _render(template: str, **subs: str) -> str:
     return out
 
 
+_LOOPBACK_HINT = (
+    " -- NOTE: SERVER is a loopback address, so on THIS host it means this host. "
+    "If you copied the one-liner from a console open at localhost, re-fetch it "
+    "from the control plane's routable address: "
+    "'<control-plane>/api/agents/install?server=http://<control-plane-ip>:8888'"
+)
+
+
+def _loopback_hint(server: str) -> str:
+    """Remediation suffix, empty unless the baked SERVER is loopback."""
+    return _LOOPBACK_HINT if _is_loopback(server) else ""
+
+
 def _posix_installer(server: str, agent_id: str, interval: int,
                      token: Optional[str], mode: str) -> str:
     return _render(
         _POSIX_INSTALLER,
         SERVER=server, AGENT_ID=agent_id, INTERVAL=str(interval),
         TOKEN=token or "", MODE=mode,
+        LOOPBACK_HINT=_loopback_hint(server),
     )
 
 
