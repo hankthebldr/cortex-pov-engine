@@ -75,3 +75,6 @@ detection_scanner/ttps/_drafts/*
 ui/.claude/
 
 
+
+# Built beacon binaries published by scripts/lab/publish-agent.sh
+dist/agent/
