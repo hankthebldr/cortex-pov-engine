@@ -70,6 +70,10 @@ const TABS_CHEATSHEET = [
     body: 'Validate detections + export the POV report. KPI row shows coverage %, median MTTD, stitch count, pending. Scorecard rows have inline ✓ ✗ ○ buttons for per-detection validation and a detection-type chip (BIOC / XQL / Correlation / IOC). "Export POV report" produces a Cortex-branded markdown you can hand to the customer.',
   },
   {
+    name: 'Agents (More ▾)',
+    body: 'The beacon fleet, split out of Targets so agent lifecycle stands on its own. Shows every registered cortexsim-agent with live / stale liveness derived from last_seen, a deploy flow that hands you the one-line installer per OS, installer re-download, and confirm-gated retirement. Selecting an agent arms it as the launch target in pull mode — same as picking it from Targets used to be.',
+  },
+  {
     name: 'Environments (More ▾)',
     body: 'Generate IaC bundles for the target environment. Pick provider + modules, fill required params, Generate Bundle → download tar.gz with Terraform. Modules auto-select their dependencies (e.g. picking cdr also picks base + tim).',
   },

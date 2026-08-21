@@ -7,6 +7,7 @@ import CoverageView from './components/console/CoverageView.jsx'
 import LabView from './components/console/LabView.jsx'
 import TenantManager from './components/console/TenantManager.jsx'
 import TargetsView from './components/console/TargetsView.jsx'
+import AgentsView from './components/console/AgentsView.jsx'
 import LaunchView from './components/console/LaunchView.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import usePinnedScenarios from './components/console/usePinnedScenarios.js'
@@ -295,6 +296,15 @@ export default function AppConsole() {
       },
       {
         section: 'Actions',
+        id: 'tab-agents',
+        title: 'Go to Agents',
+        meta: 'beacon roster \u00b7 deploy \u00b7 retire',
+        icon: '\u26a1',
+        shortcut: ['G', 'A'],
+        onSelect: () => setActiveTab('agents'),
+      },
+      {
+        section: 'Actions',
         id: 'tab-operations',
         title: 'Go to Library',
         meta: 'browse and arm scenarios',
@@ -456,18 +466,31 @@ export default function AppConsole() {
     setTimeout(() => setToast(null), 4000)
   }, [activeRun, refreshRuns])
 
+  // Both Targets and Agents arm the launch target the same way — one handler
+  // so the toast and state transition cannot drift between the two views.
+  const selectTarget = (t) => {
+    setSelectedTarget(t)
+    setToast({ message: `Target set: ${t.label || t.id} (${t.kind})`, type: 'success' })
+    setTimeout(() => setToast(null), 2500)
+  }
+
   // ── Render tab content ──────────────────────────────────────────────────
   let tabContent = null
   if (activeTab === 'targets') {
     tabContent = (
       <TargetsView
         selectedTarget={selectedTarget}
-        onSelectTarget={(t) => {
-          setSelectedTarget(t)
-          setToast({ message: `Target set: ${t.label || t.id} (${t.kind})`, type: 'success' })
-          setTimeout(() => setToast(null), 2500)
-        }}
+        onSelectTarget={selectTarget}
         onGoToLab={() => setActiveTab('lab')}
+        onGoToAgents={() => setActiveTab('agents')}
+      />
+    )
+  } else if (activeTab === 'agents') {
+    tabContent = (
+      <AgentsView
+        selectedTarget={selectedTarget}
+        onSelectTarget={selectTarget}
+        onGoToTargets={() => setActiveTab('targets')}
       />
     )
   } else if (activeTab === 'launch') {

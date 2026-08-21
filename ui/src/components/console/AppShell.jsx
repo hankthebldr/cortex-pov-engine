@@ -40,6 +40,7 @@ const STEPS = [
   { id: 'evidence',   label: 'Evidence' },
 ]
 const MORE_ITEMS = [
+  { id: 'agents',   label: 'Agents'          },
   { id: 'coverage', label: 'ATT&CK Coverage' },
   { id: 'lab',      label: 'Environments'    },
   { id: 'tenants',  label: 'Tenants'         },
