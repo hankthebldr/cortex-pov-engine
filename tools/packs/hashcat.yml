@@ -1,0 +1,55 @@
+adapter_id: TOOL-HASHCAT
+name: Hashcat
+version: "6.2.6"
+
+tier: 4
+category: identity-credential
+
+upstream:
+  repo: https://github.com/hashcat/hashcat
+  license: MIT
+  attribution: Jens Steube (atom) and the hashcat contributors
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1110.002  # Brute Force: Password Cracking
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "command -v hashcat >/dev/null 2>&1 || (apt-get install -y hashcat 2>/dev/null || yum install -y hashcat)"
+  binary: hashcat
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: DISTRO_PACKAGE
+    reason: >-
+      Hashcat installs from the operating system's package repository. Staging
+      it on the shelf would mean hosting a Debian mirror, so this tool needs
+      internet access on the target host. Plan the POV around that, or have
+      the customer pre-install it on the target.
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -m {hash_mode} -a {attack_mode} {hashfile} {wordlist} {flags}"
+  default_args:
+    hash_mode: "13100"  # Kerberos 5 TGS-REP (Kerberoast)
+    attack_mode: "0"    # straight / dictionary
+    hashfile: "/tmp/cortexsim-hashes.txt"
+    wordlist: "/usr/share/wordlists/rockyou.txt"
+    flags: "--potfile-path=/tmp/cortexsim-hashcat.pot --quiet --status --status-timer=5"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-hashes.txt /tmp/cortexsim-hashcat.pot"
+    - "rm -f hashcat.restore /tmp/cortexsim-hashcat.pot.*"
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - offline-cracking
+  - kerberoast
+  - credential-access

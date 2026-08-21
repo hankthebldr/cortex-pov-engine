@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1552.001",
+    "T1078.004",
+    "T1496"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(LLM Provider API Key Replayed From Infrastructure Absent From Its Learned Calling Baseline) AND ABIOC(Sustained Inference Spend Deviating From the Key's Learned Token-Consumption Envelope) observed on the SAME api_key_id within the run window, corroborated by XQL(Model and Endpoint Mix First Seen for This API Key) and by the replay client's user-agent indicator \u2014 ONE token-jacking incident about ONE credential. The BASELINE ARM is the discriminator and is asserted as part of the verdict rather than reported beside it: the same key must be shown used normally from corporate egress in the same window, and that arm must NOT raise this incident. Alerting on both arms means the platform matched on 'traffic to an LLM provider', which the customer's proxy already does; alerting on neither means the key's baseline never formed and the result is pending, not fail. The incident carries the unauthorized inference spend as its headline figure, because it is the rare security finding that converts directly into a line on the cloud bill.",
+      "name": "Token Jacking Stitch \u2014 Off-Baseline Key Replay With Unauthorized Inference Spend",
+      "rule_id": "CR-AIACC-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0173"
+}

@@ -1,0 +1,80 @@
+adapter_id: TOOL-AMASS
+name: "OWASP Amass"
+version: "4.2.0"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/owasp-amass/amass
+  license: "Apache-2.0"
+  attribution: "OWASP Amass Project (Jeff Foley)"
+
+cortex_signal:
+  # ASM (attack-surface management) is not a distinct signal plane in the
+  # loader enum; subdomain/attack-surface mapping telemetry lands on NDR,
+  # matching the other ASM-family enumerators (gobuster, feroxbuster).
+  planes:
+    - NDR
+  expected_techniques:
+    - T1590      # Gather Victim Network Information
+    - T1590.005  # Gather Victim Network Information: IP Addresses
+
+safety_class: safe
+
+install:
+  # Tier 4 (runtime-fetched): apt on Kali, `go install` fallback.
+  runtime_install_command: "command -v amass >/dev/null 2>&1 || (apt-get install -y amass 2>/dev/null || go install -v github.com/owasp-amass/amass/v4/...@master)"
+  binary: amass
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: ARCHIVE_ONLY_NO_EXTRACTOR
+    reason: >-
+      Amass is published only as a compressed archive, and CortexSim can
+      currently stage single files only — so it cannot be served from the
+      shelf yet. This tool needs internet access on the target host until that
+      changes, and note that its passive-enumeration mode queries external
+      data sources at run time regardless.
+    revisit: >-
+      Blocked on CortexSim, not on upstream. Requires a single-member
+      extractor (download the pinned archive on the DC's SimCore, verify the
+      ARCHIVE digest, extract one named member, verify the MEMBER digest, put
+      that one file on the shelf) so compose() still emits kind: file and
+      neither the Go beacon nor the K8s init container learns a new word.
+      Measured 2026-08-06: amass_linux_amd64.tar.gz exists at tag v5.1.1
+      (17,107,726 bytes), and upstream also publishes amass_checksums.txt. NOT
+      VERIFIED and NOT SAFE TO PIN YET, for two reasons: (1) the archive was
+      deliberately not downloaded in this pass, so no member name or digest
+      here is measured; (2) amass historically reads a config/datasources file
+      it expects beside itself, so 'is the bare member self-contained?' is an
+      open question — extract it and run 'amass enum -passive -d example.com'
+      with no HOME config before trusting it. Settle the version divergence
+      too: this pack declares 4.2.0 while upstream is on the v5 line. Also
+      note GitHub reports the licence as NOASSERTION while the repo's own
+      LICENSE file says Apache 2.0.
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} enum -d {domain} {flags}"
+  default_args:
+    domain: "lab.local"
+    flags: "-passive -timeout 5"
+  identity_required: nobody
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-amass-* 2>/dev/null || true"
+    - "rm -rf ${HOME}/.config/amass/cortexsim-* 2>/dev/null || true"
+
+ttp_refs: []
+equivalents:
+  - TOOL-DNSRECON  # DNS/subdomain reconnaissance equivalent
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - network-scan
+  - attack-surface-mapping
+  - subdomain-enumeration
+  - runtime-fetched

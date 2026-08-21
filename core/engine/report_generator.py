@@ -236,6 +236,7 @@ def render_exec_summary_markdown(
     lines.append(f"- **Coverage:** {observed} / {total} expected detections observed ({coverage_pct}%).")
     if avg_mttd is not None:
         lines.append(f"- **MTTD (average across observed):** {avg_mttd}s.")
+    lines.extend(_measurement_lines(run_dict, s))
     lines.append(f"- **Findings:** {findings}")
     if s.get("threat_report"):
         lines.append(f"- **Threat intelligence reference:** {s.get('threat_report')}.")
@@ -264,6 +265,57 @@ def render_exec_summary_markdown(
     lines.append(f"_Report generated {datetime.now(timezone.utc).isoformat()} by CortexSim._")
     lines.append("")
     return "\n".join(lines)
+
+
+_VERDICT_LABEL = {
+    "pass": "PASS",
+    "fail": "FAIL",
+    "pending": "PENDING — verification outstanding",
+    "not_applicable": "NOT SCOREABLE — the test case carries no measurable threshold",
+}
+
+
+def _measurement_lines(run_dict: dict[str, Any], s: dict[str, Any]) -> list[str]:
+    """Render the measurement contract: which test case this run was scored
+    against, on what KPI, and whether it passed.
+
+    Coverage percentage alone reads as a score but is not one — it says how much
+    of what we expected we saw, not whether the customer's bar was met. These
+    lines are what let a POV readout state a verdict.
+    """
+    out: list[str] = []
+
+    tc_ref = s.get("tc_ref")
+    if tc_ref:
+        refs = s.get("tc_refs") or [tc_ref]
+        extra = f" (+{len(refs) - 1} more)" if len(refs) > 1 else ""
+        out.append(f"- **Test case:** `{tc_ref}`{extra} — {s.get('tc_name') or '—'}.")
+
+    kpi, threshold = s.get("primary_kpi"), s.get("threshold")
+    if kpi or threshold:
+        bar = ""
+        if isinstance(threshold, dict) and threshold.get("op") is not None:
+            unit = threshold.get("unit") or ""
+            bar = f" (threshold: {threshold['op']} {threshold.get('value')}{unit})"
+        out.append(f"- **Primary KPI:** {kpi or '—'}{bar}.")
+
+    verdict = run_dict.get("tc_verdict")
+    if verdict:
+        label = _VERDICT_LABEL.get(verdict, verdict)
+        detail = (run_dict.get("tc_verdict_detail") or {}).get("detail")
+        out.append(f"- **Test-case verdict:** **{label}**"
+                   + (f" — {detail}." if detail else "."))
+
+    tier, family = s.get("moat_tier"), s.get("methodology_family")
+    if tier or family:
+        bits = []
+        if tier:
+            bits.append(f"differentiation tier **{tier}**")
+        if family:
+            bits.append(f"methodology family `{family}`")
+        out.append(f"- **Positioning:** {' · '.join(bits)}.")
+
+    return out
 
 
 def build_bundle(

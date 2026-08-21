@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1535",
+    "T1496"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when analytics `Compute Activity in Dormant Cloud Region` and abioc `Suspicious Heavy Allocation of Compute Resources - Possible Mining Activity` both observe RunInstances activity for the same recipientAccountId and userIdentity.arn within a 30-minute window \u2014 stitching the dormant-region landing and the mining-shaped GPU burst into ONE cloud cryptomining incident rather than two isolated alerts.",
+      "name": "Dormant-Region Compute Escalating to Mining-Shaped Heavy Allocation",
+      "rule_id": "CR-CDR-0024",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0159"
+}

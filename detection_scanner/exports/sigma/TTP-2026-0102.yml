@@ -1,0 +1,65 @@
+title: "DNS-Tunnel Behavioral Anomaly \u2014 Query-Volume + Subdomain-Entropy Deviation from Learned Host DNS Baseline (T1048.003 / T1071.004 / T1572) \u2014 NDR-009 DNS Query-Volume Flood Deviating from Learned Host Baseline"
+id: ttp-2026-0102-abioc-01
+status: experimental
+description: |
+  A host whose learned Cortex DNS profile is a small, low-rate set of resolutions suddenly emits dozens of lookups under a single base domain within a minute. The ABIOC anchors the volume deviation to the causality chain (one host -> one base domain -> high-rate label burst) rather than to any known-bad domain, catching a DNS tunnel over an unseen base domain that a static domain-block would miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = pan_dns
+    | filter _time > to_timestamp(current_time() - 900)
+    | filter dns_query_name contains ".exfil.testmynids.org"
+    | comp count() as query_count, count_distinct(dns_query_name) as distinct_labels by source_ip, bin(_time, 1m) as minute
+    | filter query_count >= 10
+    | sort desc query_count
+    | fields minute, source_ip, query_count, distinct_labels
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048.003
+    - attack.t1572
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "DNS-Tunnel Behavioral Anomaly \u2014 Query-Volume + Subdomain-Entropy Deviation from Learned Host DNS Baseline (T1048.003 / T1071.004 / T1572) \u2014 NDR-009 High-Entropy Subdomain Labels Deviating from Learned DNS Baseline"
+id: ttp-2026-0102-abioc-02
+status: experimental
+description: |
+  A host resolves long, encoded first-labels whose length and character distribution diverge from its learned DNS name shape — the encoded-payload signature of DNS tunneling. Every query is a legitimate DNS lookup; the ABIOC fires on the entropy-and-length deviation from the host's learned name baseline, anchored to the query-volume burst that carries it.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = pan_dns
+    | filter _time > to_timestamp(current_time() - 900)
+    | filter dns_query_name contains ".exfil.testmynids.org"
+    | alter first_label = arrayindex(split(dns_query_name, "."), 0)
+    | filter len(first_label) >= 20
+    | comp count() as high_entropy_labels, avg(len(first_label)) as avg_label_len by source_ip
+    | filter high_entropy_labels >= 3 and avg_label_len > 18
+    | sort desc high_entropy_labels
+    | fields source_ip, high_entropy_labels, avg_label_len
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.004
+    - attack.t1048.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

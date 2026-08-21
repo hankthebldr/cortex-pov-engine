@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-ITDR-07
-tc_ref: TC-ITDR-07
-uc_name: "Active Directory Privilege Escalation & Token Manipulation Detection"
-tc_name: "Post-Compromise Local-to-Domain Privilege Escalation Chain On A Domain Workstation"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-ITDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 mitre_tactic: "TA0004"
 mitre_tactic_name: "Privilege Escalation"
@@ -85,6 +90,20 @@ moat_tier: "MOAT"
 # command echoes its intent and exits 0 rather than erroring). Execute ONLY
 # against the authorised CortexSim AD lab — destroy the environment after the POV.
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The Causality Group Owner is the operator's hands-on-keyboard foothold shell on
+# the domain workstation (an explorer-spawned powershell.exe running as the
+# compromised helpdesk-admin foothold account) — NOT the cortexsim beacon. Every
+# escalation tool XDR observes on the workstation descends from this CGO. The
+# steps form a connected spine: LSASS harvest → the harvested credential is
+# reused for the DACL write (shared_entity), then two same-host escalation paths
+# (KrbRelayUp, PrintSpoofer) run in the same foothold session (shared_entity),
+# and Tokenvator (step-05) runs INSIDE the SYSTEM context PrintSpoofer spawned
+# (a genuine process_lineage fork). All steps are Windows-only tradecraft.
+cgo_anchor:
+  image_name: "powershell.exe"
+  primary_username: "helpdesk-admin"
+
 external_tools:
   - name: pypykatz
     source: "https://github.com/skelsec/pypykatz"
@@ -138,6 +157,7 @@ steps:
         description: "XDR — validation: LSASS credential-access handle from a non-system process observed in the last window"
         ttp_ref: "TTP-2026-0078"
         detection_id: "xql-itdr-007-validate-lsass-credential-access-by-non-system-process"
+    platforms: ["windows"]
 
   - id: step-02
     name: "AD DACL abuse — grant GenericAll on a privileged object via bloodyAD"
@@ -165,6 +185,10 @@ steps:
         description: "ITDR — validation: privileged-object DACL modification (4662 directory-service write) observed in the last window"
         ttp_ref: "TTP-2026-0078"
         detection_id: "xql-itdr-007-validate-abnormal-privileged-dacl-modification"
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["windows"]
 
   - id: step-03
     name: "Kerberos relay local privilege escalation — KrbRelayUp against the local machine"
@@ -185,6 +209,10 @@ steps:
         description: "ITDR — local Kerberos relay to LDAP from the same host (self-relay / RBCD machine-account abuse — KrbRelayUp local privilege escalation)"
         ttp_ref: "TTP-2026-0078"
         detection_id: "bioc-itdr-007-kerberos-relay-to-ldap-from-local-host-krbrelayup"
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["windows"]
 
   - id: step-04
     name: "SeImpersonate token abuse — PrintSpoofer named-pipe escalation to SYSTEM"
@@ -208,6 +236,10 @@ steps:
         description: "XDR — validation: a SYSTEM-integrity child spawned from a non-system service-account parent observed in the last window"
         ttp_ref: "TTP-2026-0078"
         detection_id: "xql-itdr-007-validate-system-token-spawned-from-service-account-process"
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    platforms: ["windows"]
 
   - id: step-05
     name: "Access token theft — duplicate and impersonate a SYSTEM/privileged token via Tokenvator"
@@ -226,6 +258,10 @@ steps:
         description: "XDR — a process duplicates and impersonates the access token of a privileged/SYSTEM process (token theft via DuplicateTokenEx/ImpersonateLoggedOnUser)"
         ttp_ref: "TTP-2026-0078"
         detection_id: "bioc-itdr-007-access-token-theft-and-impersonation-via-token-duplication"
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
+    platforms: ["windows"]
 
   - id: step-06
     name: "Validate the full local-to-SYSTEM escalation chain stitched into one incident"
@@ -246,6 +282,10 @@ steps:
         description: "XSIAM — LSASS access + privileged DACL write + Kerberos relay + SeImpersonate/token theft from one host stitched into a single Privilege Escalation incident"
         ttp_ref: "TTP-2026-0078"
         detection_id: "CR-ITDR-0007"
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
+    platforms: ["windows"]
 
 cleanup:
   commands:

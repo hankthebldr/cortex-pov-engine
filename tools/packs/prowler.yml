@@ -25,6 +25,14 @@ safety_class: safe
 install:
   runtime_install_command: "command -v prowler >/dev/null 2>&1 || pip3 install --no-input prowler==5.4.0"
   binary: prowler
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: LANGUAGE_PACKAGE_MANAGER
+    reason: >-
+      Prowler installs from the Python (pip) package index along with its
+      dependency tree. The shelf stages one file, and there is no single file
+      that runs. Staging it would mean hosting a package mirror, so this tool
+      needs internet access on the target host.
 
 invoke:
   target_platform: linux

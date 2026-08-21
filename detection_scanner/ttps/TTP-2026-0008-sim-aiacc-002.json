@@ -228,14 +228,14 @@
         "evidence_query": "Correlation CR-AIACC-0002 fuses the AKIA regex DLP hit with the generative-AI App-ID match into one critical credential-disclosure incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-INSIDER-008",
+        "threat_scenario_id": "TS-INSIDER-008",
         "name": "Cloud Credential Disclosure to External LLM",
         "description": "Detect AWS access keys pasted into a public LLM provider and enforce a block-action policy after the first DLP hit.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-INSIDER-008A",
+            "threat_step_id": "TS-INSIDER-008A",
             "objective": "A secret POST to api.anthropic.com fires the AKIA AWS-key DLP regex.",
             "preconditions": [
               "Cortex AI Access Security inline with TLS decrypt and secrets DLP profile.",
@@ -252,7 +252,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-INSIDER-008B",
+            "threat_step_id": "TS-INSIDER-008B",
             "objective": "Repeated secret-bearing sessions are denied by the block-action policy and stitch into one incident.",
             "success_criteria": [
               "XQL `AIACC-002 Repeated Secret Egress to Anthropic Block Policy Trigger` returns >= 1 row.",

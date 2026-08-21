@@ -41,6 +41,7 @@ description: |
     | filter actor_process_image_name in ("curl", "wget")
     | filter action_process_image_command_line contains_any ("CortexSimBeacon", "-A ", "--user-agent")
     | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+    | filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
   ----
 references:
   - https://attack.mitre.org/techniques/T1071/
@@ -71,6 +72,7 @@ description: |
     | filter actor_process_image_name in ("curl", "wget")
     | filter action_file_path contains "/tmp/"
     | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
+    | filter causality_actor_process_image_name in ("apache2", "nginx", "php-fpm", "node", "httpd")
   ----
 references:
   - https://attack.mitre.org/techniques/T1105/

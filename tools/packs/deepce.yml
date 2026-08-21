@@ -20,8 +20,29 @@ cortex_signal:
 safety_class: dual-use-lab-only
 
 install:
+  # DELIBERATELY LEFT ON /raw/main/. This string is emitted VERBATIM into the
+  # byte-frozen bash/PowerShell push bundles
+  # (tests/engine/_golden/push_bundle_digests.json), so repointing it would move
+  # SIM-CDR-001's digest for no integrity gain — the un-shelfed path fetches
+  # whatever HEAD is, which is exactly the moving-target behaviour the shelf
+  # exists to replace. The commit-pinned bytes live in install.artifact below.
   runtime_install_command: "command -v deepce.sh >/dev/null 2>&1 || curl -fsSLo /tmp/deepce.sh https://raw.githubusercontent.com/stealthcopter/deepce/main/deepce.sh && chmod +x /tmp/deepce.sh"
   binary: /tmp/deepce.sh
+
+  artifact:
+    filename: deepce.sh
+    # Commit-pinned, not /raw/main/: TA-11 WARNs on a moving raw URL because a
+    # pinned digest against a moving URL fails loudly on the next upstream push
+    # (correct), while an unpinned one substitutes a different tool silently.
+    url: "https://raw.githubusercontent.com/stealthcopter/deepce/420b1d1ddb636f6bd277a105f580cd09b03517cc/deepce.sh"
+    kind: file
+    sha256: "2c8301c3e8d12c01f6ad39e9513f5a7011ccaaee7eee1f40951a38b756d3bf98"
+    pin:
+      type: commit
+      ref: "420b1d1ddb636f6bd277a105f580cd09b03517cc"
+    license: "GPL-3.0"
+    stage_path: /tmp/deepce.sh
+    mode: "0755"
 
 invoke:
   target_platform: linux

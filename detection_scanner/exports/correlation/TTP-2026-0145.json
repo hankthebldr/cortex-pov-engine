@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1649",
+    "T1550",
+    "T1078.002",
+    "T1556",
+    "T1087.002",
+    "T1552.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(\"ITDR-017 Certificate Issued With Requester-Subject SAN Mismatch\") AND ABIOC(\"ITDR-017 ESC1 Issuance-To-PKINIT Privileged Impersonation Chain\") joined on the impersonated principal (the subject_alt_name_upn of the 4887 issuance equals the target_user_name authenticating via PKINIT in the 4768 TGT request) within 600 seconds. The lineage is rooted on the requesting domain identity: the LDAP template reconnaissance BIOC(\"ITDR-017 AD CS Certificate-Template LDAP Reconnaissance\") and the enrollee-supplied-SAN request BIOC(\"ITDR-017 ESC1 Certificate Request With Enrollee-Supplied SAN\") share the requester_domain_user that precedes the issuance, and an optional shadow-credential write BIOC(\"ITDR-017 Shadow-Credential Write To msDS-KeyCredentialLink\") on the same identity extends the persistence. Fuses recon -> ESC1 SAN-mismatch issuance -> PKINIT privileged authentication -> optional shadow credential into a single ITDR credential-access / privilege-escalation incident, evidencing the AD CS ESC1 storyline end to end with citable certificate serials, template names, the impersonated UPN, and the exact Windows Security event records.",
+      "name": "ITDR-017 AD CS ESC1 SAN-Mismatch To Privileged PKINIT Chain Stitch",
+      "rule_id": "CR-ITDR-0017",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0145"
+}

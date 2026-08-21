@@ -1,7 +1,12 @@
 import React from 'react'
 
 /**
- * ConsoleRail — left-side 240px rail with plane filter + pinned + MITRE shortcuts.
+ * ConsoleRail — the LIBRARY-SCOPED plane / pinned / MITRE FILTER column.
+ *
+ * Demoted from global navigation (that role is now DestinationNav): this rail
+ * lives INSIDE the Library surface and slices the scenario grid by detection
+ * plane, pinned set, and MITRE tactic. The `plane-button-${code}` test ids are
+ * preserved so existing vitest/playwright assertions keep matching.
  *
  * Props:
  *   planes         — [{ code, name, count, isActive }]
@@ -22,7 +27,10 @@ export default function ConsoleRail({
   onToggleCollapse = null,
 }) {
   return (
-    <aside className={'rail' + (collapsed ? ' rail--collapsed' : '')}>
+    <aside
+      className={'rail rail--filter' + (collapsed ? ' rail--collapsed' : '')}
+      aria-label="Scenario filters"
+    >
       {onToggleCollapse && (
         <button
           type="button"

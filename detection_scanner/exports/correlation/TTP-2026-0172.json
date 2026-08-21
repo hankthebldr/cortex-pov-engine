@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1199",
+    "T1550.001",
+    "T1114.002",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Consented Integration Deviating From Its Own Learned Call-Rate and Scope-Usage Baseline) AND ABIOC(Vendor Integration Touching Object Classes It Has Never Touched Before) AND XQL(Bulk Mailbox Item Access by the Vendor Integration Across Distinct Mailboxes) AND XQL(Integration Egress to a Destination Outside Its Publisher's Declared Endpoints) observed on the SAME app_id inside the correlation window \u2014 one trusted-relationship incident attributed to the integration identity rather than to any user. Two controls decide whether the result means anything. The NEGATIVE CONTROL asserts that no credential-theft, impossible-travel or anomalous interactive sign-in event exists in the run window: if one does, the detection may have come from that signal instead and the scenario's central claim \u2014 that this is detectable with every conventional identity signal absent \u2014 is unproven. The BLAST-RADIUS CONTROL asserts that peer integrations with comparable scopes stayed inside their own baselines and were NOT swept into the incident; for a tenant with hundreds of consented apps, a platform that flags them all the moment one misbehaves has produced an outage, not a detection.",
+      "name": "Trusted-Relationship Integration Pivot Stitch",
+      "rule_id": "CR-CLOUD-0010",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0172"
+}

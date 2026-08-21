@@ -51,7 +51,9 @@ preset = xdr_data
 | filter event_sub_type = ENUM.PROCESS_START
 | filter container_id != null
 | filter actor_process_image_name = "nsenter"
+| filter causality_actor_process_image_name in ("bash", "sh", "runc", "containerd-shim")
 | filter action_process_image_command_line contains_any ("/proc/1/ns/mnt", "--mount=/proc/1", "-t 1", "--target 1")
+| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_process_image_command_line
 
 ## BIOC — CDR-003 Anomalous Namespace Switch From Container Process
 # severity: high
@@ -73,6 +75,7 @@ preset = xdr_data
 | filter container_id != null
 | filter action_file_path in ("/etc/passwd", "/etc/shadow")
 | filter causality_actor_process_image_name = "nsenter" or actor_process_image_name = "nsenter"
+| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, action_file_path
 
 ## BIOC — CDR-003 Sensitive Host File Read Following Container Escape
 # severity: high
@@ -95,6 +98,7 @@ preset = xdr_data
 | filter container_id != null
 | filter action_file_path contains "/etc/cron.d/"
 | filter causality_actor_process_image_name = "nsenter" or actor_process_image_name = "nsenter"
+| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path
 
 ## BIOC — CDR-003 Host CronD File Creation After Namespace Escape
 # severity: critical

@@ -70,6 +70,7 @@ description: |
     | filter event_type = ENUM.PROCESS
     | filter event_sub_type = ENUM.PROCESS_START
     | filter container_id != null
+    | filter causality_actor_process_image_name in ("apache2", "nginx", "bash", "sh", "test_backdoor.elf")
     | filter actor_process_image_path contains "/tmp/"
     | filter actor_process_image_path contains_any (".elf", "test_backdoor", "wf_sim")
   ----
@@ -100,6 +101,7 @@ description: |
     | filter event_type = ENUM.PROCESS
     | filter event_sub_type = ENUM.PROCESS_START
     | filter container_id != null
+    | filter causality_actor_process_image_name in ("apache2", "nginx", "bash", "sh")
     | filter actor_process_image_path contains "/tmp/"
     | filter actor_effective_username in ("www-data", "nobody", "node", "apache", "nginx")
   ----
@@ -161,6 +163,7 @@ description: |
     | filter event_type = ENUM.PROCESS
     | filter event_sub_type = ENUM.PROCESS_START
     | filter container_id != null
+    | filter causality_actor_process_image_name in ("apache2", "nginx", "bash", "sh", "test_backdoor.elf")
     | filter actor_process_image_name = "curl"
     | filter action_process_image_command_line contains "192.0.2.1"
     | filter action_process_image_command_line contains_any ("beacon", "User-Agent", "-A ", "MSIE")

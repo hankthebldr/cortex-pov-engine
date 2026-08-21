@@ -1,6 +1,6 @@
 {
   "source_id": "SRC-UNIT42",
-  "indexed_at": "2026-07-05",
+  "indexed_at": "2026-07-24",
   "indexer": "manual-canvas + cortex-scraper-handoff",
   "description": "Curated, prioritized list of Unit 42 posts that should be parsed into TTP entries first. Grouped by theme so the cortex-scraper can batch by directory of relevance. Last 12-month rolling window emphasized; perennial reference docs flagged separately.",
   "priority_legend": {
@@ -60,25 +60,6 @@
       },
       {
         "priority": "P0",
-        "title": "Tracking Iranian APT Screening Serpens' 2026 Espionage Campaigns",
-        "url": "https://unit42.paloaltonetworks.com/tracking-iran-apt-screening-serpens/",
-        "actor_aliases": [
-          "Screening Serpens"
-        ],
-        "themes": [
-          "iran-nexus",
-          "apt",
-          "espionage",
-          "appdomainmanager-hijacking",
-          "dll-sideloading",
-          "rat"
-        ],
-        "published": "2026-05-22",
-        "indexed": "2026-05-28",
-        "notes": "NEW Iran-nexus actor, not previously tracked and distinct from Boggy Serpens. Signature TTPs: AppDomainManager hijacking (T1574.014) and DLL sideloading (T1574.002); MiniJunk / MiniUpdate RAT variants targeting tech and defense sectors. OPERATOR REVIEW: add 'Screening Serpens' to discovery-queries.json scope_seeds.actors; AppDomainManager hijacking (T1574.014) would be NEW MITRE technique coverage if a TTP is authored. No draft stub created (does not map to an existing tracked actor + technique per the weekly-canvas guard)."
-      },
-      {
-        "priority": "P0",
         "title": "Phantom Taurus: A New Chinese Nexus APT and the NET-STAR Malware Suite",
         "url": "https://unit42.paloaltonetworks.com/phantom-taurus/",
         "themes": [
@@ -96,26 +77,6 @@
           "china-nexus",
           "attribution"
         ]
-      },
-      {
-        "priority": "P1",
-        "title": "CL-STA-1062 Targets Southeast Asian Governments and Critical Infrastructure",
-        "url": "https://unit42.paloaltonetworks.com/cl-sta-1062-tinyrct-backdoor/",
-        "actor_aliases": [
-          "CL-STA-1062"
-        ],
-        "themes": [
-          "china-nexus",
-          "espionage",
-          "apt",
-          "custom-backdoor",
-          "tinyrct",
-          "critical-infrastructure",
-          "se-asia"
-        ],
-        "published": "2026-06-25",
-        "indexed": "2026-06-27",
-        "notes": "Threat Research (author: Unit 42). Chinese-speaking espionage cluster CL-STA-1062 targeting government and critical-infrastructure (energy) entities in Southeast Asia, active since at least March 2022, using a hybrid toolkit including the custom TinyRCT backdoor. New China-nexus cluster — NOT in scope_seeds.actors (corpus currently tracks Phantom Taurus, Stately Taurus, APT41 for China-nexus). P1 cluster profile with new TTPs (custom backdoor + espionage tradecraft). No draft stub created per the weekly-canvas guard: new actor/cluster + new malware family (TinyRCT) not yet in corpus -> routes to operator review. OPERATOR REVIEW: (1) add 'CL-STA-1062' and 'TinyRCT' to discovery-queries.json scope_seeds; (2) decide whether to author an espionage/custom-backdoor TTP."
       },
       {
         "priority": "P2",
@@ -188,31 +149,71 @@
         ]
       },
       {
+        "priority": "P0",
+        "title": "Large-Scale Cloud Extortion Operation Leverages Exposed .env Credentials",
+        "url": "https://unit42.paloaltonetworks.com/large-scale-cloud-extortion-operation/",
+        "themes": [
+          "cloud",
+          "extortion",
+          "env-credential-leak",
+          "lambda",
+          "data-exfil"
+        ],
+        "notes": "Backs SIM-CDR-017 (leaked .env credential to self-propagating Lambda escalation)."
+      },
+      {
         "priority": "P1",
-        "title": "Out of the Crypt: The Evolving Cyber Extortion Economy",
-        "url": "https://unit42.paloaltonetworks.com/cyber-extortion-economy/",
+        "title": "EDR Bypass Extortion Attempt Thwarted",
+        "url": "https://unit42.paloaltonetworks.com/edr-bypass-extortion-attempt-thwarted/",
+        "themes": [
+          "byovd",
+          "edr-tamper",
+          "cobalt-strike",
+          "rclone-exfil",
+          "extortion"
+        ],
+        "notes": "Backs SIM-MP-012 (BYOVD sensor-tamper t0 stitched to Cobalt Strike C2 + rclone SFTP exfil, time-to-contain measured)."
+      },
+      {
+        "priority": "P0",
+        "title": "Threat Assessment: Howling Scorpius (Akira Ransomware)",
+        "url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
         "actor_aliases": [
-          "Bling Libra",
-          "ShinyHunters",
-          "Hazy Scorpius",
-          "CLOP",
-          "TeamPCP",
-          "TGR-CRI-1135",
-          "CL-CRI-1116",
-          "BlackFile"
+          "Akira ransomware group",
+          "Akira operators"
         ],
         "themes": [
-          "extortion-without-encryption",
-          "data-theft",
-          "vishing",
-          "supply-chain",
-          "saas",
-          "swatting",
-          "frontier-ai"
+          "ransomware-chain",
+          "esxi",
+          "vcenter",
+          "hypervisor-encryption"
         ],
-        "published": "2026-05-27",
-        "indexed": "2026-05-28",
-        "notes": "Thematic trends piece (encryption rate fell to 78% in 2025). New TTP angles: encryption-less double extortion, swatting as a physical-pressure technique (CL-CRI-1116 / BlackFile, now rebranded 'Redact'), TGR-CRI-1135 (TeamPCP) RaaS/EaaS partnerships + open-source Shai-Hulud release (May 13). Reinforces backlog candidate TTP-2026-0008 (TeamPCP). Bling Libra / ShinyHunters already tracked."
+        "notes": "Backs TTP-2026-0132 (SIM-EDR-019) — vCenter-to-ESXi hypervisor ransomware."
+      },
+      {
+        "priority": "P0",
+        "title": "The Gentlemen Ransomware: BYOVD EDR-Kill via ThrottleStop.sys",
+        "url": "https://unit42.paloaltonetworks.com/the-gentlemen-ransomware/",
+        "themes": [
+          "ransomware-chain",
+          "byovd",
+          "edr-evasion",
+          "endpoint"
+        ],
+        "notes": "Feeds SIM-EDR-021 — signed-vulnerable-driver EDR-kill behavioral ABIOC."
+      },
+      {
+        "priority": "P1",
+        "title": "Vidar Stealer + XMRig Miner Malvertising Campaign Analysis",
+        "url": "https://unit42.paloaltonetworks.com/vidar-stealer-xmrig-miner-campaign-analysis/",
+        "themes": [
+          "infostealer",
+          "cryptomining",
+          "malvertising",
+          "code-signing-abuse",
+          "resource-development"
+        ],
+        "notes": "Feeds SIM-TIM-005 — fake/rogue Authenticode code-signing thumbprint IOC (T1587.002)."
       }
     ],
     "cloud_identity": [
@@ -266,52 +267,143 @@
         ]
       },
       {
-        "priority": "P1",
-        "title": "The Global Namespace Risk: Universal Bucket Hijacking Technique for Cloud Data Exfiltration",
-        "url": "https://unit42.paloaltonetworks.com/cloud-bucket-hijacking-risks/",
+        "priority": "P0",
+        "title": "When AWS IAM Roles Anywhere Becomes an Attacker's Anywhere",
+        "url": "https://unit42.paloaltonetworks.com/aws-roles-anywhere/",
         "themes": [
-          "cloud-data-exfil",
-          "bucket-hijacking",
-          "global-namespace-squatting",
-          "aws-s3",
-          "iam-abuse",
-          "multi-cloud"
+          "aws-iam",
+          "roles-anywhere",
+          "trust-anchor",
+          "cross-account-persistence"
         ],
-        "published": "2026-06-22",
-        "indexed": "2026-06-26",
-        "notes": "Threat Research (author Yahav Festinger). After compromising a cloud environment and obtaining delete permissions, an attacker can delete a target storage bucket and immediately recreate one with the same name in their own account, redirecting the victim's data stream — abusing global bucket-name uniqueness across major CSPs. New cloud-exfil TTP angle (bucket hijacking / namespace squatting); mitigations: least-privilege on delete actions, AWS data-perimeter SCP / VPC-endpoint policies. No tracked actor; maps loosely to T1530 (Data from Cloud Storage Object), T1537 (Transfer Data to Cloud Account), T1074 (Data Staged). P1 — did NOT meet weekly-canvas draft-stub gate (not a P0 actor profile / anatomy / IR / active-exploitation advisory)."
+        "notes": "Backs SIM-CDR-017 (self-propagating Lambda escalation) and SIM-CDR-018 (trust-anchor abuse)."
+      },
+      {
+        "priority": "P0",
+        "title": "Threat Brief: Compromised Salesforce Instances via Drift OAuth Tokens",
+        "url": "https://unit42.paloaltonetworks.com/threat-brief-compromised-salesforce-instances/",
+        "actor_aliases": [
+          "Scattered Lapsus$ Hunters",
+          "Bling Libra",
+          "ShinyHunters"
+        ],
+        "themes": [
+          "saas",
+          "oauth-token-abuse",
+          "salesforce",
+          "bulk-api",
+          "data-exfil"
+        ],
+        "notes": "Backs SIM-CLOUD-006 (post-consent OAuth token abuse — Salesloft Drift)."
+      },
+      {
+        "priority": "P0",
+        "title": "IAM Roles in the Crosshairs: Compromised Cloud Workloads Abusing AssumeRole and IMDS",
+        "url": "https://unit42.paloaltonetworks.com/iam-roles-compromised-workloads/",
+        "themes": [
+          "aws-iam",
+          "assumerole",
+          "imds",
+          "passrole",
+          "privilege-escalation"
+        ],
+        "notes": "Backs SIM-CSPM-003 (IAM trust-policy/PassRole posture finding correlated to runtime AssumeRole+IMDS privesc)."
       },
       {
         "priority": "P1",
-        "title": "Blinding the Watchmen: Abusing Cloud Logging Services for Defense Evasion and Visibility",
-        "url": "https://unit42.paloaltonetworks.com/cloud-logging-defense-evasion/",
+        "title": "Threat Actor Misuse of AzureHound for Cloud-Identity Enumeration",
+        "url": "https://unit42.paloaltonetworks.com/threat-actor-misuse-of-azurehound/",
         "themes": [
-          "cloud-defense-evasion",
-          "aws-cloudtrail",
-          "cloud-logging",
-          "impair-defenses",
-          "anti-forensics",
-          "multi-cloud"
+          "entra-id",
+          "azuread",
+          "azurehound",
+          "graph-api",
+          "identity-enumeration",
+          "token-theft"
         ],
-        "published": "2026-06-09",
-        "indexed": "2026-06-29",
-        "notes": "GAP-WINDOW CATCH (published 2026-06-09, outside the 2026-06-22..2026-06-29 canvas window; surfaced during the Unit 42 homepage sweep and was missed by prior weekly canvases). Threat Research on attackers abusing cloud logging services (e.g., disabling/tampering CloudTrail and equivalent CSP logs) to evade detection and blind defenders. Distinct from the already-indexed defensive piece 'Novel Technique to Detect Cloud Threat Actor Operations' (tracking-threat-groups-through-cloud-logging) — this is the OFFENSIVE inverse. No tracked actor; maps to T1562 (Impair Defenses), specifically T1562.008 (Disable or Modify Cloud Logs), plus T1578 (Modify Cloud Compute Infrastructure). P1 index-only: T1562.008 would be NEW MITRE technique coverage for the corpus, so it does NOT qualify for an autonomous draft stub. OPERATOR REVIEW: (1) decide whether to author a cloud-defense-evasion TTP; (2) if so, T1562.008 is a new technique enum to add to corpus MITRE coverage."
+        "notes": "Backs SIM-MP-014 (token theft → non-interactive Entra sign-in → bulk Microsoft Graph discovery stitch)."
       },
       {
         "priority": "P1",
-        "title": "Double Agents: Exposing Security Blind Spots in GCP Vertex AI",
-        "url": "https://unit42.paloaltonetworks.com/double-agents-vertex-ai/",
+        "title": "BadSuccessor: dMSA Privilege Escalation in Windows Server 2025 Active Directory",
+        "url": "https://unit42.paloaltonetworks.com/badsuccessor-attack-vector/",
         "themes": [
-          "gcp-vertex-ai",
-          "agentic-ai",
-          "overprivileged-agent",
-          "cloud-privilege-escalation",
-          "data-exfil",
-          "ai-ml-pipeline"
+          "active-directory",
+          "dmsa",
+          "privilege-escalation",
+          "kerberos",
+          "on-prem-identity"
         ],
-        "published": "2026-03-31",
-        "indexed": "2026-07-05",
-        "notes": "STALE GAP-WINDOW CATCH (published 2026-03-31 by Ofir Shaty, ~3 months before the 2026-06-28..2026-07-05 window; surfaced during this week's cloud-IAM sweep, never indexed by prior canvases). Threat Research: a 'double agent' flaw in Google Cloud Vertex AI where overprivileged AI agents can compromise the cloud environment (agentic-AI privilege escalation + data exfiltration). Foundational companion to the already-indexed 'Pickle in the Middle — Hijacking Vertex AI Model Uploads' (hijacking-vertex-ai-model, 2026-06-16) — same Vertex-AI attack surface, earlier origin research; indexing improves cross-reference integrity. No tracked actor; maps loosely to T1078 (Valid Accounts), T1098 (Account Manipulation), T1530 (Data from Cloud Storage). Did NOT meet the weekly-canvas draft-stub gate (not a P0 actor profile / anatomy / IR / active-exploitation advisory; no tracked actor). OPERATOR REVIEW: decide whether to fold into a Vertex-AI / agentic-AI cloud TTP alongside the Pickle-in-the-Middle entry."
+        "notes": "Backs SIM-ITDR-013 (dMSA create + dual-attribute write + privileged-TGT lineage). On-prem AD identity, filed here as the nearest identity group."
+      },
+      {
+        "priority": "P0",
+        "title": "ROADtools and Cloud Attacks: Entra ID Token Abuse, Rogue Device Registration and PRT Theft",
+        "url": "https://unit42.paloaltonetworks.com/roadtools-cloud-attacks/",
+        "themes": [
+          "entra-id",
+          "token-abuse",
+          "prt-theft",
+          "rogue-device",
+          "roadtx"
+        ],
+        "notes": "Backs TTP-2026-0133 (SIM-ITDR-014) — ROADtools/roadtx Entra token abuse + rogue device registration."
+      },
+      {
+        "priority": "P0",
+        "title": "Muddled Libra's Evolution to the Cloud",
+        "url": "https://unit42.paloaltonetworks.com/muddled-libra-evolution-to-cloud/",
+        "actor_aliases": [
+          "Scattered Spider",
+          "UNC3944",
+          "Octo Tempest"
+        ],
+        "themes": [
+          "identity",
+          "okta",
+          "cloud",
+          "admin-takeover"
+        ],
+        "notes": "Backs TTP-2026-0134 (SIM-MP-016) — Okta admin takeover to cloud control-plane."
+      },
+      {
+        "priority": "P0",
+        "title": "Modern Kubernetes Threats: React2Shell Pod-RCE to Cloud Control-Plane Pivot (CVE-2025-55182)",
+        "url": "https://unit42.paloaltonetworks.com/modern-kubernetes-threats/",
+        "themes": [
+          "kubernetes",
+          "pod-rce",
+          "imds",
+          "cloud-control-plane",
+          "container-escape"
+        ],
+        "notes": "Backs TTP-2026-0136 (SIM-MP-017) — pod RCE to cloud control-plane via IMDS."
+      },
+      {
+        "priority": "P0",
+        "title": "Active Directory Certificate Services Exploitation (ESC1)",
+        "url": "https://unit42.paloaltonetworks.com/active-directory-certificate-services-exploitation/",
+        "themes": [
+          "identity",
+          "ad-cs",
+          "esc1",
+          "pkinit",
+          "privilege-escalation"
+        ],
+        "notes": "Feeds SIM-ITDR-017 — SAN-mismatch enrollment to PKINIT privileged auth ABIOC."
+      },
+      {
+        "priority": "P2",
+        "title": "Kubernetes Privilege Escalation: Container Escape to Cluster Admin",
+        "url": "https://unit42.paloaltonetworks.com/kubernetes-privilege-escalation/",
+        "themes": [
+          "cloud",
+          "kubernetes",
+          "container-escape",
+          "privilege-escalation",
+          "service-account"
+        ],
+        "notes": "Feeds TTP-2026-0162/SIM-CDR-025 (unusual pod exec) — analytics log-streamer k8s_audit_emitter ABIOC/Analytics cards over kubernetes_audit_logs."
       }
     ],
     "social_engineering": [
@@ -338,42 +430,31 @@
         ]
       },
       {
-        "priority": "P2",
-        "title": "Inside the Modern SOC: The 72-Minute Race",
-        "url": "https://unit42.paloaltonetworks.com/soc-72-minute-race/",
+        "priority": "P0",
+        "title": "Preventing the ClickFix Attack Vector",
+        "url": "https://unit42.paloaltonetworks.com/preventing-clickfix-attack-vector/",
         "themes": [
-          "identity-driven",
-          "soc-operations",
-          "mdr",
-          "managed-xsiam",
-          "incident-response-report"
+          "clickfix",
+          "pastejacking",
+          "runmru",
+          "user-execution",
+          "mshta",
+          "lumma-stealer"
         ],
-        "published": "2026-06-15",
-        "indexed": "2026-06-17",
-        "notes": "Insights / 'Inside the Modern SOC' series opener anchored on the 2026 Unit 42 Global IR Report (72-min access->exfil, 4x YoY; 65% identity-driven initial access; 87% multi-source investigations). Identity-driven attack narrative (Muddled Libra/Scattered Spider, Spoiled Scorpius/RansomHub). P2 index-only: sales/SOC-modernization narrative, no new actor or TTP. Useful POV stat anchor."
+        "notes": "Backs SIM-EDR-016 (RunMRU→explorer.exe-parented interpreter) and SIM-EDR-017 (mshta fetch → extrac32 CAB unpack → renamed AutoIt3 loader)."
       },
       {
-        "priority": "P1",
-        "title": "When \"Hi, This Is IT\" Comes Through Microsoft Teams",
-        "url": "https://unit42.paloaltonetworks.com/microsoft-teams-phishing/",
-        "actor_aliases": [
-          "Cloaked Ursa",
-          "APT29",
-          "Cozy Bear",
-          "Midnight Blizzard",
-          "UNC6692"
-        ],
+        "priority": "P0",
+        "title": "Meddler-in-the-Middle (AiTM) Phishing Attacks",
+        "url": "https://unit42.paloaltonetworks.com/meddler-phishing-attacks/",
         "themes": [
-          "collaboration-tool-phishing",
-          "microsoft-teams",
-          "help-desk-impersonation",
-          "mfa-fatigue",
-          "social-engineering",
-          "identity"
+          "phishing",
+          "aitm",
+          "session-token-theft",
+          "ato",
+          "email"
         ],
-        "published": "2026-06-08",
-        "indexed": "2026-06-30",
-        "notes": "GAP-WINDOW CATCH (published 2026-06-08, before the 2026-06-23..2026-06-30 canvas window; not indexed by prior weekly canvases, surfaced during this Unit 42 sweep). Insights/General hardening piece on chat-based social engineering via Microsoft Teams external chat: threat actors impersonate IT help desk from typosquatted/unmanaged M365 tenants to drive MFA approval. Stat anchor: collaboration-tool phishing rose to 42% of Cortex phishing alerts in first 4 months of 2026 (from 30%). Tracked actor in scope_seeds: Cloaked Ursa == APT29 == Midnight Blizzard; also references Mandiant UNC6692 (Dec 2025). Maps to T1566 (Phishing), T1656 (Impersonation), T1621 (MFA Request Generation). P1 reference — does NOT meet weekly-canvas draft-stub gate (Insights/hardening piece, not a P0 actor profile/anatomy/IR/active-exploitation advisory). OPERATOR REVIEW: decide whether to author a Teams help-desk-impersonation TTP; T1656/T1621 may be new MITRE technique coverage for the corpus."
+        "notes": "Feeds SIM-EMAIL-005 — AiTM session-token theft to mailbox-rule + device-registration ATO."
       }
     ],
     "supply_chain": [
@@ -398,85 +479,6 @@
           "supply-chain",
           "shai-hulud-worm"
         ]
-      },
-      {
-        "priority": "P1",
-        "title": "Trust No Skill: Integrity Verification for AI Agent Supply Chains",
-        "url": "https://unit42.paloaltonetworks.com/ai-agent-supply-chain-risks/",
-        "themes": [
-          "supply-chain",
-          "ai-agent-skills",
-          "credential-exfiltration",
-          "rce-chain",
-          "llm",
-          "openclaw"
-        ],
-        "published": "2026-06-11",
-        "indexed": "2026-06-17",
-        "notes": "Thematic Threat Research (Malware) introducing Behavioral Integrity Verification (BIV) for AI-agent skills; crawled 49,943 OpenClaw registry skills, 80% deviate from declared behavior, top-tier 5% carry multi-stage chains (FILE_READ->base64->NETWORK_SEND exfil; download->write->execute RCE). New supply-chain TTP angle (agent-skill registry). No new actor; maps loosely to T1195 Supply Chain Compromise + T1059 / T1041. Did NOT meet weekly-canvas draft-stub gate (not a P0 actor profile/anatomy/IR/active-exploitation advisory)."
-      },
-      {
-        "priority": "P1",
-        "title": "Pickle in the Middle — Hijacking Vertex AI Model Uploads for Cross-Tenant RCE",
-        "url": "https://unit42.paloaltonetworks.com/hijacking-vertex-ai-model/",
-        "themes": [
-          "supply-chain",
-          "gcp-vertex-ai",
-          "bucket-squatting",
-          "pickle-joblib-deserialization",
-          "cross-tenant-rce",
-          "ai-ml-pipeline"
-        ],
-        "published": "2026-06-16",
-        "indexed": "2026-06-20",
-        "notes": "Threat Research — Unit 42 found a Vertex AI Python SDK flaw: the model-upload helper resolved an attacker-registerable GCS staging bucket (bucket squatting), letting a malicious joblib/pickle model achieve cross-tenant RCE on Google-managed infrastructure. New AI/ML supply-chain TTP angle (model-artifact deserialization + bucket squatting). No tracked actor; maps loosely to T1195 (Supply Chain Compromise), T1525 (Implant Internal Image), T1059 (Command and Scripting Interpreter). P1 — did NOT meet weekly-canvas draft-stub gate (not a P0 actor profile/anatomy/IR/active-exploitation advisory)."
-      },
-      {
-        "priority": "P1",
-        "title": "OpenClaw's Skill Marketplace and the Emerging AI Supply Chain Threat",
-        "url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
-        "themes": [
-          "supply-chain",
-          "ai-agent-skills",
-          "clawhub",
-          "infostealer",
-          "agentic-financial-fraud",
-          "scanner-evasion",
-          "llm"
-        ],
-        "published": "2026-06-23",
-        "indexed": "2026-06-26",
-        "notes": "Threat Research (Malware). Unit 42 analysis of the ClawHub / OpenClaw skill marketplace found evasive malicious skills that bypass automated scanners to deploy infostealers and execute agentic financial fraud. Companion deep-dive to the indexed 'Trust No Skill' / Behavioral Integrity Verification piece (ai-agent-supply-chain-risks, 2026-06-11) — same AI-agent-skill-registry supply-chain surface, newer ClawHub case study. No tracked actor; maps loosely to T1195 (Supply Chain Compromise), T1059 (Command and Scripting Interpreter), T1041 (Exfiltration Over C2 Channel). P1 — did NOT meet weekly-canvas draft-stub gate (not a P0 actor profile / anatomy / IR / active-exploitation advisory)."
-      },
-      {
-        "priority": "P1",
-        "title": "Phantom Squatting: AI-Hallucinated Domains as a Software Supply Chain Vector",
-        "url": "https://unit42.paloaltonetworks.com/phantom-squatting-hallucinated-web-domains/",
-        "themes": [
-          "supply-chain",
-          "ai-hallucination",
-          "slopsquatting",
-          "llm",
-          "domain-registration",
-          "software-supply-chain"
-        ],
-        "published": "2026-07-01",
-        "indexed": "2026-07-01",
-        "notes": "IN-WINDOW new post (published 2026-07-01T01:00Z / June 30, 6:00 PM PT; authors Keerthiraj Nagaraj, Diva-Oriane Marty, Beliz Kaleli, Oleksii Starov). Threat Research: attackers exploit LLM domain hallucinations ('phantom squatting' / slopsquatting) by pre-registering non-existent domains that LLMs repeatedly hallucinate in generated code and output, turning AI coding assistants into a software-supply-chain vector. Extends the corpus's existing AI-supply-chain cluster (ai-agent-supply-chain-risks 2026-06-11, openclaw-ai-supply-chain-risk 2026-06-23, hijacking-vertex-ai-model 2026-06-16). No tracked actor; maps loosely to T1195 (Supply Chain Compromise), T1583.001 (Acquire Infrastructure: Domains), T1608 (Stage Capabilities). P1 thematic research with a new TTP angle — does NOT meet weekly-canvas draft-stub gate (not a P0 actor profile / anatomy / IR / active-exploitation advisory; no tracked actor; T1583.001 / T1608 would be new MITRE coverage). OPERATOR REVIEW: decide whether to author an AI-supply-chain 'phantom squatting' TTP; T1583.001 / T1608 are new technique enums for the corpus if so."
-      },
-      {
-        "priority": "P1",
-        "title": "Threat Brief: Widespread Impact of the Axios Supply Chain Attack",
-        "url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
-        "themes": [
-          "supply-chain",
-          "npm",
-          "threat-brief",
-          "widespread-impact"
-        ],
-        "published": "2026-04-01",
-        "indexed": "2026-07-05",
-        "notes": "STALE GAP-WINDOW CATCH (published 2026-04-01, ~3 months before the 2026-06-28..2026-07-05 canvas window; surfaced repeatedly during this week's Unit 42 domain-restricted sweeps and was never indexed by prior weekly canvases). Threat Brief (category: Malware) on the widespread impact of the Axios supply-chain attack. Indexed here to make the corpus index the durable system-of-record and stop weekly re-discovery. Fits the existing supply-chain cluster (teampcp-supply-chain-attacks, monitoring-npm-supply-chain-attacks). No tracked actor confirmed from search; maps loosely to T1195 (Supply Chain Compromise). Did NOT meet the weekly-canvas draft-stub gate (not a P0 actor profile / anatomy / IR / active-exploitation advisory; no tracked scope_seeds actor). OPERATOR REVIEW: (1) confirm publish date + actor attribution from the source; (2) decide whether to author a supply-chain TTP or leave index-only; (3) large stale gap suggests prior canvases were not sweeping the /category/malware/ and /threat-brief/ archives — consider adding those archive URLs to scrape_hints."
       }
     ],
     "rolling_threat_bulletins": [
@@ -493,123 +495,151 @@
         "url": "https://unit42.paloaltonetworks.com/threat-bulletin/october-2025/"
       }
     ],
-    "thematic_events": [
+    "edge_device_exploitation": [
       {
-        "priority": "P2",
-        "title": "2026 World Cup: Discussing The World's Biggest Game's Attack Surface",
-        "url": "https://unit42.paloaltonetworks.com/fifa-world-cup-attack-surface/",
+        "priority": "P0",
+        "title": "Zero-Day Vulnerabilities Affect Cisco ASA and FTD Software (ArcaneDoor / LINE VIPER)",
+        "url": "https://unit42.paloaltonetworks.com/zero-day-vulnerabilities-affect-cisco-software/",
         "themes": [
-          "event-driven",
-          "attack-surface",
-          "phishing",
-          "fraud",
-          "industry-sports"
+          "edge-appliance",
+          "cisco-asa",
+          "ftd",
+          "webvpn",
+          "telemetry-collapse",
+          "c2"
         ],
-        "published": "2026-05-28",
-        "indexed": "2026-06-01",
-        "notes": "Strategic / thematic piece on the 2026 FIFA World Cup attack surface (host: US/Canada/Mexico). No new actor or TTP introduced; useful as cross-reference for event-driven phishing, scam-site, and customer/sponsor brand-impersonation use cases. P2 (index-only). Does not meet weekly-canvas draft-stub gate (not a P0 actor profile / anatomy-of-attack / IR report / active-exploitation advisory)."
+        "notes": "Backs SIM-NDR-010 (edge-appliance telemetry collapse + WebVPN-session C2)."
+      },
+      {
+        "priority": "P0",
+        "title": "Threat Brief: Ivanti Connect Secure CVE-2025-0282 and CVE-2025-0283",
+        "url": "https://unit42.paloaltonetworks.com/threat-brief-ivanti-cve-2025-0282-cve-2025-0283/",
+        "themes": [
+          "edge-appliance",
+          "ivanti-connect-secure",
+          "pre-auth-overflow",
+          "spawn-family",
+          "pivot"
+        ],
+        "notes": "Backs SIM-MP-010 (Ivanti Connect Secure pre-auth IFT overflow to internal Windows pivot)."
+      },
+      {
+        "priority": "P0",
+        "title": "Active Exploitation of PAN-OS GlobalProtect CVE-2026-0257",
+        "url": "https://unit42.paloaltonetworks.com/active-exploitation-of-pan-os-cve-2026-0257/",
+        "themes": [
+          "edge-appliance",
+          "pan-os",
+          "globalprotect",
+          "auth-bypass",
+          "client-fingerprint"
+        ],
+        "notes": "Backs SIM-ITDR-012 (GlobalProtect authentication bypass with hard-coded PoC client fingerprints)."
+      },
+      {
+        "priority": "P0",
+        "title": "CL-UNK-1068 Targets Critical Sectors: Web Shell to In-Memory Mimikatz, Reg-Hive Theft and FRP Lateral Tunnel",
+        "url": "https://unit42.paloaltonetworks.com/cl-unk-1068-targets-critical-sectors/",
+        "themes": [
+          "web-shell",
+          "mimikatz",
+          "registry-hive",
+          "frp",
+          "lateral-movement"
+        ],
+        "notes": "Backs TTP-2026-0135 (SIM-EDR-020) — web shell to in-memory credential theft + FRP tunnel."
+      },
+      {
+        "priority": "P0",
+        "title": "Microsoft WSUS Deserialization RCE (CVE-2025-59287)",
+        "url": "https://unit42.paloaltonetworks.com/microsoft-cve-2025-59287/",
+        "themes": [
+          "rce",
+          "deserialization",
+          "wsus",
+          "exposure-to-rce",
+          "asm"
+        ],
+        "notes": "Feeds SIM-ASM-005 — internet-exposed WSUS exposure-to-RCE to domain recon to webhook exfil."
       }
     ],
-    "cross_referenced_tier3": [
+    "ai_agent_threats": [
       {
-        "priority": "P1",
-        "title": "#StopRansomware: Akira Ransomware — Updated Joint Advisory (CISA/FBI/DC3/HHS + intl partners)",
-        "url": "https://www.cisa.gov/news-events/news/cisa-fbi-and-partners-unveil-critical-guidance-protect-against-akira-ransomware-threat",
-        "source_id": "SRC-CISA",
-        "actor_aliases": [
-          "Akira",
-          "Howling Scorpius"
-        ],
+        "priority": "P0",
+        "title": "Model Context Protocol (MCP) Attack Vectors: Sampling Abuse",
+        "url": "https://unit42.paloaltonetworks.com/model-context-protocol-attack-vectors/",
         "themes": [
-          "ransomware-chain",
-          "esxi",
-          "data-exfil",
-          "joint-advisory"
+          "mcp",
+          "agentic",
+          "sampling-abuse",
+          "server-initiated-inference",
+          "quota-theft"
         ],
-        "published": "2026-05-26",
-        "indexed": "2026-05-28",
-        "notes": "Tier-3 cross-reference (not a Unit 42 post). Updated joint advisory with new Akira IOCs + TTPs. Relates to TTPs we already track: TTP-2026-0006 (ESXi mass encryption) and TTP-2026-0005 (rclone bulk exfil). Akira is in scope_seeds.malware_families; operator-tracked actor Howling Scorpius operates Akira RaaS."
+        "notes": "Backs SIM-KOI-007 (MCP sampling abuse — server-initiated inference)."
+      },
+      {
+        "priority": "P0",
+        "title": "Web-Based Indirect Prompt Injection Against Browsing AI Agents",
+        "url": "https://unit42.paloaltonetworks.com/ai-agent-prompt-injection/",
+        "themes": [
+          "ai-agent",
+          "browser",
+          "indirect-prompt-injection",
+          "dom-hidden-payload"
+        ],
+        "notes": "Backs SIM-BROWSER-006 (web-based indirect prompt injection against browsing AI agents)."
       },
       {
         "priority": "P1",
-        "title": "Alert: NCSC issues advice following global targeting of Fortinet firewalls and VPN gateways",
-        "url": "https://www.ncsc.gov.uk/news/advice-following-global-targeting-of-fortinet-firewalls-and-vpn-gateways",
-        "source_id": "SRC-NCSC-UK",
-        "actor_aliases": [
-          "unnamed IAB (Exploit.in)"
-        ],
+        "title": "The SOC's 72-Minute Race: AI-Driven Triage and Containment",
+        "url": "https://unit42.paloaltonetworks.com/soc-72-minute-race/",
         "themes": [
-          "credential-theft",
-          "fortibleed",
-          "edge-device",
-          "credential-stuffing",
-          "password-spraying",
-          "brute-force",
-          "valid-accounts"
+          "ai-soc",
+          "triage",
+          "incident-scoring",
+          "summarization",
+          "defensive-ai"
         ],
-        "published": "2026-06-18",
-        "indexed": "2026-06-23",
-        "notes": "Tier-3 cross-reference (UK NCSC alert, not a Unit 42 post). Corroborates the indexed Unit 42 'FortiBleed' credential_attacks entry (large-scale-credential-attacks, published 2026-06-19): a threat actor leaked a credential database after brute-force / dictionary / credential-stuffing attempts against internet-facing FortiGate SSL-VPN portals, with potential UK impact. TTP angles: T1110 / T1110.003 (Brute Force / Password Spraying), T1110.004 (Credential Stuffing), T1078 (Valid Accounts), edge-device persistence. NOTE: relates to an INDEXED topic (FortiBleed) that is NOT yet an active TTP-YYYY-NNNN entry — it remains parked for operator review (unnamed IAB not in scope_seeds; T1110 password-spraying not yet in corpus MITRE coverage). Appended as corroborating government signal; strengthens the case to author a FortiBleed/password-spraying TTP."
+        "notes": "Defensive AI-SOC narrative (AI-as-defender, not attack surface). Backs SIM-MP-015 (triage discrimination under decoy noise) and SIM-EDR-018 (AI SOC summarization accuracy & latency)."
+      },
+      {
+        "priority": "P0",
+        "title": "Double Agents: Exploiting the Trust in Vertex AI Agents",
+        "url": "https://unit42.paloaltonetworks.com/double-agents-vertex-ai/",
+        "themes": [
+          "vertex-ai",
+          "agent-hijack",
+          "ai-supply-chain",
+          "gcp"
+        ],
+        "notes": "Backs TTP-2026-0139 (SIM-AISPM-007) — GCP Vertex AI double-agent deployment."
       }
     ],
-    "detection_engineering": [
+    "dns_threat_intel": [
+      {
+        "priority": "P0",
+        "title": "Strategically Aged Domain Detection: Capture APT Attacks With DNS Traffic Trends",
+        "url": "https://unit42.paloaltonetworks.com/strategically-aged-domain-detection/",
+        "themes": [
+          "dns",
+          "aged-domains",
+          "sleeper-domain",
+          "dga",
+          "threat-intel"
+        ],
+        "notes": "Backs SIM-TIM-003 (strategically aged sleeper-domain activation — dormancy-break burst)."
+      },
       {
         "priority": "P1",
-        "title": "Tracing Digital Intent: New MacOS Tahoe 26 Artifact Discovered",
-        "url": "https://unit42.paloaltonetworks.com/new-macos-artifact-discovered/",
+        "title": "Graph Neural Networks for Adversary Infrastructure Clustering",
+        "url": "https://unit42.paloaltonetworks.com/graph-neural-networks/",
         "themes": [
-          "digital-forensics",
-          "macos",
-          "data-exfil",
-          "anti-forensics",
-          "detection-data-source"
+          "threat-intel",
+          "infrastructure-pivot",
+          "tls-fingerprint",
+          "clustering"
         ],
-        "published": "2026-06-12",
-        "indexed": "2026-06-17",
-        "notes": "New macOS Tahoe 26 forensic artifact: the App.MenuItem Biome stream (~/Library/Biome/streams/restricted/App.MenuItem/local, SEGB protobuf) logs user menu selections, reconstructing intent (Compress -> Move to Trash -> Empty Trash). Detection/IR data source for data staging (T1074), archive-collected (T1560), and indicator removal / anti-forensics (T1070). Parse with ccl-segb. No new actor/TTP -> P1 reference for macOS data-exfil detection. New 'detection_engineering' group created for detection-relevant research."
-      }
-    ],
-    "credential_attacks": [
-      {
-        "priority": "P0",
-        "title": "Threat Brief: Mitigating Large-Scale Credential Attacks (\"FortiBleed\")",
-        "url": "https://unit42.paloaltonetworks.com/large-scale-credential-attacks/",
-        "actor_aliases": [
-          "unnamed IAB (Exploit.in)"
-        ],
-        "themes": [
-          "credential-theft",
-          "password-spraying",
-          "fortibleed",
-          "edge-device",
-          "valid-accounts",
-          "offline-cracking"
-        ],
-        "published": "2026-06-19",
-        "indexed": "2026-06-20",
-        "notes": "High Profile Threats threat brief on a large-scale password-spraying + credential-theft campaign ('FortiBleed') against internet-exposed Fortinet, Sophos, and MSSQL services; multi-stage (spray -> config/credential extraction via priv-esc -> offline cracking -> persistent admin access). An initial access broker on Russian-language forum Exploit[.]in claimed the campaign and began selling harvested credentials on 2026-06-16, referencing an unspecified CVE. Not targeting PANW devices; Unit 42 published out of an abundance of caution with hardening/MFA/ZTNA guidance. Maps to T1110 / T1110.003 (Brute Force / Password Spraying), T1078 (Valid Accounts), T1003 (credential extraction from device config). P0 active-exploitation advisory, but does NOT meet weekly-canvas draft-stub gate: the threat actor is an unnamed IAB not in scope_seeds.actors. OPERATOR REVIEW: (1) decide whether to add an actor/cluster label once Unit 42 names it; (2) confirm whether T1110 password-spraying warrants new MITRE technique coverage in the corpus."
-      }
-    ],
-    "vulnerabilities": [
-      {
-        "priority": "P0",
-        "title": "Threat Brief: Active Exploitation of PAN-OS CVE-2026-0257",
-        "url": "https://unit42.paloaltonetworks.com/active-exploitation-of-pan-os-cve-2026-0257/",
-        "actor_aliases": [
-          "unidentified threat actor"
-        ],
-        "themes": [
-          "edge-device",
-          "authentication-bypass",
-          "globalprotect",
-          "pan-os",
-          "exploit-public-facing-application",
-          "kev",
-          "initial-access"
-        ],
-        "published": "2026-06-05",
-        "indexed": "2026-06-30",
-        "notes": "GAP-WINDOW CATCH (published 2026-06-05, before the 2026-06-23..2026-06-30 canvas window; not indexed by prior weekly canvases, surfaced during this Unit 42 sweep). P0 active-exploitation advisory: Unit 42 observed in-the-wild exploitation of PAN-OS CVE-2026-0257, an authentication bypass in the GlobalProtect portal/gateway allowing unauthorized VPN connections; added to CISA KEV on 2026-05-29. No post-access/lateral movement observed as of publication; IOC set is IPs + spoofed host IDs/device names from PoC. New 'vulnerabilities' group created for active-exploitation advisories. Maps to T1190 (Exploit Public-Facing Application), T1133 (External Remote Services). Does NOT meet weekly-canvas draft-stub gate: threat actor is unidentified (not in scope_seeds.actors) and T1190/T1133 require corpus-coverage confirmation. OPERATOR REVIEW: (1) confirm whether T1190/T1133 are already in corpus MITRE coverage; (2) decide whether to author an edge-device-exploitation initial-access TTP (note: this is a PANW-product CVE — frame carefully for POV use)."
+        "notes": "Feeds SIM-TIM-004 — self-signed TLS thumbprint infrastructure-pivot IOC cluster."
       }
     ]
   },

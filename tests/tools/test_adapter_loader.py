@@ -48,6 +48,18 @@ def _minimal_tier4(**overrides) -> dict:
         "install": {
             "runtime_install_command": "true",
             "binary": "true",
+            # TA-13: a tier-4 pack must say whether the payload shelf serves it.
+            # The smallest VALID tier-4 adapter therefore carries one of
+            # install.artifact / install.artifact_exempt — the rule exists so
+            # "nobody decided" is unrepresentable, and a fixture that could skip
+            # it would be asserting a shape the loader rejects.
+            "artifact_exempt": {
+                "reason_code": "DISTRO_PACKAGE",
+                "reason": (
+                    "Fixture tool installs from the operating system's package "
+                    "repository, so it needs internet access on the target host."
+                ),
+            },
         },
         "invoke": {
             "target_platform": "linux",
@@ -110,6 +122,9 @@ class TestSchemaValidation:
         from tools.adapter_loader import ToolAdapterSchema  # noqa: PLC0415
 
         d = _minimal_tier4(tier=3)
+        # Drop the tier-4-only shelf declaration, or TA-15 fires first and this
+        # stops exercising the iac_module rule it names.
+        d["install"].pop("artifact_exempt")
         # tier 4 install block has no iac_module; tier 3 requires it.
         with pytest.raises(ValidationError, match="install.iac_module"):
             ToolAdapterSchema(**d)

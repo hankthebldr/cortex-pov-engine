@@ -1,5 +1,20 @@
 # Spec: Detection_scanner → Wiki Integration
 
+> ## STATUS: PROPOSED — never implemented
+>
+> Verified 2026-07-31. `.github/workflows/wiki-sync.yml` exists but syncs
+> `docs/wiki/**` only; it was never extended to crawl `detection_scanner/`, and
+> no card carries the frontmatter this spec defines. The folder also shipped as
+> `detection_scanner/` (lowercase), not `Detection_scanner/`.
+>
+> The corpus is instead surfaced through the TTP browser API (`/api/ttps`), the
+> deterministic exports under `detection_scanner/exports/`, and
+> [`docs/reference/scenario-catalog.md`](../reference/scenario-catalog.md).
+>
+> Kept as an unbuilt design proposal — delete it if the wiki-publish idea is
+> dead, or implement it. Do not read it as a description of current behaviour.
+
+
 > Dated 2026-05-08.
 > Purpose: define the **path** by which scheduled-research documents
 > dropped into `Detection_scanner/` flow into the GitHub wiki without

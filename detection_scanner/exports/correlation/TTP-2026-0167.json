@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1071.001",
+    "T1048",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(NGFW EAL \u2014 Abnormal Recurring Communications to a Rare Domain) AND ABIOC(NGFW EAL \u2014 Massive Upload to a Rare Storage or Mail Domain) \u2014 fuses the recurring rare-domain HTTPS beacon and the subsequent massive upload from the same NGFW EAL source host (src) into one beacon-then-exfil incident anchored to that shared source host: recurring rare-domain callbacks over 443 lead to a large then massive bytes_sent upload to a fleet-rare storage or mail domain from the same source host, surviving destination/IP rotation that defeats any static IOC.",
+      "name": "NGFW EAL Rare-Domain Beacon then Massive Upload \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-NDR-0012",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0167"
+}

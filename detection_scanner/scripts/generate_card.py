@@ -427,15 +427,15 @@ def _scenario_to_card(scenario: dict, ttp_id: str) -> dict:
         },
         "panw_mapping": {
             "products": panw_products,
-            "use_cases": [{
+            "threat_scenarios": [{
                 # UC / TC ids must match ^UC-[A-Z0-9]+-[0-9]{3}$ and
                 # ^TC-[A-Z0-9]+-[0-9]{3}[A-Z]?$ per the corpus schema —
                 # use the trailing 3 digits of the TTP id.
-                "use_case_id": f"UC-{_uc_domain_for_plane(plane)}-{ttp_id.split('-')[-1][-3:]}",
+                "threat_scenario_id": f"TS-{_uc_domain_for_plane(plane)}-{ttp_id.split('-')[-1][-3:]}",
                 "name": scenario.get("uc_name", "TBD"),
                 "description": scenario.get("uc_name", "TBD"),
-                "test_cases": [{
-                    "test_case_id": f"TC-{_uc_domain_for_plane(plane)}-{ttp_id.split('-')[-1][-3:]}A",
+                "threat_steps": [{
+                    "threat_step_id": f"TS-{_uc_domain_for_plane(plane)}-{ttp_id.split('-')[-1][-3:]}A",
                     "objective": "TBD — author concrete pass/fail criteria",
                     "success_criteria": ["TBD — author at least one verifiable success criterion"],
                     "expected_score_weight": 1.0,

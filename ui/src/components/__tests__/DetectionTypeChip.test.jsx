@@ -20,6 +20,8 @@ describe('detectionTypeToken', () => {
     expect(detectionTypeToken('Correlation')).toBe('correlation')
     expect(detectionTypeToken('analytics')).toBe('analytics')
     expect(detectionTypeToken('IOC')).toBe('ioc')
+    expect(detectionTypeToken('ABIOC')).toBe('abioc')
+    expect(detectionTypeToken('abioc')).toBe('abioc')
   })
 
   it('resolves common aliases', () => {
@@ -43,6 +45,7 @@ describe('DetectionTypeChip', () => {
       ['Analytics',   'Analytics',   'det-chip--analytics'],
       ['correlation', 'Correlation', 'det-chip--correlation'],
       ['IOC',         'IOC',         'det-chip--ioc'],
+      ['ABIOC',       'ABIOC',       'det-chip--abioc'],
     ]
     for (const [type, label, cls] of cases) {
       const { container, unmount } = render(<DetectionTypeChip type={type} />)

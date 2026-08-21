@@ -24,6 +24,16 @@ safety_class: safe
 install:
   runtime_install_command: "command -v nuclei >/dev/null 2>&1 || (curl -sSL https://github.com/projectdiscovery/nuclei/releases/download/v3.2.9/nuclei_3.2.9_linux_amd64.zip -o /tmp/nuclei.zip && unzip -o /tmp/nuclei.zip -d /usr/local/bin/ && chmod +x /usr/local/bin/nuclei)"
   binary: nuclei
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: NEEDS_RUNTIME_DATA
+    reason: >-
+      Nuclei is inert without its template repository, which it clones from
+      GitHub on first run. Staging only the binary would remove the install
+      download while leaving the template download in place — so the target
+      would still need internet access, and CortexSim would report the
+      scenario as air-gapped when it is not. This tool needs internet access
+      on the target host.
 
 invoke:
   target_platform: linux

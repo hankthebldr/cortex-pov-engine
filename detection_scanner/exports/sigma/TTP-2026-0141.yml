@@ -1,0 +1,174 @@
+title: "Internal AD Kill-Chain: Poisoning \u2192 Offline Crack \u2192 Credential Validation \u2192 WinRM Lateral (SIM-ITDR-015) \u2014 ITDR-015 Null-Session Directory Enumeration Against Domain Controller"
+id: ttp-2026-0141-bioc-01
+status: experimental
+description: |
+  A single source host issues a burst of SAMR/LSARPC directory-object reads against a Domain Controller (users, groups, domain policy) consistent with enum4linux-ng AD enumeration. The CGO here is the operator recon shell on the attacker foothold; this is the opening move of the kill chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id in (4661, 4662) and object_type in ("SAM_USER", "SAM_GROUP", "SAM_DOMAIN")
+    | comp count() as dir_reads, count_distinct(object_name) as objects by ip_address, account_name
+    | filter objects >= 10
+    | fields ip_address, account_name, dir_reads, objects
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Internal AD Kill-Chain: Poisoning \u2192 Offline Crack \u2192 Credential Validation \u2192 WinRM Lateral (SIM-ITDR-015) \u2014 ITDR-015 SMB Share Enumeration And Permission Mapping"
+id: ttp-2026-0141-bioc-02
+status: experimental
+description: |
+  A single source enumerates many SMB shares and maps their read/write permissions on the lab file/DC hosts (smbmap), a share-discovery burst that widens the attacker's picture of reachable data before credential capture.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id in (5140, 5145)
+    | comp count_distinct(share_name) as shares, count() as accesses by ip_address, account_name
+    | filter shares >= 5
+    | fields ip_address, account_name, shares, accesses
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1135/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1135
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Internal AD Kill-Chain: Poisoning \u2192 Offline Crack \u2192 Credential Validation \u2192 WinRM Lateral (SIM-ITDR-015) \u2014 ITDR-015 Offline Credential-Cracking Tool Execution With Recon-Shell Lineage"
+id: ttp-2026-0141-bioc-03
+status: experimental
+description: |
+  An offline password-cracking binary (john or hashcat) executes on the attacker foothold with its causality actor rooted in the operator recon shell (or the responder capture process) — the offline-crack leg of the chain. Keying on causality_actor_process_command_line ties the crack to the same lineage that ran the enumeration and poisoning.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("john", "hashcat")
+    | filter causality_actor_process_image_name in ("bash", "zsh", "sh", "responder")
+    | fields agent_hostname, actor_effective_username, causality_actor_process_command_line, causality_actor_process_image_name, action_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Internal AD Kill-Chain: Poisoning \u2192 Offline Crack \u2192 Credential Validation \u2192 WinRM Lateral (SIM-ITDR-015) \u2014 ITDR-015 Compromised-Account Authentication From Attacker Foothold"
+id: ttp-2026-0141-bioc-04
+status: experimental
+description: |
+  The cracked domain credential is replayed from the attacker foothold IP, producing successful network logons across two or more distinct domain hosts in a short window (netexec validation spray). Same-source, single-account fan-out across hosts is the credential-validation signature bridging the crack to lateral movement.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4624 and logon_type = 3
+    | comp count_distinct(computer_name) as hosts, count() as logons by ip_address, account_name
+    | filter hosts >= 2
+    | fields ip_address, account_name, hosts, logons
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Internal AD Kill-Chain: Poisoning \u2192 Offline Crack \u2192 Credential Validation \u2192 WinRM Lateral (SIM-ITDR-015) \u2014 ITDR-015 WinRM Lateral Movement Landing Remote Shell"
+id: ttp-2026-0141-bioc-05
+status: experimental
+description: |
+  A WinRM service host (wsmprovhost.exe) spawns an interactive shell (cmd.exe/powershell.exe) on a domain host — the endpoint-side landing of an evil-winrm lateral session. causality_actor_process_image_name = wsmprovhost.exe is the stitch between the inbound WinRM network session and the remote shell it lands.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = "wsmprovhost.exe"
+    | filter action_process_image_name in ("cmd.exe", "powershell.exe", "conhost.exe")
+    | fields agent_hostname, causality_actor_process_command_line, action_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Internal AD Kill-Chain: Poisoning \u2192 Offline Crack \u2192 Credential Validation \u2192 WinRM Lateral (SIM-ITDR-015) \u2014 ITDR-015 Rogue LLMNR And NBT-NS Responder With NetNTLMv2 Capture"
+id: ttp-2026-0141-abioc-06
+status: experimental
+description: |
+  A host on the segment begins authoritatively answering LLMNR (UDP 5355) and NBT-NS (UDP 137) broadcast name queries for names it has never legitimately owned, then receives inbound NetNTLMv2 authentication — the behavioral signature of a rogue Responder poisoning names to harvest hashes. The ABIOC anchors on the learned per-host name-resolution baseline: the responder host deviates by suddenly resolving a spike of distinct names.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_local_port in (137, 5355) or action_remote_port in (137, 5355)
+    | comp count() as name_responses, count_distinct(dns_query_name) as names by agent_hostname, action_local_ip
+    | filter name_responses >= 10 and names >= 5
+    | fields agent_hostname, action_local_ip, name_responses, names
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1557/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1557.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

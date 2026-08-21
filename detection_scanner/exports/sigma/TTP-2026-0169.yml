@@ -1,0 +1,129 @@
+title: "AI SOC at Volume \u2014 Labelled 800-Alert Corpus Measures Grouping Collapse, Triage Precision/Recall and Disposition Latency \u2014 Credential-Harvest Phishing Link Delivered and Clicked by a Corporate Recipient"
+id: ttp-2026-0169-bioc-01
+status: experimental
+description: |
+  The malicious arc's initial access: a spearphishing message carrying a credential-harvest link is delivered and the recipient clicks it. Anchored to the recipient so the whole downstream chain shares one normalized principal — that shared key is what grouping is being measured on.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = proofpoint_tap_raw
+    | filter cortexsim_run_tag = "MP021" and cortexsim_label = "malicious"
+    | filter threat_type = "url" and click_permitted = true
+    | comp count() as clicks by recipient, sender, url_host, campaign_id
+    | filter clicks >= 1
+    | sort desc clicks
+    | fields recipient, sender, url_host, campaign_id, clicks
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1566/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1566.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AI SOC at Volume \u2014 Labelled 800-Alert Corpus Measures Grouping Collapse, Triage Precision/Recall and Disposition Latency \u2014 Office Parent Spawning an Encoded PowerShell Downloader"
+id: ttp-2026-0169-bioc-02
+status: experimental
+description: |
+  Second stage of the malicious arc. The signal is the parent-child lineage plus the encoded command line, not the PowerShell binary — PowerShell itself is legitimate and firing on it is precisely the false positive the benign floor is testing for.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter cortexsim_run_tag = "MP021"
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("winword.exe", "excel.exe", "outlook.exe")
+    | filter action_process_image_name = "powershell.exe"
+    | filter action_process_image_command_line contains "-enc" or action_process_image_command_line contains "-EncodedCommand"
+    | comp count() as spawns by agent_hostname, causality_actor_process_image_name, action_process_username, causality_id
+    | filter spawns >= 1
+    | fields agent_hostname, causality_actor_process_image_name, action_process_username, causality_id, spawns
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AI SOC at Volume \u2014 Labelled 800-Alert Corpus Measures Grouping Collapse, Triage Precision/Recall and Disposition Latency \u2014 Multi-Stage Intrusion Chain Elevated Above a High-Volume Benign Alert Floor"
+id: ttp-2026-0169-abioc-03
+status: experimental
+description: |
+  The true-positive elevation claim, measured under load rather than in isolation. Auto-tuned behavioral ML must fuse four stages that arrive amid several hundred near-miss benign alerts and rank the resulting incident above every one of them. Keyed on the shared causality_id and the normalized principal, so the chain is elevated because it is causally connected, not because any single stage looked loud.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter cortexsim_run_tag = "MP021" and cortexsim_label = "malicious"
+    | filter event_type = ENUM.PROCESS or event_type = ENUM.STORY
+    | comp count_distinct(mitre_technique_id_and_name) as stages, count() as signals, min(_time) as first_seen, max(_time) as last_seen by causality_id, causality_actor_process_image_name, action_process_username
+    | filter stages >= 3
+    | sort desc stages
+    | fields causality_id, causality_actor_process_image_name, action_process_username, stages, signals, first_seen, last_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1566/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1566.002
+    - attack.t1059.001
+    - attack.t1021.001
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "AI SOC at Volume \u2014 Labelled 800-Alert Corpus Measures Grouping Collapse, Triage Precision/Recall and Disposition Latency \u2014 Automation Identity Deviating From Its Own Learned Job Envelope Under Corpus Load"
+id: ttp-2026-0169-abioc-04
+status: experimental
+description: |
+  The hard positive, and the item that separates a tuned platform from a loud one. A backup automation identity whose learned envelope is a fixed nightly window over a fixed share set suddenly archives a different share set outside that window and then egresses. It shares no principal, host or causality chain with the malicious arc, so a platform that elevates everything anomalous will wrongly merge it into that incident, and a platform that blanket-suppresses automation noise will miss it entirely. Both are failures and both are visible in the confusion matrix.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter cortexsim_run_tag = "MP021" and cortexsim_label = "hard_positive"
+    | filter event_type = ENUM.PROCESS and action_process_username = "svc-backup"
+    | alter run_hour = extract_time(_time, "HOUR")
+    | comp count_distinct(action_file_path) as share_paths, count() as ops, min(run_hour) as earliest_hour, max(run_hour) as latest_hour by agent_hostname, action_process_username, causality_id
+    | filter share_paths >= 3
+    | sort desc share_paths
+    | fields agent_hostname, action_process_username, causality_id, share_paths, ops, earliest_hour, latest_hour
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

@@ -1,0 +1,165 @@
+# POS-KSPM-003 — did the admission controller REFUSE the non-compliant workloads
+# at deploy time, while admitting the compliant control?
+#
+# The interesting shape: the PASSING case is a REFUSED deploy. A kubectl apply
+# that returns 403 is the proof. That inverts the usual direction and it is
+# honestly measurable, because a denied admission request is written to the
+# Kubernetes audit log (audit.k8s.io/v1) with responseStatus.code: 403.
+#
+# THE FIXTURE IS THE GENERATED MANIFEST SET — no hand-written parallel fixture
+# that could drift from what the k8s_manifest builder emits. The operator
+# generates `?format=k8s` (with node_access consent) for the two privileged CDR
+# scenarios and applies them; SIM-CDR-015's driver additionally `kubectl run`s a
+# privileged probe pod from inside the cluster. The compliant control is the
+# ungated SIM-CDR-001 Deployment. See docs/reference/k8s-delivery.md §2/§9.
+#
+# THE JOIN KEY IS OURS, NOT THE PRODUCT'S. chk-01 keys on responseStatus.code +
+# our namespace prefix (cortexsim-), never on a Cortex-specific webhook name we
+# would have to guess — a guessed webhook name returns zero rows and reports a
+# correct platform as FAILED. Attribution to Cortex specifically is a stated
+# scope limitation, confirmed against a live tenant on first run.
+assertion_id: POS-KSPM-003
+name: Kubernetes admission controller enforcement — six-way refuse, one admit
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CDR
+
+uc_ref: UCS-KSPM-03
+tc_ref: TC-KSPM-03
+tc_refs: [TC-KSPM-03]
+uc_name: "Kubernetes Security Posture Management (KSPM)"
+tc_name: "Validate Admission Controller Enforcement"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "Admission Enforcement Recall"
+success_criteria: |
+  Every structurally-distinct policy-violating workload the fixture applies is
+  REFUSED (403) at the API server before scheduling, AND the compliant control
+  is ADMITTED (200/201) without disruption — prevention at deploy time, in one
+  audit-log window.
+
+# ─── MANDATORY: what this does NOT prove (A-19) ──────────────────────────────
+scope_limitations: >
+  Proves that an admission plugin denied the fixture's distinct privileged /
+  host-namespace workloads at the API server (verb=create, responseStatus.code
+  403) and admitted one compliant control, in the same lookback window. It does
+  NOT attribute the denial to Cortex Cloud's admission controller specifically:
+  Kubernetes Pod Security Admission produces an identical 403 shape, so
+  responseStatus.message or the admission.k8s.io audit annotation naming the
+  webhook must be confirmed against a live tenant on first run and the filter
+  narrowed. It IS, however, provably NOT stock namespace-PSA in this fixture —
+  the privileged scenarios' namespaces are emitted with
+  pod-security.kubernetes.io/enforce=privileged (the manifest opts OUT of
+  namespace PSA), so a 403 on those workloads cannot be namespace PSA and must
+  be a cluster-scoped webhook or ValidatingAdmissionPolicy; the remaining
+  ambiguity is Cortex Cloud vs a customer's own Kyverno/OPA/Gatekeeper. It does
+  NOT prove the index's third clause (sanctioned policy exceptions passing WITH
+  an audit record) — that needs a policy-exception WRITE, outside the read-only
+  charter. It does NOT measure enforcement latency or behaviour under concurrent
+  admission load. Because the generator uses FIXED namespaces (cortexsim-<id>),
+  there is no per-run nonce in the object names, so the lookback window is the
+  only freshness guard: a prior apply of the same fixture inside the window also
+  counts — keep lookback_seconds just past this run's apply time. A Deployment's
+  pod-spec denials are raised asynchronously against the ReplicaSet controller's
+  pods (random pod names, so chk-01 counts distinct NAMESPACES not names);
+  SIM-CDR-015's direct `kubectl run` probe is the only synchronously-attributed
+  denial. Requires the cluster's audit log to be ingested into
+  kubernetes_audit_logs; a tenant not shipping K8s audit resolves
+  PROBE_QUERY_FAILED -> pending, never a benign pass. The dataset record shape is
+  upstream-standardised (audit.k8s.io/v1) so only the dataset NAME is uncertain,
+  not the fields — a wrong name errors the query to pending, which is honest.
+
+stimulus:
+  kind: iac_fixture
+  detail: >
+    With node_access consent, generate `?format=k8s` for SIM-CDR-003 (privileged
+    + hostPID + hostPath:/ Deployment) and SIM-CDR-012 (privileged / run-as-root
+    / hostPath / no-limits Deployment) and `kubectl apply` both into a cluster
+    whose Cortex Cloud admission controller is in ENFORCE (not audit/monitor)
+    mode; each applies into its own cortexsim-sim-cdr-<nnn> namespace. Also
+    generate and apply the ungated SIM-CDR-001 Deployment (cortexsim-sim-cdr-001)
+    as the compliant control. Wait for the K8s audit log to reach
+    kubernetes_audit_logs, then set lookback_seconds to just past the apply time.
+    FIRST RUN: confirm the enforcing webhook name in responseStatus.message and
+    narrow chk-01 if attribution to Cortex specifically is required.
+
+checks:
+  - check_id: chk-01
+    title: Every distinct policy-violating workload was refused at the API server
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = kubernetes_audit_logs
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter verb = "create"
+        | filter objectRef.resource in ("pods", "deployments")
+        | filter objectRef.namespace contains "cortexsim-"
+        | filter responseStatus.code = 403
+        | comp count() as denials by objectRef.namespace
+        | filter denials >= 1
+        | fields objectRef.namespace, denials
+      distinct_key: objectRef.namespace
+    threshold:
+      kpi: workloads refused
+      op: ">="
+      value: 2
+      unit: workloads
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-KSPM-03 "Qualitative pass". The fixture applies TWO
+        structurally-distinct privileged Deployments (SIM-CDR-003 and
+        SIM-CDR-012), one per cortexsim- namespace, so "the admission controller
+        blocks non-compliant workloads" has an objective floor: both namespaces
+        must carry a 403 create. Two is the count of the applied privileged
+        fixture, not a number chosen to be reachable — authoring one would
+        forgive a miss, authoring three would manufacture red against a fixture
+        that only plants two applied Deployments (SIM-CDR-015's runtime probe is
+        counted as bonus when its namespace also denies, never toward the floor).
+    negative_control:
+      description: >
+        The admission controller is installed in AUDIT/monitor mode rather than
+        enforce, so every CREATE returns 201 and no 403 is written — zero
+        namespaces carry a denial.
+      measured_value: 0
+
+  - check_id: chk-02
+    title: The compliant control was admitted without disruption
+    probe: xql_rows
+    weight: 1.0
+    params:
+      query: |
+        dataset = kubernetes_audit_logs
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter verb = "create"
+        | filter objectRef.resource = "deployments"
+        | filter objectRef.namespace = "cortexsim-sim-cdr-001"
+        | filter responseStatus.code in (200, 201)
+        | limit 10
+    threshold:
+      kpi: control admitted
+      op: ">="
+      value: 1
+      unit: rows
+      source: authored_sharpening
+      rationale: >
+        The index's success criteria has two halves — non-compliant BLOCKED and
+        "approved workloads pass without disruption". Without this check a
+        controller that rejects every workload scores a perfect pass. One
+        admitted create of the compliant SIM-CDR-001 Deployment is the floor for
+        "the control deployed".
+    negative_control:
+      description: >
+        An over-broad enforcement scope (e.g. a cluster policy keyed on the
+        cortexsim- namespace prefix rather than on the workload spec) rejects the
+        compliant control alongside the violators, so nothing in
+        cortexsim-sim-cdr-001 is admitted.
+      measured_value: 0
+
+tags: [posture, kspm, admission-controller, kubernetes, planted-fixture, refuse-is-pass]
+author: "Henry Reed"

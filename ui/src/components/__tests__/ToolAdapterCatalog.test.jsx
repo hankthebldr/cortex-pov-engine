@@ -13,6 +13,31 @@ import { installRoutes } from '../../test/mockFetch.js'
 
 void React
 
+/**
+ * The catalog became a CONTROLLED surface — filters, selection and the open
+ * panel live in URL params so a DC can send a colleague "the twelve tools this
+ * POV needs, three of them unstaged". These tests therefore drive it through a
+ * stateful params harness, which is what the real router does.
+ */
+export function Harness({ initialParams = {}, onNavigate = () => {} } = {}) {
+  const [params, setParams] = React.useState(initialParams)
+  const merge = React.useCallback((next) => {
+    setParams((prev) => {
+      const merged = { ...prev, ...next }
+      Object.keys(merged).forEach((k) => { if (merged[k] == null || merged[k] === '') delete merged[k] })
+      return merged
+    })
+  }, [])
+  return <ToolAdapterCatalog params={params} setParams={merge} onNavigate={onNavigate} />
+}
+
+/** The shelf endpoints every render touches. Defaults to "nothing staged,
+ *  nothing declared", which is this repo's real state today. */
+export const shelfRoutes = ({ payloads = [], declared = [], writable = true } = {}) => ({
+  'GET /api/shelf/payloads': { payloads, total: payloads.length, dist_dir: '/app/payloads', auth: 'open', writable, declared },
+  'GET /api/shelf/artifacts': { artifacts: declared, total: declared.length, staged: payloads.map((p) => p.name), unstaged: [], unpinned: [], dist_dir: '/app/payloads' },
+})
+
 const fixtureList = {
   adapters: [
     {
@@ -94,18 +119,18 @@ const fixtureDetailMimikatz = {
 
 describe('<ToolAdapterCatalog />', () => {
   it('renders intro + total stat from the API payload', async () => {
-    installRoutes({ 'GET /api/tools/adapters': fixtureList })
-    render(<ToolAdapterCatalog />)
+    installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
+    render(<Harness />)
     await waitFor(() => {
-      expect(screen.getByText(/Static catalog of every offensive/i)).toBeInTheDocument()
+      expect(screen.getByText(/Every offensive and defensive tool/i)).toBeInTheDocument()
     })
     // adapter count derived from the response
     expect(screen.getAllByText('3').length).toBeGreaterThan(0)
   })
 
   it('renders one card per adapter with tier · category · platform line', async () => {
-    installRoutes({ 'GET /api/tools/adapters': fixtureList })
-    render(<ToolAdapterCatalog />)
+    installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
+    render(<Harness />)
     await waitFor(() => {
       expect(screen.getByText('Nmap')).toBeInTheDocument()
     })
@@ -117,8 +142,8 @@ describe('<ToolAdapterCatalog />', () => {
   })
 
   it('derives filter chips from the loaded corpus', async () => {
-    installRoutes({ 'GET /api/tools/adapters': fixtureList })
-    render(<ToolAdapterCatalog />)
+    installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
+    render(<Harness />)
     await waitFor(() => expect(screen.getByText('Nmap')).toBeInTheDocument())
     // Plane chips
     expect(screen.getByRole('button', { name: 'NDR' })).toBeInTheDocument()
@@ -135,8 +160,8 @@ describe('<ToolAdapterCatalog />', () => {
   })
 
   it('plane filter narrows the visible cards client-side', async () => {
-    installRoutes({ 'GET /api/tools/adapters': fixtureList })
-    render(<ToolAdapterCatalog />)
+    installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
+    render(<Harness />)
     await waitFor(() => expect(screen.getByText('Nmap')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'ITDR' }))
     expect(screen.getByText('Mimikatz')).toBeInTheDocument()
@@ -145,8 +170,8 @@ describe('<ToolAdapterCatalog />', () => {
   })
 
   it('tier filter compounds with safety filter (logical AND)', async () => {
-    installRoutes({ 'GET /api/tools/adapters': fixtureList })
-    render(<ToolAdapterCatalog />)
+    installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
+    render(<Harness />)
     await waitFor(() => expect(screen.getByText('Nmap')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'T3' }))
     fireEvent.click(screen.getByRole('button', { name: 'dual-use-lab-only' }))
@@ -157,10 +182,11 @@ describe('<ToolAdapterCatalog />', () => {
 
   it('clicking a card opens the detail panel with invoke template + cleanup', async () => {
     installRoutes({
+      ...shelfRoutes(),
       'GET /api/tools/adapters':              fixtureList,
       'GET /api/tools/adapters/TOOL-MIMIKATZ': fixtureDetailMimikatz,
     })
-    render(<ToolAdapterCatalog />)
+    render(<Harness />)
     await waitFor(() => expect(screen.getByText('Mimikatz')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Mimikatz'))
     await waitFor(() => {
@@ -179,9 +205,9 @@ describe('<ToolAdapterCatalog />', () => {
   })
 
   it('handles detail load failure gracefully', async () => {
-    installRoutes({ 'GET /api/tools/adapters': fixtureList })
+    installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
     // No mock for the detail endpoint → 404 → "Load failed" panel
-    render(<ToolAdapterCatalog />)
+    render(<Harness />)
     await waitFor(() => expect(screen.getByText('Nmap')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Nmap'))
     await waitFor(() => {
@@ -190,16 +216,16 @@ describe('<ToolAdapterCatalog />', () => {
   })
 
   it('handles list load failure with a visible error banner', async () => {
-    installRoutes({})
-    render(<ToolAdapterCatalog />)
+    installRoutes({ ...shelfRoutes() })
+    render(<Harness />)
     await waitFor(() => {
       expect(screen.getByText(/no mock for|Failed to load/i)).toBeInTheDocument()
     })
   })
 
   it('shows "no matches" empty state when filters exclude everything', async () => {
-    installRoutes({ 'GET /api/tools/adapters': fixtureList })
-    render(<ToolAdapterCatalog />)
+    installRoutes({ ...shelfRoutes(), 'GET /api/tools/adapters': fixtureList })
+    render(<Harness />)
     await waitFor(() => expect(screen.getByText('Nmap')).toBeInTheDocument())
     // EDR plane + safe class — no adapter satisfies both in this fixture
     fireEvent.click(screen.getByRole('button', { name: 'EDR' }))
@@ -212,10 +238,11 @@ describe('<ToolAdapterCatalog />', () => {
 
   it('detail panel TTP-ref chips render as clickable buttons', async () => {
     installRoutes({
+      ...shelfRoutes(),
       'GET /api/tools/adapters':              fixtureList,
       'GET /api/tools/adapters/TOOL-MIMIKATZ': fixtureDetailMimikatz,
     })
-    render(<ToolAdapterCatalog />)
+    render(<Harness />)
     await waitFor(() => expect(screen.getByText('Mimikatz')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Mimikatz'))
     await waitFor(() => {
@@ -228,10 +255,11 @@ describe('<ToolAdapterCatalog />', () => {
 
   it('detail panel equivalent chips render as clickable buttons', async () => {
     installRoutes({
+      ...shelfRoutes(),
       'GET /api/tools/adapters':              fixtureList,
       'GET /api/tools/adapters/TOOL-MIMIKATZ': fixtureDetailMimikatz,
     })
-    render(<ToolAdapterCatalog />)
+    render(<Harness />)
     await waitFor(() => expect(screen.getByText('Mimikatz')).toBeInTheDocument())
     fireEvent.click(screen.getByText('Mimikatz'))
     await waitFor(() => {

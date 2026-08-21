@@ -7,10 +7,11 @@ plane: AI_ACCESS
 detection_types:
   - XQL
 
-uc_ref: UCS-AIACC-05
-tc_ref: TC-AIACC-05
-uc_name: "Cross-Provider Behaviour Stitching"
-tc_name: "Single User Rotates Across Three AI Providers in <5 min"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0005"
 mitre_tactic_name: "Defense Evasion"
@@ -34,6 +35,22 @@ pull_supported: true
 
 infra_modules_needed:
   - base
+
+# ── Causality Group Owner anchor + cross-provider stitch contract ────────────
+# The rotation runs from one containerized workload (identity container-runtime);
+# the real CGO is the container runtime that owns the app process tree, NOT the
+# synthetic cortexsim-agent beacon. The whole scenario IS an identity stitch —
+# one user rotating three providers in <5 min — so the per-step `causality`
+# blocks wire a connected containerd-shim -> OpenAI -> Gemini -> Anthropic spine
+# whose edges are the shared source identity, and stitching_key/window below let
+# the causality graph key the cross-provider evidence edges on that user within
+# the 5-minute rotation window (matching correlation CR-AIACC-0005).
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
+stitching_key: user_principal
+correlation_window_seconds: 300
 
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
 # Rolled out per the S-07 per-plane convention
@@ -104,6 +121,13 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-openai.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
+    platforms: ["linux", "container", "windows", "macos"]
+    # Provider hopping is a client-OS-agnostic egress pattern — the same user
+    # can start the rotation from a Windows laptop or macOS; AI Access Security
+    # keys on the identity, not the client OS.
+    platform_variants:
+      windows: "Invoke-RestMethod -Method Post -Uri 'https://api.openai.com/v1/chat/completions' -Headers @{ Authorization = \"Bearer $env:OPENAI_API_KEY\" } -ContentType 'application/json' -Body '{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"review this source\"}]}'"
+      macos: "curl -s https://api.openai.com/v1/chat/completions -H \"Authorization: Bearer $OPENAI_API_KEY\" -H 'Content-Type: application/json' -d '{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"review this source\"}]}'"
     expected_detections:
       - plane: AI_ACCESS
         type: XQL
@@ -134,6 +158,12 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-gemini.yml --live
     identity: container-runtime
     mitre_technique: "T1090"
+    # Same user rotates to the second provider ~30s later — one identity, no
+    # process fork; shared_entity is the rotation edge the stitch keys on.
+    causality:
+      parent_step: "step-01"
+      pivot: shared_entity
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: AI_ACCESS
         type: XQL
@@ -164,6 +194,13 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/aiacc-005-anthropic.yml --live
     identity: container-runtime
     mitre_technique: "T1090"
+    # Same user completes the rotation triangle at the third provider, closing
+    # the <5-min window — shared_entity on the single identity is exactly the
+    # join the XSIAM stitch + provider-hopping alert correlate on.
+    causality:
+      parent_step: "step-02"
+      pivot: shared_entity
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: AI_ACCESS
         type: XQL

@@ -1,0 +1,67 @@
+title: "Post-Consent OAuth Token Abuse \u2014 Salesforce Bulk API Mass Export with Query-Job Deletion (Bling Libra) \u2014 Post-Consent OAuth Token High-Volume Bulk API Export Deviating from Integration Baseline"
+id: ttp-2026-0111-abioc-01
+status: experimental
+description: |
+  A Connected App integration identity whose learned Cortex baseline is low-volume, narrow-object, scheduled Bulk API activity suddenly drives high-volume query jobs across Account/Contact/Case/Opportunity from an automation user-agent. No consent, MFA, or login event exists to alert on; the ABIOC anchors the deviation (export volume + object diversity + user-agent) to the integration identity's learned baseline rather than to any known-bad object or SOQL string, catching post-consent token abuse a static rule would miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_service = "salesforce" and event_type = "BulkApi" and api_type = "Bulk"
+    | filter operation in ("query", "queryAll")
+    | filter object_name in ("Account", "Contact", "Case", "Opportunity")
+    | comp sum(rows_processed) as run_rows, count_distinct(object_name) as run_objects by connected_app, integration_user, user_agent
+    | join type = inner (dataset = cloud_audit_logs | filter cloud_service = "salesforce" and event_type = "BulkApi" and api_type = "Bulk" | filter operation in ("query", "queryAll") and _time < to_timestamp(current_time() - 3600) | comp avg(rows_processed) as baseline_avg_rows, max(rows_processed) as baseline_max_rows, count_distinct(object_name) as baseline_objects by connected_app) as base connected_app = base.connected_app
+    | filter run_rows >= (base.baseline_max_rows * 5) and run_objects > base.baseline_objects
+    | sort desc run_rows
+    | fields connected_app, integration_user, user_agent, run_rows, run_objects, base.baseline_max_rows, base.baseline_objects
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1119/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1119
+    - attack.t1213
+    - attack.t1550
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Post-Consent OAuth Token Abuse \u2014 Salesforce Bulk API Mass Export with Query-Job Deletion (Bling Libra) \u2014 Export-Then-Erase Bulk API Query Job Deletion by Exfiltration Token"
+id: ttp-2026-0111-abioc-02
+status: experimental
+description: |
+  The same integration identity that just ran a high-volume Bulk API query job then issues deleteJob on that SAME job_id within the same short window — a query-then-erase sequence keyed on job linkage and ordering (delete after query), not a bucketless co-occurrence. Deleting completed Bulk jobs is normal housekeeping for some ETL/backup integrations, so this does not fire on job deletion alone; it fires when a large export and the deletion of that same job happen in-window for an identity whose learned baseline is to leave its query jobs in place, anchored to the mass-export causality chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_service = "salesforce" and api_type = "Bulk"
+    | filter operation in ("query", "queryAll", "deleteJob")
+    | bin _time span = 30m
+    | comp count_distinct(operation) as op_kinds, sum(rows_processed) as exported_rows, min(if(operation in ("query", "queryAll"), _time, null)) as first_query_time, max(if(operation = "deleteJob", _time, null)) as last_delete_time by _time, connected_app, integration_user, user_agent, job_id
+    | filter op_kinds >= 2 and exported_rows >= 50000 and last_delete_time > first_query_time
+    | sort desc exported_rows
+    | fields connected_app, integration_user, user_agent, job_id, exported_rows, first_query_time, last_delete_time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070
+    - attack.t1119
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

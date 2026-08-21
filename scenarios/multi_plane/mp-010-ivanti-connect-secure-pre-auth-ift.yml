@@ -1,0 +1,198 @@
+scenario_id: SIM-MP-010
+name: "Ivanti Connect Secure Pre-Auth IF-T Overflow to Internal Windows Pivot (SPAWN / CL-UNK-0979)"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-WAAS-03
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1190"
+mitre_technique_name: "Exploit Public-Facing Application"
+additional_techniques:
+  - technique: "T1543.003"
+    name: "Create or Modify System Process: Windows Service"
+  - technique: "T1053.005"
+    name: "Scheduled Task/Job: Scheduled Task"
+  - technique: "T1003.001"
+    name: "OS Credential Dumping: LSASS Memory"
+  - technique: "T1574.002"
+    name: "Hijack Execution Flow: DLL Side-Loading"
+  - technique: "T1070.004"
+    name: "Indicator Removal: File Deletion"
+
+threat_report: "Unit 42 — Threat Brief: Ivanti Connect Secure CVE-2025-0282 and CVE-2025-0283"
+threat_report_url: "https://unit42.paloaltonetworks.com/threat-brief-ivanti-cve-2025-0282-cve-2025-0283/"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - svc-account
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# This is the ANALYTICS wedge: an EDR-only stack sees the internal Windows
+# persistence but has no VPN-appliance telemetry, so it cannot tie the DcomSrv
+# host back to a pre-auth Ivanti IF-T exploit. XDM modeling rules normalize the
+# raw Ivanti appliance telemetry into addressable fields, and a correlation
+# stitches the modeled appliance source IP to the first internal host — a
+# cross-plane chain a single-plane EDR cannot assemble.
+validation_methodology: "Causality Graph Stitching"
+methodology_family: "F2"
+primary_kpi: "Causality Chain Completeness"
+threshold:
+  kpi: "Causality Chain Completeness"
+  op: "≥"
+  value: 2
+  unit: "planes"
+success_criteria: |
+  The XDM modeling rules normalize the raw Ivanti Connect Secure appliance IF-T
+  debug/syslog and log-tampering telemetry into addressable XDM fields, so the
+  pre-auth "Invalid IFT packet received from unauthenticated client" tell and the
+  anonymization-infrastructure source IPs become searchable. The internal-Windows
+  persistence BIOCs (DcomSrv service via vixDiskLib side-load, /mail scheduled
+  task launching DeElevate64, LSASS dump via hollowed svchost) fire on the pivot
+  host, and correlation CR-MP-0014 stitches the modeled appliance-plane tell to
+  the endpoint-plane persistence into one incident linking the appliance source
+  IP to the first internal host — the cross-plane chain an EDR-only stack misses.
+moat_tier: "LEAD"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The exploited Ivanti Connect Secure appliance web daemon (`web`, running as
+# www-data on the appliance) is the Causality Group Owner — the pre-auth
+# initial-access process that OWNS the whole chain. From that appliance CGO the
+# attacker pivots across the network to the first internal Windows host
+# (endpoint_network_stitch), where the SPAWN-family persistence (DcomSrv, /mail,
+# LSASS dump) are same-host follow-ons (shared_entity). This is the cross-plane
+# spine an EDR-only stack cannot assemble; CR-MP-0014 stitches the modeled
+# appliance tell to the endpoint persistence into one incident.
+cgo_anchor:
+  image_name: "web"
+  primary_username: "www-data"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Emit the Ivanti appliance IF-T pre-auth exploitation tell (SAFE-MODE marker)"
+    command: "mkdir -p /tmp/cortexsim-mp-010 && printf '%s\\n' 'Invalid IFT packet received from unauthenticated client src=185.219.141.95' > /tmp/cortexsim-mp-010/ivanti-debug.log && echo cortexsim-mp-010-ivanti-ift-preauth-tell-emitted"
+    identity: www-data
+    mitre_technique: "T1190"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: ANALYTICS
+        type: XQL
+        description: "Validation query confirms the XDM modeling rule normalized the raw appliance telemetry: the pre-auth IF-T tell and an anonymization-infrastructure source IP are searchable in ivanti_ics_raw within the window."
+        ttp_ref: "TTP-2026-0116"
+        detection_id: "xql-ivanti-if-t-pre-auth-exploitation-tell-modeled-from-appliance-telemetry"
+
+  - id: step-02
+    name: "Internal Windows pivot: DcomSrv service created via vixDiskLib DLL side-load (SAFE-MODE marker)"
+    command: "printf '%s\\n' 'service=DcomSrv binary=vmdisk.exe module=vixDiskLib.dll desc=DCOMLIENT' > /tmp/cortexsim-mp-010/dcomsrv-service.marker && echo cortexsim-mp-010-dcomsrv-service-created-marker"
+    identity: www-data
+    mitre_technique: "T1543.003"
+    platforms: ["windows"]
+    causality:
+      # The cross-plane hop: from the exploited appliance (step-01) the attacker
+      # pivots over the network (decrypted creds via ldap.pl -> RDP) onto the
+      # first internal Windows host. This is the appliance-signal <-> endpoint-
+      # signal join that only an analytics platform with modeled appliance
+      # telemetry can make — an endpoint_network_stitch.
+      parent_step: step-01
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: ANALYTICS
+        type: BIOC
+        description: "BIOC fires on the internal Windows pivot host when a service named DcomSrv is created via vixDiskLib.dll side-loaded by the legitimate vmdisk.exe (SPAWN-family persistence, DCOMLIENT misspelling)."
+        ttp_ref: "TTP-2026-0116"
+        detection_id: "bioc-ivanti-to-windows-pivot-dcomsrv-service-created-via-vixdisklib-dll-sideload"
+
+  - id: step-03
+    name: "Internal Windows pivot: /mail scheduled task launching DeElevate64 (SAFE-MODE marker)"
+    command: "printf '%s\\n' 'schtask=/mail action=DeElevate64.exe module=deelevator64.dll' > /tmp/cortexsim-mp-010/mail-task.marker && echo cortexsim-mp-010-mail-scheduled-task-marker"
+    identity: www-data
+    mitre_technique: "T1053.005"
+    platforms: ["windows"]
+    causality:
+      # Second SPAWN-family persistence mechanism on the SAME internal Windows
+      # host as the DcomSrv service — an independent persistence tree, not a fork
+      # of it, so it joins on the shared host entity.
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: BIOC
+        description: "BIOC fires when a scheduled task named /mail launches DeElevate64.exe (side-loading deelevator64.dll) — the second SPAWN-family persistence mechanism."
+        ttp_ref: "TTP-2026-0116"
+        detection_id: "bioc-ivanti-to-windows-pivot-mail-scheduled-task-launching-deelevate64"
+
+  - id: step-04
+    name: "Internal Windows pivot: LSASS dump + package.dll IOC (SAFE-MODE marker, no memory read)"
+    command: "printf '%s\\n' 'SAFE-MODE marker only - package.dll VM.txt dump NOT performed' > /tmp/cortexsim-mp-010/VM.txt && printf '%s  package.dll\\n' '1dc0a3a5904ec35103538a018ef069fbe95b0a3c26cb0ff9ba0d1c268d1aaf98' > /tmp/cortexsim-mp-010/package.dll.sha256 && echo cortexsim-mp-010-lsass-dump-safe-mode-marker"
+    identity: www-data
+    mitre_technique: "T1003.001"
+    platforms: ["windows"]
+    causality:
+      # Credential access on the same internal Windows host after the foothold is
+      # established: package.dll (built via MSBuild) hollows a suspended
+      # svchost.exe and dumps LSASS. Same-host follow-on to the DcomSrv foothold.
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: BIOC
+        description: "BIOC fires on the LSASS credential-dump chain: package.dll built via MSBuild compiling mini.xml, injected into a suspended svchost.exe, writing the XOR-encoded dump to C:\\Users\\Public\\Downloads\\VM.txt."
+        ttp_ref: "TTP-2026-0116"
+        detection_id: "bioc-ivanti-to-windows-pivot-lsass-memory-dump-via-hollowed-svchost"
+      - plane: ANALYTICS
+        type: IOC
+        description: "Atomic file-hash match on package.dll (the memory-dumping tool), one of the published CVE-2025-0282 intrusion indicators."
+        ttp_ref: "TTP-2026-0116"
+        detection_id: "ioc-file-sha256-1dc0a3a5904ec35103538a018ef069fbe95b0a3c26cb0ff9ba0d1c268d1aaf98"
+
+  - id: step-05
+    name: "Correlation stitches the modeled appliance tell to the endpoint persistence"
+    command: "echo cortexsim-mp-010-cr-mp-0014-appliance-to-endpoint-stitch"
+    identity: www-data
+    mitre_technique: "T1190"
+    platforms: ["linux", "windows"]
+    causality:
+      # CR-MP-0014 fuses the modeled appliance pre-auth IF-T tell (step-01) with
+      # the endpoint persistence BIOCs into one incident within a 24h window —
+      # a cross-source temporal join stitching the appliance source IP to the
+      # first internal host.
+      parent_step: step-04
+      pivot: temporal
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Correlation CR-MP-0014 fuses the modeled Ivanti appliance pre-auth IF-T tell (source IP) with an internal-Windows persistence BIOC into one incident linking the appliance source IP to the first internal host — the stitch an EDR-only stack cannot produce."
+        ttp_ref: "TTP-2026-0116"
+        detection_id: "CR-MP-0014"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp-010"
+    - "echo cortexsim-mp-010-cleanup-complete"

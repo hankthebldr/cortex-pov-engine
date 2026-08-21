@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1114",
+    "T1530",
+    "T1567.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Analytics(Mailbox Enumeration Activity by an Azure Application) AND Analytics(Microsoft 365 Storage Services Exfiltration Activity) observed on the same UserId / ClientIP within the run window \u2014 stitches app-driven mailbox harvest (MailItemsAccessed Bind burst across many mailboxes) followed by a bulk OneDrive/SharePoint download burst into a SINGLE Microsoft 365 collection-to-exfiltration incident. The shared identity (the mailbox owner UPN and the client IP the OAuth app operates from) is the pivot; the incident's terminal assertion is that one actor enumerated mailboxes AND pulled bulk storage in the same window, distinguishing a genuine data-theft chain from an isolated noisy download.",
+      "name": "Microsoft 365 App-Driven Mailbox Enumeration to Storage Exfiltration Stitch",
+      "rule_id": "CR-CLOUD-0008",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0164"
+}

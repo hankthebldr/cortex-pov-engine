@@ -1,0 +1,266 @@
+scenario_id: SIM-AIACC-006
+name: "Token Jacking — A Stolen LLM Provider API Key Replayed From Foreign Infrastructure for Unauthorized Compute"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: AI_ACCESS
+detection_types:
+  - ABIOC
+  - XQL
+  - Analytics
+  - IOC
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# NET-NEW, and the honest home for it does not exist in v2.2. The correct
+# binding is a proposed v2.3 UC-AIACC row, which is explicitly out of scope for
+# this pass. Following the convention the other five AI Access scenarios
+# already use, the primary ref is the nearest honest capability match:
+# TC-CITH-04 — "AI-powered runtime analytics detect anomalous cloud workload
+# behavior WITHOUT SIGNATURE DEPENDENCY". That is precisely the claim here: the
+# traffic is well-formed TLS to a legitimate provider carrying a valid key, so
+# there is no signature to match and the detection has to be behavioural.
+#
+# NONE of these rows is net-new evidence — all are already evidenced elsewhere.
+uc_ref: UCS-CITH-04
+tc_ref: TC-CITH-04
+tc_refs:
+  - TC-CITH-04
+  - TC-DLP-11
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate AI Runtime Security Analytics — AI-powered runtime analytics detect anomalous cloud workload behavior without signature dependency"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# The direction here is the INVERSE of SIM-AIACC-001..005. Those detect secrets
+# leaking OUT to an LLM provider (the employee-DLP frame). This detects a
+# provider key that already leaked being USED, from somewhere it has never been
+# used from, to buy compute the victim pays for. Different telemetry, different
+# detection, and a corpus carrying only the first has a blind spot exactly
+# where the money is.
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1552.001"
+mitre_technique_name: "Unsecured Credentials: Credentials In Files"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+  - technique: "T1496"
+    name: "Resource Hijacking"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — AI, Automation and Attacks: Unpacking the 2026 Global Incident Response Report (token jacking)"
+threat_report_url: "https://unit42.paloaltonetworks.com/ai-incident-response-report/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: developer
+  options:
+    - developer
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Per-Credential Calling and Consumption Baseline (with a benign baseline arm)"
+methodology_family: "F2"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  CR-AIACC-0006 raises ONE token-jacking incident about ONE credential,
+  fusing the calling-location deviation and the token-consumption deviation on
+  a shared api_key_id, and reports the unauthorized inference spend.
+
+  THE BASELINE ARM IS THE WHOLE TEST. Before the anomalous arm runs, the same
+  key is exercised normally — modest volume, from corporate egress, on the
+  models it always calls. Three outcomes, and only one of them is a pass:
+
+    * baseline silent, anomalous arm loud  -> PASS. The platform baselined the
+      credential.
+    * BOTH arms alert                      -> FAIL. The platform matched on
+      "traffic to an LLM provider", which the customer's proxy already does
+      for free. This is not a partial pass and must not be reported as one.
+    * NEITHER arm alerts                   -> PENDING, not fail. The key's
+      baseline never formed, which is a prerequisite failure rather than a
+      detection failure.
+
+  Two deltas carry the claim because each is individually defeatable: calling
+  LOCATION (defeated by proxying through the victim's own egress) and token
+  CONSUMPTION shape (noisy on its own for a growing workload). The user-agent
+  IOC corroborates and is deliberately not the primary — it is a one-line
+  change for the adversary.
+
+  The run also produces a dollar-legible figure: unauthorized inference spend
+  attributed to the anomalous arm alone, not to the key as a whole.
+moat_tier: "LEAD"
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The developer workstation's client process owns the chain — it is the process
+# that holds the key and makes the baseline-arm calls, following the convention
+# SIM-AIACC-002 established for this plane. The anomalous arm has no local
+# process by definition (the adversary is elsewhere); it is joined to the chain
+# on the shared credential, which is the only entity the two arms have in
+# common and is exactly the point the scenario is making.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "developer"
+
+infra_modules_needed:
+  - base
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# SAFE-MODE: no real provider is called and no real key is used. The canary key
+# is a synthetic string that exists only to be matched; requests target
+# 127.0.0.1.
+steps:
+  - id: step-01
+    name: "BASELINE ARM — the same key used normally from corporate egress, on the models it always calls (must NOT alert)"
+    command: |
+      set -u
+      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
+      KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
+      for N in 1 2 3 4 5; do
+        printf '{"run_tag":"%s","arm":"baseline","cortexsim_label":"benign","api_key_id":"%s","source":"corporate_egress","model":"gpt-4o-mini","prompt_tokens":800,"completion_tokens":400,"seq":%s}\n' "$RUN_TAG" "$KEY" "$N"
+      done > "$D/baseline-arm.ndjson"
+      curl -s --max-time 5 -o /dev/null "https://127.0.0.1/v1/chat/completions" 2>/dev/null || true
+      echo cortexsim-aiacc006-baseline-arm-emitted
+    identity: developer
+    mitre_technique: "T1552.001"
+    # ROOT — the developer's client process holds the key and owns the chain.
+    platforms: ["linux", "macos", "windows"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command \"1..5 | ForEach-Object { Write-Output 'cortexsim-aiacc006 SAFE-MODE: baseline-arm provider call marker (corporate egress, usual model)' }\""
+    expected_detections:
+      - plane: AI_ACCESS
+        type: XQL
+        description: "DISCRIMINATOR ARM — the same key used normally, in the same window. This must return rows (proving the arm ran) and must NOT raise the token-jacking incident. Without it, a detection on the anomalous arm is indistinguishable from a geo-IP rule and the customer will correctly say so."
+        ttp_ref: "TTP-2026-0173"
+        detection_id: "xql-baseline-arm-the-same-key-used-normally-from-corporate-egress-before-the-anomalous-arm"
+
+  - id: step-02
+    name: "ANOMALOUS ARM — the same key replayed from infrastructure absent from its calling history"
+    command: |
+      set -u
+      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
+      KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
+      for N in $(seq 1 40); do
+        printf '{"run_tag":"%s","arm":"anomalous","cortexsim_label":"malicious","api_key_id":"%s","source_ip":"198.51.100.66","model":"gpt-4o-large","prompt_tokens":16000,"completion_tokens":8000,"user_agent":"aiohttp/3.12.15 tokenjack/1.0","seq":%s}\n' "$RUN_TAG" "$KEY" "$N"
+      done > "$D/anomalous-arm.ndjson"
+      curl -s --max-time 5 -A "aiohttp/3.12.15 tokenjack/1.0" -o /dev/null "https://127.0.0.1/v1/chat/completions" 2>/dev/null || true
+      echo cortexsim-aiacc006-anomalous-arm-emitted
+    identity: www-data
+    mitre_technique: "T1078.004"
+    # The adversary has no process on this host — the two arms share ONLY the
+    # credential, so shared_entity is the honest edge kind. Claiming process
+    # lineage here would assert a causal link that does not exist.
+    platforms: ["linux", "macos", "windows"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: AI_ACCESS
+        type: ABIOC
+        description: "PRIMARY CLAIM — the key is valid and the traffic is well-formed TLS to a legitimate provider, so nothing about the request is malformed or blockable. The anomaly is that this key has a calling history and this call is not in it. Anchored per key rather than per user, because whoever holds a valid key is indistinguishable from its owner by every other signal."
+        ttp_ref: "TTP-2026-0173"
+        detection_id: "abioc-llm-provider-api-key-replayed-from-infrastructure-absent-from-its-learned-calling-baseline"
+      - plane: AI_ACCESS
+        type: IOC
+        description: "Corroborating indicator — the async automation client string carried by the replay tooling. Deliberately NOT the primary detection: a user-agent is a one-line change for the adversary, and a POV that leads with it is selling a control the customer will defeat on the drive home."
+        ttp_ref: "TTP-2026-0173"
+        detection_id: "ioc-user-agent-aiohttp-3-12-15-tokenjack-1-0"
+
+  - id: step-03
+    name: "Unauthorized compute — sustained inference on models this key has never called"
+    command: |
+      set -u
+      D=/tmp/cortexsim-aiacc006; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-AIACC006}"
+      KEY="${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}"
+      for MODEL in gpt-4o-large claude-opus-xl gemini-ultra-pro; do
+        printf '{"run_tag":"%s","cortexsim_label":"malicious","api_key_id":"%s","model":"%s","model_first_seen_for_key":true,"prompt_tokens":16000,"completion_tokens":8000}\n' "$RUN_TAG" "$KEY" "$MODEL"
+      done > "$D/model-novelty.ndjson"
+      echo cortexsim-aiacc006-unauthorized-compute-emitted
+    identity: www-data
+    mitre_technique: "T1496"
+    platforms: ["linux", "macos", "windows"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: AI_ACCESS
+        type: ABIOC
+        description: "The delta that survives an adversary who proxies through the victim's own egress to defeat the location signal. Token consumption per key has a shape — cadence, prompt and completion size, model mix — and unauthorized compute has a different one because its purpose is different."
+        ttp_ref: "TTP-2026-0173"
+        detection_id: "abioc-sustained-inference-spend-deviating-from-the-key-s-learned-token-consumption-envelope"
+      - plane: AI_ACCESS
+        type: Analytics
+        description: "Corroboration — model and endpoint mix first seen for this key. A key that has served one workload for months does not suddenly need three new frontier models."
+        ttp_ref: "TTP-2026-0173"
+        detection_id: "xql-model-and-endpoint-mix-first-seen-for-this-api-key"
+
+  - id: step-04
+    name: "TERMINAL — one incident about one credential, with the baseline arm asserted and the unauthorized spend quantified"
+    command: |
+      set -u
+      echo '[AIACC-006] Terminal stitch — waiting for correlation to converge'
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-120}"
+      echo '[*] CR-AIACC-0006 asserts ONE token-jacking incident keyed on api_key_id'
+      echo '[*] BASELINE ARM asserted: present in telemetry, ABSENT from the incident'
+      echo '[*] FAIL if both arms alerted — that is a destination match, not a credential baseline'
+      echo '[*] PENDING (not fail) if neither alerted — the key baseline never formed'
+      echo '[*] Headline figure: unauthorized inference spend attributed to the anomalous arm alone'
+      echo cortexsim-aiacc006-terminal-stitch-verified
+    identity: root
+    mitre_technique: "T1496"
+    platforms: ["linux", "macos", "windows"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: AI_ACCESS
+        type: Correlation
+        description: "Terminal — CR-AIACC-0006 fuses the calling-location deviation and the consumption deviation on one api_key_id into a single token-jacking incident, carrying the baseline arm as part of the verdict rather than as a footnote."
+        ttp_ref: "TTP-2026-0173"
+        detection_id: "CR-AIACC-0006"
+      - plane: AI_ACCESS
+        type: XQL
+        description: "Spend accounting — unauthorized prompt and completion tokens attributed to the anomalous arm alone, not to the key as a whole. This is the rarest artifact in a security POV: a finding that converts directly into a line on the cloud bill."
+        ttp_ref: "TTP-2026-0173"
+        detection_id: "xql-unauthorized-inference-spend-accounting-for-the-compromised-key"
+      - plane: AI_ACCESS
+        type: XQL
+        description: "Hunt — every AI provider key in the estate ranked by calling-location spread. The artifact the DC leaves behind after the demo ends."
+        ttp_ref: "TTP-2026-0173"
+        detection_id: "xql-ai-provider-api-keys-ranked-by-calling-location-spread"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-aiacc006"
+    - "echo 'cortexsim-aiacc006-cleanup-complete'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-08-02"
+last_updated: "2026-08-02"
+tags:
+  - ai-access
+  - token-jacking
+  - llm-api-key
+  - resource-hijacking
+  - unauthorized-compute
+  - baseline-arm
+  - behavioural-baseline
+  - f2
+  - lead

@@ -1,0 +1,134 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# The ingestion round-trip, in its smallest honest form.
+#
+# Three structurally dissimilar sources are emitted through the operator's
+# collector carrying ONE canary token, planted twice per record: in the source's
+# own schema fields (the normalization signal) and as a top-level raw marker
+# (the bytes-arrived signal). Reading both back is what separates three failures
+# that send a DC to three different places:
+#
+#   raw 3 / normalized 3  -> ingested AND normalized          (the claim holds)
+#   raw 3 / normalized 2  -> ingested, NOT normalized         (parser gap)
+#   raw 0 / normalized 0  -> never landed                     (collector gap)
+#
+# A round-trip built only on the raw marker cannot make that distinction, and
+# would read "never ingested" against precisely the tenants whose parsers work.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: PLT-IR-008
+name: Broker VM heterogeneous ingest and normalization
+version: "1.0"
+status: active
+
+validation_class: PLT
+kind: state
+plane: ANALYTICS
+
+uc_ref: UCS-IR-04
+tc_ref: TC-IR-08
+tc_refs: [TC-IR-08]
+uc_name: "Incident Response"
+tc_name: "Validate ingestion and normalization of 3+ heterogeneous data sources via Broker VM"
+
+moat_tier: MOAT
+methodology_family: F8
+primary_kpi: "Detection Accuracy"
+success_criteria: |
+  Three structurally dissimilar sources land AND normalize into one queryable
+  schema, all three retrievable by a single canary token in a single union
+  query that carries no source-specific rewrite.
+
+scope_limitations: >
+  Proves three structurally dissimilar sources (nested Kubernetes audit JSON,
+  flat PascalCase Microsoft 365 unified-audit, PAN-OS NGFW EAL traffic) land
+  and normalize into one queryable schema. Does NOT prove the records traversed
+  a Broker VM specifically — the operator supplies the collector URL, which may
+  be a Broker VM HTTP applet, a native cloud collector or a forwarder, and no
+  read API exposes which door a record came through. Does NOT prove anything
+  about sources CortexSim did not emit, and does NOT prove per-field fidelity
+  (that is PLT-XDL-001). The normalized field names below are tenant-schema
+  dependent; a tenant whose parser exposes different column names resolves
+  PROBE_QUERY_FAILED -> pending, never a false pass and never a false fail.
+
+stimulus:
+  kind: eal_campaign
+  campaign_id: plt-ir-008-heterogeneous-ingest-3src
+  detail: >
+    Run k8s_audit_emitter, m365_activity_emitter and ngfw_eal_emitter against
+    the operator's collector with the SAME canary_token on all three steps,
+    then supply that token as context.canary. Use a fresh token per evaluation:
+    a reused token lets yesterday's records prove today's run.
+
+context_vars: [canary]
+
+checks:
+  # ── the claim ─────────────────────────────────────────────────────────────
+  - check_id: chk-01
+    title: All three sources normalize — the canary is readable from each source's own schema field
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      # The canary is read back from the field the SOURCE's schema owns, which
+      # is the field a working parser is guaranteed to map. userAgent /
+      # UserId / user share no name, no case convention and no nesting depth
+      # across the three sources — which is what makes this a heterogeneity
+      # claim rather than three separate ingest claims.
+      query: |
+        dataset in (kubernetes_audit_logs, msft_o365_audit, panw_ngfw_traffic_raw)
+        | filter userAgent contains "{{canary}}"
+              or UserId contains "{{canary}}"
+              or user contains "{{canary}}"
+        | comp count() as records by _dataset
+      distinct_key: _dataset
+    threshold:
+      kpi: sources normalized
+      op: ">="
+      value: 3
+      unit: ""
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-IR-08 "Qualitative pass". "3+ heterogeneous data
+        sources" is objectively countable, so the assertion sharpens it to a
+        machine-evaluable floor of exactly the number the test case names,
+        rather than reporting not_applicable and proving nothing.
+    negative_control:
+      description: >
+        The Kubernetes and Microsoft 365 parsers map the canary but the NGFW
+        records land unparsed, so the union query spans two datasets, not three
+        — the single most common real failure, a missing modeling rule for one
+        of the three onboarded sources.
+      measured_value: 2
+
+  # ── the discriminator ─────────────────────────────────────────────────────
+  - check_id: chk-02
+    title: All three sources landed at all — the raw marker is present in each dataset
+    probe: xql_distinct
+    weight: 1.0
+    params:
+      # Never a primary claim on its own: a raw hit only proves bytes arrived.
+      # Its whole job is to tell chk-01's failure apart from a delivery failure.
+      query: |
+        dataset in (kubernetes_audit_logs, msft_o365_audit, panw_ngfw_traffic_raw)
+        | filter _raw_log contains "{{canary}}"
+        | comp count() as records by _dataset
+      distinct_key: _dataset
+    threshold:
+      kpi: sources landed
+      op: ">="
+      value: 3
+      unit: ""
+      source: authored_sharpening
+      rationale: >
+        Same countable floor as chk-01, read from the raw body instead of the
+        normalized schema. chk-02 passing while chk-01 fails is the precise
+        readout "the bytes are in the lake, the parser is missing".
+    negative_control:
+      description: >
+        The collector accepted the POSTs (the delivery ledger is clean) but
+        nothing reached the lake — a Broker VM applet forwarding to a dataset
+        the tenant does not carry.
+      measured_value: 0
+
+tags: [ingestion, normalization, broker-vm, round-trip]
+author: "CortexSim PLT pack"

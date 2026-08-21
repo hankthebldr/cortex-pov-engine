@@ -6,7 +6,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(NGFW EAL outbound bytes per session greatly exceeds host baseline) AND (XQL(NGFW EAL large sustained outbound bytes to single destination) OR XDR(originating process on src_host)) on same src_host within 30m",
+      "logic": "BIOC(NGFW EAL outbound bytes per session greatly exceeds host baseline) AND (XQL(NGFW EAL large sustained outbound bytes to single destination) OR XDR causality_actor_process_image_name / actor_process_instance_id owning the outbound session) stitched endpoint_network on src_host within 30m \u2014 promotes the volume anomaly to one exfiltration incident whose Causality Group Owner (causality_actor_process_*) is the process that opened the transfer, not an isolated NGFW spike.",
       "name": "Bulk HTTPS Exfil Cross-Plane Stitch \u2014 NGFW Volume Anomaly Plus XDR Originating Process",
       "rule_id": "CR-NDR-0008",
       "severity": "high"

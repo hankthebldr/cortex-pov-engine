@@ -1,0 +1,427 @@
+{
+  "id": "TTP-2026-0111",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:36:15+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "actor-bling-libra",
+      "actor-scattered-lapsus-hunters",
+      "oauth-token-abuse",
+      "salesforce",
+      "bulk-api",
+      "data-exfiltration",
+      "anti-forensics",
+      "abioc",
+      "severity-high",
+      "supply-chain"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "saas-salesforce"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Post-Consent OAuth Token Abuse — Salesforce Bulk API Mass Export with Query-Job Deletion (Bling Libra)",
+    "summary": "A stolen, already-trusted third-party Connected App token drives high-volume Salesforce Bulk API exports across Account/Contact/Case/Opportunity from an automation user-agent, then deletes the query jobs to erase evidence. There is no consent event, no MFA prompt, and no interactive login to alert on — only export volume, user-agent drift, and the export-then-erase sequence betray it.",
+    "description": "This CLOUD_APP scenario models the post-consent phase of the Salesloft Drift supply-chain campaign attributed to Bling Libra (ShinyHunters) and the Scattered Lapsus$ Hunters umbrella (SP1D3R HUNTERS / SLSH / 'Trinity of Chaos'). Between August 8-18, 2025 the actor used OAuth access/refresh tokens stolen from the Salesloft Drift integration to exfiltrate data from affected customers' Salesforce tenants. Because the token was already consented and trusted, the classic identity signals are absent: no new OAuth consent grant, no MFA challenge, no login-history anomaly. The tradecraft that IS observable is behavioral: (a) the token drives Salesforce Bulk API query jobs at a volume and object-diversity far above the integration's learned baseline (Account, Contact, Case, Opportunity), (b) the exfiltration client presents the automation user-agent 'Python/3.11 aiohttp/3.12.15' (an indicator published in the cited Unit 42 Salesloft Drift threat brief, which reports 'the user agent string Python/3.11 aiohttp/3.12.15 associated with these login events'), and (c) after the bulk pull the actor deletes the Bulk API query jobs to hide evidence of the queries they ran — an export-then-erase anti-forensics sequence a legitimate integration never performs. Source IPs in the Salesloft disclosure included Tor exit nodes, which are explicitly high-false-positive for orgs that permit Tor, so the exfil user-agent is treated as a corroborating (not standalone) IOC. A hand-authored BIOC keyed on a single bad object or SOQL string would miss this because every operation is a legitimate Bulk API call — which is exactly why the emphasis is ABIOC: two auto-tuned Analytics Behavioral IOCs anchor the deviation to the compromised integration identity's causality chain (trusted token -> high-volume CRM export -> query-job deletion), and a correlation rule fuses them into a single post-consent-token-abuse incident. Hunting substrate is Salesforce Event Monitoring (including UniqueQuery real-time events that log the executed SOQL), Connected App authentication activity, and login history, ingested into XSIAM.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Bling Libra",
+        "aliases": [
+          "ShinyHunters"
+        ]
+      },
+      {
+        "name": "Scattered Lapsus$ Hunters",
+        "aliases": [
+          "SP1D3R HUNTERS",
+          "SLSH",
+          "Trinity of Chaos"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Salesloft Drift OAuth supply-chain data theft and extortion (Aug-Oct 2025)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2025-08-08"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1528",
+        "name": "Steal Application Access Token",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "subtechnique_id": "T1550.001",
+        "name": "Use Alternate Authentication Material: Application Access Token",
+        "tactic_ids": [
+          "TA0005",
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1199",
+        "name": "Trusted Relationship",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1195",
+        "subtechnique_id": "T1195.002",
+        "name": "Supply Chain Compromise: Compromise Software Supply Chain",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1213",
+        "subtechnique_id": "T1213.003",
+        "name": "Data from Information Repositories",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1119",
+        "name": "Automated Collection",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.004",
+        "name": "Indicator Removal: File Deletion",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Cloud Service: Cloud Service Enumeration",
+      "Logon Session: Logon Session Creation",
+      "Web Credential: Web Credential Usage"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CLOUD-006 — post-consent OAuth token abuse: Salesforce Bulk API mass export with query-job deletion (non-destructive signal-injection stand-in).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Salesforce Event Monitoring (incl. UniqueQuery real-time events) and Connected App authentication activity are ingested into XSIAM so Bulk API query/queryAll/deleteJob operations and the exfil user-agent are modeled and queryable.",
+        "check_command": "echo 'confirm Salesforce Event Monitoring data source is connected to XSIAM'"
+      },
+      {
+        "description": "A baseline window has elapsed during which the Connected App integration user ran only its scheduled, low-volume Bulk API jobs so Cortex learned the integration-identity export profile.",
+        "check_command": "echo 'confirm integration baseline window elapsed'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE signal-injection stand-in — no real Salesforce data is read or\n# deleted. curl reaches an AUTHORISED canary host; SAFE-MODE marker files stand in\n# for the exported/erased query jobs so the export-then-erase behaviour is observable\n# without touching real CRM records.\nset -euo pipefail\nAPI=\"https://${TARGET_HOST:-127.0.0.1}/services/data/v61.0\"\nEXFIL_UA=\"Python/3.11 aiohttp/3.12.15\"\n# (a) high-volume Bulk API export across the four CRM objects with the exfil UA\nfor OBJ in Account Contact Case Opportunity; do\n  curl -s --max-time 5 -A \"$EXFIL_UA\" -X POST \"$API/jobs/query\" \\\n    -d \"{\\\"operation\\\":\\\"query\\\",\\\"query\\\":\\\"SELECT Id FROM ${OBJ}\\\"}\" -o /dev/null 2>/dev/null || true\n  echo \"SAFE-MODE export marker object=${OBJ} rows=250000 ua=${EXFIL_UA}\" > \"/tmp/sf-006-export-${OBJ}.marker\"\ndone\n# (b) export-then-erase: delete the Bulk API query jobs (anti-forensics)\nfor OBJ in Account Contact Case Opportunity; do\n  curl -s --max-time 5 -A \"$EXFIL_UA\" -X DELETE \"$API/jobs/query/750SIM${OBJ}\" -o /dev/null 2>/dev/null || true\n  rm -f \"/tmp/sf-006-export-${OBJ}.marker\"\ndone\necho '[CortexSim] SIM-CLOUD-006 post-consent Bulk API export-then-erase complete.'\n",
+      "input_variables": [
+        {
+          "name": "TARGET_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised canary host that stands in for the Salesforce API endpoint the Bulk API export traffic reaches."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound HTTPS Bulk API query-job requests carrying the automation exfil user-agent to the Salesforce API host.",
+        "expected_value": "user_agent = \"Python/3.11 aiohttp/3.12.15\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "High-volume Bulk API query/queryAll jobs across Account/Contact/Case/Opportunity followed by deleteJob operations issued by the same integration token.",
+        "expected_value": "operation in (\"query\", \"deleteJob\")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "SAFE-MODE export marker files recording the exported object names and row counts (no real CRM data), created then deleted to model the export-then-erase sequence.",
+        "expected_value": "/tmp/sf-006-export-*.marker"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sf-006-export-*.marker /tmp/sf-006-baseline.marker; echo '[CortexSim] SIM-CLOUD-006 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "Python/3.11 aiohttp/3.12.15",
+        "context": "Automation user-agent published in the cited Unit 42 Salesloft Drift threat brief ('the user agent string Python/3.11 aiohttp/3.12.15 associated with these login events'), presented by the high-volume Bulk API exfiltration client. High-signal but corroborating only — the same brief notes many source IPs in the Salesloft notification are Tor exit nodes with a high false-positive rate, so treat volume + export-then-erase as the primary anchor and this UA as confirmation.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Post-Consent OAuth Token High-Volume Bulk API Export Deviating from Integration Baseline",
+        "description": "A Connected App integration identity whose learned Cortex baseline is low-volume, narrow-object, scheduled Bulk API activity suddenly drives high-volume query jobs across Account/Contact/Case/Opportunity from an automation user-agent. No consent, MFA, or login event exists to alert on; the ABIOC anchors the deviation (export volume + object diversity + user-agent) to the integration identity's learned baseline rather than to any known-bad object or SOQL string, catching post-consent token abuse a static rule would miss.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_service = \"salesforce\" and event_type = \"BulkApi\" and api_type = \"Bulk\"\n| filter operation in (\"query\", \"queryAll\")\n| filter object_name in (\"Account\", \"Contact\", \"Case\", \"Opportunity\")\n| comp sum(rows_processed) as run_rows, count_distinct(object_name) as run_objects by connected_app, integration_user, user_agent\n| join type = inner (dataset = cloud_audit_logs | filter cloud_service = \"salesforce\" and event_type = \"BulkApi\" and api_type = \"Bulk\" | filter operation in (\"query\", \"queryAll\") and _time < to_timestamp(current_time() - 3600) | comp avg(rows_processed) as baseline_avg_rows, max(rows_processed) as baseline_max_rows, count_distinct(object_name) as baseline_objects by connected_app) as base connected_app = base.connected_app\n| filter run_rows >= (base.baseline_max_rows * 5) and run_objects > base.baseline_objects\n| sort desc run_rows\n| fields connected_app, integration_user, user_agent, run_rows, run_objects, base.baseline_max_rows, base.baseline_objects",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1119",
+          "T1213",
+          "T1550"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned integration-identity Bulk API baseline (low row volume, narrow object set, scheduled cadence, stable user-agent) -> trusted OAuth token reused -> high-volume multi-object export whose volume/diversity/user-agent diverge from the baseline, anchored to the originating Connected App + integration user."
+      },
+      {
+        "name": "Export-Then-Erase Bulk API Query Job Deletion by Exfiltration Token",
+        "description": "The same integration identity that just ran a high-volume Bulk API query job then issues deleteJob on that SAME job_id within the same short window — a query-then-erase sequence keyed on job linkage and ordering (delete after query), not a bucketless co-occurrence. Deleting completed Bulk jobs is normal housekeeping for some ETL/backup integrations, so this does not fire on job deletion alone; it fires when a large export and the deletion of that same job happen in-window for an identity whose learned baseline is to leave its query jobs in place, anchored to the mass-export causality chain.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_service = \"salesforce\" and api_type = \"Bulk\"\n| filter operation in (\"query\", \"queryAll\", \"deleteJob\")\n| bin _time span = 30m\n| comp count_distinct(operation) as op_kinds, sum(rows_processed) as exported_rows, min(if(operation in (\"query\", \"queryAll\"), _time, null)) as first_query_time, max(if(operation = \"deleteJob\", _time, null)) as last_delete_time by _time, connected_app, integration_user, user_agent, job_id\n| filter op_kinds >= 2 and exported_rows >= 50000 and last_delete_time > first_query_time\n| sort desc exported_rows\n| fields connected_app, integration_user, user_agent, job_id, exported_rows, first_query_time, last_delete_time",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1070",
+          "T1119"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "High-volume Bulk API query on job_id N by the integration token -> deleteJob targeting that same job_id N by the same token, delete-after-query within a 30m window, a query-then-delete sequence outside this identity's learned delete behaviour, anchored to the mass-export event chain."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Salesforce Integration Identity Bulk API Baseline Learned",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 86400)\n| filter cloud_service = \"salesforce\" and api_type = \"Bulk\"\n| filter operation in (\"query\", \"queryAll\")\n| comp sum(rows_processed) as baseline_rows, count_distinct(object_name) as baseline_objects by connected_app, integration_user\n| filter baseline_rows >= 0\n| fields connected_app, integration_user, baseline_rows, baseline_objects",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "Salesforce Bulk API Mass Export with aiohttp Exfil User-Agent",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_service = \"salesforce\" and api_type = \"Bulk\" and operation in (\"query\", \"queryAll\")\n| filter user_agent = \"Python/3.11 aiohttp/3.12.15\"\n| filter object_name in (\"Account\", \"Contact\", \"Case\", \"Opportunity\")\n| comp sum(rows_processed) as exported_rows, count() as query_jobs by integration_user, connected_app, src_ip\n| filter exported_rows >= 1\n| sort desc exported_rows\n| fields integration_user, connected_app, src_ip, exported_rows, query_jobs",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Salesforce Bulk API Query-Job Deletion Anti-Forensics Hunt",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 86400)\n| filter cloud_service = \"salesforce\" and api_type = \"Bulk\" and operation = \"deleteJob\"\n| comp count() as deleted_jobs by integration_user, connected_app, user_agent\n| filter deleted_jobs >= 1\n| sort desc deleted_jobs\n| fields integration_user, connected_app, user_agent, deleted_jobs",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Post-Consent OAuth Token Abuse — Salesforce Export-Then-Erase Stitch",
+        "rule_id": "CR-CLOUD-0006",
+        "logic": "ABIOC(Post-Consent OAuth Token High-Volume Bulk API Export Deviating from Integration Baseline) AND ABIOC(Export-Then-Erase Bulk API Query Job Deletion by Exfiltration Token) observed within 30 minutes on the same connected_app and integration_user — fuses the high-volume Bulk API export anomaly and the export-then-erase query-job deletion into a single post-consent OAuth-token-abuse incident anchored to the compromised integration identity (trusted token -> mass CRM export -> job deletion), where no consent, MFA, or interactive login event exists to alert on."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-integration Bulk API export volume, object diversity, and user-agent",
+        "validated": true,
+        "note": "Backed by the two ABIOCs on this card (high-volume export deviation + export-then-erase deletion)."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-cloud",
+        "submodule": "cloud-app-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CORTEX-CLOUD-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter cloud_service = \"salesforce\" and api_type = \"Bulk\" and operation in (\"query\", \"queryAll\") | filter user_agent = \"Python/3.11 aiohttp/3.12.15\" | comp sum(rows_processed) as exported_rows by connected_app, integration_user"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-001",
+          "TBD-XSIAM-002",
+          "CR-CLOUD-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter cloud_service = \"salesforce\" and api_type = \"Bulk\" and operation = \"deleteJob\" | comp count() as deleted_jobs by connected_app, integration_user"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CLOUD-006",
+        "name": "Post-Consent OAuth Token Abuse Detection via Cortex ABIOC (Salesforce Bulk API)",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn each Connected App integration identity's Bulk API export baseline and detect post-consent token abuse — high-volume multi-object CRM export followed by export-then-erase query-job deletion — anchored to the integration identity's causality chain, where no consent, MFA, or login event was raised to alert on.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CLOUD-006A",
+            "objective": "The high-volume Bulk API export deviates from the learned integration baseline and fires the export-deviation ABIOC.",
+            "preconditions": [
+              "Salesforce Event Monitoring ingested into XSIAM.",
+              "Integration-identity baseline window elapsed with only low-volume scheduled Bulk API jobs."
+            ],
+            "steps": [
+              "Let the integration baseline window elapse.",
+              "Drive high-volume Bulk API query jobs across Account/Contact/Case/Opportunity with the exfil user-agent.",
+              "Observe the export-deviation ABIOC fire."
+            ],
+            "success_criteria": [
+              "ABIOC `Post-Consent OAuth Token High-Volume Bulk API Export Deviating from Integration Baseline` fires.",
+              "XQL `Salesforce Bulk API Mass Export with aiohttp Exfil User-Agent` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CLOUD-006B",
+            "objective": "The query-job deletion following the mass export fires the export-then-erase ABIOC.",
+            "preconditions": [
+              "The export-deviation step (TS-CLOUD-006A) has run for the same integration token."
+            ],
+            "steps": [
+              "Issue deleteJob on the Bulk API query jobs created during the export.",
+              "Observe the export-then-erase ABIOC fire."
+            ],
+            "success_criteria": [
+              "ABIOC `Export-Then-Erase Bulk API Query Job Deletion by Exfiltration Token` fires.",
+              "XQL `Salesforce Bulk API Query-Job Deletion Anti-Forensics Hunt` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CLOUD-006C",
+            "objective": "Correlation stitches the export and erase ABIOCs into one post-consent-token-abuse incident.",
+            "preconditions": [
+              "Both ABIOCs fired for the same connected_app + integration_user within the correlation window."
+            ],
+            "steps": [
+              "Observe CR-CLOUD-0006 raise one stitched incident."
+            ],
+            "success_criteria": [
+              "Correlation `CR-CLOUD-0006` raises exactly one post-consent OAuth-token-abuse incident anchored to the integration identity's causality chain."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Rotate and tightly scope OAuth access/refresh tokens for third-party Connected Apps, and revoke all active tokens on any Salesloft/Drift-class supply-chain disclosure (Salesloft's own response was to proactively revoke all active access and refresh tokens).",
+      "Enforce IP allow-listing / login-range restrictions on Connected App integration users and block Tor exit nodes so a stolen token cannot be replayed from arbitrary infrastructure.",
+      "Set per-integration Bulk API row and query-job quotas and alert on any Connected App exceeding its learned export volume or touching object sets outside its normal scope."
+    ],
+    "detection_engineering": [
+      "Enable Salesforce Event Monitoring (including UniqueQuery real-time events that log executed SOQL) and Connected App authentication activity, and ingest them into XSIAM so Bulk API query/queryAll/deleteJob operations are modeled and queryable.",
+      "Let Cortex auto-tune ABIOCs against each integration identity's learned Bulk API baseline (row volume, object diversity, user-agent) rather than hand-authoring a static rule per object or SOQL string.",
+      "Alert on export-then-erase: a Connected App that runs high-volume Bulk API query jobs and then deletes those query jobs within a short window.",
+      "Treat the automation user-agent 'Python/3.11 aiohttp/3.12.15' as a high-signal but corroborating IOC; pair it with export volume and Tor-exit-node source IPs, which are high-false-positive for orgs that permit Tor."
+    ],
+    "response_playbook": "XSOAR-PB-PostConsentOAuthTokenAbuseTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Threat Brief: Salesloft Drift Integration Used To Compromise Salesforce Instances",
+      "url": "https://unit42.paloaltonetworks.com/threat-brief-compromised-salesforce-instances/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "Threat Brief: Escalating Threats From the Scattered Lapsus$ Hunters (Bling Libra / ShinyHunters) — actor attribution only",
+      "url": "https://unit42.paloaltonetworks.com/scattered-lapsus-hunters/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK T1550.001 — Use Alternate Authentication Material: Application Access Token",
+      "url": "https://attack.mitre.org/techniques/T1550/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1213 — Data from Information Repositories",
+      "url": "https://attack.mitre.org/techniques/T1213/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics Behavioral IOC (ABIOC) detection reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

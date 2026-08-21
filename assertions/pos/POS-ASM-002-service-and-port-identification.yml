@@ -1,0 +1,91 @@
+# POS-ASM-002 — service and port identification on the planted host.
+#
+# The asm module's security group opens exactly six ports to 0.0.0.0/0 — 80,
+# 443, 2222, 6379, 9001, 9200 — and each has a listener behind it (nginx with
+# directory listing, weak TLS, SSH on a non-standard port, Redis with no auth,
+# gocortexbrokenbank, a fake Elasticsearch banner). Six is the bar because six
+# is what the Terraform opens. Five would forgive a real miss.
+assertion_id: POS-ASM-002
+name: Service and port identification — six exposed ports on the planted host
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: ASM
+
+uc_ref: UCS-ASM-04
+tc_ref: TC-ASM-06
+tc_refs: [TC-ASM-06]
+uc_name: "Attack Surface & Exposure Management"
+tc_name: "Validate Service & Port Identification"
+
+moat_tier: MOAT
+methodology_family: F4
+primary_kpi: "Asset Discovery Coverage"
+success_criteria: |
+  All six ports the asm module exposes on the planted host are identified as
+  distinct findings against that asset.
+
+scope_limitations: >
+  Proves port identification. It does NOT prove the index row's version-detection
+  clause — no service version is queried, and two of the six listeners (the fake
+  Elasticsearch banner and the Redis instance) advertise versions the fixture
+  fabricates, so a version assertion over them would test the fixture rather than
+  the product. It does NOT prove CMDB correlation for gap analysis, which needs a
+  customer CMDB the engine cannot reach. Port 22 is deliberately closed in the
+  fixture and is NOT part of the bar. A product that reports the six ports but
+  misidentifies every service passes this check; service-NAME accuracy is
+  unevidenced. Dataset `asm_findings` and the `asset_external_ip` / `dst_port`
+  fields are convention-named and unconfirmed against a live tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/asm
+  detail: >
+    terraform apply the `asm` module and evaluate with
+    `context.asm_target_ip = terraform output exposed_host_public_ip`. Confirm the
+    listeners are actually up before reading a result — `nc -zv <ip> 6379 9200
+    9001 2222 80 443` — because a FAIL caused by a listener that never started is
+    the fixture's failure, not the platform's.
+
+context_vars: [asm_target_ip]
+
+checks:
+  - check_id: chk-01
+    title: All six exposed ports identified on the planted host
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = asm_findings
+        | filter _time > to_timestamp(current_time() - 86400)
+        | filter asset_external_ip = "{{asm_target_ip}}"
+        | filter dst_port in (80, 443, 2222, 6379, 9001, 9200)
+        | comp count() as findings by dst_port
+        | filter findings >= 1
+        | fields dst_port, findings
+      distinct_key: dst_port
+    threshold:
+      kpi: exposed ports identified
+      op: ">="
+      value: 6
+      unit: ports
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-ASM-06 "Qualitative pass". The asm module's security
+        group declares exactly six world-open ingress rules and the module's
+        `exposed_ports` output enumerates them, so "running services and open
+        ports correctly identified" has an objective floor of six. The bar is the
+        fixture's arity: setting it to five to absorb a scan-cycle miss would
+        convert a real, reportable gap into a green tick.
+    negative_control:
+      description: >
+        The external scan profile covers the IANA well-known range plus common
+        alternates, so 80, 443, 2222, 6379 and 9200 are identified but 9001 —
+        the vulnerable banking app — is outside the profile and never probed.
+      measured_value: 5
+
+tags: [posture, asm, aws, port-identification, planted-fixture]
+author: "Henry Reed"

@@ -19,10 +19,15 @@ detection_types:
   - Correlation
   - IOC
 
-uc_ref: UCS-EDR-07
-tc_ref: TC-EDR-07
-uc_name: "Ransomware Impact Detection (ESXi Hypervisor)"
-tc_name: "ESXi Mass VM Power-Off + Inhibit Recovery"
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-04
+tc_refs:
+  - TC-EDR-04
+  - TC-EDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Demonstrate auto-containment triggers on confirmed malware execution"
 
 mitre_tactic: "TA0040"
 mitre_tactic_name: "Impact"
@@ -46,6 +51,13 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "hostd"
+  primary_username: "root"
 
 external_tools: []
 
@@ -97,6 +109,9 @@ steps:
     command: "ansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /tmp/pov-encrypt.yml --tags poweroff -f 16; echo '[*] vim-cmd power.off burst issued across cluster'"
     identity: root
     mitre_technique: "T1490"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -119,6 +134,9 @@ steps:
     command: "ansible-playbook -i /tmp/pov-esxi-hosts -e pov_run_id=${CORTEXSIM_RUN_ID:-povrun} /tmp/pov-encrypt.yml --tags markers -f 16; echo '[*] SAFE-MODE markers (.tttt) dropped — NO VMDKs were encrypted'"
     identity: root
     mitre_technique: "T1486"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC

@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1589",
+    "T1593.001",
+    "T1598"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ASM Key-Personnel External Footprint Exposure) AND (BIOC(Cortex ASM Discovery of Externally-Exposed Federated-Identity and App/CSP Surface) OR XQL(Help-Desk Account-Recovery Reconnaissance Burst) OR ABIOC(Anomalous Inbound Account-Recovery Cadence on Externally-Exposed Personnel)) AND XQL(TIM Attribution Muddled Libra Recon Tradecraft Match) observed on the same target_org within a 7-day window \u2014 fuses the ASM external-footprint exposure of key personnel, the repeated low-pressure help-desk account-recovery reconnaissance, and the TIM Muddled Libra attribution into ONE early-warning identity-takeover-precursor incident. The stitched recon storyline precedes and predicts the downstream MFA-reset identity takeover, so the reconnaissance phase itself becomes the terminal early-warning detection that fires before the takeover, not after.",
+      "name": "Scattered Spider Pre-Attack Recon Storyline \u2014 ASM Footprint x Help-Desk Profiling x TIM Attribution",
+      "rule_id": "CR-ASM-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0151"
+}

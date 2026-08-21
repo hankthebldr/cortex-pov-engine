@@ -1,0 +1,244 @@
+scenario_id: SIM-KOI-008
+name: "KOI — Shai-Hulud Self-Replicating npm Worm (preinstall hook → detached child → TruffleHog scrape → exfil → token republish → self-hosted-runner persistence)"
+version: "1.0"
+status: active
+
+plane: KOI
+detection_types:
+  - ABIOC
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-SCA-01
+tc_ref: TC-SCA-01
+tc_refs:
+  - TC-SCA-01
+  - TC-SSCAN-01
+pov_scenario_id: POV-SC-012
+uc_name: "Software Composition Analysis"
+tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1195"
+mitre_technique_name: "Supply Chain Compromise"
+additional_techniques:
+  - technique: "T1059"
+    name: "Command and Scripting Interpreter"
+  - technique: "T1552.001"
+    name: "Unsecured Credentials: Credentials In Files"
+  - technique: "T1567"
+    name: "Exfiltration Over Web Service"
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1543"
+    name: "Create or Modify System Process"
+
+threat_report: "Unit 42 — Shai-Hulud: The Second Coming (Self-Replicating npm Worm)"
+threat_report_url: "https://unit42.paloaltonetworks.com/npm-supply-chain-attack/"
+
+execution_identity:
+  default: node
+  options:
+    - node
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Agentic / Supply-Chain Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The self-replicating npm worm produces the expected Cortex detections across
+  the whole chain — detached install-hook child, credential scrape, exfil,
+  sibling-package republish, and self-hosted-runner registration — and the
+  correlation stitches them into ONE incident on the shared node CGO causality_id.
+  Detection Accuracy is the share of injected signals that raise the expected
+  alert (target ≥ 90%). Agentic supply-chain coverage has no point-product equal.
+moat_tier: "MOAT"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The npm/node install process running the (pre/post)install lifecycle hook is
+# the Causality Group Owner — the process that owns every downstream node/bun/git
+# child — NOT the synthetic cortexsim-agent. The install-hook detached child
+# (step-01/02) roots at the CGO; the TruffleHog scrape (step-03) shares the
+# harvested secret files; exfil (step-04) opens the network session; the stolen
+# token republishes to sibling packages (step-05, the self-replication edge); and
+# the self-hosted-runner registration (step-06) stitches the endpoint to attacker
+# compute — one connected spine collapsed into a single incident by CR-KOI-0008.
+cgo_anchor:
+  image_name: "node"
+  primary_username: "developer"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "npm install triggers the preinstall lifecycle hook running bun_environment.js"
+    command: |
+      # SAFE-MODE — the preinstall hook launches the node payload. Realistic
+      # process lineage (npm -> node bun_environment.js), no real payload.
+      echo '[CortexSim][SAFE-MODE] npm preinstall hook: node bun_environment.js'
+      node -e "process.env.CORTEXSIM && 0; console.log('preinstall bun_environment.js')" || true
+    identity: node
+    mitre_technique: "T1195"
+    platforms: ["linux", "macos", "container"]
+    platform_variants:
+      macos: "echo '[CortexSim][SAFE-MODE] npm preinstall hook (zsh): node bun_environment.js'; /usr/bin/env node -e \"console.log('preinstall bun_environment.js')\" || true"
+    expected_detections:
+      - plane: KOI
+        type: XQL
+        description: "Validation — npm/node lifecycle hook executes the bun_environment.js payload"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: xql-koi-008-npm-preinstall-hook-executes-bun-environment-js-payload
+
+  - id: step-02
+    name: "bun_environment.js forks a detached child that outlives the install"
+    command: |
+      # SAFE-MODE — setsid detaches a benign node child that survives the
+      # install process, mirroring the worm's detached-child persistence.
+      setsid node -e "setTimeout(function(){}, 1500)" >/dev/null 2>&1 &
+      echo "[CortexSim][SAFE-MODE] detached bun_environment.js child pid $!"
+    identity: node
+    mitre_technique: "T1059"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-01
+      # The detached child descends directly from the install-hook node process
+      # (the CGO) and outlives it — a genuine process fork that survives.
+      pivot: process_lineage
+    expected_detections:
+      - plane: KOI
+        type: ABIOC
+        description: "Detached, unsigned node/bun child spawned by the install hook and outliving the install"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: abioc-koi-008-npm-install-hook-spawns-detached-node-child-outliving-install
+
+  - id: step-03
+    name: "TruffleHog-style scrape of .npmrc / PAT / cloud-key files"
+    command: |
+      # SAFE-MODE — read planted decoy secret files (no real credentials).
+      WORK="$(mktemp -d /tmp/koi008.XXXXXX)"
+      printf '//registry.npmjs.org/:_authToken=CORTEXSIM-DECOY-TOKEN\n' > "$WORK/.npmrc"
+      printf '[default]\naws_access_key_id=AKIADECOYCORTEXSIM000\n' > "$WORK/aws_credentials"
+      printf 'GITHUB_PAT=ghp_CORTEXSIMDECOY000\n' > "$WORK/.env"
+      grep -RIl "authToken\|aws_access_key_id\|GITHUB_PAT" "$WORK" || true
+      echo "[CortexSim][SAFE-MODE] TruffleHog harvested decoy .npmrc/PAT/cloud keys"
+    identity: node
+    mitre_technique: "T1552.001"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-02
+      # The detached child and the scrape share the harvested secret files —
+      # the .npmrc/PAT/cloud-key entities the worm collects and reuses.
+      pivot: shared_entity
+    expected_detections:
+      - plane: KOI
+        type: BIOC
+        description: "Install-hook child reads ≥3 credential files (.npmrc, cloud keys, SSH keys, .env) under the node CGO"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: bioc-koi-008-trufflehog-credential-file-harvest-under-npm-node-cgo
+
+  - id: step-04
+    name: "Exfil harvested secrets to webhook.site and git-push to attacker Shai-Hulud repo"
+    command: |
+      # SAFE-MODE — print the exfil shape against a canary sink; no real egress.
+      echo "[CortexSim][SAFE-MODE] POST harvested secrets -> https://webhook.site/cortexsim-canary"
+      echo "[CortexSim][SAFE-MODE] git push -> https://github.com/cortexsim-canary/Shai-Hulud (public repo)"
+    identity: node
+    mitre_technique: "T1567"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-03
+      # The scraped secrets leave the host over the network — webhook.site POST
+      # plus a git push to the attacker's public repo.
+      pivot: network_session
+    expected_detections:
+      - plane: KOI
+        type: BIOC
+        description: "Outbound webhook.site POST + git push to a new public repo from the node/git CGO chain"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: bioc-koi-008-npm-worm-exfil-to-webhook-site-and-git-push-to-new-public-repo
+      - plane: KOI
+        type: XQL
+        description: "Validation — outbound POST to webhook.site from the npm install chain"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: xql-koi-008-outbound-post-to-webhook-site-from-npm-install-chain
+
+  - id: step-05
+    name: "Stolen npm token republishes to sibling packages (self-replication)"
+    command: |
+      # SAFE-MODE — print the republish shape; no real npm publish is performed.
+      echo "[CortexSim][SAFE-MODE] npm publish --access public sibling-pkg-a (stolen token)"
+      echo "[CortexSim][SAFE-MODE] npm publish --access public sibling-pkg-b (stolen token)"
+      echo "[CortexSim][SAFE-MODE] self-replication: install script injected into 2 sibling packages"
+    identity: node
+    mitre_technique: "T1078"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-04
+      # The npm token harvested and exfiltrated in prior steps is now abused to
+      # republish sibling packages — the stolen-credential-to-propagation edge.
+      pivot: exposure_exploit
+    expected_detections:
+      - plane: KOI
+        type: ABIOC
+        description: "npm publish burst to ≥2 sibling packages using a token harvested this session (self-replication)"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: abioc-koi-008-stolen-npm-token-republishes-to-sibling-packages-self-replication
+
+  - id: step-06
+    name: "discussion.yaml registers the host as a self-hosted GitHub Actions runner"
+    command: |
+      # SAFE-MODE — print the runner-registration shape; nothing is registered.
+      echo "[CortexSim][SAFE-MODE] ./config.sh --url https://github.com/cortexsim-canary --name SHA1HULUD"
+      echo "[CortexSim][SAFE-MODE] discussion.yaml self-hosted runner registered: host is now attacker compute"
+    identity: node
+    mitre_technique: "T1543"
+    platforms: ["linux", "macos", "container"]
+    causality:
+      parent_step: step-05
+      # The endpoint registers itself with GitHub as a self-hosted runner — the
+      # dev/CI host becomes attacker-controlled compute (endpoint↔network stitch).
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: KOI
+        type: BIOC
+        description: "Self-hosted GitHub Actions runner registration (config.sh --name SHA1HULUD / discussion.yaml)"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: bioc-koi-008-self-hosted-github-actions-runner-registration-sha1hulud
+      - plane: KOI
+        type: XQL
+        description: "Validation — actions-runner config registers the infected host"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: xql-koi-008-github-actions-runner-config-registers-infected-host
+      - plane: KOI
+        type: Correlation
+        description: "Stitches the detached child, credential scrape, exfil, self-replication, and runner registration into ONE Shai-Hulud incident"
+        ttp_ref: "TTP-2026-0138"
+        detection_id: CR-KOI-0008
+
+cleanup:
+  commands:
+    - "find /tmp -maxdepth 1 -name 'koi008.*' -exec rm -rf {} + 2>/dev/null || true"
+    - "echo 'cortexsim-koi-008-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - koi
+  - supply-chain
+  - npm
+  - shai-hulud
+  - self-replicating-worm
+  - causality

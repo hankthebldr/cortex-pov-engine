@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from engine import efficacy_scorecard
 from engine import report_generator
 from engine.orchestrator import orchestrator
 from events import event_bus
@@ -43,6 +44,41 @@ logger = logging.getLogger("cortexsim.api.runs")
 # clients/UI builds keep working during the transition.
 router = APIRouter(prefix="/runs", tags=["runs"])
 compat_router = APIRouter(tags=["runs"])
+
+
+#: Markers a run carries when its tooling never reached the target. Emitted
+#: identically by the beacon (`agent/beacon/artifact.go`) and by the capability
+#: gate in `core/api/agents.py`, so one vocabulary covers both refusal points.
+_INTEGRITY_MARKERS: tuple[tuple[str, str], ...] = (
+    ("ARTIFACT STAGING FAILED",
+     "A staged tool could not be fetched or verified on the target, so the "
+     "steps that needed it did not run."),
+    ("PAYLOAD_NOT_STAGED_ON_TARGET",
+     "A step's preflight found its tool absent on the target and refused to "
+     "run the TTP untooled."),
+    ("ARTIFACT_SPEC_INVALID",
+     "The beacon rejected the artifact plan it was handed, so nothing was "
+     "staged."),
+    ("RUN FAILED ON RESTART",
+     "SimCore restarted before the agent collected this task; the run never "
+     "reached the target."),
+)
+
+
+def _execution_integrity(run: Any) -> dict[str, Any]:
+    """Did this run actually execute as authored?
+
+    Keys on `run.output` because that is where both refusal points already
+    write, and both are stable strings. Returns ``ok: True`` for the ordinary
+    case so an unremarkable run's report is byte-identical to before.
+    """
+    output = (getattr(run, "output", "") or "")
+    problems = [
+        f"**{marker}** — {explanation}"
+        for marker, explanation in _INTEGRITY_MARKERS
+        if marker in output
+    ]
+    return {"ok": not problems, "problems": problems}
 
 
 def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
@@ -93,6 +129,47 @@ def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
     return rows
 
 
+def _verdict_section(run: Run) -> list[str]:
+    """Markdown block for a run's test-case verdict. Empty when unscored.
+
+    Reuses ``report_generator._VERDICT_LABEL`` rather than restating the four
+    labels — the wording of "NOT SCOREABLE" in particular is load-bearing and
+    must not fork between the two renderers.
+    """
+    if not run.tc_verdict:
+        return []
+    detail = run.tc_verdict_detail if isinstance(run.tc_verdict_detail, dict) else {}
+    label = report_generator._VERDICT_LABEL.get(run.tc_verdict, run.tc_verdict)
+
+    out = ["## Test-Case Verdict", "", f"**{label}**", ""]
+    if detail.get("detail"):
+        out.append(f"{detail['detail']}.")
+        out.append("")
+
+    primary = detail.get("primary")
+    if isinstance(primary, dict) and primary.get("op"):
+        out.append("| Primary KPI | Verdict | Measured | Threshold |")
+        out.append("|-------------|---------|----------|-----------|")
+        actual = primary.get("actual")
+        out.append(
+            f"| {primary.get('detail') or '—'} | {primary.get('verdict') or '—'} | "
+            f"{'—' if actual is None else actual} | "
+            f"{primary.get('op')} {primary.get('expected')} |"
+        )
+        out.append("")
+
+    unscoreable = detail.get("unscoreable") or []
+    if unscoreable:
+        out.append(
+            f"> {len(unscoreable)} detection(s) carry no measurable threshold and "
+            f"are reported as evidence, never as a scored pass: "
+            f"{', '.join(str(u) for u in unscoreable[:8])}"
+            + (" …" if len(unscoreable) > 8 else "")
+        )
+        out.append("")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -103,9 +180,23 @@ class LaunchRequest(BaseModel):
     mode: str  # "pull" | "push"
     target_agent_id: Optional[str] = None
     identity: Optional[str] = None
-    # Launch-time consent for gated tool adapters. Keys: simulation_authorized
-    # (dual-use-lab-only) and c2_authorized (c2-framework). The orchestrator
-    # refuses to create a Run for a gated adapter without the matching consent.
+    # Launch-time consent. Two families, checked by the ONE launch gate
+    # (engine.orchestrator._check_launch_consent):
+    #
+    #   tool adapters   simulation_authorized (dual-use-lab-only)
+    #                   c2_authorized         (c2-framework)
+    #   cluster posture cluster_privilege_authorized (cluster-scoped/wildcard RBAC)
+    #                   node_access_authorized       (privileged · hostPID ·
+    #                                                 hostNetwork · hostPath ·
+    #                                                 hostPort), push mode only,
+    #                                                 and additionally requires
+    #                                                 CORTEXSIM_ALLOW_PRIVILEGED_K8S
+    #                                                 on the deployment
+    #
+    # The orchestrator refuses to create a Run without the matching consent.
+    # A launch does NOT authorise the manifest itself — generating that is
+    # POST /api/scenarios/{id}/bundle, which gates independently and also
+    # demands authorized_by. See docs/reference/k8s-delivery.md.
     consent: Optional[dict[str, bool]] = None
 
 
@@ -125,6 +216,15 @@ class CompleteRequest(BaseModel):
 # /abort an idempotent no-op. ``staged`` is the terminal state for a push-mode
 # run (GAP-API-004): the bundle was generated and SimCore's role is done.
 _TERMINAL_STATES = {"complete", "failed", "aborted", "staged"}
+
+
+#: Refusal codes that mean "the request was fine, a precondition is not met".
+#: These get 409 (same posture as PAYLOAD_NOT_STAGED) rather than 422, which
+#: says the body was malformed and sends the operator looking at their JSON.
+_LAUNCH_PRECONDITION_CODES = frozenset({
+    "CONSENT_REQUIRED",
+    "ADAPTER_MISSING_CLEANUP",
+})
 
 
 async def _safe_publish(run_id: Optional[str], event: dict) -> None:
@@ -171,9 +271,20 @@ async def _launch_run_impl(
     )
 
     if not result.success:
+        # A missing consent flag is not a malformed request — the body was
+        # perfectly valid, the operator simply has not authorised the action
+        # yet. 409 puts it in the same position and posture as the other
+        # preconditions a launch can fail on (PAYLOAD_NOT_STAGED), and the
+        # structured detail means a console offers the exact checkbox instead
+        # of regexing the sentence for a key name.
+        status = 409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
         raise HTTPException(
-            status_code=422,
-            detail={"error": result.error, "code": "LAUNCH_FAILED", "detail": ""},
+            status_code=status,
+            detail={
+                "error": result.error,
+                "code": result.error_code,
+                "detail": result.error_detail or "",
+            },
         )
 
     response: dict = {
@@ -235,7 +346,7 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/{run_id}/report")
 async def get_report(
     run_id: str,
-    format: str = Query("markdown", pattern="^(markdown|json)$"),
+    format: str = Query("markdown", pattern="^(markdown|json|scorecard|scorecard-html)$"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -261,6 +372,27 @@ async def get_report(
     )
     results = results_result.scalars().all()
 
+    # Executive efficacy scorecard (Detection Proof Layer) — the CISO one-pager
+    # companion to the per-detection report. Short-circuits before the
+    # markdown/json assembly since it reads the same Result rows.
+    if format in ("scorecard", "scorecard-html"):
+        scorecard = efficacy_scorecard.build_efficacy_scorecard(
+            [r.to_dict() for r in results],
+            run_ids=[run_id],
+            title=f"Cortex POV Efficacy Scorecard — {scenario.name if scenario else run.scenario_id}",
+            # Coverage says how much of what we expected we saw; the verdict says
+            # whether the test case actually met its bar. A CISO one-pager that
+            # reports only the first invites "94% covered" to be read as "94%
+            # passed", which the two numbers do not support.
+            tc_verdicts=[run.tc_verdict],
+        )
+        if format == "scorecard-html":
+            return Response(
+                content=efficacy_scorecard.render_html(scorecard),
+                media_type="text/html",
+            )
+        return PlainTextResponse(efficacy_scorecard.render_markdown(scorecard))
+
     # Compute stats
     total = len(results)
     observed = sum(1 for r in results if r.observed)
@@ -281,12 +413,14 @@ async def get_report(
     mttd_max = round(max(mttd_values), 1) if mttd_values else None
 
     tools_used = _build_tools_used_rows(scenario.external_tools if scenario else None)
+    integrity = _execution_integrity(run)
 
     if format == "json":
         return {
             "run": run.to_dict(),
             "scenario": scenario.to_dict() if scenario else None,
             "results": [r.to_dict() for r in results],
+            "execution_integrity": integrity,
             "coverage": {
                 "observed": observed, "total": total, "pct": coverage_pct,
                 "by_type": {k: {**v, "pct": round(v["observed"] / v["total"] * 100, 1) if v["total"] > 0 else 0} for k, v in by_type.items()},
@@ -313,6 +447,33 @@ async def get_report(
     lines.append(f"**Completed:** {run.completed_at.strftime('%Y-%m-%d %H:%M UTC') if run.completed_at else 'In Progress'}  ")
     lines.append(f"**Status:** {run.status}  ")
     lines.append("")
+
+    # Execution integrity FIRST — before MITRE, tools and coverage. A run whose
+    # tooling never reached the target would otherwise render as an ordinary
+    # miss: 0/14 detections, every row ❌, and a "Tools Used" table introduced as
+    # the run's audit trail listing three tools that never arrived. That is the
+    # manufactured false negative relocated out of the API and into the one
+    # artifact a DC actually puts in front of a customer, where it reads as a gap
+    # in THEIR coverage. The beacon already refuses correctly and says so in
+    # run.output; the report simply has to stop throwing that away.
+    if not integrity["ok"]:
+        lines.append("## ⚠ Execution Integrity — READ THIS FIRST")
+        lines.append("")
+        lines.append(
+            "**The detection results below are NOT evidence about this "
+            "environment's coverage.** This run did not execute as authored:"
+        )
+        lines.append("")
+        for problem in integrity["problems"]:
+            lines.append(f"- {problem}")
+        lines.append("")
+        lines.append(
+            "A step whose tool could not be staged did not run. Absent "
+            "detections therefore say nothing about whether Cortex would have "
+            "caught the behaviour — treat the coverage numbers below as void "
+            "and re-run once staging is fixed."
+        )
+        lines.append("")
 
     if s:
         lines.append("## MITRE ATT&CK Mapping")
@@ -363,6 +524,12 @@ async def get_report(
         pct = round(stats["observed"] / stats["total"] * 100, 1) if stats["total"] > 0 else 0
         lines.append(f"| {dt} | {stats['observed']} | {stats['total']} | {pct}% |")
     lines.append("")
+
+    # Test-case verdict — the answer coverage % cannot give. A coverage
+    # percentage with no verdict is exactly the inflation the verifier exists
+    # to prevent. Rendered only when a verdict exists: an unscored historical
+    # run must not grow a fake section.
+    lines.extend(_verdict_section(run))
 
     # MTTD
     if mttd_values:
@@ -620,13 +787,22 @@ async def complete_run(
         {"type": "run.status", "run_id": run_id, "data": {"status": run.status, "step_id": None}},
     )
 
+    # Seed the test-case verdict at completion. At t=0 nothing is observed, so
+    # a threshold-carrying scenario lands on `pending` ("declared but not
+    # measured") — which is the point: every finished run now carries an
+    # explicit verdict, so /api/uctc stops conflating "never scored" with
+    # "scored pending". Offline only; no tenant call on an agent callback.
+    from connectors.service import score_run_safely  # noqa: PLC0415
+    tc_verdict = await score_run_safely(db, run, source="complete")
+
     logger.info(
-        "run_complete run_id=%s exit_code=%d status=%s",
+        "run_complete run_id=%s exit_code=%d status=%s tc_verdict=%s",
         run_id,
         body.exit_code,
         run.status,
+        tc_verdict,
     )
-    return {"status": run.status, "run_id": run_id}
+    return {"status": run.status, "run_id": run_id, "tc_verdict": tc_verdict}
 
 
 # ---------------------------------------------------------------------------
@@ -671,6 +847,53 @@ async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
 
     logger.info("abort_run run_id=%s -> aborted", run_id)
     return {"status": "aborted", "run_id": run_id, "was_terminal": False}
+
+
+@router.post("/{run_id}/verify")
+async def verify_run_endpoint(
+    run_id: str,
+    integration: Optional[str] = Query(None, description="xsiam_tenant integration name (defaults to the first registered)"),
+    timeframe_seconds: Optional[int] = Query(None, ge=60, le=86400, description="XQL lookback per query"),
+    force: bool = Query(False, description="Re-verify a run that already reached a terminal verdict"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify this run's ``verification_xql`` detections against a tenant, then
+    score the run's test-case verdict.
+
+    Not flag-gated — an explicit POST naming the action is its own consent,
+    exactly like ``POST /api/runs/{id}/reconcile``. The response always names
+    the tenant it queried and how many queries it issued, so nobody has to
+    discover after the fact which customer environment was touched.
+
+    Returns **200** with ``tc_verdict: "pending"`` and
+    ``reason: "no_tenant_integration"`` when no credential is registered — the
+    same contract the assertion surface uses. "No tenant wired" is an honest
+    verdict, not a client error; only a *named* integration that does not exist
+    is a 404.
+    """
+    from connectors.service import VerifyError, verify_run_now  # noqa: PLC0415
+
+    result = await db.execute(select(Run).where(Run.run_id == run_id))
+    run: Optional[Run] = result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
+        )
+
+    try:
+        outcome = await verify_run_now(
+            db, run, integration=integration, timeframe_seconds=timeframe_seconds,
+            force=force, source="verify",
+        )
+    except VerifyError as e:
+        raise HTTPException(status_code=404, detail={
+            "error": str(e), "code": e.code, "detail": e.detail})
+
+    logger.info("verify_run run_id=%s verdict=%s tenant=%s queries=%d reason=%s",
+                run_id, outcome.tc_verdict, outcome.tenant,
+                outcome.queries_issued, outcome.reason)
+    return outcome.to_dict()
 
 
 @router.get("/{run_id}/control")

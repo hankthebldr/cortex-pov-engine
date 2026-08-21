@@ -21,6 +21,30 @@ safety_class: safe
 install:
   runtime_install_command: "command -v vt >/dev/null 2>&1 || go install github.com/VirusTotal/vt-cli/vt@latest"
   binary: "vt"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: ARCHIVE_ONLY_NO_EXTRACTOR
+    reason: >-
+      The VirusTotal CLI is published only as a compressed archive, and
+      CortexSim can currently stage single files only — so it cannot be served
+      from the shelf yet. Note that this tool's purpose is an outbound call to
+      virustotal.com, so staging the binary would remove the install download
+      but not the run-time one: it needs internet access on the target host
+      either way.
+    revisit: >-
+      Blocked on CortexSim, not on upstream. Requires a single-member
+      extractor (download the pinned archive on the DC's SimCore, verify the
+      ARCHIVE digest, extract one named member, verify the MEMBER digest, put
+      that one file on the shelf) so compose() still emits kind: file and
+      neither the Go beacon nor the K8s init container learns a new word.
+      Measured 2026-08-06: vt-cli publishes Linux64.zip ONLY (verified
+      2026-08-06; latest tag 1.3.1, no 'v' prefix — do not normalise it), so
+      this is the one candidate that would exercise an extractor's zip branch
+      with a real artifact rather than a fixture. Rank it LAST: no scenario
+      carries adapter_ref TOOL-VT-CLI, so wiring it buys no scenario coverage.
+      Compute the archive and member digests at pin time — this pass
+      deliberately did not download it, and a digest nobody verified is not a
+      pin.
 
 invoke:
   target_platform: linux

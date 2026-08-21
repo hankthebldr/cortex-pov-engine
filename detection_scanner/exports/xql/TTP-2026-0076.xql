@@ -9,9 +9,9 @@ dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("kubectl", "crictl", "runc", "containerd-shim")
 | filter action_process_image_command_line contains "exec" or action_process_image_command_line contains "/proc/1/status" or action_process_image_command_line contains "serviceaccount/token"
-| fields agent_hostname, actor_process_image_name, action_process_image_command_line, action_process_image_name
-| comp count() as exec_events by agent_hostname, actor_process_image_name
+| comp count() as exec_events, values(action_process_image_command_line) as cmds by agent_hostname, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id
 | filter exec_events >= 1
+| fields agent_hostname, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, exec_events, cmds
 
 ## BIOC — CDR-007 IAM GetAccountAuthorizationDetails Bulk Enumeration
 # severity: medium

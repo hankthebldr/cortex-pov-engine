@@ -12,7 +12,7 @@
     },
     {
       "description": null,
-      "logic": "CR-CRED-0001 (LSASS dump) AND CR-CRED-0002 (DCSync) on same actor within 4h \u2014 promotes to Critical incident with auto-isolation.",
+      "logic": "CR-CRED-0001 (LSASS dump) AND CR-CRED-0002 (DCSync) stitched on the same causality_actor / compromised user_principal within 4h \u2014 promotes to Critical incident with auto-isolation. In the multi-plane chain (SIM-MP-002) the join key is the compromised service-account principal that threads Kerberoast recon \u2192 PtH lateral \u2192 DCSync across ITDR + EDR + NDR.",
       "name": "Credential Access \u2014 Chained LSASS + DCSync Within 4h",
       "rule_id": "CR-CRED-0003",
       "severity": "high"

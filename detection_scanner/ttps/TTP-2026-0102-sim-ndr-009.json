@@ -1,0 +1,338 @@
+{
+  "id": "TTP-2026-0102",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-13T00:00:00+00:00",
+    "updated_at": "2026-07-13T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-behavioral-anomaly",
+      "actor-oilrig",
+      "dns-tunneling",
+      "dns-exfiltration",
+      "severity-high",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-PANW-TECHDOCS",
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-MANDIANT"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "DNS-Tunnel Behavioral Anomaly — Query-Volume + Subdomain-Entropy Deviation from Learned Host DNS Baseline (T1048.003 / T1071.004 / T1572)",
+    "summary": "A host whose learned Cortex DNS profile is a small, low-rate set of resolutions suddenly emits a burst of high-entropy encoded subdomains under one base domain — the DNS-tunnel tradecraft of OilRig (APT34) and SUNBURST-style beaconing. No single query is a known-bad IOC; the deviation from the host's learned DNS baseline plus the causality chain is what an auto-tuned ABIOC anchors on.",
+    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the user, endpoint, and network behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the NETWORK (NDR) plane — the gap where the corpus had NGFW App-ID / BIOC / XQL DNS coverage but no auto-tuned behavioral-ML DNS detector. It models DNS tunneling / DNS exfiltration as documented for OilRig (APT34) — whose ALMA Communicator, Helminth, and BONDUPDATER implants beacon and exfiltrate by encoding data into subdomain labels under an attacker base domain — and echoed by SUNBURST's DGA-encoded DNS beaconing to avsvmcloud.com. Cortex has learned that a given host resolves a stable, low-rate set of names to known destinations, with ordinary label length and character distribution. The scenario injects two behavioral deviations from that learned baseline: (a) a query-volume flood — dozens of lookups under a single base domain within a minute, far above the host's learned per-minute DNS rate; and (b) a high-entropy subdomain profile — long, encoded first-labels whose length and character distribution diverge from the host's learned name shape. A hand-authored BIOC keyed on a specific bad domain or a fixed FQDN-length threshold would miss a tunnel over an unseen base domain — which is the point: the auto-tuned ABIOC fires on the deviation from the host's learned DNS behavior and anchors it to the causality chain (single host -> single base domain -> high-rate, high-entropy label burst). Two ABIOCs cover the two deviation shapes; supporting validation XQL confirms the baseline resolution set and surfaces the high-entropy burst; a correlation rule stitches the two ABIOCs into a single DNS-tunnel-exfiltration incident the DC presents as proof that Cortex's behavioral analytics caught a tunnel no static domain-block or fixed-threshold rule was written for.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "OilRig",
+        "aliases": [
+          "APT34",
+          "Helix Kitten",
+          "Cobalt Gypsy"
+        ]
+      }
+    ],
+    "campaigns": [
+      "OilRig DNS tunneling operations against Middle East government and telecom targets (2016-2022)",
+      "SUNBURST / SolarWinds supply-chain DNS beaconing (avsvmcloud.com, 2020)"
+    ],
+    "malware_families": [
+      {
+        "name": "ALMA Communicator"
+      },
+      {
+        "name": "Helminth"
+      },
+      {
+        "name": "BONDUPDATER"
+      },
+      {
+        "name": "SUNBURST"
+      }
+    ],
+    "industries_targeted": [
+      "government",
+      "telecommunications",
+      "technology"
+    ],
+    "first_observed": "2016-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1048",
+        "name": "Exfiltration Over Alternative Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-NDR-009 — DNS-tunnel query-volume + subdomain-entropy behavioral deviation from a learned host DNS baseline for Cortex ABIOC validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "NGFW / Cortex XSIAM DNS telemetry reaches the pan_dns dataset so per-host query volume and label shape are observable.",
+        "check_command": "which dig || which nslookup"
+      },
+      {
+        "description": "A baseline window has elapsed during which the host resolved only its stable, low-rate set of names so Cortex learned the per-host DNS profile.",
+        "check_command": "cat /etc/resolv.conf"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# No known-bad domains. Emit a DNS-tunnel-shaped burst that deviates from the\n# host's learned DNS baseline against an authorised NIDS test domain.\nset -euo pipefail\nBASE=${BASE_DOMAIN:-exfil.testmynids.org}\n# (a) query-volume flood far above the host learned per-minute DNS rate\nfor i in 1 2 3 4 5 6 7 8 9 10; do dig +short chunk$i.$BASE TXT || true; done\n# (b) high-entropy long encoded first-labels that diverge from the learned name shape\ndig +short f8a2c9e1b4d7a0c3e6f9k2.$BASE TXT || true\ndig +short a1b2c3d4e5f6a7b8c9d0e1x7.$BASE TXT || true\ndig +short z9y8x7w6v5u4t3s2r1q0p3.$BASE TXT || true",
+      "input_variables": [
+        {
+          "name": "BASE_DOMAIN",
+          "type": "string",
+          "default": "exfil.testmynids.org",
+          "description": "Authorised base domain the DNS-tunnel burst is emitted under during the deviation."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "dns-query",
+        "description": "A burst of DNS lookups from one host under a single base domain within a minute, above the host's learned per-minute DNS rate.",
+        "expected_value": "dataset = pan_dns and dns_query_name contains \".exfil.testmynids.org\""
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "Long, high-entropy first-labels whose length and character distribution diverge from the host's learned DNS name shape.",
+        "expected_value": "len(arrayindex(split(dns_query_name, \".\"), 0)) >= 20"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-NDR-009 cleanup complete — DNS queries leave no local artifact.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "NDR-009 DNS Query-Volume Flood Deviating from Learned Host Baseline",
+        "description": "A host whose learned Cortex DNS profile is a small, low-rate set of resolutions suddenly emits dozens of lookups under a single base domain within a minute. The ABIOC anchors the volume deviation to the causality chain (one host -> one base domain -> high-rate label burst) rather than to any known-bad domain, catching a DNS tunnel over an unseen base domain that a static domain-block would miss.",
+        "logic": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 900)\n| filter dns_query_name contains \".exfil.testmynids.org\"\n| comp count() as query_count, count_distinct(dns_query_name) as distinct_labels by source_ip, bin(_time, 1m) as minute\n| filter query_count >= 10\n| sort desc query_count\n| fields minute, source_ip, query_count, distinct_labels",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048.003",
+          "T1572"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host DNS baseline (stable, low per-minute resolution rate) -> a single host issuing a high-rate burst of distinct labels under one base domain, anchored to the originating host and base domain."
+      },
+      {
+        "name": "NDR-009 High-Entropy Subdomain Labels Deviating from Learned DNS Baseline",
+        "description": "A host resolves long, encoded first-labels whose length and character distribution diverge from its learned DNS name shape — the encoded-payload signature of DNS tunneling. Every query is a legitimate DNS lookup; the ABIOC fires on the entropy-and-length deviation from the host's learned name baseline, anchored to the query-volume burst that carries it.",
+        "logic": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 900)\n| filter dns_query_name contains \".exfil.testmynids.org\"\n| alter first_label = arrayindex(split(dns_query_name, \".\"), 0)\n| filter len(first_label) >= 20\n| comp count() as high_entropy_labels, avg(len(first_label)) as avg_label_len by source_ip\n| filter high_entropy_labels >= 3 and avg_label_len > 18\n| sort desc high_entropy_labels\n| fields source_ip, high_entropy_labels, avg_label_len",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.004",
+          "T1048.003"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Query-volume burst under a single base domain -> long, high-entropy encoded first-labels that exceed the host's learned name length and character-distribution profile, anchored to the emitting host."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "NDR-009 DNS Query Volume Baseline Learned",
+        "query": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 900)\n| filter dns_query_name contains \".exfil.testmynids.org\"\n| comp count() as baseline_queries by source_ip\n| filter baseline_queries >= 1\n| fields source_ip, baseline_queries",
+        "expected_rows_min": 0,
+        "dataset": "pan_dns"
+      },
+      {
+        "purpose": "validation",
+        "name": "NDR-009 High-Entropy Label Burst Surfaced",
+        "query": "dataset = pan_dns\n| filter _time > to_timestamp(current_time() - 900)\n| filter dns_query_name contains \".exfil.testmynids.org\"\n| alter first_label = arrayindex(split(dns_query_name, \".\"), 0)\n| filter len(first_label) >= 20\n| comp count() as high_entropy_labels by source_ip\n| filter high_entropy_labels >= 1\n| fields source_ip, high_entropy_labels",
+        "expected_rows_min": 1,
+        "dataset": "pan_dns"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "DNS-Tunnel Exfiltration on a Host — ABIOC Causality Stitch",
+        "rule_id": "CR-NDR-0009",
+        "logic": "ABIOC(NDR-009 DNS Query-Volume Flood Deviating from Learned Host Baseline) AND ABIOC(NDR-009 High-Entropy Subdomain Labels Deviating from Learned DNS Baseline) — fuses the two auto-tuned behavioral deviations from the same source host into a single DNS-tunnel-exfiltration incident anchored to the host + base-domain causality chain."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-host DNS query volume and subdomain label entropy"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-ABIOC-NDR-0009-DNS-VOLUME",
+          "XSIAM-ABIOC-NDR-0009-DNS-ENTROPY"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Two ABIOCs fire on the per-host DNS behavioral deviation; CR-NDR-0009 stitches them into one DNS-tunnel-exfiltration incident anchored to the host + base-domain causality chain."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "ngfw-app-id",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-DNS-TUNNEL-BEHAVIORAL"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = pan_dns | filter dns_query_name contains \".exfil.testmynids.org\" | comp count() as q by source_ip"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-NDR-009",
+        "name": "DNS-Tunnel Behavioral Anomaly Detection via Cortex ABIOC",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a host's DNS query-volume and subdomain-entropy baseline and detect DNS-tunnel exfiltration as a deviation from that baseline, anchored to its causality chain, where no static domain-block or fixed-threshold rule was written for the unseen base domain.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-NDR-009A",
+            "objective": "Cortex learns the host DNS baseline and an injected tunnel burst fires both ABIOCs.",
+            "preconditions": [
+              "NDR target with NGFW / XSIAM DNS telemetry reaching pan_dns.",
+              "Baseline window elapsed with the host resolving only its stable, low-rate name set."
+            ],
+            "steps": [
+              "Let the host DNS baseline window elapse.",
+              "Emit a query-volume flood and a high-entropy subdomain burst under a single base domain.",
+              "Observe both ABIOCs fire and CR-NDR-0009 raise a DNS-tunnel-exfiltration incident."
+            ],
+            "success_criteria": [
+              "ABIOC `NDR-009 DNS Query-Volume Flood Deviating from Learned Host Baseline` fires.",
+              "ABIOC `NDR-009 High-Entropy Subdomain Labels Deviating from Learned DNS Baseline` fires.",
+              "Correlation CR-NDR-0009 raises one stitched DNS-tunnel-exfiltration incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Force all internal DNS through inspected resolvers and block direct outbound port 53 / DoH from endpoints so tunnels cannot bypass NGFW DNS Security.",
+      "Enable Cortex / NGFW DNS Security to sink-hole algorithmically generated and known-tunnel domains at resolution time.",
+      "Rate-limit and alert on per-host DNS query volume and subdomain entropy that exceed the host's learned baseline."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned per-host DNS query-volume and label-entropy baseline rather than hand-authoring a fixed FQDN-length threshold or a per-domain block.",
+      "Alert on a single host issuing a high-rate burst of distinct labels under one base domain.",
+      "Alert on first-label length and character distribution exceeding the host's learned DNS name shape."
+    ],
+    "response_playbook": "XSOAR-PB-DnsTunnelBehavioralAnomalyTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "Unit 42 — DNS Tunneling in the Wild: Overview of OilRig's DNS Tunneling",
+      "url": "https://unit42.paloaltonetworks.com/dns-tunneling-in-the-wild-overview-of-oilrigs-dns-tunneling/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "Unit 42 — DNS Tunneling: How DNS Can Be (Ab)used by Malicious Actors",
+      "url": "https://unit42.paloaltonetworks.com/dns-tunneling-how-dns-can-be-abused-by-malicious-actors/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK T1048.003 — Exfiltration Over Unencrypted Non-C2 Protocol",
+      "url": "https://attack.mitre.org/techniques/T1048/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1071.004 — Application Layer Protocol: DNS",
+      "url": "https://attack.mitre.org/techniques/T1071/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Mandiant — Highly Evasive Attacker Leverages SolarWinds Supply Chain (SUNBURST DNS beaconing)",
+      "url": "https://www.mandiant.com/resources/blog/evasive-attacker-leverages-solarwinds-supply-chain-compromises-with-sunburst-backdoor",
+      "publisher": "Mandiant",
+      "publisher_id": "SRC-MANDIANT"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+title: "AWS IAM Roles Anywhere Trust-Anchor Abuse for Certificate-Backed Persistence (T1098.001 / T1550.001 / T1078.004) \u2014 Roles Anywhere Trust Anchor Created or Repointed to External CA"
+id: ttp-2026-0117-bioc-01
+status: experimental
+description: |
+  A rolesanywhere CreateTrustAnchor or UpdateTrustAnchor call registers or repoints an anchor at an inline, attacker-supplied certificate bundle (sourceType CERTIFICATE_BUNDLE) rather than an AWS-managed ACM-PCA certificate authority. Registering a self-signed CA as a trust anchor is the persistence-substrate write: any certificate chaining to it can subsequently mint STS credentials.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source = "rolesanywhere.amazonaws.com"
+    | filter event_name in ("CreateTrustAnchor", "UpdateTrustAnchor")
+    | filter request_parameters.source.sourceType = "CERTIFICATE_BUNDLE"
+    | comp count() as anchor_writes by user_identity.arn, source_ip, user_agent, request_parameters.name
+    | filter anchor_writes >= 1
+    | fields user_identity.arn, source_ip, user_agent, request_parameters.name, anchor_writes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098.001
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AWS IAM Roles Anywhere Trust-Anchor Abuse for Certificate-Backed Persistence (T1098.001 / T1550.001 / T1078.004) \u2014 Roles Anywhere Trust Anchor and Profile Enumeration Burst"
+id: ttp-2026-0117-bioc-02
+status: experimental
+description: |
+  An identity issues a short burst of rolesanywhere read/list calls (ListTrustAnchors, ListProfiles, GetTrustAnchor, GetProfile) that enumerates the certificate-federation surface. This is the reconnaissance that precedes trust-anchor abuse: the attacker maps existing anchors, profiles, and the roles they attach before creating or repointing an anchor.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source = "rolesanywhere.amazonaws.com"
+    | filter event_name in ("ListTrustAnchors", "ListProfiles", "GetTrustAnchor", "GetProfile")
+    | bin _time span=300s
+    | comp count_distinct(event_name) as distinct_recon_calls by user_identity.arn, source_ip, _time
+    | filter distinct_recon_calls >= 4 and source_ip not in user_baseline.recent_ips[user_identity.arn]
+    | fields user_identity.arn, source_ip, distinct_recon_calls, _time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1580/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1580
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "AWS IAM Roles Anywhere Trust-Anchor Abuse for Certificate-Backed Persistence (T1098.001 / T1550.001 / T1078.004) \u2014 Roles Anywhere CreateSession Minting STS Credentials From Unmanaged Trust Anchor"
+id: ttp-2026-0117-bioc-03
+status: experimental
+description: |
+  A rolesanywhere CreateSession event mints STS credentials via the aws_signing_helper credential helper against a trust anchor that is NOT on the approved-anchor allowlist (i.e. an unmanaged / attacker-supplied anchor rather than a sanctioned ACM-PCA one) and from a source IP not previously seen minting for that role. The event record exposes the trust anchor, profile, and role ARNs. Scoping to unapproved anchors and new source IPs keeps benign, continuous aws_signing_helper minting by legitimate hybrid workloads from firing while surfacing the certificate-backed credential-use signal a static IAM-key rule never sees.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS" and event_source = "rolesanywhere.amazonaws.com" and event_name = "CreateSession"
+    | filter user_agent contains "aws_signing_helper"
+    | filter request_parameters.trustAnchorArn not in cloud_baseline.approved_trust_anchors
+    | filter source_ip not in user_baseline.recent_ips[request_parameters.roleArn]
+    | comp count() as sessions_minted by request_parameters.trustAnchorArn, request_parameters.profileArn, request_parameters.roleArn, source_ip
+    | filter sessions_minted >= 1
+    | fields request_parameters.trustAnchorArn, request_parameters.profileArn, request_parameters.roleArn, source_ip, sessions_minted
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.001
+    - attack.t1078.004
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

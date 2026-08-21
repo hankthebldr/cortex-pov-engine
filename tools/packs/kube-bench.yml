@@ -31,6 +31,25 @@ install:
   # binary so the adapter is usable on jumpboxes without docker.
   runtime_install_command: "command -v kube-bench >/dev/null 2>&1 || (curl -sSL https://github.com/aquasecurity/kube-bench/releases/download/v0.10.3/kube-bench_0.10.3_linux_amd64.tar.gz | tar xz -C /usr/local/bin kube-bench && chmod +x /usr/local/bin/kube-bench)"
   binary: kube-bench
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: ARCHIVE_MEMBER_NOT_SELF_CONTAINED
+    reason: >-
+      kube-bench needs its 200-file CIS benchmark configuration directory, not
+      just its binary. The shelf stages one file at a time, so there is no
+      single file that runs. This tool needs internet access on the target
+      host.
+    revisit: >-
+      Measured 2026-08-06 by opening the archive:
+      kube-bench_0.10.3_linux_amd64.tar.gz (15,953,413 bytes, sha256
+      f4fc4d51ece2e85f021ade4afa6cb7ac3a0b17e95e5712d0e2f28ce10348a37d) holds
+      205 entries — the binary plus a cfg/ tree (cfg/ack-1.0/, cfg/cis-1.*/,
+      cfg/aks-*/ ...). The binary alone exits with a config error. This is the
+      honest boundary of the one-file contract: kube-bench is UNDER the size
+      cap and looks shelvable on the release page. Only opening the archive
+      shows it is not. Revisit only if the shelf ever grows a multi-file
+      artifact type, which is a much larger change than single-member
+      extraction.
 
 invoke:
   target_platform: k8s

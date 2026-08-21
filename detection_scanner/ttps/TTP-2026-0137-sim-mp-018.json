@@ -1,0 +1,511 @@
+{
+  "id": "TTP-2026-0137",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T21:07:20+00:00",
+    "updated_at": "2026-07-24T21:07:20+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane-stitch",
+      "supply-chain",
+      "ci-cd-compromise",
+      "weaponized-scanner",
+      "proc-memory-scrape",
+      "imds-credential-theft",
+      "kubernetes-secrets",
+      "privileged-daemonset",
+      "cluster-brick",
+      "data-destruction",
+      "correlation",
+      "actor-teampcp",
+      "causality-chain",
+      "severity-critical"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "kubernetes",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 360,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "TeamPCP Weaponized-Scanner Supply Chain — CI Runner /proc Memory Scrape to Cloud-Cred Theft to K8s DaemonSet Cluster-Brick",
+    "summary": "A weaponized CI security scanner (trivy/kics) is the CGO: it spawns kamikaze.sh/kube.py, which scrapes runner.worker /proc mem to bypass GitHub secret masking, curls the IMDS (169.254.169.254) for cloud IAM creds, lists Kubernetes secrets, applies a privileged DaemonSet, then recursively wipes nodes. One XSIAM correlation anchors the CGO and stitches the chain into a single ANALYTICS+CDR incident.",
+    "description": "Models the TeamPCP weaponized-scanner supply-chain campaign Unit 42 reported (late Feb–Mar 2026), in which the actor stole GitHub PATs / PyPI tokens and force-pushed credential-stealing payloads onto version tags of trusted CI security scanners — Aqua Security Trivy (76/77 tags, Mar 19), Checkmarx KICS (35 tags, Mar 21), BerriAI LiteLLM and the Telnyx Python SDK. The differentiator is the causality spine, not any single signature. The chain, all owned by ONE Causality Group Owner: (1) the CI runner executes the weaponized trivy/kics action — this action process is the CGO (image trivy, user runner), and it spawns a bash/python child (kamikaze.sh → kube.py) BEFORE the legitimate scanner runs (process_lineage). (2) The child reads runner.worker's process memory via /proc/<pid>/mem, extracting plaintext tokens that GitHub's secret-masking never protects because they are lifted straight from RAM (shared_entity on the runner PID; T1003.007 Proc Filesystem). (3) It curls the instance metadata service at 169.254.169.254/latest/meta-data/iam/security-credentials/ to steal the runner's cloud IAM role credentials (network_session; T1552.005 Cloud Instance Metadata API). (4) kube.py uses the harvested service-account token to hit the Kubernetes API server, enumerating /api/v1/namespaces, /api/v1/nodes, and /api/v1/namespaces/*/secrets — a burst of control-plane calls from a single CI-runner-owned process (the endpoint_network_stitch that pivots ANALYTICS<->CDR; T1613 / T1552.007). (5) With cluster-admin secrets in hand it applies a privileged DaemonSet — CanisterWorm's destructive stager — landing a pod on every node (exposure_exploit; T1610 Deploy Container). (6) The DaemonSet executes a recursive destructive wipe across the mounted host filesystems to brick the cluster (exploit_impact; T1485 Data Destruction). Two EDR BIOCs catch the weaponized-action child-spawn and the /proc-mem scrape keyed on causality_actor_process; a hunt XQL surfaces the IMDS credential theft; an ABIOC flags the k8s-secrets enumeration burst from the CI-runner process; a k8s-audit BIOC catches the privileged DaemonSet; an ABIOC models the recursive wipe; a validation XQL confirms observability; and CR-MP-0018 fuses the entire lineage into one incident spanning the ANALYTICS and CDR planes. The scenario runs NON-DESTRUCTIVE, SAFE-MODE on Linux: the IMDS, k8s-API, and C2 legs use loopback/marker representations only, the destructive stage touches an isolated scratch tree it seeds itself (never a real host mount), and no real TeamPCP infrastructure is contacted.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "TeamPCP",
+        "aliases": [
+          "TPCP"
+        ]
+      }
+    ],
+    "campaigns": [
+      "TeamPCP weaponized-scanner supply-chain campaign (Unit 42, Feb–Mar 2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "kamikaze.sh (TeamPCP cloud stealer)"
+      },
+      {
+        "name": "kube.py (TeamPCP Kubernetes stealer/wiper)"
+      },
+      {
+        "name": "CanisterWorm"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1195",
+        "name": "Supply Chain Compromise (T1195.002 — Compromise Software Supply Chain)",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "name": "OS Credential Dumping (T1003.007 — Proc Filesystem)",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials (T1552.005 — Cloud Instance Metadata API; T1552.007 — Container API)",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1613",
+        "name": "Container and Resource Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1610",
+        "name": "Deploy Container",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1485",
+        "name": "Data Destruction",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Access",
+      "Network Traffic: Network Connection Creation",
+      "Cloud Service: Cloud Service Metadata",
+      "Container: Container Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-018 — TeamPCP weaponized-scanner supply-chain chain: CI-runner /proc memory scrape to cloud-cred theft to k8s DaemonSet cluster-brick.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the CI runner so per-process and file-access telemetry (the trivy CGO, the kamikaze.sh child, the /proc/<pid>/mem read) reaches xdr_data.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "Kubernetes / cloud audit logs forwarded into the tenant so the k8s-secrets enumeration and the privileged-DaemonSet apply land in cloud_audit_logs on the same run window.",
+        "check_command": "true"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE SAFE-MODE emulation of the TeamPCP weaponized-scanner chain.\n# No real cloud/k8s/C2 infrastructure is contacted: the IMDS, kube-apiserver,\n# and C2 legs use loopback/marker representations, and the destructive stage\n# only touches an isolated scratch tree this script seeds itself. The deployable\n# detections target the real CI-runner telemetry; this payload emits the\n# causality SHAPE (trivy CGO -> child -> proc-mem -> IMDS -> k8s -> daemonset -> wipe).\nset -euo pipefail\nMARK=/tmp/cortexsim_mp018\nWIPE_SCRATCH=\"${MARK}_wipe_scratch\"\n# (1) process_lineage — weaponized trivy action (CGO) spawns kamikaze.sh child\necho '[CortexSim][CGO] trivy action (runner) spawning kamikaze.sh loader before legit scan' > \"${MARK}_kamikaze.marker\"\n# (2) shared_entity — /proc/<pid>/mem scrape of runner.worker (secret-mask bypass)\necho '[CortexSim] runner.worker /proc/PID/mem scrape marker (GitHub secret-masking bypass)' > \"${MARK}_procmem.marker\"\n# (3) network_session — IMDS 169.254.169.254 cloud IAM credential theft (loopback stand-in)\ncurl -s --max-time 3 \"http://${STAGE_HOST:-127.0.0.1}/mp018/imds/latest/meta-data/iam/security-credentials/\" -o /dev/null 2>/dev/null || true\n# (4) endpoint_network_stitch — kube.py enumerates k8s secrets (loopback stand-in)\nfor p in namespaces nodes namespaces/default/secrets namespaces/kube-system/secrets; do curl -s --max-time 3 \"http://${STAGE_HOST:-127.0.0.1}/mp018/kubeapi/api/v1/${p}\" -o /dev/null 2>/dev/null || true; done\n# (5) exposure_exploit — privileged DaemonSet apply marker\necho '[CortexSim] privileged DaemonSet (CanisterWorm stager) apply marker' > \"${MARK}_daemonset.marker\"\n# (6) exploit_impact — recursive wipe against an ISOLATED scratch tree only\nmkdir -p \"${WIPE_SCRATCH}/a/b\"; echo scratch > \"${WIPE_SCRATCH}/a/b/file\"; rm -rf \"${WIPE_SCRATCH}\"\necho '[CortexSim] SIM-MP-018 chain shape emitted (CGO -> child -> procmem -> IMDS -> k8s -> daemonset -> wipe)'\n",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised loopback/collector the representative IMDS, kube-apiserver, and C2 shapes reach. Never the real metadata service, cluster, or TeamPCP infrastructure."
+        }
+      ],
+      "timeout_seconds": 360
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Marker representing the weaponized trivy action spawning the kamikaze.sh credential-harvest child (the CGO process_lineage root).",
+        "expected_value": "/tmp/cortexsim_mp018_kamikaze.marker"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Marker representing the runner.worker /proc/<pid>/mem scrape that bypasses GitHub secret masking.",
+        "expected_value": "/tmp/cortexsim_mp018_procmem.marker"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Representative IMDS request (loopback) standing in for 169.254.169.254 cloud IAM credential theft.",
+        "expected_value": "one outbound request to /latest/meta-data/iam/security-credentials/ from the CI-runner process"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Representative burst of kube-apiserver requests (loopback) standing in for /api/v1/namespaces/*/secrets enumeration.",
+        "expected_value": "4 sequential kube-apiserver requests from the same CI-runner process"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim_mp018_wipe_scratch; rm -f /tmp/cortexsim_mp018_*; echo '[CortexSim] SIM-MP-018 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "scan.aquasecurtiy.org",
+        "context": "TeamPCP exfiltration domain typosquatting Aqua Security; kamikaze.sh POSTs harvested credentials here.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "checkmarx.zone",
+        "context": "TeamPCP exfiltration domain impersonating Checkmarx; used by the KICS-action payload.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "models.litellm.cloud",
+        "context": "TeamPCP exfiltration domain tied to the LiteLLM PyPI payload.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "tdtqy-oyaaa-aaaae-af2dq-cai.raw.icp0.io",
+        "context": "Internet Computer (ICP) canister-based dead-drop C2 used by CanisterWorm for persistence.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "169.254.169.254",
+        "context": "Cloud instance metadata service (IMDS) — link-local address the payload curls for IAM credentials. Benign on its own; malicious when reached by a CI-runner scanner action's child interpreter.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "tpcp.tar.gz",
+        "context": "TeamPCP staging archive aggregating harvested cloud tokens and Kubernetes secrets before exfiltration.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "kamikaze.sh",
+        "context": "First-stage TeamPCP cloud stealer injected before legitimate scanner execution.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-018 CI-Runner Weaponized-Scanner Action Spawns Credential-Harvest Child",
+        "description": "The process_lineage root. A trusted CI security scanner (trivy / kics) is the Causality Group Owner, but instead of only running the scan it spawns a bash/python child (kamikaze.sh / kube.py) that immediately touches credential surfaces. The BIOC keys on causality_actor_process_image_name + causality_actor_process_instance_id (the CGO = the scanner action, running as the runner account) AND on the unexpected interpreter child, so the harvest binds to the SAME weaponized-action foothold rather than an incidental build subprocess. This is the anchor the F-chain correlation opens on.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"trivy\", \"kics\", \"trivy-action\") and actor_effective_username = \"runner\"\n| filter action_process_image_name in (\"bash\", \"sh\", \"python\", \"python3\", \"curl\") or action_process_command_line contains \"kamikaze\" or action_process_command_line contains \"kube.py\"\n| comp min(_time) as first_spawn, count() as child_spawns by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_name\n| filter child_spawns >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_name, first_spawn, child_spawns",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1195.002",
+          "T1195",
+          "T1059"
+        ]
+      },
+      {
+        "name": "MP-018 /proc PID mem Scrape of runner.worker Bypasses GitHub Secret Masking",
+        "description": "The shared_entity pivot on the runner PID. The weaponized action's child opens /proc/<pid>/mem of the Runner.Worker process and reads it, lifting plaintext PATs and cloud tokens straight from RAM — GitHub's secret masking only redacts log output, never memory. The BIOC keys on causality_actor_process_* (still the scanner CGO) AND an action_file_path under /proc that ends in /mem, tying the memory scrape into the same causality chain as the child-spawn above.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter action_file_path contains \"/proc/\" and action_file_path contains \"/mem\"\n| filter causality_actor_process_image_name in (\"trivy\", \"kics\", \"bash\", \"python\", \"python3\") or action_process_command_line contains \"runner.worker\" or action_process_command_line contains \"Runner.Worker\"\n| comp min(_time) as first_scrape, count() as mem_reads by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, actor_process_image_name, action_file_path\n| filter mem_reads >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, actor_process_image_name, action_file_path, first_scrape, mem_reads",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1003.007",
+          "T1003"
+        ]
+      },
+      {
+        "name": "MP-018 Privileged DaemonSet Applied from Compromised CI Credentials",
+        "description": "The exposure_exploit pivot. Using the stolen cluster-admin secrets, kube.py creates a privileged DaemonSet (CanisterWorm's destructive stager), guaranteeing a pod with a host-mount and privileged securityContext lands on every node. The BIOC keys on a k8s-audit create of a daemonsets object whose pod spec requests privileged: true or a hostPath mount, from a user-agent / service account consistent with the compromised CI runner.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"kubernetes\" and event_operation = \"create\" and resource_type = \"daemonsets\"\n| filter request_body contains \"\\\"privileged\\\":true\" or request_body contains \"hostPath\" or request_body contains \"/host\"\n| comp min(_time) as first_apply, count() as daemonset_applies by cluster_name, resource_namespace, identity_name, user_agent\n| filter daemonset_applies >= 1\n| fields cluster_name, resource_namespace, identity_name, user_agent, first_apply, daemonset_applies",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1610"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-018 Kubernetes Secrets Enumeration Burst from CI-Runner Process",
+        "description": "The endpoint_network_stitch that pivots ANALYTICS<->CDR. kube.py uses the harvested service-account token to sweep the Kubernetes control plane — /api/v1/namespaces, /api/v1/nodes, and repeatedly /api/v1/namespaces/*/secrets — producing a burst of kube-apiserver connections from a single CI-runner-owned process that no legitimate scanner emits. The ABIOC anchors its deviation on the causality_actor_process (the scanner CGO) and learns the per-runner baseline of distinct kube-apiserver secret-path requests, flagging the sudden fan-out; keeping the causality actor in the group binds the network burst back to the same weaponized-action chain rather than treating it as anonymous API traffic.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_port in (6443, 443, 8443) and (action_process_command_line contains \"/api/v1/\" or dns_query_name contains \"kubernetes.default\" or action_remote_ip = \"10.96.0.1\")\n| filter causality_actor_process_image_name in (\"trivy\", \"kics\", \"python\", \"python3\") and actor_effective_username = \"runner\"\n| comp count() as apiserver_calls, count_distinct(action_process_command_line) as distinct_paths by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id\n| filter apiserver_calls >= 4 and distinct_paths >= 2\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, apiserver_calls, distinct_paths",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1613",
+          "T1552.007",
+          "T1552"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-runner baseline of distinct kube-apiserver secret-path requests originating from the causality_actor_process (the CI scanner action CGO); the ABIOC fires on the sudden fan-out of /api/v1/namespaces/*/secrets calls from one runner-owned process."
+      },
+      {
+        "name": "MP-018 Recursive Destructive Wipe Across Cluster Nodes",
+        "description": "The exploit_impact terminal. The privileged DaemonSet pods execute a recursive destructive wipe against the mounted host filesystems to brick the cluster (or recursive file deletion on non-containerized hosts). The ABIOC learns the normal per-host rate of file-unlink / truncate operations and flags the anomalous high-volume recursive deletion sweep, anchored on the process that a privileged container spawned — the causality chain distinguishing a wiper from a routine cleanup job.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_REMOVE, ENUM.FILE_WRITE)\n| filter action_process_image_name in (\"rm\", \"dd\", \"shred\", \"find\", \"busybox\") or action_process_command_line contains \"rm -rf\" or action_process_command_line contains \"dd if=/dev/zero\"\n| filter causality_actor_process_causality_type = \"container\" or actor_process_image_name = \"runc\" or action_process_command_line contains \"/host\"\n| comp count() as destructive_ops by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id\n| filter destructive_ops >= 50\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, destructive_ops",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1485"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host baseline of file-removal / truncate volume; the ABIOC fires on the anomalous recursive deletion sweep spawned inside a privileged container, keyed on the causality_actor_process of the DaemonSet pod."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "MP-018 CI Runner Steals Cloud IAM Credentials via IMDS 169.254.169.254",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = \"169.254.169.254\"\n| filter causality_actor_process_image_name in (\"trivy\", \"kics\", \"bash\", \"sh\", \"python\", \"python3\", \"curl\") and actor_effective_username = \"runner\"\n| filter action_process_command_line contains \"security-credentials\" or action_process_command_line contains \"meta-data/iam\" or action_process_command_line = null\n| comp min(_time) as first_imds, count() as imds_hits by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, actor_effective_username\n| filter imds_hits >= 1\n| sort desc imds_hits\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, actor_effective_username, first_imds, imds_hits",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-018 Supply-Chain CI Compromise Chain Observed",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1200)\n| filter causality_actor_process_image_name in (\"trivy\", \"kics\") and actor_effective_username = \"runner\"\n| filter action_process_image_name in (\"bash\", \"sh\", \"python\", \"python3\", \"curl\") or action_file_path contains \"/proc/\" or action_remote_ip = \"169.254.169.254\"\n| comp count() as chain_events, count_distinct(event_sub_type) as distinct_stages by agent_hostname, causality_id\n| filter chain_events >= 1\n| fields agent_hostname, causality_id, chain_events, distinct_stages",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "MP-018 TeamPCP Weaponized-Scanner Supply-Chain Cluster-Brick Stitch",
+        "rule_id": "CR-MP-0018",
+        "logic": "Anchors on BIOC(MP-018 CI-Runner Weaponized-Scanner Action Spawns Credential-Harvest Child) — the CGO = the trivy/kics scanner action running as runner — and groups on agent_hostname + causality_id + causality_actor_process_instance_id. Within a 3600s window it requires the downstream chain to bind to that SAME causality actor: BIOC(MP-018 /proc PID mem Scrape of runner.worker Bypasses GitHub Secret Masking), XQL(MP-018 CI Runner Steals Cloud IAM Credentials via IMDS 169.254.169.254), ABIOC(MP-018 Kubernetes Secrets Enumeration Burst from CI-Runner Process) — which joins the cloud_audit_logs k8s-secrets access on service-account + cluster, the ANALYTICS<->CDR pivot — then BIOC(MP-018 Privileged DaemonSet Applied from Compromised CI Credentials) and ABIOC(MP-018 Recursive Destructive Wipe Across Cluster Nodes). Fires exactly ONE incident spanning the ANALYTICS and CDR planes that reconstructs the full lineage trivy(CGO) -> kamikaze.sh -> /proc-mem scrape -> IMDS theft -> k8s secrets sweep -> privileged DaemonSet -> recursive wipe, so a low-severity signed-scanner run and an anonymous burst of API calls are surfaced as one cluster-brick intrusion instead of six disconnected events."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Correlation Engine — CI/CD supply-chain to cluster-brick causality reconstruction",
+        "validated": true,
+        "note": "Backed by CR-MP-0018, which stitches the two credential-access BIOCs, the IMDS hunt XQL, the k8s-secrets ABIOC (ANALYTICS<->CDR pivot), the privileged-DaemonSet BIOC, and the recursive-wipe ABIOC into one incident keyed on the scanner-action CGO causality chain."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "CR-MP-0018 stitches the weaponized-scanner CGO, the /proc-mem scrape, the IMDS theft, the k8s-secrets burst, the privileged DaemonSet, and the recursive wipe on one causality_id into a single ANALYTICS+CDR cluster-brick incident."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001",
+          "TBD-XDR-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START | filter causality_actor_process_image_name in (\"trivy\", \"kics\") and action_process_image_name in (\"bash\", \"python\", \"python3\")"
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "cdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CDR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter cloud_provider = \"kubernetes\" and event_operation = \"create\" and resource_type = \"daemonsets\" | filter request_body contains \"\\\"privileged\\\":true\""
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-018",
+        "name": "CI/CD Supply-Chain Compromise to Kubernetes Cluster-Brick via Cortex Cross-Plane Causality",
+        "description": "A trusted CI security scanner is weaponized in the supply chain and, in one unbroken causality chain, scrapes runner memory, steals cloud IAM credentials from the metadata service, enumerates Kubernetes secrets, and deploys a privileged DaemonSet that wipes the cluster. Each individual signal is low-fidelity — a signed scanner ran, a process read /proc, an API token listed secrets — but Cortex anchors the causality on the scanner action and stitches the ANALYTICS and CDR planes into one incident that reconstructs the whole cluster-brick intrusion.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-018A",
+            "objective": "The weaponized-scanner child-spawn, the /proc-mem scrape, and the IMDS credential theft on one CI runner stitch into a single incident keyed on the scanner-action CGO.",
+            "preconditions": [
+              "CI runner with the Cortex XDR agent installed.",
+              "Kubernetes / cloud audit logs forwarded into the tenant."
+            ],
+            "steps": [
+              "Emulate the weaponized trivy/kics action spawning the kamikaze.sh child (CGO process_lineage).",
+              "Emulate the runner.worker /proc/<pid>/mem scrape.",
+              "Emit the representative IMDS request for cloud IAM credentials.",
+              "Observe the two credential-access BIOCs and the IMDS hunt XQL fire on the same causality_id."
+            ],
+            "success_criteria": [
+              "BIOC `MP-018 CI-Runner Weaponized-Scanner Action Spawns Credential-Harvest Child` fires and anchors the CGO.",
+              "BIOC `MP-018 /proc PID mem Scrape of runner.worker Bypasses GitHub Secret Masking` binds to the same causality_actor_process_instance_id.",
+              "XQL `MP-018 CI Runner Steals Cloud IAM Credentials via IMDS 169.254.169.254` returns the runner-owned IMDS hit."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-018B",
+            "objective": "The Kubernetes secrets enumeration and the privileged DaemonSet apply pivot the incident from ANALYTICS into the CDR plane.",
+            "preconditions": [
+              "TS-MP-018A produced a stitched incident on the runner."
+            ],
+            "steps": [
+              "Emit the representative burst of kube-apiserver secret-path requests from the CI-runner process.",
+              "Emulate the privileged DaemonSet apply in the k8s audit log.",
+              "Observe the ABIOC and DaemonSet BIOC fire and join the incident."
+            ],
+            "success_criteria": [
+              "ABIOC `MP-018 Kubernetes Secrets Enumeration Burst from CI-Runner Process` fires on the runner-owned API burst.",
+              "BIOC `MP-018 Privileged DaemonSet Applied from Compromised CI Credentials` fires from cloud_audit_logs.",
+              "The incident's planes ⊇ {ANALYTICS, CDR}."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "threat_step_id": "TS-MP-018C",
+            "objective": "The recursive destructive wipe closes the chain and the correlation raises exactly one cluster-brick incident.",
+            "preconditions": [
+              "TS-MP-018B extended the incident into the CDR plane."
+            ],
+            "steps": [
+              "Emulate the recursive destructive wipe from the privileged container against an isolated scratch tree.",
+              "Run the validation XQL and confirm CR-MP-0018 raised one incident."
+            ],
+            "success_criteria": [
+              "ABIOC `MP-018 Recursive Destructive Wipe Across Cluster Nodes` fires on the anomalous deletion volume.",
+              "XQL `MP-018 Supply-Chain CI Compromise Chain Observed` returns at least one row for the run window.",
+              "Correlation `CR-MP-0018` raises exactly one stitched incident spanning the ANALYTICS and CDR planes."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Pin CI actions to a full commit SHA (not a mutable version tag) and enforce a verified-provenance / SLSA policy so a force-pushed tag cannot silently substitute a weaponized scanner.",
+      "Enforce IMDSv2 (hop-limit 1, session tokens) and deny the CI runner's workload any metadata-service access it does not need, converting the IMDS credential theft from succeeded to blocked.",
+      "Run CI jobs with a least-privilege Kubernetes service account (no cluster-wide secrets:list, no daemonsets:create) and admission-control (OPA/Gatekeeper/Kyverno) that rejects privileged / hostPath DaemonSets.",
+      "Isolate runners so a scanner action cannot read the Runner.Worker process memory (separate PID namespace / user), removing the secret-masking bypass.",
+      "Rotate any PAT / cloud token that could have transited a compromised runner and scope CI credentials to short-lived OIDC federation."
+    ],
+    "detection_engineering": [
+      "Anchor the correlation on the causality_actor_process of the scanner action (the CGO), not on the beacon or the wipe, so the whole chain reconstructs from one initial-access process.",
+      "Alert on any trusted CI scanner (trivy/kics) spawning an interpreter child that then touches /proc/<pid>/mem, the IMDS, or the kube-apiserver — the child-spawn is the earliest high-signal pivot.",
+      "Treat a burst of /api/v1/namespaces/*/secrets calls from a single CI-runner-owned process as an anomaly even when the token is valid; volume + single-actor is the tell.",
+      "Correlate a privileged DaemonSet create and a recursive file-deletion sweep inside a privileged container back to the same causality chain rather than as independent k8s and endpoint events."
+    ],
+    "response_playbook": "XSOAR-PB-TeamPCPSupplyChainClusterBrickContainment-v1"
+  },
+  "references": [
+    {
+      "title": "TeamPCP Supply Chain Attacks: Weaponized Security Scanners to Cloud Credential Theft and Cluster Destruction",
+      "url": "https://unit42.paloaltonetworks.com/teampcp-supply-chain-attacks/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1195.002 — Supply Chain Compromise: Compromise Software Supply Chain",
+      "url": "https://attack.mitre.org/techniques/T1195/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1552.005 — Unsecured Credentials: Cloud Instance Metadata API",
+      "url": "https://attack.mitre.org/techniques/T1552/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Correlation Rules and cross-plane analytics reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

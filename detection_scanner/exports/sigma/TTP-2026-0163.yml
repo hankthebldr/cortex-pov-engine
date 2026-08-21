@@ -1,0 +1,59 @@
+title: "First-Time Kubernetes Secret Enumeration & Access (SIM-CDR-026) \u2014 Kubernetes secrets enumeration for the first time"
+id: ttp-2026-0163-abioc-01
+status: experimental
+description: |
+  Analytics (first-seen ML): a Kubernetes identity lists secrets for the first time. XSIAM learns which service accounts enumerate secrets in baseline; a previously-unseen subject issuing a list-secrets call is flagged as reconnaissance. This is a first-seen anomaly over the API-server audit feed, not a parent->child causality-chain ABIOC. Keyed on the kubernetes_audit_logs API-server audit feed.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = kubernetes_audit_logs
+    | filter verb = "list" and objectRef_resource = "secrets"
+    | filter user_username = "system:serviceaccount:cortexsim-canary:compromised-sa"
+    | comp count() as enum_events by user_username, sourceIPs, objectRef_namespace
+    | filter enum_events >= 1
+    | fields user_username, sourceIPs, objectRef_namespace, enum_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.007
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "First-Time Kubernetes Secret Enumeration & Access (SIM-CDR-026) \u2014 Unusual Kubernetes secret access"
+id: ttp-2026-0163-abioc-02
+status: experimental
+description: |
+  Analytics (behavioral / ML): a Kubernetes identity reads secrets in a way that deviates from its established access baseline. XSIAM learns typical per-identity secret get/watch behavior from the API-server audit feed and flags atypical reads (new secrets, new source IP, or a spike in volume). Keyed on kubernetes_audit_logs.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = kubernetes_audit_logs
+    | filter verb in ("get", "watch") and objectRef_resource = "secrets"
+    | filter user_username = "system:serviceaccount:cortexsim-canary:compromised-sa"
+    | comp count() as secret_reads by user_username, sourceIPs, objectRef_name
+    | filter secret_reads >= 1
+    | fields user_username, sourceIPs, objectRef_name, secret_reads
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.007
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -1,0 +1,26 @@
+id: cortexsim-ttp-2026-0147-response
+version: 1
+name: "CortexSim — EMAIL — AiTM Session-Token Theft to Mailbox-Reconnaissance Account Takeover (Meddler-in-the-Middle)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0147.
+  Triggered by Cortex correlation rules: CR-EMAIL-0005.
+  Reference playbook in panw_mapping: XSOAR-PB-AiTMAccountTakeoverContainment-v1
+triggers:
+  - correlation_rule_id: CR-EMAIL-0005
+  - playbook_rule_id: TBD-EMAIL-005-PB-ATO
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0147
+  cortexsim_version: 1.0

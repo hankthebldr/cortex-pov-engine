@@ -237,14 +237,14 @@
         "evidence_query": "Correlation CR-AIACC-0001 fuses the App-ID match, source-code DLP hit and repeated-paste burst into one Shadow-AI data-exfiltration incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-INSIDER-007",
+        "threat_scenario_id": "TS-INSIDER-007",
         "name": "Shadow-AI Source Code Disclosure",
         "description": "Detect proprietary source code pasted into the public OpenAI ChatGPT API and stitch App-ID, DLP and burst signals into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-INSIDER-007A",
+            "threat_step_id": "TS-INSIDER-007A",
             "objective": "A single source-code paste to api.openai.com fires the generative-AI App-ID and the source-code DLP classifier.",
             "preconditions": [
               "Cortex AI Access Security inline with TLS decrypt on the egress path.",
@@ -261,7 +261,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-INSIDER-007B",
+            "threat_step_id": "TS-INSIDER-007B",
             "objective": "Repeated source pastes from one user stitch into a single Shadow-AI incident.",
             "success_criteria": [
               "XQL `AIACC-001 Repeated Source Paste Burst to OpenAI Single User` returns >= 1 row.",

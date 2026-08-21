@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1528",
+    "T1078.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Analytics(\"ITDR-018 Remote Usage Of An Azure Service Principal Token From Off-Baseline Infrastructure\") AND Analytics(\"ITDR-018 Attempted Azure Application Access From An Unknown Home Tenant\") AND ABIOC(\"ITDR-018 Unusual Resource Access By An Azure Application Deviating From Learned Baseline\") joined on the SHARED app id carried in identity.claims.appid within 900 seconds. The remote token replay, the unknown-tenant cross-tenant access, and the unusual resource-access burst all carry the same abused service-principal app id, so the three Azure Audit Log analytics alerts fuse into a single identity-owned ITDR incident whose causality anchor is identity.claims.appid \u2014 remote token replay -> unknown-tenant access -> unusual resource access \u2014 presented to the DC as end-to-end evidence of the stolen service-principal-token storyline.",
+      "name": "ITDR-018 Azure Service-Principal Token-Abuse Identity-Owned Incident Stitch",
+      "rule_id": "CR-ITDR-0018",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0160"
+}

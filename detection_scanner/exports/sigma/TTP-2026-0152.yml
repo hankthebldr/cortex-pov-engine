@@ -1,0 +1,32 @@
+title: "Auto-Revoke OAuth Tokens on Connected-App Abuse \u2014 Salesforce Bulk Export -> Playbook Revoke + Forced Re-Auth (F5) \u2014 Connected-App OAuth Token Mass-Export Deviation Triggering Auto-Revoke"
+id: ttp-2026-0152-abioc-01
+status: experimental
+description: |
+  A Salesforce Connected-App OAuth token whose learned baseline is low-volume, narrow-object scheduled Bulk API jobs suddenly runs a high-volume export across Account/Contact/Case/Opportunity from the automation exfil user-agent. This is the behavioral trigger the XSOAR auto-revoke playbook responds to. The ABIOC anchors the deviation to the Connected-App identity (connected_app + oauth_token_id) rather than to any known-bad string — no consent, MFA, or interactive login event exists to alert on, so the volume/object-diversity deviation on the trusted token is the signal.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_service = "salesforce" and event_type = "BulkApi" and api_type = "Bulk"
+    | filter operation in ("query", "queryAll")
+    | filter object_name in ("Account", "Contact", "Case", "Opportunity")
+    | comp sum(rows_processed) as run_rows, count_distinct(object_name) as run_objects by connected_app, integration_user, oauth_token_id, user_agent
+    | filter run_rows >= 50000 and run_objects >= 3
+    | sort desc run_rows
+    | fields connected_app, integration_user, oauth_token_id, user_agent, run_rows, run_objects
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+    - attack.t1550
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

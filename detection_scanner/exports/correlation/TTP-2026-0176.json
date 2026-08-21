@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1082",
+    "T1083",
+    "T1057",
+    "T1548.001",
+    "T1518.001",
+    "T1059.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(EDR-022 Service Account Spawns Interpreter Under Web Server CGO) AND (BIOC(EDR-022 Automated Discovery Binary Breadth Burst) OR BIOC(EDR-022 Privilege Escalation Read Fan Out From One Causality Chain) OR BIOC(EDR-022 High Rate Proc Cmdline Sweep Across Distinct Pids) OR BIOC(EDR-022 Filesystem Wide Suid Sgid Sweep By Service Account) OR BIOC(EDR-022 Staging Directory Script Executed By Service Account)) grouped by causality_id within 15m",
+      "name": "Shelf-Staged Enumeration Chain \u2014 One Causality Owner",
+      "rule_id": "CR-EDR-0022",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0176"
+}

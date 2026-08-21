@@ -25,6 +25,14 @@ install:
   # Scapy is a pure-Python library; no submodule checkout is required.
   runtime_install_command: "python3 -c 'import scapy' 2>/dev/null || pip3 install --no-input scapy==2.6.1"
   binary: python3
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: LANGUAGE_PACKAGE_MANAGER
+    reason: >-
+      Scapy installs from the Python (pip) package index along with its
+      dependency tree. The shelf stages one file, and there is no single file
+      that runs. Staging it would mean hosting a package mirror, so this tool
+      needs internet access on the target host.
 
 invoke:
   target_platform: linux

@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1059.003",
+    "T1059.001",
+    "T1204.002",
+    "T1218.014",
+    "T1518.001",
+    "T1140",
+    "T1036.005"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(AV and EDR Product Discovery via tasklist Piped to findstr in a Loader Lineage) AND (XQL(extrac32 Unpack and Renamed AutoIt3 Interpreter Execution Surfaced) OR XQL(Loader Stager Fetch and Lumma C2 Egress on the Network Plane)) on the same agent_hostname within the correlation window \u2014 fuses the real endpoint loader-lineage signal (the security-software-discovery burst and the benign extrac32 CAB unpack) with the network stager-fetch / Lumma C2 egress into ONE Lumma-loader incident spanning the EDR and NDR planes. The full mshta -> cmd -> extrac32 -> renamed-AutoIt3 causality chain (the model-only grouping ABIOC) is the narrative anchor; the correlation fires on the signals the SAFE-MODE run actually produces.",
+      "name": "ClickFix Lumma-Loader Chain \u2014 mshta-to-AutoIt3 Causality Stitch (EDR + NDR)",
+      "rule_id": "CR-EDR-0017",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0129"
+}

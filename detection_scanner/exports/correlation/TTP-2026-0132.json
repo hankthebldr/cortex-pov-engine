@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1059",
+    "T1078",
+    "T1006",
+    "T1003.003",
+    "T1562.006",
+    "T1529",
+    "T1486"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(Akira ESXi Interactive Shell From vCenter-Initiated Session) AND BIOC(Akira ESXi Syslog Redirected to Ephemeral tmp for Log Blinding) AND ABIOC(Akira ESXi Offline VMDK Credential-Theft Pivot) AND ABIOC(Akira ESXi Mass Guest Power-Off Fan-Out From Blinded Host) AND BIOC(Akira v2 VM-Only Encryption Impact on ESXi Datastore) within 6h stitched on the shared causality_actor_process_instance_id and the cloned-VMDK entity \u2014 auto-promotes to one P1 hypervisor-ransomware incident.",
+      "name": "Akira vCenter-to-ESXi Hypervisor Ransomware Kill Chain",
+      "rule_id": "CR-EDR-0019",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0132"
+}

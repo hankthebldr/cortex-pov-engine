@@ -8,12 +8,12 @@ description: |
     dataset = xdr_data
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter actor_container_info != null
-    | filter actor_process_image_name in ("sh", "bash")
+    | filter causality_actor_process_image_name in ("sh", "bash", "containerd-shim")
     | filter action_process_image_name in ("uname", "curl", "tar", "id", "lscpu", "hostname")
-    | comp count_distinct(action_process_image_name) as distinct_stages by agent_hostname, actor_process_image_name
+    | comp count_distinct(action_process_image_name) as distinct_stages, values(action_process_image_name) as stages by agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id
     | filter distinct_stages >= 3
     | sort desc distinct_stages
-    | fields agent_hostname, actor_process_image_name, distinct_stages
+    | fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, distinct_stages, stages
   ----
 references:
   - https://attack.mitre.org/techniques/T1071/
@@ -44,10 +44,10 @@ description: |
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter actor_container_info != null
     | filter action_process_image_name in ("tar", "gzip", "curl", "wget", "scp")
-    | comp count() as collect_exfil_events by agent_hostname, actor_process_image_name
+    | comp count() as collect_exfil_events, values(action_process_image_name) as tools by agent_hostname, container_id, causality_id, causality_actor_process_image_name
     | filter collect_exfil_events >= 1
     | sort desc collect_exfil_events
-    | fields agent_hostname, actor_process_image_name, collect_exfil_events
+    | fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, collect_exfil_events, tools
   ----
 references:
   - https://attack.mitre.org/techniques/T1560/

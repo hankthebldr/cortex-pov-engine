@@ -1,0 +1,233 @@
+scenario_id: SIM-EDR-021
+name: "The Gentlemen GentleKiller — ThrottleStop.sys BYOVD EDR-Kill Behavioral Anomaly (Cortex EDR ABIOC)"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - BIOC
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1562.001"
+mitre_technique_name: "Impair Defenses: Disable or Modify Tools"
+additional_techniques:
+  - technique: "T1543.003"
+    name: "Create or Modify System Process: Windows Service"
+  - technique: "T1068"
+    name: "Exploitation for Privilege Escalation"
+  - technique: "T1053.005"
+    name: "Scheduled Task/Job: Scheduled Task"
+  - technique: "T1046"
+    name: "Network Service Discovery"
+  - technique: "T1571"
+    name: "Non-Standard Port"
+  - technique: "T1490"
+    name: "Inhibit System Recovery"
+  - technique: "T1485"
+    name: "Data Destruction"
+
+threat_report: "Unit 42 — The Gentlemen Ransomware (BYOVD EDR-Kill, SystemBC C2, Data Destruction)"
+threat_report_url: "https://unit42.paloaltonetworks.com/the-gentlemen-ransomware/"
+
+# This scenario is NON-DESTRUCTIVE. It models The Gentlemen crew's GentleKiller
+# BYOVD EDR-kill chain with SAFE-MODE marker files: no kernel-driver service is
+# registered, ThrottleStop.sys is never loaded, the Cortex agent is untouched,
+# no C2 egress occurs, and no Volume Shadow Copies are deleted. Every stage emits
+# an inert marker so Cortex observes the telemetry SHAPE. The offensive tradecraft
+# and detection logic live in the anchor card TTP-2026-0144.
+
+execution_identity:
+  default: administrator
+  options:
+    - administrator
+    - system
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Qualitative Forensic Evidence Capture"
+methodology_family: "F10"
+primary_kpi: "Causality Chain Completeness"
+threshold:
+  kpi: "Causality Chain Completeness"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The Gentlemen defeat the signature layer by loading a signed but
+  vulnerable driver (ThrottleStop.sys, CVE-2025-7771), so no known-bad-hash IOC
+  fires. Cortex's auto-tuned ABIOCs catch the chain behaviorally: the terminal
+  ABIOC fires on the anomalous vulnerable-driver load and anchors it to the
+  sensor-telemetry gap, a second ABIOC fires on the post-tamper hands-on-keyboard
+  burst (Advanced IP Scanner recon + SystemBC beacon), and CR-EDR-0021 stitches
+  driver-service-create -> vulnerable-driver-load -> telemetry-gap -> scheduled
+  task -> recon + C2 -> shadow-copy deletion into a single incident. The incident's
+  ordered evidence graph — registry ImagePath write, signed-driver load, telemetry
+  gap, _gentlemen task, scanner + beacon, vssadmin/wmic deletion — is exported
+  verbatim as the POV's citable forensic packet.
+moat_tier: "MOAT"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The chain OWNER is the operator-run BYOVD loader (modeled as GentleKiller-class
+# EDR-kill tooling — an analyst inference; Unit 42 does not state GentleKiller
+# loads ThrottleStop.sys) that registers and loads the vulnerable driver; every
+# downstream stage descends from it, so the
+# graph roots on the loader instead of hanging off cortexsim-agent. step-01
+# (driver-service create) is the single root; step-02 loads the driver
+# (process_lineage), step-03 is the sensor-telemetry gap it causes (temporal),
+# step-04 is _gentlemen scheduled-task persistence (process_lineage), step-05 is
+# the recon + SystemBC C2 on the now-blinded host (endpoint_network_stitch),
+# step-06 deletes shadow copies (process_lineage), and step-07 is the correlation
+# stitch (shared_entity).
+cgo_anchor:
+  image_name: "GentleKiller.exe"
+  primary_username: "administrator"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Register a kernel-driver service / registry ImagePath for the signed-vulnerable ThrottleStop.sys"
+    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-021'; New-Item -ItemType Directory -Force -Path $stage | Out-Null; Set-Content -Path (Join-Path $stage 'SAFE-MODE-throttlestop-driver-service.marker') -Value 'CortexSim SIM-EDR-021 SAFE-MODE marker: models a kernel-driver service and registry ImagePath created for the signed-but-vulnerable ThrottleStop.sys (CVE-2025-7771). No driver is registered or loaded.'; Write-Host 'cortexsim-edr-021-driver-service-created'"
+    identity: administrator
+    mitre_technique: "T1543.003"
+    platforms: ["windows"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A kernel-driver service registry ImagePath is written pointing at ThrottleStop.sys — the earliest citable forensic artifact of the BYOVD chain, before the driver is loaded."
+        ttp_ref: "TTP-2026-0144"
+        detection_id: "bioc-gentlekiller-vulnerable-driver-service-created-throttlestop-sys-byovd"
+
+  - id: step-02
+    name: "Load the signed-but-vulnerable ThrottleStop.sys driver into the kernel (BYOVD)"
+    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-021'; Set-Content -Path (Join-Path $stage 'SAFE-MODE-byovd-driver-load.marker') -Value 'CortexSim SIM-EDR-021 SAFE-MODE marker: models loading the signed vulnerable ThrottleStop.sys into the kernel for an arbitrary read/write primitive. Telemetry-shape marker only; no driver is loaded.'; Write-Host 'cortexsim-edr-021-vulnerable-driver-loaded'"
+    identity: administrator
+    mitre_technique: "T1068"
+    platforms: ["windows"]
+    causality:
+      parent_step: "step-01"
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "The signed but vulnerable OEM driver ThrottleStop.sys (CVE-2025-7771) — validly code-signed, so no known-bad-hash IOC applies — is loaded by a non-standard loader on a host whose learned driver-load baseline never carried it. The terminal auto-tuned ABIOC fires on the deviation and anchors it to the driver-service-create -> vulnerable-driver-load -> sensor-telemetry-loss causality chain."
+        ttp_ref: "TTP-2026-0144"
+        detection_id: "abioc-byovd-edr-kill-behavioral-anomaly-anomalous-signed-vulnerable-driver-load-gentlekiller"
+
+  - id: step-03
+    name: "Sensor telemetry gap — the t0 tamper immediately follows the driver load"
+    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-021'; Set-Content -Path (Join-Path $stage 'SAFE-MODE-sensor-telemetry-gap.marker') -Value 'CortexSim SIM-EDR-021 SAFE-MODE marker: models the EDR sensor telemetry gap that follows the BYOVD load (t0 tamper). The Cortex agent is untouched.'; Write-Host 'cortexsim-edr-021-sensor-telemetry-gap-modeled'"
+    identity: administrator
+    mitre_technique: "T1562.001"
+    platforms: ["windows"]
+    causality:
+      parent_step: "step-02"
+      pivot: temporal
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation query confirms the ThrottleStop.sys driver load is observable in xdr_data within the run window — the load that immediately precedes the sensor-telemetry gap."
+        ttp_ref: "TTP-2026-0144"
+        detection_id: "xql-gentlekiller-vulnerable-driver-load-preceding-edr-telemetry-loss"
+
+  - id: step-04
+    name: "Create a _gentlemen*-named scheduled task for persistence on the blinded host"
+    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-021'; Set-Content -Path (Join-Path $stage 'SAFE-MODE-gentlemen-scheduled-task.marker') -Value 'CortexSim SIM-EDR-021 SAFE-MODE marker: models a scheduled task created with the _gentlemen naming convention (schtasks /create). No task is registered.'; Write-Host 'cortexsim-edr-021-gentlemen-scheduled-task-modeled'"
+    identity: administrator
+    mitre_technique: "T1053.005"
+    platforms: ["windows"]
+    causality:
+      parent_step: "step-03"
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Hunt query surfaces scheduled-task creation matching the actor's _gentlemen* naming convention in xdr_data."
+        ttp_ref: "TTP-2026-0144"
+        detection_id: "xql-gentlekiller-named-scheduled-task-creation-gentlemen-pattern"
+
+  - id: step-05
+    name: "Advanced IP Scanner internal recon and SystemBC C2 beacon over a non-standard port"
+    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-021'; Set-Content -Path (Join-Path $stage 'SAFE-MODE-recon-and-systembc-c2.marker') -Value ('CortexSim SIM-EDR-021 SAFE-MODE marker: models Advanced IP Scanner internal sweeps and a SystemBC beacon to {0} on a non-standard port. No packet is sent.' -f $env:STAGE_HOST); Write-Host 'cortexsim-edr-021-recon-and-systembc-c2-modeled'"
+    identity: administrator
+    mitre_technique: "T1046"
+    platforms: ["windows"]
+    causality:
+      parent_step: "step-04"
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "After the telemetry gap, the blinded host produces a rapid out-of-baseline burst — Advanced IP Scanner recon plus a non-standard-port SystemBC beacon — whose breadth and cadence exceed the learned per-host profile. The auto-tuned ABIOC fires on the deviation, anchored to the causality process spawned after the BYOVD tamper. No single tool is a known-bad IOC."
+        ttp_ref: "TTP-2026-0144"
+        detection_id: "abioc-post-byovd-hands-on-keyboard-burst-on-a-blinded-host-recon-and-systembc-c2"
+
+  - id: step-06
+    name: "Delete Volume Shadow Copies via vssadmin/wmic to inhibit recovery"
+    command: "$stage = Join-Path $env:TEMP 'cortexsim-edr-021'; Set-Content -Path (Join-Path $stage 'SAFE-MODE-shadow-copy-deletion.marker') -Value 'CortexSim SIM-EDR-021 SAFE-MODE marker: models vssadmin/wmic Volume Shadow Copy deletion (delete shadows) ahead of encryption. No shadow copies are deleted.'; Write-Host 'cortexsim-edr-021-shadow-copy-deletion-modeled'"
+    identity: administrator
+    mitre_technique: "T1490"
+    platforms: ["windows"]
+    causality:
+      parent_step: "step-05"
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "vssadmin/wmic delete or resize Volume Shadow Copies — the destructive impact stage that follows recon and C2 in The Gentlemen chain, a high-fidelity citable artifact for the POV report."
+        ttp_ref: "TTP-2026-0144"
+        detection_id: "bioc-volume-shadow-copy-deletion-via-vssadmin-wmic-pre-encryption"
+
+  - id: step-07
+    name: "Correlation stitches the full BYOVD ransomware chain into one incident"
+    command: "Write-Host 'cortexsim-edr-021-cr-edr-0021-stitched-gentlemen-byovd-incident'"
+    identity: administrator
+    mitre_technique: "T1485"
+    platforms: ["windows"]
+    causality:
+      parent_step: "step-06"
+      pivot: shared_entity
+    expected_detections:
+      - plane: EDR
+        type: Correlation
+        description: "Correlation rule fuses the driver-service-create BIOC, the terminal BYOVD driver-load ABIOC, the post-tamper burst ABIOC, and the shadow-copy-deletion BIOC on the same host into a single Gentlemen-BYOVD-ransomware incident whose ordered evidence graph is exported as the POV forensic packet."
+        ttp_ref: "TTP-2026-0144"
+        detection_id: "CR-EDR-0021"
+
+cleanup:
+  commands:
+    - "Remove-Item -Recurse -Force (Join-Path $env:TEMP 'cortexsim-edr-021') -ErrorAction SilentlyContinue"
+    - "Write-Host 'cortexsim-edr-021-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - defense-evasion
+  - byovd
+  - edr-kill
+  - throttlestop
+  - cve-2025-7771
+  - gentlekiller
+  - systembc
+  - the-gentlemen
+  - ransomware-chain
+  - shadow-copy-deletion
+  - windows
+  - endpoint-security
+  - abioc

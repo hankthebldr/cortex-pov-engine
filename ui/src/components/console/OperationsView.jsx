@@ -252,7 +252,16 @@ export default function OperationsView({
             />
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            type="search"
+            className="lab__input"
+            style={{ minWidth: 220 }}
+            placeholder="Search scenarios (name · id · technique)…"
+            aria-label="Search scenarios"
+            value={scenarioFilter.filter.query}
+            onChange={(e) => scenarioFilter.setQuery(e.target.value)}
+          />
           <button
             type="button"
             className={'btn' + (scenarioFilter.activeCount > 0 ? ' btn--primary' : '')}

@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1558.003",
+    "T1550.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(A user received multiple weakly encrypted service tickets) AND ABIOC(A user authenticated with weak NTLM to multiple hosts) on the same principal_name (the realm-stripped sAMAccountName) within a 60-minute window \u2014 fuses the weakly-encrypted service-ticket roast burst and the subsequent NTLM Pass-the-Hash network logon on the same identity into a single credential-abuse incident anchored to the requesting-identity causality chain (foothold auth, weak-ticket roast, NTLM lateral logon).",
+      "name": "Kerberoast-to-Pass-the-Hash Ticket-Abuse Chain \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-ITDR-0009",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0166"
+}

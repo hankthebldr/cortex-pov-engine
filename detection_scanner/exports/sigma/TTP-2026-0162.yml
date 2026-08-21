@@ -1,0 +1,58 @@
+title: "Unusual exec Into a Kubernetes Pod + Unusual Service-Account API Call (SIM-CDR-025) \u2014 Unusual exec into a Kubernetes Pod"
+id: ttp-2026-0162-abioc-01
+status: experimental
+description: |
+  PANW-authored behavioral-ML detection over the Kubernetes API-server audit feed. It learns, per principal, the pods that identity normally execs into and raises when a create pods/exec subresource request deviates from that baseline (a principal execing into a pod it has never touched, or a service-account principal execing at all). Keyed on the kubernetes_audit_logs dataset.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = kubernetes_audit_logs
+    | filter verb = "create" and objectRef_resource = "pods" and objectRef_subresource = "exec"
+    | comp count() as exec_events by user_username, objectRef_name, sourceIPs
+    | filter exec_events >= 1
+    | fields user_username, objectRef_name, sourceIPs, exec_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1609/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1609
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unusual exec Into a Kubernetes Pod + Unusual Service-Account API Call (SIM-CDR-025) \u2014 A Kubernetes service account executed an unusual API call"
+id: ttp-2026-0162-abioc-02
+status: experimental
+description: |
+  PANW-authored behavioral-ML detection over the Kubernetes API-server audit feed. It learns, per service account, the verb+resource pairs that account exercises in baseline and raises when a service-account principal issues an out-of-profile RBAC-write (creating a ClusterRoleBinding / ClusterRole it never touches). Keyed on the kubernetes_audit_logs dataset.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = kubernetes_audit_logs
+    | filter user_username contains "system:serviceaccount:"
+    | filter verb in ("create", "update", "patch") and objectRef_resource in ("clusterrolebindings", "rolebindings", "clusterroles")
+    | comp count() as rbac_writes by user_username, verb, objectRef_resource, objectRef_name
+    | filter rbac_writes >= 1
+    | fields user_username, verb, objectRef_resource, objectRef_name, rbac_writes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: kubernetes
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

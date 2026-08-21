@@ -10,11 +10,12 @@ import (
 	"time"
 )
 
-// killGrace is how long a cancelled command's process group is given to exit on
-// SIGTERM before it is escalated to SIGKILL.
+// killGrace is how long a cancelled command's process tree is given to exit
+// between the two termination sweeps (POSIX: SIGTERM before SIGKILL; Windows:
+// the first TerminateProcess sweep before the re-snapshot sweep).
 const killGrace = 3 * time.Second
 
-// RunCommand executes cmdStr via "sh -c" and captures stdout and stderr separately.
+// RunCommand executes cmdStr via the host shell and captures stdout and stderr separately.
 // A non-zero exit code is NOT treated as an error — it is returned as exitCode.
 // err is only non-nil for failures that prevent execution from starting (e.g. exec not found).
 //
@@ -24,13 +25,14 @@ func RunCommand(cmdStr string) (stdout, stderr string, exitCode int, err error) 
 	return RunCommandCtx(context.Background(), cmdStr)
 }
 
-// RunCommandCtx executes cmdStr via "sh -c" and captures stdout and stderr
-// separately, honouring ctx for cancellation.
+// RunCommandCtx executes cmdStr via the host shell (`sh -c` on POSIX,
+// PowerShell on Windows — see the platform_*.go files) and captures stdout and
+// stderr separately, honouring ctx for cancellation.
 //
-// The command is launched in its own process group (Setpgid) so that when ctx is
-// cancelled the WHOLE group — including children spawned by runuser/sudo/su and
-// shell pipelines — can be signalled. On cancellation the group receives SIGTERM,
-// is given killGrace to exit, then SIGKILL. A cancelled execution returns
+// The command is launched so that its WHOLE descendant tree — including children
+// spawned by runuser/sudo/su and shell pipelines — can be terminated when ctx is
+// cancelled: a process group on POSIX, a snapshot-walked process tree on
+// Windows. A cancelled execution returns
 // exitCode 130 (the SIGINT/operator-abort convention) and err == context.Canceled
 // so the caller can treat it as a non-fatal "aborted" outcome rather than an
 // execution failure.
@@ -39,9 +41,7 @@ func RunCommand(cmdStr string) (stdout, stderr string, exitCode int, err error) 
 // is returned as exitCode with a nil err. err is only non-nil for failures that
 // prevent execution from starting (e.g. exec not found) or for cancellation.
 func RunCommandCtx(ctx context.Context, cmdStr string) (stdout, stderr string, exitCode int, err error) {
-	cmd := exec.Command("sh", "-c", cmdStr)
-	// Run in a new process group so we can signal the whole tree on cancel.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd := newShellCmd(cmdStr)
 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -62,7 +62,7 @@ func RunCommandCtx(ctx context.Context, cmdStr string) (stdout, stderr string, e
 		select {
 		case <-ctx.Done():
 			cancelled.Store(true)
-			killProcessGroup(cmd.Process.Pid)
+			killProcessTree(cmd.Process.Pid)
 		case <-waitDone:
 		}
 	}()
@@ -98,14 +98,4 @@ func RunCommandCtx(ctx context.Context, cmdStr string) (stdout, stderr string, e
 	}
 
 	return stdout, stderr, 0, nil
-}
-
-// killProcessGroup sends SIGTERM to the whole process group led by pid, waits a
-// grace period, then SIGKILLs anything still alive. The negative pid targets the
-// entire group (requires the child to have been started with Setpgid).
-func killProcessGroup(pid int) {
-	// Negative pid → signal the process group.
-	_ = syscall.Kill(-pid, syscall.SIGTERM)
-	time.Sleep(killGrace)
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
 }

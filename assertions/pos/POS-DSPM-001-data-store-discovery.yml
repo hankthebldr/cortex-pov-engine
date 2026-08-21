@@ -1,0 +1,85 @@
+# POS-DSPM-001 — the only net-new index coverage in this pack.
+#
+# TC-DSPM-01 has no scenario evidencing it today. The cspm module already plants
+# three S3 buckets with distinct configurations, which is a real data-store
+# discovery fixture; it just was never bound to the DSPM row.
+assertion_id: POS-DSPM-001
+name: Data store discovery — three planted S3 buckets inventoried
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CSPM
+
+uc_ref: UCS-DSPM-01
+tc_ref: TC-DSPM-01
+tc_refs: [TC-DSPM-01]
+uc_name: "Data Security Posture Management (DSPM)"
+tc_name: "Validate Data Asset Discovery"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "Asset Discovery Coverage"
+success_criteria: |
+  All three S3 data stores the cspm module plants are discovered and inventoried
+  as data assets.
+
+scope_limitations: >
+  Proves S3 data-store discovery in ONE AWS account. It does NOT prove the index
+  row's multi-cloud claim (no Azure or GCP module exists — that is a Phase C/D
+  IaC decision, not a content gap), does NOT prove RDS / DynamoDB / BigQuery /
+  Cosmos DB discovery (none is planted), and does NOT prove data volume or
+  access-pattern characterisation. It counts buckets the posture engine
+  inventoried; it says nothing about whether their CONTENTS were classified —
+  that claim belongs to POS-AISP-005, and only for the AI training bucket.
+  Dataset and field names are convention-named and unconfirmed against a live
+  tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/cspm
+  detail: >
+    terraform apply the `cspm` module; the three tagged buckets are
+    `public_bucket_name`, plus the unversioned and no-KMS buckets listed in
+    `terraform output findings_summary`. Wait one scan cycle.
+
+checks:
+  - check_id: chk-01
+    title: Three planted S3 data stores appear in the data-asset inventory
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = cortex_cloud_posture
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter cloud_provider = "AWS"
+        | filter resource_type = "aws_s3_bucket"
+        | filter tags contains "CortexSimCSPMFinding"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: data stores discovered
+      op: ">="
+      value: 3
+      unit: data stores
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-DSPM-01 "Qualitative pass". The cspm module plants
+        exactly three tagged S3 buckets (public-read, versioning-disabled,
+        no-customer-managed-kms), so "data stores discovered" has an objective
+        floor of three. The CloudTrail log bucket the module also creates is
+        deliberately NOT tagged and therefore NOT counted — the bar is the
+        planted fixture, not every bucket in the account.
+    negative_control:
+      description: >
+        Discovery is scoped to buckets with a public access path, so the
+        unversioned and no-KMS private buckets are never inventoried as data
+        assets and only one of three planted stores appears.
+      measured_value: 1
+
+tags: [posture, dspm, aws, data-discovery, planted-fixture]
+author: "Henry Reed"

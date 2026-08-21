@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-NDR-04
-tc_ref: TC-NDR-04
-uc_name: "Lateral Reconnaissance Detection via NGFW EAL"
-tc_name: "Host Sweeping Across SMB/RPC Ports"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-03
+tc_refs:
+  - TC-NDR-03
+  - TC-IR-04
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate network analytics engine filters traffic noise via EAL"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"
@@ -60,6 +64,28 @@ success_criteria: |
   emit→alert latency.
 moat_tier: "LEAD"
 
+# ── Stitch contract (endpoint↔network) ──────────────────────────────────────
+# The live-sweep step raises the ANALYTICS stitch that ties the east-west SMB
+# fan-out back to the sweeping workstation's scanner process lineage. Declare the
+# stitch key (the sweeping source host that owns both ends) and the window so
+# XSIAM folds the NDR fan-out detections and the ANALYTICS workstation-context
+# correlation into ONE lateral-recon incident.
+correlation_window_seconds: 300
+required_planes_in_incident:
+  - NDR
+  - ANALYTICS
+stitching_key: src_host
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The sweeping host is modeled as the EAL-simulator container: the containerd-
+# shim runtime OWNS the python3 sweep-generator process tree and is the Causality
+# Group Owner — NOT the synthetic beacon. The dry-run and live-sweep steps are
+# discrete python3 execs in the same container/campaign (no direct fork),
+# threaded on the shared simulator/source-host entity.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
 external_tools:
   - name: Nmap
     source: "https://github.com/nmap/nmap"
@@ -102,6 +128,7 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-dry.yml
     identity: container-runtime
     mitre_technique: "T1046"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -134,6 +161,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/smb-sweep-live.yml --live
     identity: container-runtime
     mitre_technique: "T1018"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL

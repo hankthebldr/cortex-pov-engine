@@ -10,10 +10,15 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UCS-MP-03
-tc_ref: TC-MP-03
-uc_name: "Cross-Plane Incident Stitching"
-tc_name: "Exfiltration Chain - Endpoint Staging Through Network Covert Channel"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-DLP-02
+  - TC-NDR-04
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"
@@ -74,6 +79,19 @@ required_planes_in_incident:
   - NDR
 stitching_key: src_host
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The web server (apache2, running as www-data) is the Causality Group Owner:
+# the compromised web-service context reads /etc/passwd into a /tmp staging
+# file, archives it with tar, then exfiltrates the SAME bundle.tar.gz over two
+# channels — the dig DNS-tunnel loop and the curl HTTPS-POST upload. Modeling
+# apache2→cat→tar→{dig,curl} as a CONNECTED process_lineage tree (both egress
+# legs descend from the tar staging that produced the bundle) is what lets
+# XSIAM stitch the XDR staging leg to the NGFW DNS/HTTPS egress leg on the
+# shared host and fold both planes into ONE exfiltration incident.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
 external_tools:
   - name: Scapy
     source: "https://github.com/secdev/scapy"
@@ -95,6 +113,7 @@ steps:
       echo '[*] XDR should detect /etc/passwd read + file concatenation pattern'
     identity: www-data
     mitre_technique: "T1005"
+    platforms: ["linux"]
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -116,6 +135,10 @@ steps:
       echo '[*] XDR detects tar+gzip of staging directory (classic exfil prep)'
     identity: www-data
     mitre_technique: "T1074.001"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -138,6 +161,10 @@ steps:
       echo "[*] Exfiltrated $chunks DNS TXT chunks"
     identity: www-data
     mitre_technique: "T1048.003"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL
@@ -169,6 +196,10 @@ steps:
       echo '[*] NGFW flags POST to known-IOC domain; XDR flags file upload from service account'
     identity: www-data
     mitre_technique: "T1048"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: NDR
         type: XQL

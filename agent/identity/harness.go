@@ -12,6 +12,7 @@ package identity
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -37,6 +38,18 @@ type ExecResult struct {
 	Duration time.Duration
 }
 
+// WrapCommand returns the exact shell string this harness would hand to the
+// executor for the given identity — the same string RunCommandCtx runs via
+// `sh -c`. Exposed so the causality-chained executor (a shared anchor shell)
+// can run the identically-wrapped command as a child of the anchor, keeping
+// identity-harness semantics byte-identical across the per-step and chained
+// execution paths.
+// It routes through WrapCommandFor so a mode this host cannot execute is
+// refused rather than handed to the shell (see platform.go).
+func WrapCommand(identity ExecutionIdentity) (string, error) {
+	return WrapCommandFor(runtime.GOOS, identity)
+}
+
 // Execute runs the command described by identity under the appropriate identity context.
 // It always goes through this harness — even "direct" mode — for consistent logging and
 // result capture (per spec constraint §10 rule 5).
@@ -54,7 +67,7 @@ func Execute(identity ExecutionIdentity) (ExecResult, error) {
 // which the caller should treat as a non-fatal "aborted" outcome rather than an
 // execution failure.
 func ExecuteCtx(ctx context.Context, identity ExecutionIdentity) (ExecResult, error) {
-	wrapped, err := buildWrappedCommand(identity)
+	wrapped, err := WrapCommandFor(runtime.GOOS, identity)
 	if err != nil {
 		return ExecResult{}, err
 	}

@@ -1,0 +1,459 @@
+{
+  "id": "TTP-2026-0122",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T02:49:32+00:00",
+    "updated_at": "2026-07-24T02:49:32+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "multi-plane-stitch",
+      "byovd",
+      "edr-evasion",
+      "sensor-tamper",
+      "cobalt-strike",
+      "data-exfiltration",
+      "correlation",
+      "response-timing",
+      "methodology-f6",
+      "mttr",
+      "actor-kernelmode",
+      "conti-playbook-ttp-overlap",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "data-exfil",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "EDR-Blinding Race — BYOVD Sensor-Tamper t0 Stitched to Cobalt Strike C2 and rclone SFTP Exfil, Time-to-Contain Measured",
+    "summary": "One host loads the wnbios.sys / WN_64.sys vulnerable driver and runs disabler.exe to strip EDR hooks (t0), then beacons to a Cobalt Strike C2 and exfiltrates over SFTP with a renamed rclone. An XSIAM correlation rule anchors t0 on the tamper, stitches the C2 beacon and bulk SFTP egress on the same host, and scores elapsed tamper-to-exfil time as the F6 MTTR / time-to-contain KPI.",
+    "description": "This is the corpus's first F6 (Response Timing) exemplar and models the extortion intrusion Unit 42 reported in 'EDR bypass extortion attempt thwarted', attributed to a KernelMode / Marti71 operator whose tradecraft overlaps the leaked Conti playbook (Unit 42 notes the overlap but makes no Conti attribution — an encrypted ContiTraining.rar archive was present with no evidence the attackers used it). The value of the incident is an elapsed-time metric, not a new signature: the correlation rule fixes a t0 on the moment EDR is blinded and measures how much attacker dwell elapses before bulk data leaves the host — the number a DC uses to prove Cortex's cross-plane timeline reconstruction and time-to-contain. The chain: (1) EDR plane — the host loads a legitimately-signed but vulnerable driver (wnbios.sys / WN_64.sys, SHA256 6106d1ce671b92d522144fcd3bc01276a975fe5d5b0fde09ca1cca16d09b7143) via Bring Your Own Vulnerable Driver, and disabler.exe (an EDRSandBlast fork with the CLI stripped) uses that kernel primitive to remove user-mode hooks and kernel-mode callbacks — the sensor-tamper t0. (2) NDR plane — a Cobalt Strike beacon (watermark 1357776117) begins calling out to beamofthemoon.com / mail.beamofthemoon.com / store.beamofthemoon.com and 180.131.145.85. (3) NDR plane — rclone renamed vmware.exe opens a sustained SFTP session to 82.192.88.95 and exfiltrates. Because the driver is signed and the driver-load event on its own is low-severity, and because rclone-over-SSH looks like admin file transfer, no single plane's alert conveys the urgency; the differentiation is the stitch. The correlation rule joins on agent_hostname plus the causality actor, opens its window at the driver-load t0, requires the C2 beacon and the SFTP egress to bind to the same host within that window, and emits elapsed_seconds = t(first SFTP exfil) - t0(driver load) as the primary KPI. Two EDR BIOCs catch the BYOVD driver load and the disabler.exe hook-removal tool; two NDR hunt XQLs surface the Cobalt Strike beacon and the rclone SFTP egress; a metric XQL computes the tamper-to-exfil elapsed time; a validation XQL confirms t0 is observable; the correlation rule fuses them into one time-to-contain incident. The scenario is a NON-DESTRUCTIVE, SAFE-MODE emulation on Linux (marker files + loopback-only representative telemetry — it never contacts the real malicious C2 or SFTP infrastructure); the deployable detection bodies target the real Windows telemetry the technique produces.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "KernelMode",
+        "aliases": [
+          "_KernelMode_",
+          "Marti71",
+          "Andry"
+        ]
+      }
+    ],
+    "campaigns": [
+      "EDR-bypass extortion intrusion (Unit 42, 2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "Cobalt Strike",
+        "mitre_software_id": "S0154"
+      },
+      {
+        "name": "EDRSandBlast"
+      },
+      {
+        "name": "Mimikatz",
+        "mitre_software_id": "S0002"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1562",
+        "name": "Impair Defenses (T1562.001 — Disable or Modify Tools)",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1068",
+        "name": "Exploitation for Privilege Escalation",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol (T1071.001 — Web Protocols)",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1048",
+        "name": "Exfiltration Over Alternative Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services (T1021.002 — SMB/Windows Admin Shares)",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Driver: Driver Load",
+      "Process: Process Creation",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-012 — EDR-blinding race BYOVD sensor-tamper t0 stitched to Cobalt Strike C2 and rclone SFTP exfil; F6 tamper-to-exfil time-to-contain measurement.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the target host so driver-load and per-process telemetry reaches xdr_data.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "NGFW / Cortex NDR forwards session logs into the tenant so the C2 beacon and SFTP egress land in pan_ngfw_traffic on the same host key.",
+        "check_command": "true"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE SAFE-MODE emulation of the EDR-blinding -> C2 -> SFTP-exfil\n# chain. No real malicious infrastructure is contacted: the C2 and SFTP legs\n# use loopback only and the BYOVD/tamper legs are represented by marker files.\n# The deployable detections target the real Windows telemetry; this payload\n# only produces the causality SHAPE (t0 -> beacon -> exfil) for the stitch.\nset -euo pipefail\nMARK=/tmp/cortexsim_mp012\n# (1) EDR t0 — BYOVD sensor-tamper marker (represents wnbios.sys load + disabler.exe)\necho '[CortexSim][t0] BYOVD driver-load + EDR-hook-removal marker' > \"${MARK}_wnbios.sys.marker\"\necho '[CortexSim] disabler.exe (EDRSandBlast fork) sensor-tamper marker' > \"${MARK}_disabler.marker\"\n# (2) NDR — Cobalt Strike beacon SHAPE (loopback, 5 short callbacks)\nfor i in 1 2 3 4 5; do curl -s --max-time 3 \"http://${STAGE_HOST:-127.0.0.1}/mp012/beacon?wm=1357776117&iter=${i}\" -o /dev/null 2>/dev/null || true; sleep 1; done\n# (3) NDR — rclone(vmware.exe) SFTP exfil SHAPE (marker + loopback session)\necho '[CortexSim] rclone renamed vmware.exe SFTP exfil marker' > \"${MARK}_exfil.marker\"\ncurl -s --max-time 3 \"http://${STAGE_HOST:-127.0.0.1}/mp012/sftp-egress\" -o /dev/null 2>/dev/null || true\necho '[CortexSim] SIM-MP-012 chain shape emitted (t0 -> beacon -> exfil)'\n",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised loopback/collector the representative beacon and SFTP-egress shapes reach. Never the real C2 or SFTP endpoint."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "The BYOVD sensor-tamper t0 marker representing the wnbios.sys / WN_64.sys driver load and disabler.exe hook removal.",
+        "expected_value": "/tmp/cortexsim_mp012_wnbios.sys.marker"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Representative Cobalt Strike beacon callbacks (loopback) standing in for the beamofthemoon.com C2 traffic.",
+        "expected_value": "5 short outbound sessions from the same host after t0"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Representative sustained SFTP egress session (loopback) standing in for the rclone(vmware.exe) exfil to 82.192.88.95.",
+        "expected_value": "one egress session from the same host, after the beacon"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/cortexsim_mp012_*; echo '[CortexSim] SIM-MP-012 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "6106d1ce671b92d522144fcd3bc01276a975fe5d5b0fde09ca1cca16d09b7143",
+        "context": "wnbios.sys / WN_64.sys vulnerable driver loaded via BYOVD to blind EDR.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "3758c5eb1fbab2362ef23091f082710606c1b4ebaeaff9b514896dc2a1e2ab17",
+        "context": "disabler.exe — EDRSandBlast fork that removes EDR user-mode hooks and kernel callbacks.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "0112e3b20872760dda5f658f6b546c85f126e803e27f0577b294f335ffa5a298",
+        "context": "rclone renamed vmware.exe used for SFTP exfiltration.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "beamofthemoon.com",
+        "context": "Cobalt Strike C2 domain (also mail. and store. subdomains).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "180.131.145.85",
+        "context": "Cobalt Strike C2 server IP (watermark 1357776117).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "89.251.22.32",
+        "context": "Cobalt Strike payload host.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "medium"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "82.192.88.95",
+        "context": "SFTP exfiltration endpoint (OpenSSH 8.4p1 Debian) reached by renamed rclone.",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-012 BYOVD Vulnerable Driver Load — wnbios.sys / WN_64.sys",
+        "description": "The sensor-tamper t0. A signed-but-vulnerable driver (wnbios.sys / WN_64.sys) is loaded, giving a kernel read/write primitive used to blind EDR (Bring Your Own Vulnerable Driver). The BIOC anchors on the module path or the known driver SHA256 rather than on a signature-status alone, because the driver is legitimately signed. This driver-load timestamp is the t0 the F6 correlation opens its window on.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.LOAD_IMAGE and event_sub_type = ENUM.DRIVER_LOAD\n| filter action_module_path contains \"wnbios\" or action_module_path contains \"wn_64\" or action_module_sha256 = \"6106d1ce671b92d522144fcd3bc01276a975fe5d5b0fde09ca1cca16d09b7143\"\n| comp min(_time) as tamper_t0, count() as driver_loads by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_module_sha256\n| filter driver_loads >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_module_sha256, tamper_t0, driver_loads",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1068",
+          "T1562.001"
+        ]
+      },
+      {
+        "name": "MP-012 EDR Hook Removal via disabler.exe (EDRSandBlast Fork)",
+        "description": "disabler.exe — a public EDRSandBlast fork with the CLI stripped — uses the BYOVD kernel primitive to remove EDR user-mode hooks and kernel-mode callbacks. The BIOC keys on the tool image/SHA256 AND on the causality_actor_process_image_name + causality_id that owns it, so the hook-removal binds to the SAME foothold (CGO) that just loaded the vulnerable driver — confirming the tamper is a deliberate step in one chain, not an incidental signed-driver load.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"disabler.exe\" or action_process_image_sha256 = \"3758c5eb1fbab2362ef23091f082710606c1b4ebaeaff9b514896dc2a1e2ab17\"\n| comp min(_time) as tamper_tool_time, count() as tamper_events by agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, action_process_image_sha256\n| filter tamper_events >= 1\n| fields agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, action_process_image_sha256, tamper_tool_time, tamper_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1562.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "MP-012 Cobalt Strike Beacon to beamofthemoon.com C2 Infrastructure",
+        "query": "dataset = pan_ngfw_traffic\n| filter dst_host in (\"beamofthemoon.com\", \"mail.beamofthemoon.com\", \"store.beamofthemoon.com\") or dst_ip = \"180.131.145.85\"\n| comp min(_time) as first_beacon, count() as beacon_sessions, sum(bytes_sent) as bytes_out by source_ip, dst_host\n| filter beacon_sessions >= 3\n| sort desc beacon_sessions\n| fields source_ip, dst_host, first_beacon, beacon_sessions, bytes_out",
+        "expected_rows_min": 0,
+        "dataset": "pan_ngfw_traffic"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-012 rclone SFTP Bulk Exfil to 82.192.88.95",
+        "query": "dataset = pan_ngfw_traffic\n| filter dst_ip = \"82.192.88.95\" and (dst_port = 22 or app = \"ssh\" or app = \"sftp\")\n| comp min(_time) as first_exfil, count() as sftp_sessions, sum(bytes_sent) as bytes_exfiltrated by source_ip, dst_ip\n| filter bytes_exfiltrated >= 1000000\n| sort desc bytes_exfiltrated\n| fields source_ip, dst_ip, first_exfil, sftp_sessions, bytes_exfiltrated",
+        "expected_rows_min": 0,
+        "dataset": "pan_ngfw_traffic"
+      },
+      {
+        "purpose": "metric",
+        "name": "MP-012 Tamper-to-Exfil Elapsed Time (F6 MTTR KPI)",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.LOAD_IMAGE and event_sub_type = ENUM.DRIVER_LOAD and (action_module_path contains \"wnbios\" or action_module_path contains \"wn_64\" or action_module_sha256 = \"6106d1ce671b92d522144fcd3bc01276a975fe5d5b0fde09ca1cca16d09b7143\")\n| comp min(_time) as tamper_t0 by agent_hostname, action_local_ip\n| join type = inner (\n    dataset = pan_ngfw_traffic\n    | filter dst_ip = \"82.192.88.95\"\n    | comp min(_time) as first_exfil by source_ip ) as exfil exfil.source_ip = action_local_ip\n| alter time_to_exfil_seconds = timestamp_diff(first_exfil, tamper_t0, \"SECOND\")\n| fields agent_hostname, action_local_ip, tamper_t0, first_exfil, time_to_exfil_seconds",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-012 BYOVD Driver-Load t0 Observed",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.LOAD_IMAGE and event_sub_type = ENUM.DRIVER_LOAD\n| filter action_module_path contains \"wnbios\" or action_module_path contains \"wn_64\"\n| comp count() as tamper_events by agent_hostname\n| filter tamper_events >= 1\n| fields agent_hostname, tamper_events",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "MP-012 EDR-Blinding Race — Tamper-to-Exfil Time-to-Contain Stitch",
+        "rule_id": "CR-MP-0017",
+        "logic": "Anchors t0 on BIOC(MP-012 BYOVD Vulnerable Driver Load — wnbios.sys / WN_64.sys) and BIOC(MP-012 EDR Hook Removal via disabler.exe (EDRSandBlast Fork)) for one agent_hostname, then requires XQL(MP-012 Cobalt Strike Beacon to beamofthemoon.com C2 Infrastructure) and XQL(MP-012 rclone SFTP Bulk Exfil to 82.192.88.95) to bind to the same agent_hostname and causality actor within a 3600s window opened at t0. Fires ONE incident spanning the EDR and NDR planes and carries elapsed_seconds = first_exfil - tamper_t0 (from XQL(MP-012 Tamper-to-Exfil Elapsed Time (F6 MTTR KPI))) as the F6 time-to-contain KPI: the dwell an operator got between blinding the sensor and moving data. Time-to-contain passes when the stitched incident is raised before that exfil window closes."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Correlation Engine — cross-plane tamper-to-exfil timeline reconstruction",
+        "validated": true,
+        "note": "Backed by CR-MP-0017, which fuses the two EDR tamper BIOCs with the two NDR beacon/exfil XQLs and emits the elapsed tamper-to-exfil time as the F6 KPI."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "CR-MP-0017 stitches the BYOVD tamper t0, the Cobalt Strike beacon, and the rclone SFTP egress on one agent_hostname into a single incident whose elapsed_seconds = first_exfil - tamper_t0 is the F6 time-to-contain KPI."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001",
+          "TBD-XDR-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter event_type = ENUM.LOAD_IMAGE and event_sub_type = ENUM.DRIVER_LOAD | filter action_module_path contains \"wnbios\" or action_module_path contains \"wn_64\""
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "network-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NGFW-001",
+          "TBD-NGFW-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = pan_ngfw_traffic | filter dst_host in (\"beamofthemoon.com\", \"mail.beamofthemoon.com\", \"store.beamofthemoon.com\") or dst_ip = \"82.192.88.95\""
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-012",
+        "name": "Tamper-to-Exfil Time-to-Contain via Cortex Cross-Plane Correlation (F6)",
+        "description": "When an operator blinds EDR with a signed vulnerable driver and moves fast to beacon and exfiltrate, no single plane's alert conveys the urgency. Cortex fixes a t0 on the sensor-tamper, stitches the C2 beacon and bulk SFTP egress from the same host into one incident, and reports the elapsed tamper-to-exfil time — the number that proves whether the SOC would have contained the host before data left it.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-012A",
+            "objective": "The BYOVD sensor-tamper t0, the Cobalt Strike beacon, and the rclone SFTP egress on one host stitch into a single time-to-contain incident.",
+            "preconditions": [
+              "Target with the Cortex XDR agent installed.",
+              "NGFW / NDR session logs forwarded into the tenant."
+            ],
+            "steps": [
+              "Emulate the BYOVD driver load + disabler.exe hook removal (t0).",
+              "Emit the representative Cobalt Strike beacon shape from the same host.",
+              "Emit the representative rclone SFTP egress shape from the same host.",
+              "Observe the two EDR BIOCs and two NDR XQLs fire and CR-MP-0017 raise one incident."
+            ],
+            "success_criteria": [
+              "BIOC `MP-012 BYOVD Vulnerable Driver Load — wnbios.sys / WN_64.sys` fires and sets tamper_t0.",
+              "XQL `MP-012 Cobalt Strike Beacon to beamofthemoon.com C2 Infrastructure` and XQL `MP-012 rclone SFTP Bulk Exfil to 82.192.88.95` bind to the same agent_hostname.",
+              "Correlation `CR-MP-0017` raises exactly one stitched incident spanning the EDR and NDR planes."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-MP-012B",
+            "objective": "The stitched incident reports a non-zero elapsed tamper-to-exfil time (the F6 MTTR / time-to-contain KPI).",
+            "preconditions": [
+              "TS-MP-012A produced a single stitched incident."
+            ],
+            "steps": [
+              "Run the metric XQL against the incident's host.",
+              "Read elapsed_seconds = first_exfil - tamper_t0."
+            ],
+            "success_criteria": [
+              "XQL `MP-012 Tamper-to-Exfil Elapsed Time (F6 MTTR KPI)` returns a positive time_to_exfil_seconds.",
+              "The incident surfaces the elapsed tamper-to-exfil time as the primary KPI."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-MP-012C",
+            "objective": "The BYOVD driver load is detected on its own signed-driver merit (t0 observability).",
+            "preconditions": [
+              "Target with the Cortex XDR agent installed."
+            ],
+            "steps": [
+              "Emulate only the BYOVD driver load.",
+              "Run the validation XQL."
+            ],
+            "success_criteria": [
+              "XQL `MP-012 BYOVD Driver-Load t0 Observed` returns at least one row for the host.",
+              "BIOC `MP-012 EDR Hook Removal via disabler.exe (EDRSandBlast Fork)` fires when disabler.exe runs on the same host."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable the Microsoft vulnerable-driver blocklist / HVCI and Cortex XDR's blocklist so wnbios.sys / WN_64.sys and other known BYOVD drivers cannot load, converting the tamper t0 from detected to blocked.",
+      "Enforce EDR tamper protection and anti-tampering so removal of user-mode hooks / kernel callbacks requires a protected action.",
+      "Egress-filter and inspect outbound SSH/SFTP from workstations at the NGFW so rclone-over-SSH exfil to unknown endpoints is blocked, not just logged.",
+      "Restrict RMM (Atera) install/execution to an allowlist to close the initial-access path."
+    ],
+    "detection_engineering": [
+      "Author the F6 correlation to open its window on the driver-load / EDR-tamper t0, not on the exfil, so the elapsed tamper-to-exfil time is measurable as a response-timing KPI.",
+      "Alert on any signed-but-vulnerable driver load correlated with an EDR-hook-removal tool on the same host and causality actor.",
+      "Treat a Cobalt Strike beacon and a bulk SFTP egress from a host whose EDR was just tampered as one incident, joined on agent_hostname, rather than three independent low-severity events.",
+      "Feed the elapsed tamper-to-exfil time into the measurement loop as the time-to-contain metric the DC reports."
+    ],
+    "response_playbook": "XSOAR-PB-EDRBlindingRaceTamperToExfilContainment-v1"
+  },
+  "references": [
+    {
+      "title": "EDR bypass extortion attempt thwarted",
+      "url": "https://unit42.paloaltonetworks.com/edr-bypass-extortion-attempt-thwarted/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1562.001 — Impair Defenses: Disable or Modify Tools",
+      "url": "https://attack.mitre.org/techniques/T1562/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1048 — Exfiltration Over Alternative Protocol",
+      "url": "https://attack.mitre.org/techniques/T1048/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Correlation Rules and cross-plane analytics reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

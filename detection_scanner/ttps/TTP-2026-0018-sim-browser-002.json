@@ -46,8 +46,8 @@
     }
   },
   "identity": {
-    "name": "Prisma Browser \u2014 Drive-by Download from Phishing Page (T1189)",
-    "summary": "A managed user lands on a phishing page whose JavaScript triggers an unsolicited binary download with no user gesture. Prisma Browser observes the auto-initiated download, flags the executable MIME type from a non-SaaS origin, submits the artifact to WildFire, and the NGFW EAL file-type policy independently matches the egress \u2014 a stitched drive-by compromise detection.",
+    "name": "Prisma Browser — Drive-by Download from Phishing Page (T1189)",
+    "summary": "A managed user lands on a phishing page whose JavaScript triggers an unsolicited binary download with no user gesture. Prisma Browser observes the auto-initiated download, flags the executable MIME type from a non-SaaS origin, submits the artifact to WildFire, and the NGFW EAL file-type policy independently matches the egress — a stitched drive-by compromise detection.",
     "description": "Drive-by compromise turns a single page visit into code on disk. In this scenario the cortex-browser-attacker EAL plugin drives the managed Prisma Browser to a phishing-tagged origin (`phish.cortexsim-test.invalid/q3-earnings-update`) whose page script auto-triggers a binary download with no click. Prisma Browser sees the download was initiated programmatically (no user gesture), records the file name, SHA-256, and `application/x-msdownload` MIME from a non-SaaS origin, and submits the artifact to WildFire. In parallel the NGFW network EAL matches its file-type download policy against the same egress, giving NDR-plane corroboration. Detection layers: a BIOC on gesture-less auto-download; analytics on executable MIME from a non-sanctioned origin; an NDR analytic on the NGFW file-type policy hit; and a WildFire-submission delivery check. A correlation rule fuses the browser auto-download BIOC with the executable-MIME analytic into one initial-access incident.",
     "severity": "high",
     "confidence": "high"
@@ -106,7 +106,7 @@
   "execution": {
     "target_platform": "windows",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "browser_attack_runner \u2014 campaign scenarios/browser/campaigns/drive-by-download.yml (navigate + download actions)",
+    "framework_reference_id": "browser_attack_runner — campaign scenarios/browser/campaigns/drive-by-download.yml (navigate + download actions)",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -171,8 +171,8 @@
     ],
     "biocs": [
       {
-        "name": "Prisma Browser \u2014 auto-download initiated by JS without user gesture",
-        "description": "Prisma Browser \u2014 auto-download initiated by JS without user gesture. A file download begins programmatically (no click / no user gesture) from a page the managed browser rendered.",
+        "name": "Prisma Browser — auto-download initiated by JS without user gesture",
+        "description": "Prisma Browser — auto-download initiated by JS without user gesture. A file download begins programmatically (no click / no user gesture) from a page the managed browser rendered.",
         "logic": "dataset = prisma_browser_events\n| filter action = \"download\"\n| filter user_gesture = false\n| filter file_name != null\n| filter origin not in (\"drive.google.com\", \"onedrive.live.com\", \"box.com\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -191,21 +191,21 @@
       },
       {
         "purpose": "validation",
-        "name": "Prisma Browser \u2014 downloaded artifact MIME application/x-msdownload from non-SaaS origin",
+        "name": "Prisma Browser — downloaded artifact MIME application/x-msdownload from non-SaaS origin",
         "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"download\"\n| filter file_mime_type in (\"application/x-msdownload\", \"application/x-dosexec\", \"application/octet-stream\")\n| filter origin not in (\"drive.google.com\", \"onedrive.live.com\", \"box.com\")\n| fields _time, user, origin, url, file_name, file_mime_type, file_sha256\n| sort desc _time",
         "expected_rows_min": 1,
         "dataset": "prisma_browser_events"
       },
       {
         "purpose": "validation",
-        "name": "NGFW EAL \u2014 file-type download policy matches downloaded artifact",
+        "name": "NGFW EAL — file-type download policy matches downloaded artifact",
         "query": "dataset = panw_ngfw_threat_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter log_subtype = \"file\" or sub_type = \"data\"\n| filter file_type in (\"PE\", \"msdownload\", \"dll\")\n| filter dst_host = \"phish.cortexsim-test.invalid\" or url contains \"q3-earnings-update\"\n| fields _time, src_ip, dst_host, app, file_name, file_type, action\n| sort desc _time",
         "expected_rows_min": 1,
         "dataset": "panw_ngfw_threat_raw"
       },
       {
         "purpose": "validation",
-        "name": "PB \u2192 WildFire submission within download-policy MTTD",
+        "name": "PB → WildFire submission within download-policy MTTD",
         "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"download\" and wildfire_submitted = true\n| fields _time, user, origin, file_name, file_sha256, wildfire_verdict\n| sort desc _time",
         "expected_rows_min": 1,
         "dataset": "prisma_browser_events"
@@ -213,15 +213,15 @@
     ],
     "correlation_rules": [
       {
-        "name": "Browser Drive-by Download \u2014 Gesture-less Executable",
+        "name": "Browser Drive-by Download — Gesture-less Executable",
         "rule_id": "CR-BROWSER-0002",
-        "logic": "BIOC(Prisma Browser \u2014 auto-download initiated by JS without user gesture)"
+        "logic": "BIOC(Prisma Browser — auto-download initiated by JS without user gesture)"
       }
     ],
     "analytics_modules": [
-      "Prisma Browser \u2014 Unsolicited download heuristics",
-      "Cortex XSIAM Analytics \u2014 Executable MIME from non-SaaS origin",
-      "Advanced WildFire \u2014 Downloaded artifact verdict"
+      "Prisma Browser — Unsolicited download heuristics",
+      "Cortex XSIAM Analytics — Executable MIME from non-SaaS origin",
+      "Advanced WildFire — Downloaded artifact verdict"
     ]
   },
   "panw_mapping": {
@@ -253,14 +253,14 @@
         "evidence_query": "Correlation CR-BROWSER-0002 raises an initial-access incident on a gesture-less executable download."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-WEB-018",
+        "threat_scenario_id": "TS-WEB-018",
         "name": "Browser-Initiated Malware Download",
         "description": "Detect and block drive-by binary downloads triggered by phishing pages inside the managed Prisma Browser, with WildFire and NGFW corroboration.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-WEB-018A",
+            "threat_step_id": "TS-WEB-018A",
             "objective": "Gesture-less executable download fires the Prisma Browser BIOC and submits to WildFire.",
             "preconditions": [
               "Managed Prisma Browser reporting to XSIAM.",
@@ -271,14 +271,14 @@
               "Observe the download alert and WildFire verdict in the Cortex console."
             ],
             "success_criteria": [
-              "BIOC `Prisma Browser \u2014 auto-download initiated by JS without user gesture` fires within 60s.",
+              "BIOC `Prisma Browser — auto-download initiated by JS without user gesture` fires within 60s.",
               "Executable-MIME and WildFire XQL queries return >= 1 row.",
               "NGFW file-type policy XQL returns >= 1 row when NGFW EAL is inline."
             ],
             "expected_score_weight": 0.7
           },
           {
-            "test_case_id": "TC-WEB-018B",
+            "threat_step_id": "TS-WEB-018B",
             "objective": "Browser + network signals stitch into one initial-access incident.",
             "success_criteria": [
               "Correlation `CR-BROWSER-0002` produces a single incident."
@@ -311,7 +311,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1189 \u2014 Drive-by Compromise",
+      "title": "MITRE ATT&CK T1189 — Drive-by Compromise",
       "url": "https://attack.mitre.org/techniques/T1189/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

@@ -1,0 +1,125 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# The same round-trip as PLT-IR-008, widened from three sources to six spanning
+# container, SaaS, network, cloud control-plane, endpoint/identity and IdP.
+#
+# This is a BREADTH claim, and it is the weakest binding in the pack — read the
+# scope_limitations before quoting it. TC-ERV-01's distinctive claim is that the
+# customer's own stack arrives through three specific doors (Broker VM,
+# Marketplace, native connectors). No read API exposes which door carried a
+# record, so the door is unprovable and is explicitly disclaimed. What IS proven
+# is the measurable core of the success criterion: heterogeneous telemetry
+# normalizing into one unified model, across six families instead of three.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: PLT-ERV-001
+name: Security-stack source breadth normalizes into one model
+version: "1.0"
+status: active
+
+validation_class: PLT
+kind: state
+plane: ANALYTICS
+
+uc_ref: UCS-ERV-01
+tc_ref: TC-ERV-01
+tc_refs: [TC-ERV-01]
+uc_name: "Enterprise Risk Visibility"
+tc_name: "Validate security stack onboarding via BVM, Marketplace, and native connectors"
+
+moat_tier: MOAT
+methodology_family: F8
+primary_kpi: "Coverage %"
+success_criteria: |
+  Six source families spanning container, SaaS, network, cloud control-plane,
+  endpoint/identity and IdP land and normalize into one unified model, each
+  retrievable from its own schema field by a single shared canary token.
+
+scope_limitations: >
+  Proves six heterogeneous source families onboard through the operator's
+  collector and normalize into one queryable model. Does NOT prove which door
+  carried them — Broker VM, a Marketplace content pack and a native connector
+  are indistinguishable from the query side, and no public API exposes a
+  record's onboarding provenance, so the "via BVM, Marketplace, and native
+  connectors" half of this test case is NOT evidenced here. Does NOT prove
+  coverage of the CUSTOMER's stack: the six families are the ones CortexSim
+  itself emits, so this measures the onboarding PATH, not the customer's
+  inventory. Treat a pass as "the platform normalizes six dissimilar families",
+  never as "the customer's security stack is onboarded".
+
+stimulus:
+  kind: eal_campaign
+  campaign_id: plt-erv-001-stack-breadth-6src
+  detail: >
+    Run k8s_audit_emitter, m365_activity_emitter, ngfw_eal_emitter,
+    cloud_audit_emitter, ad_windows_emitter and idp_signin_emulator
+    (provider=okta) against the operator's collector with the SAME fresh
+    canary_token on every step, then supply that token as context.canary.
+
+context_vars: [canary]
+
+checks:
+  - check_id: chk-01
+    title: Six source families normalize into one queryable model
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset in (kubernetes_audit_logs, msft_o365_audit, panw_ngfw_traffic_raw,
+                    cloud_audit_logs, msft_windows_security, okta_sso)
+        | filter userAgent contains "{{canary}}"
+              or UserId contains "{{canary}}"
+              or user contains "{{canary}}"
+              or userName contains "{{canary}}"
+              or TargetUserName contains "{{canary}}"
+              or alternateId contains "{{canary}}"
+        | comp count() as records by _dataset
+      distinct_key: _dataset
+    threshold:
+      kpi: source families normalized
+      op: ">="
+      value: 6
+      unit: ""
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-ERV-01 "Qualitative pass" against a Coverage %
+        KPI. The population being covered here is the six families the
+        stimulus emits, and six of six is the only defensible floor — anything
+        lower would be authoring a bar the assertion is guaranteed to clear.
+    negative_control:
+      description: >
+        The tenant has onboarded endpoint, network and SaaS but the cloud
+        control-plane and Kubernetes datasets are not yet configured, so four
+        of six families return nothing — the partial-onboarding state a real
+        stack is in halfway through a POV.
+      measured_value: 4
+
+  - check_id: chk-02
+    title: Every family that normalized also landed — raw-marker breadth
+    probe: xql_distinct
+    weight: 1.0
+    params:
+      query: |
+        dataset in (kubernetes_audit_logs, msft_o365_audit, panw_ngfw_traffic_raw,
+                    cloud_audit_logs, msft_windows_security, okta_sso)
+        | filter _raw_log contains "{{canary}}"
+        | comp count() as records by _dataset
+      distinct_key: _dataset
+    threshold:
+      kpi: source families landed
+      op: ">="
+      value: 6
+      unit: ""
+      source: authored_sharpening
+      rationale: >
+        The raw-body counterpart to chk-01. A gap between the two localises the
+        failure to a named family's parser rather than to onboarding as a whole.
+    negative_control:
+      description: >
+        Two of the six collector targets were rejected at the ingestion door
+        (401 on the HEC-style token), so those families never reach the lake at
+        all and the raw marker is absent for them.
+      measured_value: 4
+
+tags: [ingestion, onboarding, coverage, round-trip]
+author: "CortexSim PLT pack"

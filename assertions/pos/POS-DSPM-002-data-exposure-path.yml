@@ -1,0 +1,88 @@
+# POS-DSPM-002 — the public-access exposure path on a data store.
+#
+# The filter matches OUR tag value ("public-read-bucket"), which the cspm
+# module's Terraform writes, not the product's finding vocabulary. That is the
+# difference between "the engine flagged the bucket we made public" and "the
+# engine emitted a finding whose class string happens to match a name we
+# guessed".
+assertion_id: POS-DSPM-002
+name: Data exposure path — publicly readable data store flagged
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CSPM
+
+uc_ref: UCS-DSPM-03
+tc_ref: TC-DSPM-03
+tc_refs: [TC-DSPM-03]
+uc_name: "Data Security Posture Management (DSPM)"
+tc_name: "Validate Data Risk & Exposure Analysis"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "Posture Finding Coverage"
+success_criteria: |
+  The one data store the fixture makes publicly readable is surfaced as a
+  posture finding.
+
+scope_limitations: >
+  Proves the publicly readable data store is surfaced. It does NOT prove the
+  index row's other two exposure paths — no cross-account bucket share and no
+  overly broad bucket-level IAM grant beyond public-read are planted — does NOT
+  prove risk scoring combines sensitivity, access breadth and encryption status,
+  and does NOT prove the internet-to-data attack path is VISUALISED, which is a
+  UI claim no XQL query can make. The bar is one resource because exactly one is
+  planted; that makes the check weak in magnitude but honest in shape, and a
+  tenant whose posture engine misses the single most obvious data exposure in
+  the account still reads FAIL. Dataset and field names are convention-named and
+  unconfirmed against a live tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/cspm
+  detail: >
+    terraform apply the `cspm` module. `terraform output public_bucket_url`
+    should be reachable anonymously before evaluating — if it is not, the
+    fixture did not plant and a FAIL here would be the fixture's fault, not the
+    platform's.
+
+checks:
+  - check_id: chk-01
+    title: The publicly readable bucket is surfaced as a posture finding
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = cortex_cloud_posture
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter cloud_provider = "AWS"
+        | filter resource_type = "aws_s3_bucket"
+        | filter tags contains "public-read-bucket"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: exposed data stores flagged
+      op: ">="
+      value: 1
+      unit: data stores
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-DSPM-03 "Qualitative pass". The cspm module plants
+        exactly one publicly readable bucket, tagged
+        `CortexSimCSPMFinding = "public-read-bucket"`, so the objective floor is
+        one. Authoring two would manufacture red against a correct platform.
+    negative_control:
+      description: >
+        The connector inventories the bucket but the account-level
+        BlockPublicAccess setting is read instead of the bucket ACL, so the
+        object-level public-read grant is never evaluated and no exposure finding
+        is raised on the bucket.
+      measured_value: 0
+
+tags: [posture, dspm, aws, data-exposure, planted-fixture]
+author: "Henry Reed"

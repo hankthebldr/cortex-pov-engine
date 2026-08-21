@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1074",
+    "T1560",
+    "T1005"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(EDR-012 Anomalous Bulk File-Read Sweep from Non-Staging Process) AND ABIOC(EDR-012 Archive/Compression Staging Burst Deviating from Process Baseline) \u2014 fuses the two auto-tuned behavioral deviations on the same host+process into a single collection-and-staging (pre-exfil) incident anchored to the read-sweep-to-archive causality chain.",
+      "name": "Collection and Data-Staging Intrusion on Service Process \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-EDR-0012",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0098"
+}

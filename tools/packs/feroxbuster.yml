@@ -22,6 +22,28 @@ safety_class: dual-use-lab-only
 install:
   runtime_install_command: "command -v feroxbuster >/dev/null 2>&1 || (apt-get install -y feroxbuster 2>/dev/null || cargo install feroxbuster)"
   binary: "feroxbuster"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: ARCHIVE_ONLY_NO_EXTRACTOR
+    reason: >-
+      feroxbuster's maintainers publish it only as a compressed archive, and
+      CortexSim can currently stage single files only — so it cannot be served
+      from the shelf yet. This tool needs internet access on the target host
+      until that changes.
+    revisit: >-
+      Blocked on CortexSim, not on upstream. Requires a single-member
+      extractor (download the pinned archive on the DC's SimCore, verify the
+      ARCHIVE digest, extract one named member, verify the MEMBER digest, put
+      that one file on the shelf) so compose() still emits kind: file and
+      neither the Go beacon nor the K8s init container learns a new word.
+      Measured 2026-08-06: x86_64-linux-feroxbuster.tar.gz at release tag
+      v2.10.4 is 4,667,169 bytes, sha256
+      a1141bc9ef0e4d8c095d7170494d6bca7977d4757dfbd625960bead60ca0f721, and
+      holds exactly 1 entry ('feroxbuster'), an 11,795,680-byte static binary.
+      Take the .tar.gz and NOT the same-content .zip: alpine's busybox has
+      'tar -z' but no 'unzip', so keeping every shelf archive to one format
+      leaves the pod a fallback if extraction ever does move consumer-side.
+      Also blocked on the beacon PATH gap.
 
 invoke:
   target_platform: linux

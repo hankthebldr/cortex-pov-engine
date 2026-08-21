@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1587.002",
+    "T1608",
+    "T1036.001",
+    "T1071.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(TIM \u2014 Rogue Authenticode Code-Signing Certificate Match on Signed-Binary Execution) AND XQL(TIM IOC Match \u2014 Outbound C2 Session to Vidar Exfil IP) -> join on agent_hostname = src_host (endpoint_network_stitch pivot) within 600s. Fuses the rogue-signer execution match and the outbound Vidar C2 session into a single malvertising-loader incident anchored to the fabricated code-signing certificate, so the DC sees one incident driven by the subscribed cert IOC rather than two unrelated signals.",
+      "name": "TIM \u2014 Rogue-Signer Execution Match Stitched to Vidar C2 Session",
+      "rule_id": "CR-TIM-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0149"
+}

@@ -1,0 +1,311 @@
+scenario_id: SIM-MP-022
+name: "Encryption-Less Extortion — Mass Staging, Chunked Egress and a Ransom Note With No Data-Encrypted-For-Impact Event"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: ANALYTICS
+detection_types:
+  - ABIOC
+  - BIOC
+  - XQL
+  - Analytics
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# Both bound rows are ALREADY EVIDENCED. This scenario adds NOTHING to the
+# index coverage number and that is stated deliberately: its value is threat
+# currency and detection-thesis coverage, not a count. Anyone quoting it as
+# coverage progress is quoting a number that did not move.
+uc_ref: UCS-DLP-01
+tc_ref: TC-DLP-02
+tc_refs:
+  - TC-DLP-02
+  - TC-IR-05
+  - TC-DLP-01
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Demonstrate cross-channel correlation identifies coordinated data staging across endpoint and network"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# The arc is deliberately T1083 -> T1074.001 -> T1030 -> T1567.002 -> T1657,
+# with NO T1486. The absence is the scenario: remove the encryption crescendo
+# and most detection stacks — including badly tuned ones — go quiet, because
+# they were keying on the terminal event rather than on the theft.
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1074.001"
+mitre_technique_name: "Data Staged: Local Data Staging"
+additional_techniques:
+  - technique: "T1083"
+    name: "File and Directory Discovery"
+  - technique: "T1030"
+    name: "Data Transfer Size Limits"
+  - technique: "T1567.002"
+    name: "Exfiltration Over Web Service: Exfiltration to Cloud Storage"
+  - technique: "T1657"
+    name: "Financial Theft"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Out of the Crypt: The Evolving Cyber Extortion Economy"
+threat_report_url: "https://unit42.paloaltonetworks.com/cyber-extortion-economy/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - svc-backup
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Behavioural Staging & Egress Deviation Without a Terminal Impact Event"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  CR-MP-0022 stitches enumeration, mass staging, chunked egress and the ransom
+  note into ONE extortion incident within 5 minutes of the third staging
+  indicator — and it does so with NO encryption event anywhere in the run.
+
+  Two assertions are what make this a result rather than an alert:
+
+    * NEGATIVE CONTROL — the run window is queried for mass rename / extension
+      change and must return ZERO. If it does not, this has quietly become an
+      ordinary ransomware test and its claim is void.
+    * BENIGN COMPARISON ARM — a legitimate quarterly archive job with the same
+      bulk-read / compress / upload I/O shape runs in the same window under
+      svc-archive, whose learned envelope includes exactly that. It must NOT
+      join the extortion incident.
+
+  Alerting on BOTH arms is a FAIL, not a partial pass: it means the platform
+  matched on volume, which is a threshold, not a baseline — and a threshold is
+  what the customer's incumbent stack already has. The egress is deliberately
+  chunked below the per-session volume floor so a static per-session byte rule
+  stays silent by construction, forcing the detection into the sustained
+  aggregate where a learned destination profile lives.
+moat_tier: "MOAT"
+
+# ── F2 Stitch Fields ────────────────────────────────────────────────────────
+# 300s window: TC-DLP-02 scores "3+ staging indicators into a single
+# high-confidence exfiltration alert within 5 minutes", and that number is
+# transcribed rather than invented.
+correlation_window_seconds: 300
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: src_host
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# An abused legitimate remote-access tool session owns the chain. This is the
+# 2026 shape: no malware to find, a signed RMM binary the helpdesk already
+# runs, and a valid account. Every malicious step descends from it; the benign
+# archive job deliberately does not, which is what makes the comparison arm a
+# real discriminator rather than a decoy.
+cgo_anchor:
+  image_name: "anydesk.exe"
+  primary_username: "svc-helpdesk"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# SAFE-MODE: nothing is encrypted and nothing leaves the host. Files are
+# created and read inside a scratch directory; egress is modelled with markers
+# against RFC5737 documentation addresses. Because the ABSENCE of encryption is
+# part of the claim, no step may ever rename or re-extension a file — a
+# violation here would silently invert the scenario's meaning.
+steps:
+  - id: step-01
+    name: "High-value share enumeration from the abused remote-access session"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp022; mkdir -p "$D/stage"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
+      for SHARE in finance-archive hr-records legal-hold board-minutes; do
+        printf '{"run_tag":"%s","event":"dir_list","share":"/mnt/%s","actor":"svc-helpdesk","tool":"anydesk"}\n' "$RUN_TAG" "$SHARE"
+      done > "$D/enum.ndjson"
+      echo cortexsim-mp022-share-enumeration-emitted
+    identity: svc-account
+    mitre_technique: "T1083"
+    # ROOT — links from the anydesk.exe CGO.
+    platforms: ["windows", "linux"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command \"'finance-archive','hr-records','legal-hold','board-minutes' | ForEach-Object { Write-Output ('cortexsim-mp022 SAFE-MODE: share enumeration marker for ' + $_) }\""
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation — a burst of directory enumeration across three or more high-value share roots inside a remote-access tool's causality chain. Nothing here is malicious on its own; it is the first of the three staging indicators TC-DLP-02 requires."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "xql-high-value-share-enumeration-burst-from-a-remote-access-tool-session"
+
+  - id: step-02
+    name: "Mass staging — bulk read across the enumerated shares into one local staging path (no rename, no encryption)"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp022; mkdir -p "$D/stage"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
+      # 40 staged records. Deliberately created and READ — never renamed and
+      # never re-extensioned, because the negative control asserts zero renames.
+      for N in $(seq 1 40); do
+        printf 'cortexsim-mp022 staged record %s run=%s\n' "$N" "$RUN_TAG" > "$D/stage/doc-${N}.dat"
+      done
+      cat "$D"/stage/doc-*.dat > /dev/null
+      echo "cortexsim-mp022-mass-staging-emitted files=40"
+    identity: svc-account
+    mitre_technique: "T1074.001"
+    platforms: ["windows", "linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "PRIMARY CLAIM. With no encryption event to key on, the signal is tempo and breadth against what this host and identity normally read — distinct share roots touched, files read per minute, collected into one staging path. Keyed on the causality chain rather than on file names, because file names are exactly what an encryption-less operation leaves untouched."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "abioc-mass-staging-tempo-deviating-from-a-host-s-learned-file-access-envelope"
+
+  - id: step-03
+    name: "Chunked egress deliberately held below the per-session volume alert floor"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp022; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
+      CHUNK="${CORTEXSIM_CHUNK_BYTES:-48000000}"
+      # Eight sessions, each under a typical per-session byte threshold. A stack
+      # tuned on "more than N GB in one session" stays silent by construction —
+      # that silence is the point, and the aggregate is where the answer lives.
+      for C in 1 2 3 4 5 6 7 8; do
+        printf '{"run_tag":"%s","event":"egress","dest":"198.51.100.90","app":"cloud-storage","bytes":%s,"chunk":%s}\n' "$RUN_TAG" "$CHUNK" "$C"
+      done > "$D/egress.ndjson"
+      echo "cortexsim-mp022-chunked-egress-emitted sessions=8 chunk_bytes=$CHUNK"
+    identity: svc-account
+    mitre_technique: "T1030"
+    platforms: ["windows", "linux"]
+    causality:
+      parent_step: step-02
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "The counter to the obvious tuning. Each session is individually below the per-session volume floor; the deviation exists only in the sustained aggregate for one host to one destination. A platform that fires here but not on the benign archive arm has a learned baseline; one that fires on both has a threshold."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "abioc-sustained-chunked-egress-held-below-the-per-session-volume-alert-floor"
+      - plane: NDR
+        type: XQL
+        description: "Hunt — cloud-storage egress destinations first seen for this host in the window, so the destination itself is evidence rather than an assumption."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "xql-cloud-storage-egress-destinations-first-seen-for-this-host"
+
+  - id: step-04
+    name: "BENIGN COMPARISON ARM — legitimate quarterly archive job with the same bulk-read / compress / upload I/O shape"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp022; mkdir -p "$D/archive"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
+      # Same I/O shape, different owner, inside its learned envelope. Without
+      # this arm an alert on the malicious arm proves only that the platform
+      # alerts on bulk file activity — which is not a capability worth buying.
+      for N in $(seq 1 25); do
+        printf 'cortexsim-mp022 archive record %s\n' "$N" > "$D/archive/arch-${N}.dat"
+      done
+      cat "$D"/archive/arch-*.dat > /dev/null
+      printf '{"run_tag":"%s","cortexsim_label":"benign","event":"archive_upload","actor":"svc-archive","dest":"198.51.100.91","app":"cloud-storage"}\n' "$RUN_TAG" > "$D/archive-arm.json"
+      echo cortexsim-mp022-benign-archive-arm-emitted
+    identity: svc-backup
+    mitre_technique: "T1074.001"
+    # temporal, deliberately: the benign arm co-occurs in the window but is
+    # causally UNRELATED and owned by a different identity. If it were on the
+    # spine it could not function as a discriminator.
+    platforms: ["linux", "windows"]
+    causality:
+      parent_step: step-01
+      pivot: temporal
+    expected_detections:
+      - plane: ANALYTICS
+        type: Analytics
+        description: "DISCRIMINATION EVIDENCE — the archive arm actually ran (so its absence from the incident is a real result, not a no-op) and stayed inside svc-archive's learned envelope. If this arm ALSO joins CR-MP-0022, the platform matched on volume and the run is a fail, not a partial pass."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "xql-benign-quarterly-archive-arm-stays-inside-its-learned-i-o-envelope"
+
+  - id: step-05
+    name: "Ransom note written to the staged share set — no rename, no extension change, no encryption"
+    command: |
+      set -u
+      D=/tmp/cortexsim-mp022; mkdir -p "$D/stage"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
+      printf 'Your data has been copied. Contact us. [CortexSim SAFE-MODE marker, run %s]\n' "$RUN_TAG" > "$D/stage/README-RESTORE.txt"
+      echo cortexsim-mp022-ransom-note-written
+    identity: svc-account
+    mitre_technique: "T1657"
+    platforms: ["windows", "linux"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "The only overtly hostile artifact in the chain — and it arrives WITHOUT the mass rename or extension change a ransomware BIOC keys on. Detecting the note is detecting the operation after the data is already gone, which is exactly why the staging and egress ABIOCs upstream are the detections that matter."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "bioc-ransom-note-written-to-staged-shares-with-no-preceding-mass-file-rename"
+
+  - id: step-06
+    name: "TERMINAL — one extortion incident with the negative control asserted: no encryption event anywhere in the run"
+    command: |
+      set -u
+      echo '[MP-022] Terminal stitch — waiting for correlation to converge'
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-120}"
+      echo '[*] CR-MP-0022 asserts ONE extortion incident from enumeration + staging + chunked egress + note'
+      echo '[*] NEGATIVE CONTROL: zero mass-rename / extension-change events in the run window'
+      echo '[*] BENIGN ARM: svc-archive activity present in telemetry and ABSENT from the incident'
+      echo '[*] FAIL if both arms alerted — that is a volume threshold, not a learned baseline'
+      echo cortexsim-mp022-terminal-stitch-verified
+    identity: root
+    mitre_technique: "T1567.002"
+    platforms: ["windows", "linux"]
+    causality:
+      parent_step: step-05
+      pivot: exploit_impact
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Terminal — CR-MP-0022 stitches the encryption-less lifecycle into ONE incident and carries both guards: the negative control (no encryption event) and the benign comparison arm (present in telemetry, absent from the incident)."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "CR-MP-0022"
+      - plane: EDR
+        type: XQL
+        description: "NEGATIVE CONTROL — the run window is queried for mass rename / extension change and must return ZERO rows. A scenario that claims 'no encryption occurred' without asserting it will eventually run somewhere that encrypts, and will then prove the opposite of its claim."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "xql-negative-control-no-data-encrypted-for-impact-event-in-the-run-window"
+      - plane: NDR
+        type: XQL
+        description: "Byte accounting — total egressed bytes for the staging identity across all sessions, so the customer sees the aggregate their per-session rule never saw."
+        ttp_ref: "TTP-2026-0171"
+        detection_id: "xql-staging-to-egress-byte-accounting-for-the-deviating-identity"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp022"
+    - "echo 'cortexsim-mp022-cleanup-complete'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-08-02"
+last_updated: "2026-08-02"
+tags:
+  - multi-plane
+  - analytics
+  - encryption-less-extortion
+  - data-staging
+  - chunked-egress
+  - negative-control
+  - benign-comparison-arm
+  - f2
+  - moat

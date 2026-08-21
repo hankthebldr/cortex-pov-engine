@@ -131,6 +131,8 @@ description: |
     | filter event_sub_type = ENUM.PROCESS_START
     | filter container_id != null
     | filter actor_process_image_name = "xmrig" or action_process_image_command_line contains_any ("xmrig", "--config", "stratum+tcp", "--max-threads-hint")
+    | filter causality_actor_process_image_name in ("bash", "sh", "runc", "containerd-shim", "cron", "crond")
+    | fields _time, container_id, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
   ----
 references:
   - https://attack.mitre.org/techniques/T1496/
@@ -189,7 +191,9 @@ description: |
     | filter event_sub_type = ENUM.PROCESS_START
     | filter container_id != null
     | filter actor_process_image_name = "crontab"
+    | filter causality_actor_process_image_name in ("bash", "sh", "runc", "containerd-shim")
     | filter action_process_image_command_line contains_any ("xmrig", "-", "/tmp/.xmr")
+    | fields _time, container_id, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
   ----
 references:
   - https://attack.mitre.org/techniques/T1053/

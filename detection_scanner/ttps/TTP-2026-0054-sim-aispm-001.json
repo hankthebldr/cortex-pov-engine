@@ -45,9 +45,9 @@
     }
   },
   "identity": {
-    "name": "Shadow-AI Asset Discovery & Inventory \u2014 Cortex Cloud AI-SPM (T1526)",
-    "summary": "Cortex Cloud AI Security Posture Management scans an AWS account and inventories every AI/ML asset \u2014 SageMaker endpoints and models, Bedrock-targeted Lambda integrations, training-data S3 buckets, serialized model objects, and the IAM roles bound to them. The scenario validates that all planted shadow-AI assets surface in the AI inventory within one scan cycle, each carrying model_type / data_s\u2026",
-    "description": "Shadow AI is the unmanaged sprawl of model endpoints, training pipelines, and third-party LLM integrations that teams stand up faster than security can track. The first job of AI Security Posture Management is discovery: enumerate every AI/ML asset across the cloud estate before reasoning about its risk. This scenario plants a representative shadow-AI fixture \u2014 a SageMaker endpoint and model, a Lambda function proxying to OpenAI, an S3 training-data bucket, an insecurely-serialized pickled model object, and an over-privileged execution role \u2014 then validates that Cortex Cloud AI-SPM discovers all of them in a single scan cycle. Detection here is posture-oriented rather than detonation-based: the validation queries run against the Cortex Cloud inventory and audit-log datasets mirrored into XSIAM, asserting that each AI asset_type appears with its discovery metadata. A correlation rule fuses the per-asset-type discovery signals into one shadow-AI inventory coverage event so a DC can demonstrate full asset-discovery coverage in the executive readout.",
+    "name": "Shadow-AI Asset Discovery & Inventory — Cortex Cloud AI-SPM (T1526)",
+    "summary": "Cortex Cloud AI Security Posture Management scans an AWS account and inventories every AI/ML asset — SageMaker endpoints and models, Bedrock-targeted Lambda integrations, training-data S3 buckets, serialized model objects, and the IAM roles bound to them. The scenario validates that all planted shadow-AI assets surface in the AI inventory within one scan cycle, each carrying model_type / data_s…",
+    "description": "Shadow AI is the unmanaged sprawl of model endpoints, training pipelines, and third-party LLM integrations that teams stand up faster than security can track. The first job of AI Security Posture Management is discovery: enumerate every AI/ML asset across the cloud estate before reasoning about its risk. This scenario plants a representative shadow-AI fixture — a SageMaker endpoint and model, a Lambda function proxying to OpenAI, an S3 training-data bucket, an insecurely-serialized pickled model object, and an over-privileged execution role — then validates that Cortex Cloud AI-SPM discovers all of them in a single scan cycle. Detection here is posture-oriented rather than detonation-based: the validation queries run against the Cortex Cloud inventory and audit-log datasets mirrored into XSIAM, asserting that each AI asset_type appears with its discovery metadata. A correlation rule fuses the per-asset-type discovery signals into one shadow-AI inventory coverage event so a DC can demonstrate full asset-discovery coverage in the executive readout.",
     "severity": "medium",
     "confidence": "high"
   },
@@ -94,7 +94,7 @@
   "execution": {
     "target_platform": "aws",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-AISPM-001 \u2014 Cortex Cloud AI-SPM inventory scan + REST inventory probe",
+    "framework_reference_id": "SIM-AISPM-001 — Cortex Cloud AI-SPM inventory scan + REST inventory probe",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -107,7 +107,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Posture validation \u2014 no detonation. Probe Cortex Cloud inventory for AI assets.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" -H \"Accept: application/json\" \"${CORTEX_CLOUD_API_BASE}/inventory?asset_type=ai&tag=CortexSimAISPMFinding\" | jq '.assets | length'",
+      "code": "# Posture validation — no detonation. Probe Cortex Cloud inventory for AI assets.\ncurl -fsSL -H \"Authorization: Bearer ${CORTEX_CLOUD_API_TOKEN}\" -H \"Accept: application/json\" \"${CORTEX_CLOUD_API_BASE}/inventory?asset_type=ai&tag=CortexSimAISPMFinding\" | jq '.assets | length'",
       "input_variables": [],
       "timeout_seconds": 1200
     },
@@ -125,7 +125,7 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "rm -f /tmp/aispm-planted.json /tmp/aispm-discovered.json; echo '[CortexSim] SIM-AISPM-001 cleanup complete \u2014 planted AWS assets owned by terraform destroy.'"
+      "code": "rm -f /tmp/aispm-planted.json /tmp/aispm-discovered.json; echo '[CortexSim] SIM-AISPM-001 cleanup complete — planted AWS assets owned by terraform destroy.'"
     }
   },
   "detections": {
@@ -182,14 +182,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Shadow-AI Inventory Coverage \u2014 Full Asset Discovery",
+        "name": "Shadow-AI Inventory Coverage — Full Asset Discovery",
         "rule_id": "CR-AISPM-0001",
         "logic": "XQL(AISPM-001 AI Asset Scan Cycle Discovery) AND XQL(AISPM-001 Inventory API AI Tagged Assets Count) AND XQL(AISPM-001 Asset Discovery Coverage Reconciliation)"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud AI-SPM \u2014 Shadow-AI asset discovery and inventory enrichment",
-      "Cortex Cloud Posture \u2014 AI asset coverage reconciliation"
+      "Cortex Cloud AI-SPM — Shadow-AI asset discovery and inventory enrichment",
+      "Cortex Cloud Posture — AI asset coverage reconciliation"
     ]
   },
   "panw_mapping": {
@@ -217,14 +217,14 @@
         "evidence_query": "Correlation CR-AISPM-0001 fuses per-asset-type AI discovery signals into a single shadow-AI inventory coverage event."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-AISPM-001",
-        "name": "AI Asset Discovery & Inventory \u2014 Shadow AI",
+        "threat_scenario_id": "TS-AISPM-001",
+        "name": "AI Asset Discovery & Inventory — Shadow AI",
         "description": "Discover and inventory all AI/ML assets across the cloud estate and reconcile against the planted manifest for full coverage.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-AISP-001A",
+            "threat_step_id": "TS-AISP-001A",
             "objective": "Every planted AI asset surfaces in the Cortex Cloud AI inventory within one scan cycle.",
             "preconditions": [
               "Cortex Cloud AI-SPM connected to the AWS account.",
@@ -260,14 +260,14 @@
   },
   "references": [
     {
-      "title": "Unit42 \u2014 Shadow AI in the Enterprise",
+      "title": "Unit42 — Shadow AI in the Enterprise",
       "url": "https://unit42.paloaltonetworks.com/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1526 \u2014 Cloud Service Discovery",
+      "title": "MITRE ATT&CK T1526 — Cloud Service Discovery",
       "url": "https://attack.mitre.org/techniques/T1526/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

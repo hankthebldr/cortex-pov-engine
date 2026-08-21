@@ -231,7 +231,7 @@
       {
         "name": "TIM — TAXII IOC Feed Match Stitched to Outbound NDR Session",
         "rule_id": "CR-TIM-0001",
-        "logic": "(XQL(TIM IOC Match — Outbound Session to TAXII-Fed C2 Domain) AND XQL(TIM — Periodic Beacon to Feed-Listed IOC Domain (NDR leg))) -> join on src_host within 60s. Promotes the benign-looking outbound web session to a C2 incident because the destination resolves against the subscribed mocktaxii TAXII feed."
+        "logic": "(XQL(TIM IOC Match — Outbound Session to TAXII-Fed C2 Domain) AND XQL(TIM — Periodic Beacon to Feed-Listed IOC Domain (NDR leg))) -> join on src_host (shared_entity pivot: the beacon host owned by the Causality Group Owner) within 60s. Promotes the benign-looking outbound web session to a C2 incident because the destination resolves against the subscribed mocktaxii TAXII feed."
       },
       {
         "name": "TIM — IOC Feed Match With Operator-Tagged Simulation Session",
@@ -289,14 +289,14 @@
         "evidence_query": "Playbook: enrich the matched indicator from TIM, block the IOC domain/IP at NGFW, isolate the beaconing source host, open a DFIR ticket with the feed provenance."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-TIM-001",
+        "threat_scenario_id": "TS-TIM-001",
         "name": "Threat Intel Management — TAXII Feed IOC Match + NDR Stitch",
         "description": "Validate that XSIAM TIM ingests the mocktaxii TAXII 2.1 collection, raises an IOC match when a lab host beacons to a feed-listed C2 domain, and stitches that feed-match to the NGFW outbound session into a single C2 incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-TIM-001A",
+            "threat_step_id": "TS-TIM-001A",
             "objective": "The subscribed mocktaxii TAXII feed is ingested and an IOC match fires on the outbound session to the planted C2 domain.",
             "preconditions": [
               "tim IaC module deployed (mocktaxii :9000, fake C2 :8000, Route53 IOC zone).",
@@ -316,7 +316,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-TIM-001B",
+            "threat_step_id": "TS-TIM-001B",
             "objective": "The IOC feed match stitches to the NDR session into a single C2 incident, and the simulated session is operator-isolable.",
             "success_criteria": [
               "Correlation `CR-TIM-0001` groups the IOC feed match and the NGFW session on src_host into one incident_id.",

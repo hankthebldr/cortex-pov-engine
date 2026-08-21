@@ -1,0 +1,111 @@
+# POS-CSPM-003 — the one genuinely SCORED assertion in this pack.
+#
+# TC-CSPM-01 is the only POS row in the first slice that carries a measurable
+# threshold ("within 15 min"), so it is the only one whose run-level verdict can
+# be a real `pass` rather than "evidence, not a scored pass". Everything else
+# here clamps to not_applicable on success.
+#
+# The latency is measured in the PLATFORM's clock on both ends: the AWS
+# control-plane API call that created the resource (CloudTrail, mirrored into
+# `cloud_audit_logs`) and the first posture/inventory record for that same
+# resource. Wall-clock — `now() - terraform apply` — would fold Terraform
+# provider retries, CloudTrail's own 5-15 minute delivery lag and the collector's
+# buffering into the product's response time and manufacture red against a
+# platform that met the bar.
+#
+# No CloudTrail event for the resource inside the window resolves
+# PRECURSOR_MISSING -> pending, NOT fail: an un-ingested control plane is an
+# ingestion gap, and reporting it as a discovery-latency failure blames the
+# wrong product.
+assertion_id: POS-CSPM-003
+name: Cloud asset discovery latency — provisioning to inventory
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CSPM
+
+uc_ref: UCS-CSPM-01
+tc_ref: TC-CSPM-01
+tc_refs: [TC-CSPM-01]
+uc_name: "Cloud Security Posture Management (CSPM)"
+tc_name: "Validate Cloud Asset Discovery & Inventory"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "Asset Discovery Coverage"
+success_criteria: |
+  A newly provisioned resource appears in Cortex Cloud's inventory within 15
+  minutes of the control-plane call that created it.
+
+scope_limitations: >
+  Measures ONE resource's provisioning-to-inventory latency, supplied by the
+  operator as `planted_resource_id` from a `terraform output`. It does NOT prove
+  the index row's coverage clause ("asset count matches or exceeds the cloud
+  provider console inventory") — that needs a console-side census this engine
+  cannot take — and it does NOT prove metadata accuracy (region, tags, network,
+  owner), only presence. It measures against the CloudTrail record of creation,
+  so the number includes CloudTrail's own delivery lag into the tenant and is
+  therefore a CEILING on the product's discovery time, never an understatement.
+  The index's own detection source for this row is the REST inventory endpoint
+  (/api/v1/inventory); this assertion reads the XQL posture dataset instead,
+  because the substrate ships no REST probe — if the two surfaces disagree the
+  REST endpoint is authoritative.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/cspm
+  detail: >
+    terraform apply the `cspm` module, capture one resource id from the outputs
+    (`terraform output public_bucket_name` or `unencrypted_volume_id`), and
+    evaluate with `context.planted_resource_id` set to it. Run inside the
+    `lookback_seconds` window (default 3600) of the apply, or widen it — a
+    CloudTrail event older than the window resolves `pending`, not `fail`.
+
+context_vars: [planted_resource_id]
+
+checks:
+  - check_id: chk-01
+    title: Provisioned resource reaches inventory within the 15-minute bar
+    probe: xql_latency
+    primary: true
+    weight: 1.0
+    params:
+      precursor_query: |
+        dataset = cloud_audit_logs
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter cloud_provider = "AWS"
+        | filter event_name in ("CreateBucket", "CreateVolume", "RunInstances", "CreateRole", "CreateUser", "CreateTrail")
+        | filter _raw_log contains "{{planted_resource_id}}"
+        | fields _time, event_name
+        | sort asc _time
+        | limit 5
+      precursor_ts_field: _time
+      outcome_query: |
+        dataset = cortex_cloud_posture
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter cloud_provider = "AWS"
+        | filter resource_id contains "{{planted_resource_id}}"
+        | fields _time, resource_id
+        | sort asc _time
+        | limit 5
+      outcome_ts_field: _time
+    threshold:
+      kpi: MTTD
+      op: "<="
+      value: 900
+      unit: seconds
+      source: index
+      rationale: >
+        Transcribed from the index, which sets "within 15 min" for TC-CSPM-01.
+        15 min = 900 s; not sharpened, not loosened.
+    negative_control:
+      description: >
+        The account is connected but on the 24-hour scheduled scan rather than
+        event-driven discovery, so the bucket created at 09:00 first appears in
+        inventory at 09:30 — the loop closed, thirty minutes late.
+      measured_value: 1800
+
+tags: [posture, cspm, aws, latency, scored, planted-fixture]
+author: "Henry Reed"

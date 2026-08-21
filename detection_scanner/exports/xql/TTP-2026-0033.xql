@@ -23,6 +23,8 @@ preset = xdr_data
 | filter action_process_image_command_line contains "-i"
 | filter action_process_image_command_line contains "/dev/tcp/"
 | filter actor_effective_username in ("www-data", "nobody", "node", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "httpd", "nginx", "php-fpm", "node")
+| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name, causality_actor_process_instance_id
 
 ## BIOC — EDR-002 Python Socket Subprocess Reverse Shell
 # severity: high
@@ -66,6 +68,8 @@ preset = xdr_data
 | filter actor_process_image_name = "openssl"
 | filter action_process_image_command_line contains "s_client"
 | filter actor_effective_username in ("www-data", "nobody", "node", "apache", "nginx")
+| filter causality_actor_process_image_name in ("apache2", "httpd", "nginx", "php-fpm", "node")
+| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name, causality_actor_process_instance_id
 
 ## VALIDATION — EDR-002 Analytics Interactive Shell Network Redirect
 # purpose: validation

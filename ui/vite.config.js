@@ -8,7 +8,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:8888'
+      // Point the dev server at a SimCore on another port with
+      // CORTEXSIM_DEV_API=http://localhost:8899 — useful when the compose stack
+      // on 8888 is an older build and you need to drive the UI against a
+      // freshly built image.
+      '/api': process.env.CORTEXSIM_DEV_API || 'http://localhost:8888'
     }
   }
 })

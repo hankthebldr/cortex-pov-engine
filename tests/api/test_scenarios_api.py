@@ -197,7 +197,11 @@ def test_list_scenarios_ttp_ref_empty_when_no_citers(client, session_factory):
     _seed_with_ttp_ref(session_factory, scenario_id="SIM-A", ttp_ref="TTP-2026-0002")
     resp = client.get("/api/scenarios?ttp_ref=TTP-2026-NOPE")
     assert resp.status_code == 200
-    assert resp.json() == {"scenarios": [], "total": 0}
+    body = resp.json()
+    # Assert the payload, not the envelope's full key set — the list response
+    # also carries `projection` (see api/scenarios._LIST_OMIT_FIELDS).
+    assert body["scenarios"] == []
+    assert body["total"] == 0
 
 
 def test_list_scenarios_ttp_ref_composes_with_plane(client, session_factory):

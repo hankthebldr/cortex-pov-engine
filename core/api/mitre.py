@@ -35,9 +35,10 @@ every previously-emitted key is preserved. New, additive fields per technique:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -135,6 +136,28 @@ def _scenario_ttp_refs(scenario: Scenario) -> set[str]:
     return refs
 
 
+def _step_technique_map(scenario: Scenario) -> dict[Any, Any]:
+    """``step_id -> technique`` for one scenario, resolved exactly as the
+    per-Result lookup used to resolve it inline.
+
+    Mirrors the old linear rescan semantics precisely: the FIRST step carrying a
+    given id wins (the loop used to ``break``), a step that omits
+    ``mitre_technique`` falls back to the scenario's primary technique, and a
+    step that declares it explicitly as null keeps that null (which then fails
+    the ``in techniques`` test, as before). Built once per scenario instead of
+    once per Result row.
+    """
+    out: dict[Any, Any] = {}
+    for step in (scenario.steps or []):
+        if not isinstance(step, dict):
+            continue
+        sid = step.get("id")
+        if sid in out:
+            continue
+        out[sid] = step.get("mitre_technique", scenario.mitre_technique)
+    return out
+
+
 def _additional_technique_ids(scenario: Scenario) -> list[str]:
     """Normalized list of technique ids from ``Scenario.additional_techniques``.
 
@@ -190,14 +213,28 @@ async def get_mitre_coverage(
     scen_result = await db.execute(scen_stmt)
     scenarios = scen_result.scalars().all()
 
-    # Collect all runs
-    runs_result = await db.execute(select(Run))
-    runs = runs_result.scalars().all()
-    run_scenario_ids = {r.scenario_id for r in runs}
+    # Which scenarios have ever been run. A DISTINCT projection — the Run rows
+    # themselves were only ever used to answer this and to map run -> scenario,
+    # and the latter is now done in SQL by the tally below.
+    run_scenario_ids = set(
+        (await db.execute(select(Run.scenario_id).distinct())).scalars().all()
+    )
 
-    # Collect all results
-    results_result = await db.execute(select(Result))
-    all_results = results_result.scalars().all()
+    # Detection tallies, aggregated in SQL. The response is a fixed-size
+    # summary, so materializing every Result row to count them made a
+    # constant-size answer degrade linearly with POV history. Grouping by
+    # (scenario, step) collapses the result set to the distinct step surface
+    # (~hundreds of rows) regardless of how many runs have accumulated.
+    detection_tally = (await db.execute(
+        select(
+            Run.scenario_id,
+            Result.step_id,
+            func.count(Result.id),
+            func.sum(case((Result.observed, 1), else_=0)),
+        )
+        .join(Run, Result.run_id == Run.run_id)
+        .group_by(Run.scenario_id, Result.step_id)
+    )).all()
 
     # Build technique -> data mapping
     techniques: dict[str, dict] = {}
@@ -291,27 +328,19 @@ async def get_mitre_coverage(
                 for k, v in kind_counts.items():
                     entry["detection_kinds"][k] += v
 
-    # From results: count detections per technique
-    run_to_scenario = {r.run_id: r.scenario_id for r in runs}
+    # Fold the SQL tallies onto their technique. Step -> technique resolution is
+    # a prebuilt map per scenario rather than a rescan of steps[] per row.
     scenario_map = {s.scenario_id: s for s in scenarios}
+    step_tech_maps = {sid: _step_technique_map(s) for sid, s in scenario_map.items()}
 
-    for result in all_results:
-        scen_id = run_to_scenario.get(result.run_id)
-        scen = scenario_map.get(scen_id) if scen_id else None
+    for scen_id, step_id, total, observed in detection_tally:
+        scen = scenario_map.get(scen_id)
         if not scen:
             continue
-
-        # Find the technique for this result's step
-        tech_id = scen.mitre_technique  # fallback
-        for step in (scen.steps or []):
-            if isinstance(step, dict) and step.get("id") == result.step_id:
-                tech_id = step.get("mitre_technique", tech_id)
-                break
-
+        tech_id = step_tech_maps[scen_id].get(step_id, scen.mitre_technique)
         if tech_id in techniques:
-            techniques[tech_id]["total_detections"] += 1
-            if result.observed:
-                techniques[tech_id]["observed_detections"] += 1
+            techniques[tech_id]["total_detections"] += total
+            techniques[tech_id]["observed_detections"] += observed or 0
 
     # Compute status and serialize
     output = []

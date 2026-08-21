@@ -10,6 +10,8 @@ preset = xdr_data
 | filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
 | filter action_file_name = "mcp.json"
 | filter action_file_path contains "anthroopic-calculator"
+| filter causality_actor_process_image_name in ("node", "claude", "code", "python3")
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, action_file_path
 
 ## BIOC — KOI-001 Cortex Cloud Code Instruction Injection In Tool Description
 # severity: high
@@ -42,7 +44,7 @@ preset = xdr_data
 | filter event_type = ENUM.NETWORK
 | filter dst_action_external_hostname contains "cortexsim-canary" or dns_query_name contains "cortexsim-canary"
 | filter action_external_port in (80, 443)
-| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_port, http_req_user_agent
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, action_external_port, http_req_user_agent
 
 ## VALIDATION — KOI-001 Outbound URL Matches Typosquat Of Approved AI Publisher Domain
 # purpose: validation

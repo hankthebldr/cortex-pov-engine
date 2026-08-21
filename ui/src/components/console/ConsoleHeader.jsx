@@ -1,19 +1,36 @@
 import React from 'react'
+import TenantSwitcher from './GlobalContextBar/TenantSwitcher.jsx'
+import AgentSwitcher from './GlobalContextBar/AgentSwitcher.jsx'
 
 /**
- * ConsoleHeader — 56px brand + environment + ⌘K trigger + user + PANW mark.
+ * ConsoleHeader — the persistent GLOBAL CONTEXT BAR.
+ *
+ * Always visible, top of shell. Left→right:
+ *   1. Brand mark + version
+ *   2. Tenant switcher pill (provider-backed; status dot + Manage… footer)
+ *   3. Agent switcher pill  (provider-backed; liveness dot + Manage… footer)
+ *   4. Connectivity/health chip — the real sensor summary for the active tenant
+ *   5. Global LIVE run pill — only when a run is in flight; deep-links to Runs
+ *   6. ⌘K command-palette trigger
+ *   7. Theater-mode toggle
+ *
+ * The two switchers + the ⌘K palette all write to the SAME provider, so the
+ * active tenant/agent is switchable from three places and reflected everywhere.
  *
  * Props:
- *   health          — { hostname, version, sensors: { xdr: 'healthy'|'warn'|'bad', ... } }
+ *   health          — { hostname, version, sensors: {..}, tenantHealth }
+ *   activeRun       — { scenarioId, step, totalSteps, elapsed } | null
  *   onOpenPalette   — () => void
- *   userInitials    — string (defaults to 'DC')
- *   theaterMode     — boolean — when true, render the theater toggle as
- *                     active (filled). Otherwise outlined.
+ *   onNavigate      — (destinationId, params?) => void  (Manage… + LIVE pill)
+ *   userInitials    — string
+ *   theaterMode     — boolean
  *   onToggleTheater — () => void
  */
 export default function ConsoleHeader({
   health = {},
+  activeRun = null,
   onOpenPalette,
+  onNavigate = () => {},
   userInitials = 'DC',
   theaterMode = false,
   onToggleTheater = null,
@@ -32,6 +49,13 @@ export default function ConsoleHeader({
     ? Object.entries(sensors).map(([k, v]) => `${k} ${v}`).join(' · ')
     : 'sensors pending'
 
+  const fmtElapsed = (s) => {
+    if (s == null) return '0:00'
+    const m = Math.floor(s / 60)
+    const sec = String(s % 60).padStart(2, '0')
+    return `${m}:${sec}`
+  }
+
   return (
     <header className="header">
       <div className="header__left">
@@ -43,6 +67,9 @@ export default function ConsoleHeader({
       </div>
 
       <div className="header__right">
+        <TenantSwitcher onManage={() => onNavigate('tenants')} />
+        <AgentSwitcher onManage={() => onNavigate('agents')} />
+
         <div className="env-pill" title={sensorSummary}>
           <span className={
             'env-pill__dot' +
@@ -52,6 +79,26 @@ export default function ConsoleHeader({
           <span className="env-pill__label">{hostname.toUpperCase()}</span>
           <span className="env-pill__meta">/ {sensorSummary}</span>
         </div>
+
+        {activeRun && (
+          <button
+            type="button"
+            className="env-pill live-pill"
+            onClick={() => onNavigate('runs', { run: activeRun.runId, tab: 'live' })}
+            title="Jump to the live run"
+            aria-label={`Live run ${activeRun.scenarioId || ''} — open in Runs & Proof`}
+            style={{ cursor: 'pointer' }}
+          >
+            <span className="env-pill__dot" style={{
+              background: 'var(--cortex-teal, #00C0E8)',
+              boxShadow: '0 0 6px var(--cortex-teal, #00C0E8)',
+            }} />
+            <span className="env-pill__label" style={{ color: 'var(--cortex-teal, #00C0E8)' }}>LIVE</span>
+            <span className="env-pill__meta mono">
+              {activeRun.scenarioId} · {activeRun.step}/{activeRun.totalSteps} · {fmtElapsed(activeRun.elapsed)}
+            </span>
+          </button>
+        )}
 
         <button className="cmd-trigger" onClick={onOpenPalette} aria-label="Open command palette (search, launch, export)" title="Search · launch · export">
           <span className="kbd">⌘K</span>

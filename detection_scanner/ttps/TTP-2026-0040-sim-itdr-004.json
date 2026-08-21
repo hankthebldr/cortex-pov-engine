@@ -45,9 +45,9 @@
     }
   },
   "identity": {
-    "name": "ITDR \u2014 Session Token Replay Across Geo / User-Agent",
-    "summary": "The idp_signin_emulator issues a session token to one user from a US-West Chrome session, then replays the same session_token_id from an EU-Central curl client \u2014 the AiTM cookie-theft shape where a stolen session is reused from attacker infrastructure with a different geo and user-agent. Cortex ITDR keys on one session token observed from two source geos / user-agents in a short window, and sti\u2026",
-    "description": "Stolen-session replay is how APT29 and AiTM phishing kits sidestep MFA entirely: rather than re-authenticate, the attacker lifts the post-MFA session cookie / refresh token and replays it from their own host. The identity tell is one session_token_id appearing on two source contexts that can't both be the legitimate user \u2014 different country and different user-agent inside a window too short for genuine roaming. This scenario drives CortexSim's idp_signin_emulator to issue a token from a US-West Chrome session and replay the same session_token_id from an EU-Central curl client, then repeat the replay three times. Detection is IdP-log analytics in Cortex ITDR: an XQL rule groups authentication events by session_token_id and alerts when one token shows >=2 distinct source-geo countries and >=2 distinct user-agents within the window; a companion BIOC keys on the explicit replay_marker the emulator stamps. A third query proves the three independent replays inside 5 minutes collapse into one incident, and an ANALYTICS-plane query demonstrates XSIAM stitching grouping the replay incidents under the same identity. A correlation rule fuses the replay-marker BIOC and the token-reuse analytic into one session-hijack incident.",
+    "name": "ITDR — Session Token Replay Across Geo / User-Agent",
+    "summary": "The idp_signin_emulator issues a session token to one user from a US-West Chrome session, then replays the same session_token_id from an EU-Central curl client — the AiTM cookie-theft shape where a stolen session is reused from attacker infrastructure with a different geo and user-agent. Cortex ITDR keys on one session token observed from two source geos / user-agents in a short window, and sti…",
+    "description": "Stolen-session replay is how APT29 and AiTM phishing kits sidestep MFA entirely: rather than re-authenticate, the attacker lifts the post-MFA session cookie / refresh token and replays it from their own host. The identity tell is one session_token_id appearing on two source contexts that can't both be the legitimate user — different country and different user-agent inside a window too short for genuine roaming. This scenario drives CortexSim's idp_signin_emulator to issue a token from a US-West Chrome session and replay the same session_token_id from an EU-Central curl client, then repeat the replay three times. Detection is IdP-log analytics in Cortex ITDR: an XQL rule groups authentication events by session_token_id and alerts when one token shows >=2 distinct source-geo countries and >=2 distinct user-agents within the window; a companion BIOC keys on the explicit replay_marker the emulator stamps. A third query proves the three independent replays inside 5 minutes collapse into one incident, and an ANALYTICS-plane query demonstrates XSIAM stitching grouping the replay incidents under the same identity. A correlation rule fuses the replay-marker BIOC and the token-reuse analytic into one session-hijack incident.",
     "severity": "high",
     "confidence": "high"
   },
@@ -112,7 +112,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin \u2014 event_pattern=token_replay",
+    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin — event_pattern=token_replay",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -182,7 +182,7 @@
       },
       {
         "name": "ITDR-004 Replay Marker Boolean Explicit Match",
-        "description": "ITDR \u2014 replay_marker boolean fires explicit detection rule. Keys on the explicit replay_marker the emulator stamps on the reused-session event so the replay is unambiguously attributable to the token-replay pattern.",
+        "description": "ITDR — replay_marker boolean fires explicit detection rule. Keys on the explicit replay_marker the emulator stamps on the reused-session event so the replay is unambiguously attributable to the token-replay pattern.",
         "logic": "dataset = okta_sso\n| filter eventType = \"user.session.start\"\n| filter replay_marker = true or _raw_log contains \"\\\"replay_marker\\\": true\"\n| fields _time, actor_effective_username, session_token_id, src_ip, src_geo_country, user_agent",
         "severity": "high",
         "mitre_technique_ids": [
@@ -215,14 +215,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Session Token Replay Hijack \u2014 Same Identity",
+        "name": "Session Token Replay Hijack — Same Identity",
         "rule_id": "CR-ITDR-0004",
         "logic": "BIOC(ITDR-004 Replay Marker Boolean Explicit Match) OR XQL(ITDR-004 Session Token Reused Across Geo And User-Agent)"
       }
     ],
     "analytics_modules": [
-      "Cortex ITDR Analytics \u2014 Session token reused across geo/user-agent",
-      "Cortex XSIAM Identity Analytics \u2014 Token-replay incident grouping per principal"
+      "Cortex ITDR Analytics — Session token reused across geo/user-agent",
+      "Cortex XSIAM Identity Analytics — Token-replay incident grouping per principal"
     ]
   },
   "panw_mapping": {
@@ -248,14 +248,14 @@
         "evidence_query": "Correlation CR-ITDR-0004 fuses the replay-marker BIOC and the token-reuse analytic into one session-hijack incident per identity."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IDENT-040",
+        "threat_scenario_id": "TS-IDENT-040",
         "name": "Stolen Session-Token Detection",
         "description": "Detect one session token reused from two distinct geos / user-agents within a short window, and stitch repeated replays for the same identity into one incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IDENT-040A",
+            "threat_step_id": "TS-IDENT-040A",
             "objective": "A session token reused across geo and user-agent raises a token-replay anomaly.",
             "preconditions": [
               "Cortex ITDR ingesting okta_sso with session_token_id and user_agent fields.",
@@ -273,7 +273,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-IDENT-040B",
+            "threat_step_id": "TS-IDENT-040B",
             "objective": "Repeated replays stitch into one session-hijack incident per identity.",
             "success_criteria": [
               "Correlation `CR-ITDR-0004` groups the replays under one incident keyed on identity."
@@ -299,14 +299,14 @@
   },
   "references": [
     {
-      "title": "Mandiant \u2014 APT29 OAuth Token Theft via AiTM",
+      "title": "Mandiant — APT29 OAuth Token Theft via AiTM",
       "url": "https://cloud.google.com/blog/topics/threat-intelligence/",
       "publisher": "Mandiant",
       "publisher_id": "SRC-MANDIANT",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1539 \u2014 Steal Web Session Cookie",
+      "title": "MITRE ATT&CK T1539 — Steal Web Session Cookie",
       "url": "https://attack.mitre.org/techniques/T1539/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

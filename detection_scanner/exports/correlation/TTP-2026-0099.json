@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1110",
+    "T1539"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(ITDR-009 Sign-In Auth-Velocity and New-ASN Deviation from Learned Identity Baseline) AND ABIOC(ITDR-009 Impossible-Travel Geo-Velocity Deviation from Learned Sign-In Baseline) \u2014 fuses the two auto-tuned behavioral deviations on the same user into a single account-takeover incident anchored to the valid-account sign-in causality chain.",
+      "name": "Sign-In Account Takeover on a Learned Identity Baseline \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-ITDR-0008",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0099"
+}

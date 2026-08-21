@@ -3,14 +3,16 @@ import React from 'react'
 /**
  * DetectionTypeChip — a single detection-type pill.
  *
- * GAP-2: the detection-type vocabulary now includes XQL and Correlation
- * alongside the legacy BIOC | Analytics | IOC. Correlation is the strongest
- * XSIAM differentiator, so it gets a distinct violet treatment; XQL inherits
- * the teal signal color (XSIAM hunting query language), BIOC the Cortex-green
- * action color (behavioral / prevention-grade), IOC amber, Analytics neutral.
+ * The detection-type vocabulary is BIOC | XQL | Analytics | Correlation | IOC |
+ * ABIOC. Correlation gets a distinct violet treatment (the strongest cross-source
+ * XSIAM stitch); ABIOC — PANW-authored auto-tuned behavioral-ML with a causality
+ * chain, the flagship differentiator — gets a distinct magenta treatment; XQL
+ * inherits the teal signal color (XSIAM hunting query language), BIOC the
+ * Cortex-green action color (behavioral / prevention-grade), IOC amber,
+ * Analytics neutral.
  *
- * Accepts any casing ('bioc', 'XQL', 'Correlation') and normalizes for both
- * the CSS variant class and the displayed label.
+ * Accepts any casing ('bioc', 'XQL', 'ABIOC') and normalizes for both the CSS
+ * variant class and the displayed label.
  */
 
 // Canonical display labels keyed by the lower-cased token.
@@ -20,6 +22,7 @@ const LABELS = {
   analytics:   'Analytics',
   correlation: 'Correlation',
   ioc:         'IOC',
+  abioc:       'ABIOC',
 }
 
 /** Normalize a free-form detection-type string to a known token, or null. */
@@ -30,6 +33,7 @@ export function detectionTypeToken(type) {
   // tolerate a few common aliases the corpus uses
   if (t === 'corr' || t === 'correlation_rule') return 'correlation'
   if (t === 'xql_query') return 'xql'
+  if (t === 'a-bioc' || t === 'analytics_bioc') return 'abioc'
   return null
 }
 

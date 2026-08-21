@@ -1,0 +1,88 @@
+# POS-CSPM-002 — does the posture assessment span resource KINDS, or only the
+# easy one?
+#
+# POS-CSPM-001 counts resources; this counts resource TYPES. The distinction is
+# the whole point: an engine that surfaces all three planted S3 buckets and
+# nothing else scores 3 of 9 on recall, but an engine that surfaces one of each
+# type scores 6 of 6 here. Breadth and depth fail independently, so they are
+# separate assertions bound to separate index rows.
+assertion_id: POS-CSPM-002
+name: Posture assessment breadth — six planted resource types
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CSPM
+
+uc_ref: UCS-CSPM-04
+tc_ref: TC-CSPM-04
+tc_refs: [TC-CSPM-04]
+uc_name: "Cloud Security Posture Management (CSPM)"
+tc_name: "Validate Posture Assessment & Management"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "Posture Assessment Breadth"
+success_criteria: |
+  Posture assessment reaches all six AWS resource types the cspm module plants —
+  storage, network, two identity types, block storage and audit logging — rather
+  than one well-covered service.
+
+scope_limitations: >
+  Proves posture assessment reaches six distinct AWS resource types
+  (aws_s3_bucket, aws_security_group, aws_iam_role, aws_iam_user,
+  aws_ebs_volume, aws_cloudtrail). It does NOT prove the index row's full claim
+  of coverage "across CSPM, CWPP, CIEM and DSPM modules": there is no workload
+  agent, container or host fixture in this module, so CWPP is entirely
+  unevidenced here, and the CIEM claim is only the trivial attached-policy case
+  (see the dropped TC-CIEM-01 note in the pack summary — no permission boundary,
+  SCP or resource policy is planted, so net-effective permission COMPUTATION is
+  not exercised). It also does NOT prove risk scoring differentiates critical
+  from informational — no severity field is queried. Field and dataset names are
+  convention-named and unconfirmed against a live tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/cspm
+  detail: >
+    terraform apply the `cspm` module, then wait one posture scan cycle. Same
+    fixture as POS-CSPM-001; no additional setup.
+
+checks:
+  - check_id: chk-01
+    title: Posture findings span all six planted AWS resource types
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = cortex_cloud_posture
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter cloud_provider = "AWS"
+        | filter tags contains "CortexSimCSPMFinding"
+        | comp count_distinct(resource_id) as resources by resource_type
+        | filter resources >= 1
+        | fields resource_type, resources
+      distinct_key: resource_type
+    threshold:
+      kpi: planted resource types assessed
+      op: ">="
+      value: 6
+      unit: resource types
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-CSPM-04 "Qualitative pass". The nine planted
+        resources fall into exactly six AWS resource types, which is countable
+        from the module's own Terraform, so "posture assessment covers all
+        connected resources" gets an objective floor of six distinct types.
+        Six is the fixture's own arity, not a chosen bar.
+    negative_control:
+      description: >
+        The tenant's Cortex Cloud connector was granted S3, EC2 and IAM read
+        permissions but not cloudtrail:DescribeTrails, so the weak trail is never
+        inventoried and posture assessment spans five resource types, not six.
+      measured_value: 5
+
+tags: [posture, cspm, aws, breadth, planted-fixture]
+author: "Henry Reed"

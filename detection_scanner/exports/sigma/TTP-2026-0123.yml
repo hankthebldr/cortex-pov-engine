@@ -1,0 +1,217 @@
+title: "Muddled Libra Rogue-VM Alert Storm \u2014 AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537) \u2014 MP-013 Rogue vSphere VM Creation with Local Administrator Login"
+id: ttp-2026-0123-abioc-01
+status: experimental
+description: |
+  A 'New Virtual Machine' is created in vSphere and immediately logged into with a local Administrator account — the rogue-VM tradecraft Muddled Libra uses to work from a host outside EDR visibility. Individually a medium behavioral signal; the ABIOC anchors it to the vCenter identity + source-host chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = esxi_syslog
+    | filter event_message contains "VmCreatedEvent" or event_message contains "New Virtual Machine"
+    | filter user_name = "Administrator" or user_name contains "administrator"
+    | alter agent_hostname = source_address
+    | comp count() as vm_creates by agent_hostname, esxi_host, user_name
+    | filter vm_creates >= 1
+    | fields agent_hostname, esxi_host, user_name, vm_creates
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+    - attack.t1564.006
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Muddled Libra Rogue-VM Alert Storm \u2014 AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537) \u2014 MP-013 NTDS.dit Extraction from Mounted Domain Controller VMDK"
+id: ttp-2026-0123-abioc-02
+status: experimental
+description: |
+  NTDS.dit and the SYSTEM registry hive are copied off a mounted (powered-down) domain-controller VMDK and decrypted into 'result' / 'result.kerb' on the rogue VM — full-domain credential theft that never touches a live DC's LSASS. The ABIOC anchors the file activity to the rogue-VM process lineage.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter action_file_name in ("ntds.dit", "SYSTEM", "result", "result.kerb")
+    | filter actor_process_image_name in ("cmd.exe", "powershell.exe", "esentutl.exe", "diskshadow.exe")
+    | comp count() as ntds_ops by agent_hostname, actor_effective_username
+    | filter ntds_ops >= 1
+    | fields agent_hostname, actor_effective_username, ntds_ops
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.003
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Muddled Libra Rogue-VM Alert Storm \u2014 AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537) \u2014 MP-013 ADRecon Domain Enumeration Burst"
+id: ttp-2026-0123-abioc-03
+status: experimental
+description: |
+  A PowerShell ADRecon run enumerates the domain — forest, trusts, SPNs (ComputerSPNs.csv), users — in a short LDAP-heavy burst. Legitimate admins occasionally run AD reporting, so in isolation this scores medium; the ABIOC keys on the cadence + the rogue-host origin.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "powershell.exe"
+    | filter action_process_command_line contains "ADRecon" or action_process_command_line contains "ComputerSPNs"
+    | comp count() as adrecon_runs by agent_hostname, actor_effective_username
+    | filter adrecon_runs >= 1
+    | fields agent_hostname, actor_effective_username, adrecon_runs
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.002
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Muddled Libra Rogue-VM Alert Storm \u2014 AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537) \u2014 MP-013 Rogue Local Administrator Account Creation (gooner)"
+id: ttp-2026-0123-abioc-04
+status: experimental
+description: |
+  A new local account 'gooner' is created (Windows 4720) and immediately used for an interactive logon (4624) on the rogue host — attacker-controlled persistence. Account creation is routine in isolation (low), so the value is the correlation into the wider chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id in (4720, 4624)
+    | filter target_user_name = "gooner"
+    | alter agent_hostname = host_name
+    | comp count() as account_events by agent_hostname, target_user_name
+    | filter account_events >= 1
+    | fields agent_hostname, target_user_name, account_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1136/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1136.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: low
+---
+title: "Muddled Libra Rogue-VM Alert Storm \u2014 AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537) \u2014 MP-013 Forged Kerberos Ticket Pass-the-Ticket Authentication"
+id: ttp-2026-0123-abioc-05
+status: experimental
+description: |
+  Kerberos service tickets requested with RC4 (0x17) encryption — a downgrade consistent with tickets forged/roasted from the credential material harvested off the DC VMDK — are used for pass-the-ticket authentication, enabling RDP / PsExec lateral movement without re-entering passwords. The ABIOC keys on the RC4-downgraded 4769 service-ticket request (excluding the krbtgt TGT service) from the rogue host, normalized to the resolved endpoint entity (agent_hostname), rather than on all Kerberos traffic.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = ad_audit
+    | filter event_id = 4769 and ticket_encryption_type = "0x17"
+    | filter service_name != "krbtgt"
+    | alter agent_hostname = client_address
+    | comp count() as ticket_events by agent_hostname, service_name
+    | filter ticket_events >= 1
+    | fields agent_hostname, service_name, ticket_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.003
+    - attack.t1021.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Muddled Libra Rogue-VM Alert Storm \u2014 AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537) \u2014 MP-013 Chisel SSH-over-HTTPS Persistent C2 Tunnel"
+id: ttp-2026-0123-abioc-06
+status: experimental
+description: |
+  A Chisel SSH-over-HTTPS tunnel to an attacker-associated destination stays alive on TCP 443 for hours — protocol-on-non-standard-port persistence that blends into HTTPS. The ABIOC keys on the long-lived ssh-app-over-443 session from the rogue host.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dest_port = 443 and app = "ssh"
+    | filter session_duration >= 3600
+    | alter agent_hostname = source_address
+    | comp count() as long_tunnels, sum(bytes_total) as tunnel_bytes by agent_hostname, dest_address
+    | filter long_tunnels >= 1
+    | fields agent_hostname, dest_address, long_tunnels, tunnel_bytes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1572/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1572
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Muddled Libra Rogue-VM Alert Storm \u2014 AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537) \u2014 MP-013 Bulk Cloud Exfiltration to S3 and Snowflake"
+id: ttp-2026-0123-abioc-07
+status: experimental
+description: |
+  The rogue host attempts bulk data movement to Snowflake and attacker AWS S3 buckets over 443 (via the S3 Browser client). Cloud upload volume alone is a medium behavioral signal; the ABIOC anchors the egress spike to the same host that dumped NTDS and forged tickets.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = network_story
+    | filter dest_host contains "s3" or dest_host contains "snowflake" or dest_host contains "amazonaws"
+    | filter action_total_upload_size >= 10000000
+    | comp sum(action_total_upload_size) as exfil_bytes by agent_hostname, dest_host
+    | filter exfil_bytes >= 10000000
+    | fields agent_hostname, dest_host, exfil_bytes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1537/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1537
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

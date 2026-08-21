@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1548.005",
+    "T1098.003",
+    "T1078.004",
+    "T1552.005",
+    "T1580",
+    "T1530"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(CSPM-003 Wildcard-Trust or Unrestricted PassRole IAM Posture Finding) AND ( XQL(CSPM-003 Anonymous or Cross-Account AssumeRole on Exposed Role) OR XQL(CSPM-003 IMDS Role-Credential Retrieval from Compromised Workload) ) AND XQL(CSPM-003 PassRole and AttachRolePolicy Granting AdministratorAccess) AND XQL(CSPM-003 KMS Decrypt and Bulk S3 GetObject from Newly-Privileged Session) \u2014 fuses the CSPM wildcard-trust/unrestricted-PassRole posture finding (Signal A) with the runtime AssumeRole plus IMDS credential retrieval plus AttachRolePolicy AdministratorAccess privilege-escalation chain (Signal B) and the KMS-Decrypt plus bulk S3 GetObject impact (Signal C) on the same exposed role ARN, principal, and time window into a single 'IAM-exposure exploited to org-wide access' incident that names the misconfigured role, who assumed it, the moment it became privileged, and what data it reached.",
+      "name": "IAM Exposure Exploited to Org-Wide Access \u2014 Posture-to-Impact Stitch",
+      "rule_id": "CR-CSPM-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0121"
+}

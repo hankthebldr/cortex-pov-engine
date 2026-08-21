@@ -20,10 +20,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-ITDR-08
-tc_ref: TC-ITDR-08
-uc_name: "Identity-Driven Initial Access Defense"
-tc_name: "Help-Desk-Assisted MFA Reset → Factor Enrollment → New-Device Sign-In Account Takeover"
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-ITDR-05
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"
@@ -46,6 +50,20 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# SaaS-only identity scenario: the detection telemetry is Okta / Entra audit
+# logs, so there is NO endpoint process-causality tree to trace. The chain is
+# stitched on the SHARED VICTIM IDENTITY (user_principal = ada.lovelace) — the
+# reset → factor.activate → session.start sequence and the cross-provider repeat
+# all thread on that one account, which is exactly how XSIAM ITDR folds them into
+# a single help-desk-assisted account-takeover incident (CR-IDENT-0001). The CGO
+# is the idp_signin_emulator EAL runtime (python3, container-runtime) that emits
+# the campaign; steps 2..n pivot on shared_entity (the victim principal), not on
+# a fabricated process fork.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "container-runtime"
 
 infra_modules_needed:
   - base
@@ -87,6 +105,7 @@ steps:
         | jq -e '.eal_targets | length > 0'
     identity: container-runtime
     mitre_technique: "T1078.004"
+    platforms: ["container"]
     expected_detections:
       - plane: ITDR
         type: BIOC
@@ -122,6 +141,13 @@ steps:
       echo '[*] ITDR should flag the reset_factors → factor.activate → session.start chain from a new device fingerprint'
     identity: container-runtime
     mitre_technique: "T1556.006"
+    platforms: ["container"]
+    # First live emission: the Okta reset→enroll→sign-in sequence for the victim
+    # principal. Threads from the pre-flight foothold on the same emitter host /
+    # campaign; the detection stitch is on the shared victim identity.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: ITDR
         type: BIOC
@@ -161,6 +187,13 @@ steps:
       echo '[*] Hunt: a help-desk MFA reset followed by a privileged group-membership add within 1h is the Muddled Libra escalation tell'
     identity: container-runtime
     mitre_technique: "T1078.004"
+    platforms: ["container"]
+    # Cross-provider repeat (Entra ID) + escalation hunt for the SAME victim
+    # principal — shared_entity ties the Okta and Microsoft legs to one identity
+    # so the takeover is one incident spanning both IdPs, not two star alerts.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: ITDR
         type: XQL

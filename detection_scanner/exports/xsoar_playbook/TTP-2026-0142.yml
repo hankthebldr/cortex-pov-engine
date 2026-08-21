@@ -1,0 +1,26 @@
+id: cortexsim-ttp-2026-0142-response
+version: 1
+name: "CortexSim — Ransomware Precursor Auto-Containment — BlackSuit DCSync-to-ESXi Kill Chain Fires XSOAR Auto-Containment (T1003.006 / T1053.005 / T1486)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0142.
+  Triggered by Cortex correlation rules: CR-MP-0020.
+  Reference playbook in panw_mapping: XSOAR-PB-Ransomware-Precursor-AutoContain-v1
+triggers:
+  - correlation_rule_id: CR-MP-0020
+  - playbook_rule_id: TBD-XSOAR-RR-001
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0142
+  cortexsim_version: 1.0

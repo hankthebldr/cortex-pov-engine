@@ -1,0 +1,87 @@
+adapter_id: TOOL-LINPEAS
+name: LinPEAS
+version: "20260803-00785084"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/carlospolop/PEASS-ng
+  # Verified from the repository's own LICENSE file, NOT from the GitHub API
+  # (which reports NOASSERTION for this project). PEASS-ng is GPLv2-or-later
+  # with Nmap-style "derived works" clarifications: parsing peass-ng output is
+  # a derived work, but "typical shell or execution-menu apps, which simply
+  # display raw peass-ng output" are not. CortexSim streams the raw stdout of
+  # the step back to the console and never parses it, which is the exempt case.
+  # The `docs/reference/payload-shelf.md` §8 worked example says MIT — that is
+  # wrong, and this pack is the authority.
+  license: "GPL-2.0-or-later"
+  attribution: Carlos Polop Martin (PEASS-ng)
+
+cortex_signal:
+  planes:
+    - EDR
+    - CDR
+  expected_techniques:
+    - T1082  # System Information Discovery
+    - T1083  # File and Directory Discovery
+    - T1057  # Process Discovery
+    - T1518.001  # Software Discovery: Security Software Discovery
+    - T1548.001  # Abuse Elevation Control Mechanism: Setuid and Setgid
+
+safety_class: dual-use-lab-only
+
+install:
+  # Kept verbatim so a target with public-internet egress behaves exactly as it
+  # did before this pack existed, and so the byte-frozen bash/PowerShell push
+  # bundles are unaffected. The shelf is the ADDITIONAL path, not a replacement.
+  runtime_install_command: "command -v linpeas.sh >/dev/null 2>&1 || curl -fsSLo /tmp/linpeas.sh https://github.com/carlospolop/PEASS-ng/releases/download/20260803-00785084/linpeas.sh && chmod +x /tmp/linpeas.sh"
+  binary: /tmp/linpeas.sh
+
+  artifact:
+    filename: linpeas.sh
+    # Release-tag download URL, NOT /releases/latest/download/. `latest` and the
+    # tag serve identical bytes today (both sha256 0ea7e9ce…); they stop being
+    # identical the moment upstream ships, and only one of the two turns that
+    # into a loud build failure.
+    url: "https://github.com/carlospolop/PEASS-ng/releases/download/20260803-00785084/linpeas.sh"
+    kind: file
+    sha256: "0ea7e9ce5fcca464b5998cb73930e36647ebf9b38590fe250bbd5664fe8670a5"
+    pin:
+      type: release-tag
+      ref: "20260803-00785084"
+    license: "GPL-2.0-or-later"
+    stage_path: /tmp/linpeas.sh
+    mode: "0755"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} {flags}"
+  default_args:
+    # -q suppresses the banner/colour art. Deliberately NOT -a (all checks):
+    # the "all" profile writes into more of the filesystem and takes minutes,
+    # which is a worse demo and a worse citizen on a customer's host.
+    flags: "-q"
+  identity_required: www-data
+
+cleanup:
+  commands:
+    - "rm -f /tmp/linpeas.sh /tmp/linpeas_output.txt"
+
+ttp_refs:
+  - TTP-2026-0176
+
+equivalents:
+  - TOOL-LSE
+  - TOOL-LINENUM
+  - TOOL-DEEPCE
+
+author: Henry Reed
+created: "2026-08-05"
+last_updated: "2026-08-05"
+tags:
+  - privilege-escalation
+  - enumeration
+  - linux
+  - edr
+  - payload-shelf

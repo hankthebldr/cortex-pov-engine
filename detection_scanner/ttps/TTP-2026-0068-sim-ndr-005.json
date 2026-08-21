@@ -201,7 +201,7 @@
       {
         "name": "Bulk HTTPS Exfil Cross-Plane Stitch — NGFW Volume Anomaly Plus XDR Originating Process",
         "rule_id": "CR-NDR-0008",
-        "logic": "BIOC(NGFW EAL outbound bytes per session greatly exceeds host baseline) AND (XQL(NGFW EAL large sustained outbound bytes to single destination) OR XDR(originating process on src_host)) on same src_host within 30m"
+        "logic": "BIOC(NGFW EAL outbound bytes per session greatly exceeds host baseline) AND (XQL(NGFW EAL large sustained outbound bytes to single destination) OR XDR causality_actor_process_image_name / actor_process_instance_id owning the outbound session) stitched endpoint_network on src_host within 30m — promotes the volume anomaly to one exfiltration incident whose Causality Group Owner (causality_actor_process_*) is the process that opened the transfer, not an isolated NGFW spike."
       }
     ],
     "analytics_modules": [
@@ -243,14 +243,14 @@
         "evidence_query": "Playbook: block the outbound destination at the NGFW, isolate the source host, snapshot file-server access logs for the source, open a data-exfiltration DFIR ticket."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EXFIL-064",
+        "threat_scenario_id": "TS-EXFIL-064",
         "name": "Anomalous Outbound Bytes Detection via NGFW EAL",
         "description": "Validate that NGFW EAL + XSIAM Network Security Analytics detect sustained bulk HTTPS upload exceeding the host baseline and stitch the session-volume anomaly to the originating process.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EXFIL-064A",
+            "threat_step_id": "TS-EXFIL-064A",
             "objective": "Sustained large outbound byte volume to a single destination is surfaced by Network Security Analytics.",
             "preconditions": [
               "NGFW inline forwarding outbound traffic logs to XSIAM.",
@@ -267,7 +267,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-EXFIL-064B",
+            "threat_step_id": "TS-EXFIL-064B",
             "objective": "Long-lived upload-skewed session and originating process stitch into one exfiltration incident.",
             "success_criteria": [
               "BIOC `NGFW EAL long-lived upload-skewed HTTPS session` returns >= 1 row with max_duration > 120s.",

@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0024",
   "schema_version": "1.0.0",
-  "entry_version": "1.0.0",
+  "entry_version": "1.1.0",
   "status": "active",
   "metadata": {
     "created_at": "2026-05-20T21:16:12+00:00",
-    "updated_at": "2026-06-02",
+    "updated_at": "2026-07-24",
     "authors": [
       {
         "name": "CortexSim generate_card.py",
@@ -48,8 +48,8 @@
   },
   "identity": {
     "name": "Container Escape via Privileged Mode and nsenter (T1611)",
-    "summary": "A privileged container confirms it holds full capabilities and a host block device, traverses the host filesystem through /proc/1/root, uses nsenter against PID 1's mount namespace to break onto the host, reads the host /etc/passwd and /etc/shadow, and drops a cron job into the host /etc/cron.d. Cortex Cloud runtime defense and XDR container BIOCs flag the capability-mask read with device acces\u2026",
-    "description": "Escape-to-host is the most dangerous container outcome: a privileged or over-capable container can step out of its namespace and act as root on the node. Unit 42's Kubernetes threat assessment documents attackers abusing privileged pods and host-namespace primitives to pivot from a single workload to the entire node and cluster. This scenario reproduces the canonical privileged-mode escape from a root container identity \u2014 reading /proc/self/status capability masks and probing /dev/sda to confirm privileged mode, traversing the host root via /proc/1/root, invoking nsenter --mount=/proc/1/ns/mnt to enter the host mount namespace, reading host credential files, and writing a persistence cron job to the host /etc/cron.d. The detection approach is container-context behavioral analysis with a focus on the namespace-switch primitive: Cortex flags the capability+device enumeration, the /proc/1/root namespace traversal, the nsenter call targeting PID 1 (the highest-fidelity escape signal), the host credential-file read following escape, and the host cron.d write. A correlation rule fuses these stages from one container into a single critical Escape-to-Host incident, demonstrating XSIAM kill-chain stitching across the container boundary.",
+    "summary": "A privileged container confirms it holds full capabilities and a host block device, traverses the host filesystem through /proc/1/root, uses nsenter against PID 1's mount namespace to break onto the host, reads the host /etc/passwd and /etc/shadow, and drops a cron job into the host /etc/cron.d. Cortex Cloud runtime defense and XDR container BIOCs flag the capability-mask read with device acces…",
+    "description": "Escape-to-host is the most dangerous container outcome: a privileged or over-capable container can step out of its namespace and act as root on the node. Unit 42's Kubernetes threat assessment documents attackers abusing privileged pods and host-namespace primitives to pivot from a single workload to the entire node and cluster. This scenario reproduces the canonical privileged-mode escape from a root container identity — reading /proc/self/status capability masks and probing /dev/sda to confirm privileged mode, traversing the host root via /proc/1/root, invoking nsenter --mount=/proc/1/ns/mnt to enter the host mount namespace, reading host credential files, and writing a persistence cron job to the host /etc/cron.d. The detection approach is container-context behavioral analysis with a focus on the namespace-switch primitive: Cortex flags the capability+device enumeration, the /proc/1/root namespace traversal, the nsenter call targeting PID 1 (the highest-fidelity escape signal), the host credential-file read following escape, and the host cron.d write. A correlation rule fuses these stages from one container into a single critical Escape-to-Host incident, demonstrating XSIAM kill-chain stitching across the container boundary.",
     "severity": "critical",
     "confidence": "high"
   },
@@ -131,7 +131,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1611 \u2014 Container escape via privileged mode using /proc/1/root traversal and nsenter into the host mount namespace.",
+    "framework_reference_id": "T1611 — Container escape via privileged mode using /proc/1/root traversal and nsenter into the host mount namespace.",
     "privilege_required": "root",
     "prerequisites": [
       {
@@ -139,12 +139,12 @@
         "check_command": "systemctl is-active cortex-agent || ps aux | grep -i defender"
       },
       {
-        "description": "Lab environment matching scenario SIM-CDR-003 \u2014 an intentionally privileged container (--privileged or hostPID) for safe escape validation."
+        "description": "Lab environment matching scenario SIM-CDR-003 — an intentionally privileged container (--privileged or hostPID) for safe escape validation."
       }
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Privileged-mode container escape \u2014 lab-only, restricted to a disposable privileged container.\ncat /proc/self/status | grep -E 'CapEff|CapPrm|CapBnd'; ls /dev/sda 2>/dev/null && echo '[!] privileged'\nls -la /proc/1/root/ 2>/dev/null | head -20; cat /proc/1/root/etc/os-release 2>/dev/null\nnsenter --mount=/proc/1/ns/mnt -- ls /etc/ 2>&1 | head -20\nnsenter --mount=/proc/1/ns/mnt -- cat /etc/passwd 2>/dev/null | head -10\nnsenter --mount=/proc/1/ns/mnt -- bash -c \"echo '* * * * * root echo CORTEXSIM-PERSISTENCE-SIM-CDR-003 >> /tmp/cortexsim_escape_proof.txt' > /etc/cron.d/cortexsim-sim\"",
+      "code": "# Privileged-mode container escape — lab-only, restricted to a disposable privileged container.\ncat /proc/self/status | grep -E 'CapEff|CapPrm|CapBnd'; ls /dev/sda 2>/dev/null && echo '[!] privileged'\nls -la /proc/1/root/ 2>/dev/null | head -20; cat /proc/1/root/etc/os-release 2>/dev/null\nnsenter --mount=/proc/1/ns/mnt -- ls /etc/ 2>&1 | head -20\nnsenter --mount=/proc/1/ns/mnt -- cat /etc/passwd 2>/dev/null | head -10\nnsenter --mount=/proc/1/ns/mnt -- bash -c \"echo '* * * * * root echo CORTEXSIM-PERSISTENCE-SIM-CDR-003 >> /tmp/cortexsim_escape_proof.txt' > /etc/cron.d/cortexsim-sim\"",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -187,7 +187,7 @@
     "biocs": [
       {
         "name": "CDR-003 Container Capability Read With Block Device Access",
-        "description": "Container privilege enumeration \u2014 /proc/self/status capability read combined with /dev device access. A container process reads its own capability mask and probes a host block device, the precondition check for a privileged-mode escape.",
+        "description": "Container privilege enumeration — /proc/self/status capability read combined with /dev device access. A container process reads its own capability mask and probes a host block device, the precondition check for a privileged-mode escape.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter action_process_image_command_line contains_any (\"/proc/self/status\", \"CapEff\", \"CapBnd\")\n| filter action_process_image_command_line contains_any (\"/dev/sda\", \"/dev/sd\", \"/dev/nvme\", \"/dev/xvda\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -196,7 +196,7 @@
       },
       {
         "name": "CDR-003 Privileged Container Full Capability Set Anomaly",
-        "description": "Privileged container anomaly \u2014 process capability set indicates full host capabilities. A container process is observed running with the full Linux capability bounding set (privileged mode).",
+        "description": "Privileged container anomaly — process capability set indicates full host capabilities. A container process is observed running with the full Linux capability bounding set (privileged mode).",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_command_line contains_any (\"CapEff:\\t0000003fffffffff\", \"CapBnd:\\t0000003fffffffff\", \"CapPrm:\\t0000003fffffffff\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -205,7 +205,7 @@
       },
       {
         "name": "CDR-003 Host Filesystem Access Via Proc1 Root From Container",
-        "description": "Host filesystem access via /proc/1/root from container \u2014 namespace traversal attempt. A container process reads host paths through /proc/1/root, reaching the host root filesystem without a formal escape.",
+        "description": "Host filesystem access via /proc/1/root from container — namespace traversal attempt. A container process reads host paths through /proc/1/root, reaching the host root filesystem without a formal escape.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path contains \"/proc/1/root/\"\n| filter actor_process_image_name in (\"ls\", \"cat\", \"bash\", \"sh\", \"find\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -214,7 +214,7 @@
       },
       {
         "name": "CDR-003 Proc1 Root Traversal Host Namespace Enumeration",
-        "description": "Suspicious /proc/1/root traversal in container context \u2014 host namespace enumeration. A container process lists or reads host configuration through PID 1's root link to map the host before escaping.",
+        "description": "Suspicious /proc/1/root traversal in container context — host namespace enumeration. A container process lists or reads host configuration through PID 1's root link to map the host before escaping.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter action_process_image_command_line contains \"/proc/1/root\"",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -223,8 +223,8 @@
       },
       {
         "name": "CDR-003 nsenter Into PID1 Mount Namespace Container Escape",
-        "description": "nsenter execution targeting PID 1 mount namespace \u2014 container escape via privileged mode (high fidelity). nsenter joins the host (PID 1) mount namespace from inside a container, the definitive escape primitive.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"nsenter\"\n| filter action_process_image_command_line contains_any (\"/proc/1/ns/mnt\", \"--mount=/proc/1\", \"-t 1\", \"--target 1\")",
+        "description": "nsenter execution targeting PID 1 mount namespace — container escape via privileged mode (high fidelity). nsenter joins the host (PID 1) mount namespace from inside a container, the definitive escape primitive.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"nsenter\"\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"runc\", \"containerd-shim\")\n| filter action_process_image_command_line contains_any (\"/proc/1/ns/mnt\", \"--mount=/proc/1\", \"-t 1\", \"--target 1\")\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_effective_username, action_process_image_command_line",
         "severity": "critical",
         "mitre_technique_ids": [
           "T1611"
@@ -232,7 +232,7 @@
       },
       {
         "name": "CDR-003 Anomalous Namespace Switch From Container Process",
-        "description": "Host namespace access via nsenter \u2014 anomalous namespace switch from container process. A container process switches into a host namespace via nsenter, an action no legitimate workload performs.",
+        "description": "Host namespace access via nsenter — anomalous namespace switch from container process. A container process switches into a host namespace via nsenter, an action no legitimate workload performs.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"nsenter\"\n| filter action_process_image_command_line contains_any (\"--mount\", \"--pid\", \"--net\", \"--ipc\", \"--uts\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -241,8 +241,8 @@
       },
       {
         "name": "CDR-003 Host Passwd Read From Container Via Namespace Escape",
-        "description": "Host /etc/passwd access from container via namespace escape \u2014 credential harvesting post-escape. After escaping, the process reads the host /etc/passwd or /etc/shadow through the joined namespace.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path in (\"/etc/passwd\", \"/etc/shadow\")\n| filter causality_actor_process_image_name = \"nsenter\" or actor_process_image_name = \"nsenter\"",
+        "description": "Host /etc/passwd access from container via namespace escape — credential harvesting post-escape. After escaping, the process reads the host /etc/passwd or /etc/shadow through the joined namespace.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter action_file_path in (\"/etc/passwd\", \"/etc/shadow\")\n| filter causality_actor_process_image_name = \"nsenter\" or actor_process_image_name = \"nsenter\"\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_image_name, action_file_path",
         "severity": "high",
         "mitre_technique_ids": [
           "T1003.008"
@@ -250,7 +250,7 @@
       },
       {
         "name": "CDR-003 Sensitive Host File Read Following Container Escape",
-        "description": "Sensitive host file read following successful container escape \u2014 multi-stage attack chain detected. A sensitive host credential file is read in the same container lineage that just performed an nsenter escape.",
+        "description": "Sensitive host file read following successful container escape — multi-stage attack chain detected. A sensitive host credential file is read in the same container lineage that just performed an nsenter escape.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"nsenter\"\n| filter action_process_image_command_line contains_any (\"/etc/passwd\", \"/etc/shadow\", \"cat /etc\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -259,8 +259,8 @@
       },
       {
         "name": "CDR-003 Host Cron Persistence Written From Escaped Container",
-        "description": "Cron persistence written to host filesystem from container escape \u2014 T1611 + T1053 chained. The escaped process writes a cron job to the host /etc/cron.d to persist on the node.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type = ENUM.FILE_CREATE\n| filter container_id != null\n| filter action_file_path contains \"/etc/cron.d/\"\n| filter causality_actor_process_image_name = \"nsenter\" or actor_process_image_name = \"nsenter\"",
+        "description": "Cron persistence written to host filesystem from container escape — T1611 + T1053 chained. The escaped process writes a cron job to the host /etc/cron.d to persist on the node.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type = ENUM.FILE_CREATE\n| filter container_id != null\n| filter action_file_path contains \"/etc/cron.d/\"\n| filter causality_actor_process_image_name = \"nsenter\" or actor_process_image_name = \"nsenter\"\n| fields _time, container_id, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path",
         "severity": "critical",
         "mitre_technique_ids": [
           "T1053.003"
@@ -268,7 +268,7 @@
       },
       {
         "name": "CDR-003 Host CronD File Creation After Namespace Escape",
-        "description": "Host cron.d file creation following container namespace escape \u2014 kill chain stitching signal. A new /etc/cron.d file appears on the host in a lineage that performed a namespace switch.",
+        "description": "Host cron.d file creation following container namespace escape — kill chain stitching signal. A new /etc/cron.d file appears on the host in a lineage that performed a namespace switch.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter action_process_image_command_line contains \"/etc/cron.d/\"\n| filter causality_actor_process_image_name = \"nsenter\"",
         "severity": "critical",
         "mitre_technique_ids": [
@@ -301,14 +301,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Container Escape To Host Kill Chain \u2014 Same Container",
+        "name": "Container Escape To Host Kill Chain — Same Container",
         "rule_id": "CR-CDR-0003",
         "logic": "BIOC(CDR-003 Container Capability Read With Block Device Access) OR BIOC(CDR-003 Host Filesystem Access Via Proc1 Root From Container) OR BIOC(CDR-003 nsenter Into PID1 Mount Namespace Container Escape) OR BIOC(CDR-003 Anomalous Namespace Switch From Container Process) OR BIOC(CDR-003 Host Passwd Read From Container Via Namespace Escape) OR BIOC(CDR-003 Host Cron Persistence Written From Escaped Container)"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud Runtime Defense \u2014 Container escape / host namespace access",
-      "Cortex XDR Analytics \u2014 Container process performing nsenter into host PID 1 namespace"
+      "Cortex Cloud Runtime Defense — Container escape / host namespace access",
+      "Cortex XDR Analytics — Container process performing nsenter into host PID 1 namespace"
     ]
   },
   "panw_mapping": {
@@ -347,14 +347,14 @@
         "evidence_query": "Correlation CR-CDR-0003 fuses capability/device recon, /proc/1/root traversal, nsenter escape, host credential read, and host cron persistence from one container into a single critical Escape-to-Host incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-024",
-        "name": "Container Escape Attempt Detection \u2014 Privileged Mode",
-        "description": "Detect and stitch the privileged-mode container escape chain (capability recon \u2192 /proc/1/root \u2192 nsenter \u2192 host credential read \u2192 host cron persistence).",
-        "test_cases": [
+        "threat_scenario_id": "TS-CLOUD-024",
+        "name": "Container Escape Attempt Detection — Privileged Mode",
+        "description": "Detect and stitch the privileged-mode container escape chain (capability recon → /proc/1/root → nsenter → host credential read → host cron persistence).",
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-024A",
+            "threat_step_id": "TS-CLOUD-024A",
             "objective": "The nsenter escape and host credential read fire their Cortex container BIOCs.",
             "preconditions": [
               "Cortex Cloud runtime defender or Cortex XDR Linux agent >= 8.4.0 reporting on the node.",
@@ -373,7 +373,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUD-024B",
+            "threat_step_id": "TS-CLOUD-024B",
             "objective": "Escape stages stitch into one Escape-to-Host incident.",
             "success_criteria": [
               "Correlation `CR-CDR-0003` groups the escape stages from one container_id into one incident.",
@@ -395,7 +395,7 @@
     "detection_engineering": [
       "Treat any nsenter targeting PID 1's namespace from a container as a critical escape signal.",
       "Alert on container reads of /proc/1/root and host /etc/passwd /etc/shadow.",
-      "Correlate the capability recon \u2192 escape \u2192 host persistence stages from one container lineage into a single incident."
+      "Correlate the capability recon → escape → host persistence stages from one container lineage into a single incident."
     ],
     "response_playbook": "XSOAR-PB-ContainerEscapeResponse-v1"
   },
@@ -408,7 +408,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1611 \u2014 Escape to Host",
+      "title": "MITRE ATT&CK T1611 — Escape to Host",
       "url": "https://attack.mitre.org/techniques/T1611/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -426,6 +426,12 @@
       "date": "2026-06-02",
       "author": "Henry Reed",
       "change": "Replaced skeleton detections with real container-escape CDR BIOCs/XQL, added correlation CR-CDR-0003, IOC, enriched identity + panw_mapping. Promoted to active."
+    },
+    {
+      "entry_version": "1.1.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Causality contract: anchored the headline nsenter-escape BIOC on causality_actor_process_image_name (the container entrypoint / runc / containerd-shim lineage that OWNS the escape) plus container_id, and surfaced causality_actor_process_instance_id + actor_effective_username on the escape, the host /etc/passwd read, and the host /etc/cron.d write — the child-of-nsenter chain join (host↔runc cross-namespace lineage break) the sensor stamps, not only actor_process_image_name = nsenter. Pairs with SIM-CDR-003 gaining cgo_anchor (containerd-shim/root) + an exposure_exploit→process_lineage escape spine (host cred read and host cron persistence both descend from the nsenter escape step) + per-step platforms (linux/container)."
     }
   ]
 }

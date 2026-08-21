@@ -73,7 +73,7 @@ preset = network_story
 | filter dns_query_name contains ".testmynids.org"
 | join type=inner (xdr_data
     | filter event_type = ENUM.NETWORK
-    | fields agent_hostname, actor_process_image_name, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip
-| comp count() as stitched_dns by src_ip, ep.agent_hostname, ep.actor_process_image_name
-| fields src_ip, ep.agent_hostname, ep.actor_process_image_name, stitched_dns
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, src_ip as ep_src_ip) as ep ep.ep_src_ip = src_ip
+| comp count() as stitched_dns, count_distinct(dns_query_name) as unique_labels by src_ip, ep.agent_hostname, ep.causality_actor_process_image_name, ep.causality_actor_process_instance_id
+| fields src_ip, ep.agent_hostname, ep.causality_actor_process_image_name, ep.causality_actor_process_instance_id, stitched_dns, unique_labels
 

@@ -8,10 +8,14 @@ detection_types:
   - Analytics
   - BIOC
 
-uc_ref: UCS-BROWSER-04
-tc_ref: TC-BROWSER-04
-uc_name: "Cross-SaaS Data Movement Detection"
-tc_name: "User Copies from Sanctioned CRM, Pastes Into Personal Webmail"
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-DLP-01
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
 
 mitre_tactic: "TA0010"
 mitre_tactic_name: "Exfiltration"
@@ -54,6 +58,17 @@ success_criteria: |
   injected browser events that raise the expected alert (target ≥ 90%).
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The managed Prisma Browser (Chromium-based) is the Causality Group Owner — the
+# process that OWNS the cross-origin copy/paste chain in XSIAM's causality view,
+# NOT the synthetic beacon. The pre-flight roots the chain; the browser drive
+# (copy from sanctioned CRM, paste into personal webmail) is its process child;
+# the stitched-incident confirmation joins back to the drive by the clipboard
+# payload hash (shared_entity) — the same entity XSIAM correlates copy↔paste on.
+cgo_anchor:
+  image_name: "chrome"
+  primary_username: "corp-user"
+
 external_tools:
   - name: Cortex Browser Attacker
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -73,6 +88,7 @@ steps:
         | jq -e '.eal_targets | length > 0'
     identity: container-runtime
     mitre_technique: "T1005"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: BROWSER
         type: Analytics
@@ -106,6 +122,13 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-004-eal.yml --live
     identity: container-runtime
     mitre_technique: "T1567"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["linux", "container", "windows", "macos"]
+    platform_variants:
+      windows: "python -m scripts.eal_simulator.cli run %TEMP%\\sim-browser-004-eal.yml --live  # browser_channel: prisma -> clipboard DLP on Windows"
+      macos: "python3 -m scripts.eal_simulator.cli run /tmp/sim-browser-004-eal.yml --live  # browser_channel: prisma -> clipboard DLP on macOS"
     expected_detections:
       - plane: BROWSER
         type: BIOC
@@ -129,6 +152,10 @@ steps:
       echo "[CortexSim] Confirm XSIAM stitched incident: clipboard-origin mismatch."
     identity: container-runtime
     mitre_technique: "T1567"
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: ANALYTICS
         type: Analytics

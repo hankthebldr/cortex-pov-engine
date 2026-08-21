@@ -7,10 +7,11 @@ plane: AI_SPM
 detection_types:
   - XQL
 
-uc_ref: UCS-AISPM-01
-tc_ref: TC-AISPM-05
+uc_ref: UCS-AISP-05
+tc_ref: TC-AISP-05
+pov_scenario_id: POV-SC-004
 uc_name: "AI Security Posture Management"
-tc_name: "AI Sensitive Data Classification"
+tc_name: "Validate AI Sensitive Data Classification — Training data stores scanned for sensitive data (PII/PHI/PCI in training sets)"
 
 mitre_tactic: "TA0009"
 mitre_tactic_name: "Collection"
@@ -30,6 +31,13 @@ execution_identity:
 
 push_supported: true
 pull_supported: false
+
+# ── Causality Group Owner ────────────────────────────────────────────────────
+# Realistic initial-access process that owns the chain (Cortex Causality View
+# root), so the graph reads as a real intrusion, not the beacon.
+cgo_anchor:
+  image_name: "cortex-aispm-scan"
+  primary_username: "root"
 
 external_tools:
   - name: aws-cli
@@ -85,6 +93,7 @@ steps:
       echo "[*] Canary patterns present: $(grep -c 'CORTEXSIM' /tmp/aispm-005-canary-preview.txt) lines"
     identity: root
     mitre_technique: "T1530"
+    platforms: ["linux"]
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -100,6 +109,10 @@ steps:
       date -u +%s > /tmp/aispm-005-t1.txt
     identity: root
     mitre_technique: "T1530"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: AI_SPM
         type: XQL
@@ -150,6 +163,10 @@ steps:
       fi
     identity: root
     mitre_technique: "T1213"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: AI_SPM
         type: XQL

@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1098.005",
+    "T1550.001",
+    "T1078.004",
+    "T1087.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(\"ITDR-014 Programmatic Entra Sign-In From Rogue roadtx Automation User-Agent\") AND ABIOC(\"ITDR-014 Rogue Device Registration Burst Following First Programmatic Sign-In\") joined on the same user_principal_name within 900 seconds \u2014 the sign-in and the DRS device registration share the compromised identity, and the registration emits the rogue device_detail_device_id. That device identity is then joined to BIOC(\"ITDR-014 PRT-Backed Silent Token Minting With MFA Satisfied By Refresh Token\") and ABIOC(\"ITDR-014 Bulk Microsoft Graph Directory Enumeration Burst From Rogue Device Identity\") on the SHARED device_detail_device_id: the PRT minted on the rogue device and the Graph enumeration burst both carry that same device id, tying the cloud-token abuse and the Discovery tail to the one rogue device. Finally the endpoint spine ABIOC(\"ITDR-014 roadrecon Graph Enumeration Process Descends From roadtx Causality Owner\") is joined on the roadtx causality_actor_process_instance_id and the acting user_principal_name, folding the roadtx to roadrecon process lineage from xdr_data into the same identity. All five signals fuse into a single identity-owned ITDR incident whose causality anchor is the rogue device object id + PRT \u2014 programmatic sign-in -> DRS registration -> PRT silent token mint (MFA bypass) -> roadtx-owned roadrecon lineage -> Graph enumeration burst \u2014 presented to the DC as end-to-end evidence of the ROADtools storyline.",
+      "name": "ITDR-014 roadtx Entra Token-Abuse Identity-Owned Incident Stitch",
+      "rule_id": "CR-ITDR-0014",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0133"
+}

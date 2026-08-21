@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1059",
+    "T1078",
+    "T1046"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(EDR-010 Anomalous Interactive Shell Lineage from Automation Account) AND ABIOC(EDR-010 Living-off-the-Land Discovery Burst Deviating from Account Baseline) \u2014 fuses the two auto-tuned behavioral deviations on the same host+account into a single hands-on-keyboard-intrusion incident anchored to the service-account causality chain.",
+      "name": "Hands-on-Keyboard Intrusion on Automation Account \u2014 ABIOC Causality Stitch",
+      "rule_id": "CR-EDR-0010",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0096"
+}

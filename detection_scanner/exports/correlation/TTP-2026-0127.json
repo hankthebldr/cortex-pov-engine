@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1098",
+    "T1136.002",
+    "T1078.002",
+    "T1550.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(\"ITDR-013 dMSA Created Outside Managed Service Accounts Container By Non-Privileged Identity\") AND ABIOC(\"ITDR-013 dMSA Dual Privileged-Attribute Write Lineage In One Logon Session\") joined on the same host_name and subject_logon_id within 600 seconds \u2014 the create-and-modify pairing shares the attacker's originating logon session (the 5137 creation and both 5136 writes carry one subject_logon_id). That lineage is then joined to XQL(\"ITDR-013 Hunt dMSA Privileged TGT And Inherited-Privilege Logon\") on the created-dMSA IDENTITY, not on subject_logon_id: the sAMAccountName / object_dn of the dMSA created in the 5137 event (websvc-dmsa$) equals the account_name authenticating in the 2946 TGT mint and 4624 logon, which run under the dMSA's OWN new logon session and therefore do NOT carry the attacker's subject_logon_id \u2014 within the same 600-second window and host_name. Fuses the create-and-modify dMSA lineage (5137 create -> dual 5136 write under one subject_logon_id) with the privileged-TGT mint (2946) and the inherited-privilege logon (4624) bound by dMSA identity into a single ITDR privilege-escalation incident, evidencing the BadSuccessor storyline end to end.",
+      "name": "ITDR-013 BadSuccessor dMSA Privilege-Escalation Chain Stitch",
+      "rule_id": "CR-ITDR-0013",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0127"
+}

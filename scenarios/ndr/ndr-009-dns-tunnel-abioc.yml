@@ -1,0 +1,178 @@
+scenario_id: SIM-NDR-009
+name: "DNS-Tunnel Behavioral Anomaly — Learned Host DNS Baseline (Cortex ABIOC)"
+version: "1.0"
+status: active
+
+plane: NDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-04
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Demonstrate behavioral analytics thresholds for malicious egress and data exfil detection"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1048.003"
+mitre_technique_name: "Exfiltration Over Unencrypted Non-C2 Protocol"
+additional_techniques:
+  - technique: "T1071.004"
+    name: "Application Layer Protocol: DNS"
+  - technique: "T1572"
+    name: "Protocol Tunneling"
+
+threat_report: "Unit 42 — DNS Tunneling in the Wild: Overview of OilRig's DNS Tunneling"
+threat_report_url: "https://unit42.paloaltonetworks.com/dns-tunneling-in-the-wild-overview-of-oilrigs-dns-tunneling/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Network Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the host DNS baseline (a stable, low-rate set of
+  resolutions with ordinary label length and character distribution). The
+  injected query-volume flood and high-entropy subdomain burst under a single
+  base domain deviate from that learned baseline; both auto-tuned ABIOCs fire
+  and the correlation rule stitches them into a single DNS-tunnel-exfiltration
+  incident. This is the "behavioral-ML catches what a static rule misses" proof:
+  every query is a legitimate DNS lookup over an unseen base domain, so the catch
+  comes from the deviation and its host + base-domain causality chain, not a
+  domain-block or a fixed FQDN-length threshold. Mean time from burst to alert is
+  within the MTTD budget.
+moat_tier: "LEAD"
+
+external_tools: []
+
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# The DNS-tunnel implant is modeled as the EAL/foothold container: the
+# containerd-shim runtime OWNS the resolver-client (dig) process tree and is the
+# Causality Group Owner XDR blames for the chain — NOT the synthetic beacon. The
+# baseline resolution and the two deviation bursts are discrete dig execs on the
+# SAME host under the SAME base domain (exfil.testmynids.org); the pan_dns
+# sensor observes no direct fork between them, so they thread on the shared
+# host + base-domain entity (see the shared_entity pivots below) rather than
+# hanging as a star off the agent node.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "container-runtime"
+
+steps:
+  - id: step-01
+    name: "Establish the host DNS baseline resolution"
+    command: "dig +short baseline.exfil.testmynids.org A || true; echo cortexsim-ndr-009-dns-baseline-established"
+    identity: container-runtime
+    mitre_technique: "T1071.004"
+    platforms: ["linux", "container", "macos"]
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "Validation query confirms the host's learned DNS baseline (a stable, low-rate resolution set) is observable in pan_dns before the deviation is injected."
+        ttp_ref: "TTP-2026-0102"
+        detection_id: "xql-ndr-009-dns-query-volume-baseline-learned"
+
+  - id: step-02
+    name: "DNS query-volume flood far above the host learned per-minute rate"
+    command: "for i in 1 2 3 4 5 6 7 8 9 10; do dig +short chunk$i.exfil.testmynids.org TXT || true; done; echo cortexsim-ndr-009-dns-volume-flood-complete"
+    identity: container-runtime
+    mitre_technique: "T1048.003"
+    platforms: ["linux", "container", "macos", "windows"]
+    platform_variants:
+      windows: "foreach ($i in 1..10) { Resolve-DnsName -Type TXT \"chunk$i.exfil.testmynids.org\" -ErrorAction SilentlyContinue | Out-Null }; Write-Output 'cortexsim-ndr-009-dns-volume-flood-complete'"
+    causality:
+      # step-01 (learned baseline resolution) and this volume flood are separate
+      # dig execs on the SAME host under the SAME base domain — the pan_dns
+      # sensor sees no direct fork between them, only the shared source_ip +
+      # base-domain entity. The volume ABIOC anchors on that host + base-domain
+      # chain, so the edge is a shared_entity join, not a process fork.
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "A host whose learned DNS baseline is a low-rate resolution set issues a high-rate burst of distinct labels under a single base domain — auto-tuned ABIOC fires on the volume deviation from the learned per-host DNS profile, anchored to the host + base-domain causality chain. No single query is a known-bad IOC."
+        ttp_ref: "TTP-2026-0102"
+        detection_id: "abioc-ndr-009-dns-query-volume-flood-deviating-from-learned-host-baseline"
+
+  - id: step-03
+    name: "High-entropy encoded subdomain labels diverging from the learned name shape"
+    command: "dig +short f8a2c9e1b4d7a0c3e6f9k2.exfil.testmynids.org TXT || true; dig +short a1b2c3d4e5f6a7b8c9d0e1x7.exfil.testmynids.org TXT || true; dig +short z9y8x7w6v5u4t3s2r1q0p3.exfil.testmynids.org TXT || true; echo cortexsim-ndr-009-high-entropy-burst-complete"
+    identity: container-runtime
+    mitre_technique: "T1071.004"
+    platforms: ["linux", "container", "macos", "windows"]
+    platform_variants:
+      windows: "foreach ($l in 'f8a2c9e1b4d7a0c3e6f9k2','a1b2c3d4e5f6a7b8c9d0e1x7','z9y8x7w6v5u4t3s2r1q0p3') { Resolve-DnsName -Type TXT \"$l.exfil.testmynids.org\" -ErrorAction SilentlyContinue | Out-Null }; Write-Output 'cortexsim-ndr-009-high-entropy-burst-complete'"
+    causality:
+      # The high-entropy label burst is carried BY the volume flood under the
+      # same base domain from the same host — the entropy ABIOC's causality
+      # anchor is "the query-volume burst that carries it". No direct process
+      # fork links the two dig execs; the pan_dns stitch is the shared
+      # host + base-domain entity, so the edge is shared_entity.
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "The host resolves long, encoded first-labels whose length and character distribution exceed its learned DNS name shape — auto-tuned ABIOC fires on the entropy-and-length deviation, anchored to the query-volume burst that carries it. Every query is a legitimate DNS lookup."
+        ttp_ref: "TTP-2026-0102"
+        detection_id: "abioc-ndr-009-high-entropy-subdomain-labels-deviating-from-learned-dns-baseline"
+      - plane: NDR
+        type: XQL
+        description: "Validation query confirms the high-entropy label burst surfaced on the source host within the run window (the deviation is observable in pan_dns)."
+        ttp_ref: "TTP-2026-0102"
+        detection_id: "xql-ndr-009-high-entropy-label-burst-surfaced"
+
+  - id: step-04
+    name: "Correlation stitches the two behavioral deviations into one incident"
+    command: "echo cortexsim-ndr-009-cr-ndr-0009-stitched-dns-tunnel-incident"
+    identity: container-runtime
+    mitre_technique: "T1048.003"
+    platforms: ["linux", "container", "macos"]
+    causality:
+      # Correlation terminal — CR-NDR-0009 fuses the two ABIOC deviations from
+      # the SAME source host under the SAME base domain into one DNS-tunnel
+      # incident. The stitch is the host + base-domain entity the two ABIOCs
+      # share, so the edge is shared_entity onto the entropy-burst node.
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: NDR
+        type: Correlation
+        description: "Correlation rule fuses the query-volume-flood ABIOC and the high-entropy-subdomain ABIOC from the same source host into a single DNS-tunnel-exfiltration incident anchored to the host + base-domain causality chain."
+        ttp_ref: "TTP-2026-0102"
+        detection_id: "CR-NDR-0009"
+
+cleanup:
+  commands:
+    - "echo cortexsim-ndr-009-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-13"
+last_updated: "2026-07-13"
+tags:
+  - ndr
+  - abioc
+  - dns-tunnel
+  - exfiltration
+  - behavioral-ml

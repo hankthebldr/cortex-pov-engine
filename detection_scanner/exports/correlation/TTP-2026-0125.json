@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1570",
+    "T1021.001",
+    "T1021.002",
+    "T1021.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Lateral Tool Transfer to Never-Before-Seen Tunneler over HTTPS) AND ABIOC(Anomalous Remote-Service Fan-Out from Newly-Written Tool) fire on the same agent_hostname, and the NDR XQL(Long-Lived TCP-443 Tunnel Session Observable in network_story) shares that host src_ip within a 15-minute window. The three signals stitch into one lateral-movement and privilege-escalation incident_id whose causality chain spans EDR process lineage (HTTPS archive fetch -> never-before-seen chisel.exe execution -> psexec.exe peer fan-out) and NDR session telemetry (the long-lived TCP/443 tunnel) \u2014 the Muddled Libra lateral-tool-transfer playbook as a single incident rather than three unlinked alerts.",
+      "name": "Muddled Libra Lateral Tool Transfer + Tunnel + PsExec Fan-Out \u2014 Cross-Plane Causality Stitch",
+      "rule_id": "CR-EDR-0015",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0125"
+}

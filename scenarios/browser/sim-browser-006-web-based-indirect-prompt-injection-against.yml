@@ -1,0 +1,189 @@
+scenario_id: SIM-BROWSER-006
+name: "Browser — Web-Based Indirect Prompt Injection Against a Browsing AI Agent (DOM-hidden payload)"
+version: "1.0"
+status: active
+
+plane: BROWSER
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-AIRS-04
+tc_ref: TC-AIRS-07
+tc_refs:
+  - TC-AIRS-07
+  - TC-AGTX-07
+pov_scenario_id: POV-SC-033
+uc_name: "AI Runtime Security (Prisma AIRS)"
+tc_name: "Validate real-time detection and blocking of prompt injection, jailbreak attempts, and malicious agent behaviors in production AI systems"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1189"
+mitre_technique_name: "Drive-by Compromise"
+additional_techniques:
+  - technique: "T1204.001"
+    name: "User Execution: Malicious Link"
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+  - technique: "T1657"
+    name: "Financial Theft"
+
+threat_report: "Unit 42 — Web-Based Indirect Prompt Injection Against Browsing AI Agents"
+threat_report_url: "https://unit42.paloaltonetworks.com/ai-agent-prompt-injection/"
+
+execution_identity:
+  default: node
+  options:
+    - node
+    - www-data
+    - nobody
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Browsing-Agent Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned the browsing agent's baseline (it reaches only the sensitive
+  origins present in its task manifest, and the browser-engine process never parents an
+  OS shell). A DOM-hidden indirect prompt injection drives the agent to perform a
+  cross-origin sensitive (payment/OAuth) action absent from its task manifest right after
+  it ingests the hidden DOM content, plus a browser-engine->shell backend-command attempt
+  (SAFE-MODE). Both auto-tuned ABIOCs fire on the deviation from that learned baseline —
+  anchored on the injected off-manifest navigation and the browser-engine->shell lineage,
+  not on the absence of a human gesture (an unattended agent never produces one).
+  Advanced DNS Security / the DNS hunt surfaces the IDPI+payment domain
+  resolutions, and CR-BROWSER-0006 stitches them into a single indirect-prompt-injection
+  incident anchored to the page-load -> hidden-ingest -> no-human-gesture causality
+  chain. Every binary the agent uses is legitimate, so the catch is the behavioral
+  deviation and its causality chain, not a known-bad signature. Mean time from the
+  autonomous action to alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The browsing AI agent's own browser engine (headless_shell, running as `node`)
+# is the Causality Group Owner — the initial-access process that OWNS the IDPI
+# chain in XDR's causality view, NOT the synthetic beacon. The IDPI page load,
+# the off-manifest sensitive navigation, and the injected browser->shell attempt
+# all descend from that one browser-engine CGO, collapsing the star into a
+# connected spine: CGO(headless_shell) -> page load -> {same-session navigation,
+# browser-engine-parents-shell}.
+cgo_anchor:
+  image_name: "headless_shell"
+  primary_username: "node"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Browsing agent loads the attacker IDPI page and ingests the DOM-hidden instruction"
+    command: "curl -s --max-time 5 http://127.0.0.1/idpi/advertorial -o /tmp/cortexsim-browser-006.page 2>/dev/null || true; echo cortexsim-browser-006-idpi-page-loaded"
+    identity: node
+    mitre_technique: "T1189"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: "curl.exe -s --max-time 5 http://127.0.0.1/idpi/advertorial -o %TEMP%\\cortexsim-browser-006.page & echo cortexsim-browser-006-idpi-page-loaded"
+      macos: "curl -s --max-time 5 http://127.0.0.1/idpi/advertorial -o /tmp/cortexsim-browser-006.page 2>/dev/null || true; echo cortexsim-browser-006-idpi-page-loaded"
+    expected_detections:
+      - plane: BROWSER
+        type: XQL
+        description: "Hunt / Advanced DNS Security surfaces the browsing agent resolving and reaching the published IDPI and abused-payment domains during the run window."
+        ttp_ref: "TTP-2026-0114"
+        detection_id: "xql-sim-browser-006-idpi-domain-and-payment-egress-hunt"
+
+  - id: step-02
+    name: "Agent performs an autonomous cross-origin action (payment/OAuth) with no human gesture"
+    command: "curl -s --max-time 5 http://127.0.0.1/pay/checkout -o /tmp/cortexsim-browser-006.autonomous-action 2>/dev/null || true; echo cortexsim-browser-006-autonomous-cross-origin-action-no-gesture"
+    identity: node
+    mitre_technique: "T1204.001"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: "curl.exe -s --max-time 5 http://127.0.0.1/pay/checkout -o %TEMP%\\cortexsim-browser-006.autonomous-action & echo cortexsim-browser-006-autonomous-cross-origin-action-no-gesture"
+      macos: "curl -s --max-time 5 http://127.0.0.1/pay/checkout -o /tmp/cortexsim-browser-006.autonomous-action 2>/dev/null || true; echo cortexsim-browser-006-autonomous-cross-origin-action-no-gesture"
+    causality:
+      # Same browsing-agent session as the page load: a cross-origin navigation
+      # driven by the ingested hidden-DOM instruction, correlated on
+      # browser_session_id — no new process fork, so the pivot is the shared
+      # session entity, not process lineage.
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: BROWSER
+        type: ABIOC
+        description: "Within one agent session the browsing-agent identity makes a cross-origin navigation to a sensitive-origin class (payment/OAuth) that is absent from its task manifest, immediately after ingesting hidden DOM content — auto-tuned ABIOC fires on the page-load -> hidden-DOM-ingest -> off-manifest sensitive-navigation causality chain correlated by browser_session_id. It does not key on the absence of a human gesture (an unattended agent never produces one) or on any bad URL string."
+        ttp_ref: "TTP-2026-0114"
+        detection_id: "abioc-browsing-agent-sensitive-origin-action-after-hidden-dom-ingest-outside-task-manifest"
+      - plane: BROWSER
+        type: XQL
+        description: "Validation query confirms the gesture-less cross-origin navigation surfaced on the browsing-agent session within the run window."
+        ttp_ref: "TTP-2026-0114"
+        detection_id: "xql-sim-browser-006-autonomous-cross-origin-navigation-surfaced"
+
+  - id: step-03
+    name: "Browsing-agent process spawns a shell for the injected backend-command (SAFE-MODE, not executed)"
+    command: "printf 'SAFE-MODE: injected backend-command attempt (recursive-delete / fork-bomb class) neutralized — not executed\\n' > /tmp/cortexsim-browser-006.injected-command.SAFE-MODE; echo cortexsim-browser-006-agent-parented-shell-safe-mode"
+    identity: node
+    mitre_technique: "T1059.004"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "cmd.exe /c echo cortexsim-browser-006-agent-parented-shell-safe-mode"
+    causality:
+      # The injected backend-command attempt: the browser-engine CGO (step-01's
+      # headless_shell process that loaded the page) directly forks an OS shell —
+      # a real process-create, keyed on the browser-engine->shell lineage. Parents
+      # off step-01 (the browser engine), not the step-02 navigation, because the
+      # shell is a child of the engine process, not of a network action.
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: BROWSER
+        type: ABIOC
+        description: "A browser-engine process (chrome/chromium/chromium-browser/headless_shell — generic node workers excluded, since node->sh is ubiquitous and benign) parents an OS shell — a lineage the browser engine's learned per-process profile never produces. Auto-tuned ABIOC fires on the browser-engine->shell lineage deviation anchored to the page load, not on any command string. The destructive payload is a SAFE-MODE marker; nothing is executed."
+        ttp_ref: "TTP-2026-0114"
+        detection_id: "abioc-browsing-agent-process-spawns-shell-after-dom-hidden-ingest"
+
+  - id: step-04
+    name: "Correlation stitches the browser deviations and the IDPI/payment egress into one incident"
+    command: "echo cortexsim-browser-006-cr-browser-0006-stitched-idpi-incident"
+    identity: node
+    mitre_technique: "T1657"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      # CR-BROWSER-0006 co-fires on the same agent_hostname + browser_session_id,
+      # fusing the off-manifest sensitive-navigation ABIOC, the browser->shell
+      # ABIOC, and the IDPI/payment egress into one incident within a 5-minute
+      # window — a near-simultaneous correlation stitch over the session.
+      parent_step: step-03
+      pivot: temporal
+    expected_detections:
+      - plane: BROWSER
+        type: Correlation
+        description: "Correlation rule fuses the gesture-less cross-origin ABIOC, the browser->shell ABIOC, and the IDPI/payment egress on the same agent_hostname + browser_session_id into a single web-based indirect-prompt-injection incident anchored to the page-load -> hidden-ingest -> no-human-gesture causality chain."
+        ttp_ref: "TTP-2026-0114"
+        detection_id: "CR-BROWSER-0006"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-browser-006.page /tmp/cortexsim-browser-006.autonomous-action /tmp/cortexsim-browser-006.injected-command.SAFE-MODE"
+    - "echo cortexsim-browser-006-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-07-23"
+last_updated: "2026-07-23"
+tags:
+  - browser
+  - prisma-browser
+  - indirect-prompt-injection
+  - browsing-ai-agent
+  - dom-hidden-payload
+  - abioc
+  - ai-access-security

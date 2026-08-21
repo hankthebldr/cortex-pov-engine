@@ -7,7 +7,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook) OR BIOC(KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint)",
+      "logic": "BIOC(KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook) OR BIOC(KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint) OR XQL(KOI-003 Outbound HTTPS To Non Canonical PyPI Mirror With Pip User Agent) \u2014 stitched by shared agent_hostname + causality_id so the runtime import-time child-spawn, the SCA/SBOM fingerprint finding, and the NGFW mirror fetch (endpoint_network_stitch) collapse into ONE agentic-supply-chain incident",
       "name": "Agentic Supply Chain \u2014 Backdoored PyPI Package Post-Install Hook",
       "rule_id": "CR-KOI-0003",
       "severity": "high"

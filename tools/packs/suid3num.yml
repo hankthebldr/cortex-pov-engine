@@ -1,0 +1,69 @@
+adapter_id: TOOL-SUID3NUM
+name: SUID3NUM
+version: "2.0"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/Anon-Exploiter/SUID3NUM
+  license: "MIT"
+  attribution: Anon-Exploiter (Syed Umar Arfeen)
+
+cortex_signal:
+  planes:
+    - EDR
+    - CDR
+  expected_techniques:
+    - T1548.001  # Abuse Elevation Control Mechanism: Setuid and Setgid
+    - T1083  # File and Directory Discovery
+
+safety_class: dual-use-lab-only
+
+install:
+  runtime_install_command: "test -f /tmp/suid3num.py || curl -fsSLo /tmp/suid3num.py https://raw.githubusercontent.com/Anon-Exploiter/SUID3NUM/master/suid3num.py"
+  binary: /tmp/suid3num.py
+
+  artifact:
+    filename: suid3num.py
+    url: "https://raw.githubusercontent.com/Anon-Exploiter/SUID3NUM/881b48866741ee78a0d79d4c54c64c53feb3f655/suid3num.py"
+    kind: file
+    sha256: "25a070b7756010f5acb1052de1ba93c894fefbcbf0d9c540c2df582f348c11cd"
+    pin:
+      type: commit
+      ref: "881b48866741ee78a0d79d4c54c64c53feb3f655"
+    license: "MIT"
+    stage_path: /tmp/suid3num.py
+    mode: "0755"
+
+invoke:
+  target_platform: linux
+  # Invoked through the interpreter rather than the shebang: a staged .py lands
+  # 0755 but a target with no /usr/bin/env python3 would otherwise fail with an
+  # exec-format error that reads like a corrupted artifact.
+  run_template: "python3 {binary} {flags}"
+  default_args:
+    # No flag: enumerate only. The tool's --exploit mode spawns root shells from
+    # GTFOBins payloads and is not what a detection-validation step needs.
+    flags: ""
+  identity_required: www-data
+
+cleanup:
+  commands:
+    - "rm -f /tmp/suid3num.py"
+
+ttp_refs:
+  - TTP-2026-0176
+
+equivalents:
+  - TOOL-LINPEAS
+
+author: Henry Reed
+created: "2026-08-05"
+last_updated: "2026-08-05"
+tags:
+  - privilege-escalation
+  - suid
+  - linux
+  - edr
+  - payload-shelf

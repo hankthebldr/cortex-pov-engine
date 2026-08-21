@@ -62,11 +62,41 @@ class VerifyMark(BaseModel):
 # ── Secrets endpoints ──────────────────────────────────────────────────────
 
 
+#: ``put_integration`` stores an integration's API key as a Secret named
+#: ``__integration__/{name}``, and its docstring claims that keeps it out of the
+#: plain ``list()`` call. It does not — ``CredentialStore.list()`` is an
+#: unfiltered SELECT — so this endpoint returned every tenant's backing row
+#: including ``preview_tail``, the last four characters of the customer's API
+#: key, from an endpoint that is unauthenticated in a default deploy.
+_BACKING_SECRET_PREFIX = "__integration__/"
+
+
 @router.get("/secrets")
 async def list_secrets(session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Operator-managed secrets. Integration-backing rows are NOT listed here.
+
+    An integration's key is managed through /credentials/integrations, which
+    already names the tenant; surfacing the backing Secret row here buys the
+    operator nothing and leaks a preview of the key.
+    """
     store = CredentialStore(session)
-    secrets = await store.list()
-    return {"secrets": [s.to_dict() for s in secrets]}
+    secrets = [s for s in await store.list()
+               if not (s.name or "").startswith(_BACKING_SECRET_PREFIX)]
+    return {"secrets": [_redact_backing(s.to_dict()) for s in secrets]}
+
+
+def _redact_backing(row: dict[str, Any]) -> dict[str, Any]:
+    """Belt and braces: strip ``preview_tail`` from any integration credential.
+
+    The filter above is the primary fix, but a future export, POV report or MCP
+    surface could reach these rows another way. Two layers, because the leak
+    reappearing is a credential disclosure and the cost of the second layer is
+    one dict comparison.
+    """
+    if str(row.get("type_hint") or "").endswith("_credential"):
+        row = dict(row)
+        row["preview_tail"] = None
+    return row
 
 
 @router.put("/secrets")
@@ -96,7 +126,11 @@ async def get_secret_meta(
     row = await store._get_secret_row(name)  # noqa: SLF001 — controlled internal access
     if row is None:
         raise HTTPException(status_code=404, detail=_not_found("secret", name))
-    return row.to_dict()
+    if (row.name or "").startswith(_BACKING_SECRET_PREFIX):
+        # Addressable by name is still addressable. 404 rather than 403 so this
+        # endpoint does not confirm which integrations exist.
+        raise HTTPException(status_code=404, detail=_not_found("secret", name))
+    return _redact_backing(row.to_dict())
 
 
 @router.delete("/secrets/{name}", status_code=status.HTTP_204_NO_CONTENT)
@@ -124,11 +158,49 @@ async def list_integrations(
     return {"integrations": [r.to_dict() for r in rows]}
 
 
+def _validate_integration_config(kind: str, config: dict[str, Any]) -> None:
+    """Per-kind config validation at WRITE time. Raises HTTPException(400).
+
+    A bad tenant URL used to be accepted here silently and only became a problem
+    at the first ``/reconcile`` — at which point CortexSim had already sent the
+    customer's API key to whatever host the config named. Rejecting at PUT means
+    the key never leaves the process, and the operator learns about their typo
+    while they are still looking at the form.
+    """
+    from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
+    from integrations.xsiam.loader import XSIAM_KIND  # noqa: PLC0415
+    from integrations.xsiam.tenant_url import normalize_tenant_base_url  # noqa: PLC0415
+
+    if kind not in ("xsiam", XSIAM_KIND):
+        return
+    url = config.get("base_url") or config.get("fqdn") or config.get("tenant_url")
+    if not url:
+        raise HTTPException(status_code=400, detail={
+            "error": "Tenant URL is required",
+            "code": "INTEGRATION_CONFIG_INVALID",
+            "detail": f"kind '{kind}' needs config.base_url (or config.fqdn)"})
+    try:
+        normalize_tenant_base_url(str(url))
+    except XsiamConfigError as exc:
+        raise HTTPException(status_code=400, detail={
+            "error": "Tenant URL rejected", "code": "INTEGRATION_CONFIG_INVALID",
+            "detail": str(exc)}) from exc
+
+    caps = config.get("capabilities")
+    if caps is not None and (not isinstance(caps, list)
+                             or any(not isinstance(c, str) for c in caps)):
+        raise HTTPException(status_code=400, detail={
+            "error": "capabilities must be a list of strings",
+            "code": "INTEGRATION_CONFIG_INVALID",
+            "detail": "e.g. [\"read_alerts\"] or [\"read_alerts\", \"xql\"]"})
+
+
 @router.put("/integrations")
 async def put_integration(
     body: IntegrationPut,
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    _validate_integration_config(body.kind, body.config or {})
     store = CredentialStore(session)
     row = await store.put_integration(
         name=body.name,

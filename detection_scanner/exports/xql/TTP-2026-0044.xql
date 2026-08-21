@@ -42,7 +42,7 @@ preset = xdr_data
 | filter dst_action_external_hostname contains "cortexsim-canary" or dns_query_name contains "cortexsim-canary"
 | filter action_external_port = 443
 | filter http_req_user_agent contains_any ("pip", "python-requests", "python-urllib") or actor_process_image_name in ("pip", "pip3", "python", "python3")
-| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, http_req_user_agent
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, http_req_user_agent
 
 ## VALIDATION — KOI-003 PyPI Mirror Domain Matches Typosquat Of PyPI Org
 # purpose: validation

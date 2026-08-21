@@ -250,14 +250,14 @@
         "evidence_query": "Correlation CR-AIRS-0005 fuses the token-budget breach, latency anomaly, and POST burst into one unbounded-consumption incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-AIRS-016",
+        "threat_scenario_id": "TS-AIRS-016",
         "name": "OWASP LLM10 — Unbounded Consumption / Token-Exhaustion DoS",
         "description": "Detect denial-of-wallet / DoS against an LLM endpoint via repeated high-token requests, and confirm a cost-cap / circuit-breaker engages.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-AIRS-016A",
+            "threat_step_id": "TS-AIRS-016A",
             "objective": "AIRS detects the token-budget breach and latency anomaly under sustained load.",
             "preconditions": [
               "cortex-vulnerable-llm serving --vuln llm10 (no rate limit) on port 8089.",
@@ -275,7 +275,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-AIRS-016B",
+            "threat_step_id": "TS-AIRS-016B",
             "objective": "Cost-cap / circuit-breaker rejects the oversized final request, and all signals stitch into one incident.",
             "success_criteria": [
               "Circuit-breaker query returns >= 1 row with HTTP 429.",

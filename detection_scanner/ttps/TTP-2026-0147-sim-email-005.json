@@ -1,0 +1,407 @@
+{
+  "id": "TTP-2026-0147",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.1",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:25:46+00:00",
+    "updated_at": "2026-07-24",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-email",
+      "vector-aitm-phishing",
+      "meddler-in-the-middle",
+      "session-token-theft",
+      "account-takeover",
+      "evilproxy",
+      "evilginx2",
+      "proofpoint-tap",
+      "microsoft-365",
+      "entra-id",
+      "correlation-terminal",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-PROOFPOINT-TAP-DOCS",
+      "SRC-MICROSOFT-365-DOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "email",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "EMAIL — AiTM Session-Token Theft to Mailbox-Reconnaissance Account Takeover (Meddler-in-the-Middle)",
+    "summary": "An AiTM reverse-proxy phish captures the post-MFA Microsoft 365 session cookie and replays it from a new ASN — an Entra success whose MFA is satisfied by a token claim, from an ASN outside the mailbox owner's baseline. The operator then logs on to the compromised mailbox and searches finance-related mail for payment fraud. Low-signal alone; fused on user_principal they name the takeover.",
+    "description": "Meddler-in-the-Middle (AiTM) phishing defeats MFA by proxying the real login page: the phishing server sits between the victim and Microsoft 365, forwards credentials AND the OTP to the legitimate site, and receives a valid session cookie back (T1557 / T1539). Unit 42's meddler-phishing reporting documents this reverse-proxy tradecraft and the tokenized lure URLs (e.g. login[.]mcrsfts-passwdupdate[.]com/HMxVQmxZ) that Advanced URL Filtering blocks; per Unit 42, once the MitM server 'would receive a real session cookie from the legitimate site' the attacker 'would log on to the compromised Outlook account and continually search for finance-related emails and attachments in order to find opportunities for payment fraud'. With the stolen cookie the attacker signs in without solving MFA again (T1550.004). The specific sign-in-log signature used here — an Entra success whose MFA requirement is 'satisfied by a claim in the token', from an ASN outside the mailbox owner's baseline — is standard Microsoft 365 / Entra ID detection engineering (SRC-MICROSOFT-365-DOCS) layered on top of the source's cookie-theft finding, not a signature the Unit 42 post itself reports. The operator then monetizes the mailbox exactly as the source describes: manual logon and repeated finance-mail reconnaissance for payment fraud (T1114.002). This card is correlation-terminal (methodology family F2, Causality Stitching Validation): three per-source XQL legs — (A) a permitted click to an AiTM look-alike domain in proofpoint_tap_raw, (B) a token-replay sign-in from a new ASN in msft_azure_ad_signin, (C) post-compromise finance-mail reconnaissance on the mailbox in the Microsoft 365 unified/Entra audit (msft_o365) — are stitched by CR-EMAIL-0005 on the single join key user_principal within one incident window. Signal C on its own is routine mailbox activity; it is the co-occurrence with A+B on the same identity that names the account takeover. The AiTM domain and the anomalous ASN ride along as incident evidence.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "EvilProxy / Evilginx2 phishing-as-a-service AiTM credential + session-token theft against Microsoft 365 tenants (2021-2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "EvilProxy"
+      },
+      {
+        "name": "Evilginx2"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2021-09-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "name": "Phishing: Spearphishing Link",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1566.002"
+      },
+      {
+        "technique_id": "T1557",
+        "name": "Adversary-in-the-Middle",
+        "tactic_ids": [
+          "TA0006",
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Credential Access",
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1539",
+        "name": "Steal Web Session Cookie",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "name": "Use Alternate Authentication Material: Web Session Cookie",
+        "tactic_ids": [
+          "TA0005",
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Lateral Movement"
+        ],
+        "subtechnique_id": "T1550.004"
+      },
+      {
+        "technique_id": "T1114",
+        "name": "Email Collection: Remote Email Collection",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ],
+        "subtechnique_id": "T1114.002"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Application Log: Application Log Content",
+      "Logon Session: Logon Session Creation",
+      "Web Credential: Web Credential Usage"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "CortexSim EAL — email_emitter (phishing_link) + idp_signin_emulator (token_replay) + inline Microsoft 365 audit emit for the compromised-mailbox finance-mail reconnaissance leg",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "CortexSim EAL plugins registered and an authorized email/identity log collector endpoint reachable.",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe email_emitter | jq -e '.eal_targets | length > 0'"
+      },
+      {
+        "description": "Cortex XSIAM ingesting the Proofpoint TAP (proofpoint_tap_raw), Entra ID sign-in (msft_azure_ad_signin), and Microsoft 365 unified/Entra audit (msft_o365) datasets."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Non-destructive AiTM account-takeover chain. All hosts use the reserved\n# .invalid TLD / documentation domains; nothing resolves on a real network.\nset -euo pipefail\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/email/events}\"\n# (A) EMAIL — permitted click to the AiTM look-alike domain (Proofpoint TAP shape).\npython3 -m scripts.eal_simulator.cli run /tmp/email-005-click.yml --live\n# (B) IDENTITY — token-replay sign-in from a new ASN (Entra ID sign-in shape).\npython3 -m scripts.eal_simulator.cli run /tmp/email-005-replay.yml --live\n# (C) COLLECTION — post-compromise the operator logs on to the mailbox and\n#     searches finance-related mail for payment-fraud opportunities (Unit 42).\n#     Emitted inline as a synthetic Microsoft 365 mailbox-audit record\n#     (MailItemsAccessed) to the same collector.\ncurl -s --max-time 10 -X POST \"${COLLECTOR_URL}\" -H 'Content-Type: application/json' -d '{\"workload\":\"Exchange\",\"operation\":\"MailItemsAccessed\",\"folder\":\"Inbox\",\"search_terms\":\"invoice payment wire\"}' >/dev/null || true\necho '[CortexSim] SIM-EMAIL-005 AiTM ATO chain emitted.'",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "string",
+          "default": "https://collector.cortexsim-canary.invalid/email/events",
+          "description": "Authorized log-collector endpoint already wired into Cortex XSIAM as a Proofpoint TAP / Microsoft 365 third-party source."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "A permitted click to an AiTM look-alike domain for the target mailbox in the Proofpoint TAP feed.",
+        "expected_value": "messageType = \"clicksPermitted\" and url contains \"mcrsfts-passwdupdate\""
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "A successful Entra sign-in whose MFA requirement is satisfied by a token claim (no interactive prompt) from a new ASN — the same user shows a second, non-baseline ASN within the window.",
+        "expected_value": "auth_outcome = \"SUCCESS\" and auth_status_detail contains \"satisfied by claim in the token\" and distinct_asns >= 2"
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "Post-compromise mailbox access on the same user_principal in the Microsoft 365 audit — the operator logs on and searches finance-related mail for payment fraud.",
+        "expected_value": "workload = \"Exchange\" and operation = \"MailItemsAccessed\" for the compromised user_principal"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/email-005-click.yml /tmp/email-005-replay.yml; echo '[CortexSim] SIM-EMAIL-005 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "mcrsfts-passwdupdate.com",
+        "context": "AiTM look-alike domain hosting the EvilProxy/Evilginx2 reverse-proxy Microsoft 365 login (Unit 42). Tokenized lure paths (e.g. /HMxVQmxZ) sit under login. subdomains. Appears in the Proofpoint TAP url / M365 Url field.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "microsoftonlinesupport.cf",
+        "context": "MitM phishing page targeting Microsoft 365 (Unit 42, Fig. 9 caption). A reverse-proxy look-alike login domain; appears in the Proofpoint TAP url / M365 Url field.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "url",
+        "value": "https://login.mcrsfts-passwdupdate.com/HMxVQmxZ",
+        "context": "Tokenized AiTM lure URL Advanced URL Filtering began blocking as early as September 2021 (Unit 42). The per-victim token path defeats content-based phish detection. This is the clicked link in the Proofpoint TAP clicksPermitted event.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EMAIL-005 AiTM Look-Alike Click Permitted",
+        "query": "dataset = proofpoint_tap_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter messageType = \"clicksPermitted\" and classification = \"credphish\"\n| filter url contains \"mcrsfts-passwdupdate.com\" or url contains \"microsoftonlinesupport.cf\"\n| comp count() as permitted_clicks, values(url) as aitm_urls, values(senderIP) as sender_ips by recipient\n| filter permitted_clicks >= 1\n| fields recipient, aitm_urls, sender_ips, permitted_clicks",
+        "expected_rows_min": 1,
+        "dataset": "proofpoint_tap_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "EMAIL-005 Session-Cookie Replay Sign-In from New ASN",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 1800)\n| filter auth_outcome = \"SUCCESS\"\n| filter auth_status_detail contains \"satisfied by claim in the token\"\n| comp count() as replayed_signins, count_distinct(src_asn) as distinct_asns, values(src_asn) as sign_in_asns, values(src_geo_country) as countries by user_name\n| filter replayed_signins >= 1 and distinct_asns >= 2\n| fields user_name, sign_in_asns, countries, distinct_asns, replayed_signins",
+        "expected_rows_min": 1,
+        "dataset": "msft_azure_ad_signin"
+      },
+      {
+        "purpose": "validation",
+        "name": "EMAIL-005 Compromised-Mailbox Finance-Mail Reconnaissance",
+        "query": "dataset = msft_o365\n| filter _time > to_timestamp(current_time() - 1800)\n| filter workload = \"Exchange\" and operation in (\"MailItemsAccessed\", \"MessageBind\", \"SearchQueryInitiatedExchange\")\n| comp count() as mailbox_access_events, values(operation) as ops by user_id, client_ip\n| filter mailbox_access_events >= 1\n| fields user_id, client_ip, ops, mailbox_access_events",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AiTM Session-Token Theft to Mailbox-Reconnaissance ATO — Cross-Source Stitch",
+        "rule_id": "CR-EMAIL-0005",
+        "logic": "XQL(EMAIL-005 AiTM Look-Alike Click Permitted) FOLLOWED_BY XQL(EMAIL-005 Session-Cookie Replay Sign-In from New ASN) FOLLOWED_BY XQL(EMAIL-005 Compromised-Mailbox Finance-Mail Reconnaissance) — joined on user_principal within a 60-minute window. The permitted click to an AiTM look-alike domain plus the token-replay sign-in from a new ASN name the Meddler-in-the-Middle compromise; fusing them with post-compromise finance-mail reconnaissance on the same mailbox raises ONE account-takeover incident. The mailbox-access events are routine activity in isolation, so it is their co-occurrence with the AiTM click and the new-ASN token-replay sign-in on the same user_principal that classifies the takeover. The AiTM domain and the anomalous ASN attach as incident evidence."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Identity Analytics — token-replay sign-in (MFA satisfied by token claim from a new ASN)",
+        "validated": true,
+        "note": "Backed by XQL EMAIL-005 Session-Cookie Replay Sign-In from New ASN."
+      },
+      {
+        "module": "Cortex XSIAM Correlation — AiTM click + new-ASN token-replay + mailbox-reconnaissance stitch on user_principal",
+        "validated": true,
+        "note": "Backed by correlation CR-EMAIL-0005."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-EMAIL-005-AITM-CLICK",
+          "TBD-EMAIL-005-TOKEN-REPLAY"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_azure_ad_signin | filter auth_outcome = \"SUCCESS\" and auth_status_detail contains \"satisfied by claim in the token\" | comp count() as replays, count_distinct(src_asn) as distinct_asns, values(src_asn) as asns by user_name | filter replays >= 1 and distinct_asns >= 2"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-EMAIL-005-CR-0005"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EMAIL-0005 fuses the AiTM permitted click, the new-ASN token-replay sign-in, and the post-compromise finance-mail reconnaissance on the same user_principal into one account-takeover incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "submodule": "playbooks",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "TBD-EMAIL-005-PB-ATO"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "On CR-EMAIL-0005 the ATO playbook revokes the user's sessions, forces a phishing-resistant MFA re-registration, and hunts the compromised mailbox for finance-mail access from the anomalous session."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EMAIL-005",
+        "name": "AiTM Session-Token Theft to Account-Takeover — Cross-Source Correlation",
+        "description": "Prove Cortex XSIAM fuses the low-signal legs of a Meddler-in-the-Middle account takeover — an AiTM permitted click, a token-replay sign-in from a new ASN, and post-compromise finance-mail reconnaissance on the mailbox — into a single incident keyed on user_principal, where each leg alone would not raise an actionable alert.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EMAIL-005A",
+            "objective": "The AiTM permitted click and the token-replay sign-in are each observable in their source datasets.",
+            "preconditions": [
+              "Cortex XSIAM ingesting proofpoint_tap_raw and msft_azure_ad_signin datasets.",
+              "email_emitter and idp_signin_emulator authorized against the lab collector."
+            ],
+            "steps": [
+              "Run SIM-EMAIL-005 steps 1-2.",
+              "Observe the permitted click and the token-replay sign-in for the target user_principal."
+            ],
+            "success_criteria": [
+              "XQL `EMAIL-005 AiTM Look-Alike Click Permitted` returns >= 1 row.",
+              "XQL `EMAIL-005 Session-Cookie Replay Sign-In from New ASN` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-EMAIL-005B",
+            "objective": "The post-compromise finance-mail reconnaissance leg is observable in the Microsoft 365 audit.",
+            "preconditions": [
+              "Cortex XSIAM ingesting the msft_o365 unified/Entra audit dataset."
+            ],
+            "steps": [
+              "Run SIM-EMAIL-005 step 3.",
+              "Observe the MailItemsAccessed audit records for the same user_principal."
+            ],
+            "success_criteria": [
+              "XQL `EMAIL-005 Compromised-Mailbox Finance-Mail Reconnaissance` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.25
+          },
+          {
+            "threat_step_id": "TS-EMAIL-005C",
+            "objective": "All three legs stitch into one account-takeover incident on user_principal.",
+            "preconditions": [
+              "All three EMAIL-005 XQL legs return rows for the same user_principal within the window."
+            ],
+            "steps": [
+              "Run SIM-EMAIL-005 steps 1-4.",
+              "Observe a single stitched account-takeover incident in the Cortex console."
+            ],
+            "success_criteria": [
+              "Correlation `CR-EMAIL-0005` raises exactly one incident grouping the AiTM click, the new-ASN token-replay sign-in, and the finance-mail reconnaissance leg on the same user_principal."
+            ],
+            "expected_score_weight": 0.35
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Deploy phishing-resistant MFA (FIDO2 / WebAuthn hardware keys) so a proxied login cannot be relayed and no replayable OTP exists.",
+      "Enforce Entra Conditional Access with token-protection / sign-in risk policies and compliant-device requirements so a replayed cookie from a new ASN is challenged or blocked.",
+      "Revoke refresh/session tokens and force re-authentication on sign-in-risk events so a stolen cookie cannot be reused past the risk signal."
+    ],
+    "detection_engineering": [
+      "Alert on Entra sign-ins whose MFA requirement is 'satisfied by a claim in the token' from an ASN outside the user's baseline (a new/second ASN within the window) — the token-replay signature (standard Microsoft 365 / Entra detection engineering).",
+      "Alert on anomalous mailbox access (MailItemsAccessed / mailbox search) shortly after a risky sign-in, especially finance-keyword reconnaissance from a session on a non-baseline ASN.",
+      "Correlate the AiTM permitted click, the new-ASN token-replay sign-in, and the post-compromise mailbox reconnaissance on a single user_principal within one incident window rather than triaging each in isolation."
+    ],
+    "response_playbook": "XSOAR-PB-AiTMAccountTakeoverContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Meddler-in-the-Middle Phishing Attacks Explained",
+      "url": "https://unit42.paloaltonetworks.com/meddler-phishing-attacks/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "Cortex XSIAM — Proofpoint TAP Ingestion & Modeling (proofpoint_tap_raw)",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks",
+      "publisher_id": "SRC-PROOFPOINT-TAP-DOCS"
+    },
+    {
+      "title": "Cortex XSIAM — Microsoft 365 / Entra ID Connector (msft_o365 / msft_azure_ad_signin)",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks",
+      "publisher_id": "SRC-MICROSOFT-365-DOCS"
+    },
+    {
+      "title": "MITRE ATT&CK T1557 — Adversary-in-the-Middle",
+      "url": "https://attack.mitre.org/techniques/T1557/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Replace research-intake scaffold with real AiTM/Meddler-in-the-Middle account-takeover detection: per-source XQL legs (AiTM click / token-replay sign-in / post-compromise mailbox activity) stitched by CR-EMAIL-0005 on user_principal, grounded in Unit 42 meddler-phishing reporting. Fills GAP EMAIL as a correlation-terminal F2 card."
+    },
+    {
+      "entry_version": "1.0.1",
+      "date": "2026-07-24",
+      "author": "Henry Reed",
+      "change": "Source-fidelity + XQL repair. (1) Removed the SilverTerrier / Nigerian-BEC actor attribution, tag, and 'SilverTerrier-style' phrasing — the Unit 42 source names no actor. (2) Dropped the unsupported inbox-rule (T1114.003) and device-registration (T1098.005) legs the source never describes; leg C reframed to the behavior the source states — manual logon and finance-mail reconnaissance on the compromised mailbox (T1114.002, MailItemsAccessed). (3) Corrected the microsoftonlinesupport.cf IOC context to a MitM phishing page (Unit 42, Fig. 9) and removed the invented exfil/ForwardTo role and finance-ap@ forwarding address. (4) Attributed the Entra 'satisfied by a claim in the token' sign-in signature to SRC-MICROSOFT-365-DOCS, not Unit 42. (5) Reconciled the msft_azure_ad_signin field vocabulary to the corpus (auth_outcome/src_geo_country/auth_status_detail/src_asn/user_name) and implemented real new-ASN semantics (distinct_asns >= 2) so the leg is not satisfied by routine SSO. Techniques now T1566.002 / T1557 / T1539 / T1550.004 / T1114.002."
+    }
+  ]
+}

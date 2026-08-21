@@ -1,0 +1,195 @@
+title: "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain \u2014 VMDK-Copy Offline Credential Theft to Akira_v2 Encryption (SIM-EDR-019) \u2014 Akira ESXi Interactive Shell From vCenter-Initiated Session"
+id: ttp-2026-0132-bioc-01
+status: experimental
+description: |
+  The Causality Group Owner: an esxcli/vim-cmd shell whose causality actor is a vCenter-initiated sshd/hostd/dcui session. Keys on causality_actor_process_* + instance_id so every downstream hypervisor action is owned by this CGO rather than the beacon.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter action_process_image_name in ("esxcli", "vim-cmd", "localcli")
+    | filter causality_actor_process_image_name in ("sshd", "hostd", "dcui")
+    | comp count() as shell_execs by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id
+    | filter shell_execs >= 1
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, shell_execs
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059
+    - attack.t1078
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain \u2014 VMDK-Copy Offline Credential Theft to Akira_v2 Encryption (SIM-EDR-019) \u2014 Akira ESXi Syslog Redirected to Ephemeral tmp for Log Blinding"
+id: ttp-2026-0132-bioc-02
+status: experimental
+description: |
+  esxcli redirecting the ESXi syslog directory to /tmp (wiped on reboot) to blind the host before mass encryption — indicator blocking under the same CGO instance.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter action_process_image_name = "esxcli"
+    | filter action_process_image_command_line contains "system syslog config set" and action_process_image_command_line contains "--logdir=/tmp"
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.006
+    - attack.t1562
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain \u2014 VMDK-Copy Offline Credential Theft to Akira_v2 Encryption (SIM-EDR-019) \u2014 Akira ESXi DC-VM VMDK Cloned to Attacker Datastore Path"
+id: ttp-2026-0132-bioc-03
+status: experimental
+description: |
+  vmkfstools/cp/dd copying a .vmdk within /vmfs/volumes/ after the DC VM is powered off — the offline-disk clone that carries credentials off the DC. Anchored to the ESXi-shell CGO via causality_actor_process_instance_id.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter action_process_image_name in ("vmkfstools", "cp", "dd")
+    | filter action_process_image_command_line contains ".vmdk" and action_process_image_command_line contains "/vmfs/volumes/"
+    | filter causality_actor_process_image_name in ("esxcli", "vim-cmd", "localcli", "sshd")
+    | comp count() as clone_ops by agent_hostname, causality_actor_process_instance_id, action_process_image_command_line
+    | filter clone_ops >= 1
+    | fields agent_hostname, causality_actor_process_instance_id, action_process_image_command_line, clone_ops
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1006/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1006
+    - attack.t1003.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain \u2014 VMDK-Copy Offline Credential Theft to Akira_v2 Encryption (SIM-EDR-019) \u2014 Akira v2 VM-Only Encryption Impact on ESXi Datastore"
+id: ttp-2026-0132-bioc-04
+status: experimental
+description: |
+  Burst of file creations with the .akiranew extension or the akiranew.txt ransom note under /vmfs/volumes/ — the Akira_v2 --vmonly encryption impact stage.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter action_file_path starts_with "/vmfs/volumes/"
+    | filter action_file_extension = "akiranew" or action_file_name = "akiranew.txt"
+    | bin _time span=5m
+    | comp count() as impacted_files by agent_hostname, action_file_extension, _time
+    | filter impacted_files >= 5
+    | fields agent_hostname, action_file_extension, impacted_files, _time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain \u2014 VMDK-Copy Offline Credential Theft to Akira_v2 Encryption (SIM-EDR-019) \u2014 Akira ESXi Offline VMDK Credential-Theft Pivot"
+id: ttp-2026-0132-abioc-05
+status: experimental
+description: |
+  The novel differentiator: after the DC VMDK is cloned, an offline extractor (mimikatz/secretsdump/esentutl/reg) reads NTDS.dit + SYSTEM/SAM from the mounted clone on the attacker VM. Because the dump happens off-host, no endpoint detection fires on the real DC — the ABIOC anchors on the cloned-VMDK shared entity crossing into the attacker VM's process lineage.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("mimikatz.exe", "secretsdump.py", "impacket-secretsdump", "esentutl.exe", "reg.exe")
+    | filter action_process_image_command_line contains "ntds" or action_process_image_command_line contains "NTDS" or action_process_image_command_line contains "SYSTEM" or action_process_image_command_line contains "SAM"
+    | comp count() as offline_extractions by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_instance_id
+    | filter offline_extractions >= 1
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, actor_process_instance_id, offline_extractions
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.003
+    - attack.t1006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain \u2014 VMDK-Copy Offline Credential Theft to Akira_v2 Encryption (SIM-EDR-019) \u2014 Akira ESXi Mass Guest Power-Off Fan-Out From Blinded Host"
+id: ttp-2026-0132-abioc-06
+status: experimental
+description: |
+  A single ESXi shell lineage that powers off an anomalously high number of guest VMs via vim-cmd getallvms|power.off, diverging from the host's learned admin power-cycle baseline — the pre-encryption mass shutdown.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter agent_os_type = ENUM.AGENT_OS_LINUX
+    | filter action_process_image_name = "vim-cmd" and action_process_image_command_line contains "power.off"
+    | comp count() as guests_powered_off by agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name
+    | filter guests_powered_off >= 10
+    | sort desc guests_powered_off
+    | fields agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name, guests_powered_off
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1529/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1529
+    - attack.t1562.006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

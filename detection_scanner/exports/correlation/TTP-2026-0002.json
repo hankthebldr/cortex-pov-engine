@@ -5,7 +5,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(LSASS Handle Open With Sensitive Access Rights) OR BIOC(comsvcs.dll MiniDump LOLBin Execution)",
+      "logic": "(BIOC(LSASS Handle Open With Sensitive Access Rights) OR BIOC(comsvcs.dll MiniDump LOLBin Execution)) grouped by causality_id, agent_hostname within 60s \u2014 the handle-open and the comsvcs MiniDump share one causality_actor (the launching powershell CGO), so both fold into a single credential-theft incident.",
       "name": "Credential Theft \u2014 LSASS Memory Dump",
       "rule_id": "CR-CRED-0001",
       "severity": "high"

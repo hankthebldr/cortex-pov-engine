@@ -1,0 +1,141 @@
+pov_scenario_id,scenario_payload,bound_tc_count,bound_detection_count,bound_tc_ids,mitre_techniques,reuse_flag
+POV-SC-001,Execute multi-stage attack chain (T1566 email → T1059 endpoint → T1021 lateral → T1078 cloud identity),21,14,TC-IR-05 TC-ITDR-03 TC-ITDR-06 TC-ERV-03 TC-ASM-03 TC-ASM-04 TC-CDR-02 TC-CDR-04 TC-DLP-02 TC-DLP-03 TC-DLP-08 TC-DLP-11 TC-AES-01 TC-AES-02 TC-AGTX-01 TC-AGTX-05 TC-AGTX-09 TC-XDL-01 TC-XDL-05 TC-XDL-06 TC-XDL-08,T1021 T1059 T1078 T1566,SPLIT REQUIRED
+POV-SC-002,"Execute container/K8s attack (shell spawn, crypto-miner, reverse shell) via attack simulation (e.g., Stratus)",14,12,TC-CIEM-03 TC-DSPM-04 TC-CITH-02 TC-CITH-03 TC-CITH-04 TC-CITH-11 TC-CITH-13 TC-WAAS-03 TC-WAAS-04 TC-IACS-01 TC-SSCAN-01 TC-SSCAN-02 TC-CC2-05 TC-CC2-06,TBD,SPLIT REQUIRED
+POV-SC-003,"Provision 50+ net-new assets via Terraform across AWS/Azure/GCP (compute, storage, network, IAM)",12,0,TC-CSPM-01 TC-CRPS-03 TC-KSPM-01 TC-ASM-05 TC-DSPM-01 TC-AISP-01 TC-SCS-01 TC-SCS-03 TC-RSER-06 TC-WAAS-01 TC-ASER-01 TC-CC2-01,TBD,SPLIT REQUIRED
+POV-SC-004,Deploy SageMaker endpoint + Bedrock invocation + Lambda→OpenAI + shadow GPU VM with custom LLM,12,1,TC-AISP-02 TC-AISP-03 TC-AISP-04 TC-AISP-05 TC-AISP-06 TC-SCS-04 TC-SCS-05 TC-CITH-07 TC-CITH-19 TC-ASER-02 TC-PGE-06 TC-CC2-04,TBD,SPLIT REQUIRED
+POV-SC-005,Trigger incident matching automated playbook conditions; measure playbook completion,10,9,TC-IR-07 TC-TH-02 TC-SOAR-01 TC-SOAR-02 TC-SOAR-03 TC-DLP-04 TC-DLP-10 TC-AES-09 TC-AGTX-02 TC-AGTX-12,TBD,SPLIT REQUIRED
+POV-SC-006,"Inject synthetic alert volume (500–1,000 alerts mixing Atomic Red Team T1059 / T1021 with benign noise)",8,8,TC-IR-01 TC-IR-02 TC-IR-13 TC-SOT-02 TC-DLP-06 TC-AES-08 TC-AGTX-03 TC-AGTX-06,T1021 T1059,SPLIT REQUIRED
+POV-SC-007,"Deploy test fixtures with intentional misconfigurations (open SGs, public buckets, over-permissive IAM)",7,0,TC-CSPM-02 TC-CCMP-01 TC-CCMP-02 TC-CCMP-03 TC-CCMP-04 TC-SCS-02 TC-ASER-03,TBD,review
+POV-SC-008,"Execute network-based attack (beaconing, DNS tunneling, lateral movement via SMB/RDP)",6,5,TC-NDR-01 TC-NDR-02 TC-NDR-03 TC-NDR-04 TC-NDR-05 TC-NDR-06,TBD,review
+POV-SC-009,"Commit intentionally vulnerable code (SQLi, OSS with CVE) → build image → deploy to test namespace",6,0,TC-ASPM-01 TC-SCA-04 TC-ASPM-03 TC-ASPM-04 TC-AGRP-03 TC-ASPMC-01,TBD,review
+POV-SC-010,"Upload representative sensitive data (PII, PCI, PHI) to S3/GCS/Azure Blob with mixed access controls",5,0,TC-DSPM-02 TC-DSPM-03 TC-CITH-08 TC-PGE-02 TC-CC2-03,TBD,review
+POV-SC-011,"Simulate credential abuse (token replay, impossible travel, privilege escalation via Atomic T1078.004)",4,3,TC-ITDR-01 TC-ITDR-02 TC-ITDR-04 TC-ITDR-05,T1078.004,review
+POV-SC-012,"Deploy workloads with known CVEs (e.g., Log4Shell container, unpatched RDS); seed vulnerability intel",4,2,TC-CVM-01 TC-CVM-02 TC-SCA-01 TC-SCA-02,TBD,review
+POV-SC-013,"Pre-seeded hunt dataset with 20–30 known IOCs across credential access, persistence, exfiltration",3,2,TC-TH-01 TC-MTH-01 TC-XDL-04,TBD,ok
+POV-SC-014,TBD — DC authoring,3,0,TC-AEPS-01 TC-AEPS-02 TC-AEPS-03,TBD,ok
+POV-SC-015,Create test IAM roles with over-permissive policies; simulate privilege escalation path,3,0,TC-CIEM-01 TC-CIEM-02 TC-CIEM-04,TBD,ok
+POV-SC-016,"Commit hardcoded AWS keys, API tokens, and DB passwords to test repo (in feature branch + main)",3,0,TC-SSCAN-03 TC-SSCAN-04 TC-SSCAN-05,TBD,ok
+POV-SC-017,Execute scenario-specific simulation for Poor Prioritization / Risk Misalignment,2,2,TC-IR-09 TC-IR-10,TBD,ok
+POV-SC-018,Execute scenario-specific simulation for Repetitive Manual Workflows,2,2,TC-IR-11 TC-IR-12,TBD,ok
+POV-SC-019,Execute scenario-specific simulation for Disconnected Non-Security Data,2,1,TC-TH-03 TC-TH-04,TBD,ok
+POV-SC-020,Execute scenario-specific simulation for Siloed EDR Policy Management,2,2,TC-EDR-01 TC-EDR-02,TBD,ok
+POV-SC-021,Execute scenario-specific simulation for Malware Detection Gaps,2,2,TC-EDR-03 TC-EDR-04,TBD,ok
+POV-SC-022,Execute scenario-specific simulation for Disconnected Security Platforms,2,0,TC-ERV-01 TC-ERV-02,TBD,ok
+POV-SC-023,Execute scenario-specific simulation for Siloed Cloud Visibility,2,0,TC-ERV-04 TC-ERV-05,TBD,ok
+POV-SC-024,Execute scenario-specific simulation for Separate Compliance and Reporting Tools,2,0,TC-ERV-07 TC-ERV-08,TBD,ok
+POV-SC-025,"Provision test external asset with known exposure (open port, expired cert, exposed S3)",2,0,TC-ASM-01 TC-ASM-02,TBD,ok
+POV-SC-026,Execute scenario-specific simulation for Unmanaged / Stale Threat Intel Feeds,2,1,TC-TIM-01 TC-TIM-02,TBD,ok
+POV-SC-027,Execute scenario-specific simulation for Custom Detection Requirements Beyond OOTB Rules,2,2,TC-BYOML-01 TC-BYOML-02,TBD,ok
+POV-SC-028,Execute scenario-specific simulation for Business Email Compromise (BEC),2,1,TC-AES-03 TC-AES-04,TBD,ok
+POV-SC-029,Execute scenario-specific simulation for Agent Governance & Auditability,2,1,TC-AGTX-07 TC-AGTX-08,TBD,ok
+POV-SC-030,Execute scenario-specific simulation for AI Model Security Scanning,2,1,TC-AIRS-01 TC-AIRS-02,TBD,ok
+POV-SC-031,Execute scenario-specific simulation for AI Agent Discovery & Governance,2,0,TC-AIRS-03 TC-AIRS-04,TBD,ok
+POV-SC-032,Execute scenario-specific simulation for AI Red Team Testing,2,0,TC-AIRS-05 TC-AIRS-06,TBD,ok
+POV-SC-033,Execute scenario-specific simulation for AI Runtime Threat Prevention,2,2,TC-AIRS-07 TC-AIRS-08,TBD,ok
+POV-SC-034,Execute scenario-specific simulation for AI Data Pipeline Protection,2,0,TC-AIRS-09 TC-AIRS-10,TBD,ok
+POV-SC-035,Deploy test fixture representing Internet Exposure Detection,2,0,TC-CVM-03 TC-ASM-07,TBD,ok
+POV-SC-036,"Deploy test Kubernetes cluster with misconfigured RBAC, exposed dashboard, privileged pods",2,0,TC-KSPM-02 TC-KSPM-03,TBD,ok
+POV-SC-037,Deploy test API with exposed endpoints + known OWASP API Top-10 vulnerabilities,2,0,TC-WAAS-02 TC-WAAS-05,TBD,ok
+POV-SC-038,Execute scenario-specific simulation for Analyst Fatigue / Alert Overload,1,1,TC-IR-03,TBD,ok
+POV-SC-039,Execute scenario-specific simulation for Detection Delays / Missed Threats,1,1,TC-IR-04,TBD,ok
+POV-SC-040,Execute scenario-specific simulation for Slow Time to Resolution,1,0,TC-IR-06,TBD,ok
+POV-SC-041,Execute scenario-specific simulation for Disconnected Data Sources / Visibility Gaps,1,0,TC-IR-08,TBD,ok
+POV-SC-042,Execute scenario-specific simulation for High False Positive Rate in Hunting,1,1,TC-TH-05,TBD,ok
+POV-SC-043,Execute scenario-specific simulation for Reactive Hunting / Lack of Threat Intel Integration,1,1,TC-TH-06,TBD,ok
+POV-SC-044,Execute scenario-specific simulation for Lack of Integrated Forensics Tooling,1,1,TC-TH-07,TBD,ok
+POV-SC-045,Execute scenario-specific simulation for Lack of Endpoint Alert Context,1,1,TC-EDR-05,TBD,ok
+POV-SC-046,Execute scenario-specific simulation for Disparate Agent Upgrade Process,1,1,TC-EDR-06,TBD,ok
+POV-SC-047,Execute scenario-specific simulation for Non-Coherent Rolling Risk Attribution,1,0,TC-ERV-06,TBD,ok
+POV-SC-048,Execute scenario-specific simulation for Log Retention and Search Performance,1,0,TC-SIEM-01,TBD,ok
+POV-SC-049,Execute scenario-specific simulation for Vulnerability Management Integration,1,1,TC-SIEM-02,TBD,ok
+POV-SC-050,Execute scenario-specific simulation for IT/Security Process Silos,1,1,TC-ITPA-01,TBD,ok
+POV-SC-051,Execute scenario-specific simulation for Lack of 24/7 SOC Coverage,1,0,TC-MDR-01,TBD,ok
+POV-SC-052,Execute scenario-specific simulation for Insufficient Incident Response Expertise,1,1,TC-MDR-02,TBD,ok
+POV-SC-053,Execute scenario-specific simulation for Lack of Internal XSIAM Operational Expertise,1,1,TC-MSIAM-01,TBD,ok
+POV-SC-054,Execute scenario-specific simulation for Cloud Runtime Threats Invisible to SOC,1,1,TC-CDR-01,TBD,ok
+POV-SC-055,Execute scenario-specific simulation for Cloud Posture Drift and Misconfigurations,1,1,TC-CDR-03,TBD,ok
+POV-SC-056,Execute scenario-specific simulation for Agentless Workload Protection,1,0,TC-CDR-05,TBD,ok
+POV-SC-057,Execute scenario-specific simulation for No Defined Alerting / Triage Strategy,1,1,TC-SOT-01,TBD,ok
+POV-SC-058,Execute scenario-specific simulation for Platform Care and Feeding / Self-Healing Loop,1,1,TC-SOT-03,TBD,ok
+POV-SC-059,Execute scenario-specific simulation for Data Exfiltration Detection & Prevention,1,1,TC-DLP-01,TBD,ok
+POV-SC-060,Execute scenario-specific simulation for Insider Threat Data Movement,1,1,TC-DLP-05,TBD,ok
+POV-SC-061,Execute scenario-specific simulation for Compliance-Driven Data Controls (PCI/HIPAA/GDPR),1,0,TC-DLP-07,TBD,ok
+POV-SC-062,Execute scenario-specific simulation for DLP Incident Response & Remediation,1,1,TC-DLP-09,TBD,ok
+POV-SC-063,Execute malware sample (EICAR + representative ransomware binary in isolated test segment),1,1,TC-AES-05,TBD,ok
+POV-SC-064,Execute scenario-specific simulation for Malicious Payload Delivery via Email,1,1,TC-AES-06,TBD,ok
+POV-SC-065,Execute scenario-specific simulation for Email-Based Insider Threat Detection,1,1,TC-AES-07,TBD,ok
+POV-SC-066,Execute scenario-specific simulation for AI-Driven Triage & Enrichment,1,1,TC-AGTX-04,TBD,ok
+POV-SC-067,Execute scenario-specific simulation for Copilot-Assisted Investigation,1,1,TC-AGTX-10,TBD,ok
+POV-SC-068,Execute scenario-specific simulation for MCP Integration & Extensibility,1,1,TC-AGTX-11,TBD,ok
+POV-SC-069,Execute scenario-specific simulation for Data Ingestion & Normalization at Scale,1,1,TC-XDL-02,TBD,ok
+POV-SC-070,Execute scenario-specific simulation for Tiered Storage & Cost Optimization,1,0,TC-XDL-03,TBD,ok
+POV-SC-071,Execute scenario-specific simulation for Cross-Source Federated Search,1,0,TC-XDL-07,TBD,ok
+POV-SC-072,Execute scenario-specific simulation for Observability-Security Convergence,1,0,TC-XDL-09,TBD,ok
+POV-SC-073,Inject 3 feeds with 20% deliberate indicator overlap and a set of past-expiry IOCs,1,0,TC-XTI-01,TBD,ok
+POV-SC-074,Ingest a labeled corpus mixing high-confidence and known-noisy indicators,1,1,TC-XTI-02,TBD,ok
+POV-SC-075,"Promote a controlled test domain to EDL, then generate an outbound connection to it",1,1,TC-XTI-03,TBD,ok
+POV-SC-076,Promote then withdraw a benign control domain,1,1,TC-XTI-04,TBD,ok
+POV-SC-077,"Plant a matching artifact in telemetry 30 days back, then ingest the corresponding indicator",1,1,TC-XTI-05,TBD,ok
+POV-SC-078,Schedule a hunt for a known indicator set across the full retention window,1,0,TC-XTI-06,TBD,ok
+POV-SC-079,Trigger activity matching a tracked Unit 42 actor profile,1,1,TC-XTI-07,TBD,ok
+POV-SC-080,Close a mixed set of TP/FP cases tied to specific indicators,1,1,TC-XTI-08,TBD,ok
+POV-SC-081,"Seed an exposed asset with a CVE, then introduce active-exploitation intel for that CVE",1,0,TC-XTI-09,TBD,ok
+POV-SC-082,Derive indicators locally and publish to a test ISAC endpoint,1,1,TC-XTI-10,TBD,ok
+POV-SC-083,Submit incident variants deliberately outside the authored decision branches,1,0,TC-APB-01,TBD,ok
+POV-SC-084,Submit ambiguous incidents engineered to produce low model confidence,1,0,TC-APB-02,TBD,ok
+POV-SC-085,Submit 10 plain-language response-workflow descriptions of varying complexity,1,0,TC-APB-03,TBD,ok
+POV-SC-086,Alter an integration response schema a live playbook depends on,1,0,TC-APB-04,TBD,ok
+POV-SC-087,Direct the agent toward actions on protected/critical assets outside its authorized scope,1,0,TC-APB-05,TBD,ok
+POV-SC-088,"Execute a batch of agent actions across several incident types, then audit them",1,1,TC-APB-06,TBD,ok
+POV-SC-089,Submit a set of multi-artifact cases of varying complexity,1,0,TC-APB-07,TBD,ok
+POV-SC-090,"Feed a volume of a routine, well-understood incident class",1,0,TC-APB-08,TBD,ok
+POV-SC-091,Stand up a customer-representative internal tool behind an MCP endpoint,1,0,TC-APB-09,TBD,ok
+POV-SC-092,Trigger a vulnerability requiring an IT-owned patch and change approval,1,1,TC-APB-10,TBD,ok
+POV-SC-093,Deploy test fixture representing Multi-Cloud Onboarding & Visibility — Ease of Deployment,1,0,TC-PSER-01,TBD,ok
+POV-SC-094,Deploy test fixture representing Reports & Dashboards,1,0,TC-PSER-02,TBD,ok
+POV-SC-095,Deploy test fixture representing Cases & Issues,1,0,TC-CSPM-03,TBD,ok
+POV-SC-096,Deploy test fixture representing Posture Security Management,1,0,TC-CSPM-04,TBD,ok
+POV-SC-097,Deploy test fixture representing Agentless Scanning,1,0,TC-CSPM-05,TBD,ok
+POV-SC-098,Deploy test fixture representing Utilize Graph Search to visualize security findings,1,0,TC-CRPS-01,TBD,ok
+POV-SC-099,Deploy test fixture representing Risk Prioritization,1,0,TC-CRPS-02,TBD,ok
+POV-SC-100,Deploy test fixture representing Remediation Guidance,1,0,TC-CRWA-01,TBD,ok
+POV-SC-101,Deploy test fixture representing Playbooks & Automation,1,0,TC-CRWA-02,TBD,ok
+POV-SC-102,Deploy test fixture representing Scripted Remediation,1,0,TC-CRWA-03,TBD,ok
+POV-SC-103,Deploy test fixture representing Misconfigurations Autoremediation,1,0,TC-CRWA-04,TBD,ok
+POV-SC-104,Deploy test fixture representing 3rd Party Ticketing Integration,1,0,TC-CRWA-05,TBD,ok
+POV-SC-105,Deploy test fixture representing Service and Port Identification,1,0,TC-ASM-06,TBD,ok
+POV-SC-106,Deploy test fixture representing Cloud Exploit Prevention,1,0,TC-CITH-01,TBD,ok
+POV-SC-107,Deploy test fixture representing Cloud Endpoint Protection: Wildfire Intelligence & Sandboxing,1,0,TC-CITH-05,TBD,ok
+POV-SC-108,Deploy test fixture representing Cloud Endpoint Protection: Ransomware Prevention,1,0,TC-CITH-06,TBD,ok
+POV-SC-109,Deploy test fixture representing Cloud Data Investigation & Query Language,1,0,TC-CITH-09,TBD,ok
+POV-SC-110,Deploy test fixture representing Capture Complete Record of Events for EDR,1,0,TC-CITH-10,TBD,ok
+POV-SC-111,Deploy test fixture representing User and Entity Behavior Analytics (UEBA),1,0,TC-CITH-12,TBD,ok
+POV-SC-112,Deploy test fixture representing Causality View,1,0,TC-CITH-14,TBD,ok
+POV-SC-113,Deploy test fixture representing MITRE ATT&CK Mapping,1,0,TC-CITH-15,TBD,ok
+POV-SC-114,Deploy test fixture representing Ad-Hoc Queries,1,0,TC-CITH-16,TBD,ok
+POV-SC-115,Deploy test fixture representing Live Terminal,1,0,TC-CITH-17,TBD,ok
+POV-SC-116,Deploy test fixture representing Search and Destroy Files across multiple hosts,1,0,TC-CITH-18,TBD,ok
+POV-SC-117,Deploy test fixture representing Script Execution,1,0,TC-CITH-20,TBD,ok
+POV-SC-118,Deploy test fixture representing Native Automation,1,0,TC-CITH-21,TBD,ok
+POV-SC-119,Deploy test fixture representing Support for Cloud Native Platforms,1,0,TC-RSER-01,TBD,ok
+POV-SC-120,Deploy test fixture representing Agent Configurations,1,0,TC-RSER-02,TBD,ok
+POV-SC-121,Deploy test fixture representing Support for On-Premises Workloads,1,0,TC-RSER-03,TBD,ok
+POV-SC-122,Deploy test fixture representing Agent Upgrade Process,1,0,TC-RSER-04,TBD,ok
+POV-SC-123,Deploy test fixture representing Technologies,1,0,TC-IACS-02,TBD,ok
+POV-SC-124,Deploy test fixture representing SBOM,1,0,TC-SCA-03,TBD,ok
+POV-SC-125,Deploy test fixture representing Application Security Rules,1,0,TC-ASER-04,TBD,ok
+POV-SC-126,Deploy test fixture representing Reports and Dashboards,1,0,TC-ASER-05,TBD,ok
+POV-SC-127,Deploy test fixture representing Backlog Baseline,1,0,TC-ASER-06,TBD,ok
+POV-SC-128,Deploy test fixture representing Native Integrations,1,0,TC-DEVX-01,TBD,ok
+POV-SC-129,Deploy test fixture representing IDE,1,0,TC-DEVX-02,TBD,ok
+POV-SC-130,Deploy test fixture representing Branch Scans,1,0,TC-DEVX-03,TBD,ok
+POV-SC-131,Deploy test fixture representing Pull Requests (PR),1,0,TC-DEVX-04,TBD,ok
+POV-SC-132,Deploy test fixture representing CI Scans,1,0,TC-DEVX-05,TBD,ok
+POV-SC-133,Deploy test fixture representing Business application - Manually,1,0,TC-AGRP-01,TBD,ok
+POV-SC-134,Deploy test fixture representing Business application - Criteria,1,0,TC-AGRP-02,TBD,ok
+POV-SC-135,Deploy test fixture representing Platform Integration & Extensibility,1,0,TC-PGE-01,TBD,ok
+POV-SC-136,Deploy test fixture representing User/Group Management and SSO,1,0,TC-PGE-03,TBD,ok
+POV-SC-137,Deploy test fixture representing Security Settings,1,0,TC-PGE-04,TBD,ok
+POV-SC-138,Deploy test fixture representing Platform RestAPIs,1,0,TC-PGE-05,TBD,ok
+POV-SC-139,Deploy test fixture representing MCP Server,1,0,TC-PGE-07,TBD,ok
+POV-SC-140,Deploy test fixture representing Cloud Command Center Operations,1,0,TC-CC2-02,TBD,ok

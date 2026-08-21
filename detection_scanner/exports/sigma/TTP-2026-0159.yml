@@ -1,0 +1,29 @@
+title: "Compute Activity in a Dormant Cloud Region (Cryptomining) \u2014 CDR (SIM-CDR-024) \u2014 Suspicious Heavy Allocation of Compute Resources - Possible Mining Activity"
+id: ttp-2026-0159-abioc-01
+status: experimental
+description: |
+  ABIOC (is_ml=true) — the XSIAM Cloud Storage & Compute analytics alert 'Suspicious heavy allocation of compute resources - possible mining activity'. Auto-tuned behavioral-ML anchored on a learned per-principal compute-allocation baseline: a short-window burst of large GPU / high-core instance types (a mining-shaped fleet) far above the principal's normal allocation profile.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter eventSource = "ec2.amazonaws.com" and eventName = "RunInstances"
+    | filter instance_type in ("p4d.24xlarge", "p5.48xlarge", "g5.48xlarge", "g6e.48xlarge")
+    | comp count() as gpu_launches, sum(instances_requested) as total_requested by userIdentity.arn, awsRegion
+    | filter gpu_launches >= 3 or total_requested >= 20
+    | fields userIdentity.arn, awsRegion, gpu_launches, total_requested
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1496/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1496
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

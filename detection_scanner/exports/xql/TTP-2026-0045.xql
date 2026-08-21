@@ -44,7 +44,7 @@ preset = xdr_data
 | filter event_type = ENUM.NETWORK
 | filter dst_action_external_hostname contains "cortexsim-canary" or dns_query_name contains "cortexsim-canary"
 | filter action_external_url contains "/vsx/" or action_external_url contains ".vsix"
-| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_url
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, action_external_url
 
 ## VALIDATION — KOI-004 Extension Marketplace Risk Unverified Publisher Overbroad Permissions
 # purpose: validation
@@ -66,5 +66,5 @@ preset = xdr_data
 | filter event_type = ENUM.NETWORK
 | filter causality_actor_process_image_name in ("code", "node", "Code", "code-server") or actor_process_image_name in ("code", "node")
 | filter dst_action_external_hostname contains "cortexsim-canary" or dst_action_external_hostname not contains "microsoft.com"
-| fields _time, agent_hostname, actor_process_image_name, dst_action_external_hostname, action_external_port
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_id, actor_process_image_name, actor_process_instance_id, dst_action_external_hostname, action_external_port
 

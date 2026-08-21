@@ -7,10 +7,14 @@ plane: CDR
 detection_types:
   - BIOC
 
-uc_ref: UCS-CDR-05
-tc_ref: TC-CDR-05
-uc_name: "WildFire Cloud Intelligence Validation"
-tc_name: "Known-Bad File Execution and C2 Simulation"
+uc_ref: UCS-CITH-02
+tc_ref: TC-CITH-02
+tc_refs:
+  - TC-CITH-02
+  - TC-CDR-01
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate Cloud Malware Detection & Response — Known and unknown malware detected on cloud workloads via static analysis, behavioral detection, and WildFire…"
 
 mitre_tactic: "TA0002"
 mitre_tactic_name: "Execution"
@@ -60,6 +64,18 @@ external_tools:
     type: script
     install_inline: true
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The compromised web-app pod (apache2/www-data) is the Causality Group Owner
+# that owns the whole WildFire kill chain. The dropped ELF is executed as a
+# child of the download shell (process_lineage); the C2 beacon and the
+# ransomware-style bulk-encrypt both fork from that execution (a branch at
+# step-02), so all four stages stitch into ONE connected malware incident under
+# a single causality_id instead of hanging off the beacon. platforms tag each
+# step's container/linux environment.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
 steps:
   - id: step-01
     name: "Download WildFire EICAR-equivalent test file"
@@ -85,6 +101,7 @@ steps:
       ls -la /tmp/wf_sim/
     identity: container-runtime
     mitre_technique: "T1105"
+    platforms: ["container", "linux"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -107,6 +124,10 @@ steps:
       echo '[*] Backdoor execution simulation complete'
     identity: www-data
     mitre_technique: "T1059.004"
+    platforms: ["container", "linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -134,6 +155,10 @@ steps:
       echo '[*] C2 beacon simulation complete (3 intervals)'
     identity: www-data
     mitre_technique: "T1071.001"
+    platforms: ["container", "linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -169,6 +194,10 @@ steps:
       echo '[CortexSim] File encryption simulation complete — NOTE: XOR simulation only, not real ransomware'
     identity: container-runtime
     mitre_technique: "T1486"
+    platforms: ["container", "linux"]
+    causality:
+      parent_step: step-02
+      pivot: exploit_impact
     expected_detections:
       - plane: CDR
         type: BIOC

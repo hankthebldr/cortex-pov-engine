@@ -2,46 +2,67 @@ import React, { useState, useEffect } from 'react'
 import useMitreCoverage from './useMitreCoverage.js'
 import StackCoverageView from './StackCoverageView.jsx'
 import CompetitiveView from './CompetitiveView.jsx'
-import AdapterRegistryView from './AdapterRegistryView.jsx'
-import ToolAdapterCatalog from './ToolAdapterCatalog.jsx'
-import TtpBrowserView from './TtpBrowserView.jsx'
 import { downloadLayer } from './exportNavigatorLayer.js'
+import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
 /**
- * CoverageView — the Coverage tab. Two view modes:
+ * CoverageView — the Coverage destination. THREE analytical modes, each a
+ * different lens over the same scenario corpus:
  *
- *   ATT&CK   — MITRE Navigator-style matrix (tactic × technique cells)
- *   PANW Stack — product × tactic kill-chain matrix
+ *   ATT&CK      — MITRE Navigator-style matrix (tactic × technique cells);
+ *                 "which techniques does the library exercise?"
+ *   PANW Stack  — product × tactic kill-chain matrix; "which Palo Alto
+ *                 products carry the detection load?"
+ *   Competitive — capability matrix vs. major EDR / SIEM / BAS competitors.
  *
- * Both pivot the same scenario library through different lenses. The
- * ATT&CK view answers "which techniques do we exercise?"; the Stack view
- * answers "which Palo Alto products carry the detection load?"
+ * The adapters / tools / TTP inventories that used to live here as extra
+ * toggle modes have GRADUATED to their own first-class destinations
+ * (Tool Adapters + TTP Cards). This surface is now purely analytical.
  *
- * Props:
- *   onFilterByTechnique  — (tid, scenarioIds) => void
- *                          AppConsole switches to Operations tab + applies
- *                          the filter for either view's cell click.
+ * Ambient scope (the active XSIAM tenant) comes from the EnvironmentProvider,
+ * not local tab state — switching tenant in the global bar refetches the
+ * coverage matrix automatically.
+ *
+ * Props (spine contract — all optional; the surface degrades gracefully when
+ * mounted bare, e.g. in isolated tests):
+ *   onNavigate  — (destinationId, params?) => void  cross-surface router jump.
+ *                 Used to hop to the `ttps` destination when a sibling surface
+ *                 emits a cortex:navigate-ttp event, and to the `library`
+ *                 destination for a technique drill-down.
  */
-export default function CoverageView({ onFilterByTechnique = () => {} }) {
-  const { data, loading, error, refresh } = useMitreCoverage()
+export default function CoverageView({ onNavigate } = {}) {
+  const { tenant } = useEnvironment()
+  const { data, loading, error, refresh } = useMitreCoverage(tenant?.name || null)
   const [selectedTechnique, setSelectedTechnique] = useState(null)
-  const [viewMode, setViewMode] = useState('attack') // 'attack' | 'stack' | 'advantage' | 'adapters' | 'tools' | 'ttps'
+  const [viewMode, setViewMode] = useState('attack') // 'attack' | 'stack' | 'competitive'
 
-  // When an adapter detail panel emits a cortex:navigate-ttp custom
-  // event (PR #49's TTP-ref chip click), flip to the TTP browser sub-
-  // tab and pre-select the TTP whose id rode the event payload.
-  const [pendingTtpId, setPendingTtpId] = useState(null)
+  // A sibling surface (the Tool Adapters destination's detail panel) can emit
+  // a cortex:navigate-ttp custom event when a DC clicks a TTP-ref chip. The
+  // TTP browser is no longer a sub-tab here — it graduated to its own
+  // destination — so we hop the router to `ttps?ttp=<id>` instead of flipping
+  // an internal mode. When the spine hands us `onNavigate` we use it; otherwise
+  // we fall back to a direct hash write the zero-dep router reflects back.
   useEffect(() => {
     const handler = (e) => {
       const ttpId = e?.detail?.ttpId
-      if (typeof ttpId === 'string' && ttpId) {
-        setPendingTtpId(ttpId)
-        setViewMode('ttps')
+      if (typeof ttpId !== 'string' || !ttpId) return
+      if (typeof onNavigate === 'function') {
+        onNavigate('ttps', { ttp: ttpId })
+      } else {
+        window.location.hash = `#/ttps?ttp=${encodeURIComponent(ttpId)}`
       }
     }
     window.addEventListener('cortex:navigate-ttp', handler)
     return () => window.removeEventListener('cortex:navigate-ttp', handler)
-  }, [])
+  }, [onNavigate])
+
+  // Technique / stack-cell drill-down → the Library destination. Only wired
+  // when the spine passes onNavigate; a bare mount degrades to a no-op.
+  const onFilterByTechnique = (tid, scenarioIds) => {
+    if (typeof onNavigate === 'function') {
+      onNavigate('library', { technique: tid, scenarios: (scenarioIds || []).join(',') })
+    }
+  }
 
   if (viewMode === 'stack') {
     return (
@@ -67,12 +88,12 @@ export default function CoverageView({ onFilterByTechnique = () => {} }) {
     )
   }
 
-  if (viewMode === 'advantage') {
+  if (viewMode === 'competitive') {
     return (
       <div className="coverage">
         <div className="view-head">
           <div>
-            <h1>PANW Advantage</h1>
+            <h1>Competitive Position</h1>
             <div className="view-head__meta">
               capability matrix · Cortex vs. major EDR / SIEM / BAS competitors
             </div>
@@ -80,60 +101,6 @@ export default function CoverageView({ onFilterByTechnique = () => {} }) {
           <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
         </div>
         <CompetitiveView />
-      </div>
-    )
-  }
-
-  if (viewMode === 'adapters') {
-    return (
-      <div className="coverage">
-        <div className="view-head">
-          <div>
-            <h1>EAL Plugins</h1>
-            <div className="view-head__meta">
-              attack vectors shipped with this build · the plugins SimCore
-              invokes to generate Cortex-bound signal
-            </div>
-          </div>
-          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
-        </div>
-        <AdapterRegistryView />
-      </div>
-    )
-  }
-
-  if (viewMode === 'tools') {
-    return (
-      <div className="coverage">
-        <div className="view-head">
-          <div>
-            <h1>Tool Adapters</h1>
-            <div className="view-head__meta">
-              static catalog of offensive + defensive tools a scenario can
-              reference via <span className="mono">external_tools[].adapter_ref</span>
-            </div>
-          </div>
-          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
-        </div>
-        <ToolAdapterCatalog />
-      </div>
-    )
-  }
-
-  if (viewMode === 'ttps') {
-    return (
-      <div className="coverage">
-        <div className="view-head">
-          <div>
-            <h1>TTP Browser</h1>
-            <div className="view-head__meta">
-              detection cards under <span className="mono">detection_scanner/ttps/</span> —
-              BIOC + XQL + correlation logic that catches each technique
-            </div>
-          </div>
-          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
-        </div>
-        <TtpBrowserView initialTtpId={pendingTtpId} />
       </div>
     )
   }
@@ -384,6 +351,7 @@ function ViewModeToggle({ viewMode, onChange }) {
         aria-selected={viewMode === 'attack'}
         className={viewMode === 'attack' ? 'is-active' : ''}
         onClick={() => onChange('attack')}
+        title="MITRE ATT&CK technique coverage matrix"
       >
         ATT&amp;CK
       </button>
@@ -393,48 +361,19 @@ function ViewModeToggle({ viewMode, onChange }) {
         aria-selected={viewMode === 'stack'}
         className={viewMode === 'stack' ? 'is-active' : ''}
         onClick={() => onChange('stack')}
+        title="PANW product × kill-chain coverage matrix"
       >
         PANW Stack
       </button>
       <button
         type="button"
         role="tab"
-        aria-selected={viewMode === 'advantage'}
-        className={viewMode === 'advantage' ? 'is-active' : ''}
-        onClick={() => onChange('advantage')}
-        title="Capability matrix vs. major competitors"
+        aria-selected={viewMode === 'competitive'}
+        className={viewMode === 'competitive' ? 'is-active' : ''}
+        onClick={() => onChange('competitive')}
+        title="Capability matrix vs. major EDR / SIEM / BAS competitors"
       >
-        Advantage
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={viewMode === 'adapters'}
-        className={viewMode === 'adapters' ? 'is-active' : ''}
-        onClick={() => onChange('adapters')}
-        title="Installed EAL attack-vector plugins + parameter schemas"
-      >
-        EAL Plugins
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={viewMode === 'tools'}
-        className={viewMode === 'tools' ? 'is-active' : ''}
-        onClick={() => onChange('tools')}
-        title="Static catalog of tool adapters scenarios can reference"
-      >
-        Tool Adapters
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={viewMode === 'ttps'}
-        className={viewMode === 'ttps' ? 'is-active' : ''}
-        onClick={() => onChange('ttps')}
-        title="TTP corpus — BIOC + XQL + correlation detection cards"
-      >
-        TTP Browser
+        Competitive
       </button>
     </div>
   )

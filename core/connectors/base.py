@@ -25,10 +25,11 @@ from __future__ import annotations
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 logger = logging.getLogger("cortexsim.connectors")
@@ -70,14 +71,25 @@ class ObservedAlert:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any], *, default_source: str = "manual") -> "ObservedAlert":
+    def from_dict(cls, d: dict[str, Any], *,
+                  default_source: str = "manual") -> Optional["ObservedAlert"]:
         """Build from a loose dict (manual batch ingest / exported JSON).
 
-        Accepts ISO-8601 strings or epoch seconds for ``observed_at``; tolerates
-        ``technique``/``techniques`` and ``mitre_technique`` aliases.
+        Accepts ISO-8601 strings or epoch seconds/ms for ``observed_at``;
+        tolerates ``technique``/``techniques`` and ``mitre_technique`` aliases.
+
+        Returns **None** when the timestamp cannot be read. It used to fall back
+        to ``utcnow()``, which silently turned a formatting problem into
+        ``mttd_seconds = now - executed_at`` — minutes or hours — and
+        ``score_run`` then reported `fail` against a ``<= 300s`` threshold. A
+        schema change in the customer's export became a claim that their
+        detection was too slow. Dropping the row and counting it is the honest
+        alternative; :meth:`from_dicts` does the counting.
         """
         ts = d.get("observed_at") or d.get("timestamp") or d.get("time")
-        observed_at = _coerce_dt(ts)
+        observed_at = coerce_utc(ts)
+        if observed_at is None:
+            return None
         techs = d.get("techniques")
         if techs is None:
             single = d.get("technique") or d.get("mitre_technique")
@@ -96,6 +108,27 @@ class ObservedAlert:
             raw=d if isinstance(d, dict) else {},
         )
 
+    @classmethod
+    def from_dicts(
+        cls, items: list[dict[str, Any]], *, default_source: str = "manual"
+    ) -> "tuple[list[ObservedAlert], int]":
+        """Build a batch, returning ``(alerts, dropped)``.
+
+        ``dropped`` counts observations whose timestamp could not be read. The
+        caller MUST surface it: "3 of 40 alerts had an unreadable timestamp and
+        were not counted" is actionable; three phantom threshold FAILs are worse
+        than useless, and a silently shorter list is invisible.
+        """
+        alerts: list[ObservedAlert] = []
+        dropped = 0
+        for item in items:
+            alert = cls.from_dict(item, default_source=default_source)
+            if alert is None:
+                dropped += 1
+                continue
+            alerts.append(alert)
+        return alerts, dropped
+
 
 def _str_or_none(v: Any) -> Optional[str]:
     if v is None:
@@ -104,29 +137,61 @@ def _str_or_none(v: Any) -> Optional[str]:
     return s or None
 
 
-def _coerce_dt(value: Any) -> datetime:
-    """Coerce an ISO string / epoch (s or ms) / datetime to a naive UTC datetime.
+#: Naive-UTC is the storage contract: ``Result.executed_at`` / ``observed_at``
+#: are written with ``datetime.utcnow()``, so every observation must be
+#: converted to the same frame before it is subtracted from one.
+_UTC = timezone.utc
 
-    Result.executed_at / observed_at are stored naive-UTC (datetime.utcnow), so
-    we normalize to the same so subtraction yields a correct MTTD."""
+
+def coerce_utc(value: Any) -> Optional[datetime]:
+    """THE timestamp coercer. Naive-UTC datetime, or None when untrustworthy.
+
+    There were two of these and they disagreed by up to nine hours. Given
+    ``2026-06-10T12:00:30+02:00`` (true UTC 10:00:30):
+
+    * ``connectors/base._coerce_dt`` did ``astimezone(tz=None)`` — convert to the
+      **host's local time**. On a DC's laptop in ``America/Los_Angeles`` that is
+      03:00:30, seven hours *before* ``executed_at``, so the matcher's
+      ``[executed_at, executed_at + window]`` never contained it and coverage
+      read 0 % with no error anywhere. The Docker image runs UTC, which is
+      exactly why no test caught it and why it only appears mid-POV.
+    * ``connectors/xsiam._ms_to_dt`` did ``replace(tzinfo=None)`` — **drop** the
+      offset and pretend it was UTC. That is 12:00:30, a 2 h MTTD error.
+
+    Neither answer was 10:00:30. An offset must be CONVERTED, never stripped,
+    and never converted to host-local time.
+
+    Returns ``None`` rather than ``utcnow()`` on a value it cannot parse. See
+    :meth:`ObservedAlert.from_dict` for why the old fallback manufactured FAILs.
+    """
     if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(_UTC).replace(tzinfo=None)
+    if isinstance(value, bool):
+        # bool is an int subclass; `True` is not epoch-1-second.
+        return None
     if isinstance(value, (int, float)):
-        # Heuristic: > 1e12 → milliseconds.
-        seconds = value / 1000.0 if value > 1e12 else float(value)
-        return datetime.utcfromtimestamp(seconds)
-    if isinstance(value, str) and value.strip():
-        s = value.strip().replace("Z", "+00:00")
+        # Heuristic: > 1e12 → milliseconds. Cortex alert timestamps are ms.
+        seconds = value / 1000.0 if abs(value) > 1e12 else float(value)
         try:
-            dt = datetime.fromisoformat(s)
-            if dt.tzinfo is not None:
-                dt = dt.astimezone(tz=None).replace(tzinfo=None)
-            return dt
+            return datetime.fromtimestamp(seconds, tz=_UTC).replace(tzinfo=None)
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(value, str) and value.strip():
+        s = value.strip()
+        # Numeric strings are epochs, not ISO — a tenant export that quotes its
+        # millisecond timestamps used to fall through to utcnow().
+        try:
+            return coerce_utc(int(s))
         except ValueError:
             pass
-    # Fall back to "now" so a malformed timestamp doesn't crash ingest; the
-    # matcher's window check will simply not match it to anything older.
-    return datetime.utcnow()
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return dt if dt.tzinfo is None else dt.astimezone(_UTC).replace(tzinfo=None)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +215,22 @@ def default_http_fetcher(
         body_text = e.read().decode("utf-8", errors="replace") if e.fp else ""
         return e.code, body_text
     except (urllib.error.URLError, OSError, TimeoutError) as e:
-        raise ConnectorError(f"transport error reaching {url}: {e}") from e
+        # scheme+host only: the full URL can carry query parameters, and this
+        # string is returned to API callers and persisted to
+        # IntegrationCredential.last_verified_error, which the console and any
+        # POV export both read.
+        raise ConnectorError(f"transport error reaching {_host_only(url)}: {e}") from e
+
+
+def _host_only(url: str) -> str:
+    """``https://host`` from a full URL, for error strings that leave the process."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return "the tenant"
+    if not parts.scheme or not parts.hostname:
+        return "the tenant"
+    return f"{parts.scheme}://{parts.hostname}"
 
 
 class ConnectorError(Exception):
@@ -177,21 +257,39 @@ class ConnectorConfig:
 
 @dataclass
 class PullResult:
-    """Outcome of a connector pull."""
+    """Outcome of a connector pull.
+
+    ``code`` is drawn from ``integrations.xsiam.codes`` — the SAME vocabulary
+    the typed ``XsiamError`` subclasses use. Two carriers, one vocabulary: this
+    connector must stay non-raising and offline-safe (it is the stdlib path that
+    has to work in a minimal image), so it cannot raise ``XsiamAuthError``; but a
+    DC hitting a 401 should read ``XSIAM_AUTH_ERROR`` regardless of which half of
+    the product produced it, and one remediation table should serve both.
+
+    ``dropped`` counts observations discarded before matching — today, alerts
+    whose timestamp could not be parsed. It is reported, never silently absorbed.
+    """
 
     ok: bool
     connector: str
     observations: list[ObservedAlert] = field(default_factory=list)
     error: Optional[str] = None
+    code: Optional[str] = None
     detail: dict[str, Any] = field(default_factory=dict)
+    dropped: int = 0
 
     def to_dict(self) -> dict[str, Any]:
+        from integrations.xsiam.codes import remediation_for  # noqa: PLC0415
+
         return {
             "ok": self.ok,
             "connector": self.connector,
             "count": len(self.observations),
             "observations": [o.to_dict() for o in self.observations],
             "error": self.error,
+            "code": self.code,
+            "remediation": remediation_for(self.code),
+            "dropped": self.dropped,
             "detail": self.detail,
         }
 

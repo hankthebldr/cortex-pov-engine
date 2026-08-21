@@ -8,10 +8,11 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-KOI-04
-tc_ref: TC-KOI-04
-uc_name: "Developer-Tool Extension Risk"
-tc_name: "VS Code Extension Requests Workspace + Network + Auth Permissions"
+uc_ref: UCS-SCA-01
+tc_ref: TC-SCA-01
+pov_scenario_id: POV-SC-012
+uc_name: "Software Composition Analysis"
+tc_name: "Validate Dependency Vulnerability Detection — Known CVEs detected in direct and transitive dependencies across npm, pip, Maven, Go, NuGet"
 
 # S-16 — remapped off T1176 ("Browser Extensions"). A malicious VS Code
 # extension distributed via the marketplace is a software-supply-chain
@@ -67,6 +68,17 @@ success_criteria: |
   product equivalent.
 moat_tier: "MOAT"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# VS Code (the IDE host, image code/node) is the Causality Group Owner — the
+# process that loads the extension and, on activation, reads ~/.aws + ~/.ssh and
+# beacons out — NOT the synthetic beacon. The manifest-scan (step-01) roots at
+# the CGO; the .vsix fetch (step-02) stitches the endpoint finding to its NGFW
+# session; activation (step-03) is the fetched artifact escalating to
+# credential-theft impact, so the graph is one connected spine.
+cgo_anchor:
+  image_name: "code"
+  primary_username: "developer"
+
 external_tools:
   - name: Cortex Malicious Agentic Pack
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -92,6 +104,9 @@ steps:
         "$EXT_ROOT"/extension/package.json
     identity: container-runtime
     mitre_technique: "T1195"
+    platforms: ["linux", "macos", "windows", "container"]
+    platform_variants:
+      windows: "Get-Content \"$env:USERPROFILE\\.vscode\\extensions\\helpful-ai-assistant\\extension\\package.json\" | ConvertFrom-Json | Select-Object contributes, activationEvents, extensionDependencies"
     expected_detections:
       - plane: KOI
         type: XQL
@@ -128,6 +143,12 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/koi-004.yml --live
     identity: container-runtime
     mitre_technique: "T1195"
+    platforms: ["linux", "macos", "windows", "container"]
+    causality:
+      parent_step: step-01
+      # Endpoint manifest-scan finding (step-01) stitched to the NGFW session
+      # that fetches the SAME malicious .vsix from the non-canonical CDN.
+      pivot: endpoint_network_stitch
     expected_detections:
       - plane: NDR
         type: XQL
@@ -149,6 +170,15 @@ steps:
       echo "[CortexSim] post-install activate() emits HTTP beacon to attacker C2"
     identity: container-runtime
     mitre_technique: "T1059"
+    platforms: ["linux", "macos", "windows", "container"]
+    platform_variants:
+      windows: "Select-String -Path \"$env:USERPROFILE\\.vscode\\extensions\\helpful-ai-assistant\\extension\\dist\\*.js\" -Pattern 'fetch|http|XMLHttpRequest|\\.aws\\\\credentials|\\.ssh'; Get-Content \"$env:USERPROFILE\\.aws\\credentials\""
+    causality:
+      parent_step: step-02
+      # The malicious extension fetched/installed in step-02 escalates to impact
+      # on activation: the VS Code (code/node) host reads ~/.aws + ~/.ssh and
+      # beacons out — a fetched-artifact-to-impact edge.
+      pivot: exploit_impact
     expected_detections:
       - plane: KOI
         type: BIOC

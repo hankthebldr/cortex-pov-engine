@@ -10,10 +10,14 @@ detection_types:
   - IOC
   - Correlation
 
-uc_ref: UCS-ASM-04
-tc_ref: TC-ASM-04
-uc_name: "Web-Application Attack-Surface Enumeration & Exploitation via Cortex ASM"
-tc_name: "External Web Enumeration + Injection Probing Against the Exposed Surface"
+uc_ref: UCS-WAAS-03
+tc_ref: TC-WAAS-03
+tc_refs:
+  - TC-WAAS-03
+  - TC-ASM-06
+pov_scenario_id: POV-SC-002
+uc_name: "Web API & Application Security"
+tc_name: "Validate Web Application Threat Detection — OWASP Top 10 web attacks detected with accurate classification"
 
 mitre_tactic: "TA0043"
 mitre_tactic_name: "Reconnaissance"
@@ -38,6 +42,22 @@ execution_identity:
 
 push_supported: true
 pull_supported: true
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# External web recon against the asm-module exposed surface: the detection
+# telemetry is NGFW/NDR network logs (panw_ngfw_traffic_raw / _threat_raw) and
+# Cortex ASM exposure findings (asm_findings) — none carries an endpoint
+# process-causality tree on the target. The chain is stitched on the SHARED
+# ATTACKER ORIGIN (one operator source host → the exposed surface), which is
+# what CR-ASM-0004 keys on (single-source URI fan-out + injection). The CGO is
+# the operator's recon shell (bash) that forks the web scanners — NOT the
+# cortexsim-agent beacon. step-02 pivots exposure_exploit: the surface Cortex
+# ASM discovered in step-01 is now actively abused at runtime; steps 03..07
+# continue that abuse from the same source (shared_entity), giving one connected
+# discover → enumerate → scan → inject spine.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "root"
 
 infra_modules_needed:
   - base
@@ -120,6 +140,7 @@ steps:
         --query 'ResourceTagMappingList[].ResourceARN' --output text || true
     identity: root
     mitre_technique: "T1595"
+    platforms: ["linux"]
     expected_detections:
       - plane: ASM
         type: XQL
@@ -136,6 +157,13 @@ steps:
       cmseek -u "http://${ASM_TARGET_HOST}/" --batch 2>&1 | tee /tmp/cmseek-asm-004.txt || true
     identity: root
     mitre_technique: "T1592"
+    platforms: ["linux"]
+    # The exposed surface Cortex ASM discovered in step-01 is now actively
+    # fingerprinted from the operator host — the ASM posture finding abused at
+    # runtime, bridging ASM discovery into NGFW/NDR detection.
+    causality:
+      parent_step: step-01
+      pivot: exposure_exploit
     expected_detections:
       - plane: ASM
         type: XQL
@@ -159,6 +187,13 @@ steps:
         -o /tmp/gobuster-asm-004.txt || true
     identity: root
     mitre_technique: "T1595.003"
+    platforms: ["linux"]
+    # Same operator source host continues against the same exposed surface —
+    # shared_entity (src_ip → exposed host) threads the content-discovery burst
+    # onto the chain; detection is NGFW-side, no endpoint fork on the target.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: BIOC
@@ -186,6 +221,11 @@ steps:
         -o /tmp/feroxbuster-asm-004.txt || true
     identity: root
     mitre_technique: "T1595.003"
+    platforms: ["linux"]
+    # Recursive discovery from the same source — shared_entity deepens the fan-out.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: BIOC
@@ -208,6 +248,11 @@ steps:
         -o /tmp/nikto-asm-004.txt -Format txt || true
     identity: root
     mitre_technique: "T1595.002"
+    platforms: ["linux"]
+    # Vuln scan against the banking app from the same source — shared_entity.
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: XQL
@@ -231,6 +276,12 @@ steps:
         --output-dir=/tmp/sqlmap-cortexsim || true
     identity: root
     mitre_technique: "T1190"
+    platforms: ["linux"]
+    # Injection probe against the discovered-vulnerable app from the same source
+    # — shared_entity moves the chain from scanning to exploitation.
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: BIOC
@@ -259,6 +310,13 @@ steps:
         --batch --output-dir=/tmp/commix-asm-004 || true
     identity: root
     mitre_technique: "T1190"
+    platforms: ["linux"]
+    # Final injection probe from the same source; CR-ASM-0004 folds the ASM
+    # discovery (step-01/02) with the content-discovery, vuln-scan, and injection
+    # legs from this one origin into a single exposure incident — shared_entity.
+    causality:
+      parent_step: step-06
+      pivot: shared_entity
     expected_detections:
       - plane: NDR
         type: BIOC

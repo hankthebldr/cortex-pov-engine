@@ -1,0 +1,362 @@
+{
+  "id": "TTP-2026-0152",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:26:14+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "casb",
+      "salesforce",
+      "oauth",
+      "connected-app",
+      "token-revocation",
+      "soar-playbook",
+      "closed-loop-response",
+      "salesloft-drift",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Auto-Revoke OAuth Tokens on Connected-App Abuse — Salesforce Bulk Export -> Playbook Revoke + Forced Re-Auth (F5)",
+    "summary": "A stolen Salesforce Connected-App OAuth token runs a high-volume Bulk API export then deletes the query jobs (Salesloft Drift abuse; source names no actor). An XSOAR playbook auto-revokes the access and refresh token; a replay with the stale token returns 401 invalid_token. The correlation stitches export -> erase -> revoke -> 401 into one incident asserting the token is dead: F5 closed-loop KPI.",
+    "description": "This card validates the CLOSED-LOOP RESPONSE half of the Salesloft Drift OAuth-abuse story (the detection half is SIM-CLOUD-006 / TTP-2026-0111). A threat actor — the cited Unit 42 brief deliberately does not attribute the campaign to any named group — abused compromised OAuth credentials for the Drift Connected App (Aug 8-18 2025) to run rapid, high-throughput Salesforce Bulk API exports over an async Python client (user-agent 'Python/3.11 aiohttp/3.12.15'), then deleted the SOQL query jobs (UniqueQuery events) to hide their tracks. Salesloft's remediation was to proactively revoke all active access and refresh tokens for the Drift application, forcing re-authentication for affected admins. This scenario models that remediation as an automated Cortex XSOAR playbook and PROVES it closed the loop rather than merely alerting: (1) the mass-export behavioral anomaly on the Connected-App token is the trigger; (2) the query-job deletion is the anti-forensics tell; (3) the playbook revokes the access AND refresh token for the exact connected_app + oauth_token_id and requires forced re-auth for affected admins; (4) a replay call carrying the revoked token returns HTTP 401 with error_code invalid_token. A correlation rule fuses all four stages on the shared connected_app + oauth_token_id into a single incident whose terminal assertion is that the token is dead. Emphasis is CORRELATION-TERMINAL (methodology family F5): the DC proves not just that Cortex saw the abuse but that the automated response executed and verifiably killed the abused grant, with a blast-radius negative test confirming benign Connected Apps were left untouched.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Salesloft Drift Connected-App OAuth abuse against Salesforce instances (August 2025)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2025-08-08"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1550",
+        "subtechnique_id": "T1550.001",
+        "name": "Use Alternate Authentication Material: Application Access Token",
+        "tactic_ids": [
+          "TA0005",
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Defense Evasion",
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1199",
+        "name": "Trusted Relationship",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "name": "Indicator Removal",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Modification",
+      "Application Log: Application Log Content",
+      "Logon Session: Logon Session Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CLOUD-007 — Connected-App OAuth token abuse with automated XSOAR token-revoke closed-loop validation.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "A SaaS/CASB collector is ingesting Salesforce event-monitoring / audit telemetry into cloud_audit_logs so Bulk API jobs, OAuth token-revocation, and API-auth (401) events are queryable.",
+        "check_command": "true"
+      },
+      {
+        "description": "An XSOAR auto-revoke playbook is wired to the Connected-App-abuse trigger with a Salesforce integration credential authorised to revoke tokens and force re-auth.",
+        "check_command": "true"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: all calls target 127.0.0.1 and write local markers; no real\n# Salesforce tenant is touched. Models the abuse -> automated-revoke closed loop.\nset -euo pipefail\nEXFIL_UA=\"Python/3.11 aiohttp/3.12.15\"\nTOKEN_ID=\"0Ci5SIMDRIFTTOKEN\"\n# (1) high-volume Bulk API mass export on the trusted Connected-App token\nfor OBJ in Account Contact Case Opportunity; do\n  curl -s --max-time 5 -A \"$EXFIL_UA\" -X POST \"https://127.0.0.1/services/data/v61.0/jobs/query\" \\\n    -d \"{\\\"operation\\\":\\\"query\\\",\\\"query\\\":\\\"SELECT Id FROM ${OBJ}\\\"}\" -o /dev/null 2>/dev/null || true\n  echo \"SAFE-MODE export object=${OBJ} rows=250000 ua=${EXFIL_UA} token=${TOKEN_ID}\" > \"/tmp/sf-007-export-${OBJ}.marker\"\ndone\n# (2) export-then-erase: delete the query jobs (anti-forensics)\nfor OBJ in Account Contact Case Opportunity; do\n  curl -s --max-time 5 -A \"$EXFIL_UA\" -X DELETE \"https://127.0.0.1/services/data/v61.0/jobs/query/750SIM${OBJ}\" -o /dev/null 2>/dev/null || true\ndone\n# (3) XSOAR auto-revoke playbook: revoke access + refresh token, force re-auth\necho \"SAFE-MODE revoke token=${TOKEN_ID} types=access,refresh source=cortex-xsoar-playbook\" > /tmp/sf-007-revoke.marker\necho \"SAFE-MODE force_reauth connected_app=Drift affected_admins=applied\" > /tmp/sf-007-reauth.marker\n# (4) replay with the revoked token -> expect 401 invalid_token (closed-loop proof)\ncurl -s --max-time 5 -A \"$EXFIL_UA\" -H \"Authorization: Bearer ${TOKEN_ID}\" \\\n  \"https://127.0.0.1/services/data/v61.0/jobs/query\" -o /dev/null 2>/dev/null || true\necho \"SAFE-MODE replay token=${TOKEN_ID} response_status=401 error_code=invalid_token\" > /tmp/sf-007-replay-401.marker\necho cortexsim-cloud-007-auto-revoke-closed-loop-complete",
+      "input_variables": [
+        {
+          "name": "CONNECTED_APP",
+          "type": "string",
+          "default": "Drift",
+          "description": "The abused Salesforce Connected App whose OAuth grant the playbook revokes."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "Salesforce Bulk API query jobs across Account/Contact/Case/Opportunity carrying the automation exfil user-agent on one Connected-App token, followed by deleteJob events.",
+        "expected_value": "cloud_service = \"salesforce\" and api_type = \"Bulk\" and user_agent = \"Python/3.11 aiohttp/3.12.15\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "An XSOAR-sourced OAuth token-revocation event revoking both the access and refresh token for the offending Connected App, plus a forced-re-auth requirement for affected admins.",
+        "expected_value": "event_type = \"OAuthToken\" and operation in (\"revokeAccessToken\", \"revokeRefreshToken\") and action_source = \"cortex-xsoar-playbook\""
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "A replay API call carrying the revoked token that Salesforce rejects with HTTP 401 invalid_token — the closed-loop proof the revoke landed.",
+        "expected_value": "event_type = \"ApiAuth\" and response_status = 401 and error_code = \"invalid_token\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/sf-007-export-*.marker /tmp/sf-007-revoke.marker /tmp/sf-007-reauth.marker /tmp/sf-007-replay-401.marker; echo '[CortexSim] SIM-CLOUD-007 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "Connected-App OAuth Token Mass-Export Deviation Triggering Auto-Revoke",
+        "description": "A Salesforce Connected-App OAuth token whose learned baseline is low-volume, narrow-object scheduled Bulk API jobs suddenly runs a high-volume export across Account/Contact/Case/Opportunity from the automation exfil user-agent. This is the behavioral trigger the XSOAR auto-revoke playbook responds to. The ABIOC anchors the deviation to the Connected-App identity (connected_app + oauth_token_id) rather than to any known-bad string — no consent, MFA, or interactive login event exists to alert on, so the volume/object-diversity deviation on the trusted token is the signal.",
+        "logic": "dataset = cloud_audit_logs\n| filter cloud_service = \"salesforce\" and event_type = \"BulkApi\" and api_type = \"Bulk\"\n| filter operation in (\"query\", \"queryAll\")\n| filter object_name in (\"Account\", \"Contact\", \"Case\", \"Opportunity\")\n| comp sum(rows_processed) as run_rows, count_distinct(object_name) as run_objects by connected_app, integration_user, oauth_token_id, user_agent\n| filter run_rows >= 50000 and run_objects >= 3\n| sort desc run_rows\n| fields connected_app, integration_user, oauth_token_id, user_agent, run_rows, run_objects",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567",
+          "T1550"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned Connected-App integration baseline (low-volume scheduled Bulk API on a narrow object set) -> already-consented OAuth token drives a high-volume multi-object export, anchored to the connected_app + oauth_token_id that owns the grant. This anomaly is the automation trigger for the token-revoke playbook."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "Salesforce Query-Job Deletion Anti-Forensics by Exfiltration Token",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_service = \"salesforce\" and api_type = \"Bulk\" and operation = \"deleteJob\"\n| filter user_agent = \"Python/3.11 aiohttp/3.12.15\"\n| comp count() as deleted_jobs by connected_app, integration_user, oauth_token_id, user_agent\n| filter deleted_jobs >= 1\n| sort desc deleted_jobs\n| fields connected_app, integration_user, oauth_token_id, deleted_jobs",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "SOAR Playbook OAuth Access and Refresh Token Revocation for Connected App",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_service = \"salesforce\" and event_type = \"OAuthToken\"\n| filter operation in (\"revokeAccessToken\", \"revokeRefreshToken\", \"revokeToken\")\n| filter action_source = \"cortex-xsoar-playbook\"\n| comp count_distinct(token_type) as revoked_token_types, count() as revoke_events by connected_app, oauth_token_id, playbook_name\n| filter revoked_token_types >= 2\n| sort desc revoke_events\n| fields connected_app, oauth_token_id, playbook_name, revoked_token_types, revoke_events",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "Forced Re-Authentication Requirement Applied to Affected Connected-App Admins",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_service = \"salesforce\" and event_type = \"SessionSecurity\"\n| filter operation = \"forceReauth\" and action_source = \"cortex-xsoar-playbook\"\n| comp count() as forced_reauth_events by connected_app, affected_user\n| filter forced_reauth_events >= 1\n| sort desc forced_reauth_events\n| fields connected_app, affected_user, forced_reauth_events",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "Revoked-Token Replay Returns 401 invalid_token Closed-Loop Proof",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter cloud_service = \"salesforce\" and event_type = \"ApiAuth\"\n| filter user_agent = \"Python/3.11 aiohttp/3.12.15\"\n| filter response_status = 401 and error_code = \"invalid_token\"\n| comp count() as rejected_calls, max(_time) as last_rejection by connected_app, integration_user, oauth_token_id\n| filter rejected_calls >= 1\n| sort desc rejected_calls\n| fields connected_app, integration_user, oauth_token_id, rejected_calls, last_rejection",
+        "expected_rows_min": 1,
+        "dataset": "cloud_audit_logs"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Connected-App OAuth Token Abuse Auto-Revoke Closed-Loop Stitch",
+        "rule_id": "CR-CLOUD-0007",
+        "logic": "ABIOC(Connected-App OAuth Token Mass-Export Deviation Triggering Auto-Revoke) AND XQL(Salesforce Query-Job Deletion Anti-Forensics by Exfiltration Token) AND XQL(SOAR Playbook OAuth Access and Refresh Token Revocation for Connected App) AND XQL(Revoked-Token Replay Returns 401 invalid_token Closed-Loop Proof) observed on the same connected_app and oauth_token_id within the run window — stitches the full closed loop trusted-token -> mass CRM export -> query-job deletion -> automated access+refresh token revocation -> revoked-token replay rejected 401 invalid_token into a SINGLE post-consent OAuth-token-abuse incident. The incident's terminal assertion is that the XSOAR auto-revoke playbook FIRED and CLOSED: the token that ran the export is verifiably dead because the subsequent replay returns 401 invalid_token, satisfying the F5 closed-loop response KPI. Forced re-authentication for affected admins is attached as corroborating remediation evidence; a benign Connected App whose token was NOT revoked is the blast-radius negative control."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics — auto-tuned Connected-App Bulk API volume/object-diversity behavioral profiling",
+      "Cortex XSOAR — automated OAuth token-revocation + forced-re-auth response playbook"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-CLOUD007-EXPORT",
+          "CR-CLOUD-0007"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter cloud_service = \"salesforce\" and api_type = \"Bulk\" and user_agent = \"Python/3.11 aiohttp/3.12.15\" | comp sum(rows_processed) as exported_rows, count_distinct(object_name) as objects by connected_app, oauth_token_id"
+      },
+      {
+        "module": "cortex-xsoar",
+        "submodule": "playbook",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "TBD-XSOAR-CLOUD007-REVOKE"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter event_type = \"OAuthToken\" and action_source = \"cortex-xsoar-playbook\" and operation in (\"revokeAccessToken\", \"revokeRefreshToken\") | comp count_distinct(token_type) as revoked_types by connected_app, oauth_token_id"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CLOUD-007",
+        "name": "Auto-Revoke OAuth Tokens on Connected-App Abuse — Closed-Loop Response Validation",
+        "description": "Proves Cortex does not merely detect the Salesloft-Drift-style Connected-App token abuse but that an XSOAR playbook automatically revokes the access + refresh token and forces re-auth, and that the revoke is verifiable: a replay with the stale token returns 401 invalid_token. The correlation asserts the whole chain is one incident and the token is dead — the F5 Automation & Workflow closed-loop KPI.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CLOUD-007A",
+            "objective": "On the mass-export behavioral anomaly, the XSOAR auto-revoke playbook fires and revokes BOTH the access and refresh token for the offending Connected App.",
+            "preconditions": [
+              "SaaS/CASB collector ingesting Salesforce event monitoring into cloud_audit_logs.",
+              "XSOAR auto-revoke playbook wired to the Connected-App-abuse trigger."
+            ],
+            "steps": [
+              "Drive the high-volume Bulk API export on the trusted Connected-App token.",
+              "Observe the mass-export ABIOC fire and the auto-revoke playbook execute.",
+              "Confirm the revocation event revokes both access and refresh token types."
+            ],
+            "success_criteria": [
+              "ABIOC `Connected-App OAuth Token Mass-Export Deviation Triggering Auto-Revoke` fires.",
+              "Validation XQL shows revoked_token_types >= 2 (access + refresh) sourced from cortex-xsoar-playbook.",
+              "Forced-re-auth requirement is applied to affected admins."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-CLOUD-007B",
+            "objective": "The revoke is verifiable end-to-end: a replay call carrying the revoked token returns 401 invalid_token and CR-CLOUD-0007 raises one closed-loop incident.",
+            "preconditions": [
+              "TS-CLOUD-007A completed (token revoked by the playbook)."
+            ],
+            "steps": [
+              "Replay a Bulk API call with the revoked Connected-App token.",
+              "Observe Salesforce reject it with HTTP 401 invalid_token.",
+              "Confirm CR-CLOUD-0007 stitches export -> erase -> revoke -> 401-replay into one incident."
+            ],
+            "success_criteria": [
+              "Validation XQL `Revoked-Token Replay Returns 401 invalid_token Closed-Loop Proof` returns >= 1 row.",
+              "Correlation CR-CLOUD-0007 raises one incident whose terminal assertion is that the token is dead."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-CLOUD-007C",
+            "objective": "Blast-radius negative control: a benign Connected App's tokens are NOT revoked and its calls continue to succeed.",
+            "preconditions": [
+              "A second, benign Connected App with normal low-volume Bulk API activity."
+            ],
+            "steps": [
+              "Run normal low-volume activity on the benign Connected App during the run.",
+              "Confirm no revocation event targets the benign app's oauth_token_id.",
+              "Confirm the benign app's subsequent calls return 200, not 401."
+            ],
+            "success_criteria": [
+              "No OAuthToken revoke event references the benign Connected App.",
+              "The benign app produces no 401 invalid_token replay row."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scope Connected-App OAuth grants to least privilege and cap Bulk API row/object quotas per integration identity so a stolen token cannot mass-export the CRM.",
+      "Require admin approval + short token lifetimes and refresh-token rotation for third-party Connected Apps (Drift-class integrations), and monitor consented app inventory for drift.",
+      "Pre-stage an XSOAR auto-revoke playbook keyed on Connected-App abuse so response is automated, not a manual runbook."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune an ABIOC on per-Connected-App Bulk API volume and object-diversity rather than hand-authoring a static threshold.",
+      "Alert on export-then-erase sequences (query/queryAll followed by deleteJob) by one oauth_token_id — the anti-forensics tell.",
+      "Validate the closed loop: assert an OAuthToken revoke event for both token types AND a subsequent 401 invalid_token replay for the same oauth_token_id, so the playbook's effect is verified, not assumed."
+    ],
+    "response_playbook": "XSOAR-PB-ConnectedAppOAuthTokenAutoRevoke-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 Threat Brief: Salesloft Drift Integration Used To Compromise Salesforce Instances",
+      "url": "https://unit42.paloaltonetworks.com/threat-brief-compromised-salesforce-instances/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1550.001 — Use Alternate Authentication Material: Application Access Token",
+      "url": "https://attack.mitre.org/techniques/T1550/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1567 — Exfiltration Over Web Service",
+      "url": "https://attack.mitre.org/techniques/T1567/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1070 — Indicator Removal",
+      "url": "https://attack.mitre.org/techniques/T1070/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM / XSOAR — Analytics BIOC (ABIOC) detection + automated response playbooks",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}
