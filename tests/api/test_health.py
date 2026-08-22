@@ -184,6 +184,40 @@ def test_ttp_catalog_zero_is_degraded(monkeypatch):
     assert comp["code"] == "TTP_CATALOG_EMPTY"
 
 
+def test_assertion_catalog_zero_is_degraded(monkeypatch):
+    """An unshipped assertions/ must not read as 'nobody authored any'.
+
+    This is the probe that did not exist while the Dockerfile did not COPY
+    assertions/ — 18 artifacts on disk, 0 in the image, rejected:[], and no
+    component said so. See tests/tools/test_image_ships_runtime_content.py.
+    """
+    import engine.assertions as mod
+    from api import health
+
+    class _EmptyAssertionCatalog:
+        _by_id: dict = {}
+        _rejected: list = []
+
+        def ensure_loaded(self):
+            return self
+
+    monkeypatch.setattr(mod, "catalog", _EmptyAssertionCatalog())
+    comp = health.probe_assertion_catalog()
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "ASSERTION_CATALOG_EMPTY"
+    # The remediation must name the packaging cause, not just the symptom —
+    # that distinction is the whole reason this defect survived.
+    assert "assertions/" in comp["detail"]
+    assert "COPY" in comp["detail"]
+
+
+def test_assertion_catalog_is_a_registered_component():
+    """A probe nobody dispatches is a probe nobody reads."""
+    from api import health
+
+    assert "assertion_catalog" in health.COMPONENT_KEYS
+
+
 def test_uctc_snapshot_absent_is_degraded_not_zero_test_cases(monkeypatch):
     import engine.uctc_registry as mod
     from api import health

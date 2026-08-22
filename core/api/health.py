@@ -194,6 +194,36 @@ def probe_ttp_catalog() -> dict[str, Any]:
     return _ok(count=count)
 
 
+def probe_assertion_catalog() -> dict[str, Any]:
+    """The POS/PLT/AUT corpus — the half of the index scenarios cannot close.
+
+    This probe exists because its absence is what let the gap ship: every other
+    base-dir-relative content directory had a probe saying "confirm the image
+    COPYs it", assertions/ did not, and so 18 authored artifacts loaded as 0 in
+    every deployed image with `rejected: []` and no boot error. An empty
+    catalog and an unshipped one are the same response, which is the reading
+    this probe exists to break.
+    """
+    from engine.assertions import catalog as assertion_catalog  # noqa: PLC0415
+
+    cat = assertion_catalog.ensure_loaded()
+    count = len(cat._by_id)
+    rejected = len(cat._rejected)
+    if count == 0:
+        return _degraded(
+            "ASSERTION_CATALOG_EMPTY",
+            "0 assertions loaded — assertions/ is missing from this deployment "
+            "or every artifact was rejected. GET /api/assertions will serve an "
+            "empty list that reads as 'none authored' rather than 'none "
+            "shipped', and every test case evidenced only by an assertion "
+            "silently loses its evidence. Fix: confirm core/Dockerfile COPYs "
+            "assertions/ and check the boot log for A-* rejections.",
+            count=0,
+            rejected=rejected,
+        )
+    return _ok(count=count, rejected=rejected)
+
+
 def probe_adapter_catalog() -> dict[str, Any]:
     from tools.adapter_catalog import catalog as adapter_catalog  # noqa: PLC0415
 
@@ -639,6 +669,7 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "db",
     "scenario_catalog",
     "ttp_catalog",
+    "assertion_catalog",
     "adapter_catalog",
     "uctc_registry",
     "eal",
@@ -702,6 +733,7 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["db"] = await _aguard("db", probe_db)
     components["scenario_catalog"] = await _aguard("scenario_catalog", probe_scenario_catalog)
     components["ttp_catalog"] = _guard("ttp_catalog", probe_ttp_catalog)
+    components["assertion_catalog"] = _guard("assertion_catalog", probe_assertion_catalog)
     components["adapter_catalog"] = _guard("adapter_catalog", probe_adapter_catalog)
     components["uctc_registry"] = _guard("uctc_registry", probe_uctc_registry)
     components["eal"] = _guard("eal", probe_eal)
