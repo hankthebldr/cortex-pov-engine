@@ -302,6 +302,21 @@ WORKDIR /app
 COPY core/      /app/core/
 COPY scenarios/ /app/scenarios/
 COPY infra/     /app/infra/
+# The POS/PLT/AUT assertion corpus — the second proof mechanism, sibling of
+# scenarios/. AssertionCatalog.ensure_loaded() reads <base>/assertions at first
+# access. Without it the catalog loads 18 -> 0 with rejected:[] , and
+# GET /api/assertions returns an empty list that is indistinguishable from
+# "nobody authored any" — the A-17 guard, the rejected[] surface and every
+# assertion-evidenced TC vanish silently. This is the same class of defect as
+# the health probe that reported {status: ok, count: 0} with no tools/.
+COPY assertions/ /app/assertions/
+# Identity-harness spec. identity_spec._load() reads
+# <base>/spec/identity_harness.json and falls back to a hard-coded list when it
+# is unreadable. The fallback is currently identical to the file, so omitting
+# this changed no behaviour — which is exactly why it went unnoticed. It makes
+# the JSON decoration in every deployed image: edit the authoritative file and
+# the change takes effect in tests (BASE_DIR=repo root) and nowhere else.
+COPY spec/ /app/spec/
 # TTP detection-card corpus + tool-adapter packs. The TtpCatalog and
 # adapter_catalog read these from <base>/detection_scanner/ttps and
 # <base>/tools/packs at boot; without them the catalogs load empty and every
