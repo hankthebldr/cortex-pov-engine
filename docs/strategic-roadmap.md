@@ -23,6 +23,28 @@ or an alignment with a market shift CortexSim should ride.
 > Living section. Updated as phases land so leadership can read
 > "where are we" without scraping the git log. Newest first.
 
+### 2026-08 — CI hardening: adapter-wiring + Tier-C gates (project-init cadence baseline)
+
+Two of the four remaining open items in the consolidated gap backlog
+closed, tightening the CI matrix from 5 to 6 jobs:
+
+- **De-hand-rolling gate.** `scripts/check-adapter-wiring.py` fails CI if
+  any scenario names a tool that has a (non-reference-only) adapter pack
+  but never wires it via `adapter_ref` — the case that silently bypasses
+  the safety/consent + self-install machinery. The one real gap it found
+  (`deepce` in `cdr-003`) is fixed; the gate is green at 0 candidates and
+  now blocks *new* hand-rolled debt.
+- **Tier-C isolated-execution gate.** The pure observed-signal assertion
+  suite is now a dedicated `e2e-isolated` CI job (fast, no docker), giving
+  the "did the agent actually run the TTP" proof a focused red/green signal
+  instead of being buried in the backend image build. The full docker
+  detonation e2e is wired as an opt-in label step, pending live-CI
+  validation.
+
+Remaining backlog: opportunistic CDR/NDR `command:`→`adapter_ref`
+migration, Tier-C docker-e2e promotion, and live-tenant poll-cadence
+tuning. Full detail: `docs/reference/GAP-ANALYSIS.md`.
+
 ### 2026-05 — Detection-content surface (TTP browser trilogy + Navigator export + search)
 
 The Coverage tab is now the operator's detection-content home, not

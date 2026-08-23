@@ -182,16 +182,18 @@ Declarative `ToolAdapter` model — one YAML per security tool under `tools/pack
 
 ## CI & Quality Gates
 
-`.github/workflows/ci.yml` runs a **5-job matrix** on push / PR / manual dispatch:
+`.github/workflows/ci.yml` runs a **6-job matrix** on push / PR / manual dispatch:
 
 - **backend** — Python test suite (`pytest`, runs inside the prod image; 1596 pass / 80 skip as of the 2026-06-08 verification).
 - **agent** — Go beacon `build` + `vet` + `test -race -count=1`.
 - **ui** — vitest + `vite build`.
-- **detection** — detection-corpus validator (140 pass / 0 fail) + deterministic export regeneration check (`sha256sum -c`, SKELETON=0).
-- **adapters** — `scripts/check-adapter-sources.sh`: tier-2 adapter source trees (git submodules) **must exist on disk** (FAIL if missing — GAP-ADAPT-01 guard); tier-4 runtime-fetched misses are WARN only.
+- **detection** — detection-corpus validator (184 pass / 0 fail) + deterministic export regeneration check (`sha256sum -c`, SKELETON=0).
+- **adapters** — `scripts/check-adapter-sources.sh` (tier-2 adapter source trees / git submodules **must exist on disk** — FAIL if missing, GAP-ADAPT-01 guard; tier-4 runtime-fetched misses are WARN only) **plus** `scripts/check-adapter-wiring.py` (de-hand-rolling gate: FAIL if a scenario names a tool that HAS a non-reference-only adapter pack but never wires it via `external_tools[].adapter_ref`; green at 0 candidates).
+- **e2e-isolated** — Tier-C isolated-execution assertion suite (`tests/e2e_isolated/test_tier_c_{assets,isolated_exec}.py` driven by `deploy/tier-c/tier_c_assert.py`; stdlib + pyyaml, no docker) as a hard gate. The docker-gated end-to-end (real SIM-EDR-001 detonation through the runner+sinkhole stack) is an opt-in step behind the `tier-c-e2e` PR label.
 
 `make -n ci` enumerates the local equivalents. Run `scripts/check-adapter-sources.sh`
-standalone to preflight adapter source availability before pushing.
+and `scripts/check-adapter-wiring.py` standalone to preflight adapter source
+availability and wiring before pushing.
 
 ## Cortex Branding
 

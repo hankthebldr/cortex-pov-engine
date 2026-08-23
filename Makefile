@@ -21,7 +21,7 @@ COMPOSE     ?= docker compose
 SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up down build test test-backend test-agent test-ui validate \
-        validate-detection check-adapters ci clean
+        validate-detection check-adapters e2e-tierc ci clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -78,13 +78,18 @@ validate-detection: ## validate.py (0 fail) + export-determinism gate (CI 'detec
 	python3 detection_scanner/scripts/export_artifacts.py
 	git diff --exit-code detection_scanner/exports/
 
-check-adapters: ## tier-2 adapter source preflight (CI 'adapters' job)
+check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
+	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-adapter-wiring.py --list
 
 # -----------------------------------------------------------------------------
 # Everything
 # -----------------------------------------------------------------------------
-ci: test validate ## Run every CI gate (backend + agent + ui + detection + adapters)
+e2e-tierc: ## Tier-C isolated-execution assertion suite (CI 'e2e-isolated' job, no docker)
+	python3 -m pytest tests/e2e_isolated/test_tier_c_assets.py \
+		tests/e2e_isolated/test_tier_c_isolated_exec.py -v --tb=short
+
+ci: test validate e2e-tierc ## Run every CI gate (backend + agent + ui + detection + adapters + e2e-tierc)
 	@echo "All CI gates passed."
 
 clean: ## Remove the built image

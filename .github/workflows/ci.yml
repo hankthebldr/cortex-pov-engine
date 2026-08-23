@@ -152,10 +152,10 @@ jobs:
         run: git diff --exit-code detection_scanner/exports/
 
   # ---------------------------------------------------------------------------
-  # adapters — tool-adapter source preflight.
+  # adapters — tool-adapter source preflight + de-hand-rolling wiring gate.
   # ---------------------------------------------------------------------------
   adapters:
-    name: adapters (tier-2 source preflight)
+    name: adapters (source preflight + wiring)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -167,3 +167,69 @@ jobs:
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
         run: scripts/check-adapter-sources.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install lint deps
+        run: pip install pyyaml
+      - name: Adapter-wiring lint (de-hand-rolling gate)
+        # FAILs if a scenario names a tool that HAS an adapter pack but never
+        # wires it via external_tools[].adapter_ref — the case that silently
+        # bypasses the safety/consent + self-install machinery. Currently green
+        # at 0 candidates; this gate keeps it there.
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+        run: python3 scripts/check-adapter-wiring.py --list
+
+  # ---------------------------------------------------------------------------
+  # e2e-isolated — Tier-C isolated-execution gate.
+  #
+  # The pure assertion suite (deploy/tier-c/tier_c_assert.py driven by reference
+  # expectation specs) is a HARD gate: it proves that when a scenario dispatches
+  # step N the observed-signal contract still holds, WITHOUT needing docker.
+  # It is stdlib + pyyaml only and runs in ~2s, so it runs on every push as a
+  # focused Tier-C signal separate from the monolithic `backend` image build.
+  #
+  # The docker-gated end-to-end (build the runner + sinkhole, detonate a real
+  # SIM-EDR-001 push bundle, assert the observed signals) is opt-in behind the
+  # `tier-c-e2e` PR label until it is validated against live CI — see the
+  # sprint-plan task "Promote Tier-C docker e2e to a default hard gate".
+  # ---------------------------------------------------------------------------
+  e2e-isolated:
+    name: e2e (Tier-C isolated execution)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install test deps
+        run: pip install pytest pyyaml
+      - name: Tier-C assertion suite (hard gate — no docker)
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+        run: |
+          python3 -m pytest \
+            tests/e2e_isolated/test_tier_c_assets.py \
+            tests/e2e_isolated/test_tier_c_isolated_exec.py \
+            -v --tb=short
+      - name: Tier-C docker end-to-end (opt-in — label 'tier-c-e2e')
+        # Only runs when the PR carries the `tier-c-e2e` label. Boots SimCore,
+        # pulls a SIM-EDR-001 bundle, and detonates it through the Tier-C stack;
+        # run-tier-c.sh curls the bundle from the running SimCore (--scenario).
+        if: contains(toJson(github.event.pull_request.labels.*.name), 'tier-c-e2e')
+        env:
+          CORTEXSIM_ENV: development
+        run: |
+          docker build -f core/Dockerfile -t cortexsim:tierc .
+          docker run -d --name simcore -p 8888:8888 \
+            -e CORTEXSIM_ENV=development \
+            -e CORTEXSIM_SECRET="$(openssl rand -hex 32)" \
+            cortexsim:tierc
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8888/api/health && break || sleep 2
+          done
+          deploy/tier-c/run-tier-c.sh --scenario SIM-EDR-001 \
+            --simcore http://localhost:8888 --results "$RUNNER_TEMP/tierc-out"
