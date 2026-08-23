@@ -17,8 +17,14 @@ name: CI
 #               export-determinism gate: regenerate every artifact and assert
 #               `git diff --exit-code detection_scanner/exports/` is clean,
 #               proving the committed exports match the live TTP cards.
-#   adapters  — scripts/check-adapter-sources.sh: tier-2 submodule sources
-#               must exist on disk (tier-4 runtime-fetched misses are WARN).
+#   adapters  — scripts/check-adapter-sources.sh (tier-2 submodule sources must
+#               exist on disk; tier-4 runtime-fetched misses are WARN) AND
+#               scripts/check-adapter-wiring.py (de-hand-rolling gate: FAIL if a
+#               scenario names a tool with a non-reference-only adapter pack but
+#               never wires it via external_tools[].adapter_ref).
+#   e2e-isolated — Tier-C observed-signal assertion suite (no docker) as a hard
+#               gate; the docker detonation e2e is opt-in behind a `tier-c-e2e`
+#               PR label.
 #
 # All jobs run independently and in parallel — a failure in one surfaces a
 # precise gate without masking the others.
