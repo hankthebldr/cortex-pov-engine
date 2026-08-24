@@ -1,17 +1,20 @@
-fastapi==0.111.0
+fastapi==0.141.1
+# starlette is pinned explicitly (fastapi only requires >=0.46.0): 1.6.0 clears
+# the starlette advisories that only have fixes in the 1.x line.
+starlette==1.6.0
 uvicorn[standard]==0.29.0
 sqlalchemy==2.0.30
 aiosqlite==0.20.0
 pydantic==2.7.1
 pydantic-settings==2.2.1
-python-multipart==0.0.9
+python-multipart==0.0.32
 aiofiles==23.2.1
 pyyaml==6.0.1
 httpx==0.27.0
 psutil==5.9.8
 greenlet==3.4.0
-jinja2==3.1.4
-cryptography==43.0.1
-pytest==8.3.3
-pytest-asyncio==0.24.0
+jinja2==3.1.6
+cryptography==50.0.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
 jsonschema==4.23.0
