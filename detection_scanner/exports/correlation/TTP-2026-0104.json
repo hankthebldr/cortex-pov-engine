@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1621",
+    "T1059",
+    "T1071"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(MP-008 Identity Sign-In Anomaly on a Privileged Account) AND ABIOC(MP-008 Hands-on-Keyboard Endpoint Behavioral Deviation) AND XQL(MP-008 C2 Egress Session Burst From the Compromised Host) joined on the shared identity-host-session entity chain within a 300-second correlation window \u2014 fuses the ITDR sign-in anomaly, the EDR hands-on-keyboard behavioral deviation, and the NDR C2 egress into ONE incident_id spanning >= 3 planes (ITDR + EDR + NDR), producing the anomalous-auth -> interactive-shell-plus-discovery -> C2-egress causality chain.",
+      "name": "Identity-to-Endpoint-to-Network Hands-on-Keyboard Campaign Stitch",
+      "rule_id": "CR-MP-0013",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0104"
+}

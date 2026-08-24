@@ -9,10 +9,14 @@ detection_types:
   - XQL
   - Correlation
 
-uc_ref: UCS-CDR-09
-tc_ref: TC-CDR-09
-uc_name: "Microservices Behavioral Anomaly Detection via Cortex ABIOC"
-tc_name: "Sock-Shop Baseline + Behavioral Deviation Detection"
+uc_ref: UCS-CITH-04
+tc_ref: TC-CITH-04
+tc_refs:
+  - TC-CITH-04
+  - TC-CDR-01
+pov_scenario_id: POV-SC-002
+uc_name: "Accelerated Investigations & Threat Hunting"
+tc_name: "Validate AI Runtime Security Analytics — AI-powered runtime analytics detect anomalous cloud workload behavior without signature dependency"
 
 mitre_tactic: "TA0007"
 mitre_tactic_name: "Discovery"
@@ -61,6 +65,20 @@ success_criteria: |
   static BIOC was authored for, anchored to its privileged-exec causality chain.
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The Causality Group Owner is the container runtime (containerd-shim) that owns
+# the catalogue pod's process tree — NOT the cortexsim beacon. The baselined
+# catalogue service is a single long-running process under the shim; the injected
+# deviations are exec'd shells the shim reparents. step-01 deploys the mesh under
+# the runtime (root). steps 02 + 03 are two exec'd-shell deviations in the SAME
+# catalogue container (shared_entity on container_id), and step-04 correlates
+# them — the two ABIOCs fuse on the shared container/causality within the window.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+correlation_window_seconds: 600
+stitching_key: container_id
+
 steps:
   - id: step-01
     name: "Deploy Sock-Shop microservices mesh and let Cortex learn the baseline"
@@ -77,6 +95,7 @@ steps:
         description: "Cortex learns the Sock-Shop east-west service-mesh baseline (per-service peer set) over the baselining window — precondition for behavioral-deviation detection"
         ttp_ref: "TTP-2026-0080"
         detection_id: xql-cdr-009-sock-shop-baseline-service-mesh-learned
+    platforms: ["k8s", "container", "linux"]
 
   - id: step-02
     name: "Inject anomalous east-west connection spike from a baselined microservice"
@@ -94,6 +113,10 @@ steps:
         description: "A baselined Sock-Shop microservice fans out east-west connections to peers absent from its learned service-mesh profile — auto-tuned ABIOC fires on the deviation, anchored to the privileged-exec causality chain"
         ttp_ref: "TTP-2026-0080"
         detection_id: abioc-cdr-009-anomalous-east-west-connection-spike-from-baselined-microservice
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["container", "linux", "k8s"]
 
   - id: step-03
     name: "Inject anomalous container process-tree deviation from the learned baseline"
@@ -115,6 +138,10 @@ steps:
         description: "The behavioral deviation surfaces in endpoint telemetry (exec-spawned shell process starts on the Sock-Shop node) — validation that the deviation reached xdr_data"
         ttp_ref: "TTP-2026-0080"
         detection_id: xql-cdr-009-behavioral-deviation-surfaced-in-endpoint-telemetry
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["container", "linux", "k8s"]
 
   - id: step-04
     name: "Stitch the two ABIOCs into a single behavioral-anomaly incident"
@@ -128,6 +155,10 @@ steps:
         description: "Correlation rule CR-CDR-0009 stitches the east-west connection-spike ABIOC and the process-tree-deviation ABIOC into one behavioral-anomaly incident with the privileged-exec causality chain"
         ttp_ref: "TTP-2026-0080"
         detection_id: CR-CDR-0009
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    platforms: ["k8s", "container"]
 
 cleanup:
   commands:

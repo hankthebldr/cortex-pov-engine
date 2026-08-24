@@ -1,0 +1,94 @@
+# POS-AISP-001 — AI asset discovery against the ai-spm fixture.
+#
+# Six AI-ecosystem resources are planted unconditionally (training-data bucket,
+# over-privileged SageMaker execution role, SageMaker model, SageMaker endpoint
+# configuration, SageMaker endpoint, OpenAI proxy Lambda). The shadow-GPU
+# instance is a SEVENTH and is opt-in (`enable_shadow_gpu`, default false), so
+# the bar is six — an assertion that required seven would go red on every
+# default deployment, which is manufactured failure, not measurement.
+#
+# The two remaining `CortexSimAISPMFinding` tag sites in the module are S3
+# OBJECT tags (the PII fixture and the pickled model), not AWS resources. A
+# posture inventory enumerates resources, not object tags, so they are
+# deliberately excluded from every threshold in this pack.
+assertion_id: POS-AISP-001
+name: AI asset inventory — six planted AI-ecosystem resources discovered
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: AI_SPM
+
+uc_ref: UCS-AISP-01
+tc_ref: TC-AISP-01
+tc_refs: [TC-AISP-01]
+uc_name: "AI Security Posture Management"
+tc_name: "Validate AI Asset Discovery & Inventory"
+
+moat_tier: MOAT
+methodology_family: F4
+primary_kpi: "Asset Discovery Coverage"
+success_criteria: |
+  All six unconditionally planted AI-ecosystem resources appear in the AI asset
+  inventory within one scan cycle.
+
+scope_limitations: >
+  Proves discovery of six AWS AI-ecosystem resources in ONE account. It does NOT
+  prove the index row's multi-cloud claim — no Vertex AI or Azure OpenAI fixture
+  exists, and Bedrock is not planted, so "SageMaker, Bedrock, Vertex AI, OpenAI
+  integrations discovered across multi-cloud" is evidenced only for the
+  SageMaker and OpenAI-integration halves on AWS. It counts assets; it does NOT
+  prove the inventory shows model type, data sources, API exposure or access
+  patterns, none of which is queried. The headline shadow-AI finding
+  (`shadow-ai-on-unmanaged-gpu`) is opt-in and NOT part of the bar, so a POV that
+  wants it must set `enable_shadow_gpu=true` and read the measured count, which
+  is always printed. Dataset and field names are convention-named and unconfirmed
+  against a live tenant.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/ai-spm
+  detail: >
+    terraform apply the `ai-spm` module into the account Cortex Cloud AI-SPM is
+    connected to. `terraform output findings_summary` reports
+    `total_assets_planted` — 6 with the default `enable_shadow_gpu=false`, 7 with
+    it on. Wait one AI-SPM scan cycle before evaluating.
+
+checks:
+  - check_id: chk-01
+    title: Six planted AI-ecosystem resources present in the AI asset inventory
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = ai_spm_findings
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter tags contains "CortexSimAISPMFinding"
+        | comp count() as findings by resource_id
+        | filter findings >= 1
+        | fields resource_id, findings
+      distinct_key: resource_id
+    threshold:
+      kpi: AI assets discovered
+      op: ">="
+      value: 6
+      unit: assets
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-AISP-01 "Qualitative pass". The ai-spm module plants
+        six AI-ecosystem AWS resources unconditionally and reports the count as
+        `total_assets_planted` in its own Terraform output, so "AI/ML resources
+        discovered" has an objective floor of six. The opt-in seventh is excluded
+        so the bar does not depend on a variable the DC may not have set.
+    negative_control:
+      description: >
+        The AI-SPM connector discovers SageMaker natively but treats the Lambda
+        that proxies OpenAI as ordinary compute, so the third-party AI
+        integration and the training-data bucket never enter the AI inventory —
+        four of six.
+      measured_value: 4
+
+tags: [posture, ai-spm, aws, asset-discovery, planted-fixture]
+author: "Henry Reed"

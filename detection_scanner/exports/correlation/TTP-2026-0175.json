@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1587.001",
+    "T1588.002",
+    "T1583.001",
+    "T1566.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(Capability Intel Landed Strictly Before Any Estate Contact With the Staging Host) AND ABIOC(First Estate Contact With Pre-Weaponization Staging Infrastructure) AND XQL(Campaign Attribution and Actor Context Attach to the Live Match) on the same indicator value \u2014 one 'we saw it before it was pointed at you' case. The SEQUENCING assertion is the rule's spine and not a nicety: lead_seconds must be strictly positive, comparing the indicator's ingest timestamp against the estate's first-contact timestamp. An indicator ingested AFTER the traffic it appears to have caught is a retrospective lookup wearing prevention's clothes, it is easy to present convincingly, and the only thing separating the two in a readout is this comparison. Two controls sit alongside. The LOW-CONFIDENCE CONTROL from the same TAXII batch must be scored and NOT promoted: a platform that promotes everything in a feed has a pipe rather than a confidence model, and that is invisible unless something in the batch was supposed to be suppressed. The RETRO-HUNT leg must fire on intel arrival and report what it found, because the realistic case is that someone in the estate touched the staging infrastructure days before anyone thought to look.",
+      "name": "Pre-Weaponization Capability Intel Matched on First Estate Contact",
+      "rule_id": "CR-TIM-0009",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0175"
+}

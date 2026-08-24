@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UCS-EDR-05
-tc_ref: TC-EDR-05
-uc_name: "Lateral Movement Detection"
-tc_name: "SSH-Based Lateral Movement and Network Tunneling"
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-04
+tc_refs:
+  - TC-IR-04
+  - TC-EDR-05
+pov_scenario_id: POV-SC-039
+uc_name: "Incident Response"
+tc_name: "Validate analytics detection rules trigger on simulated lateral movement patterns"
 
 mitre_tactic: "TA0008"
 mitre_tactic_name: "Lateral Movement"
@@ -27,6 +31,18 @@ additional_techniques:
 
 threat_report: "Unit42 - Linux Threat Landscape Report 2024"
 threat_report_url: "https://unit42.paloaltonetworks.com/2024-linux-threat-landscape/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The foothold is a compromised web service: apache2 (running as www-data)
+# spawns the reverse shell that performs internal recon, scanning, SSH abuse
+# and tunnelling. apache2 is the Causality Group Owner; every step runs under
+# the dropped www-data identity and traces its lineage back to that daemon, so
+# the sensor keys detections on causality_actor_process_image_name (the web
+# daemon) + actor_effective_username (www-data) rather than the beacon. step-01
+# anchors the www-data session; steps 2..n are its process-lineage children.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
 
 execution_identity:
   default: www-data
@@ -82,6 +98,11 @@ steps:
       echo '[*] Network reconnaissance complete'
     identity: www-data
     mitre_technique: "T1016"
+    # Root step: the www-data reverse shell's first action, owned by apache2.
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'ipconfig /all & route print & arp -a'
+      macos: 'ifconfig; netstat -rn; arp -a'
     expected_detections:
       - plane: EDR
         type: XQL
@@ -100,6 +121,13 @@ steps:
       echo '[*] Service discovery scan complete'
     identity: www-data
     mitre_technique: "T1046"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'foreach ($p in 22,80,443,3306,5432,8080,8888) { Test-NetConnection 127.0.0.1 -Port $p -WarningAction SilentlyContinue }'
+      macos: 'for port in 22 80 443 3306 5432 8080 8888; do nc -z -G 1 127.0.0.1 $port && echo "localhost:$port OPEN"; done'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -123,6 +151,13 @@ steps:
       echo '[*] SSH lateral movement simulation complete'
     identity: www-data
     mitre_technique: "T1021.004"
+    causality:
+      parent_step: "step-02"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no www-data@127.0.0.1 whoami'
+      macos: 'ssh -o BatchMode=yes -o StrictHostKeyChecking=no www-data@127.0.0.1 whoami'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -151,6 +186,13 @@ steps:
       echo '[*] SSH SOCKS proxy tunnel simulation complete'
     identity: www-data
     mitre_technique: "T1572"
+    causality:
+      parent_step: "step-03"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'ssh -N -L 8443:127.0.0.1:443 localhost'
+      macos: 'ssh -N -D 1080 localhost'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -175,6 +217,13 @@ steps:
       echo '[*] Remote system discovery complete'
     identity: www-data
     mitre_technique: "T1018"
+    causality:
+      parent_step: "step-04"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'type C:\Windows\System32\drivers\etc\hosts & nslookup %USERDNSDOMAIN%'
+      macos: 'cat /etc/hosts; cat /etc/resolv.conf; dscacheutil -q host'
     expected_detections:
       - plane: EDR
         type: XQL

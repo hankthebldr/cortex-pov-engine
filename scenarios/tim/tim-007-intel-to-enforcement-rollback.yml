@@ -1,0 +1,247 @@
+scenario_id: SIM-TIM-007
+name: "TIM — Intel-to-Enforcement Rollback (A Withdrawn Indicator Must Retract From the EDL and Restore Traffic Unattended)"
+version: "1.0"
+status: active
+
+plane: TIM
+detection_types:
+  - XQL
+  - BIOC
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UCS-XTI-02
+tc_ref: TC-XTI-04
+pov_scenario_id: POV-SC-076
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Demonstrate enforcement rollback when an indicator is withdrawn or proves false-positive"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# The index row carries NO MITRE mapping, and that is correct: this is a
+# defender-vantage control test, not adversary tradecraft. The technique below
+# labels the TRAFFIC SHAPE the control beacon produces — HTTP(S) callbacks to a
+# single FQDN — because that is the shape the EDL either blocks or does not.
+# There is no adversary here; the destination is a benign, lab-owned control
+# domain deliberately promoted and then withdrawn, exactly as the index's
+# simulation_input specifies ("Promote then withdraw a benign control domain").
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1071.001"
+mitre_technique_name: "Application Layer Protocol: Web Protocols"
+
+threat_report: "Palo Alto Networks TechDocs — Cortex XSIAM Threat Intelligence Management: indicator lifecycle and External Dynamic List enforcement"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+required_content:
+  - repo: "PaloAltoNetworks/mocktaxii"
+
+infra_modules_needed:
+  - base
+  - tim
+  - ndr
+
+external_tools: []
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# Defender-vantage, single-host, four-phase control test. One operator session
+# on one estate host owns the whole chain: the CGO is the curl process that
+# issues both beacon phases. The pivot ANCHOR across every step is the control
+# FQDN itself (shared_entity) — phase A and phase B are the SAME request to the
+# SAME destination, separated only in time, which is what makes the deny->allow
+# transition attributable to the withdrawal and to nothing else. Step-04 carries
+# a `temporal` pivot rather than `shared_entity` because its whole claim is the
+# ORDERING: the allow must follow the deny, or there is no rollback to observe.
+cgo_anchor:
+  image_name: "curl"
+  primary_username: "container-runtime"
+
+steps:
+  # ── PRE-FLIGHT — the anti-vacuous guard ───────────────────────────────────
+  # Without this step the rollback proof is meaningless: if the promote leg
+  # never worked, "traffic to the control FQDN is allowed" is the tenant's
+  # steady state and phase B would pass on a platform that never enforced
+  # anything. This step is what makes the later allow mean something.
+  - id: step-01
+    name: "Pre-flight — confirm the benign control FQDN is a PROMOTED indicator carried on the enforcement EDL"
+    command: |
+      ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
+      curl -sf "http://localhost:9000/taxii2/" -H 'Accept: application/taxii+json;version=2.1' | head -c 400
+      echo "[CortexSim][SAFE-MODE] SIM-TIM-007 control indicator armed and promoted: rollback-control.${ZONE}"
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "Pre-flight guard — the benign control FQDN is present in threat_intel with a PROMOTED lifecycle state and an EDL binding. If this returns nothing the promote leg never landed, and every downstream allow is the tenant's steady state rather than a rollback."
+        ttp_ref: "TTP-2026-0168"
+        detection_id: xql-sim-tim-007-control-indicator-promoted-to-the-edl
+
+  # ── PHASE A — enforcement is live ─────────────────────────────────────────
+  - id: step-02
+    name: "Phase A — beacon to the control FQDN while the indicator is promoted; sessions must be DENIED at the enforcement point"
+    command: |
+      ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
+      TARGET="rollback-control.${ZONE}"
+      for i in 1 2 3; do
+        curl -s -o /dev/null -w "phase-a attempt ${i} http=%{http_code} exitcode=" \
+          --max-time 5 "http://${TARGET}/health" || true
+        echo "$?"
+        sleep 2
+      done
+      echo 'cortexsim-tim-007-phase-a-blocked-beacons-emitted'
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    platforms: ["linux", "container", "windows"]
+    platform_variants:
+      windows: 'for ($i=1; $i -le 3; $i++) { try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 "http://rollback-control.cortexsim-tim.internal/health" | Out-Null } catch { $_.Exception.Message }; Start-Sleep -Seconds 2 }'
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: NDR
+        type: BIOC
+        description: "The estate host's session to the feed-matched control FQDN is DENIED / RESET at the enforcement point while the indicator is promoted — the intel-to-enforcement loop is live and observable in the firewall's own action field."
+        ttp_ref: "TTP-2026-0168"
+        detection_id: bioc-sim-tim-007-feed-matched-control-fqdn-session-denied-at-the-enforcement-point
+      - plane: NDR
+        type: XQL
+        description: "Phase A validation — one or more sessions to the control FQDN carry a deny/reset/drop action while the indicator is promoted. This is the baseline the rollback is measured against."
+        ttp_ref: "TTP-2026-0168"
+        detection_id: xql-sim-tim-007-phase-a-sessions-to-the-control-fqdn-denied-while-promoted
+
+  # ── OPERATOR GATE — the withdrawal ────────────────────────────────────────
+  # The engine does NOT withdraw the indicator: that is a WRITE against the
+  # customer's TIM, and CortexSim is read-only there. The DC performs it in the
+  # console; the step asserts the withdrawal was recorded, which is also the
+  # "full audit trail" half of the index's expected_signal.
+  - id: step-03
+    name: "Operator gate — the DC withdraws the control indicator in Cortex TIM; the withdrawal must be recorded"
+    command: |
+      ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
+      echo "[CortexSim] OPERATOR ACTION REQUIRED — withdraw the indicator rollback-control.${ZONE} in Cortex TIM now."
+      echo "[CortexSim] CortexSim performs no write against the tenant. Waiting out the EDL refresh interval."
+      sleep 30
+      echo 'cortexsim-tim-007-indicator-withdrawal-window-elapsed'
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: TIM
+        type: XQL
+        description: "The withdrawal is recorded against the SAME indicator value — lifecycle state moved off PROMOTED and the intel audit trail carries the actor and timestamp. Asserted as a positive record rather than as the absence of the promoted row, because 'no rows' is also what an unreachable dataset returns."
+        ttp_ref: "TTP-2026-0168"
+        detection_id: xql-sim-tim-007-indicator-withdrawal-recorded-in-the-intel-audit-trail
+
+  # ── PHASE B — enforcement must have retracted ─────────────────────────────
+  - id: step-04
+    name: "Phase B — the IDENTICAL beacon replays to the SAME FQDN; sessions must now be ALLOWED with no firewall commit between phases"
+    command: |
+      ZONE="${TIM_ZONE:-cortexsim-tim.internal}"
+      TARGET="rollback-control.${ZONE}"
+      for i in 1 2 3; do
+        curl -s -o /dev/null -w "phase-b attempt ${i} http=%{http_code} exitcode=" \
+          --max-time 5 "http://${TARGET}/health" || true
+        echo "$?"
+        sleep 2
+      done
+      echo 'cortexsim-tim-007-phase-b-restored-beacons-emitted'
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    platforms: ["linux", "container", "windows"]
+    platform_variants:
+      windows: 'for ($i=1; $i -le 3; $i++) { try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 "http://rollback-control.cortexsim-tim.internal/health" | Out-Null } catch { $_.Exception.Message }; Start-Sleep -Seconds 2 }'
+    causality:
+      parent_step: step-02
+      pivot: temporal
+    expected_detections:
+      - plane: NDR
+        type: XQL
+        description: "Phase B validation — sessions to the SAME control FQDN now carry an allow action, and the earliest allow is later than the recorded withdrawal. The request is byte-identical to phase A and no firewall policy was committed between the phases, so the only variable is the indicator's lifecycle state."
+        ttp_ref: "TTP-2026-0168"
+        detection_id: xql-sim-tim-007-phase-b-sessions-to-the-same-fqdn-allowed-after-withdrawal
+
+  # ── TERMINAL — one deny→allow transition, attributable to the withdrawal ──
+  - id: step-05
+    name: "Terminal — CR-TIM-0007 fuses phase A and phase B on the same destination into ONE enforcement-rollback assertion"
+    command: "echo cortexsim-tim-007-cr-tim-0007-stitched-enforcement-rollback-transition"
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: ANALYTICS
+        type: Correlation
+        description: "Stitch — the phase-A denies and the phase-B allows to the same dst_fqdn are fused into exactly ONE deny->allow transition, gated on the recorded withdrawal falling between them. An allow with no preceding deny is rejected by the rule, which is what blocks a vacuous pass on a tenant that never enforced anything."
+        ttp_ref: "TTP-2026-0168"
+        detection_id: CR-TIM-0007
+      - plane: ANALYTICS
+        type: XQL
+        description: "Rollback-completeness measurement — the share of post-withdrawal sessions to the control FQDN that are allowed. Returned as a NUMBER, not filtered to the passing range, so a partially-retracted EDL reports 40% rather than being indistinguishable from a tenant whose traffic never reached the firewall at all."
+        ttp_ref: "TTP-2026-0168"
+        detection_id: xql-sim-tim-007-enforcement-rollback-completeness
+
+cleanup:
+  commands:
+    - "echo '[CortexSim] SIM-TIM-007 cleanup — no artifacts written on the endpoint (HTTP GETs only).'"
+    - "echo '[CortexSim] OPERATOR: re-promote or delete the control indicator in Cortex TIM to return the tenant to its starting state.'"
+
+author: "Henry Reed"
+created: "2026-08-01"
+last_updated: "2026-08-01"
+tags:
+  - tim
+  - threat-intel
+  - enforcement-reversibility
+  - edl
+  - intel-to-enforcement
+  - rollback
+  - correlation
+
+validation_methodology: "Enforcement Reversibility — Deny/Allow Transition on a Withdrawn Indicator"
+methodology_family: "F5"
+primary_kpi: "Automation Rate"
+threshold:
+  kpi: "Automation Rate"
+  op: "="
+  value: 100
+  unit: "%"
+success_criteria: |
+  A benign, lab-owned control FQDN is promoted as a TIM indicator and bound to
+  the enforcement EDL (step-01 proves the promote leg landed). Beacons to it are
+  DENIED at the firewall while the indicator is live. The DC then withdraws the
+  indicator in the console — CortexSim performs no write — and the withdrawal is
+  recorded in the intel audit trail. The IDENTICAL beacon then replays to the
+  SAME FQDN with no firewall policy commit in between, and every session is
+  ALLOWED. CR-TIM-0007 fuses the two phases into exactly ONE deny->allow
+  transition whose allow timestamps follow the recorded withdrawal.
+
+  F5 pass = 100% of post-withdrawal sessions to the control FQDN are allowed.
+  The scenario FAILS, and each failure is a distinct customer finding, when:
+  phase B still returns denies (a stale EDL entry — the rollback did not land,
+  which is the failure customers actually fear and the reason they refuse to run
+  the loop unattended); phase A returns no denies (nothing was enforced, so
+  there is no rollback to demonstrate and the pre-flight guard has caught a
+  broken promote leg); or the correlation sees allows with no preceding deny
+  (a vacuous pass, blocked at the rule).
+moat_tier: "LEAD"
+correlation_window_seconds: 1800
+required_planes_in_incident:
+  - TIM
+  - NDR
+stitching_key: dst_fqdn

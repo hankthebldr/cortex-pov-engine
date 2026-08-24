@@ -14,8 +14,14 @@ ui/dist/
 
 # Build artifacts
 bin/cortexsim-agent
+# `make agent-dist` drops ~21 MB of cross-compiled beacons here; the image bakes
+# its own copy from the Dockerfile agent-builder stage, so these are never tracked.
+agent-dist/
 core/static/assets/
 core/static/index.html
+# Beacon artifacts published into the static mount by
+# scripts/lab/publish-agent.sh (native mode). Build output, never source.
+core/static/agent/
 
 # Data
 data/
@@ -75,3 +81,22 @@ detection_scanner/ttps/_drafts/*
 ui/.claude/
 
 
+
+# Cross-compiled beacon matrix served by GET /api/agents/binary. ~21 MB of
+# build output produced by `make agent-dist` / the Dockerfile agent-builder
+# stage — regenerable, never committed.
+agent-dist/
+
+# Static-musl Rust tool matrix (signalbench/ackbarx/xdrtop) produced by
+# `make rust-dist` / scripts/build-rust-dist.sh. ~34 MB of regenerable build
+# output, exactly like agent-dist/ above — never committed.
+rust-dist/
+
+# Local landing zone for inbound handoff packages (spreadsheet exports, plans).
+# Whatever survives triage is promoted into docs/ by hand — the drop itself is
+# never committed, because its payload duplicates what the promotion already
+# tracked (the v2.2 drop was 8 CSVs byte-identical to _v2.2-source/).
+handoff/
+
+# Built beacon binaries published by scripts/lab/publish-agent.sh
+dist/agent/

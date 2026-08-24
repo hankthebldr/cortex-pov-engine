@@ -1,0 +1,63 @@
+title: "AWS Credential & Secret Harvesting Behavioral Chain \u2014 CloudTrail (SIM-CDR-020) \u2014 Suspicious secrets dump activity"
+id: ttp-2026-0155-abioc-01
+status: experimental
+description: |
+  ABIOC — behavioral-ML anomaly: a single IAM identity reads an unusually high volume of AWS Secrets Manager secrets in a short window (a 'secrets dump'), well above the identity's learned baseline. Keyed on the cloud_audit_logs dataset (AWS CloudTrail control-plane events normalised to the XDM cloud-audit schema).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS"
+    | filter event_source = "secretsmanager.amazonaws.com"
+    | filter event_name in ("GetSecretValue", "BatchGetSecretValue", "ListSecrets")
+    | filter isnull(error_code)
+    | comp count() as retrieval_calls by user_identity_arn, source_ip_address
+    | filter retrieval_calls >= 20
+    | fields user_identity_arn, source_ip_address, retrieval_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1555/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1555
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AWS Credential & Secret Harvesting Behavioral Chain \u2014 CloudTrail (SIM-CDR-020) \u2014 AWS SSM parameters retrieval"
+id: ttp-2026-0155-abioc-02
+status: experimental
+description: |
+  ABIOC — behavioral-ML anomaly: a single IAM identity retrieves an unusually high volume of SSM Parameter Store parameters (with_decryption=true, exposing tokens/keys held as SecureString) in a short window, above the identity's learned baseline. Keyed on the cloud_audit_logs dataset.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter cloud_provider = "AWS"
+    | filter event_source = "ssm.amazonaws.com"
+    | filter event_name in ("GetParameter", "GetParameters", "GetParametersByPath")
+    | filter with_decryption = true and isnull(error_code)
+    | comp count() as retrieval_calls by user_identity_arn, source_ip_address
+    | filter retrieval_calls >= 25
+    | fields user_identity_arn, source_ip_address, retrieval_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1528/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1528
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

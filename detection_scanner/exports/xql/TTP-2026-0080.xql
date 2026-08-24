@@ -10,10 +10,11 @@
 dataset = network_story
 | filter action_local_ip != null and action_remote_ip != null
 | filter actor_process_image_name in ("sh", "bash", "nc", "curl")
-| comp count_distinct(action_remote_ip) as distinct_peers by actor_effective_username, agent_hostname
+| filter causality_actor_process_image_name in ("sh", "bash")
+| comp count_distinct(action_remote_ip) as distinct_peers by actor_effective_username, causality_actor_process_image_name, container_id, agent_hostname
 | filter distinct_peers >= 5
 | sort desc distinct_peers
-| fields agent_hostname, actor_effective_username, distinct_peers
+| fields agent_hostname, container_id, causality_actor_process_image_name, actor_effective_username, distinct_peers
 
 ## ABIOC — CDR-009 Anomalous Container Process-Tree Deviation from Learned Baseline (behavioral-ML, causality-anchored)
 # severity: high
@@ -25,9 +26,10 @@ dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("sh", "bash")
 | filter action_process_image_name in ("curl", "nc", "nmap", "python3", "apt", "apk", "ps")
-| comp count() as anomalous_children by agent_hostname, actor_process_image_name
+| filter causality_actor_process_image_name in ("sh", "bash")
+| comp count() as anomalous_children by agent_hostname, container_id, causality_actor_process_image_name, actor_process_instance_id
 | filter anomalous_children >= 1
-| fields agent_hostname, actor_process_image_name, anomalous_children
+| fields agent_hostname, container_id, causality_actor_process_image_name, actor_process_instance_id, anomalous_children
 
 ## VALIDATION — CDR-009 Sock-Shop Baseline Service-Mesh Learned
 # purpose: validation

@@ -1,0 +1,466 @@
+{
+  "id": "TTP-2026-0124",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T02:49:43+00:00",
+    "updated_at": "2026-07-24T02:49:43+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "cross-plane-stitch",
+      "cloud-identity",
+      "azurehound",
+      "bloodhound",
+      "actor-curious-serpens",
+      "actor-peach-sandstorm",
+      "entra-id",
+      "microsoft-graph",
+      "correlation",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-MICROSOFT",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "azure",
+        "saas-m365"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "AzureHound Cloud-Identity Enumeration Stitch: Token Theft -> Non-Interactive Entra Sign-In -> Bulk Microsoft Graph Discovery (SIM-MP-014)",
+    "summary": "A stolen cloud refresh token, an anomalous non-interactive Entra ID sign-in from an unusual geo, and an AzureHound-user-agent Microsoft Graph enumeration burst collapse to one XSIAM incident on a shared session identity — proving cross-plane causality across endpoint, cloud identity, and cloud-audit telemetry instead of three low-fidelity alerts.",
+    "description": "Curious Serpens (Peach Sandstorm), Void Blizzard, and Storm-0501 have all been observed misusing AzureHound — the Go data collector for BloodHound — for post-compromise discovery of a target's Microsoft Entra ID tenant. The chain begins on the endpoint: an infostealer such as Raccoon Stealer or Redline extracts cookies, credentials, and session tokens from a user's browser credential stores (T1528). That stolen session token is replayed against login.microsoftonline.com to obtain a non-interactive sign-in (T1078.004) that Entra records in its non-interactive sign-in logs — frequently from an unusual geography (impossible travel from the identity's baseline) because the operator is elsewhere. AzureHound then drives a high-volume Microsoft Graph enumeration burst (`azurehound list users|groups|service-principals|role-assignments|key-vaults|storage-accounts`) that shows up in Microsoft Graph activity logs carrying the distinctive `azurehound/<version>` User-Agent (e.g. `azurehound/v2.6.0`), typically preceded by a `GET /v1.0/organization` reachability probe and exceeding 500 Graph calls/hour. The output lands on disk as `users.json`, `groups.json`, etc. for ingest into BloodHound. A critical blind spot: the Azure Resource Manager list calls AzureHound makes against management.azure.com (storage-accounts, key-vaults, virtual-machines) are NOT recorded in Azure Activity Logs, so the Graph-side volume and the non-interactive sign-in are the load-bearing signals. This card is CORRELATION-terminal: two ABIOCs (anomalous non-interactive sign-in, AzureHound Graph enumeration burst) plus an endpoint token-theft BIOC are stitched by CR-MP-0014 on the shared session identity (endpoint actor -> Entra user_principal_name -> cloud_audit identity_name, joined via signin_activity_id / caller_ip) into a single escalation incident whose causality chain spans the endpoint, cloud-identity, and cloud-audit planes.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Curious Serpens",
+        "aliases": [
+          "Peach Sandstorm"
+        ]
+      },
+      {
+        "name": "Void Blizzard"
+      },
+      {
+        "name": "Storm-0501"
+      }
+    ],
+    "campaigns": [
+      "Iranian-nexus cloud-identity discovery against Entra ID tenants (2024-2026)",
+      "Ransomware operator hybrid multi-tenant Entra enumeration"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2024-04-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1528",
+        "name": "Steal Application Access Token",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1087",
+        "subtechnique_id": "T1087.004",
+        "name": "Account Discovery: Cloud Account",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1069",
+        "subtechnique_id": "T1069.003",
+        "name": "Permission Groups Discovery: Cloud Groups",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1526",
+        "name": "Cloud Service Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1580",
+        "name": "Cloud Infrastructure Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Logon Session: Logon Session Creation",
+      "Cloud Service: Cloud Service Enumeration",
+      "Application Log: Application Log Content",
+      "File: File Access"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-014 — AzureHound cloud-identity enumeration cross-plane stitch (token theft -> non-interactive Entra sign-in -> bulk Graph discovery).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the jumpbox so endpoint file-access and process telemetry reaches xdr_data.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      },
+      {
+        "description": "Entra ID sign-in logs and Microsoft Graph activity logs ingested into XSIAM (Graph activity logging is GA April 2024 but disabled by default).",
+        "check_command": "echo 'confirm msft_azure_ad_signin and cloud_audit_logs datasets are ingesting in the tenant'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: no real token theft, no real Entra/Graph egress. All signals are\n# modelled with local marker files under the identity harness so XSIAM sees the\n# process/file causality shape without touching a real cloud tenant.\nset -euo pipefail\nWORK=\"${WORK_DIR:-/tmp/cortexsim_mp014}\"\nmkdir -p \"$WORK\"\n# (1) endpoint token theft — model an infostealer sweeping browser credential\n# stores (saved logins + cookie/session-token DBs) with a non-browser process\nprintf 'SAFE-MODE-COOKIE-MARKER-NOT-A-REAL-SESSION-TOKEN\\n' > \"$WORK/cookies.sqlite\"\nprintf 'SAFE-MODE-LOGIN-MARKER-NOT-A-REAL-CREDENTIAL\\n' > \"$WORK/Login Data\"\ngrep -a 'SAFE-MODE' \"$WORK/cookies.sqlite\" \"$WORK/Login Data\" | head -2\n# (2) model AzureHound Graph enumeration output artifacts on disk\nfor obj in users groups service-principals role-assignments key-vaults storage-accounts; do\n  printf '{\"marker\":\"SAFE-MODE azurehound list %s\"}\\n' \"$obj\" > \"$WORK/${obj}.json\"\ndone\necho '[CortexSim] SIM-MP-014 chain modelled: token-cache read + azurehound-style JSON artifacts staged.'",
+      "input_variables": [
+        {
+          "name": "WORK_DIR",
+          "type": "path",
+          "default": "/tmp/cortexsim_mp014",
+          "description": "Scratch directory the SAFE-MODE browser-credential-store markers and modelled AzureHound JSON artifacts are written to."
+        }
+      ],
+      "timeout_seconds": 420
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "A non-browser process reading multiple browser credential/cookie stores under the run identity (models infostealer browser session-token theft).",
+        "expected_value": "action_file_path contains \"cookies.sqlite\" or action_file_path contains \"Login Data\""
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "A non-interactive Entra ID sign-in from an unusual geography (impossible travel from the identity's baseline) on the same user principal.",
+        "expected_value": "is_interactive = false and location_country deviates from the identity's learned sign-in baseline"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "A burst of Microsoft Graph GET calls carrying the azurehound User-Agent exceeding 500 requests/hour.",
+        "expected_value": "lowercase(user_agent) contains \"azurehound\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf \"${WORK_DIR:-/tmp/cortexsim_mp014}\"; echo '[CortexSim] SIM-MP-014 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "azurehound",
+        "context": "AzureHound emits a distinctive HTTP User-Agent 'azurehound/<version>' (e.g. azurehound/v2.6.0) on its Microsoft Graph and Azure Resource Manager calls. Match case-insensitively; version suffix varies.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-014 Browser Session-Token and Cookie Theft by Non-Browser Process",
+        "description": "A non-browser process reads multiple browser credential stores (saved-login and cookie/session-token databases). Infostealers such as Raccoon Stealer or Redline sweep these stores to lift session tokens later replayed against Entra ID; the browser reading its own store is normal, a non-browser process sweeping several stores in one burst is the endpoint anchor of the AzureHound chain.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN\n| filter action_file_path contains \"Login Data\" or action_file_path contains \"cookies.sqlite\" or action_file_path contains \"logins.json\" or action_file_path contains \"key4.db\"\n| filter actor_process_image_name not in (\"chrome\", \"chromium\", \"google-chrome\", \"msedge\", \"firefox\", \"firefox-bin\", \"cortex-agent\")\n| comp count_distinct(action_file_path) as stores_read by agent_hostname, actor_effective_username, actor_process_image_name, actor_process_instance_id\n| filter stores_read >= 2\n| fields agent_hostname, actor_effective_username, actor_process_image_name, actor_process_instance_id, stores_read",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1528"
+        ]
+      },
+      {
+        "name": "MP-014 AzureHound Microsoft Graph Reachability Probe",
+        "description": "AzureHound issues a GET /v1.0/organization reachability probe against graph.microsoft.com before the bulk enumeration begins. Paired with the azurehound User-Agent this is an early, low-volume tell of the enumeration about to start.",
+        "logic": "dataset = cloud_audit_logs\n| filter lowercase(user_agent) contains \"azurehound\"\n| filter request_uri contains \"/v1.0/organization\" or request_uri contains \"graph.microsoft.com/v1.0/organization\"\n| comp count() as probe_calls by identity_name, caller_ip, user_agent\n| filter probe_calls >= 1\n| fields identity_name, caller_ip, user_agent, probe_calls",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1526",
+          "T1071.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-014 AzureHound User-Agent Present in Cloud Audit Logs",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter lowercase(user_agent) contains \"azurehound\"\n| comp count() as azurehound_calls by identity_name, caller_ip, user_agent\n| filter azurehound_calls >= 1\n| fields identity_name, caller_ip, user_agent, azurehound_calls",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-014 High-Volume Graph Enumeration Above 500 Calls Per Hour",
+        "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 3600)\n| filter http_method = \"GET\"\n| filter request_uri contains \"graph.microsoft.com\"\n| bin _time span = 60m\n| comp count() as api_call_count by identity_name, user_agent, caller_ip, _time\n| filter api_call_count > 500\n| sort desc api_call_count\n| fields identity_name, user_agent, caller_ip, api_call_count",
+        "expected_rows_min": 0,
+        "dataset": "cloud_audit_logs"
+      },
+      {
+        "purpose": "metric",
+        "name": "MP-014 Cross-Plane Stitch Single Incident Spanning Endpoint and Cloud Identity",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by causality_actor_primary_username\n| filter plane_count >= 2 and incident_count = 1\n| fields causality_actor_primary_username, plane_count, incident_count",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-014 Non-Interactive Entra Sign-In from Unusual Geo Post Token Theft",
+        "description": "A non-interactive Entra ID sign-in (stolen session/refresh-token replay) lands on a user principal from a geography that deviates from that identity's learned sign-in baseline (impossible travel). The ABIOC anchors the deviation to the cloud-identity profile (non-interactive token replay diverging from the user's usual interactive, in-region sign-ins) rather than to any single bad value.",
+        "logic": "dataset = msft_azure_ad_signin\n| filter is_interactive = false\n| comp count() as noninteractive_signins, values(signin_activity_id) as signin_activity_ids, count_distinct(location_country) as geo_count by user_principal_name, ip_address, app_display_name\n| filter geo_count >= 2\n| fields user_principal_name, ip_address, app_display_name, noninteractive_signins, geo_count, signin_activity_ids",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004",
+          "T1528"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity Entra sign-in baseline (interactive, in-region, known apps) -> stolen-token replay produces a non-interactive, out-of-region sign-in (impossible travel) that diverges from the baseline, anchored to the user_principal_name and signin_activity_id."
+      },
+      {
+        "name": "MP-014 AzureHound Bulk Microsoft Graph Enumeration Burst",
+        "description": "A single identity drives a high-volume burst of Microsoft Graph GET enumeration (users, groups, roleManagement) carrying the azurehound User-Agent, far exceeding that identity's learned Graph read cadence. Every call is a legitimate Graph read; the ABIOC fires on the volumetric-and-cadence deviation from the identity's learned baseline, anchored to the caller identity and session.",
+        "logic": "dataset = cloud_audit_logs\n| filter http_method = \"GET\"\n| filter request_uri contains \"graph.microsoft.com/v1.0/users\" or request_uri contains \"graph.microsoft.com/v1.0/groups\" or request_uri contains \"graph.microsoft.com/v1.0/roleManagement\" or lowercase(user_agent) contains \"azurehound\"\n| bin _time span = 60m\n| comp count() as graph_calls by identity_name, user_agent, caller_ip, _time\n| filter graph_calls > 500\n| sort desc graph_calls\n| fields identity_name, user_agent, caller_ip, graph_calls",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1087.004",
+          "T1069.003",
+          "T1526",
+          "T1580"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-identity Microsoft Graph read cadence -> AzureHound enumeration burst (>500 GET/hour across users/groups/roles) that exceeds the identity's learned volume, anchored to identity_name + caller_ip and correlated to the sign-in via signin_activity_id."
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "AzureHound Cloud-Identity Enumeration Chain — Token Theft to Graph Discovery Stitch",
+        "rule_id": "CR-MP-0014",
+        "logic": "BIOC(MP-014 Browser Session-Token and Cookie Theft by Non-Browser Process) AND ABIOC(MP-014 Non-Interactive Entra Sign-In from Unusual Geo Post Token Theft) AND ABIOC(MP-014 AzureHound Bulk Microsoft Graph Enumeration Burst) within a 30-minute window, joined on the shared session identity (endpoint actor_effective_username maps to Entra user_principal_name maps to cloud_audit_logs identity_name, correlated by signin_activity_id and caller_ip). Fuses the endpoint token-theft signal, the anomalous non-interactive cloud sign-in, and the AzureHound Graph enumeration burst into a single escalation incident spanning the endpoint, cloud-identity, and cloud-audit planes instead of three low-fidelity alerts."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM ITDR — Entra ID non-interactive sign-in anomaly analytics",
+        "validated": true,
+        "note": "Backed by ABIOC 'MP-014 Non-Interactive Entra Sign-In from Unusual Geo Post Token Theft'."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — cloud-audit Graph enumeration volumetric profiling",
+        "validated": true,
+        "note": "Backed by ABIOC 'MP-014 AzureHound Bulk Microsoft Graph Enumeration Burst'."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation-engine",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-CORR-014"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "CR-MP-0014 stitches the endpoint token-theft BIOC and the two cloud-identity ABIOCs into one incident; surface with: dataset = xdr_data | comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by causality_actor_primary_username | filter plane_count >= 2 and incident_count = 1"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "identity-threat-module",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-ITDR-014"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_azure_ad_signin | filter is_interactive = false | comp count_distinct(location_country) as geo_count by user_principal_name, ip_address | filter geo_count >= 2"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "cloud-app-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-CLOUDAPP-014"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter lowercase(user_agent) contains \"azurehound\" | bin _time span = 60m | comp count() as api_call_count by identity_name, caller_ip, _time | filter api_call_count > 500"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "agent",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-014"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_file_path contains \"Login Data\" or action_file_path contains \"cookies.sqlite\" | comp count_distinct(action_file_path) as stores_read by agent_hostname, actor_effective_username, actor_process_image_name | filter stores_read >= 2"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-014",
+        "name": "AzureHound Cloud-Identity Enumeration — Cross-Plane Causality Stitch",
+        "description": "Prove that Cortex stitches an endpoint token-theft signal, an anomalous non-interactive Entra ID sign-in, and an AzureHound-user-agent Microsoft Graph enumeration burst into one escalation incident on a shared session identity — the cross-plane causality a single-plane tool sees only as three disconnected low-fidelity alerts.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-014A",
+            "objective": "The endpoint token-theft BIOC and the anomalous non-interactive Entra sign-in ABIOC both fire on the same identity.",
+            "preconditions": [
+              "Jumpbox with the Cortex agent installed.",
+              "Entra ID non-interactive sign-in logs ingesting into msft_azure_ad_signin."
+            ],
+            "steps": [
+              "Run the SAFE-MODE token-cache read step under the identity harness.",
+              "Emit the modelled non-interactive at-risk Entra sign-in on the same user principal.",
+              "Observe the BIOC and the sign-in ABIOC fire."
+            ],
+            "success_criteria": [
+              "BIOC `MP-014 Browser Session-Token and Cookie Theft by Non-Browser Process` fires.",
+              "ABIOC `MP-014 Non-Interactive Entra Sign-In from Unusual Geo Post Token Theft` fires."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-014B",
+            "objective": "The AzureHound Graph enumeration burst is detected by volume and by the azurehound User-Agent.",
+            "preconditions": [
+              "Microsoft Graph activity logging enabled and ingesting into cloud_audit_logs."
+            ],
+            "steps": [
+              "Model the AzureHound bulk Graph enumeration burst (>500 GET/hour, azurehound User-Agent).",
+              "Run the validation XQL for the azurehound User-Agent."
+            ],
+            "success_criteria": [
+              "ABIOC `MP-014 AzureHound Bulk Microsoft Graph Enumeration Burst` fires.",
+              "XQL `MP-014 AzureHound User-Agent Present in Cloud Audit Logs` returns the enumerating identity."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-MP-014C",
+            "objective": "The three signals stitch into a single incident whose causality chain spans at least two planes.",
+            "preconditions": [
+              "All three plane telemetry sources ingesting; correlation window >= 30 minutes."
+            ],
+            "steps": [
+              "Let the XSIAM correlation engine converge on the shared session identity.",
+              "Assert one incident_id spans the endpoint and cloud-identity planes."
+            ],
+            "success_criteria": [
+              "Correlation `CR-MP-0014` raises exactly one stitched incident.",
+              "The incident's causality chain spans >= 2 planes (endpoint + cloud identity/audit)."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce phishing-resistant MFA and Entra ID Token Protection (GA August 2025) so a stolen refresh token cannot be replayed from a new device/session.",
+      "Apply Conditional Access Policies and Privileged Identity Management to gate non-interactive sign-ins and privileged Graph scopes.",
+      "Deploy EDR/XDR across all endpoints — including cloud workloads — to catch token-cache theft at the source, and disable user-initiated app registrations."
+    ],
+    "detection_engineering": [
+      "Enable Microsoft Graph activity logging (disabled by default) so bulk Graph enumeration is visible in cloud_audit_logs.",
+      "Alert on the azurehound User-Agent and on any identity exceeding ~500 Graph GET calls/hour against users/groups/roleManagement.",
+      "Correlate non-interactive, out-of-region Entra sign-ins with endpoint browser-credential-store access and cloud-audit enumeration on the shared session identity (signin_activity_id / caller_ip) rather than alerting on each in isolation.",
+      "Note the ARM blind spot: management.azure.com list/GET calls AzureHound makes are NOT in Azure Activity Logs, so weight the Graph-side volume and the sign-in signal accordingly."
+    ],
+    "response_playbook": "XSOAR-PB-AzureHoundCloudIdentityEnumerationTriage-v1"
+  },
+  "references": [
+    {
+      "title": "Threat Actor Misuse of AzureHound to Enumerate Microsoft Entra ID",
+      "url": "https://unit42.paloaltonetworks.com/threat-actor-misuse-of-azurehound/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1528 — Steal Application Access Token",
+      "url": "https://attack.mitre.org/techniques/T1528/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Microsoft — Microsoft Graph activity logs and Entra ID non-interactive sign-in logs",
+      "url": "https://learn.microsoft.com/en-us/graph/microsoft-graph-activity-logs-overview",
+      "publisher": "Microsoft Threat Intelligence",
+      "publisher_id": "SRC-MICROSOFT"
+    },
+    {
+      "title": "Cortex XSIAM — Correlation Rules and ITDR analytics reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

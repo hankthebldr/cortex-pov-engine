@@ -5,7 +5,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert)",
+      "logic": "BIOC(Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert) FOLLOWED BY BIOC(Prisma Browser \u2014 page.screenshot() called against origin tagged sensitive \u2014 block + alert) BY user WITHIN 1800s \u2192 single collection incident (shared_entity: user). Repeat captures by the same user also raise XQL(Prisma Browser \u2014 repeat screen-capture from same user counts toward elevated risk score), driving the user-risk / conditional-access escalation.",
       "name": "Browser Sensitive Screen Capture \u2014 Repeat Collection",
       "rule_id": "CR-BROWSER-0005",
       "severity": "high"

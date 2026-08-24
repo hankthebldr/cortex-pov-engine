@@ -45,9 +45,9 @@
     }
   },
   "identity": {
-    "name": "ITDR \u2014 Brute-Force Causing Account Lockout (Microsoft)",
-    "summary": "The idp_signin_emulator emits a burst of FAILURE sign-ins against one Microsoft Entra identity that crosses the lockout threshold and produces a user.account.lock state-transition event, then sprays the same target from a second source IP. Cortex ITDR detects the consecutive-failure burst as brute-force, records the lockout transition, and escalates when a second lockout lands on the same ident\u2026",
-    "description": "Password spraying and targeted brute force remain the Midnight Blizzard (APT29) workhorse against Microsoft Entra: low-and-slow guesses against many accounts, or a concentrated burst against one, until a credential lands or the account locks. The identity tell is a run of consecutive authentication FAILUREs for one principal terminating in an account-lock state transition, and \u2014 for spray \u2014 repeated lockouts on the same target from rotating source IPs inside a short window. This scenario drives CortexSim's idp_signin_emulator to emit a 10-failure burst against alice.singh (Microsoft Entra shape) that trips the lockout, then a second 5-failure burst from another origin against the same user. Detection is IdP-log analytics in Cortex ITDR: an XQL rule counts consecutive FAILURE authentications per user/source in the window and raises a brute-force anomaly at threshold; a companion BIOC keys on the user.account.lock (resultType lockout) state-transition event so the lockout itself is captured. A third query escalates severity when a second lockout lands on the same identity within an hour, and an ANALYTICS-plane query demonstrates XSIAM stitching grouping the repeat lockouts under a single password-spray incident. A correlation rule fuses the brute-force analytic and the lockout BIOC into one incident.",
+    "name": "ITDR — Brute-Force Causing Account Lockout (Microsoft)",
+    "summary": "The idp_signin_emulator emits a burst of FAILURE sign-ins against one Microsoft Entra identity that crosses the lockout threshold and produces a user.account.lock state-transition event, then sprays the same target from a second source IP. Cortex ITDR detects the consecutive-failure burst as brute-force, records the lockout transition, and escalates when a second lockout lands on the same ident…",
+    "description": "Password spraying and targeted brute force remain the Midnight Blizzard (APT29) workhorse against Microsoft Entra: low-and-slow guesses against many accounts, or a concentrated burst against one, until a credential lands or the account locks. The identity tell is a run of consecutive authentication FAILUREs for one principal terminating in an account-lock state transition, and — for spray — repeated lockouts on the same target from rotating source IPs inside a short window. This scenario drives CortexSim's idp_signin_emulator to emit a 10-failure burst against alice.singh (Microsoft Entra shape) that trips the lockout, then a second 5-failure burst from another origin against the same user. Detection is IdP-log analytics in Cortex ITDR: an XQL rule counts consecutive FAILURE authentications per user/source in the window and raises a brute-force anomaly at threshold; a companion BIOC keys on the user.account.lock (resultType lockout) state-transition event so the lockout itself is captured. A third query escalates severity when a second lockout lands on the same identity within an hour, and an ANALYTICS-plane query demonstrates XSIAM stitching grouping the repeat lockouts under a single password-spray incident. A correlation rule fuses the brute-force analytic and the lockout BIOC into one incident.",
     "severity": "high",
     "confidence": "high"
   },
@@ -100,7 +100,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin \u2014 event_pattern=brute_force_lockout",
+    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin — event_pattern=brute_force_lockout",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -163,7 +163,7 @@
       },
       {
         "name": "ITDR-005 Account Lock State Transition Recorded",
-        "description": "ITDR \u2014 user.account.lock state-transition event recorded. Captures the Microsoft Entra lockout result type emitted when the consecutive-failure burst crosses the lockout threshold for the target identity.",
+        "description": "ITDR — user.account.lock state-transition event recorded. Captures the Microsoft Entra lockout result type emitted when the consecutive-failure burst crosses the lockout threshold for the target identity.",
         "logic": "dataset = msft_azure_ad_signin\n| filter result_type = \"user.account.lock\" or auth_status_detail contains \"locked\" or _raw_log contains \"user.account.lock\"\n| fields _time, user_name, src_ip, src_geo_country, result_type, auth_status_detail",
         "severity": "high",
         "mitre_technique_ids": [
@@ -196,14 +196,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Brute-Force Lockout Password Spray \u2014 Same Identity",
+        "name": "Brute-Force Lockout Password Spray — Same Identity",
         "rule_id": "CR-ITDR-0005",
         "logic": "XQL(ITDR-005 Ten Consecutive Failed Sign-Ins Brute Force) OR BIOC(ITDR-005 Account Lock State Transition Recorded)"
       }
     ],
     "analytics_modules": [
-      "Cortex ITDR Analytics \u2014 Consecutive failure burst and lockout per principal",
-      "Cortex XSIAM Identity Analytics \u2014 Repeat-lockout password-spray grouping"
+      "Cortex ITDR Analytics — Consecutive failure burst and lockout per principal",
+      "Cortex XSIAM Identity Analytics — Repeat-lockout password-spray grouping"
     ]
   },
   "panw_mapping": {
@@ -229,14 +229,14 @@
         "evidence_query": "Correlation CR-ITDR-0005 fuses the brute-force failure analytic and the lockout state-transition BIOC into one password-spray incident per identity."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IDENT-041",
+        "threat_scenario_id": "TS-IDENT-041",
         "name": "Account-Lockout State Transition",
         "description": "Detect a consecutive-failure brute-force burst that locks an identity, capture the lockout transition, and escalate when repeat lockouts on the same target indicate password spray.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IDENT-041A",
+            "threat_step_id": "TS-IDENT-041A",
             "objective": "Ten consecutive failures lock the account and raise a brute-force anomaly.",
             "preconditions": [
               "Cortex ITDR ingesting msft_azure_ad_signin including lockout result types.",
@@ -254,7 +254,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-IDENT-041B",
+            "threat_step_id": "TS-IDENT-041B",
             "objective": "Repeat lockouts on one identity stitch into one password-spray incident.",
             "success_criteria": [
               "Correlation `CR-ITDR-0005` groups the brute-force burst and lockout under one incident."
@@ -280,14 +280,14 @@
   },
   "references": [
     {
-      "title": "Microsoft \u2014 Midnight Blizzard Password Spray Campaigns",
+      "title": "Microsoft — Midnight Blizzard Password Spray Campaigns",
       "url": "https://www.microsoft.com/en-us/security/blog/",
       "publisher": "Microsoft",
       "publisher_id": "SRC-MICROSOFT",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1110.003 \u2014 Password Spraying",
+      "title": "MITRE ATT&CK T1110.003 — Password Spraying",
       "url": "https://attack.mitre.org/techniques/T1110/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

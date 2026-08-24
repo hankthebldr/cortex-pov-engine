@@ -45,8 +45,8 @@
     }
   },
   "identity": {
-    "name": "ITDR \u2014 MFA Fatigue / Push-Bombing (Okta)",
-    "summary": "The idp_signin_emulator emits a rapid burst of Okta MFA push challenges for one user \u2014 a run of DENY/timeout verifications followed by a single APPROVE \u2014 modeling push-bombing where an attacker holding valid credentials hammers the victim with prompts until one is reflexively approved. Cortex ITDR counts MFA challenges per user inside a short window and alerts when the burst-then-approve shape\u2026",
+    "name": "ITDR — MFA Fatigue / Push-Bombing (Okta)",
+    "summary": "The idp_signin_emulator emits a rapid burst of Okta MFA push challenges for one user — a run of DENY/timeout verifications followed by a single APPROVE — modeling push-bombing where an attacker holding valid credentials hammers the victim with prompts until one is reflexively approved. Cortex ITDR counts MFA challenges per user inside a short window and alerts when the burst-then-approve shape…",
     "description": "MFA fatigue (push-bombing) was the access vector in the Lapsus$ and APT29 intrusions called out by CISA AA22-074A: an attacker who already holds a valid password triggers MFA push after MFA push until the exhausted user taps Approve. The identity tell is a tight cluster of MFA verification events for one principal in a window of tens of seconds, dominated by denials/timeouts and terminated by a lone success. This scenario drives CortexSim's idp_signin_emulator to POST an 8-event Okta MFA burst (7 denials, 1 approval) and then a heavier 16-event burst into the identity collector. Detection is IdP-log analytics in Cortex ITDR: an XQL rule buckets MFA-challenge events per user per short window, counts denials versus the terminal approval, and raises a fatigue anomaly when the burst pattern matches; a companion BIOC keys on the explicit fatigue_marker the emulator stamps so the pattern is unambiguously attributable. A third query proves severity escalates once the burst exceeds the 16-event threshold. A correlation rule fuses the explicit-marker BIOC and the windowed-burst analytic into one push-bombing incident per identity.",
     "severity": "high",
     "confidence": "high"
@@ -103,7 +103,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin \u2014 event_pattern=mfa_fatigue",
+    "framework_reference_id": "CortexSim idp_signin_emulator EAL plugin — event_pattern=mfa_fatigue",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -166,7 +166,7 @@
       },
       {
         "name": "ITDR-002 MFA Fatigue Marker Boolean Explicit Match",
-        "description": "ITDR \u2014 fatigue_marker boolean fires explicit pattern detection. Keys on the explicit fatigue_marker the emulator stamps on each push-bombing event so the burst is unambiguously attributable to the MFA-fatigue pattern.",
+        "description": "ITDR — fatigue_marker boolean fires explicit pattern detection. Keys on the explicit fatigue_marker the emulator stamps on each push-bombing event so the burst is unambiguously attributable to the MFA-fatigue pattern.",
         "logic": "dataset = okta_sso\n| filter eventType contains \"user.authentication.auth_via_mfa\"\n| filter fatigue_marker = true or _raw_log contains \"\\\"fatigue_marker\\\": true\"\n| fields _time, actor_effective_username, src_ip, mfa_result, auth_outcome",
         "severity": "high",
         "mitre_technique_ids": [
@@ -192,14 +192,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "MFA Push-Bombing Incident \u2014 Burst Then Approve",
+        "name": "MFA Push-Bombing Incident — Burst Then Approve",
         "rule_id": "CR-ITDR-0002",
         "logic": "BIOC(ITDR-002 MFA Fatigue Marker Boolean Explicit Match) OR XQL(ITDR-002 MFA Fatigue Push Burst Then Approval)"
       }
     ],
     "analytics_modules": [
-      "Cortex ITDR Analytics \u2014 MFA challenge burst per principal",
-      "Cortex XSIAM Identity Analytics \u2014 Push-bombing fatigue detection"
+      "Cortex ITDR Analytics — MFA challenge burst per principal",
+      "Cortex XSIAM Identity Analytics — Push-bombing fatigue detection"
     ]
   },
   "panw_mapping": {
@@ -225,14 +225,14 @@
         "evidence_query": "Correlation CR-ITDR-0002 fuses the explicit fatigue-marker BIOC and the windowed MFA-burst analytic into one push-bombing incident per identity."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IDENT-038",
+        "threat_scenario_id": "TS-IDENT-038",
         "name": "MFA Fatigue Detection",
         "description": "Detect MFA push-bombing where a user receives many MFA challenges in a short window and finally approves one, with severity scaling to burst volume.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IDENT-038A",
+            "threat_step_id": "TS-IDENT-038A",
             "objective": "An 8-event push burst ending in approval raises an MFA-fatigue anomaly.",
             "preconditions": [
               "Cortex ITDR ingesting okta_sso MFA verification events.",
@@ -250,7 +250,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-IDENT-038B",
+            "threat_step_id": "TS-IDENT-038B",
             "objective": "Marker BIOC and windowed analytic stitch into one push-bombing incident.",
             "success_criteria": [
               "Correlation `CR-ITDR-0002` groups the burst into one incident at High or Critical severity."
@@ -276,14 +276,14 @@
   },
   "references": [
     {
-      "title": "CISA AA22-074A \u2014 Russian State-Sponsored Cyber Actors Exploit MFA",
+      "title": "CISA AA22-074A — Russian State-Sponsored Cyber Actors Exploit MFA",
       "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-074a",
       "publisher": "CISA",
       "publisher_id": "SRC-CISA",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1621 \u2014 Multi-Factor Authentication Request Generation",
+      "title": "MITRE ATT&CK T1621 — Multi-Factor Authentication Request Generation",
       "url": "https://attack.mitre.org/techniques/T1621/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

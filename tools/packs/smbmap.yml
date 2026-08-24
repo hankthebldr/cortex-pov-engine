@@ -1,0 +1,54 @@
+adapter_id: TOOL-SMBMAP
+name: SMBMap
+version: "1.10.5"
+
+tier: 4
+category: network-scan
+
+upstream:
+  repo: https://github.com/ShawnDEvans/smbmap
+  license: GPL-3.0-only
+  attribution: Shawn Evans (ShawnDEvans)
+
+cortex_signal:
+  planes:
+    - ITDR
+    - NDR
+  expected_techniques:
+    - T1135  # Network Share Discovery
+
+safety_class: safe
+
+install:
+  runtime_install_command: "command -v smbmap >/dev/null 2>&1 || (apt-get install -y smbmap 2>/dev/null || pipx install smbmap)"
+  binary: smbmap
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: DISTRO_PACKAGE
+    reason: >-
+      smbmap installs from the operating system's package repository. Staging
+      it on the shelf would mean hosting a Debian mirror, so this tool needs
+      internet access on the target host. Plan the POV around that, or have
+      the customer pre-install it on the target.
+
+invoke:
+  target_platform: linux
+  run_template: "{binary} -H {target} -u {username} -p {password} {flags}"
+  default_args:
+    target: "127.0.0.1"
+    username: "guest"
+    password: "''"
+    flags: "--no-banner"
+  identity_required: nobody
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cortexsim-smbmap-*.txt"
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - smb-enumeration
+  - share-discovery
+  - lateral-recon

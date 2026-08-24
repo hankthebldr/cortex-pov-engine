@@ -10,9 +10,10 @@ preset = xdr_data
 | filter event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("bash", "sh")
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
-| comp count() as proc_count by agent_hostname, action_local_ip, actor_effective_username
+| filter causality_actor_process_image_name in ("apache2", "nginx", "httpd", "php-fpm")
+| comp count() as proc_count by agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, causality_id
 | filter proc_count >= 1
-| fields agent_hostname, action_local_ip, actor_effective_username, proc_count
+| fields agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, causality_id, proc_count
 
 ## BIOC — MP-005 NGFW Outbound HTTP Beacon To Known IOC Domain
 # severity: high
@@ -57,7 +58,8 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("bash", "sh")
 | filter actor_effective_username in ("www-data", "nobody", "apache", "nginx")
-| fields _time, agent_hostname, action_local_ip, actor_effective_username, action_process_image_command_line
+| filter causality_actor_process_image_name in ("apache2", "nginx", "httpd", "php-fpm")
+| fields _time, agent_hostname, action_local_ip, actor_effective_username, causality_actor_process_image_name, actor_process_instance_id, causality_id, action_process_image_command_line
 
 ## VALIDATION — MP-005 ITDR Kerberos PreAuth Failure Burst Against Service Accounts
 # purpose: validation
@@ -77,7 +79,7 @@ dataset = ad_audit
 
 preset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
-| comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count by action_local_ip
+| comp count_distinct(_product) as plane_count, count_distinct(incident_id) as incident_count, count_distinct(causality_id) as chains by action_local_ip
 | filter plane_count >= 2 and incident_count = 1
-| fields action_local_ip, plane_count, incident_count
+| fields action_local_ip, plane_count, incident_count, chains
 

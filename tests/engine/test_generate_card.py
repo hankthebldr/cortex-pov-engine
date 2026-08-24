@@ -92,13 +92,13 @@ def test_uc_tc_ids_match_corpus_regex(gen, schema):
     bug caught during initial development."""
     scenario = yaml.safe_load((REPO_ROOT / "scenarios/edr/edr-001-credential-dumping.yml").read_text())
     card = gen._scenario_to_card(scenario, "TTP-2026-0007")
-    use_cases = card["panw_mapping"]["use_cases"]
+    use_cases = card["panw_mapping"]["threat_scenarios"]
     assert use_cases, "card must have at least one use case"
     import re
     for uc in use_cases:
-        assert re.match(r"^UC-[A-Z0-9]+-\d{3}$", uc["use_case_id"])
-        for tc in uc["test_cases"]:
-            assert re.match(r"^TC-[A-Z0-9]+-\d{3}[A-Z]?$", tc["test_case_id"])
+        assert re.match(r"^TS-[A-Z0-9]+-\d{3}$", uc["threat_scenario_id"])
+        for tc in uc["threat_steps"]:
+            assert re.match(r"^TS-[A-Z0-9]+-\d{3}[A-Z]?$", tc["threat_step_id"])
 
 
 def test_bioc_count_matches_scenario_detections(gen):

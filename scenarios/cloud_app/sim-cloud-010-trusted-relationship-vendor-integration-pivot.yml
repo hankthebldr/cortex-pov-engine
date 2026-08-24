@@ -1,0 +1,315 @@
+scenario_id: SIM-CLOUD-010
+name: "Trusted-Relationship Abuse — A Compromised Vendor's Consented Integration Pivots Into the Tenant With No Sign-In Anomaly"
+version: "1.0"
+status: active
+
+# ── Detection Plane ─────────────────────────────────────────────────────────
+plane: CLOUD_APP
+detection_types:
+  - ABIOC
+  - XQL
+  - Analytics
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+# Both primary rows are ALREADY EVIDENCED — this scenario adds NOTHING to the
+# index coverage count, and that is stated rather than glossed. Its value is
+# threat currency: T1199 had exactly ONE step in the entire corpus before this
+# scenario, against a 2026 supply-chain finding that risk has moved from
+# vulnerable code to misused trusted connectivity.
+#
+# Note also that Cloud App Security carries no SKU line in the price book (see
+# index-gaps-v2.2.md). Binding through UC-DLP / UC-ITDR is the existing
+# convention for this plane, not a claim that the SKU exists.
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-ITDR-03
+  - TC-AES-07
+  - TC-DSPM-04
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# T1199 leads because the ACCESS is the trusted relationship itself: a
+# legitimately consented integration, granted months ago by a real
+# administrator, whose upstream vendor was compromised. Everything downstream
+# rides an app-only token, which is why T1550.001 rather than any credential
+# technique appears here — no credential was stolen from this tenant.
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1199"
+mitre_technique_name: "Trusted Relationship"
+additional_techniques:
+  - technique: "T1550.001"
+    name: "Use Alternate Authentication Material: Application Access Token"
+  - technique: "T1114.002"
+    name: "Email Collection: Remote Email Collection"
+  - technique: "T1567"
+    name: "Exfiltration Over Web Service"
+
+# ── Threat Intelligence ─────────────────────────────────────────────────────
+threat_report: "Unit 42 — Trusted Connections, Hidden Risks: Token Management in the Third-Party Supply Chain"
+threat_report_url: "https://unit42.paloaltonetworks.com/third-party-supply-chain-token-management/"
+
+# ── Execution Configuration ─────────────────────────────────────────────────
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - svc-account
+    - root
+
+push_supported: true
+pull_supported: true
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Per-Application Behavioural Baseline Deviation (no identity signal available)"
+methodology_family: "F2"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  CR-CLOUD-0010 raises ONE trusted-relationship incident attributed to the
+  integration IDENTITY (app_id), stitching the call-rate/scope-usage deviation,
+  the object-class novelty, the bulk mailbox access and the non-publisher
+  egress — with every conventional identity signal absent by construction.
+
+  This is the hardest detection in the corpus, and the reason is worth stating
+  to the customer directly:
+
+    * the consent event is OLD and LEGITIMATE — a real administrator approved
+      it months ago, so there is no consent anomaly;
+    * there is NO credential-theft event, because no credential was stolen
+      from this tenant;
+    * there is NO impossible travel and NO anomalous interactive sign-in,
+      because the integration never signs in interactively — it presents an
+      app-only token;
+    * blocking the app is not available as an answer: it is load-bearing for a
+      business process, which is why it holds the scopes at all.
+
+  What remains is the app's behaviour against the app's own history. Three
+  deltas carry the claim and each is meaningless alone: call RATE against the
+  learned request profile, scope-usage BREADTH (scopes consented long ago and
+  never actually exercised), and OBJECT-CLASS novelty.
+
+  Two controls decide whether the result means anything:
+
+    * NEGATIVE CONTROL — the run window must contain ZERO credential-theft,
+      impossible-travel or anomalous interactive sign-in events. If one exists,
+      the detection may have come from it and the central claim is unproven.
+    * BLAST-RADIUS CONTROL — peer integrations with comparable scopes must
+      stay inside their own baselines and must NOT join the incident. For a
+      tenant with 300 consented apps, flagging them all when one misbehaves is
+      an outage, not a detection.
+moat_tier: "MOAT"
+
+# ── F2 Stitch Fields ────────────────────────────────────────────────────────
+# The join key is the application identity, not a user. That is the whole
+# reframing this scenario asks for: the integration IS the actor, and a
+# per-user behavioural model has nothing to say about an app-only token.
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - CLOUD_APP
+  - ITDR
+stitching_key: user_principal
+
+# ── Causality ────────────────────────────────────────────────────────────────
+# There is deliberately NO cgo_anchor, following the convention SIM-CLOUD-007
+# and SIM-CLOUD-008 established: the only local process is the EAL emitter (our
+# own tooling), which the causality contract forbids as a CGO, and the SaaS
+# audit datasets carry no causality_actor_process_* fields to anchor on.
+# Inventing a plausible-looking process CGO here would be worse than having
+# none — it would put a fictional process at the root of a chain that has no
+# process in it. The connected graph forms on the shared APPLICATION IDENTITY
+# instead: every step references the same app_id, so they stitch via
+# shared_entity into one incident. step-01 (the app-only token auth) is the
+# single root.
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# SAFE-MODE: all calls target 127.0.0.1 and write local markers. No real tenant
+# is touched, no mail is read and no token is presented anywhere real.
+steps:
+  - id: step-01
+    name: "Trusted access — the consented integration presents its app-only token (no new consent, no interactive sign-in)"
+    command: |
+      set -u
+      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
+      APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
+      printf '{"run_tag":"%s","event":"token_auth","app_id":"%s","auth_type":"app_only","interactive":false,"consent_age_days":214}\n' "$RUN_TAG" "$APP_ID" > "$D/token-auth.json"
+      curl -s --max-time 5 -o /dev/null "https://127.0.0.1/v1.0/me" 2>/dev/null || true
+      echo cortexsim-cloud010-app-only-token-presented
+    identity: www-data
+    mitre_technique: "T1199"
+    # ROOT. There is nothing anomalous to detect here on its own and that is the
+    # point — this step exists so the readout can show the customer the entry
+    # event and then show that it produced no alert, correctly.
+    platforms: ["linux", "windows", "macos"]
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "NEGATIVE CONTROL — the run window is queried for credential-theft, impossible-travel and anomalous interactive sign-in events and must return ZERO. If any exist, the detection downstream may have come from that signal and this scenario's central claim (detectable with every conventional identity signal absent) is unproven, not merely weakened."
+        ttp_ref: "TTP-2026-0172"
+        detection_id: "xql-negative-control-no-credential-theft-impossible-travel-or-anomalous-interactive-sign-in-precedes-the-integration-act"
+
+  - id: step-02
+    name: "Call-rate and scope-usage deviation — the integration exercises scopes consented long ago and never used"
+    command: |
+      set -u
+      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
+      APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
+      for N in $(seq 1 60); do
+        printf '{"run_tag":"%s","event":"api_call","app_id":"%s","operation":"MailItemsAccessed","seq":%s}\n' "$RUN_TAG" "$APP_ID" "$N"
+      done > "$D/call-rate.ndjson"
+      for SCOPE in Mail.Read Files.Read.All Sites.Read.All User.Read.All; do
+        printf '{"run_tag":"%s","event":"scope_use","app_id":"%s","scope":"%s","first_use":true}\n' "$RUN_TAG" "$APP_ID" "$SCOPE"
+      done > "$D/scope-use.ndjson"
+      echo cortexsim-cloud010-call-rate-and-scope-deviation-emitted
+    identity: www-data
+    mitre_technique: "T1550.001"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "PRIMARY CLAIM — request volume above the integration's learned profile combined with the first-ever exercise of scopes it was granted months ago and never used. A scope granted is not a scope used, and the gap between the two is the most under-instrumented surface in a SaaS tenant."
+        ttp_ref: "TTP-2026-0172"
+        detection_id: "abioc-consented-integration-deviating-from-its-own-learned-call-rate-and-scope-usage-baseline"
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Corroboration — bulk MailItemsAccessed by one AppId across many distinct mailboxes on an app-only token. Breadth across mailboxes is what distinguishes a pivot from a legitimate sync of the one mailbox the integration was built for."
+        ttp_ref: "TTP-2026-0172"
+        detection_id: "xql-bulk-mailbox-item-access-by-the-vendor-integration-across-distinct-mailboxes"
+
+  - id: step-03
+    name: "Object-class novelty — the integration reads record types it has never touched in its operating history"
+    command: |
+      set -u
+      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
+      APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
+      for CLASS in ContactFolder SecurityGroup DirectoryRole DriveItem; do
+        printf '{"run_tag":"%s","event":"object_access","app_id":"%s","object_class":"%s","object_class_first_seen":true}\n' "$RUN_TAG" "$APP_ID" "$CLASS"
+      done > "$D/object-novelty.ndjson"
+      echo cortexsim-cloud010-object-class-novelty-emitted
+    identity: www-data
+    mitre_technique: "T1114.002"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "The harder-to-evade half of the pair. An adversary pacing the call rate to stay inside the learned profile still has to read record types the integration never read — reaching data the vendor's own function never needed is the whole point of the pivot. Meaningless alone, specific alongside the rate deviation."
+        ttp_ref: "TTP-2026-0172"
+        detection_id: "abioc-vendor-integration-touching-object-classes-it-has-never-touched-before"
+
+  - id: step-04
+    name: "Exfiltration — integration egress to a destination outside its publisher's declared endpoints"
+    command: |
+      set -u
+      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
+      APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
+      printf '{"run_tag":"%s","event":"egress","app_id":"%s","dest":"198.51.100.77","publisher_declared":false,"bytes_sent":41000000}\n' "$RUN_TAG" "$APP_ID" > "$D/egress.json"
+      echo cortexsim-cloud010-non-publisher-egress-emitted
+    identity: svc-account
+    mitre_technique: "T1567"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Validation — data leaves toward a destination outside the publisher's declared endpoint set. Publisher endpoint attestation turns this from an anomaly somebody has to notice into a policy violation that names itself."
+        ttp_ref: "TTP-2026-0172"
+        detection_id: "xql-integration-egress-to-a-destination-outside-its-publisher-s-declared-endpoints"
+
+  - id: step-05
+    name: "BLAST-RADIUS CONTROL — a peer integration with comparable scopes behaves normally and must NOT be swept in"
+    command: |
+      set -u
+      D=/tmp/cortexsim-cloud010; mkdir -p "$D"
+      RUN_TAG="${CORTEXSIM_RUN_TAG:-CLOUD010}"
+      printf '{"run_tag":"%s","cortexsim_label":"benign","event":"api_call","app_id":"peer-ticketing-sync","operation":"MailItemsAccessed","within_baseline":true}\n' "$RUN_TAG" > "$D/peer-control.json"
+      echo cortexsim-cloud010-peer-integration-control-emitted
+    identity: www-data
+    mitre_technique: "T1550.001"
+    # temporal: the peer app runs in the same window but is a DIFFERENT identity
+    # and must not join the incident. Putting it on the spine would defeat the
+    # control it exists to provide.
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-01
+      pivot: temporal
+    expected_detections:
+      - plane: CLOUD_APP
+        type: XQL
+        description: "The control arm actually ran, and stayed inside its own baseline. For a tenant with hundreds of consented apps the dangerous failure is not a missed alert but a platform that flags every vendor app the moment one misbehaves — that is an outage, and this query is what makes it visible."
+        ttp_ref: "TTP-2026-0172"
+        detection_id: "xql-blast-radius-control-peer-integrations-with-comparable-scopes-stay-inside-their-baselines"
+
+  - id: step-06
+    name: "TERMINAL — one trusted-relationship incident attributed to the integration identity, both controls asserted"
+    command: |
+      set -u
+      echo '[CLOUD-010] Terminal stitch — waiting for correlation to converge'
+      sleep "${CORTEXSIM_STITCH_WAIT_SECONDS:-120}"
+      echo '[*] CR-CLOUD-0010 asserts ONE incident keyed on app_id, not on any user'
+      echo '[*] NEGATIVE CONTROL: zero credential-theft / impossible-travel / interactive-sign-in events in the window'
+      echo '[*] BLAST-RADIUS CONTROL: peer integrations present in telemetry, absent from the incident'
+      echo '[*] Response is scope revocation and token invalidation for ONE app_id — not a tenant-wide app block'
+      echo cortexsim-cloud010-terminal-stitch-verified
+    identity: root
+    mitre_technique: "T1199"
+    platforms: ["linux", "windows", "macos"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Correlation
+        description: "Terminal — CR-CLOUD-0010 stitches the rate/scope deviation, object-class novelty, bulk mailbox access and non-publisher egress into ONE incident attributed to the integration identity, and carries both the negative control and the blast-radius control as part of the verdict rather than as footnotes."
+        ttp_ref: "TTP-2026-0172"
+        detection_id: "CR-CLOUD-0010"
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Hunt — the tenant's whole consented-application inventory ranked by baseline deviation. This is the artifact the DC leaves behind: the customer's own 300 consented apps, ordered by how far each has drifted from its own history."
+        ttp_ref: "TTP-2026-0172"
+        detection_id: "xql-consented-application-inventory-ranked-by-baseline-deviation"
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-cloud010"
+    - "echo 'cortexsim-cloud010-cleanup-complete'"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-08-02"
+last_updated: "2026-08-02"
+tags:
+  - cloud-app
+  - casb
+  - trusted-relationship
+  - third-party-integration
+  - oauth
+  - vendor-compromise
+  - behavioural-baseline
+  - negative-control
+  - blast-radius-control
+  - f2
+  - moat

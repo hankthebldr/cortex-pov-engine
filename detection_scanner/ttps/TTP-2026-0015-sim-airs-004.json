@@ -262,14 +262,14 @@
         "evidence_query": "Correlation CR-AIRS-0004 fuses an unsafe agentic tool-call (exec_shell or external send_email) with downstream endpoint process telemetry into one incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-AIRS-015",
+        "threat_scenario_id": "TS-AIRS-015",
         "name": "OWASP LLM06 — Excessive Agency / Tool-Call Abuse",
         "description": "Detect an agentic LLM being coerced into invoking destructive or exfiltration tools, and stitch the tool-call to downstream endpoint activity.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-AIRS-015A",
+            "threat_step_id": "TS-AIRS-015A",
             "objective": "AIRS flags the exec_shell call and the external send_email tool call.",
             "preconditions": [
               "cortex-vulnerable-llm serving --vuln llm06 with three tools on port 8089.",
@@ -287,7 +287,7 @@
             "expected_score_weight": 0.7
           },
           {
-            "test_case_id": "TC-AIRS-015B",
+            "threat_step_id": "TS-AIRS-015B",
             "objective": "Agentic tool-call stitches to downstream endpoint process telemetry.",
             "success_criteria": [
               "Correlation `CR-AIRS-0004` groups the unsafe tool-call with the endpoint event into one incident."

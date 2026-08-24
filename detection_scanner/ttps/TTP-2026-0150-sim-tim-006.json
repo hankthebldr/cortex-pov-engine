@@ -1,0 +1,412 @@
+{
+  "id": "TTP-2026-0150",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:26:04+00:00",
+    "updated_at": "2026-07-25T04:26:04+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-tim",
+      "cve-2026-0257",
+      "globalprotect",
+      "edge-vpn",
+      "active-scanning",
+      "reconnaissance",
+      "exploit-precursor",
+      "correlation",
+      "threat-intel-attribution",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Edge-VPN Probing Surge Attributed to a TIM Scanning-Infra Feed as a CVE-2026-0257 Exploit Precursor (T1595 / T1590 / T1133)",
+    "summary": "A TIM feed flags a source IP/ASN as CVE-2026-0257 GlobalProtect scanning infrastructure; Cortex ASM and the NGFW record that same IP mass-probing the exposed portal, where few probes establish a session. A correlation joins the feed match and the probing surge on source IP, asserting recon preceded any auth-bypass on the matched edge asset — an attributed exploit precursor.",
+    "description": "During the active exploitation of CVE-2026-0257 (a GlobalProtect portal/gateway authentication bypass in PAN-OS), Unit 42 observed a wide-sweep reconnaissance phase from a small set of source IPs before the public PoC dropped: mass probing of internet-exposed GlobalProtect portals where only a small portion of the probed devices actually established VPN sessions (gateway-connected events). In isolation each inbound prelogin probe is low signal — indistinguishable from benign VPN-client discovery — so a single-signal detector under-alerts on it. This scenario proves the Cortex differentiator: cross-source correlation. Three independent facts are stitched on the shared source IP within a window: (1) a Threat Intel Management feed lists the source IP/ASN as adversary scanning infrastructure tied to CVE-2026-0257; (2) Cortex ASM/Xpanse has the org's exposed GlobalProtect portal in its attack-surface inventory as an internet-exposed VPN edge asset; (3) the NGFW records a probing surge from that same source against the portal's unauthenticated prelogin endpoints, with an anomalously low probe-to-session ratio (wide sweep, few connects). The terminal correlation (CR-TIM-0006) joins the feed match to the NGFW portal-probing surge on source IP, asserts the reconnaissance temporally precedes the first gateway-connected event on the matched edge asset, and raises ONE attributed exploit-precursor incident. The POV thesis: a feed hit alone is noise, a probe alone is noise, an exposure finding alone is a to-do item — the platform is what fuses all three into an attributed, actionable precursor that lets the SOC pre-empt the auth-bypass rather than triage it after a session is established. Detections are weighted to the correlation terminal: the TIM attribution query and the portal-probing-surge BIOC are the joined legs, the probe-to-session ratio query is the behavioral anomaly, the ASM query supplies the matched edge asset, and the stitch-validation query confirms the enriched join fired.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "CVE-2026-0257 GlobalProtect authentication-bypass exploitation (2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2026-05-29"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1595",
+        "subtechnique_id": "T1595.001",
+        "name": "Active Scanning: Scanning IP Blocks",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1595",
+        "subtechnique_id": "T1595.002",
+        "name": "Active Scanning: Vulnerability Scanning",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1590",
+        "name": "Gather Victim Network Information",
+        "tactic_ids": [
+          "TA0043"
+        ],
+        "tactic_names": [
+          "Reconnaissance"
+        ]
+      },
+      {
+        "technique_id": "T1133",
+        "name": "External Remote Services",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      }
+    ],
+    "kill_chain_phase": "reconnaissance",
+    "data_sources": [
+      "Network Traffic: Network Traffic Flow",
+      "Network Traffic: Network Connection Creation",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-TIM-006 — TIM-attributed GlobalProtect probing surge as a CVE-2026-0257 exploit precursor (recon-to-exploit cross-source correlation).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "The TIM feed (mocktaxii / threat_intel) is subscribed and carries the CVE-2026-0257 GlobalProtect scanning-infrastructure indicators tagged as adversary scanning infrastructure.",
+        "check_command": "curl -sf http://localhost:9000/taxii2/ -H 'Accept: application/taxii+json;version=2.1' | jq -e '.api_roots | length >= 1'"
+      },
+      {
+        "description": "An authorised lab GlobalProtect portal (or NGFW GlobalProtect log source) is reachable so inbound prelogin probing produces panw_ngfw_globalprotect_raw telemetry, and Cortex ASM has the exposed portal in its inventory.",
+        "check_command": "getent hosts \"${PORTAL_HOST:-gp-portal.lab.local}\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE recon simulation: probe the AUTHORISED lab GlobalProtect portal's\n# unauthenticated prelogin endpoints to reproduce the CVE-2026-0257 pre-exploit\n# scanning surge (wide sweep, few sessions). NO authentication-bypass exploit is\n# attempted — this generates RECON signal only so the TIM feed match, the NGFW\n# portal-probing surge, and the ASM edge-asset finding can be correlated.\nset -euo pipefail\nPORTAL=\"${PORTAL_HOST:-gp-portal.lab.local}\"\nfor i in $(seq 1 60); do\n  curl -sk --max-time 5 \"https://${PORTAL}/global-protect/prelogin.esp\" -o /dev/null 2>/dev/null || true\n  curl -sk --max-time 5 \"https://${PORTAL}/ssl-vpn/prelogin.esp\" -o /dev/null 2>/dev/null || true\ndone\necho \"[CortexSim] SIM-TIM-006 GlobalProtect prelogin probing surge complete (recon only, no exploit).\"",
+      "input_variables": [
+        {
+          "name": "PORTAL_HOST",
+          "type": "string",
+          "default": "gp-portal.lab.local",
+          "description": "Authorised lab GlobalProtect portal the recon probing surge targets."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "A burst of inbound HTTPS requests to the GlobalProtect unauthenticated prelogin endpoints (/global-protect/prelogin.esp, /ssl-vpn/prelogin.esp) from a single source, with an anomalously low probe-to-session ratio.",
+        "expected_value": "request_path in (\"/global-protect/prelogin.esp\", \"/ssl-vpn/prelogin.esp\") and dst_port = 443"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "The probing source IP matches a TIM threat_intel indicator tagged as CVE-2026-0257 GlobalProtect scanning infrastructure.",
+        "expected_value": "threat_intel.indicator_type = \"ipv4\" and threat_intel.feed_source = \"scanning-infrastructure\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-TIM-006 cleanup complete — no persistent artifacts (read-only recon probing).'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "23.128.228.6",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "104.207.144.154",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "146.19.216.119",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "146.19.216.120",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "146.19.216.125",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "179.43.172.213",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "185.195.232.139",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "198.12.106.60",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "202.144.192.47",
+        "context": "Unit 42 IoC — CVE-2026-0257 GlobalProtect exploitation source IP (Active Exploitation of PAN-OS CVE-2026-0257).",
+        "reputation_required": "malicious",
+        "cortex_severity_override": "high"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "GlobalProtect Portal Probing Surge From a Single Source",
+        "description": "A single source IP mass-probes the unauthenticated GlobalProtect prelogin/login endpoints on the exposed portal in a short burst — the wide-sweep reconnaissance shape Unit 42 observed ahead of CVE-2026-0257 exploitation. Rate-bounded: keys on >=50 prelogin requests from one source within a 10-minute bucket AND a low probe-to-session ratio (<=2 gateway-connected sessions), so busy-but-benign NAT/CGNAT egress that establishes real sessions is excluded rather than raised as a chronic false positive.",
+        "logic": "dataset = panw_ngfw_globalprotect_raw\n| filter log_subtype = \"globalprotect\"\n| filter request_path in (\"/global-protect/prelogin.esp\", \"/ssl-vpn/prelogin.esp\", \"/global-protect/login.esp\")\n| bin _time span=10m\n| alter is_connected = if(event_type = \"gateway-connected\", 1, 0)\n| comp count() as portal_probes, sum(is_connected) as connected_sessions, count_distinct(request_path) as distinct_paths by source_ip, dst_host, _time\n| filter portal_probes >= 50 and connected_sessions <= 2\n| sort desc portal_probes\n| fields source_ip, dst_host, _time, portal_probes, connected_sessions, distinct_paths",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1595.001",
+          "T1595.002"
+        ],
+        "suppression_window_seconds": 3600
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "TIM Feed Attribution — GlobalProtect Scanning Infrastructure Match",
+        "query": "dataset = threat_intel\n| filter indicator_type = \"ipv4\"\n| filter feed_source = \"scanning-infrastructure\"\n| filter tags contains \"globalprotect-scanner\" or tags contains \"cve-2026-0257\"\n| comp count() as flagged_hits by indicator_value, asn\n| filter flagged_hits >= 1\n| fields indicator_value, asn, flagged_hits",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "GlobalProtect Probe-to-Session Ratio Anomaly",
+        "query": "dataset = panw_ngfw_globalprotect_raw\n| filter log_subtype = \"globalprotect\"\n| bin _time span=10m\n| alter is_connected = if(event_type = \"gateway-connected\", 1, 0)\n| comp count() as portal_events, sum(is_connected) as connected_sessions by source_ip, _time\n| filter portal_events >= 50 and connected_sessions <= 2\n| sort desc portal_events\n| fields source_ip, _time, portal_events, connected_sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_globalprotect_raw"
+      },
+      {
+        "purpose": "investigation",
+        "name": "Cortex ASM Exposed GlobalProtect Portal Edge Asset",
+        "query": "dataset = asm_findings\n| filter service_name = \"globalprotect-portal\" or service_port = 443\n| filter finding_type = \"internet-exposed-vpn-portal\"\n| comp count() as exposures by asset_name, asset_ip\n| filter exposures >= 1\n| fields asset_name, asset_ip, exposures",
+        "expected_rows_min": 1,
+        "dataset": "asm_findings"
+      },
+      {
+        "purpose": "validation",
+        "name": "Recon-to-Exploit Precursor Stitch Validation",
+        "query": "dataset = network_story\n| filter dst_port = 443 and app = \"panos-global-protect\"\n| filter ti_category = \"scanning-infrastructure\"\n| bin _time span=10m\n| comp count() as probe_sessions, min(_time) as first_probe, max(_time) as last_probe by source_ip, dst_host, _time\n| filter probe_sessions >= 50\n| fields source_ip, dst_host, probe_sessions, first_probe, last_probe",
+        "expected_rows_min": 1,
+        "dataset": "network_story"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "TIM-Attributed GlobalProtect Recon-to-Exploit Precursor",
+        "rule_id": "CR-TIM-0006",
+        "logic": "XQL(TIM Feed Attribution — GlobalProtect Scanning Infrastructure Match) AND BIOC(GlobalProtect Portal Probing Surge From a Single Source) share the same source_ip within a 3600s window AND the NGFW portal-probing surge precedes the first gateway-connected event on the matched exposed GlobalProtect edge asset — stitches the low-signal probe into one attributed exploit-precursor incident asserting reconnaissance preceded the CVE-2026-0257 authentication-bypass attempt."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Correlation — TIM feed enrichment joined to NGFW GlobalProtect portal telemetry and ASM edge-asset inventory on source IP",
+        "validated": true,
+        "note": "Backed by CR-TIM-0006 and the Recon-to-Exploit Precursor Stitch Validation query on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-CORR-006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = network_story | filter dst_port = 443 and app = \"panos-global-protect\" | filter ti_category = \"scanning-infrastructure\" | comp count() as probe_sessions by source_ip, dst_host | filter probe_sessions >= 50"
+      },
+      {
+        "module": "cortex-asm",
+        "submodule": "exposure",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "TBD-ASM-006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = asm_findings | filter finding_type = \"internet-exposed-vpn-portal\" | comp count() as exposures by asset_name, asset_ip | filter exposures >= 1"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "globalprotect",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-NGFW-GP-006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_globalprotect_raw | filter request_path in (\"/global-protect/prelogin.esp\", \"/ssl-vpn/prelogin.esp\") | comp count() as portal_probes by source_ip | filter portal_probes >= 50"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-TIM-006",
+        "name": "TIM-Attributed Edge-VPN Recon-to-Exploit Precursor Correlation",
+        "description": "Cortex fuses a Threat Intel Management feed hit (source IP flagged as CVE-2026-0257 GlobalProtect scanning infrastructure), the NGFW GlobalProtect portal-probing surge from that same source, and the Cortex ASM exposed-portal edge-asset inventory into one attributed exploit-precursor incident — turning a low-signal probe into an actionable, pre-exploit alert the SOC can act on before a VPN session is established.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-TIM-006A",
+            "objective": "The correlation raises one attributed exploit-precursor incident when the TIM feed match and the GlobalProtect portal-probing surge share a source IP within the window.",
+            "preconditions": [
+              "TIM feed carries the CVE-2026-0257 GlobalProtect scanning-infrastructure indicators.",
+              "An authorised GlobalProtect portal log source and the ASM exposed-portal finding are present."
+            ],
+            "steps": [
+              "Confirm the TIM feed lists the scanning-infrastructure source IPs.",
+              "Generate the GlobalProtect prelogin probing surge from a flagged source.",
+              "Observe CR-TIM-0006 stitch the feed match and portal-probing surge into one incident."
+            ],
+            "success_criteria": [
+              "XQL `TIM Feed Attribution — GlobalProtect Scanning Infrastructure Match` returns the flagged source IP.",
+              "BIOC `GlobalProtect Portal Probing Surge From a Single Source` fires.",
+              "Correlation CR-TIM-0006 raises exactly one attributed exploit-precursor incident joining TIM + ASM + NDR on source IP."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "threat_step_id": "TS-TIM-006B",
+            "objective": "The probe-to-session ratio anomaly surfaces the wide-sweep/low-connect shape of the reconnaissance.",
+            "preconditions": [
+              "GlobalProtect portal telemetry is ingested (panw_ngfw_globalprotect_raw)."
+            ],
+            "steps": [
+              "Run the probing surge with only a small fraction of probes establishing gateway-connected sessions.",
+              "Run the GlobalProtect Probe-to-Session Ratio Anomaly query."
+            ],
+            "success_criteria": [
+              "XQL `GlobalProtect Probe-to-Session Ratio Anomaly` returns the source with portal_events >= 50 and connected_sessions <= 2."
+            ],
+            "expected_score_weight": 0.25
+          },
+          {
+            "threat_step_id": "TS-TIM-006C",
+            "objective": "The matched edge asset is the org's exposed GlobalProtect portal in the Cortex ASM inventory.",
+            "preconditions": [
+              "Cortex ASM has discovered the internet-exposed GlobalProtect portal."
+            ],
+            "steps": [
+              "Run the Cortex ASM Exposed GlobalProtect Portal Edge Asset query."
+            ],
+            "success_criteria": [
+              "XQL `Cortex ASM Exposed GlobalProtect Portal Edge Asset` returns the exposed portal asset the correlation matched on."
+            ],
+            "expected_score_weight": 0.15
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Patch PAN-OS to a fixed release for CVE-2026-0257 and restrict GlobalProtect portal/gateway exposure to required source ranges or a ZTNA broker rather than the open internet.",
+      "Block or challenge inbound connections from source IPs/ASNs a TIM feed flags as active scanning infrastructure at the NGFW before they reach the portal.",
+      "Reduce the attack surface Cortex ASM/Xpanse reports for internet-exposed VPN portals; require MFA and device posture for any GlobalProtect gateway connection."
+    ],
+    "detection_engineering": [
+      "Enrich NGFW GlobalProtect portal telemetry with the TIM scanning-infrastructure feed at ingest so a feed-flagged source probing the portal is high-fidelity from the first event.",
+      "Alert on a probe-to-session ratio anomaly (many prelogin probes from one source, few gateway-connected sessions) as the pre-exploit reconnaissance signature.",
+      "Correlate the TIM feed match, the NGFW portal-probing surge, and the ASM exposed-portal finding on source IP so the recon is raised as an attributed exploit precursor, not three disconnected low-signal events."
+    ]
+  },
+  "references": [
+    {
+      "title": "Active Exploitation of PAN-OS CVE-2026-0257 (GlobalProtect Authentication Bypass)",
+      "url": "https://unit42.paloaltonetworks.com/active-exploitation-of-pan-os-cve-2026-0257/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1595.002 Active Scanning: Vulnerability Scanning",
+      "url": "https://attack.mitre.org/techniques/T1595/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Correlation Rules & Threat Intel Management feed enrichment",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

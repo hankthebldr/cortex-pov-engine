@@ -1,0 +1,433 @@
+{
+  "id": "TTP-2026-0146",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T04:25:42+00:00",
+    "updated_at": "2026-07-24T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-tim",
+      "threat-intel",
+      "resource-development",
+      "vector-certificate-fingerprint-pivot",
+      "self-signed-tls",
+      "infrastructure-clustering",
+      "actor-trident-ursa",
+      "actor-fin7",
+      "correlation",
+      "ioc",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Certificate-Fingerprint Infrastructure Pivot — GNN Surfaces a Self-Signed TLS Cert Reused Across Trident Ursa IPs (T1587.003)",
+    "summary": "A GNN over multi-feature infrastructure relationships is Unit 42's method; a reused self-signed TLS certificate fingerprint is one high-value pivot feature. The scenario arms the source's one certificate example — a Trident Ursa self-signed cert reused across multiple IPs — as the TIM pivot: a handshake fires the IOC match, the fingerprint fans out, and a rule stitches one incident.",
+    "description": "Unit 42's research applies a Graph Neural Network (GNN) to discover malicious infrastructure: from a small seed set of known-bad indicators the GNN learns relationships between network artifacts across MANY edge features — co-hosted domains, hosting duration, content structure, lexical patterns, malware-delivery URLs, C2 domains, and TLS certificate fingerprints — and pivots to surface additional related infrastructure. A self-signed TLS certificate fingerprint is ONE high-value edge feature among these: because generating a fresh certificate per host is operational friction adversaries often skip, the same self-signed certificate can appear on multiple IP addresses, stitching those hosts together even when no domain or IP overlaps. The report's single concrete certificate example is Russian actor Trident Ursa — multiple IP addresses hosting Trident Ursa content shared one self-signed certificate fingerprint (07eee6e893766e8bcc4a711abfdf201ee2920799). The report documents other, SEPARATE GNN-clustered infrastructure that is NOT linked by that certificate: an unattributed postal/package-delivery phishing network (correosesllr[.]top, inposdomag[.]top, usps.postscy[.]top co-hosted on 47.251.0[.]168, with reuse hub 146.112.61[.]108 hosting ~160 domains) surfaced via shared HOSTING; an unattributed web-skimming set (apple.com-ticket[.]info, ssl-google-analytics[.]com) whose indicators partially overlap with activity previously attributed to TA569; and a Squeamish Libra / FIN7 scanner-lookalike set (advanced-ip-sccanner[.]com) distributing a fake Advanced IP Scanner installer. This TIM-plane scenario reproduces the ONE genuine certificate-fingerprint pivot in a lab: mocktaxii arms the Trident Ursa self-signed certificate fingerprint as the pivot indicator; an estate host performs TLS handshakes to lab hosts that present that shared self-signed certificate (the NGFW captures tls_cert_fingerprint_sha1); Cortex raises a TIM IOC match on the certificate fingerprint and then fans out on the shared fingerprint to roll up every co-fingerprinted IP the estate touched. A correlation rule gates on the feed-presence of the certificate indicator and joins the self-signed-cert BIOC to the fingerprint fan-out on the shared tls_cert_fingerprint_sha1 into one Resource-Development adversary-infrastructure incident. The point is that a reused certificate fingerprint is a high-fidelity pivot FEATURE — one of several the GNN weighs — not the sole method, and not a link across the otherwise-unrelated postal, skimming, and scanner clusters.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Trident Ursa",
+        "aliases": [
+          "Gamaredon",
+          "Primitive Bear",
+          "ACTINIUM",
+          "Armageddon"
+        ],
+        "mitre_group_id": "G0047"
+      },
+      {
+        "name": "FIN7",
+        "aliases": [
+          "Squeamish Libra",
+          "Carbon Spider"
+        ],
+        "mitre_group_id": "G0046"
+      }
+    ],
+    "campaigns": [
+      "Trident Ursa self-signed TLS certificate (07eee6e893766e8bcc4a711abfdf201ee2920799) reused across multiple IP addresses — Unit 42 GNN infrastructure discovery (2022-2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2022-02-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1587",
+        "subtechnique_id": "T1587.003",
+        "name": "Develop Capabilities: Digital Certificates",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1583",
+        "subtechnique_id": "T1583.001",
+        "name": "Acquire Infrastructure: Domains",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1608",
+        "subtechnique_id": "T1608.003",
+        "name": "Stage Capabilities: Install Digital Certificate",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1583",
+        "subtechnique_id": "T1583.006",
+        "name": "Acquire Infrastructure: Web Services",
+        "tactic_ids": [
+          "TA0042"
+        ],
+        "tactic_names": [
+          "Resource Development"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Certificate: Certificate Registration",
+      "Internet Scan: Response Content",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-TIM-004 — Certificate-fingerprint infrastructure pivot on the TIM plane (defender-vantage; mocktaxii-armed self-signed certificate fingerprint reused across multiple IPs).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "mocktaxii TAXII 2.1 collection reachable so the self-signed certificate fingerprint indicator (the pivot key) is ingested into the XSIAM threat_intel dataset.",
+        "check_command": "curl -sf http://localhost:9000/taxii2/ -H 'Accept: application/taxii+json;version=2.1'"
+      },
+      {
+        "description": "NGFW / decryption telemetry captures the server certificate fingerprint (tls_cert_fingerprint_sha1) on TLS handshakes from the estate so the pivot has a field to fan out on.",
+        "check_command": "openssl version"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE / NON-DESTRUCTIVE. No exploitation, no payload delivery. Perform TLS\n# handshakes to several lab hosts that all present the ONE shared self-signed\n# certificate (Trident Ursa fingerprint 07eee6e893766e8bcc4a711abfdf201ee2920799)\n# and READ the server certificate fingerprint so the NGFW/network telemetry sees\n# the same fingerprint fan out across multiple destination IPs.\nset -euo pipefail\nZONE=\"${TIM_ZONE:-cortexsim-tim.internal}\"\necho \"[CortexSim][SAFE-MODE] SIM-TIM-004 certificate-fingerprint pivot against lab zone ${ZONE}\"\nfor host in \"tu-node-a.${ZONE}\" \"tu-node-b.${ZONE}\" \"tu-node-c.${ZONE}\"; do\n  echo | timeout 5 openssl s_client -connect \"${host}:443\" -servername \"${host}\" 2>/dev/null \\\n    | openssl x509 -noout -fingerprint -sha1 2>/dev/null || true\ndone\necho '[CortexSim] SIM-TIM-004 handshake sweep complete — one cert fingerprint observed across the lab IPs for the fan-out roll-up.'\n",
+      "input_variables": [
+        {
+          "name": "TIM_ZONE",
+          "type": "string",
+          "default": "cortexsim-tim.internal",
+          "description": "Authorised lab DNS zone whose hosts present the shared SAFE-MODE self-signed certificate the pivot fans out on."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "TLS handshakes from the estate host to multiple lab hosts that all present the same self-signed server certificate fingerprint.",
+        "expected_value": "tls_cert_self_signed = true and tls_cert_fingerprint_sha1 = \"07eee6e893766e8bcc4a711abfdf201ee2920799\" shared across >= 2 distinct dst_ip"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "TIM IOC match on the armed self-signed certificate fingerprint captured on the estate handshake.",
+        "expected_value": "tls_cert_fingerprint_sha1 = \"07eee6e893766e8bcc4a711abfdf201ee2920799\" (feed-armed CERT_FINGERPRINT indicator)"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-TIM-004 cleanup complete — no artifacts written (read-only handshakes).'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha1",
+        "value": "07eee6e893766e8bcc4a711abfdf201ee2920799",
+        "context": "Self-signed TLS certificate SHA-1 fingerprint reused across multiple Trident Ursa IP addresses (Unit 42 GNN research). THE certificate-fingerprint pivot anchor — the only concrete certificate indicator the source documents. Armed in TIM as a CERT_FINGERPRINT / TLS_CERT_SHA1 indicator; the BIOC and fan-out XQL key on this value.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "47.251.0.168",
+        "context": "Postal/package-delivery phishing hosting hub — serves look-alike domains (correosesllr[.]top, inposdomag[.]top, usps.postscy[.]top). Unattributed in the source. A SEPARATE GNN cluster surfaced via shared HOSTING, NOT tied to the certificate fingerprint. Documentary IOC breadth.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "146.112.61.108",
+        "context": "Long-lived infrastructure-reuse hub — ~160 malicious domains over the prior year (Unit 42). Unattributed. A GNN hosting-duration / shared-hosting pivot feature, NOT a certificate pivot. Documentary IOC breadth.",
+        "reputation_required": "any",
+        "cortex_severity_override": "high"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "correosesllr.top",
+        "context": "Postal/delivery look-alike phishing domain co-hosted on 47.251.0.168. Unattributed. Surfaced by the GNN via shared hosting, not by any shared certificate.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "inposdomag.top",
+        "context": "Postal/delivery look-alike phishing domain in the shared-hosting postal cluster on 47.251.0.168. Unattributed. Not certificate-linked.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "usps.postscy.top",
+        "context": "USPS look-alike phishing domain in the shared-hosting postal cluster on 47.251.0.168. Unattributed. Not certificate-linked.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "apple.com-ticket.info",
+        "context": "Web-skimming exfiltration domain. Attribution unclear; some indicators overlap with activity previously attributed to TA569 (Unit 42). A GNN content/lexical cluster, not certificate-linked.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "ssl-google-analytics.com",
+        "context": "Web-skimming exfiltration domain masquerading as Google Analytics. Attribution unclear (possible TA569 overlap per Unit 42). Not certificate-linked.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "advanced-ip-sccanner.com",
+        "context": "Scanner-lookalike malware-distribution domain hosting a fake Advanced_Ip_Scanner_setup.exe (Carbanak/Aranuk installer). Attributed to Squeamish Libra / FIN7 (Unit 42). A separate GNN cluster, not certificate-linked.",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "SIM-TIM-004 Estate Handshake to a TIM-Armed Self-Signed Certificate",
+        "description": "An estate host completes a TLS handshake to a destination presenting the mocktaxii-armed self-signed certificate — server-certificate fingerprint equals the feed-armed value 07eee6e893766e8bcc4a711abfdf201ee2920799. Keying on the armed fingerprint (not a broad self-signed-cert predicate and not any single domain) is what seeds the fingerprint fan-out; a default/snakeoil self-signed cert cannot match, so there is no false-positive breadth.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssl\" or app = \"web-browsing\"\n| filter tls_cert_self_signed = true and tls_cert_fingerprint_sha1 = \"07eee6e893766e8bcc4a711abfdf201ee2920799\"\n| comp count() as handshakes by agent_hostname, src_host, dst_ip, dst_host, tls_cert_fingerprint_sha1\n| filter handshakes >= 1\n| fields agent_hostname, src_host, dst_ip, dst_host, tls_cert_fingerprint_sha1, handshakes",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1608.003",
+          "T1071.001"
+        ]
+      }
+    ],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SIM-TIM-004 Cert-Fingerprint Indicator Ingested",
+        "query": "dataset = threat_intel\n| filter indicator_type in (\"CERT_FINGERPRINT\", \"TLS_CERT_SHA1\")\n| filter indicator_value = \"07eee6e893766e8bcc4a711abfdf201ee2920799\"\n| filter reference contains \"certificate-fingerprint-pivot\"\n| comp count() as armed_indicators by indicator_type, indicator_value\n| filter armed_indicators >= 1\n| fields indicator_type, indicator_value, armed_indicators",
+        "expected_rows_min": 0,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "hunt",
+        "name": "SIM-TIM-004 Shared Self-Signed Cert Fingerprint Fan-Out Across IPs",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssl\" or app = \"web-browsing\"\n| filter tls_cert_self_signed = true and tls_cert_fingerprint_sha1 = \"07eee6e893766e8bcc4a711abfdf201ee2920799\"\n| comp count_distinct(dst_ip) as distinct_ips, count_distinct(dst_host) as distinct_domains by tls_cert_fingerprint_sha1\n| filter distinct_ips >= 2\n| sort desc distinct_ips\n| fields tls_cert_fingerprint_sha1, distinct_ips, distinct_domains",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "SIM-TIM-004 Feed Match Stitched to TLS Handshake on Cert Fingerprint",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter tls_cert_self_signed = true and tls_cert_fingerprint_sha1 = \"07eee6e893766e8bcc4a711abfdf201ee2920799\"\n| comp count() as cluster_sessions, count_distinct(dst_ip) as cluster_ips by tls_cert_fingerprint_sha1, src_host\n| filter cluster_sessions >= 1\n| fields tls_cert_fingerprint_sha1, src_host, cluster_sessions, cluster_ips",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "SIM-TIM-004 Certificate-Fingerprint Infrastructure-Cluster Incident",
+        "rule_id": "CR-TIM-0004",
+        "logic": "GATE XQL(SIM-TIM-004 Cert-Fingerprint Indicator Ingested) — a feed-presence precondition confirming the self-signed certificate fingerprint is armed in threat_intel (it is not a join participant). JOIN BIOC(SIM-TIM-004 Estate Handshake to a TIM-Armed Self-Signed Certificate) with XQL(SIM-TIM-004 Shared Self-Signed Cert Fingerprint Fan-Out Across IPs) on the shared tls_cert_fingerprint_sha1 entity within the correlation window — both carry that key. Together they fuse the certificate-fingerprint IOC match with the multi-IP fingerprint fan-out into one Resource-Development adversary-infrastructure incident scoped to the shared certificate. The incident rolls up every co-fingerprinted IP the estate touched under that one fingerprint."
+      }
+    ],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "threat-intelligence",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-TIM-004-CERTPIVOT-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter tls_cert_self_signed = true and tls_cert_fingerprint_sha1 = \"07eee6e893766e8bcc4a711abfdf201ee2920799\" | comp count_distinct(dst_ip) as ips by tls_cert_fingerprint_sha1 | filter ips >= 2"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-TIM-004-CLUSTER-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "CR-TIM-0004 stitches the threat_intel feed match to the NGFW fingerprint fan-out on tls_cert_fingerprint_sha1 into one Resource-Development infrastructure-cluster incident."
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "decryption",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-TIM-004-TLSCERT-003"
+        ],
+        "license_required": "base",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app = \"ssl\" | filter tls_cert_fingerprint_sha1 = \"07eee6e893766e8bcc4a711abfdf201ee2920799\" | fields src_host, dst_ip, dst_host, tls_cert_self_signed, tls_cert_fingerprint_sha1"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-TIM-004",
+        "name": "Certificate-Fingerprint Infrastructure-Cluster Pivot on the TIM Plane",
+        "description": "Cortex TIM arms the source-documented self-signed TLS certificate fingerprint (a Trident Ursa cert reused across multiple IPs) as the pivot indicator; a matching estate handshake raises an IOC hit and the fingerprint fan-out rolls up every co-fingerprinted IP into one Resource-Development adversary-infrastructure incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-TIM-004A",
+            "objective": "The TIM-armed self-signed certificate fingerprint plus an estate handshake to a host presenting that certificate raises the certificate-fingerprint IOC match and the estate-handshake BIOC.",
+            "preconditions": [
+              "mocktaxii armed the self-signed certificate fingerprint (07eee6e893766e8bcc4a711abfdf201ee2920799) into threat_intel.",
+              "NGFW/decryption telemetry captures tls_cert_fingerprint_sha1 on the handshake."
+            ],
+            "steps": [
+              "Confirm the cert-fingerprint indicator set is ingested.",
+              "Perform a TLS handshake from the estate host to a lab host presenting the armed self-signed certificate.",
+              "Observe the TIM IOC match and the estate-handshake BIOC fire."
+            ],
+            "success_criteria": [
+              "XQL `SIM-TIM-004 Cert-Fingerprint Indicator Ingested` returns the armed indicator set.",
+              "BIOC `SIM-TIM-004 Estate Handshake to a TIM-Armed Self-Signed Certificate` fires on the handshake."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-TIM-004B",
+            "objective": "The armed certificate fingerprint fans out across >= 2 distinct destination IPs, rolling up the co-fingerprinted hosts.",
+            "preconditions": [
+              "Estate handshakes to multiple lab hosts presenting the armed self-signed certificate recorded in panw_ngfw_traffic_raw."
+            ],
+            "steps": [
+              "Run the fingerprint fan-out hunt query over the handshake window.",
+              "Confirm one fingerprint groups multiple distinct destinations."
+            ],
+            "success_criteria": [
+              "XQL `SIM-TIM-004 Shared Self-Signed Cert Fingerprint Fan-Out Across IPs` returns the armed fingerprint with distinct_ips >= 2."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-TIM-004C",
+            "objective": "The correlation rule fuses the feed match and the fingerprint fan-out into one Resource-Development infrastructure-cluster incident scoped to the shared certificate.",
+            "preconditions": [
+              "The feed match and fan-out both observed on the shared tls_cert_fingerprint_sha1 within the correlation window."
+            ],
+            "steps": [
+              "Let the run window elapse.",
+              "Observe CR-TIM-0004 raise one incident.",
+              "Confirm the incident rolls up every co-fingerprinted IP the estate touched."
+            ],
+            "success_criteria": [
+              "Correlation `CR-TIM-0004` raises exactly one Resource-Development adversary-infrastructure incident.",
+              "The incident is scoped to the shared certificate fingerprint and enumerates the co-fingerprinted IPs."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Block TLS sessions to hosts presenting self-signed certificates whose fingerprints are on a threat-intel indicator list at the NGFW.",
+      "Enforce decryption on egress so the firewall can observe server-certificate fingerprints rather than only SNI/domain.",
+      "Subscribe TIM to certificate-fingerprint indicators (not only domain/IP) so provisioned-infrastructure reuse is caught before a domain is even blocked."
+    ],
+    "detection_engineering": [
+      "Arm the certificate fingerprint — not a single domain — as the TIM pivot indicator; a self-signed thumbprint reused across IPs is a higher-fidelity cluster anchor than any one domain.",
+      "Alert only when a FEED-MATCHED self-signed certificate fingerprint (one on a threat-intel indicator list) is observed across two or more distinct destination IPs. Do NOT alert on any self-signed fingerprint shared across destinations — default/snakeoil certs (Ubuntu ssl-cert-snakeoil, k8s ingress default, appliance/load-balancer/IoT defaults) are shared byte-for-byte across many internal hosts, so an unqualified 'one fingerprint across >= 2 destinations' rule pages the SOC continuously. Exclude RFC1918 destinations and maintain a known-good self-signed-cert allowlist.",
+      "Stitch the TIM feed match to the NGFW fingerprint fan-out on tls_cert_fingerprint_sha1 into a single Resource-Development cluster incident rather than N per-IP alerts."
+    ]
+  },
+  "references": [
+    {
+      "title": "Discovering Malicious Infrastructure with Graph Neural Networks (certificate-fingerprint pivoting)",
+      "url": "https://unit42.paloaltonetworks.com/graph-neural-networks/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1587.003 — Develop Capabilities: Digital Certificates",
+      "url": "https://attack.mitre.org/techniques/T1587/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1583.001 — Acquire Infrastructure: Domains",
+      "url": "https://attack.mitre.org/techniques/T1583/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1608.003 — Stage Capabilities: Install Digital Certificate",
+      "url": "https://attack.mitre.org/techniques/T1608/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

@@ -19,8 +19,29 @@ cortex_signal:
 safety_class: safe
 
 install:
+  # DEAD UPSTREAM (measured 2026-08-06, HTTP 404): Aqua pruned the v0.55.x
+  # release line, so this command cannot install trivy on ANY target, egress or
+  # not — SIM-CDR-007's trivy step runs with no tool, detects nothing, and the
+  # absent detection reads in a POV report as "Cortex missed it". Not repointed
+  # here because this string is emitted VERBATIM into push bundles
+  # (push_generator.py), so bumping the version moves SIM-CDR-007's entry in
+  # tests/engine/_golden/push_bundle_digests.json. It belongs in a commit that
+  # can regenerate those goldens. v0.73.0 is live; v0.55.0 also 404s.
+  # Detectable by tests/tools/test_tier4_artifact_declaration.py
+  # ::test_every_pinned_release_url_still_resolves (CORTEXSIM_CHECK_UPSTREAM_URLS=1).
   runtime_install_command: "command -v trivy >/dev/null 2>&1 || (curl -sSL https://github.com/aquasecurity/trivy/releases/download/v0.55.2/trivy_0.55.2_Linux-64bit.tar.gz | tar xz -C /usr/local/bin trivy && chmod +x /usr/local/bin/trivy)"
   binary: trivy
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: NEEDS_RUNTIME_DATA
+    reason: >-
+      Trivy downloads its vulnerability database from a registry on every
+      scan. Staging only the binary would remove the install download while
+      leaving the database download in place — so the target would still need
+      internet access, and CortexSim would report the scenario as air-gapped
+      when it is not. This tool needs internet access on the target host.
+      Separately, this pack's install URL is dead upstream: see the note above
+      runtime_install_command.
 
 invoke:
   target_platform: linux

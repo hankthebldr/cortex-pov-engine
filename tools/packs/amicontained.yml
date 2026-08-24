@@ -1,0 +1,61 @@
+adapter_id: TOOL-AMICONTAINED
+name: amicontained
+version: "0.4.9"
+
+tier: 4
+category: cloud-container
+
+upstream:
+  repo: https://github.com/genuinetools/amicontained
+  license: "MIT"
+  attribution: Jessie Frazelle (genuinetools)
+
+cortex_signal:
+  planes:
+    - CDR
+    - EDR
+  expected_techniques:
+    - T1613  # Container and Resource Discovery
+    - T1082  # System Information Discovery
+
+safety_class: safe
+
+install:
+  runtime_install_command: "test -x /tmp/amicontained-linux-amd64 || (curl -fsSLo /tmp/amicontained-linux-amd64 https://github.com/genuinetools/amicontained/releases/download/v0.4.9/amicontained-linux-amd64 && chmod +x /tmp/amicontained-linux-amd64)"
+  binary: /tmp/amicontained-linux-amd64
+
+  artifact:
+    filename: amicontained-linux-amd64
+    url: "https://github.com/genuinetools/amicontained/releases/download/v0.4.9/amicontained-linux-amd64"
+    kind: file
+    sha256: "d8c49e2cf44ee9668219acd092ed961fc1aa420a6e036e0822d7a31033776c9f"
+    pin:
+      type: release-tag
+      ref: "v0.4.9"
+    license: "MIT"
+    stage_path: /tmp/amicontained-linux-amd64
+    mode: "0755"
+
+invoke:
+  target_platform: linux
+  run_template: "{binary}"
+  default_args: {}
+  identity_required: container-runtime
+
+cleanup:
+  commands:
+    - "rm -f /tmp/amicontained-linux-amd64"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-DEEPCE
+
+author: Henry Reed
+created: "2026-08-05"
+last_updated: "2026-08-05"
+tags:
+  - container
+  - enumeration
+  - cdr
+  - payload-shelf

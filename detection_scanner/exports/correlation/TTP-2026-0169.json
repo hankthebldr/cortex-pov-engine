@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1566.002",
+    "T1059.001",
+    "T1021.001",
+    "T1078.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Multi-Stage Intrusion Chain Elevated Above a High-Volume Benign Alert Floor) AND XQL(Alert Grouping Collapse Ratio Across the Labelled Corpus) AND XQL(Triage Classification Confusion Matrix Against the Ground-Truth Label) AND XQL(Benign Near-Miss Alerts Remain Singletons Below the Escalation Floor) observed under one cortexsim_run_tag \u2014 the terminal assertion is a measurement, not a merge. The four malicious-labelled stages must resolve to ONE incident ranked above every benign-labelled alert; the hard-positive automation deviation must raise its OWN incident and must NOT be absorbed into the malicious one; the benign near-miss floor must stay singleton and below the escalation floor. Precision and recall are computed from the confusion-matrix query against the author-time label column, and the collapse ratio from the raw-alert to incident count. Failure modes are individually visible and individually reportable: a benign alert inside the malicious incident is a precision failure, a malicious-labelled alert on the recall miss list is a recall failure, a hard positive merged into the malicious incident is a grouping-precision failure, and a collapse ratio below the bar is a grouping failure.",
+      "name": "AI SOC Volume Triage Discrimination Terminal Stitch",
+      "rule_id": "CR-MP-0021",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0169"
+}

@@ -20,6 +20,10 @@ logger = logging.getLogger("cortexsim.infra_catalog")
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
+# libyaml-backed loader where available — same YAML 1.1 safe subset, ~9x
+# faster. See the matching note in engine/scenario_loader.py.
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 
 class InfraCatalog:
     """
@@ -60,7 +64,7 @@ class InfraCatalog:
             return None
         try:
             with p.open("r", encoding="utf-8") as fh:
-                return yaml.safe_load(fh) or {}
+                return yaml.load(fh, Loader=_YAML_LOADER) or {}
         except yaml.YAMLError:
             logger.exception("failed to parse content.yml for %s/%s", provider, module)
             return None
@@ -79,7 +83,7 @@ class InfraCatalog:
             return None
 
         try:
-            fm = yaml.safe_load(match.group(1)) or {}
+            fm = yaml.load(match.group(1), Loader=_YAML_LOADER) or {}
         except yaml.YAMLError:
             logger.exception("invalid frontmatter YAML in %s/%s README.md", provider, module)
             return None

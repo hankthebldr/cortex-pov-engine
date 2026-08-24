@@ -21,6 +21,23 @@ safety_class: safe
 install:
   runtime_install_command: "command -v kubescape >/dev/null 2>&1 || curl -s https://raw.githubusercontent.com/kubescape/kubescape/master/install.sh | /bin/bash"
   binary: "kubescape"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: ARTIFACT_TOO_LARGE
+    reason: >-
+      Kubescape ships a 250 MB binary. It is the one tool in this catalog
+      published as a single file rather than an archive, but staging it would
+      put a quarter of a gigabyte into the SimCore image, and it still
+      downloads its control frameworks at scan time. This tool needs internet
+      access on the target host.
+    revisit: >-
+      Measured 2026-08-06: kubescape_4.0.11_linux_amd64 is a BARE FILE of
+      262,032,010 bytes (249.9 MiB) against CORTEXSIM_SHELF_MAX_BYTES of 64
+      MiB — so it needs no extractor, only a cap decision. Do NOT simply raise
+      the cap: the beacon's whole value proposition is a 5 MB static binary
+      that installs on an air-gapped host. The right answer for a customer who
+      genuinely needs this air-gapped is an internal Artifactory mirror (the
+      stage SSRF guard already permits RFC1918 sources), not a bigger image.
 
 invoke:
   target_platform: linux

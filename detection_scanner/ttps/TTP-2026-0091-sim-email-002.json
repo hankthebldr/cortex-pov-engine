@@ -201,14 +201,14 @@
         "evidence_query": "Correlation CR-EMAIL-0002 pivots the attachment sha256 into the endpoint file/process stream for the recipient."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EMAIL-002",
+        "threat_scenario_id": "TS-EMAIL-002",
         "name": "Malicious Attachment Detection",
         "description": "Detect a malware-classified attachment delivered to a recipient across both Proofpoint TAP and Microsoft 365 email log shapes, pivoting the hash into the endpoint stream.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EMAIL-002A",
+            "threat_step_id": "TS-EMAIL-002A",
             "objective": "A burst of blocked malware-attachment messages for one recipient raises a malware-attachment alert.",
             "preconditions": [
               "Cortex XSIAM ingesting proofpoint_tap_raw and msft_o365 datasets.",
@@ -225,7 +225,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-EMAIL-002B",
+            "threat_step_id": "TS-EMAIL-002B",
             "objective": "The attachment hash pivots into the endpoint file/process stream.",
             "success_criteria": [
               "Correlation `CR-EMAIL-0002` ties the attachment sha256 to the recipient endpoint follow-on under one incident."

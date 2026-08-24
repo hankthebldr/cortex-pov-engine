@@ -1,0 +1,157 @@
+scenario_id: SIM-TIM-003
+name: "Strategically Aged Sleeper-Domain Activation — Dormancy-Break DNS Burst with DGA Subdomain Fan-Out"
+version: "1.0"
+status: active
+
+plane: TIM
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-XTI-03
+tc_ref: TC-XTI-05
+tc_refs:
+  - TC-XTI-05
+  - TC-XTI-07
+  - TC-TH-01
+pov_scenario_id: POV-SC-077
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate retro-hunt automatically sweeps historical telemetry when new intel lands"
+
+mitre_tactic: "TA0011"
+mitre_tactic_name: "Command and Control"
+mitre_technique: "T1568.002"
+mitre_technique_name: "Dynamic Resolution: Domain Generation Algorithms"
+additional_techniques:
+  - technique: "T1071.004"
+    name: "Application Layer Protocol: DNS"
+  - technique: "T1583.001"
+    name: "Acquire Infrastructure: Domains"
+  - technique: "T1048.003"
+    name: "Exfiltration Over Alternative Protocol: Unencrypted Non-C2 Protocol"
+
+threat_report: "Unit 42 — Strategically Aged Domain Detection: Capture APT Attacks With DNS Traffic Trends"
+threat_report_url: "https://unit42.paloaltonetworks.com/strategically-aged-domain-detection/"
+
+# Non-destructive DNS-plane scenario. Every step only emits DNS query telemetry
+# to a lab-controlled resolver (${DNS_RESOLVER}); nothing is encrypted, deleted,
+# or exfiltrated. The published apexes (avsvmcloud.com etc.) are sinkholed — keep
+# DNS_RESOLVER pointed at a lab/sinkhole zone so no query reaches real infra.
+# A SAFE-MODE marker file records the simulated activation.
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The chain OWNER is the beaconing implant process on the compromised host that
+# resolves the aged apex, NOT the synthetic beacon. Modeled as the svc-account
+# shell loop that drives the dormancy-break burst and the DGA fan-out, so both
+# per-apex DNS deviations descend from one CGO instead of hanging off cortexsim-agent.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "svc-account"
+
+validation_methodology: "Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex has learned a per-apex DNS request-volume baseline (a 90-day average daily
+  query count while the apex sat dormant, below the 75th-percentile activity band).
+  This learned baseline is a HARD precondition — it must predate the run, since the
+  dormancy-break ABIOC measures the activation multiple against that multi-day average,
+  not against traffic emitted inside the run window. The injected same-day query burst
+  crosses the >10.3x activation multiple into the top-5% band and a fan-out of
+  never-before-seen high-entropy DGA subdomains (alphanumeric leftmost label, length
+  >= 8, >= 2 digits) exceeds the apex's learned subdomain diversity. Both
+  auto-tuned ABIOCs fire and the correlation rule stitches them on the same apex into
+  a single strategically-aged-sleeper-domain-activation incident. This is the
+  "behavioral DNS analytics catch what a newly-registered-domain block misses" proof:
+  the apex is years old and reputation-clean, so the catch comes from the dormancy-break
+  deviation and DGA fan-out, not from domain age or a static IOC list.
+moat_tier: "LEAD"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Dormancy-break activation burst — spike DNS query volume for the aged sleeper apex"
+    command: "mkdir -p /tmp/cortexsim-tim-003 && echo \"SAFE-MODE simulated sleeper-domain activation of avsvmcloud.com at $(date -u +%FT%TZ)\" > /tmp/cortexsim-tim-003/activation.marker; for i in $(seq 1 120); do dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} avsvmcloud.com >/dev/null 2>&1 || true; done; echo cortexsim-tim-003-dormancy-break-activation-burst"
+    identity: svc-account
+    mitre_technique: "T1071.004"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: |
+        $r = if ($env:DNS_RESOLVER) { $env:DNS_RESOLVER } else { '127.0.0.1' }; 1..120 | ForEach-Object { Resolve-DnsName -Server $r -Name avsvmcloud.com -QuickTimeout -DnsOnly -ErrorAction SilentlyContinue | Out-Null }
+      macos: |
+        for i in $(seq 1 120); do dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} avsvmcloud.com >/dev/null 2>&1 || true; done
+    expected_detections:
+      - plane: TIM
+        type: ABIOC
+        description: "An aged apex whose learned DNS volume baseline sat below its 75th-percentile activity for a long dormancy suddenly jumps past the >10.3x activation multiple into the top-5% band — auto-tuned ABIOC fires on the dormancy-break deviation, anchored to the apex's own request-volume history, not domain reputation."
+        ttp_ref: "TTP-2026-0108"
+        detection_id: "abioc-dormancy-break-traffic-burst-on-a-strategically-aged-domain"
+      - plane: TIM
+        type: XQL
+        description: "Validation query confirms the activation burst is observable in pan_dns for the published aged apexes within the run window."
+        ttp_ref: "TTP-2026-0108"
+        detection_id: "xql-sleeper-domain-activation-burst-surfaced-in-dns-telemetry"
+
+  - id: step-02
+    name: "DGA subdomain fan-out — resolve never-before-seen high-entropy subdomains under the activated apex"
+    command: "for pub in imgdsg4f35 php78mp9v dga1a2b3c appsync-api-70e2b8f4; do dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} ${pub}.avsvmcloud.com >/dev/null 2>&1 || true; done; for i in $(seq 1 60); do sub=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \\n'); dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} ${sub}.avsvmcloud.com >/dev/null 2>&1 || true; done; echo cortexsim-tim-003-dga-subdomain-fan-out"
+    identity: svc-account
+    mitre_technique: "T1568.002"
+    causality:
+      parent_step: "step-01"
+      pivot: shared_entity
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: |
+        $r = if ($env:DNS_RESOLVER) { $env:DNS_RESOLVER } else { '127.0.0.1' }; foreach ($pub in 'imgdsg4f35','php78mp9v','dga1a2b3c','appsync-api-70e2b8f4') { Resolve-DnsName -Server $r -Name "$pub.avsvmcloud.com" -QuickTimeout -DnsOnly -ErrorAction SilentlyContinue | Out-Null }; 1..60 | ForEach-Object { $sub = -join ((48..57) + (97..122) | Get-Random -Count 16 | ForEach-Object { [char]$_ }); Resolve-DnsName -Server $r -Name "$sub.avsvmcloud.com" -QuickTimeout -DnsOnly -ErrorAction SilentlyContinue | Out-Null }
+      macos: |
+        for pub in imgdsg4f35 php78mp9v dga1a2b3c appsync-api-70e2b8f4; do dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} ${pub}.avsvmcloud.com >/dev/null 2>&1 || true; done; for i in $(seq 1 60); do sub=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'); dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} ${sub}.avsvmcloud.com >/dev/null 2>&1 || true; done
+    expected_detections:
+      - plane: TIM
+        type: ABIOC
+        description: "Under the activated apex, a fan-out of distinct never-before-seen high-entropy DGA subdomains exceeds the apex's learned subdomain diversity — auto-tuned ABIOC fires on the fan-out deviation, anchored to the same apex that broke dormancy. No single subdomain is on a static IOC list."
+        ttp_ref: "TTP-2026-0108"
+        detection_id: "abioc-never-before-seen-dga-subdomain-fan-out-under-a-newly-activated-apex"
+      - plane: TIM
+        type: XQL
+        description: "Validation query confirms distinct high-entropy DGA subdomains under the activated apex are observable in pan_dns within the run window."
+        ttp_ref: "TTP-2026-0108"
+        detection_id: "xql-dga-subdomain-fan-out-surfaced-under-an-activated-apex"
+
+  - id: step-03
+    name: "Correlation stitches the dormancy-break burst and the DGA fan-out into one activation incident"
+    command: "echo cortexsim-tim-003-cr-tim-0003-stitched-sleeper-domain-activation"
+    identity: svc-account
+    mitre_technique: "T1568.002"
+    causality:
+      parent_step: "step-02"
+      pivot: shared_entity
+    platforms: ["linux"]
+    expected_detections:
+      - plane: TIM
+        type: Correlation
+        description: "Correlation rule fuses the dormancy-break-burst ABIOC and the DGA-fan-out ABIOC on the same apex within the activation window into a single strategically-aged-sleeper-domain-activation incident anchored to the aged apex the NRD block never flagged."
+        ttp_ref: "TTP-2026-0108"
+        detection_id: "CR-TIM-0003"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-tim-003"
+    - "echo cortexsim-tim-003-cleanup-complete"

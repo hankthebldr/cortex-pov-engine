@@ -6,7 +6,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "(XQL(TIM IOC Match \u2014 Outbound Session to TAXII-Fed C2 Domain) AND XQL(TIM \u2014 Periodic Beacon to Feed-Listed IOC Domain (NDR leg))) -> join on src_host within 60s. Promotes the benign-looking outbound web session to a C2 incident because the destination resolves against the subscribed mocktaxii TAXII feed.",
+      "logic": "(XQL(TIM IOC Match \u2014 Outbound Session to TAXII-Fed C2 Domain) AND XQL(TIM \u2014 Periodic Beacon to Feed-Listed IOC Domain (NDR leg))) -> join on src_host (shared_entity pivot: the beacon host owned by the Causality Group Owner) within 60s. Promotes the benign-looking outbound web session to a C2 incident because the destination resolves against the subscribed mocktaxii TAXII feed.",
       "name": "TIM \u2014 TAXII IOC Feed Match Stitched to Outbound NDR Session",
       "rule_id": "CR-TIM-0001",
       "severity": "high"

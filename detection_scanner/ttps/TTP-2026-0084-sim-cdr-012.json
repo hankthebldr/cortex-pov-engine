@@ -236,14 +236,14 @@
         "evidence_query": "Correlation CR-CDR-0012 fuses the misconfiguration BIOC and the sample-execution BIOC into one container-malware incident; the WildFire verdict path validates the submission pipeline."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-012",
+        "threat_scenario_id": "TS-CLOUD-012",
         "name": "WildFire Verdict Path and Pod-Misconfiguration Coverage",
         "description": "Cortex Cloud CDR + XSIAM exercise the WildFire verdict path with benign test samples inside a container and surface the insecure-pod misconfiguration that enables malware staging — in one fixture, without handling real malware.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-012A",
+            "threat_step_id": "TS-CLOUD-012A",
             "objective": "The WildFire test-sample retrieval and execution inside a container is detected.",
             "preconditions": [
               "cdr EKS fixture applied with the Cortex Linux agent daemonset and WildFire enabled."
@@ -259,7 +259,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-CLOUD-012B",
+            "threat_step_id": "TS-CLOUD-012B",
             "objective": "The insecure-pod misconfiguration is surfaced and stitched to the execution.",
             "preconditions": [
               "Cortex Cloud CDR posture scanning the cluster after the misconfig manifest is applied."

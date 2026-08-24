@@ -1,0 +1,67 @@
+title: "Collection and Data-Staging Behavioral Anomaly \u2014 Cortex ABIOC (T1074.001 / T1560.001 / T1005) \u2014 EDR-012 Anomalous Bulk File-Read Sweep from Non-Staging Process"
+id: ttp-2026-0098-abioc-01
+status: experimental
+description: |
+  A service process whose learned Cortex behavioral profile touches a narrow, stable set of files suddenly reads a fan-out of distinct files across the filesystem. ABIOC anchors the read-count-and-diversity deviation to the causality chain (service process -> bulk read sweep) rather than to any known-bad path, catching pre-exfil collection that a static rule keyed on a bad file or binary would miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN
+    | filter actor_effective_username in ("www-data", "node", "nobody")
+    | filter causality_actor_process_image_name in ("apache2", "httpd", "nginx", "node")
+    | filter actor_process_image_name in ("cat", "dd", "cp", "tar", "find")
+    | comp count_distinct(action_file_path) as distinct_files, values(actor_process_instance_id) as proc_instances by agent_hostname, actor_effective_username, causality_actor_process_image_name
+    | filter distinct_files >= 5
+    | sort desc distinct_files
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, distinct_files, proc_instances
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1005/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1005
+    - attack.t1074.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Collection and Data-Staging Behavioral Anomaly \u2014 Cortex ABIOC (T1074.001 / T1560.001 / T1005) \u2014 EDR-012 Archive/Compression Staging Burst Deviating from Process Baseline"
+id: ttp-2026-0098-abioc-02
+status: experimental
+description: |
+  A service process whose learned baseline never produces archives spawns tar/gzip/zip to compress swept files into a single staging artifact. Every utility is legitimate; the ABIOC fires on the archive-creation deviation from the process's learned behavior, anchored to the bulk-read sweep that fed it — the pre-exfil staging moment.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username in ("www-data", "node", "nobody")
+    | filter causality_actor_process_image_name in ("apache2", "httpd", "nginx", "node")
+    | filter action_process_image_name in ("tar", "gzip", "zip", "7z", "xz", "bzip2")
+    | filter action_process_command_line contains "-c" or action_process_command_line contains "tmp"
+    | comp count() as archive_ops, values(actor_process_instance_id) as proc_instances by agent_hostname, actor_effective_username, causality_actor_process_image_name, action_process_image_name
+    | filter archive_ops >= 1
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, action_process_image_name, archive_ops, proc_instances
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1560/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1560.001
+    - attack.t1074.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

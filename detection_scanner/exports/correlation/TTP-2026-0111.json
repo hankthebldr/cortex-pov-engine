@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1528",
+    "T1550.001",
+    "T1199",
+    "T1195.002",
+    "T1213.003",
+    "T1119",
+    "T1070.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Post-Consent OAuth Token High-Volume Bulk API Export Deviating from Integration Baseline) AND ABIOC(Export-Then-Erase Bulk API Query Job Deletion by Exfiltration Token) observed within 30 minutes on the same connected_app and integration_user \u2014 fuses the high-volume Bulk API export anomaly and the export-then-erase query-job deletion into a single post-consent OAuth-token-abuse incident anchored to the compromised integration identity (trusted token -> mass CRM export -> job deletion), where no consent, MFA, or interactive login event exists to alert on.",
+      "name": "Post-Consent OAuth Token Abuse \u2014 Salesforce Export-Then-Erase Stitch",
+      "rule_id": "CR-CLOUD-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0111"
+}

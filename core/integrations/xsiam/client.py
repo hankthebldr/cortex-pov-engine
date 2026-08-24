@@ -161,7 +161,13 @@ class XsiamClient:
         async with self._client() as c:
             resp = await c.post("/public_api/v1/xql/get_query_results", json=body)
         data = self._unwrap(resp)
-        return data.get("reply", data) if isinstance(data, dict) else {}
+        reply = data.get("reply", data) if isinstance(data, dict) else {}
+        # `request()` has always done this; this method did not. A 200 carrying
+        # {"err_code": ...} has no `status`, so run_xql's poll loop saw
+        # `status is None`, treated it as still-pending, and burned the full
+        # max_wait before raising "still None after 30s" — a misleading timeout
+        # in place of the syntax/quota error the tenant actually reported.
+        return self._check_app_error(reply)
 
     async def run_xql(
         self, query: str, timeframe: dict[str, Any],
@@ -173,7 +179,10 @@ class XsiamClient:
         metrics queries are cheap. Tune if your tenant's XQL latency differs.
         """
         query_id = await self.start_xql_query(query, timeframe)
-        waited = 0.0
+        # A monotonic deadline, not an accumulator. `waited += interval` with
+        # interval=0 (which tests pass, and which a future caller might) never
+        # advances, so a permanently-PENDING tenant spun forever.
+        deadline = asyncio.get_running_loop().time() + max(0.0, max_wait)
         while True:
             reply = await self.get_query_results(query_id, limit=limit)
             status = (reply or {}).get("status")
@@ -181,9 +190,8 @@ class XsiamClient:
                 return reply
             if status not in ("PENDING", None):
                 raise XsiamQueryError(f"XQL query {query_id} returned status {status!r}")
-            if waited >= max_wait:
+            if asyncio.get_running_loop().time() >= deadline:
                 raise XsiamQueryError(
                     f"XQL query {query_id} still {status!r} after {max_wait}s"
                 )
-            await asyncio.sleep(interval)
-            waited += interval
+            await asyncio.sleep(max(interval, 0.05))

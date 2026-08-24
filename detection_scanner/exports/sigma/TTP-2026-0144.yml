@@ -1,0 +1,127 @@
+title: "The Gentlemen 'GentleKiller' ThrottleStop.sys BYOVD EDR-Kill \u2014 Cortex EDR Behavioral Anomaly (ABIOC) (T1562.001 / T1543.003 / T1068) \u2014 GentleKiller Vulnerable Driver Service Created (ThrottleStop.sys BYOVD)"
+id: ttp-2026-0144-bioc-01
+status: experimental
+description: |
+  A kernel-driver service is registered (registry ImagePath under Services) pointing at ThrottleStop.sys — the signed-but-vulnerable OEM driver (CVE-2025-7771) The Gentlemen abuse for BYOVD EDR-kill. The service-creation write is the earliest citable forensic artifact of the chain and precedes the actual driver load.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.REGISTRY and event_sub_type = ENUM.REGISTRY_SET_VALUE
+    | filter action_registry_key_name contains "\\Services\\" and action_registry_value_name = "ImagePath"
+    | filter lowercase(action_registry_data) contains "throttlestop.sys"
+    | filter actor_process_image_name not in ("TrustedInstaller.exe", "msiexec.exe")
+    | fields agent_hostname, actor_process_image_name, action_registry_key_name, action_registry_data
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1543/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1543.003
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "The Gentlemen 'GentleKiller' ThrottleStop.sys BYOVD EDR-Kill \u2014 Cortex EDR Behavioral Anomaly (ABIOC) (T1562.001 / T1543.003 / T1068) \u2014 Volume Shadow Copy Deletion via vssadmin/wmic (Pre-Encryption)"
+id: ttp-2026-0144-bioc-02
+status: experimental
+description: |
+  vssadmin, wmic, wbadmin or diskshadow deletes or resizes Volume Shadow Copies to inhibit recovery ahead of ransomware encryption — the destructive stage that follows the blinded-host recon and C2 in The Gentlemen chain. A high-fidelity, citable impact artifact for the POV report.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("vssadmin.exe", "wmic.exe", "wbadmin.exe", "diskshadow.exe")
+    | filter lowercase(action_process_image_command_line) contains "delete shadows" or lowercase(action_process_image_command_line) contains "shadowcopy delete" or lowercase(action_process_image_command_line) contains "resize shadowstorage"
+    | comp count() as shadow_ops by agent_hostname, actor_effective_username, action_process_image_name, action_process_image_command_line
+    | filter shadow_ops >= 1
+    | fields agent_hostname, actor_effective_username, action_process_image_name, action_process_image_command_line, shadow_ops
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1490/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1490
+    - attack.t1485
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "The Gentlemen 'GentleKiller' ThrottleStop.sys BYOVD EDR-Kill \u2014 Cortex EDR Behavioral Anomaly (ABIOC) (T1562.001 / T1543.003 / T1068) \u2014 BYOVD EDR-Kill Behavioral Anomaly \u2014 Anomalous Signed Vulnerable Driver Load (GentleKiller)"
+id: ttp-2026-0144-abioc-03
+status: experimental
+description: |
+  The terminal ABIOC of the chain. A signed but vulnerable OEM driver (ThrottleStop.sys, CVE-2025-7771) — validly code-signed, so no known-bad-hash IOC applies — is loaded into the kernel by a non-standard loader process on a host whose learned driver-load baseline has never carried it. The ABIOC fires on the deviation (rare vulnerable driver + unexpected loader + first-seen-on-host) and anchors it to the causality chain driver-service-create -> vulnerable-driver-load -> sensor-telemetry-loss, catching the EDR-kill that the signature layer cannot.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.LOAD_IMAGE and action_module_signature_status = "SIGNED"
+    | filter lowercase(action_module_path) contains "throttlestop.sys"
+    | filter actor_process_image_name not in ("services.exe", "wininit.exe", "smss.exe", "TrustedInstaller.exe")
+    | comp count() as anomalous_driver_loads by agent_hostname, action_module_path, actor_process_image_name
+    | filter anomalous_driver_loads >= 1
+    | fields agent_hostname, action_module_path, actor_process_image_name, anomalous_driver_loads
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+    - attack.t1543.003
+    - attack.t1068
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "The Gentlemen 'GentleKiller' ThrottleStop.sys BYOVD EDR-Kill \u2014 Cortex EDR Behavioral Anomaly (ABIOC) (T1562.001 / T1543.003 / T1068) \u2014 Post-BYOVD Hands-on-Keyboard Burst on a Blinded Host \u2014 Recon and SystemBC C2"
+id: ttp-2026-0144-abioc-04
+status: experimental
+description: |
+  Immediately after the sensor-telemetry gap, the same host exhibits a rapid, out-of-baseline behavioral cluster the learned profile never produced: Advanced IP Scanner internal sweeps, an outbound beacon to a non-standard port matching SystemBC's cadence, and shadow-storage tampering. The ABIOC fires on the breadth-and-cadence deviation of this burst, anchored to the tamper event that immediately precedes it — no single tool here is a known-bad IOC.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter _time > to_timestamp(current_time() - 900)
+    | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name in ("advanced_ip_scanner.exe", "advanced_port_scanner.exe")) or (event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION and action_remote_port not in (80, 443, 53, 8080) and dst_action_external_hostname != null)
+    | comp count_distinct(action_process_image_name) as recon_tools, count_distinct(action_remote_port) as beacon_ports, count() as burst_events by agent_hostname, actor_effective_username, causality_actor_process_image_name
+    | filter recon_tools >= 1 and beacon_ports >= 1
+    | sort desc burst_events
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, recon_tools, beacon_ports, burst_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1046/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1046
+    - attack.t1571
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

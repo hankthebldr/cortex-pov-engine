@@ -1,0 +1,19 @@
+{
+  "mitre_techniques": [
+    "T1568.002",
+    "T1071.004",
+    "T1583.001",
+    "T1584.001",
+    "T1048.003"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Dormancy-Break Traffic Burst on a Strategically Aged Domain) AND ABIOC(Never-Before-Seen DGA Subdomain Fan-Out Under a Newly-Activated Apex) \u2014 fuses the same-day dormancy-break traffic burst and the never-before-seen DGA subdomain fan-out on the SAME apex_domain within the activation window into a single strategically-aged-sleeper-domain-activation incident, anchored to the aged apex the newly-registered-domain block never flagged.",
+      "name": "Strategically Aged Sleeper-Domain Activation \u2014 Burst + DGA Fan-Out Stitch",
+      "rule_id": "CR-TIM-0003",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0108"
+}

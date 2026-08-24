@@ -1,0 +1,199 @@
+scenario_id: SIM-CLOUD-009
+name: "Cloud App — Microsoft SharePoint & OneDrive Enumeration"
+version: "1.0"
+status: active
+
+plane: CLOUD_APP
+detection_types:
+  - ABIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-DSPM-04
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
+
+mitre_tactic: "TA0007"
+mitre_tactic_name: "Discovery"
+mitre_technique: "T1526"
+mitre_technique_name: "Cloud Service Discovery"
+
+threat_report: "Cortex XSIAM Analytics Alert Reference by data source — Microsoft SharePoint & OneDrive enumeration activity"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "M365 Unified-Audit Signal Injection & Analytics Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Microsoft 365 unified-audit-log enumeration bursts (SharePoint
+  page/search sweep + OneDrive file sweep) POSTed into the operator collector
+  raise the expected Cortex XSIAM ML analytics — 'Microsoft SharePoint
+  enumeration activity' and 'Microsoft OneDrive enumeration activity' — and the
+  two stitch into one cloud-repository enumeration (Discovery) incident. Detection
+  Accuracy is the share of injected enumeration bursts that raise the expected
+  alert (target ≥ 90%).
+moat_tier: "LEAD"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is a SaaS/CASB analytics scenario keyed on the Microsoft 365 unified
+# audit log (msft_o365_audit), NOT an endpoint process-causality chain. There
+# is deliberately NO cgo_anchor: the only endpoint process is the EAL emitter
+# (our tooling/beacon), which the causality contract forbids as a CGO, and the
+# msft_o365_audit records carry no causality_actor_process_* fields to anchor.
+# The connected graph is instead formed on the SHARED IDENTITY (shared_entity):
+# every enumeration burst is attributed to the same canary UserId + ClientIP
+# against the same tenant, so the SharePoint sweep and the OneDrive sweep stitch
+# into ONE cloud-repository enumeration (Discovery) incident. step-01 is a local
+# readiness probe (the single root); the enumeration steps chain from it.
+
+steps:
+  - id: step-01
+    name: "Pre-flight: confirm m365_activity_emitter plugin is registered"
+    command: |
+      python3 -m scripts.eal_simulator.cli describe m365_activity_emitter \
+        | jq -e '.eal_targets | length > 0'
+    identity: container-runtime
+    mitre_technique: "T1526"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Pre-flight: m365_activity_emitter metadata visible to operator (no signal yet)"
+        ttp_ref: "TTP-2026-0165"
+        detection_id: xql-microsoft-365-audit-enumeration-landing-validation
+
+  - id: step-02
+    name: "SharePoint enumeration sweep — SearchQueryPerformed / PageViewed burst"
+    command: |
+      cat > /tmp/sim-cloud-009-sharepoint.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-009
+      name: "Microsoft SharePoint enumeration"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - collector.cortexsim-canary.invalid
+      dry_run: false
+      tags: [cloud-app, m365, sharepoint, enumeration, eal-plugin]
+      steps:
+        - step_id: sharepoint-enum
+          plugin: m365_activity_emitter
+          params:
+            collector_url: https://collector.cortexsim-canary.invalid/logs/v1/event
+            event_pattern: sharepoint_enumeration
+            burst_count: 24
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-cloud-009-sharepoint.yml --live
+    identity: container-runtime
+    mitre_technique: "T1526"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "XSIAM ML analytic — Microsoft SharePoint enumeration activity fires on the search/page sweep across a site"
+        ttp_ref: "TTP-2026-0165"
+        detection_id: abioc-microsoft-sharepoint-enumeration-activity
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Validation — the emitted SharePoint audit records landed in msft_o365_audit within the run window"
+        ttp_ref: "TTP-2026-0165"
+        detection_id: xql-microsoft-365-audit-enumeration-landing-validation
+
+  - id: step-03
+    name: "OneDrive enumeration sweep — FileAccessed burst across distinct files"
+    command: |
+      cat > /tmp/sim-cloud-009-onedrive.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-009
+      name: "Microsoft OneDrive enumeration"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - collector.cortexsim-canary.invalid
+      dry_run: false
+      tags: [cloud-app, m365, onedrive, enumeration, eal-plugin]
+      steps:
+        - step_id: onedrive-enum
+          plugin: m365_activity_emitter
+          params:
+            collector_url: https://collector.cortexsim-canary.invalid/logs/v1/event
+            event_pattern: onedrive_enumeration
+            burst_count: 30
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/sim-cloud-009-onedrive.yml --live
+    identity: container-runtime
+    mitre_technique: "T1526"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: ABIOC
+        description: "XSIAM ML analytic — Microsoft OneDrive enumeration activity fires on the rapid file-access sweep"
+        ttp_ref: "TTP-2026-0165"
+        detection_id: abioc-microsoft-onedrive-enumeration-activity
+
+  - id: step-04
+    name: "Correlation stitches the two enumeration bursts into one discovery incident"
+    command: "echo 'cortexsim-cloud-009-enumeration-correlation-stitch' || true"
+    identity: container-runtime
+    mitre_technique: "T1526"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Correlation
+        description: "SharePoint + OneDrive enumeration by the same UserId + ClientIP within 30m stitches into one Discovery-stage cloud-repository enumeration incident"
+        ttp_ref: "TTP-2026-0165"
+        detection_id: CR-CLOUD-0009
+
+cleanup:
+  commands:
+    - "rm -f /tmp/sim-cloud-009-sharepoint.yml /tmp/sim-cloud-009-onedrive.yml"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - cloud-app
+  - casb
+  - m365
+  - sharepoint
+  - onedrive
+  - enumeration
+  - cloud-service-discovery
+  - abioc
+  - eal-plugin

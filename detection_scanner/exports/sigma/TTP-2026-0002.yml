@@ -11,6 +11,8 @@ description: |
     | filter target_process_name = "lsass.exe"
     | filter requested_access bitand 0x0410 != 0
     | filter actor_process_image_name not in ("MsMpEng.exe", "cyserver.exe", "WmiPrvSE.exe")
+    | filter causality_actor_process_image_name not in ("MsMpEng.exe", "cyserver.exe", "WmiPrvSE.exe")
+    | fields _time, agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, causality_id, requested_access
   ----
 references:
   - https://attack.mitre.org/techniques/T1003/
@@ -40,6 +42,7 @@ description: |
     | filter event_sub_type = ENUM.PROCESS_START
     | filter actor_process_image_name = "rundll32.exe"
     | filter action_process_image_command_line contains_any ("comsvcs.dll MiniDump", "comsvcs.dll, MiniDump", "comsvcs MiniDump")
+    | fields _time, agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, causality_id, action_process_image_command_line
   ----
 references:
   - https://attack.mitre.org/techniques/T1003/

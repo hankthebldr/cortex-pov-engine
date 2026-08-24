@@ -1,0 +1,50 @@
+uc_id,use_case,domain,fy26_subdomain,fy27_subdomain,value_drivers,scenario_count,test_case_count,products,product_addon,status
+UC-BYOML,Advanced Analytics & BYOML,One Cortex,"SecOps Investigation, Detection & Response",SOC Transformation,Accelerate Secure Growth & Innovation,1,2,XSIAM,Compute Units,Active
+UC-CDR,Cloud Detection & Response,One Cortex,"SecOps Investigation, Detection & Response",Cloud Security,Accelerate Secure Growth & Innovation; Reduce Risk. Redefine Security.,4,5,"XSIAM, Cortex Cloud, Cortex XDR",Cloud,Active
+UC-EDR,Endpoint Detection & Response,One Cortex,"SecOps Investigation, Detection & Response",Endpoint Protection,Enhance Operational Efficiency & Talent Sustainability; Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,4,6,"Cortex XDR, XSIAM","Agentic Endpoint Security, Host Insights, Forensics",Active
+UC-IR,Incident Response,One Cortex,"SecOps Investigation, Detection & Response",SOC Transformation,Enhance Operational Efficiency & Talent Sustainability; Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,6,13,"XSIAM, Cortex XDR","Forensics, Compute Units",Active
+UC-ITDR,Identity Threat Detection & Response,One Cortex,"SecOps Investigation, Detection & Response",Identity Security,Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,3,6,"XSIAM, Cortex XDR",—,Active
+UC-NDR,Network Detection & Response,One Cortex,"SecOps Investigation, Detection & Response",SOC Transformation,Enhance Operational Efficiency & Talent Sustainability; Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,4,6,"XSIAM, Cortex XDR, NGFW",—,Active
+UC-TH,Threat Hunting,One Cortex,"SecOps Investigation, Detection & Response",SOC Transformation,Enhance Operational Efficiency & Talent Sustainability; Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,5,7,"XSIAM, Cortex XDR",XTH,Active
+UC-ASM,Attack Surface & Exposure Management,One Cortex,Attack Surface & Exposure Management,Attack Surface & Exposure Management,Enhance Operational Efficiency & Talent Sustainability; Reduce Risk. Redefine Security.,5,7,"XSIAM, Xpanse, Cortex Cloud","ASM / EM, Cloud",Active
+UC-ERV,Enterprise Risk Visibility,One Cortex,"SecOps Posture, Exposure & Attack Surface",Attack Surface & Exposure Management,Accelerate Secure Growth & Innovation; Enhance Operational Efficiency & Talent Sustainability; Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,4,8,"XSIAM, Cortex XDR, Cortex Cloud, Xpanse","ASM / EM, Cloud",Active
+UC-SIEM,Log Management & Compliance,One Cortex,"SecOps Posture, Exposure & Attack Surface",SOC Transformation,Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,2,2,XSIAM,Host Insights,Active
+UC-SOT,Security Operations Transformation,One Cortex,"SecOps Posture, Exposure & Attack Surface",SOC Transformation,Accelerate Secure Growth & Innovation; Enhance Operational Efficiency & Talent Sustainability,2,3,XSIAM,Compute Units,Active
+UC-MDR,Managed Detection & Response (MDR),One Cortex,Security Managed Services,SOC Transformation,Enhance Operational Efficiency & Talent Sustainability; Reduce Risk. Redefine Security.,2,2,"Unit 42 MDR, XSIAM, Cortex XDR","Host Insights, Forensics, XTH, XTI, Compute Units",Active
+UC-MSIAM,Managed XSIAM (MSIAM),One Cortex,Security Managed Services,SOC Transformation,Simplify Operations. Optimize Cost.,1,1,"Unit 42 Managed XSIAM, XSIAM","Host Insights, Forensics, XTH, XTI, Compute Units",Active
+UC-MTH,Managed Threat Hunting (MTH),One Cortex,Security Managed Services,SOC Transformation,Reduce Risk. Redefine Security.,1,1,"Unit 42 MTH, XSIAM",XTH,Active
+UC-ITPA,IT Process Automation,One Cortex,Security Workflow Automation,Security Automation,Accelerate Secure Growth & Innovation,1,1,"XSIAM, XSOAR",Compute Units,Active
+UC-SOAR,SOC Process Automation,One Cortex,Security Workflow Automation,Security Automation,Enhance Operational Efficiency & Talent Sustainability; Simplify Operations. Optimize Cost.,2,3,"XSIAM, XSOAR",Compute Units,Active
+UC-TIM,Threat Intelligence Management,One Cortex,Security Workflow Automation,Security Automation,Reduce Risk. Redefine Security.,1,2,"XSIAM, XSOAR, NGFW",XTI,Active
+UC-AGRP,Cloud Application Lifecycle Management,One Cortex,Application Security,Application Security,Accelerate Secure Growth & Innovation,3,3,"Cortex Cloud, Cortex XDR, XSIAM","AppSec, Cloud",Active
+UC-ASER,Application Security Enterprise Readiness,One Cortex,Application Security,Application Security,Accelerate Secure Growth & Innovation,6,6,"Cortex Cloud, Cortex XDR, XSIAM",AppSec,Active
+UC-ASPMC,ASPM Command Center,One Cortex,Application Security,Application Security,Accelerate Secure Growth & Innovation,1,1,"Cortex Cloud, Cortex XDR, XSIAM",AppSec,Active
+UC-DEVX,Secure Developer Experience (CICD Security_,One Cortex,Application Security,Application Security,Accelerate Secure Growth & Innovation,5,5,"Cortex Cloud, Cortex XDR, XSIAM",AppSec,Active
+UC-IACS,Infrastructure-as-Code Scanning,One Cortex,Application Security,Application Security,Accelerate Secure Growth & Innovation,2,2,"Cortex Cloud, Cortex XDR, XSIAM",AppSec,Active
+UC-SCA,Software Composition Analysis,One Cortex,Application Security,Application Security,Accelerate Secure Growth & Innovation,4,4,"Cortex Cloud, Cortex XDR, XSIAM",AppSec,Active
+UC-SSCAN,Secrets Security,One Cortex,Application Security,Application Security,Accelerate Secure Growth & Innovation,5,5,"Cortex Cloud, Cortex XDR, XSIAM",AppSec,Active
+UC-PGE,Platform Operations & Governance,One Cortex,Cloud Platform Operations,Cloud Security,Simplify Operations. Optimize Cost.,7,7,"Cortex Cloud, XSIAM",Cloud,Active
+UC-AISP,AI Security Posture Management,One Cortex,Cloud Posture Security,AI Security,Reduce Risk. Redefine Security.,6,6,"Cortex Cloud, Prisma AIRS",Cloud,Active
+UC-ASPM,Application Security Posture Management (ASPM),One Cortex,Cloud Posture Security,Application Security,Reduce Risk. Redefine Security.,3,3,"Cortex Cloud, XSIAM","AppSec, Cloud",Active
+UC-CCMP,Compliance,One Cortex,Cloud Posture Security,Cloud Security,Reduce Risk. Redefine Security.,4,4,Cortex Cloud,Cloud,Active
+UC-CIEM,Cloud Infrastructure Entitlement Management (CIEM),One Cortex,Cloud Posture Security,Identity Security,Reduce Risk. Redefine Security.,4,4,Cortex Cloud,Cloud,Active
+UC-CRPS,Risk Prioritization & Scoring,One Cortex,Cloud Posture Security,Cloud Security,Reduce Risk. Redefine Security.,3,3,Cortex Cloud,Cloud,Active
+UC-CRWA,Cloud Remediation & Workflow Automation,One Cortex,Cloud Posture Security,Cloud Security,Reduce Risk. Redefine Security.,5,5,"Cortex Cloud, XSIAM","Cloud, Compute Units",Active
+UC-CSPM,Cloud Security Posture Management (CSPM),One Cortex,Cloud Posture Security,Cloud Security,Reduce Risk. Redefine Security.,5,5,Cortex Cloud,Cloud,Active
+UC-CVM,Vulnerability Management,One Cortex,Cloud Posture Security,Attack Surface & Exposure Management,Reduce Risk. Redefine Security.,3,3,"Cortex Cloud, XSIAM","Cloud, Host Insights",Active
+UC-DSPM,Data Security Posture Management (DSPM),One Cortex,Cloud Posture Security,Data Security & Email,Reduce Risk. Redefine Security.,4,4,Cortex Cloud,Cloud,Active
+UC-KSPM,Kubernetes Security Posture Management (KSPM),One Cortex,Cloud Posture Security,Cloud Security,Reduce Risk. Redefine Security.,3,3,Cortex Cloud,Cloud,Active
+UC-PSER,Posture Security Enterprise Readiness,One Cortex,Cloud Posture Security,Cloud Security,Reduce Risk. Redefine Security.,2,2,Cortex Cloud,Cloud,Active
+UC-SCS,Supply Chain Security,One Cortex,Cloud Posture Security,Application Security,Reduce Risk. Redefine Security.,5,5,Cortex Cloud,"AppSec, Cloud",Active
+UC-CITH,Accelerated Investigations & Threat Hunting,One Cortex,Cloud Runtime Security,Cloud Security,Reduce Risk. Redefine Security.,21,21,"Cortex Cloud, XSIAM, Cortex XDR","Cloud, Forensics",Active
+UC-RSER,Cloud Native Workload Protection,One Cortex,Cloud Runtime Security,Cloud Security,Reduce Risk. Redefine Security.,5,5,"Cortex Cloud, Cortex XDR",Cloud,Active
+UC-WAAS,Web API & Application Security,One Cortex,Cloud Runtime Security,Cloud Security,Reduce Risk. Redefine Security.,5,5,Cortex Cloud,Cloud,Active
+UC-DLP,Data Loss Prevention (DLP),One Cortex,—,Data Security & Email,Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,6,11,"XSIAM, Cortex XDR",DLP,Active
+UC-AES,Advanced Email Security,One Cortex,—,Data Security & Email,Reduce Risk. Redefine Security.; Enhance Operational Efficiency & Talent Sustainability,5,9,XSIAM,Email Security,Active
+UC-AEPS,Agentic Endpoint Security,One Cortex,—,Endpoint Protection,Reduce Risk. Redefine Security.; Enhance Operational Efficiency & Talent Sustainability,3,3,"Cortex XDR, XSIAM",Agentic Endpoint Security,Draft — DC review
+UC-AGTX,Agentic Automation (AgentiX),One Cortex,—,Security Automation,Enhance Operational Efficiency & Talent Sustainability; Simplify Operations. Optimize Cost.,6,12,"XSIAM, XSOAR",Compute Units,Active
+UC-AIRS,AI Runtime Security (Prisma AIRS),One Cortex,—,AI Security,Reduce Risk. Redefine Security.; Accelerate Secure Growth & Innovation,5,10,"Prisma AIRS, Cortex Cloud",—,Active
+UC-XDL,Extended Data Lake (XDL) & Observability,One Cortex,—,SOC Transformation,Simplify Operations. Optimize Cost.; Accelerate Secure Growth & Innovation,5,9,"XSIAM, Chronosphere",—,Active
+UC-CC2,Cortex Cloud 2.0 Enhancements,One Cortex,—,Cloud Security,Reduce Risk. Redefine Security.; Simplify Operations. Optimize Cost.,3,6,Cortex Cloud,Cloud,Active
+UC-XTI,Extended Threat Intelligence (XTI),One Cortex,Security Workflow Automation,Security Automation,Reduce Risk. Redefine Security.; Enhance Operational Efficiency & Talent Sustainability,6,10,"XSIAM, XSOAR, Cortex XDR, NGFW",XTI,Draft — DC review
+UC-APB,Autonomous Playbooks (AgentiX),One Cortex,Security Workflow Automation,Security Automation,Enhance Operational Efficiency & Talent Sustainability; Simplify Operations. Optimize Cost.,5,10,"AgentiX, XSIAM, XSOAR, Cortex Cloud",AgentiX,Draft — DC review

@@ -6,7 +6,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "XQL(CLOUD-001 Okta Risky Drive-Wide OAuth Scope Grant) OR XQL(CLOUD-001 NGFW Okta OAuth Authorize Risky-Scope Egress) OR XQL(CLOUD-001 Okta Repeated Risky Grant Enumeration Burst)",
+      "logic": "XQL(CLOUD-001 Okta Risky Drive-Wide OAuth Scope Grant) OR XQL(CLOUD-001 NGFW Okta OAuth Authorize Risky-Scope Egress) OR XQL(CLOUD-001 Okta Repeated Risky Grant Enumeration Burst) GROUPED BY user, source_ip, app_name WITHIN 60s",
       "name": "Okta Risky OAuth Drive-Scope Consent Phishing \u2014 Same Identity",
       "rule_id": "CR-CLOUDAPP-0001",
       "severity": "high"

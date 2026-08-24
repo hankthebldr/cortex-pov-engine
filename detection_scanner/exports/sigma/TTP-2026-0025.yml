@@ -69,6 +69,7 @@ description: |
     | filter event_type = ENUM.PROCESS
     | filter event_sub_type = ENUM.PROCESS_START
     | filter container_id != null
+    | filter causality_actor_process_image_name in ("containerd-shim", "runc", "bash", "sh")
     | filter actor_process_image_name in ("cat", "cp", "bash", "sh")
     | filter action_process_image_command_line contains "serviceaccount/token"
   ----
@@ -190,6 +191,7 @@ description: |
     | filter event_type = ENUM.PROCESS
     | filter event_sub_type = ENUM.PROCESS_START
     | filter container_id != null
+    | filter causality_actor_process_image_name in ("containerd-shim", "runc", "bash", "sh")
     | filter actor_process_image_name = "kubectl"
     | filter action_process_image_command_line contains "exec"
     | filter action_process_image_command_line contains_any ("-n ", "--namespace")
@@ -251,6 +253,7 @@ description: |
     | filter event_type = ENUM.PROCESS
     | filter event_sub_type = ENUM.PROCESS_START
     | filter container_id != null
+    | filter causality_actor_process_image_name in ("containerd-shim", "runc", "bash", "sh")
     | filter actor_process_image_name = "kubectl"
     | filter action_process_image_command_line contains_any ("apply", "create")
     | filter action_process_image_command_line contains_any ("cronjob", ".yaml", "-f ")

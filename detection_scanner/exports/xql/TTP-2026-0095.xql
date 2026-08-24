@@ -31,7 +31,8 @@ dataset = xdr_data
 | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
 | filter action_file_name contains "runtime-poisoned-response.json" or action_file_path contains "pa-firewall-mcp"
 | filter actor_process_image_name in ("python3", "node", "claude", "cursor", "mcp-host")
-| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_file_path
+| filter causality_actor_process_image_name in ("python3", "node", "claude", "cursor", "mcp-host")
+| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path
 
 ## VALIDATION — KOI-006 stitch tool result injection with followon credential access
 # purpose: validation
@@ -40,6 +41,7 @@ dataset = xdr_data
 dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter (action_file_path contains "pa-firewall-mcp" or action_file_name contains "runtime-poisoned-response.json") or (action_file_path contains ".aws/credentials" or action_file_path contains ".ssh/id_rsa")
-| comp count_distinct(action_file_path) as touched_paths by agent_hostname, actor_process_image_name
+| comp count_distinct(action_file_path) as touched_paths by agent_hostname, actor_process_instance_id, causality_actor_process_image_name
 | filter touched_paths >= 2
+| fields agent_hostname, actor_process_instance_id, causality_actor_process_image_name, touched_paths
 

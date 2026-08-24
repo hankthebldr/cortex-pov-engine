@@ -1,0 +1,154 @@
+title: "AD CS ESC1 Certificate-Template Abuse \u2014 SAN-Mismatch Enrollment to PKINIT Privileged Auth (Cortex Identity ABIOC) \u2014 ITDR-017 AD CS Certificate-Template LDAP Reconnaissance"
+id: ttp-2026-0145-bioc-01
+status: experimental
+description: |
+  Certipy / Certify enumerate AD CS by issuing broad, repeated LDAP queries for pKICertificateTemplate objects, the PKI-Enrollment-Service container, and msDS-KeyCredentialLink. This BIOC keys on LDAP server search (event 1644) and LDAP client search (event 30) whose search filter references those AD CS / shadow-credential object classes from an account that does not normally perform certificate administration — the reconnaissance that precedes an ESC1 request.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = ad_audit
+    | filter event_id in (1644, 30)
+    | filter search_filter contains "pKICertificateTemplate" or search_filter contains "pKIEnrollmentService" or search_filter contains "msDS-KeyCredentialLink"
+    | comp count_distinct(search_filter) as adcs_ldap_queries by host_name, subject_user_name, client_ip
+    | filter adcs_ldap_queries >= 2
+    | fields host_name, subject_user_name, client_ip, adcs_ldap_queries
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "AD CS ESC1 Certificate-Template Abuse \u2014 SAN-Mismatch Enrollment to PKINIT Privileged Auth (Cortex Identity ABIOC) \u2014 ITDR-017 ESC1 Certificate Request With Enrollee-Supplied SAN"
+id: ttp-2026-0145-bioc-02
+status: experimental
+description: |
+  A certificate request (Windows Security event 4886) against a template whose flags include CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT where the requester supplies a Subject Alternative Name UPN that differs from their own account. This is the ESC1 enrollment step — the requester is choosing the identity the certificate will authenticate as. Evidence-grade catch keyed to the exact template-flag and the requested SAN.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4886
+    | filter certificate_template_flags contains "CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT"
+    | filter requested_san_upn != null and requested_san_upn != requester_domain_user
+    | comp count() as esc1_requests by ca_host_name, requester_domain_user, requested_san_upn, certificate_template
+    | filter esc1_requests >= 1
+    | fields ca_host_name, requester_domain_user, requested_san_upn, certificate_template, esc1_requests
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1649/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1649
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AD CS ESC1 Certificate-Template Abuse \u2014 SAN-Mismatch Enrollment to PKINIT Privileged Auth (Cortex Identity ABIOC) \u2014 ITDR-017 Certificate Issued With Requester-Subject SAN Mismatch"
+id: ttp-2026-0145-bioc-03
+status: experimental
+description: |
+  The deterministic, evidence-grade signature of successful ESC1: Windows Security event 4887 records the CA issuing a certificate whose Requester does not equal the Subject / Subject Alternative Name. A low-privileged account has just been issued a certificate that authenticates as a different (privileged) principal. The certificate serial number and template are captured as citable forensic evidence for the POV report.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4887
+    | filter requester_domain_user != subject_alt_name_upn
+    | comp count() as mismatched_issuances by ca_host_name, requester_domain_user, subject_alt_name_upn, certificate_template, certificate_serial_number
+    | filter mismatched_issuances >= 1
+    | fields ca_host_name, requester_domain_user, subject_alt_name_upn, certificate_template, certificate_serial_number, mismatched_issuances
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1649/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1649
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AD CS ESC1 Certificate-Template Abuse \u2014 SAN-Mismatch Enrollment to PKINIT Privileged Auth (Cortex Identity ABIOC) \u2014 ITDR-017 Shadow-Credential Write To msDS-KeyCredentialLink"
+id: ttp-2026-0145-bioc-04
+status: experimental
+description: |
+  Optional persistence step — a Directory Service Changes event 5136 modifying the msDS-KeyCredentialLink attribute on a user or computer object by a non-administrative subject. Writing a key credential (shadow credential) grants durable, passwordless PKINIT re-entry as the target, extending the ESC1 compromise. Evidence-grade catch keyed to the attribute name and a non-admin subject.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 5136
+    | filter attribute_ldap_display_name = "msDS-KeyCredentialLink"
+    | filter subject_user_name not in ("Administrator", "SYSTEM")
+    | comp count() as shadow_cred_writes by host_name, subject_user_name, object_dn
+    | filter shadow_cred_writes >= 1
+    | fields host_name, subject_user_name, object_dn, shadow_cred_writes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1556/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1556
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "AD CS ESC1 Certificate-Template Abuse \u2014 SAN-Mismatch Enrollment to PKINIT Privileged Auth (Cortex Identity ABIOC) \u2014 ITDR-017 ESC1 Issuance-To-PKINIT Privileged Impersonation Chain"
+id: ttp-2026-0145-abioc-05
+status: experimental
+description: |
+  The auto-tuned terminal ABIOC anchors on a learned identity baseline in which the requesting account never enrolls certificates whose Subject Alternative Name is a different, privileged principal. It fires when a SAN-mismatch issuance (event 4887, requester != subject) is immediately followed within a short window by a PKINIT Kerberos TGT (event 4768, pre-authentication type 16) authenticating AS the very principal named in that SAN — the privilege-inheritance moment of ESC1. Every command is a legitimate certificate operation, so the catch comes from the LINEAGE (who requested a privileged-SAN cert, and that the cert was immediately used to authenticate as that privileged principal) rather than any known-bad signature. The issued certificate serial numbers and the impersonated UPN are surfaced as citable evidence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id in (4887, 4768)
+    | alter impersonated_principal = coalesce(subject_alt_name_upn, target_user_name)
+    | filter (event_id = 4887 and requester_domain_user != subject_alt_name_upn) or (event_id = 4768 and pre_authentication_type = "16")
+    | comp count_distinct(event_id) as chain_stages, values(certificate_serial_number) as issued_serials, values(ca_host_name) as ca_hosts, min(_time) as first_seen, max(_time) as last_seen by impersonated_principal
+    | filter chain_stages >= 2
+    | fields impersonated_principal, ca_hosts, issued_serials, first_seen, last_seen, chain_stages
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550
+    - attack.t1078.002
+    - attack.t1552.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

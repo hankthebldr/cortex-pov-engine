@@ -7,7 +7,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(KOI-001 MCP Tool Description Embeds Instruction Injection and AKIA Canary) OR BIOC(KOI-001 Cortex Cloud Code Instruction Injection In Tool Description)",
+      "logic": "BIOC(KOI-001 MCP Tool Description Embeds Instruction Injection and AKIA Canary) OR BIOC(KOI-001 Cortex Cloud Code Instruction Injection In Tool Description) OR XQL(KOI-001 Claude Desktop Fetches MCP Manifest From Non Canonical FQDN) \u2014 stitched by shared agent_hostname + causality_id within 1800s so the endpoint code-scan finding and the NGFW manifest fetch (endpoint_network_stitch) collapse into ONE agentic-supply-chain incident",
       "name": "Agentic Supply Chain \u2014 Typosquat MCP Server Installed",
       "rule_id": "CR-KOI-0001",
       "severity": "high"

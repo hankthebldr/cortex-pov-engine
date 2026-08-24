@@ -1,0 +1,155 @@
+title: "ROADtools/roadtx Entra Token Abuse \u2014 Rogue Device Registration to PRT Theft to Bulk Graph Enumeration (Identity-Owned Causality Chain) \u2014 ITDR-014 PRT-Backed Silent Token Minting With MFA Satisfied By Refresh Token"
+id: ttp-2026-0133-bioc-01
+status: experimental
+description: |
+  Deterministic Entra sign-in catch: a token acquisition where the incoming token type is a Primary Refresh Token and MFA is satisfied by a claim already carried in the token (no interactive challenge), originating from the rogue device registered seconds earlier. This is the MFA-bypass signature of the ROADtools chain — a PRT minted on a freshly-registered device silently issuing fresh access tokens — complementing the behavioral ABIOCs with an evidence-grade rule keyed to the PRT token type and the satisfied-by-token MFA result.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter incoming_token_type = "primaryRefreshToken"
+    | filter authentication_requirement = "multiFactorAuthentication" and mfa_detail_auth_method = "PreviouslySatisfied"
+    | filter is_interactive = false
+    | comp count() as prt_silent_tokens by user_principal_name, device_detail_device_id, ip_address
+    | filter prt_silent_tokens >= 1
+    | fields user_principal_name, device_detail_device_id, ip_address, prt_silent_tokens
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ROADtools/roadtx Entra Token Abuse \u2014 Rogue Device Registration to PRT Theft to Bulk Graph Enumeration (Identity-Owned Causality Chain) \u2014 ITDR-014 Programmatic Entra Sign-In From Rogue roadtx Automation User-Agent"
+id: ttp-2026-0133-abioc-02
+status: experimental
+description: |
+  An identity whose learned Cortex sign-in profile is interactive (browser) only produces a non-interactive, scripted Entra sign-in whose user-agent is a Python HTTP stack / roadtools rather than a browser. The ABIOC anchors the deviation to the per-identity sign-in baseline rather than to the user-agent string alone — roadtx blends into legitimate API traffic, so the catch is WHO is suddenly authenticating programmatically. This is the opening move of the ROADtools chain and the root of the causality graph.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter is_interactive = false
+    | filter user_agent contains "python-requests" or user_agent contains "roadtools" or client_app_used = "Mobile Apps and Desktop clients"
+    | filter authentication_protocol in ("deviceCode", "refreshToken", "ropc")
+    | comp count() as programmatic_signins by user_principal_name, ip_address, user_agent, authentication_protocol
+    | filter programmatic_signins >= 1
+    | fields user_principal_name, ip_address, user_agent, authentication_protocol, programmatic_signins
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ROADtools/roadtx Entra Token Abuse \u2014 Rogue Device Registration to PRT Theft to Bulk Graph Enumeration (Identity-Owned Causality Chain) \u2014 ITDR-014 Rogue Device Registration Burst Following First Programmatic Sign-In"
+id: ttp-2026-0133-abioc-03
+status: experimental
+description: |
+  Within minutes of its first programmatic sign-in the same identity registers a device against the Azure Device Registration Service (Azure AD audit 'Add device' / 'Register device'), the synthetic roadtx device presenting OS build 10.0.19041.928 and a DESKTOP-<8 digits> display name. The ABIOC fires on the sign-in -> device-registration LINEAGE for an identity whose baseline never registers devices — a genuine device join is performed once by a real endpoint, not seconds after a scripted sign-in — anchoring the registration to the same user_principal_name as the programmatic sign-in and emitting the rogue device_id that owns the rest of the chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_o365_audit
+    | filter workload = "AzureActiveDirectory"
+    | filter operation in ("Add device", "Register device", "Add registered owner to device")
+    | filter device_os_version = "10.0.19041.928" or device_display_name contains "DESKTOP-"
+    | comp count() as device_registrations, values(target_device_id) as rogue_device_ids by user_principal_name, client_ip
+    | filter device_registrations >= 1
+    | fields user_principal_name, client_ip, rogue_device_ids, device_registrations
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1098.005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ROADtools/roadtx Entra Token Abuse \u2014 Rogue Device Registration to PRT Theft to Bulk Graph Enumeration (Identity-Owned Causality Chain) \u2014 ITDR-014 roadrecon Graph Enumeration Process Descends From roadtx Causality Owner"
+id: ttp-2026-0133-abioc-04
+status: experimental
+description: |
+  Endpoint process-lineage catch keyed to XDR causality: a roadrecon / python enumeration process is started whose Causality Group Owner (causality_actor_process_image_name) is roadtx. The ABIOC anchors on the roadtx CGO and the causality_actor_process_instance_id rather than on the child image name alone — python is ubiquitous, so the signal is that THIS python descends from the roadtx token-theft process that owns the whole chain. This is the process_lineage spine that ties the endpoint tradecraft to the cloud-identity abuse.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = "roadtx"
+    | filter action_process_image_name in ("python3", "python", "roadrecon")
+    | filter action_process_image_command_line contains "roadrecon" or action_process_image_command_line contains "graph.microsoft.com"
+    | comp count() as enum_process_starts by agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name, actor_effective_username
+    | filter enum_process_starts >= 1
+    | fields agent_hostname, causality_actor_process_instance_id, causality_actor_process_image_name, actor_effective_username, enum_process_starts
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.001
+    - attack.t1087.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ROADtools/roadtx Entra Token Abuse \u2014 Rogue Device Registration to PRT Theft to Bulk Graph Enumeration (Identity-Owned Causality Chain) \u2014 ITDR-014 Bulk Microsoft Graph Directory Enumeration Burst From Rogue Device Identity"
+id: ttp-2026-0133-abioc-05
+status: experimental
+description: |
+  The PRT-backed access tokens drive roadrecon to bulk-read the directory: a burst of repetitive Microsoft Graph calls to /users, /groups, /devices, /servicePrincipals and /applications — well above any interactive-admin rate — bound to the rogue device identity. The ABIOC anchors the volume/endpoint-mix deviation to the per-identity Graph-usage baseline (an interactive user never enumerates the whole directory in an hour), surfacing the Discovery stage as the tail of the identity-owned chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_o365_audit
+    | filter workload = "MicrosoftGraphActivityLogs"
+    | filter request_uri contains "/users" or request_uri contains "/groups" or request_uri contains "/devices" or request_uri contains "/servicePrincipals" or request_uri contains "/applications"
+    | comp count() as graph_reads, count_distinct(request_uri) as distinct_endpoints by user_principal_name, device_detail_device_id
+    | filter graph_reads >= 100 and distinct_endpoints >= 3
+    | fields user_principal_name, device_detail_device_id, graph_reads, distinct_endpoints
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1087/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1087.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -45,6 +45,38 @@ Remaining backlog: opportunistic CDR/NDR `command:`→`adapter_ref`
 migration, Tier-C docker-e2e promotion, and live-tenant poll-cadence
 tuning. Full detail: `docs/reference/GAP-ANALYSIS.md`.
 
+### 2026-07 — UC/TC reconciliation, measurement contract, license gating
+
+The engine could not prove what it covered. Three defects closed, in order:
+
+- **The UC/TC join is real.** The FY27 master index (v2.2 — 49 UC / 266 TC / 38 SKU)
+  is snapshotted in-repo and loaded at boot by `uctc_registry`. All **161 scenarios**
+  were re-keyed onto it via a hand-authored crosswalk; the loader enforces the refs as
+  a foreign key (S-10…S-16) with `CORTEXSIM_STRICT_REFS` on, so a scenario with an
+  unresolvable ref now fails at boot instead of silently inflating coverage. The
+  binding is a *set* (`tc_refs`) because the index binds one POV-SC payload to many
+  test cases. **81 of 266 test cases are evidenced today (62 of 107 detection-backable).**
+- **Runs are scored, not just observed.** The measurement contract (KPI, threshold,
+  success criteria, methodology family, moat tier) is persisted rather than validated
+  and discarded, and `engine/verifier.py` turns it into a run-level `tc_verdict` that
+  the POV report states. An unscoreable test case reports `not_applicable` and never
+  `pass` — 57 index rows carry no measurable threshold and a silent pass on one
+  produces a green readout that means nothing.
+- **POVs are scoped to what the prospect can license.** Every scenario derives its
+  required base platform and add-ons from the index, and `POST /api/pov/scope` returns
+  the runnable/blocked split plus an upsell list ranked by scenarios unblocked, each
+  line carrying a real `PAN-*` part number.
+
+Also: card-local threat ids were renamed off the `UC-`/`TC-` prefix
+(`threat_scenario_id` / `threat_step_id`) so two namespaces can no longer be confused.
+
+Open, and deliberately left for human judgement:
+`docs/uc_tc_mapping/index-gaps-v2.2.md` — 76 scenarios over-claim their
+differentiation tier vs the index, 13 posture-class scenarios want a fixture harness
+rather than authored detections, and 16 proposed v2.3 test cases are pending upstream
+merge (the gap is a *licensing* one: Prisma Browser, AI Access Security and agentic
+endpoint have no index home that quotes the right SKU).
+
 ### 2026-05 — Detection-content surface (TTP browser trilogy + Navigator export + search)
 
 The Coverage tab is now the operator's detection-content home, not
@@ -379,6 +411,8 @@ Three rules CortexSim development should observe to stay best-of-class:
 
 ## Pointers
 
+- `docs/strategy/caldera-parity-and-next-generation-strategy.md` — source-level Caldera teardown, capability parity matrix, and the
+  next-generation architecture thesis (detection-objective planning)
 - `docs/design/console-redesign.md` — UI architecture + tokens
 - `docs/design/e2e-execution-methodology.md` — test methodology
 - `docs/operator-runbook.md` — DC workflow

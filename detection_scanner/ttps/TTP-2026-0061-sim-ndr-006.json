@@ -47,8 +47,8 @@
     }
   },
   "identity": {
-    "name": "FTP Cleartext Egress + Credential Exposure \u2014 Outbound STOR Exfiltration (T1071 / T1048.003)",
-    "summary": "A non-admin endpoint opens an outbound FTP control session to a host outside the corporate range, authenticates with cleartext USER/PASS commands, and pushes data with STOR. The CortexSim ftp_egress EAL plugin reproduces the full cleartext FTP shape so NGFW App-ID identifies the session as ftp and XSIAM Network Security Analytics flags both the cleartext credential exposure and the outbound fil\u2026",
+    "name": "FTP Cleartext Egress + Credential Exposure — Outbound STOR Exfiltration (T1071 / T1048.003)",
+    "summary": "A non-admin endpoint opens an outbound FTP control session to a host outside the corporate range, authenticates with cleartext USER/PASS commands, and pushes data with STOR. The CortexSim ftp_egress EAL plugin reproduces the full cleartext FTP shape so NGFW App-ID identifies the session as ftp and XSIAM Network Security Analytics flags both the cleartext credential exposure and the outbound fil…",
     "description": "FTP remains a favored exfiltration channel precisely because it is unencrypted, ubiquitous on internal file-transfer appliances, and frequently allowed outbound through legacy firewall rules. The control channel carries credentials in the clear (USER <name> / PASS <secret>) and the STOR command moves file payloads out of the environment. The wire signature Cortex detects is threefold: (1) NGFW App-ID resolving an outbound session to the ftp application from a non-admin source toward a destination outside the corporate CIDR; (2) cleartext credential material observed in the FTP command stream (USER + PASS), which NGFW EAL surfaces as an IOC; and (3) an outbound file transfer via the STOR command carrying a data payload, behaviourally anomalous from a workstation. This card detects all three from panw_ngfw_traffic_raw / network_story, and a correlation rule fuses the App-ID, the cleartext-credential IOC, and the STOR-upload BIOC into a single data-exfiltration incident so the SOC sees one story rather than three disconnected traffic events.",
     "severity": "high",
     "confidence": "high"
@@ -97,7 +97,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1048.003 \u2014 CortexSim ftp_egress EAL plugin (outbound FTP USER/PASS + STOR to lab sinkhole)",
+    "framework_reference_id": "T1048.003 — CortexSim ftp_egress EAL plugin (outbound FTP USER/PASS + STOR to lab sinkhole)",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -110,7 +110,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Live cleartext FTP session: USER/PASS auth + STOR data egress to lab sinkhole.\ncat > /tmp/ftp-egress-live.yml <<'YML'\ncampaign_id: CMP-NDR-006\nname: \"NDR validation \u2014 FTP cleartext credential + STOR egress\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.0.0/24\ndry_run: false\ntags: [ndr, ftp, eal, cleartext, exfiltration]\nsteps:\n  - step_id: step-01\n    plugin: ftp_egress\n    params:\n      target_host: \"10.50.0.42\"\n      target_port: 21\n      username: \"cortexsim\"\n      password: \"cortexsim-lab\"\n      iterations: 3\n      sleep_seconds: 8\n      send_stor: true\n      stor_bytes: 4096\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/ftp-egress-live.yml --live",
+      "code": "# Live cleartext FTP session: USER/PASS auth + STOR data egress to lab sinkhole.\ncat > /tmp/ftp-egress-live.yml <<'YML'\ncampaign_id: CMP-NDR-006\nname: \"NDR validation — FTP cleartext credential + STOR egress\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - 10.50.0.0/24\ndry_run: false\ntags: [ndr, ftp, eal, cleartext, exfiltration]\nsteps:\n  - step_id: step-01\n    plugin: ftp_egress\n    params:\n      target_host: \"10.50.0.42\"\n      target_port: 21\n      username: \"cortexsim\"\n      password: \"cortexsim-lab\"\n      iterations: 3\n      sleep_seconds: 8\n      send_stor: true\n      stor_bytes: 4096\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/ftp-egress-live.yml --live",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -141,13 +141,13 @@
       {
         "ioc_type": "user-agent",
         "value": "ftp-cleartext-credentials-user-pass",
-        "context": "NGFW EAL \u2014 cleartext FTP credentials observed (USER + PASS commands in session). Cleartext USER and PASS command strings present in the outbound FTP control channel."
+        "context": "NGFW EAL — cleartext FTP credentials observed (USER + PASS commands in session). Cleartext USER and PASS command strings present in the outbound FTP control channel."
       }
     ],
     "biocs": [
       {
         "name": "NGFW EAL outbound FTP STOR file transfer with data payload",
-        "description": "NGFW EAL \u2014 outbound file transfer via FTP STOR command + 4 KB data payload",
+        "description": "NGFW EAL — outbound file transfer via FTP STOR command + 4 KB data payload",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ftp\" or dst_port = 21\n| filter ftp_command = \"STOR\" or action_total_upload > 0\n| filter dst_ip != null and not incidr(dst_ip, \"10.0.0.0/8\")\n| comp count() as stor_sessions, sum(action_total_upload) as bytes_out by src_ip, dst_ip, dst_port\n| filter bytes_out > 0\n| fields src_ip, dst_ip, dst_port, stor_sessions, bytes_out",
         "severity": "high",
         "mitre_technique_ids": [
@@ -181,14 +181,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "FTP Cleartext Egress \u2014 Credential Exposure Plus STOR Upload",
+        "name": "FTP Cleartext Egress — Credential Exposure Plus STOR Upload",
         "rule_id": "CR-NDR-0005",
         "logic": "IOC(ftp-cleartext-credentials-user-pass) OR BIOC(NGFW EAL outbound FTP STOR file transfer with data payload) OR XQL(NGFW App-ID FTP outbound session from non-admin endpoint)"
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Network Security Analytics \u2014 Cleartext Protocol Exfiltration",
-      "Cortex XSIAM Analytics \u2014 Outbound FTP Data Transfer to Non-Corporate Destination"
+      "Cortex XSIAM Network Security Analytics — Cleartext Protocol Exfiltration",
+      "Cortex XSIAM Analytics — Outbound FTP Data Transfer to Non-Corporate Destination"
     ]
   },
   "panw_mapping": {
@@ -225,14 +225,14 @@
         "evidence_query": "Playbook: block the outbound FTP destination, rotate the exposed credentials, quarantine the source host, open a data-exfiltration DFIR ticket."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EXFIL-061",
+        "threat_scenario_id": "TS-EXFIL-061",
         "name": "Cleartext FTP Exfiltration Detection via NGFW EAL",
         "description": "Validate that NGFW App-ID + XSIAM Network Security Analytics detect outbound FTP with cleartext credentials and STOR data egress from a non-admin endpoint.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EXFIL-061A",
+            "threat_step_id": "TS-EXFIL-061A",
             "objective": "Outbound FTP App-ID and cleartext credentials are detected from NGFW telemetry.",
             "preconditions": [
               "NGFW logging outbound traffic from the lab subnet to XSIAM.",
@@ -249,7 +249,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-EXFIL-061B",
+            "threat_step_id": "TS-EXFIL-061B",
             "objective": "STOR upload and credential exposure stitch into a single exfiltration incident.",
             "success_criteria": [
               "BIOC `NGFW EAL outbound FTP STOR file transfer with data payload` returns >= 1 row with bytes_out > 0.",
@@ -283,7 +283,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1048.003 \u2014 Exfiltration Over Unencrypted Non-C2 Protocol",
+      "title": "MITRE ATT&CK T1048.003 — Exfiltration Over Unencrypted Non-C2 Protocol",
       "url": "https://attack.mitre.org/techniques/T1048/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

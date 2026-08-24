@@ -63,10 +63,19 @@ def _configure_logging() -> None:
     file_handler.setFormatter(fmt)
     root_logger.addHandler(file_handler)
 
-    # Silence noisy libraries
+    # Silence noisy libraries.
+    #
+    # sqlalchemy.engine at INFO logs every statement, and the engine's own
+    # `echo` flag logs them a SECOND time through the same handler — a dev boot
+    # log carried hundreds of duplicated aiosqlite lines, and a DC reading it
+    # for the one real error scrolled straight past. Both are now tied to the
+    # single explicit opt-in, CORTEXSIM_SQL_ECHO.
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(
-        logging.INFO if settings.CORTEXSIM_ENV == "development" else logging.WARNING
+        logging.INFO if settings.CORTEXSIM_SQL_ECHO else logging.WARNING
+    )
+    logging.getLogger("aiosqlite").setLevel(
+        logging.DEBUG if settings.CORTEXSIM_SQL_ECHO else logging.INFO
     )
 
 
@@ -89,9 +98,28 @@ async def lifespan(app: FastAPI):
     from config import validate_master_key  # noqa: PLC0415
     validate_master_key(settings.CORTEXSIM_SECRET, env=settings.CORTEXSIM_ENV)
 
-    # 1. Initialize database (create tables)
-    await init_db()
-    logger.info("Database initialized at %s/data/cortexsim.db", settings.CORTEXSIM_BASE_DIR)
+    # 1. Initialize database (create tables).
+    #    A storage fault here is a DEPLOYMENT problem, not a defect, so it gets
+    #    the same treatment as the master-key guard: a named code, a plain
+    #    remediation, and a distinct exit status — never a raw traceback the
+    #    operator has to interpret. Exit 4 (the master-key guard uses 3).
+    from database import DB_BOOT_EXIT_CODE, DatabaseBootError  # noqa: PLC0415
+
+    try:
+        await init_db()
+    except DatabaseBootError as exc:
+        import sys  # noqa: PLC0415
+
+        # Terse to the log stream, full text to stderr — printing the whole
+        # remediation through both handlers would show it twice, which is the
+        # exact noise this pass removed from the SQL echo.
+        logger.error("BOOT REFUSED [%s] — see stderr for the remediation", exc.code)
+        print(f"\n[cortexsim] BOOT REFUSED — {exc.code}\n{exc}", file=sys.stderr, flush=True)
+        # os._exit, not sys.exit: a SystemExit raised inside the lifespan is
+        # caught by uvicorn's startup handler and reported as a generic
+        # "Application startup failed", which buries the message above.
+        os._exit(DB_BOOT_EXIT_CODE)
+    logger.info("Database initialized at %s", settings.CORTEXSIM_BASE_DIR + "/data/cortexsim.db")
 
     # 2. Load scenarios from YAML
     scenarios_dir = settings.CORTEXSIM_SCENARIOS_DIR
@@ -114,6 +142,17 @@ async def lifespan(app: FastAPI):
     packs_dir = default_packs_dir(settings.CORTEXSIM_BASE_DIR)
     adapters_loaded = adapter_catalog.load(packs_dir)
     logger.info("Tool adapter catalog ready: %d adapter(s)", adapters_loaded)
+
+    # 2c. Load the master UC/TC index snapshot BEFORE scenarios so the loader
+    #     can validate uc_ref / tc_ref as a real foreign key (S-10..S-14).
+    #     Missing snapshot → empty registry → validation degrades to advisory.
+    from engine.uctc_registry import registry as uctc_registry, default_index_dir  # noqa: PLC0415
+    index_dir = default_index_dir(settings.CORTEXSIM_BASE_DIR)
+    tcs_loaded = uctc_registry.load(index_dir)
+    logger.info(
+        "UC/TC registry ready: %d test case(s) (v%s, strict_refs=%s)",
+        tcs_loaded, uctc_registry.version or "?", settings.CORTEXSIM_STRICT_REFS,
+    )
 
     # 2c. Load XSIAM API operation catalog (API harness). Declarative packs
     #     describing every callable Cortex Platform API operation; same
@@ -172,8 +211,21 @@ async def lifespan(app: FastAPI):
             settings.CORTEXSIM_AUTO_RECONCILE_LOOKBACK,
             settings.CORTEXSIM_AUTO_RECONCILE_WINDOW,
         ))
-        logger.info("Auto-reconcile loop started (interval=%ds)",
-                    settings.CORTEXSIM_AUTO_RECONCILE_INTERVAL)
+        logger.info("Auto-reconcile loop started (interval=%ds, auto_verify=%s)",
+                    settings.CORTEXSIM_AUTO_RECONCILE_INTERVAL,
+                    settings.CORTEXSIM_AUTO_VERIFY)
+    elif settings.CORTEXSIM_AUTO_VERIFY:
+        # Verify runs as a PHASE of the reconcile sweep, so with the reconcile
+        # loop off there is no timer to carry it. Deliberately NOT starting a
+        # standalone timer here: silently beginning to issue XQL against a
+        # customer tenant off the back of an unrelated flag is exactly the
+        # surprise the opt-in exists to prevent.
+        logger.warning(
+            "CORTEXSIM_AUTO_VERIFY is on but CORTEXSIM_AUTO_RECONCILE is off — "
+            "auto-verify is INERT. It runs as a phase of the reconcile sweep; "
+            "enable CORTEXSIM_AUTO_RECONCILE too, or verify on demand with "
+            "POST /api/runs/{run_id}/verify."
+        )
 
     logger.info("CortexSim ready — listening on port %d", settings.CORTEXSIM_PORT)
     yield
@@ -263,6 +315,46 @@ async def xsiam_error_handler(request: Request, exc: XsiamError) -> JSONResponse
     )
 
 
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(
+    request: Request, exc: RequestValidationError,
+) -> JSONResponse:
+    """Pydantic 422s in the project's own ``{error, code, detail}`` envelope.
+
+    FastAPI's default body is ``{"detail": [{"type": "missing", "loc": [...]}]}``
+    — a shape that violates the structured-error contract every other endpoint
+    honours, and that ``ui/src/api/client.js::formatValidationDetail`` had to
+    reverse-engineer client-side. The server sends it properly now. Status stays
+    422; only the body shape changes, so existing clients that read
+    ``detail`` still find a list under ``detail.fields``.
+    """
+    fields: list[dict[str, object]] = []
+    for err in exc.errors():
+        # loc is ("body", "field", 0, "sub") — drop the source segment for the
+        # human string but keep the whole path in the machine field.
+        loc = [str(part) for part in err.get("loc", ())]
+        label = ".".join(loc[1:]) or (loc[0] if loc else "(body)")
+        fields.append({
+            "field": label,
+            "location": loc[0] if loc else "body",
+            "message": err.get("msg", "invalid"),
+            "type": err.get("type", "value_error"),
+            "loc": loc,
+        })
+    summary = "; ".join(f"{f['field']}: {f['message']}" for f in fields) or "invalid request"
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": summary,
+            "code": "VALIDATION_ERROR",
+            "detail": {"fields": fields},
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Global error handler — catch-all for anything not matched above
 # ---------------------------------------------------------------------------
@@ -282,129 +374,24 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 # ---------------------------------------------------------------------------
 # Health endpoint
+#
+# The implementation lives in `api/health.py` — ONE diagnostic surface, with a
+# machine code and a remediation line per component. It used to be inline here,
+# and that is how merge 0ef802b managed to orphan the `xsiam_operation_catalog`
+# probe after a `return` where nobody could see it was dead. The names below are
+# re-exported because callers (and tests) import them from `main`.
 # ---------------------------------------------------------------------------
 
-_APP_VERSION = "1.0.0"
+from api.health import (  # noqa: E402
+    APP_VERSION as _APP_VERSION,
+    commit_sha as _commit_sha,
+    component_health as _component_health,
+    health_payload,
+    health_check,
+    router as health_router,
+)
 
-
-def _commit_sha() -> str:
-    """Best-effort build/commit identifier.
-
-    Tries (in order): ``CORTEXSIM_COMMIT_SHA`` / ``GIT_COMMIT`` env vars, a
-    stamped file at ``{BASE_DIR}/COMMIT_SHA``, then ``git rev-parse`` if a
-    checkout is present. Returns ``"unknown"`` when none resolve — never raises
-    (a health probe must not fail because the build wasn't stamped)."""
-    for var in ("CORTEXSIM_COMMIT_SHA", "GIT_COMMIT", "SOURCE_COMMIT"):
-        val = os.environ.get(var)
-        if val:
-            return val.strip()[:40]
-    stamp = os.path.join(settings.CORTEXSIM_BASE_DIR, "COMMIT_SHA")
-    try:
-        if os.path.isfile(stamp):
-            with open(stamp, encoding="utf-8") as fh:
-                line = fh.readline().strip()
-                if line:
-                    return line[:40]
-    except OSError:  # pragma: no cover - defensive
-        pass
-    try:
-        import subprocess  # noqa: PLC0415
-
-        out = subprocess.run(
-            ["git", "-C", settings.CORTEXSIM_BASE_DIR, "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=2, check=False,
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            return out.stdout.strip()
-    except Exception:  # pragma: no cover - defensive
-        pass
-    return "unknown"
-
-
-async def _component_health() -> dict:
-    """Per-component readiness — DB reachability + catalog/EAL load counts.
-
-    Each probe is independently guarded so one failing component degrades the
-    overall status to ``degraded`` rather than throwing. The DB probe runs a
-    trivial ``SELECT 1``; catalog probes read the already-loaded in-process
-    singletons (no disk I/O)."""
-    components: dict[str, dict] = {}
-
-    # Database — round-trip a trivial query.
-    try:
-        from sqlalchemy import text  # noqa: PLC0415
-        from database import AsyncSessionLocal  # noqa: PLC0415
-
-        async with AsyncSessionLocal() as session:
-            await session.execute(text("SELECT 1"))
-        components["db"] = {"status": "ok"}
-    except Exception as exc:  # noqa: BLE001
-        components["db"] = {"status": "error", "detail": str(exc)}
-
-    # Scenario catalog — count rows in the durable store.
-    try:
-        from sqlalchemy import func, select as _select  # noqa: PLC0415
-        from database import AsyncSessionLocal  # noqa: PLC0415
-        from models import Scenario  # noqa: PLC0415
-
-        async with AsyncSessionLocal() as session:
-            count = await session.scalar(_select(func.count()).select_from(Scenario))
-        components["scenario_catalog"] = {"status": "ok", "count": int(count or 0)}
-    except Exception as exc:  # noqa: BLE001
-        components["scenario_catalog"] = {"status": "error", "detail": str(exc)}
-
-    # TTP detection-card catalog (count of distinct TTP entries).
-    try:
-        from engine.ttp_catalog import catalog as ttp_catalog  # noqa: PLC0415
-
-        components["ttp_catalog"] = {"status": "ok", "count": len(ttp_catalog.all_entries())}
-    except Exception as exc:  # noqa: BLE001
-        components["ttp_catalog"] = {"status": "error", "detail": str(exc)}
-
-    # Tool adapter catalog.
-    try:
-        from tools.adapter_catalog import catalog as adapter_catalog  # noqa: PLC0415
-
-        components["adapter_catalog"] = {"status": "ok", "count": adapter_catalog.count()}
-    except Exception as exc:  # noqa: BLE001
-        components["adapter_catalog"] = {"status": "error", "detail": str(exc)}
-
-    # XSIAM API operation catalog.
-    try:
-        from integrations.xsiam.operations.catalog import catalog as xsiam_op_catalog  # noqa: PLC0415
-
-        components["xsiam_operation_catalog"] = {"status": "ok", "count": xsiam_op_catalog.count()}
-    except Exception as exc:  # noqa: BLE001
-        components["xsiam_operation_catalog"] = {"status": "error", "detail": str(exc)}
-
-    # EAL simulator plugin registry.
-    try:
-        from eal_simulator import get_default_registry  # noqa: PLC0415
-
-        components["eal"] = {"status": "ok", "plugins": len(get_default_registry().manifest())}
-    except Exception as exc:  # noqa: BLE001
-        components["eal"] = {"status": "error", "detail": str(exc)}
-
-    return components
-
-
-@app.get("/api/health", tags=["health"])
-async def health_check():
-    """Liveness + readiness probe (GAP-API-007).
-
-    Reports the app version, a best-effort commit SHA, and per-component
-    health (db, scenario catalog, ttp catalog, adapter catalog, eal). Overall
-    ``status`` is ``ok`` only when every component is ``ok``; otherwise
-    ``degraded`` (the endpoint itself still returns 200 so a probe can read the
-    detail)."""
-    components = await _component_health()
-    overall = "ok" if all(c.get("status") == "ok" for c in components.values()) else "degraded"
-    return {
-        "status": overall,
-        "version": _APP_VERSION,
-        "commit": _commit_sha(),
-        "components": components,
-    }
+app.include_router(health_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +403,7 @@ from api.runs import router as runs_router              # noqa: E402
 from api.runs import compat_router as runs_compat_router  # noqa: E402
 from api.results import router as results_router        # noqa: E402
 from api.tools import router as tools_router            # noqa: E402
+from api.tools_dist import router as tools_dist_router  # noqa: E402
 from api.agents import router as agents_router          # noqa: E402
 from api.mitre import router as mitre_router            # noqa: E402
 from api.infra import router as infra_router            # noqa: E402
@@ -426,6 +414,25 @@ from api.ttps import router as ttps_router              # noqa: E402
 from api.events import router as events_router          # noqa: E402
 from api.connectors import router as connectors_router  # noqa: E402
 from api.connectors import runs_reconcile_router        # noqa: E402
+from api.storyline import router as storyline_router    # noqa: E402
+from api.causality import router as causality_router    # noqa: E402
+from api.pov import router as pov_router                # noqa: E402
+from api.uctc import router as uctc_router              # noqa: E402
+# Assertion substrate — the POS/PLT/AUT proof mechanism. The catalog loads
+# lazily on first access, so a deployment with no assertions/ directory boots
+# exactly as it did before.
+from api.assertions import router as assertions_router  # noqa: E402
+# K8s payload serving — the pod-facing half of the container delivery mode.
+# For a cloud-native target the DEPLOYMENT is the agent: no beacon, no binary on
+# a customer host. The init container fetches and sha256-verifies its payload
+# from these endpoints. See docs/reference/k8s-delivery.md §5.
+from api.payloads import router as k8s_payloads_router  # noqa: E402
+# The same shelf, plane-agnostic. Three consumers pull tools from it: the Go
+# beacon (EDR-plane endpoint), the K8s init container (CDR/cloud-EDR pod) and
+# the console. `/api/k8s/*` stays mounted FOREVER because every manifest this
+# engine has emitted hard-codes those paths; `/api/shelf/*` is an additional
+# mount of the same handlers, never a redirect.
+from api.payloads import shelf_router  # noqa: E402
 
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
@@ -434,6 +441,7 @@ app.include_router(runs_router, prefix="/api")
 app.include_router(runs_compat_router, prefix="/api")
 app.include_router(results_router, prefix="/api")
 app.include_router(tools_router, prefix="/api")
+app.include_router(tools_dist_router, prefix="/api")
 app.include_router(agents_router, prefix="/api")
 app.include_router(mitre_router, prefix="/api")
 app.include_router(infra_router, prefix="/api")
@@ -445,6 +453,17 @@ app.include_router(events_router, prefix="/api")
 # Connector framework — optional read-back / measurement loop (GAP: efficacy).
 app.include_router(connectors_router, prefix="/api")
 app.include_router(runs_reconcile_router, prefix="/api")
+# Detection Proof Layer — per-run storyline snapshot (mounts a second router
+# under the /runs prefix, same pattern as runs_reconcile_router above).
+app.include_router(storyline_router, prefix="/api")
+# Causality-Graph — per-run typed DAG (endpoint+network), extends the storyline
+# spine; same /runs-prefixed second-router pattern.
+app.include_router(causality_router, prefix="/api")
+app.include_router(pov_router, prefix="/api")
+app.include_router(uctc_router, prefix="/api")
+app.include_router(assertions_router, prefix="/api")
+app.include_router(k8s_payloads_router, prefix="/api")
+app.include_router(shelf_router, prefix="/api")
 
 
 # ---------------------------------------------------------------------------

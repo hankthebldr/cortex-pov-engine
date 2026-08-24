@@ -1,0 +1,22 @@
+{
+  "mitre_techniques": [
+    "T1562.001",
+    "T1543.003",
+    "T1068",
+    "T1053.005",
+    "T1046",
+    "T1571",
+    "T1490",
+    "T1485"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when, on the same agent_hostname within the run window, the BIOC `GentleKiller Vulnerable Driver Service Created (ThrottleStop.sys BYOVD)`, the terminal ABIOC `BYOVD EDR-Kill Behavioral Anomaly \u2014 Anomalous Signed Vulnerable Driver Load (GentleKiller)`, the ABIOC `Post-BYOVD Hands-on-Keyboard Burst on a Blinded Host \u2014 Recon and SystemBC C2`, and the BIOC `Volume Shadow Copy Deletion via vssadmin/wmic (Pre-Encryption)` observe activity. It fuses driver-service-create -> vulnerable-driver-load -> sensor-telemetry-gap -> scheduled-task persistence -> recon + SystemBC C2 -> shadow-copy deletion into ONE Gentlemen-BYOVD-ransomware incident whose ordered evidence graph is exported verbatim as the POV forensic packet.",
+      "name": "The Gentlemen BYOVD Ransomware Chain \u2014 Full Causality Stitch",
+      "rule_id": "CR-EDR-0021",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0144"
+}

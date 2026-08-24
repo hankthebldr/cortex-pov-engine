@@ -57,7 +57,7 @@ preset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter action_process_image_command_line contains_any ("history -c", "HISTFILE", ".bash_history")
-| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — EDR-004 Analytics Auth Log Access Non-Syslog Process
 # purpose: validation
@@ -67,7 +67,7 @@ preset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.FILE and action_file_path contains_any ("/var/log/auth.log", "/var/log/syslog")
 | filter actor_process_image_name not in ("rsyslogd", "systemd-journald", "logrotate")
-| fields _time, agent_hostname, actor_process_image_name, action_file_path
+| fields _time, agent_hostname, actor_process_image_name, causality_actor_process_image_name, causality_actor_process_instance_id, action_file_path
 
 ## VALIDATION — EDR-004 Analytics Timestomp Reference File
 # purpose: validation
@@ -78,7 +78,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = "touch"
 | filter action_process_image_command_line contains_any (" -r ", " -t ")
-| fields _time, agent_hostname, action_process_image_command_line
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — EDR-004 Analytics Shell Binary Copied To System Name
 # purpose: validation
@@ -89,7 +89,7 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("cp", "mv")
 | filter action_process_image_command_line contains_any ("/bin/sh", "/bin/bash") and action_process_image_command_line contains_any ("kworker", "systemd-", "/tmp/")
-| fields _time, agent_hostname, action_process_image_command_line
+| fields _time, agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 
 ## VALIDATION — EDR-004 Analytics Security Tool Discovery Via Process Listing
 # purpose: validation
@@ -100,5 +100,5 @@ preset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name in ("grep", "egrep", "pgrep")
 | filter action_process_image_command_line contains_any ("falcon", "crowd", "cortex", "sentinel", "cylance", "carbon")
-| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+| fields _time, agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_command_line
 

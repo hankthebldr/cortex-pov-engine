@@ -23,6 +23,16 @@ install:
   # at dispatch into /tmp. Plan data + python runner; no build step.
   runtime_install_command: "test -d /tmp/scythe-community-threats || git clone --depth 1 https://github.com/scythe-io/community-threats /tmp/scythe-community-threats"
   binary: "python3"
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: SOURCE_TREE_REQUIRED
+    reason: >-
+      This is a directory of adversary-emulation plan files, not a program, so
+      there is no single file to stage and it is cloned onto the target host.
+      Note also that its upstream repository no longer resolves (verified
+      2026-08-06), so the clone fails on the target host whether or not you
+      have egress — treat this adapter as unavailable until it is repointed,
+      and do not plan a POV step around it.
 
 invoke:
   target_platform: linux

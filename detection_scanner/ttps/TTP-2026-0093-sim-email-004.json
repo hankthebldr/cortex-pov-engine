@@ -211,14 +211,14 @@
         "evidence_query": "Correlation CR-EMAIL-0004 fuses the delivered-then-clicked hijack with the recipient endpoint follow-on into one incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-EMAIL-004",
+        "threat_scenario_id": "TS-EMAIL-004",
         "name": "Thread-Hijack Reply-Chain Phishing Detection",
         "description": "Detect a malicious reply inserted into a trusted conversation across both Proofpoint TAP and Microsoft 365 email log shapes, stitched delivered-then-clicked to the endpoint follow-on.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-EMAIL-004A",
+            "threat_step_id": "TS-EMAIL-004A",
             "objective": "A phish-classified reply-chain message re-using an existing subject raises a thread-hijack alert.",
             "preconditions": [
               "Cortex XSIAM ingesting proofpoint_tap_raw and msft_o365 datasets.",
@@ -235,7 +235,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-EMAIL-004B",
+            "threat_step_id": "TS-EMAIL-004B",
             "objective": "The delivered-then-clicked hijack stitches to the endpoint follow-on.",
             "success_criteria": [
               "Correlation `CR-EMAIL-0004` groups the hijack delivery, the permitted click, and the recipient endpoint follow-on under one incident."

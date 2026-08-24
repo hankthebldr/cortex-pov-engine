@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1552.007"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when analytics alert `Kubernetes secrets enumeration for the first time` and analytics alert `Unusual Kubernetes secret access` both observe the same user_username (Kubernetes service account) from the same sourceIPs within a 10-minute window, stitching the first-seen enumeration and the anomalous read into one CDR credential-theft incident.",
+      "name": "SIM-CDR-026 first-time enumerate-then-harvest secret theft",
+      "rule_id": "CR-CDR-0026",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0163"
+}

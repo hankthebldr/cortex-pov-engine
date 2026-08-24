@@ -1,0 +1,170 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# TC-AEPS-01 — Agentic Endpoint Security · Autonomous Endpoint Triage
+#
+# The index row's TITLE asks for ">90% analyst-agreement ACCURACY", but its
+# declared primary_kpi is "Triage Automation Rate" with threshold ">90%".
+# Those are two different quantities and only one of them is machine-knowable:
+# agreement accuracy needs a blind analyst panel scoring the agent's
+# dispositions, which no read-only probe can produce and which this assertion
+# therefore does NOT claim. What it measures is the index's own declared KPI —
+# the share of endpoint alerts the agent dispositioned with zero human touch.
+#
+# chk-02 exists because chk-01 alone is gameable by the wrong thing succeeding:
+# a tenant that blanket-auto-closes every endpoint alert scores 100 % autonomy
+# and has no triage capability at all. Requiring a reasoning trace on the
+# dispositions is what separates "the agent investigated and decided" from
+# "a suppression rule fired".
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: AUT-AEPS-001
+name: Autonomous endpoint triage dispositions alerts without human touch
+version: "1.0"
+status: active
+
+validation_class: AUT
+kind: state
+plane: EDR
+
+uc_ref: UCS-AEPS-01
+tc_ref: TC-AEPS-01
+tc_refs: [TC-AEPS-01]
+uc_name: "Agentic Endpoint Security"
+tc_name: "Validate agentic triage autonomously investigates and dispositions endpoint alerts with >90% analyst-agreement accuracy"
+
+moat_tier: EMERGING
+methodology_family: F5
+primary_kpi: "Triage Automation Rate"
+success_criteria: |
+  Of the endpoint alerts raised on the exercised host inside the measurement
+  window, more than 90 % reach a terminal disposition attributed to the
+  autonomous triage agent with zero analyst touches, AND at least one of those
+  dispositions carries the agent's own reasoning trace.
+
+scope_limitations: >
+  Proves the autonomous DISPOSITION RATE — the index's own declared
+  primary_kpi, "Triage Automation Rate" — over the endpoint alerts raised on
+  one exercised host inside the measurement window. It does NOT prove the
+  ">90% analyst-agreement accuracy" the test-case title asks for: agreement
+  accuracy requires a blind analyst panel independently dispositioning the same
+  alerts, which is a human judgement no read-only probe can produce. A tenant
+  can therefore score 100 % here while dispositioning every alert WRONGLY, and
+  the readout must say so. It also does not prove anything about the customer's
+  live production alert queue — the population is the run-scoped batch this
+  stimulus raised, which is far smaller and far less diverse. Finally, the
+  agent-attribution fields (triage_actor_type, analyst_touch_count,
+  triage_rationale) are tenant-schema dependent; a tenant that names them
+  differently resolves PROBE_QUERY_FAILED -> pending, never a green.
+
+stimulus:
+  kind: scenario_run
+  scenario_id: SIM-EDR-011
+  detail: >
+    Run SIM-EDR-011 (ransomware pre-encryption ABIOC — a real file-enumeration
+    then mass-rewrite burst then recovery-inhibition sequence, executed by the
+    identity harness on a real endpoint carrying the Cortex XDR agent) against
+    ONE target host. Optionally run further EDR scenarios against the SAME host
+    to widen the alert population. Then supply that host's name as
+    context.target_host and a timeframe_seconds that covers the run.
+
+context_vars: [target_host]
+
+checks:
+  # ── the index's own KPI ──────────────────────────────────────────────────
+  - check_id: chk-01
+    title: Endpoint alerts dispositioned autonomously, with zero analyst touches
+    probe: xql_ratio
+    primary: true
+    weight: 2.0
+    params:
+      # POPULATION — every endpoint alert the platform raised on the exercised
+      # host in the window. Deliberately the platform's own set, not a set the
+      # engine asserts SHOULD have been raised: the engine controls the input
+      # and reads the platform's judgement of it.
+      population_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter alert_source in ("XDR Agent", "Cortex XDR Analytics")
+        | fields incident_id, alert_name, triage_actor_type, analyst_touch_count
+      # NUMERATOR — the subset the agent took to a terminal disposition on its
+      # own. analyst_touch_count = 0 is the load-bearing clause: an incident a
+      # human reopened, reassigned or re-dispositioned was not autonomous, and
+      # counting it would report a human's work as the agent's.
+      numerator_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter alert_source in ("XDR Agent", "Cortex XDR Analytics")
+        | filter triage_actor_type = "agent"
+        | filter triage_disposition in ("closed", "escalated", "resolved")
+        | filter analyst_touch_count = 0
+        | fields incident_id, triage_disposition, triage_actor_type
+      # Zero of zero is 100 %. A run that raised nothing must resolve
+      # POPULATION_EMPTY -> pending, not a green on an empty set.
+      min_population: 5
+    threshold:
+      kpi: "Triage Automation Rate"
+      op: ">"
+      value: 90
+      unit: "%"
+      source: index
+      rationale: >
+        Transcribed verbatim from the index row's own threshold (">90%") against
+        its own declared primary_kpi ("Triage Automation Rate").
+    negative_control:
+      description: >
+        Tier-1 analysts are still shadowing the agent: of 10 endpoint alerts the
+        agent reached a disposition on 6 unaided and a human touched the other 4,
+        so the autonomous rate is 60 % against a 90 % bar.
+      measured_value: 60
+
+  # ── the anti-suppression guard ───────────────────────────────────────────
+  # A ratio over the dispositions the agent actually made, not a raw row count.
+  # A row count returns 0 when the run raised nothing at all, which scores
+  # `fail` and reports "the agent does not reason" about a tenant that was never
+  # given an alert — a false red. Over an empty population a ratio resolves
+  # POPULATION_EMPTY -> pending, which is the honest answer.
+  - check_id: chk-02
+    title: The autonomous dispositions carry the agent's reasoning trace
+    probe: xql_ratio
+    weight: 1.0
+    params:
+      population_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter triage_actor_type = "agent"
+        | filter analyst_touch_count = 0
+        | fields incident_id, triage_disposition, triage_rationale
+      numerator_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter triage_actor_type = "agent"
+        | filter analyst_touch_count = 0
+        | filter triage_rationale != null and triage_rationale != ""
+        | fields incident_id, triage_disposition, triage_rationale
+      min_population: 5
+    threshold:
+      kpi: "autonomous dispositions carrying a reasoning trace"
+      op: ">="
+      value: 100
+      unit: "%"
+      source: authored_sharpening
+      rationale: >
+        The index sets no bar for this and it needs one: chk-01 is satisfied at
+        100 % by a tenant that blanket-auto-closes every endpoint alert, which is
+        alert suppression wearing triage's clothes. The bar is absolute because a
+        disposition with no recorded reasoning is one no analyst can review and
+        no override can be fed back from — indistinguishable, from the outside,
+        from a tuning rule that fired.
+    negative_control:
+      description: >
+        Of 10 alerts the agent closed unaided, only 6 carry a rationale; the
+        other 4 were closed by a suppression rule running under the agent's
+        identity — 60 % against an absolute bar, and the four silent closes are
+        exactly the ones a customer would want to inspect.
+      measured_value: 60
+
+tags: [agentic, endpoint, triage, autonomy, aes]
+author: "Henry Reed"

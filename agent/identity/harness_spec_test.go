@@ -13,9 +13,14 @@ import (
 // core/engine/identity_spec.py). This test guards against the Go allowlist
 // drifting from the canonical spec (GAP-PUSH-001).
 type identityHarnessSpec struct {
-	Version          int      `json:"version"`
-	DirectIdentities []string `json:"direct_identities"`
-	ServiceAccounts  []string `json:"service_accounts"`
+	Version                int      `json:"version"`
+	DirectIdentities       []string `json:"direct_identities"`
+	ServiceAccounts        []string `json:"service_accounts"`
+	ImpersonationPlatforms []string `json:"impersonation_platforms"`
+	Windows                struct {
+		ImpersonationSupported    bool `json:"impersonation_supported"`
+		DegradationMustBeRecorded bool `json:"degradation_must_be_recorded"`
+	} `json:"windows"`
 }
 
 // loadSpec walks up from the test's working directory (agent/identity) to the
@@ -25,8 +30,8 @@ func loadSpec(t *testing.T) identityHarnessSpec {
 	t.Helper()
 	candidates := []string{
 		filepath.Join("..", "..", "spec", "identity_harness.json"), // from agent/identity
-		filepath.Join("..", "spec", "identity_harness.json"),        // from agent
-		filepath.Join("spec", "identity_harness.json"),              // from repo root
+		filepath.Join("..", "spec", "identity_harness.json"),       // from agent
+		filepath.Join("spec", "identity_harness.json"),             // from repo root
 	}
 	var data []byte
 	var err error
@@ -89,6 +94,54 @@ func TestDirectIdentitiesMatchCanonicalSpec(t *testing.T) {
 		if mode != "direct" || user != "" || unknown {
 			t.Errorf("ResolveIdentity(%q) = (%q,%q,%v); want (direct,\"\",false)",
 				ident, mode, user, unknown)
+		}
+	}
+}
+
+// TestImpersonationPlatformsMatchCanonicalSpec asserts the Go platform gate
+// agrees with the canonical spec on WHERE an identity can actually be honoured.
+//
+// This is the drift guard that matters most for Windows: the push generator and
+// the pull beacon both read this contract, and if the Go side quietly started
+// claiming impersonation works on Windows, every Windows scenario's run record
+// would assert an actor account that was never used.
+func TestImpersonationPlatformsMatchCanonicalSpec(t *testing.T) {
+	spec := loadSpec(t)
+
+	if len(spec.ImpersonationPlatforms) == 0 {
+		t.Fatal("canonical spec has no impersonation_platforms")
+	}
+	supported := make(map[string]bool, len(spec.ImpersonationPlatforms))
+	for _, p := range spec.ImpersonationPlatforms {
+		supported[p] = true
+	}
+
+	if supported["windows"] != spec.Windows.ImpersonationSupported {
+		t.Fatalf("spec contradicts itself: impersonation_platforms says windows=%v but "+
+			"windows.impersonation_supported=%v", supported["windows"], spec.Windows.ImpersonationSupported)
+	}
+
+	// For every canonical service account, the Go resolver must honour it exactly
+	// on the platforms the spec says it can, and degrade (never silently pretend)
+	// everywhere else.
+	for _, acct := range spec.ServiceAccounts {
+		for _, goos := range []string{"linux", "darwin", "windows"} {
+			res := ResolveFor(goos, acct, "beacon-user")
+			if supported[goos] {
+				if !res.Honoured || res.Degraded() {
+					t.Errorf("spec says %s honours impersonation, but ResolveFor(%s, %q) degraded: %s",
+						goos, goos, acct, res.Degradation)
+				}
+				continue
+			}
+			if res.Honoured {
+				t.Errorf("spec says %s CANNOT impersonate, but ResolveFor(%s, %q) claims honoured",
+					goos, goos, acct)
+			}
+			if spec.Windows.DegradationMustBeRecorded && goos == "windows" && !res.Degraded() {
+				t.Errorf("spec requires the degradation be recorded, but ResolveFor(windows, %q) "+
+					"produced none", acct)
+			}
 		}
 	}
 }

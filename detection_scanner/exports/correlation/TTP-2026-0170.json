@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1059",
+    "T1550.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Identity Anomaly Trigger \u2014 Privileged Principal Sign-In Deviating From Its Learned Access Baseline) AND ABIOC(Endpoint Anomaly Trigger \u2014 Off-Baseline Interpreter Chain on a Server-Role Host) AND XQL(Cloud Anomaly Trigger \u2014 Application Access Token Used From an Unseen Calling Location) AND XQL(Three Structurally Different Autonomous Actions Executed in One Run) AND XQL(Autonomous Action Audit Completeness \u2014 All Five Reconstruction Fields Present) under one cortexsim_run_tag. The terminal assertion is a completeness RATIO, not a merge: every autonomous action executed in this run must reconstruct end to end to its triggering input, its reasoning trace, the policy decision that permitted it, the approver identity that owned it, and an independently observable resulting change. The bar is 100% of actions taken, across at least three structurally different action classes \u2014 one class proving complete says nothing about the other two, which is why a single-arm run cannot satisfy this rule. Failure is specific and reportable: the audit-gap list names each action missing a field, and the field it is missing. Two non-failures must be distinguished from failure. If no tenant is reachable or governed-autonomy logging is off, the measurement is PENDING, not a fail; and a complete audit record does NOT establish that the recorded reasoning was correct, only that it is present, attributable and queryable.",
+      "name": "Governed-Autonomy Audit Reconstruction Terminal Assertion",
+      "rule_id": "CR-APB-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0170"
+}

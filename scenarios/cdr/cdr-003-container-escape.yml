@@ -7,10 +7,14 @@ plane: CDR
 detection_types:
   - BIOC
 
-uc_ref: UCS-CDR-03
-tc_ref: TC-CDR-03
-uc_name: "Container Escape Attempt Detection"
-tc_name: "Privileged Container Escape via nsenter"
+uc_ref: UCS-CDR-01
+tc_ref: TC-CDR-01
+tc_refs:
+  - TC-CDR-01
+  - TC-CITH-03
+pov_scenario_id: POV-SC-054
+uc_name: "Cloud Detection & Response"
+tc_name: "Validate runtime threat detection for containers and serverless workloads"
 
 mitre_tactic: "TA0004"
 mitre_tactic_name: "Privilege Escalation"
@@ -63,6 +67,53 @@ external_tools:
     type: binary
     install_inline: false
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# The privileged pod's container runtime (containerd-shim → runc → container
+# entrypoint, running as root) is the Causality Group Owner — the process that
+# OWNS this escape chain, NOT the cortexsim-agent beacon. The chain models the
+# escape as: privileged-capability/block-device recon (the exposure) →
+# exposure_exploit into host-fs traversal via /proc/1/root → the nsenter escape
+# into PID 1's mount namespace → and the two genuine CHILDREN of that nsenter
+# (host /etc/passwd read and the host /etc/cron.d persistence write, both
+# `nsenter -- ...` forks) descend from the escape step via process_lineage — the
+# host↔runc cross-namespace lineage break the sensor traces. platforms tag the
+# Linux container env.
+cgo_anchor:
+  image_name: "containerd-shim"
+  primary_username: "root"
+
+# ── Cluster posture — the privilege the escape needs to actually escape ──────
+# RANK 4 of the first slice, and the fix for the WORST live FALSE-GREEN in the
+# corpus (#1). In a pod WITHOUT host_pid, /proc/1 is the container's OWN
+# entrypoint, so `nsenter --mount=/proc/1/ns/mnt` (steps 03–05) enters the
+# CONTAINER's mount namespace: step-03 prints the container's /etc and logs
+# "Successfully entered host mount namespace", step-05 writes /etc/cron.d INSIDE
+# the container and prints "Persistence dropped on HOST". Nothing escaped — a DC
+# demoing it asserted a host compromise that did not occur.
+#
+# host_pid: true is the LOAD-BEARING field: with it, PID 1 is the host's init and
+# every nsenter step becomes a real escape. privileged + SYS_ADMIN + hostPath /
+# (read-only) complete the breakout posture. Plants pod-privileged,
+# pod-host-pid, hostpath-root-mount, pod-added-capabilities, hostpath-mount,
+# pod-allow-privilege-escalation (forced true — Kubernetes rejects
+# privileged+APE=false), namespace-pod-security-privileged. GATED: node_access,
+# AND gated a second time by the CORTEXSIM_ALLOW_PRIVILEGED_K8S deployment kill
+# switch. Do NOT apply this manifest to any cluster you are not willing to lose a
+# node on — the charter reserves rank 4 for a throwaway cluster only.
+cluster_posture:
+  workload: auto
+  security_context:
+    privileged: true
+    capabilities_add: ["SYS_ADMIN"]
+  host_access:
+    host_pid: true
+    host_paths:
+      - name: hostroot
+        host_path: /
+        mount_path: /host
+        type: Directory
+        read_only: true
+
 steps:
   - id: step-01
     name: "Verify privileged container mode and enumerate escape preconditions"
@@ -75,6 +126,7 @@ steps:
       echo '[*] Privilege check complete'
     identity: root
     mitre_technique: "T1613"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -98,6 +150,10 @@ steps:
       echo '[*] Host filesystem enumeration complete'
     identity: root
     mitre_technique: "T1083"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: exposure_exploit
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -118,6 +174,10 @@ steps:
       echo '[*] Successfully entered host mount namespace' || echo '[!] nsenter attempt failed — container may not be privileged'
     identity: root
     mitre_technique: "T1611"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -139,6 +199,10 @@ steps:
       echo '[*] Host credential file access attempt complete'
     identity: root
     mitre_technique: "T1003.008"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC
@@ -161,6 +225,10 @@ steps:
       echo '[CortexSim] Escape persistence step complete'
     identity: root
     mitre_technique: "T1053.003"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
     expected_detections:
       - plane: CDR
         type: BIOC

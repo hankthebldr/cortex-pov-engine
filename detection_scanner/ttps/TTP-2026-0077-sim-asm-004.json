@@ -311,14 +311,14 @@
         "evidence_query": "Correlation CR-ASM-0004 fuses the ASM web-surface discovery finding with the NGFW content-discovery, vulnerability-scan, and injection-probe detections into one exposure-management incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ASM-004",
+        "threat_scenario_id": "TS-ASM-004",
         "name": "Web-Application Attack-Surface Enumeration & Exploitation Detection via Cortex ASM + NGFW",
         "description": "Cortex ASM/Xpanse discovers and fingerprints the exposed web application while Cortex NGFW/NDR detects the active content-discovery brute force, web-vulnerability scan, and SQL/command-injection probing, correlating both into a single exposure-management incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ASM-004A",
+            "threat_step_id": "TS-ASM-004A",
             "objective": "Cortex ASM discovers and fingerprints the exposed web surface, and the NGFW detects the content-discovery + vulnerability-scan traffic from a single source.",
             "preconditions": [
               "asm IaC fixture applied (exposed nginx + gocortexbrokenbank on :9001).",
@@ -338,7 +338,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-ASM-004B",
+            "threat_step_id": "TS-ASM-004B",
             "objective": "Injection probing against the vulnerable banking app is detected and correlated with the ASM discovery into one exposure incident.",
             "preconditions": [
               "gocortexbrokenbank reachable on :9001."

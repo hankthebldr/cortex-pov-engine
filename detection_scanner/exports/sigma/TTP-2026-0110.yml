@@ -1,0 +1,97 @@
+title: "MCP Sampling Abuse \u2014 Server-Initiated Inference for Quota Theft and Covert Tool Invocation (T1656 / T1059 / T1496) \u2014 KOI-007 Covert writeFile Artifact tmp.txt from MCP Host Process"
+id: ttp-2026-0110-bioc-01
+status: experimental
+description: |
+  Signature match on the exact artifact Unit 42's covert-tool-invocation PoC produces: an MCP host process (node/npx/python3/IDE) creating a file named tmp.txt in a temporary directory. This hand-authored BIOC fires on the known-bad shape; it is the deliberate contrast to the ABIOC below, which catches the same class of covert writeFile even when the filename is not tmp.txt.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter action_file_name = "tmp.txt"
+    | filter action_file_path contains "/tmp/" or action_file_path contains "/var/tmp/"
+    | filter actor_process_image_name in ("node", "npx", "python3", "claude", "code", "mcp-server")
+    | filter causality_actor_process_image_name in ("node", "npx", "python3", "claude", "code")
+    | fields agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, actor_process_instance_id, causality_id, action_file_path, action_file_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059
+    - attack.t1005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "MCP Sampling Abuse \u2014 Server-Initiated Inference for Quota Theft and Covert Tool Invocation (T1656 / T1059 / T1496) \u2014 KOI-007 Unattended MCP Tool Invocation with No User Interaction"
+id: ttp-2026-0110-abioc-02
+status: experimental
+description: |
+  An MCP host process writes a file via a tool invocation with no preceding user-interaction event in its causality chain — the behavioral signature of server-initiated covert tool use. Unlike the tmp.txt BIOC, this ABIOC anchors on the deviation (a writeFile tool firing without a user keystroke/interactive parent) rather than a specific filename, so it catches covert writes to any path. Auto-tuned against the host's learned tool-invocation-follows-user-action baseline.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter actor_process_image_name = "mcp-server"
+    | filter action_file_path contains "/tmp/" or action_file_path contains "/var/tmp/"
+    | filter causality_actor_process_image_name in ("node", "npx", "python3", "claude", "code")
+    | filter causality_actor_process_image_name not in ("bash", "sh", "zsh", "dash", "gnome-terminal", "sshd", "login", "tmux", "screen")
+    | comp count() as unattended_writes by agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, causality_id
+    | filter unattended_writes >= 2
+    | sort desc unattended_writes
+    | fields agent_hostname, actor_effective_username, actor_process_image_name, causality_actor_process_image_name, causality_id, unattended_writes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1656/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1656
+    - attack.t1059
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "MCP Sampling Abuse \u2014 Server-Initiated Inference for Quota Theft and Covert Tool Invocation (T1656 / T1059 / T1496) \u2014 KOI-007 Sampling-Request Token Consumption Anomaly from MCP Host"
+id: ttp-2026-0110-abioc-03
+status: experimental
+description: |
+  The MCP host emits a burst of server-initiated inference requests whose volume and byte count exceed its learned interactive sampling cadence — the quota-theft signal ('tokens consumed exceed expected output size'). ABIOC anchors the statistical outlier to the MCP-server connection that drove the createMessage calls, catching quota theft that leaves no known-bad string.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = network_story
+    | filter actor_process_image_name = "mcp-server"
+    | filter dst_ip = "127.0.0.1" and dst_port = 80
+    | comp count() as sampling_requests, sum(action_total_upload) as bytes_uploaded, sum(action_total_download) as bytes_downloaded by agent_hostname, actor_effective_username, actor_process_image_name
+    | filter bytes_uploaded > (bytes_downloaded * 4)
+    | sort desc bytes_uploaded
+    | fields agent_hostname, actor_effective_username, actor_process_image_name, sampling_requests, bytes_uploaded, bytes_downloaded
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1496/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1496
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

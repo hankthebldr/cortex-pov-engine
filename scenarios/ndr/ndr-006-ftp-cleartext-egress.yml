@@ -9,10 +9,15 @@ detection_types:
   - XQL
   - IOC
 
-uc_ref: UCS-NDR-06
-tc_ref: TC-NDR-06
-uc_name: "FTP App-ID + Cleartext Credential Detection"
-tc_name: "Outbound FTP USER/PASS + Data Egress via STOR"
+uc_ref: UCS-NDR-02
+tc_ref: TC-NDR-03
+tc_refs:
+  - TC-NDR-03
+  - TC-NDR-04
+  - TC-DLP-01
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate network analytics engine filters traffic noise via EAL"
 
 mitre_tactic: "TA0011"
 mitre_tactic_name: "Command and Control"
@@ -63,6 +68,16 @@ external_tools:
     type: script
     install_inline: false
 
+# ── Causality Group Owner ───────────────────────────────────────────────────
+# The outbound FTP session is OWNED by the exfil client process, not the
+# beacon. The EAL runner (python3) opens the control channel and issues the
+# cleartext USER/PASS + STOR commands, so it is the process that owns the
+# egress causality. The reachability pre-flight and the live session are two
+# observations of the SAME network flow to the sinkhole (see step-02 pivot).
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "root"
+
 steps:
   - id: step-01
     name: "Stand up sinkhole FTP listener inside lab CIDR"
@@ -73,6 +88,7 @@ steps:
       nc -zv 10.50.0.42 21 || echo "[CortexSim] sinkhole reachable check (best-effort)"
     identity: container-runtime
     mitre_technique: "T1071"
+    platforms: ["linux"]
     expected_detections:
       - plane: NDR
         type: XQL
@@ -108,6 +124,15 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/ftp-egress-live.yml --live
     identity: container-runtime
     mitre_technique: "T1071"
+    platforms: ["linux"]
+    causality:
+      # step-01 (reachability probe) and this live FTP session are the two ends
+      # of ONE outbound flow to the sinkhole 10.50.0.42:21 — same 5-tuple
+      # destination. The edge is a network_session join, not a process fork:
+      # the detections are pure NGFW/App-ID network telemetry (no process actor
+      # fields), so the graph stitches them by the shared FTP session.
+      parent_step: step-01
+      pivot: network_session
     expected_detections:
       - plane: NDR
         type: XQL

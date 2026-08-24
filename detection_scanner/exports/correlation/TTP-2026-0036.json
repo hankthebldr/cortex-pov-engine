@@ -9,7 +9,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(EDR-005 Port Scan Via Bash devtcp) OR BIOC(EDR-005 Batch Mode SSH From Service Account) OR BIOC(EDR-005 SSH Tunnel Creation With Forward Flags)",
+      "logic": "BIOC(EDR-005 Port Scan Via Bash devtcp) OR BIOC(EDR-005 Batch Mode SSH From Service Account) OR BIOC(EDR-005 SSH Tunnel Creation With Forward Flags) STITCH BY agent_hostname, causality_actor_process_instance_id, actor_effective_username WITHIN 900s",
       "name": "Linux Lateral Movement Chain \u2014 Recon, Scan, SSH, Tunnel",
       "rule_id": "CR-EDR-0005",
       "severity": "high"

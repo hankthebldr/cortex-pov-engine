@@ -8,10 +8,14 @@ detection_types:
   - BIOC
   - XQL
 
-uc_ref: UC-EMAIL-001
-tc_ref: TC-EMAIL-001A
-uc_name: "Phishing Credential-Link Detection"
-tc_name: "Blocked Phishing Message + Permitted Click For One Recipient Raises Credential-Phishing Alert"
+uc_ref: UCS-AES-01
+tc_ref: TC-AES-01
+tc_refs:
+  - TC-AES-01
+  - TC-AES-06
+pov_scenario_id: POV-SC-001
+uc_name: "Advanced Email Security"
+tc_name: "Validate AI-driven phishing detection identifies credential harvesting, brand impersonation, and zero-day phishing URLs across email platforms"
 
 mitre_tactic: "TA0001"
 mitre_tactic_name: "Initial Access"
@@ -51,6 +55,19 @@ success_criteria: |
   expected alert (target ≥ 90%).
 moat_tier: "LEAD"
 
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is an email-log analytics scenario, NOT an endpoint process-causality
+# chain: detections key on the proofpoint_tap_raw / msft_o365 message shape, not
+# on a process tree. There is deliberately NO cgo_anchor — the only endpoint
+# process is the email_emitter EAL plugin (our tooling/beacon), which the
+# contract forbids as a CGO, and the email datasets carry no
+# causality_actor_process_* fields to anchor. The connected graph is formed on
+# the shared RECIPIENT MAILBOX: the same recipient (ada.lovelace) receives the
+# credential-phishing lure across both the Proofpoint TAP (step-02) and the
+# Microsoft 365 (step-03) provider shapes, so they stitch via shared_entity into
+# ONE account-compromise signal rather than hanging off the beacon. step-01 is a
+# local readiness probe (the root).
+
 external_tools:
   - name: cortexsim-eal-cli
     source: "https://github.com/hankthebldr/cortex-pov-engine"
@@ -65,6 +82,7 @@ steps:
         | jq -e '.eal_targets | length > 0'
     identity: container-runtime
     mitre_technique: "T1566.002"
+    platforms: ["linux", "container"]
     expected_detections:
       - plane: EMAIL
         type: BIOC
@@ -99,6 +117,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/email-001.yml --live
     identity: container-runtime
     mitre_technique: "T1566.002"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
     expected_detections:
       - plane: EMAIL
         type: XQL
@@ -137,6 +159,10 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/email-001-m365.yml --live
     identity: container-runtime
     mitre_technique: "T1566.002"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
     expected_detections:
       - plane: EMAIL
         type: XQL

@@ -31,7 +31,10 @@ It is wired to the rest of CortexSim by:
 |-----------|------|----------------|
 | `BaseSimulation` | `core/eal_simulator/base.py` | Abstract contract every plugin implements. Inner `Meta` class declares identity; `async run(ctx) -> SimulationResult` is the only method the executor calls. |
 | `SimulationContext` | `core/eal_simulator/base.py` | Per-step dataclass injected into `run()`: `campaign_id`, `run_id`, `step_id`, `simulation_run_id`, `dry_run`, `target_allowlist`, `emit_event` callback, validated `params`, optional `deadline_at`. Exposes `telemetry_headers` property. |
-| `SimulationResult` | `core/eal_simulator/base.py` | Structured outcome: `plugin`, `step_id`, `status` (`success`/`error`/`skipped`), `started_at`, `completed_at`, `events_emitted`, `bytes_sent`, `detail` dict, `error`. Has `duration_seconds` and `to_dict()`. |
+| `SimulationResult` | `core/eal_simulator/base.py` | Structured outcome: `plugin`, `step_id`, `status` (`success`/`partial`/`error`/`skipped`), `started_at`, `completed_at`, `events_emitted`, `bytes_sent`, `detail` dict, `error`. Has `duration_seconds` and `to_dict()`. For collector-POST plugins `events_emitted`/`bytes_sent` are what the collector **accepted** and `detail.delivery` carries attempted-vs-delivered. |
+| `DeliveryLedger` / taxonomy | `core/eal_simulator/delivery.py` | Per-step accounting of attempted vs collector-accepted records/bytes, the stable failure-code taxonomy + remediation lines, and `summarise_step_results()` for the run-level rollup. |
+| `CollectorTarget` / preflight | `core/eal_simulator/collector.py` | Resolves a campaign's collector destinations from step params (secret-free) and canary-POSTs them to answer "will this ingest?" before launch. |
+| Offline bundle | `core/eal_simulator/bundle.py` | Pre-renders a campaign's records and emits a self-contained tar.gz (stdlib-only `send.py`) the DC runs inside the customer network. No SimCore at run time. |
 | `PluginRegistry` | `core/eal_simulator/registry.py` | Dynamic loader. `load_package()` imports every submodule under `eal_simulator.plugins`; `load_directory()` loads out-of-tree `.py` drops. Case-insensitive lookup on `Meta.name`. `get_default_registry()` is the process-wide singleton. |
 | `Campaign` / `CampaignStep` / `PluginInvocation` | `core/eal_simulator/campaign.py` | Pydantic declarative schema. Campaign carries the safety block + ordered steps. |
 | `CampaignExecutor` / `ExecutorState` / `TaskQueue` / `InMemoryTaskQueue` | `core/eal_simulator/executor.py` | Async orchestrator. Runs steps **sequentially** (campaigns are narrative orderings, not parallel fan-outs). Constructs the `SafetyPolicy` once, gates the campaign, then per step: resolve plugin → validate params → build ctx → emit `step_started` → `plugin.run()` → emit `step_finished`. |
@@ -83,6 +86,74 @@ A plugin **must**:
 4. **Persistence**: the background task mirrors the final `ExecutorState`
    (status, error, completed_at, step_results) back to the row. Poll
    `GET /api/eal/runs/{run_id}`.
+
+### Delivery accounting (`delivery.py`)
+
+The collector-POST families (every analytics log-streamer + `email_emitter`)
+account **what the collector accepted**, not what was sent. `DeliveryLedger`
+records every POST; only a **2xx** counts as delivered — a 401 from a Broker VM
+with the wrong ingestion token, a 404 from a mistyped `/logs/v1/event` path, or
+a 302 to a captive portal (the clients run `follow_redirects=False`) are all
+failures. That decides the step's status:
+
+| ledger state | `SimulationResult.status` |
+|--------------|---------------------------|
+| every record accepted (or none attempted) | `success` |
+| some accepted | `partial` |
+| none accepted, ≥1 attempted | `error` |
+
+`events_emitted` / `bytes_sent` report the **accepted** volume; `detail.delivery`
+carries the full picture — `records_attempted` vs `records_delivered`,
+`bytes_attempted` vs `bytes_delivered`, `status_counts`, and a `failures[]` list
+of taxonomy codes with per-code `remediation`. Taxonomy:
+
+`collector_rejected` · `collector_unauthorized` · `collector_throttled` ·
+`collector_redirected` · `collector_unavailable` · `collector_error` ·
+`collector_unreachable` · `collector_timeout` · `collector_tls_error` ·
+`transport_error` · `plugin_misconfigured` · `target_not_authorised`
+
+`ExecutorState.to_dict()` and `GET /api/eal/runs/{id}` add a campaign-level
+`delivery` rollup with a `delivery_verdict` of `delivered` / `partial` /
+`not_delivered` / `not_applicable`, computed at read time from `step_results`
+(no schema migration; pre-ledger runs report `not_applicable`).
+
+### Collector configuration + preflight (`collector.py`)
+
+- `GET /api/eal/campaigns/{id}/collectors` — every step's resolved destination
+  (scheme/host/port/path, dataset, auth header + scheme, whether a token is
+  configured — never the token), plus warnings for a collector host outside
+  `target_allowlist`, a pathless URL, or plaintext http to a remote host.
+- `POST /api/eal/campaigns/{id}/collectors/preflight` — POSTs one discard-safe
+  canary record per collector and answers in the taxonomy above. The campaign's
+  `target_allowlist` gates it; a non-allowlisted host is reported as
+  `target_not_authorised` and never contacted.
+
+### Offline bundle (`bundle.py`) — run it where the collector lives
+
+`POST /api/eal/campaigns/{id}/bundle` exports a campaign as a self-contained
+tar.gz (`GET /api/eal/bundles/{id}/download`) that a DC runs on a jumpbox
+**inside the customer network**, where the Broker VM / HTTP collector actually
+is. SimCore pre-renders the records (the log-streamer families build them with
+pure functions), so at run time the bundle needs **only `python3` from the
+stdlib — no SimCore, no pip install, no callback**, matching the push-bundle
+invariant.
+
+```
+<bundle_id>/
+  manifest.json                per-step collector config + record index
+  records/<step>-iNN.ndjson    pre-rendered, shape-true records
+  send.py                      stdlib-only sender (urllib/gzip/ssl/json)
+  run.sh · README.md
+```
+
+Credentials are never written into a bundle: the manifest names an env var
+(`CORTEXSIM_COLLECTOR_TOKEN`, or per-step `CORTEXSIM_COLLECTOR_TOKEN_STEP_NN`)
+that the operator exports on the jumpbox. `send.py` re-implements the delivery
+taxonomy inline, writes `results.json`, and exits `0` all delivered / `1`
+partial / `2` nothing delivered / `3` usage error. Steps that emit live protocol
+traffic (C2 beacon, DNS tunnel, browser driver …) cannot be pre-rendered and are
+listed under `skipped_steps` in both the manifest and the README rather than
+being silently omitted.
 
 ### Audit event shape (`ecs_event`)
 
@@ -379,8 +450,10 @@ per-request `x-simulation-run-id`. Body carries `cortexsim_run_id`. `verify=Fals
 | `user_agent` | str? = None | optional override |
 
 **Output.** `detail`: `provider`, `event_pattern`, `iterations_completed`,
-`events_posted`, `response_status_counts`, `target`, `target_user`. Per-event
-`idp_signin_emulator_event`.
+`events_posted`, `response_status_counts`, `target`, `target_user`, plus the
+`delivery` block (see *Delivery accounting* in §1). Per-event
+`idp_signin_emulator_event`, whose `event.outcome` is `failure` — carrying
+`failure_code` + `remediation` — whenever the collector refused the record.
 
 ---
 

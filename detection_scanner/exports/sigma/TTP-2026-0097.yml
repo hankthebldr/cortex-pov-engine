@@ -1,0 +1,62 @@
+title: "Ransomware Pre-Encryption Behavioral Anomaly on a Host \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1486 / T1490 / T1083) \u2014 EDR-011 Anomalous Pre-Encryption File-Modification Burst Deviating from Host Baseline"
+id: ttp-2026-0097-abioc-01
+status: experimental
+description: |
+  A single process produces a rapid burst of high-entropy file writes/renames with a uniform new extension at a rate far above the host's learned file-modification profile. Every write uses legitimate syscalls and the encryptor may be a fresh, unhashed Akira build, so a signature BIOC misses it; the ABIOC fires on the rate-and-entropy deviation from the learned endpoint baseline, anchored to the enumeration-then-mass-rewrite causality chain rather than any known-bad extension or hash.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_RENAME)
+    | filter actor_process_image_name not in ("tar", "gzip", "rsync", "dpkg", "apt", "logrotate")
+    | comp count() as file_ops, count_distinct(action_file_extension) as ext_spread by agent_hostname, actor_process_instance_id, actor_process_image_name, causality_actor_process_image_name
+    | filter file_ops >= 200
+    | sort desc file_ops
+    | fields agent_hostname, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, file_ops, ext_spread
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+    - attack.t1083
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Ransomware Pre-Encryption Behavioral Anomaly on a Host \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1486 / T1490 / T1083) \u2014 EDR-011 Recovery-Inhibition Snapshot Deletion Deviating from Host Baseline"
+id: ttp-2026-0097-abioc-02
+status: experimental
+description: |
+  A process deletes snapshot/backup artefacts on a host whose learned backup routine only CREATES snapshots on a schedule and never bulk-deletes them. The deletion co-occurs with the high-entropy file-modification burst. The ABIOC fires on the recovery-inhibition deviation from the host's learned backup behavior, anchored to the mass-rewrite that immediately precedes it.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("rm", "shred", "btrfs", "lvremove", "vgremove", "unlink", "vssadmin", "wbadmin")
+    | filter action_process_command_line contains "snapshot" or action_process_command_line contains "backup" or action_process_command_line contains ".img" or action_process_command_line contains "shadows"
+    | comp count() as recovery_inhibit_ops by agent_hostname, actor_effective_username, actor_process_instance_id, causality_actor_process_image_name
+    | filter recovery_inhibit_ops >= 1
+    | fields agent_hostname, actor_effective_username, actor_process_instance_id, causality_actor_process_image_name, recovery_inhibit_ops
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1490/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1490
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

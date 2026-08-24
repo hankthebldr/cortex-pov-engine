@@ -1,0 +1,97 @@
+title: "ClickFix Pastejacking: RunMRU-to-explorer.exe-Parented Interpreter Execution ABIOC (T1204.004 / T1059.001 / T1105) \u2014 EDR-016 RunMRU Paste-Execution Seeding an Interpreter Download Cradle"
+id: ttp-2026-0126-abioc-01
+status: experimental
+description: |
+  A value under the Windows Run-dialog RunMRU key is written whose data carries a download cradle (http / curl / powershell / mshta tokens). This is the earliest ClickFix seam: the paste-execution the victim performed via Win+R is recorded in the MRU. The ABIOC fires on a RunMRU value that carries remote-fetch content, anchored to the paste that immediately precedes an explorer-parented interpreter, not on any known-bad command string.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.REGISTRY
+    | filter action_registry_key_name contains "\\Explorer\\RunMRU"
+    | filter (action_registry_data contains "powershell" or action_registry_data contains "mshta" or action_registry_data contains "curl" or action_registry_data contains "certutil") and (action_registry_data contains "http" or action_registry_data contains "DownloadString" or action_registry_data contains "iwr" or action_registry_data contains "-enc")
+    | comp count() as runmru_download_cradles by agent_hostname, actor_effective_username
+    | filter runmru_download_cradles >= 1
+    | fields agent_hostname, actor_effective_username, runmru_download_cradles
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1204/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1204.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ClickFix Pastejacking: RunMRU-to-explorer.exe-Parented Interpreter Execution ABIOC (T1204.004 / T1059.001 / T1105) \u2014 EDR-016 explorer.exe-Parented Interpreter Launched with Remote-Fetch Arguments"
+id: ttp-2026-0126-abioc-02
+status: experimental
+description: |
+  An interpreter (powershell.exe / cmd.exe / mshta.exe / wscript.exe) is parented DIRECTLY by explorer.exe with a command line carrying remote-fetch arguments (http / curl / DownloadString / iwr) and no browser or console-host ancestry. explorer.exe is the Run-dialog handler, so this parentage is the signature of a human paste-execution rather than a script, scheduled task, or console session. The ABIOC scores the deviation-plus-causality, catching a chain in which every binary is legitimate.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "explorer.exe" and causality_actor_process_image_name = "explorer.exe"
+    | filter action_process_image_name in ("powershell.exe", "cmd.exe", "mshta.exe", "wscript.exe")
+    | filter action_process_command_line contains "http" or action_process_command_line contains "curl" or action_process_command_line contains "DownloadString" or action_process_command_line contains "iwr"
+    | comp count() as paste_exec_launches by agent_hostname, causality_actor_process_instance_id, action_process_image_name
+    | filter paste_exec_launches >= 1
+    | fields agent_hostname, causality_actor_process_instance_id, action_process_image_name, paste_exec_launches
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1204/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1204.004
+    - attack.t1059.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ClickFix Pastejacking: RunMRU-to-explorer.exe-Parented Interpreter Execution ABIOC (T1204.004 / T1059.001 / T1105) \u2014 EDR-016 Interpreter-Spawned LOLBin Fetching a Remote Payload"
+id: ttp-2026-0126-abioc-03
+status: experimental
+description: |
+  The paste-launched interpreter (powershell.exe / cmd.exe / mshta.exe) spawns a living-off-the-land binary (curl.exe, certutil.exe, extrac32.exe, rundll32.exe, msiexec.exe, bitsadmin.exe) whose command line fetches a remote payload — often an encrypted .bin. Every LOLBin is legitimate; the ABIOC fires on an interpreter parented by explorer.exe spawning a downloader LOLBin, anchored to the paste-execution causality chain rather than to a specific payload URL.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name in ("powershell.exe", "cmd.exe", "mshta.exe")
+    | filter causality_actor_process_image_name = "explorer.exe"
+    | filter action_process_image_name in ("curl.exe", "certutil.exe", "extrac32.exe", "rundll32.exe", "msiexec.exe", "bitsadmin.exe")
+    | filter action_process_command_line contains "http" or action_process_command_line contains "urlcache" or action_process_command_line contains ".bin"
+    | comp count() as lolbin_remote_fetches by agent_hostname, causality_actor_process_instance_id, action_process_image_name
+    | filter lolbin_remote_fetches >= 1
+    | fields agent_hostname, causality_actor_process_instance_id, action_process_image_name, lolbin_remote_fetches
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.003
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

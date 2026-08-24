@@ -1,0 +1,61 @@
+title: "Low-and-Slow Jittered C2 Beacon Behavioral Anomaly \u2014 Cortex Network Analytics Behavioral IOC (ABIOC) (T1071 / T1571) \u2014 NDR-008 Periodic Low-and-Slow Beacon Deviating from Host Egress Baseline"
+id: ttp-2026-0101-abioc-01
+status: experimental
+description: |
+  A source host that Cortex has learned emits bursty, high-volume web traffic suddenly produces a tight, periodic trickle of small sessions to a single destination — the Cobalt Strike / Sliver low-and-slow beacon shape. Every destination is legitimate-looking and rotates, so no IOC matches; the ABIOC fires on the periodicity-and-small-payload deviation from the host's learned egress baseline, anchored to the destination causality chain rather than to a known-bad indicator.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("web-browsing", "http", "ssl", "unknown-tcp")
+    | filter action = "allow"
+    | comp count() as beacon_count, avg(bytes_sent) as avg_bytes, count_distinct(uri) as uri_variants by src_ip, dst_ip, dst_host
+    | filter beacon_count >= 8 and avg_bytes < 2048
+    | sort desc beacon_count
+    | fields src_ip, dst_ip, dst_host, beacon_count, avg_bytes, uri_variants
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Low-and-Slow Jittered C2 Beacon Behavioral Anomaly \u2014 Cortex Network Analytics Behavioral IOC (ABIOC) (T1071 / T1571) \u2014 NDR-008 Jittered Beacon to Rare Destination With Non-Standard Port Deviation"
+id: ttp-2026-0101-abioc-02
+status: experimental
+description: |
+  A host contacts a destination that is rare for it over a non-standard port at a jittered but still statistically periodic cadence — the sleep-with-jitter profile Malleable C2 and Sliver use to evade fixed-interval rules. The ABIOC fires on the rare-destination-plus-non-standard-port deviation from the learned baseline, anchored to the periodic beacon that spawned the flows, catching the beacon after infrastructure rotation defeats any IOC.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter action = "allow"
+    | filter dst_port not in (80, 443, 53)
+    | comp count() as sessions, count_distinct(dst_ip) as dst_cardinality, avg(bytes_sent) as avg_bytes by src_ip, dst_host, dst_port
+    | filter sessions >= 6 and dst_cardinality = 1 and avg_bytes < 2048
+    | sort desc sessions
+    | fields src_ip, dst_host, dst_port, sessions, dst_cardinality, avg_bytes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1571/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1571
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

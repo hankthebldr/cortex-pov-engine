@@ -209,14 +209,14 @@
         "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app contains \"web-browsing\" or url_category != null | comp count() by source_ip, dest_ip, dest_port, protocol"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-MP-006",
+        "threat_scenario_id": "TS-MP-006",
         "name": "NGFW-to-Endpoint Container Causality Stitching",
         "description": "Cortex XSIAM stitches an NGFW App-ID/URL/DGA session and the endpoint container process that originated it into one cross-plane incident on the shared 5-tuple + container_id, proving network and endpoint signals fuse into one causality story.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-MP-006A",
+            "threat_step_id": "TS-MP-006A",
             "objective": "The NGFW container egress and the endpoint container process are both captured on the shared 5-tuple.",
             "preconditions": [
               "XSIAM ingesting panw_ngfw_traffic_raw and xdr_data.",
@@ -233,7 +233,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-MP-006B",
+            "threat_step_id": "TS-MP-006B",
             "objective": "XSIAM stitches the two planes into one incident within the 10s window.",
             "preconditions": [
               "Correlation CR-MP-0006 enabled with a 10-second window."

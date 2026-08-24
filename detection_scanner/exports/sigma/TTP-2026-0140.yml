@@ -1,0 +1,126 @@
+title: "Kali External-to-Internal Kill-Chain \u2014 Recon to Web Exploit to Credential Access to Lateral Movement (Chained Causality) \u2014 MP-019 External Port-and-Service Scan Burst Against Exposed Host"
+id: ttp-2026-0140-bioc-01
+status: experimental
+description: |
+  The recon root. nmap + masscan + dnsrecon fan out from one operator source against the exposed lab host, producing a burst of connections to many distinct destination ports from a single source IP — the classic NDR port-scan signature that opens the kill-chain before any web or endpoint signal exists.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_ip = "${CORTEXSIM_WEB_TARGET}"
+    | comp count() as conns, count_distinct(action_remote_port) as distinct_ports by action_local_ip, action_remote_ip
+    | filter distinct_ports >= 20
+    | fields action_local_ip, action_remote_ip, distinct_ports, conns
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1595/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1595
+    - attack.t1046
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Kali External-to-Internal Kill-Chain \u2014 Recon to Web Exploit to Credential Access to Lateral Movement (Chained Causality) \u2014 MP-019 Web-Service Process Spawns Interactive Shell After Injection Exploit"
+id: ttp-2026-0140-bioc-02
+status: experimental
+description: |
+  The exposure_exploit pivot and process-lineage anchor. The web app the operator enumerated is exploited (sqlmap injection / metasploit module) and lands code execution in the web-service context — the runtime tell is an interactive shell (bash/sh) whose causality_actor_process is the web server (nginx/apache/php-fpm) running as www-data. The BIOC keys on causality_actor_process_image_name + causality_actor_process_instance_id so the shell binds to the SAME web foothold the correlation opens on, not an incidental subprocess.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("nginx", "apache2", "httpd", "php", "php-fpm", "node") or actor_effective_username = "www-data"
+    | filter action_process_image_name in ("bash", "sh", "dash", "zsh")
+    | comp min(_time) as first_shell, count() as shells by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, actor_effective_username
+    | filter shells >= 1
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, actor_effective_username, first_shell, shells
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1190/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1190
+    - attack.t1059
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kali External-to-Internal Kill-Chain \u2014 Recon to Web Exploit to Credential Access to Lateral Movement (Chained Causality) \u2014 MP-019 Credential Brute-Force Child Spawned From Web-Service Shell"
+id: ttp-2026-0140-bioc-03
+status: experimental
+description: |
+  The process_lineage pivot into credential access. From the landed www-data shell the operator launches an online guessing / spraying tool (hydra, netexec/nxc, medusa, ncrack) against the internal identity surface. The BIOC keys on the causality_actor_process (still the www-data shell) AND the brute-force interpreter child, tying the credential burst to the same web foothold rather than treating it as anonymous auth traffic.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("bash", "sh", "dash", "zsh") and actor_effective_username = "www-data"
+    | filter action_process_image_name in ("hydra", "nxc", "netexec", "crackmapexec", "medusa", "ncrack")
+    | comp min(_time) as first_bf, count() as bf_spawns by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_name
+    | filter bf_spawns >= 1
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_name, first_bf, bf_spawns
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110
+    - attack.t1110.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kali External-to-Internal Kill-Chain \u2014 Recon to Web Exploit to Credential Access to Lateral Movement (Chained Causality) \u2014 MP-019 Anomalous Lateral Authentication Burst From Web Host"
+id: ttp-2026-0140-abioc-04
+status: experimental
+description: |
+  The exploit-chain terminal, keyed on the reused credential (shared_entity). Impacket (secretsdump.py / psexec.py) authenticates from the compromised web host to the Domain Controller over SMB/DCE-RPC — a host that in the learned baseline never initiates lateral authentication. The ABIOC anchors its deviation on the causality_actor_process (the impacket child of the www-data shell) and the source host, learning the per-host baseline of distinct remote SMB/RPC authentications and flagging the sudden lateral burst, so the DC auth binds back to the web-exploit chain rather than looking like a legitimate admin action.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION
+    | filter action_remote_port in (445, 135, 139, 5985, 5986) and action_remote_ip = "${CORTEXSIM_DC_TARGET}"
+    | filter causality_actor_process_image_name in ("bash", "sh", "python", "python3") or action_process_image_name in ("secretsdump.py", "psexec.py", "wmiexec.py", "nxc", "netexec")
+    | comp count() as lateral_auths, count_distinct(action_remote_ip) as distinct_targets by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id
+    | filter lateral_auths >= 1
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, lateral_auths, distinct_targets
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021
+    - attack.t1021.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

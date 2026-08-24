@@ -12,6 +12,7 @@ description: |
     | filter rpc_opnum in (0,3)  // DRSBind, DRSGetNCChanges
     | filter dst_host in (active_directory.domain_controllers)
     | filter src_host not in (active_directory.domain_controllers)
+    | fields _time, src_host, dst_host, rpc_opnum, causality_actor_process_image_name, actor_process_instance_id, causality_id, actor_effective_username
   ----
 references:
   - https://attack.mitre.org/techniques/T1003/
@@ -68,6 +69,7 @@ description: |
     preset = xdr_data
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter action_process_image_command_line contains_any ("dcsync", "lsadump::dcsync")
+    | fields _time, agent_hostname, causality_actor_process_image_name, actor_process_image_name, actor_process_instance_id, causality_id, actor_effective_username, action_process_image_command_line
   ----
 references:
   - https://attack.mitre.org/techniques/T1003/

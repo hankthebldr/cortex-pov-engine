@@ -2,12 +2,19 @@
 
 > A **derived** view of every loadable scenario YAML under `scenarios/`. Source-of-truth
 > is the YAML itself; the data-heavy sections (§2, §3, §5) are **regenerated from disk**.
-> **Current ground truth (2026-06-17): 88 scenarios across 15 planes** (the 2026-06-15
-> baseline of 75 + the 13 detection-substrate-expansion scenarios — SIM-CDR-009..015,
-> SIM-MP-006, SIM-EMAIL-001..004, SIM-KOI-006; new EMAIL plane; ABIOC detection_type +
-> XDM modeling-rule substrate). The §2/§3/§5 per-scenario data tables below were last
-> regenerated 2026-06-15 (75 scenarios) and are pending a full regeneration for the 13
-> new scenarios; the boot-verified counts above are authoritative. Stable IDs:
+> **Current ground truth (2026-08-02): 169 scenarios · 169 TTP cards across 15 planes**,
+> all `status: active`, 0 rejected / 0 dangling refs, 1073/1073 `detection_id` slugs
+> resolving. Per-plane on disk: CDR=26 · ANALYTICS=23 · EDR=21 · ITDR=20 · NDR=12 ·
+> CLOUD_APP=10 · TIM=9 · KOI=8 · AI_SPM=7 · AI_ACCESS=6 · ASM=6 · BROWSER=6 · AIRS=5 ·
+> CSPM=5 · EMAIL=5. The 2026-08-02 library-breadth pass added `SIM-MP-021`,
+> `SIM-MP-022`, `SIM-APB-001`, `SIM-CLOUD-010`, `SIM-AIACC-006`, `SIM-TIM-008` and
+> `SIM-TIM-009` (`TTP-2026-0169..0175`).
+>
+> **The §2/§3/§5 per-scenario data tables below are STALE.** They were last regenerated
+> 2026-06-15 against a 75-scenario corpus and have not been regenerated through the
+> five content passes since. Treat the header counts here, `docs/reference/README.md`
+> and `make coverage` as authoritative, and do not quote the tables. Regenerating them
+> is a standing task, not a claim this file makes. Stable IDs:
 > `SIM-{PLANE}-{NNN}`, `TTP-2026-NNNN`, `TOOL-*`, `UCS-*/TC-*`.
 
 ## 0. Scope & method

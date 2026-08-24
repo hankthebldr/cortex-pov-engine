@@ -1,0 +1,215 @@
+scenario_id: SIM-ITDR-013
+name: "BadSuccessor dMSA Privilege Escalation (Windows Server 2025) — Create + Dual-Attribute Write + Privileged-TGT Lineage (Cortex ITDR ABIOC)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - ABIOC
+  - BIOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+tc_refs:
+  - TC-ITDR-01
+  - TC-ITDR-03
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
+
+# ── MITRE ATT&CK Mapping ────────────────────────────────────────────────────
+# DL-04: depth on TA0004 Privilege Escalation — real dMSA technique variants,
+# not an initial-access re-skin. The lineage is Account Manipulation (T1098)
+# of a freshly created domain account (T1136.002) whose inherited valid-account
+# identity (T1078.002) is exercised via a minted dMSA TGT (T1550.003).
+mitre_tactic: "TA0004"
+mitre_tactic_name: "Privilege Escalation"
+mitre_technique: "T1098"
+mitre_technique_name: "Account Manipulation"
+additional_techniques:
+  - technique: "T1136.002"
+    name: "Create Account: Domain Account"
+  - technique: "T1078.002"
+    name: "Valid Accounts: Domain Accounts"
+  - technique: "T1550.003"
+    name: "Use Alternate Authentication Material: Pass the Ticket"
+
+threat_report: "Unit 42 — BadSuccessor: Abusing dMSA to Escalate Privileges in Active Directory"
+threat_report_url: "https://unit42.paloaltonetworks.com/badsuccessor-attack-vector/"
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - nobody
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - itdr
+
+# ── Causality Group Owner anchor ────────────────────────────────────────────
+# The BadSuccessor chain is OWNED by the non-privileged identity's interactive
+# session — the PowerShell / SharpSuccessor process the svc-account ran to create
+# the dMSA and write its attributes. That session is the chain root, NOT the
+# synthetic beacon. The downstream directory-service events (5137/5136/4662/
+# 2946/4624) are AD audit records, not process forks, so steps thread on the
+# shared subject_logon_id and the created-dMSA identity (shared_entity pivots).
+cgo_anchor:
+  image_name: "powershell.exe"
+  primary_username: "svc-account"
+
+external_tools: []
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# DL-06: methodology_family F1 (Signal Injection & Detection Accuracy) with an
+# MTTD KPI — the scenario injects the BadSuccessor identity-event chain and
+# measures whether the auto-tuned ABIOC + correlation catch the create-and-
+# modify lineage within the MTTD budget. DL-03 is honoured by the terminal
+# correlation step (step-04) asserting a single stitched ITDR incident_id.
+validation_methodology: "Identity Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Cortex Identity Analytics has learned that the acting identity never
+  provisions managed-service accounts. The injected BadSuccessor chain — a dMSA
+  created outside CN=Managed Service Accounts (5137), a dual privileged-attribute
+  write (msDS-DelegatedMSAState=2 + msDS-ManagedAccountPrecededByLink to a DA
+  target) in one logon session (paired 5136), the dMSA TGT mint (2946) and the
+  inherited-privilege logon (4624) — deviates from that learned baseline. Both
+  auto-tuned ABIOCs fire on the create-and-modify lineage, the deterministic
+  4662 Write-Property BIOC catches the attribute write, and correlation
+  CR-ITDR-0013 fuses the whole chain into a SINGLE ITDR privilege-escalation
+  incident whose causality chain spans creation -> dual-attribute write -> TGT
+  -> logon. Mean time from the write to the stitched incident is within the
+  MTTD budget. This is the "behavioral-ML catches domain compromise no static
+  rule was written for" proof: dMSA creation is a legitimate operation, so the
+  catch comes from WHO/WHERE plus the lineage, not a known-bad signature.
+moat_tier: "LEAD"
+
+# ── Steps ───────────────────────────────────────────────────────────────────
+# NON-DESTRUCTIVE: no dMSA is actually created and Active Directory is not
+# mutated. SAFE-MODE marker files stand in for each stage of the BadSuccessor
+# chain so the run is observable under the identity harness on the jumpbox.
+# On a sanctioned Windows Server 2025 lab (infra module `itdr`) the real stages
+# are performed by SharpSuccessor.exe (create + attribute write) and Rubeus
+# (dMSA TGT request + authentication); the detection logic on card
+# TTP-2026-0127 keys on the resulting Windows Security events.
+steps:
+  - id: step-01
+    name: "dMSA object created outside CN=Managed Service Accounts (Security 5137)"
+    command: "mkdir -p /tmp/cortexsim-itdr-013 && echo '[SIM-ITDR-013] SAFE-MODE 5137: SharpSuccessor would create dMSA CN=websvc-dmsa outside CN=Managed Service Accounts as a non-privileged identity' | tee /tmp/cortexsim-itdr-013/5137-dmsa-create.marker; echo cortexsim-itdr-013-dmsa-object-created"
+    identity: svc-account
+    mitre_technique: "T1136.002"
+    # Root step — links from the powershell.exe CGO session. dMSA / Windows
+    # Server 2025 is a Windows-only technique; no cross-OS variant applies.
+    platforms: ["windows"]
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "An identity whose learned baseline never provisions managed-service accounts creates a dMSA outside the default container (5137) — auto-tuned ABIOC fires on the deviation from the learned per-identity provisioning profile, anchored to the originating logon session. dMSA creation itself is legitimate; the catch is WHO and WHERE."
+        ttp_ref: "TTP-2026-0127"
+        detection_id: "abioc-itdr-013-dmsa-created-outside-managed-service-accounts-container-by-non-privileged-identity"
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms a dMSA creation event (5137) outside CN=Managed Service Accounts is observable in the run window."
+        ttp_ref: "TTP-2026-0127"
+        detection_id: "xql-itdr-013-validate-dmsa-creation-outside-managed-service-accounts-container"
+
+  - id: step-02
+    name: "Dual privileged-attribute write in one logon session (paired Security 5136 + 4662)"
+    command: "printf '[SIM-ITDR-013] SAFE-MODE 5136 msDS-DelegatedMSAState=2\\n[SIM-ITDR-013] SAFE-MODE 5136 msDS-ManagedAccountPrecededByLink=CN=Administrator,CN=Users,DC=corp,DC=local\\n' | tee /tmp/cortexsim-itdr-013/5136-dual-attr-write.marker; echo cortexsim-itdr-013-dual-privileged-attribute-write"
+    identity: svc-account
+    mitre_technique: "T1098"
+    # Same attacker logon session as the 5137 creation — the dual 5136/4662
+    # attribute writes target the dMSA object created in step-01. No process
+    # fork (LDAP directory ops), so the pivot is shared_entity on the shared
+    # subject_logon_id + dMSA object.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["windows"]
+    expected_detections:
+      - plane: ITDR
+        type: ABIOC
+        description: "Within one logon session the same identity writes BOTH msDS-DelegatedMSAState=2 and msDS-ManagedAccountPrecededByLink to a DA target on the just-created dMSA (paired 5136) — auto-tuned ABIOC fires on the create-and-modify lineage, which a legitimate migration performed by an admin over time never exhibits. Anchored to the subject_logon_id of the creation."
+        ttp_ref: "TTP-2026-0127"
+        detection_id: "abioc-itdr-013-dmsa-dual-privileged-attribute-write-lineage-in-one-logon-session"
+      - plane: ITDR
+        type: BIOC
+        description: "Deterministic audit signature — Security event 4662 with access mask 0x20 (Write Property) against the msDS-DelegatedManagedServiceAccount object-type GUID by a non-administrative subject. Evidence-grade catch of the dMSA attribute mutation."
+        ttp_ref: "TTP-2026-0127"
+        detection_id: "bioc-itdr-013-write-property-4662-on-dmsa-object-type-by-non-admin"
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms the dual privileged-attribute write (two distinct 5136 attributes under one subject_logon_id) is observable in the run window."
+        ttp_ref: "TTP-2026-0127"
+        detection_id: "xql-itdr-013-validate-dual-privileged-attribute-write-on-dmsa"
+
+  - id: step-03
+    name: "dMSA privileged TGT minted and inherited-privilege logon (Security 2946 / 4624)"
+    command: "echo '[SIM-ITDR-013] SAFE-MODE 2946/4624: Rubeus would request the dMSA TGT (inheriting Administrator privileges) and authenticate as the privilege-inherited dMSA' | tee /tmp/cortexsim-itdr-013/2946-4624-inherited-priv.marker; echo cortexsim-itdr-013-privileged-tgt-and-logon"
+    identity: svc-account
+    mitre_technique: "T1550.003"
+    # The privileged TGT (2946) and inherited-privilege logon (4624) run under
+    # the created dMSA's OWN new session, joined to the lineage on the created-
+    # dMSA identity (websvc-dmsa$), not the attacker's subject_logon_id — so the
+    # pivot is shared_entity on the reused dMSA account identity.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["windows"]
+    expected_detections:
+      - plane: ITDR
+        type: XQL
+        description: "Hunt query surfaces the dMSA privileged TGT (2946 — the privilege-inheritance moment) and the subsequent inherited-privilege logon (4624), the signals the correlation rule fuses with the create-and-modify lineage."
+        ttp_ref: "TTP-2026-0127"
+        detection_id: "xql-itdr-013-hunt-dmsa-privileged-tgt-and-inherited-privilege-logon"
+
+  - id: step-04
+    name: "Correlation-terminal — assert one stitched ITDR privilege-escalation incident"
+    command: "echo '[SIM-ITDR-013] Polling XSIAM for the single stitched BadSuccessor incident'; sleep \"${CORTEXSIM_STITCH_WAIT_SECONDS:-60}\"; echo '[*] CR-ITDR-0013 should fuse the 5137 create + dual 5136 write (one host_name+subject_logon_id) with the 2946 TGT + 4624 logon (joined on the created-dMSA identity websvc-dmsa$, which run under the dMSA own session) into ONE incident_id'; echo cortexsim-itdr-013-cr-itdr-0013-single-incident-stitched"
+    identity: svc-account
+    mitre_technique: "T1078.002"
+    # Terminal stitch — fuses the create-and-modify lineage (steps 01-02, one
+    # subject_logon_id) with the dMSA TGT + logon (step-03, dMSA identity) into
+    # one incident; shared_entity is the join semantics.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    platforms: ["windows"]
+    expected_detections:
+      - plane: ITDR
+        type: Correlation
+        description: "Terminal stitch — CR-ITDR-0013 fuses the two create-and-modify ABIOCs (5137 create + dual 5136 write sharing one host_name+subject_logon_id) with the privileged-TGT mint (2946) and inherited-privilege logon (4624) — joined on the created-dMSA IDENTITY (websvc-dmsa$), since the TGT and logon run under the dMSA own new session and do not carry the attacker subject_logon_id — into a SINGLE ITDR privilege-escalation incident whose causality chain covers dMSA creation -> dual-attribute write -> TGT -> logon. One incident_id, the full BadSuccessor storyline."
+        ttp_ref: "TTP-2026-0127"
+        detection_id: "CR-ITDR-0013"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-itdr-013"
+    - "echo cortexsim-itdr-013-cleanup-complete"
+
+# ── Provenance ──────────────────────────────────────────────────────────────
+author: "Henry Reed"
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - itdr
+  - active-directory
+  - badsuccessor
+  - dmsa
+  - privilege-escalation
+  - abioc
+  - windows-server-2025
+  - correlation-terminal

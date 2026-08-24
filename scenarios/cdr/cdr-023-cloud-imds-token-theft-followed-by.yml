@@ -1,0 +1,166 @@
+scenario_id: SIM-CDR-023
+name: "Cloud IMDS Token Theft Followed by Remote Use (Cloud Storage & Compute)"
+version: "1.0"
+status: active
+
+plane: CDR
+detection_types:
+  - ABIOC
+  - XQL
+  - Analytics
+  - Correlation
+
+uc_ref: UCS-CIEM-03
+tc_ref: TC-CIEM-03
+tc_refs:
+  - TC-CIEM-03
+  - TC-CITH-04
+pov_scenario_id: POV-SC-002
+uc_name: "Cloud Infrastructure Entitlement Management (CIEM)"
+tc_name: "Validate Privileged Permission Detection — Privilege escalation paths identified (iam:PassRole, sts:AssumeRole chains)"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1552.005"
+mitre_technique_name: "Unsecured Credentials: Cloud Instance Metadata API"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+
+threat_report: "Cortex XSIAM Analytics Alert Reference — Cloud Unusual Instance Metadata Service (IMDS) access / Suspicious usage of EC2 token (cloud_audit_logs)"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source/Cloud-Unusual-Instance-Metadata-Service-IMDS-access"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The connected graph is the shared EC2 instance-profile role SESSION (assumed-role
+# ARN + instance_id i-0abcd1234ef567890). step-01 fetches the IMDS-sourced credential
+# on-instance and then uses it from an off-instance IP (the imds_token_usage preset
+# emits both halves); step-02 reuses that SAME instance role session off-instance for
+# an IAM policy enumeration (ec2_token_usage), stitched on the shared role session
+# (pivot: shared_entity). cgo_anchor names the on-instance workload the credential is
+# stolen from; the analytics streamer EAL plugin is our tooling, not the CGO.
+cgo_anchor:
+  image_name: "amazonlinux-ec2-workload"
+  primary_username: "svc-account"
+
+execution_identity:
+  default: svc-account
+  options:
+    - svc-account
+    - www-data
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+# methodology_family was absent, so this scenario was silently missing from the
+# coverage analyzer's Section 4 family table — invisible rather than uncovered.
+validation_methodology: "Cloud Audit-Log Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+
+steps:
+  - id: step-01
+    name: "Emit IMDS credential fetch then off-instance role use (imds_token_usage)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/cloud/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/cdr-023-imds.yml <<YML
+      campaign_id: CMP-CDR-023
+      name: "CDR — Cloud IMDS token theft followed by remote use"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [cdr, cloud, imds, instance-credential-theft]
+      steps:
+        - step_id: step-01
+          plugin: cloud_storage_compute_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: imds_token_usage
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cdr-023-imds.yml --live
+    identity: svc-account
+    mitre_technique: "T1552.005"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: CDR
+        type: ABIOC
+        description: "IMDS-sourced instance role credential used from an off-instance IP within the causality window"
+        ttp_ref: "TTP-2026-0158"
+        detection_id: "abioc-cloud-unusual-instance-metadata-service-imds-access"
+      - plane: CDR
+        type: XQL
+        description: "Landing validation — the emitted IMDS/STS CloudTrail records are observable in cloud_audit_logs for the run"
+        ttp_ref: "TTP-2026-0158"
+        detection_id: "xql-sim-cdr-023-imds-to-remote-use-landing-validation"
+
+  - id: step-02
+    name: "Reuse the same EC2 role session off-instance (ec2_token_usage)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/cloud/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      cat > /tmp/cdr-023-ec2.yml <<YML
+      campaign_id: CMP-CDR-023
+      name: "CDR — Suspicious usage of EC2 token"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      steps:
+        - step_id: step-01
+          plugin: cloud_storage_compute_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: aws
+            event_pattern: ec2_token_usage
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cdr-023-ec2.yml --live
+    identity: svc-account
+    mitre_technique: "T1078.004"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CDR
+        type: Analytics
+        description: "Suspicious usage of EC2 token — an EC2 instance-profile role session makes an off-instance API call"
+        ttp_ref: "TTP-2026-0158"
+        detection_id: "xql-suspicious-usage-of-ec2-token"
+      - plane: CDR
+        type: Correlation
+        description: "Stitch — IMDS credential fetch and off-instance EC2-token reuse on the same instance role session raise one incident"
+        ttp_ref: "TTP-2026-0158"
+        detection_id: "CR-CDR-0023"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cdr-023-imds.yml /tmp/cdr-023-ec2.yml"
+    - "echo 'cortexsim-cdr-023-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - cdr
+  - cloud
+  - imds
+  - instance-credential-theft
+  - abioc
+  - analytics
+  - eal-plugin

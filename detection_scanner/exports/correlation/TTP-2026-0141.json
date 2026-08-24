@@ -1,0 +1,20 @@
+{
+  "mitre_techniques": [
+    "T1087.002",
+    "T1135",
+    "T1557.001",
+    "T1110.002",
+    "T1078",
+    "T1021.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(ITDR-015 Inbound NetNTLMv2 Authentication To Rogue Responder Host) AND XQL(ITDR-015 Offline Cracking-Tool Process With Recon-Shell Causality) AND (XQL(ITDR-015 Compromised-Account Validation Across Domain Hosts) OR BIOC(ITDR-015 Compromised-Account Authentication From Attacker Foothold)) AND (XQL(ITDR-015 WinRM Remote-Shell Session Landing On Domain Host) OR BIOC(ITDR-015 WinRM Lateral Movement Landing Remote Shell)) \u2014 stitches the LLMNR/NBT-NS poisoning capture, the offline NetNTLMv2 crack on the attacker foothold, the cracked-credential validation across domain hosts, and the WinRM lateral landing into one credential-access-to-lateral-movement incident, all tied to a single attacker source_ip / recon-shell CGO.",
+      "name": "Internal AD Kill-Chain \u2014 Enumerate To Poison To Crack To Validate To Lateral WinRM",
+      "rule_id": "CR-ITDR-0015",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0141"
+}

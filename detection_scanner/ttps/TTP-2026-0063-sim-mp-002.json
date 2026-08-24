@@ -327,14 +327,14 @@
         "evidence_query": "Correlation CR-MP-0011 stitches the same identity across DC/XDR/NGFW into one lateral-movement incident; CR-MP-0012 measures the Kerberoast→lateral-auth MTTD timeline."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CRED-063",
+        "threat_scenario_id": "TS-CRED-063",
         "name": "Cross-Plane Identity Attack Chain — Kerberoast to DCSync",
         "description": "Detect and stitch the full Kerberoasting → Pass-the-Hash → DCSync kill chain across the Cortex ITDR, XDR, NDR and XSIAM correlation planes into a single high-severity incident with an end-to-end MTTD timeline.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CRED-063A",
+            "threat_step_id": "TS-CRED-063A",
             "objective": "Each plane fires its corresponding detection during SIM-MP-002.",
             "preconditions": [
               "Cortex ITDR connected to AD with the seeded Kerberoastable accounts.",
@@ -354,7 +354,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-CRED-063B",
+            "threat_step_id": "TS-CRED-063B",
             "objective": "Cross-plane signals stitch into one incident with an MTTD timeline.",
             "success_criteria": [
               "Correlation `CR-MP-0011` groups the ITDR + XDR + NGFW signals for sql-svc into one lateral-movement incident.",

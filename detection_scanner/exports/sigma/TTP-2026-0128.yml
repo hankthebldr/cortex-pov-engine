@@ -1,0 +1,32 @@
+title: "Unencrypted-Snapshot / KMS-Gap Posture Finding Correlated to Cross-Account Snapshot Export (T1537 / T1578.001 / T1552.005 / T1530) \u2014 CSPM-004 Impossible Travel by Cloud Compute Identity"
+id: ttp-2026-0128-abioc-01
+status: experimental
+description: |
+  An EC2 instance role whose credentials were minted at the Instance Metadata endpoint issues a snapshot-export control-plane call (ModifySnapshotAttribute / CopySnapshot / CreateSnapshot) from a region that is NOT in the role's learned region baseline. Routine cross-region and global-service traffic (STS, IAM, CloudFront, Route53, cross-region S3/DynamoDB) is deliberately excluded: the ABIOC fires only when an off-baseline-region call co-occurs with a sensitive snapshot-export action by the same IMDS-minted identity — never on a bare region mismatch, which for a compute role calling global services is normal. Every individual API call is legitimate in isolation; the ABIOC fires on the rarity-plus-co-occurrence deviation from the compute identity's learned home-region baseline and anchors it to the IMDS credential lineage, catching the off-region actor behind the snapshot export that a static rule keyed on one API name would miss.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter _time > to_timestamp(current_time() - 3600)
+    | filter cloud_provider = "AWS"
+    | filter user_identity_type = "AssumedRole" and credential_source = "ec2-instance-metadata"
+    | filter event_name in ("ModifySnapshotAttribute", "CopySnapshot", "CreateSnapshot")
+    | filter aws_region != instance_home_region and region_in_role_baseline = false
+    | comp count() as sensitive_new_region_calls, values(event_name) as export_actions by user_identity_arn, src_ip, aws_region
+    | sort desc sensitive_new_region_calls
+    | fields user_identity_arn, src_ip, aws_region, export_actions, sensitive_new_region_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.005
+logsource:
+  product: aws
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

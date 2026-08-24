@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1003.006",
+    "T1053.005",
+    "T1021.001",
+    "T1570",
+    "T1020",
+    "T1486"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(DCSync Replication Request from a Non-Domain-Controller Account) AND (BIOC(AnyDesk RAT Registered as a Scheduled Task for Persistence on a Domain Controller) OR ABIOC(DCSync-to-Persistence Behavioral Chain on a Domain Controller)) on the same domain-controller host and stolen service account within 600s -> raise ONE 'Ransomware Precursor' incident at CRITICAL and trigger XSOAR playbook Ransomware-Precursor-AutoContain (isolate the DC, disable the stolen service account, block the exfil egress ASN). The playbook fires at this junction so the T1486 ESXi mass-encryption impact is CONTAINED rather than observed. F5 Response/Automation KPI: the correlation fires AND the playbook completes before impact.",
+      "name": "Ransomware Precursor Auto-Containment \u2014 DCSync + Scheduled-Task-Persistence Junction Fires XSOAR R&R Playbook",
+      "rule_id": "CR-MP-0020",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0142"
+}

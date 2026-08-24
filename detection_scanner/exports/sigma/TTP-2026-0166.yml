@@ -1,0 +1,95 @@
+title: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash \u2014 Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) \u2014 A user received multiple weakly encrypted service tickets"
+id: ttp-2026-0166-abioc-01
+status: experimental
+description: |
+  A single account receives an unusual burst of Kerberos service tickets (4769) encrypted with legacy RC4-HMAC (TicketEncryptionType 0x17) across many distinct Service Principal Names, deviating from the AES-only service-ticket-encryption baseline Cortex learned for the identity. Every ticket request is a valid, well-formed Kerberos operation and no single 4769 is a known-bad IOC; the auto-tuned ABIOC fires on the weak-encryption-ticket-burst deviation from the account's learned baseline — the offline-crackable roast material — anchored to the requesting-identity causality chain rather than to any static indicator.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4769
+    | filter ticket_encryption_type = "0x17"
+    | alter principal_name = arrayindex(split(target_user_name, "@"), 0)
+    | comp count() as weak_ticket_count, count_distinct(service_name) as distinct_services, values(service_name) as services, min(_time) as first_seen, max(_time) as last_seen by principal_name
+    | alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)
+    | filter weak_ticket_count >= 5 and distinct_services >= 3
+    | fields principal_name, weak_ticket_count, distinct_services, services, window_minutes, first_seen, last_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash \u2014 Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) \u2014 A user requested multiple service tickets"
+id: ttp-2026-0166-abioc-02
+status: experimental
+description: |
+  The same account requests Kerberos service tickets (4769) across an anomalously large set of distinct Service Principal Names in a short window — the enumeration-and-request volume of a Kerberoasting sweep — exceeding the low, human-cadence service-ticket request rate Cortex learned for the identity. The alert fires on ticket-request VOLUME (independent of encryption strength) via a statistical deviation from the learned baseline, anchored to the same requesting identity as the weak-ticket burst.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4769
+    | alter principal_name = arrayindex(split(target_user_name, "@"), 0)
+    | comp count() as ticket_requests, count_distinct(service_name) as distinct_services, min(_time) as first_seen, max(_time) as last_seen by principal_name
+    | alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)
+    | filter distinct_services >= 5 and ticket_requests >= 8 and window_minutes <= 30
+    | fields principal_name, ticket_requests, distinct_services, window_minutes, first_seen, last_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1558/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1558.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Kerberoast Weak-Ticket Burst Followed by Pass-the-Hash \u2014 Cortex AD Behavioral IOC (ABIOC) (T1558.003 / T1550.002) \u2014 A user authenticated with weak NTLM to multiple hosts"
+id: ttp-2026-0166-abioc-03
+status: experimental
+description: |
+  An account authenticates with legacy NTLM over an NTLM (type 3) network logon through the NtLmSsp logon process — presenting a password-derived secret directly, with no preceding Kerberos exchange — the Pass-the-Hash (T1550.002) lateral-movement shape — against an account whose learned authentication baseline is Kerberos interactive logon. Each NTLM logon is technically valid and benign in isolation; the auto-tuned ABIOC fires on the out-of-baseline weak-NTLM network authentication deviation, aggregating the distinct target hosts reached, anchored to the roasted identity whose service-ticket material was harvested moments earlier.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id = 4624
+    | filter logon_type = 3
+    | filter authentication_package_name = "NTLM"
+    | filter logon_process_name contains "NtLmSsp"
+    | alter principal_name = arrayindex(split(target_user_name, "@"), 0)
+    | comp count() as ntlm_network_logons, count_distinct(host_name) as target_hosts, values(host_name) as hosts, min(_time) as first_seen, max(_time) as last_seen by principal_name
+    | filter ntlm_network_logons >= 1
+    | fields principal_name, ntlm_network_logons, target_hosts, hosts, first_seen, last_seen
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1550/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1550.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

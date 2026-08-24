@@ -47,9 +47,9 @@
     }
   },
   "identity": {
-    "name": "Cloud App \u2014 Cross-Provider OAuth Grant Rotation (Okta \u2192 MS \u2192 Google) (T1090)",
-    "summary": "A single identity solicits risky OAuth grants across three IdPs in sequence \u2014 Okta (risky drive), Microsoft (admin-consent), Google (risky drive) \u2014 inside a 5-minute rotation window. Cortex Cloud App Security flags provider-hopping policy evasion, and XSIAM stitches the three IdP sessions (sharing the X-Simulation-Run-ID prefix) into one cross-provider incident, corroborated by three NGFW /auth\u2026",
-    "description": "Sophisticated OAuth consent-phishing operators spread their grant attempts across multiple IdPs to stay under any single provider's per-tenant rate and anomaly thresholds \u2014 a deliberate policy-evasion / proxy-rotation behaviour. This scenario chains three oauth_grant_emulator runs from one identity: a risky drive scope to Okta, an admin-consent scope to Microsoft 30s later, and a risky drive scope to Google 30s after that \u2014 all within the 5-minute rotation window and all sharing a common X-Simulation-Run-ID prefix. Detection is on the cross-provider correlation rather than any single grant: each individual grant is risky on its own, but the standout signal is the same identity touching three distinct IdP authorize endpoints in rapid succession. Cortex Cloud App Security marks the identity active in its IdP matrix on the first grant, escalates on the second provider inside the rotation window, and raises a provider-hopping policy-evasion alert on the third. A XSIAM stitching rule fuses the three sessions into a single incident keyed on the shared run-ID prefix, while the NGFW EAL plane independently sees three /authorize App-ID hits across okta.com, login.microsoftonline.com, and accounts.google.com. All grants use bogus client_ids against canary endpoints; no token is ever issued \u2014 detection is on the multi-IdP request pattern.",
+    "name": "Cloud App — Cross-Provider OAuth Grant Rotation (Okta → MS → Google) (T1090)",
+    "summary": "A single identity solicits risky OAuth grants across three IdPs in sequence — Okta (risky drive), Microsoft (admin-consent), Google (risky drive) — inside a 5-minute rotation window. Cortex Cloud App Security flags provider-hopping policy evasion, and XSIAM stitches the three IdP sessions (sharing the X-Simulation-Run-ID prefix) into one cross-provider incident, corroborated by three NGFW /auth…",
+    "description": "Sophisticated OAuth consent-phishing operators spread their grant attempts across multiple IdPs to stay under any single provider's per-tenant rate and anomaly thresholds — a deliberate policy-evasion / proxy-rotation behaviour. This scenario chains three oauth_grant_emulator runs from one identity: a risky drive scope to Okta, an admin-consent scope to Microsoft 30s later, and a risky drive scope to Google 30s after that — all within the 5-minute rotation window and all sharing a common X-Simulation-Run-ID prefix. Detection is on the cross-provider correlation rather than any single grant: each individual grant is risky on its own, but the standout signal is the same identity touching three distinct IdP authorize endpoints in rapid succession. Cortex Cloud App Security marks the identity active in its IdP matrix on the first grant, escalates on the second provider inside the rotation window, and raises a provider-hopping policy-evasion alert on the third. A XSIAM stitching rule fuses the three sessions into a single incident keyed on the shared run-ID prefix, while the NGFW EAL plane independently sees three /authorize App-ID hits across okta.com, login.microsoftonline.com, and accounts.google.com. All grants use bogus client_ids against canary endpoints; no token is ever issued — detection is on the multi-IdP request pattern.",
     "severity": "high",
     "confidence": "high"
   },
@@ -122,7 +122,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Three sequenced risky grants from one identity within the rotation window \u2014 bogus client_ids, no token issued.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-004-okta.yml --live\nsleep 30; python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-ms.yml --live\nsleep 30; python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-google.yml --live",
+      "code": "# Three sequenced risky grants from one identity within the rotation window — bogus client_ids, no token issued.\npython3 -m scripts.eal_simulator.cli run /tmp/cloud-004-okta.yml --live\nsleep 30; python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-ms.yml --live\nsleep 30; python3 -m scripts.eal_simulator.cli run /tmp/cloud-004-google.yml --live",
       "input_variables": [],
       "timeout_seconds": 180
     },
@@ -207,14 +207,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Cross-Provider OAuth Grant Rotation Policy Evasion \u2014 Single Identity",
+        "name": "Cross-Provider OAuth Grant Rotation Policy Evasion — Single Identity",
         "rule_id": "CR-CLOUDAPP-0004",
         "logic": "XQL(CLOUD-004 Three IdPs Same Identity Provider-Hopping Policy Evasion) OR XQL(CLOUD-004 XSIAM Cross-Provider Rotation Single Incident Stitch) OR XQL(CLOUD-004 NGFW Three Authorize Hits Across Three FQDNs Shared Run Marker)"
       }
     ],
     "analytics_modules": [
-      "Cortex Cloud App Security \u2014 Single identity solicits risky grants across multiple IdPs",
-      "Cortex XSIAM Analytics \u2014 Cross-provider OAuth rotation stitched by shared run marker"
+      "Cortex Cloud App Security — Single identity solicits risky grants across multiple IdPs",
+      "Cortex XSIAM Analytics — Cross-provider OAuth rotation stitched by shared run marker"
     ]
   },
   "panw_mapping": {
@@ -240,14 +240,14 @@
         "evidence_query": "Correlation CR-CLOUDAPP-0004 stitches three IdP grant sessions sharing a run-ID prefix from one identity into a single provider-hopping policy-evasion incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUDAPP-030",
+        "threat_scenario_id": "TS-CLOUDAPP-030",
         "name": "Cross-Provider OAuth Behaviour Stitching",
         "description": "Detect a single identity soliciting risky OAuth grants across three IdPs within 5 minutes and stitch the sessions into one provider-hopping incident.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUDAPP-030A",
+            "threat_step_id": "TS-CLOUDAPP-030A",
             "objective": "Three IdP grants from one identity raise the provider-hopping detection.",
             "preconditions": [
               "oauth_grant_emulator supports all three providers and all IdP audit feeds are ingested.",
@@ -264,7 +264,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUDAPP-030B",
+            "threat_step_id": "TS-CLOUDAPP-030B",
             "objective": "The three sessions stitch into one incident via the shared run-ID prefix.",
             "success_criteria": [
               "XQL `CLOUD-004 XSIAM Cross-Provider Rotation Single Incident Stitch` returns >= 1 row.",
@@ -298,7 +298,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1090 \u2014 Proxy",
+      "title": "MITRE ATT&CK T1090 — Proxy",
       "url": "https://attack.mitre.org/techniques/T1090/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

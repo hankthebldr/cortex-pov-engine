@@ -1,0 +1,312 @@
+{
+  "id": "TTP-2026-0164",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T15:31:42+00:00",
+    "updated_at": "2026-07-25T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cloud-app",
+      "casb",
+      "microsoft-365",
+      "exchange-online",
+      "onedrive",
+      "sharepoint",
+      "oauth-app",
+      "mailbox-enumeration",
+      "data-exfiltration",
+      "analytics",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "saas-m365",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Microsoft 365 Storage Exfiltration + Mailbox Enumeration by an Azure Application (SIM-CLOUD-008)",
+    "summary": "An Azure AD OAuth app binds a MailItemsAccessed burst across many Exchange mailboxes (mailbox enumeration by an app), then drives a bulk OneDrive/SharePoint download burst (M365 storage exfiltration). Two XSIAM Analytics alerts fire on the unified audit log (msft_o365_audit); a correlation stitches enumeration to exfiltration on the shared identity into one incident.",
+    "description": "This card validates the two Microsoft 365 data-plane Analytics alerts a customer expects on the unified audit log when a compromised or over-consented OAuth application is used for collection and exfiltration: (1) 'Mailbox enumeration activity by Azure application' — an Azure AD app service principal performs a high-fan-out MailItemsAccessed Bind sweep across MANY distinct Exchange Online mailboxes, the app-driven mailbox-harvest shape (T1114); and (2) 'Microsoft 365 storage services exfiltration activity' — a bulk FileDownloaded / FileSyncDownloadedFull burst pulls sensitive documents out of OneDrive/SharePoint (T1567.002). Both are Cortex XSIAM Analytics alerts named in the XSIAM Analytics Alert Reference by data source (Azure Audit Log); neither keys on a known-bad string — the signal is the volume / object-diversity of the operation on the app or user identity in the msft_o365_audit dataset. There is deliberately no internal process-causality chain (the M365 unified-audit dataset carries no causality_actor_process_* fields), so these are Analytics detections, NOT ABIOCs — the cross-stage link forms on the shared identity, not a process tree. The scenario drives the m365_activity_emitter EAL plugin to POST shape-true O365 Management Activity API records (the unified audit log XSIAM ingests as msft_o365_audit) into an operator-supplied collector, so a DC can prove the alerts fire without touching a real tenant, reading a real mailbox, or downloading a real file. A correlation rule fuses the enumeration and exfiltration Analytics alerts on the shared UserId / ClientIP into a single collection-to-exfiltration incident, and two validation XQL queries confirm the emitted records actually landed in the dataset.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1114",
+        "name": "Email Collection",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "subtechnique_id": "T1567.002",
+        "name": "Exfiltration Over Web Service: Exfiltration to Cloud Storage",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Metadata",
+      "Application Log: Application Log Content",
+      "Cloud Storage: Cloud Storage Access"
+    ]
+  },
+  "execution": {
+    "target_platform": "saas-m365",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-CLOUD-008 — m365_activity_emitter drives mailbox-enumeration-by-app then storage-exfiltration analytics into msft_o365_audit.",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "An HTTP log collector (XSIAM Broker VM HTTP applet / Cribl / nginx forwarder) is wired into Cortex XSIAM as a Microsoft 365 unified-audit source so POSTed records normalise into msft_o365_audit.",
+        "check_command": "true"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: no real Microsoft 365 tenant is touched. The m365_activity_emitter\n# EAL plugin POSTs shape-true O365 unified-audit records (msft_o365_audit) to an\n# operator-supplied, allowlisted collector. See the SIM-CLOUD-008 scenario for the\n# full campaign wiring; this payload documents the two-stage drive.\nset -euo pipefail\nCOLLECTOR_URL=\"${COLLECTOR_URL:-https://xsiam-collector.cortexsim-canary.invalid/logs/v1/event}\"\necho \"[CortexSim] SIM-CLOUD-008 stage 1: mailbox enumeration by Azure app -> ${COLLECTOR_URL}\"\necho \"[CortexSim] SIM-CLOUD-008 stage 2: bulk OneDrive/SharePoint storage exfiltration -> ${COLLECTOR_URL}\"\necho cortexsim-cloud-008-m365-enum-then-exfil-complete\n",
+      "input_variables": [
+        {
+          "name": "COLLECTOR_URL",
+          "type": "url",
+          "default": "https://xsiam-collector.cortexsim-canary.invalid/logs/v1/event",
+          "description": "Operator-supplied HTTP log collector wired into XSIAM as a Microsoft 365 unified-audit source."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "saas-event",
+        "description": "A high-fan-out MailItemsAccessed Bind burst across many distinct mailboxes in the unified audit log attributed to one Azure AD application (AppId), the mailbox-enumeration-by-app shape.",
+        "expected_value": "Workload = \"Exchange\" and Operation = \"MailItemsAccessed\" and MailAccessType = \"Bind\" and AppId != null"
+      },
+      {
+        "artifact_type": "saas-event",
+        "description": "A bulk FileDownloaded / FileSyncDownloadedFull burst against OneDrive/SharePoint pulling sensitive documents out of the tenant, the storage-exfiltration shape.",
+        "expected_value": "Workload in (\"OneDrive\", \"SharePoint\") and Operation in (\"FileDownloaded\", \"FileSyncDownloadedFull\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-CLOUD-008 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "Mailbox Enumeration Activity by an Azure Application",
+        "query": "dataset = msft_o365_audit\n| filter Workload = \"Exchange\" and Operation = \"MailItemsAccessed\"\n| filter MailAccessType = \"Bind\" and AppId != null\n| comp count() as bind_ops, count_distinct(ObjectId) as mailboxes_touched by AppId, ClientAppId, UserId, ClientIP\n| filter bind_ops >= 20 and mailboxes_touched >= 5\n| sort desc bind_ops\n| fields AppId, ClientAppId, UserId, ClientIP, bind_ops, mailboxes_touched",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Microsoft 365 Storage Services Exfiltration Activity",
+        "query": "dataset = msft_o365_audit\n| filter Workload in (\"OneDrive\", \"SharePoint\") and Operation in (\"FileDownloaded\", \"FileSyncDownloadedFull\")\n| comp count() as download_ops, count_distinct(ObjectId) as files_pulled by UserId, ClientIP, Workload\n| filter download_ops >= 15 and files_pulled >= 5\n| sort desc download_ops\n| fields UserId, ClientIP, Workload, download_ops, files_pulled",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "Mailbox Enumeration by Azure App Landed in Unified Audit Log",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 900)\n| filter Operation = \"MailItemsAccessed\" and mailbox_enumeration_marker = true\n| comp count() as bind_events, count_distinct(AppId) as apps by UserId, ClientIP, AppId\n| filter bind_events >= 1\n| sort desc bind_events\n| fields UserId, ClientIP, AppId, bind_events, apps",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "Microsoft 365 Storage Exfiltration Download Burst Landed in Unified Audit Log",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 900)\n| filter Operation in (\"FileDownloaded\", \"FileSyncDownloadedFull\") and storage_exfiltration_marker = true\n| comp count() as download_events, count_distinct(ObjectId) as files by UserId, ClientIP\n| filter download_events >= 1\n| sort desc download_events\n| fields UserId, ClientIP, download_events, files",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Microsoft 365 App-Driven Mailbox Enumeration to Storage Exfiltration Stitch",
+        "rule_id": "CR-CLOUD-0008",
+        "logic": "Analytics(Mailbox Enumeration Activity by an Azure Application) AND Analytics(Microsoft 365 Storage Services Exfiltration Activity) observed on the same UserId / ClientIP within the run window — stitches app-driven mailbox harvest (MailItemsAccessed Bind burst across many mailboxes) followed by a bulk OneDrive/SharePoint download burst into a SINGLE Microsoft 365 collection-to-exfiltration incident. The shared identity (the mailbox owner UPN and the client IP the OAuth app operates from) is the pivot; the incident's terminal assertion is that one actor enumerated mailboxes AND pulled bulk storage in the same window, distinguishing a genuine data-theft chain from an isolated noisy download."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — Mailbox enumeration activity by Azure application",
+        "validated": true,
+        "note": "Backed by the logic-bearing Analytics hunt query 'Mailbox Enumeration Activity by an Azure Application' on this card."
+      },
+      {
+        "module": "Cortex XSIAM Analytics — Microsoft 365 storage services exfiltration activity",
+        "validated": true,
+        "note": "Backed by the logic-bearing Analytics hunt query 'Microsoft 365 Storage Services Exfiltration Activity' on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-CLOUD-0008"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_o365_audit | filter Operation in (\"MailItemsAccessed\", \"FileDownloaded\", \"FileSyncDownloadedFull\") | comp count() as ops, count_distinct(Operation) as op_types by UserId, ClientIP, AppId"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CLOUD-008",
+        "name": "Microsoft 365 App-Driven Mailbox Enumeration and Storage Exfiltration",
+        "description": "Proves Cortex XSIAM fires its two Microsoft 365 data-plane behavioral analytics alerts — mailbox enumeration by an Azure application, and storage-services exfiltration — on the unified audit log (msft_o365_audit), and stitches them on the shared identity into one collection-to-exfiltration incident, all driven by shape-true synthetic audit records with no real tenant touched.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CLOUD-008A",
+            "objective": "The mailbox-enumeration-by-app Analytics alert fires on a high-fan-out MailItemsAccessed Bind sweep across many mailboxes attributed to one Azure AD application.",
+            "preconditions": [
+              "An HTTP log collector wired into XSIAM as a Microsoft 365 unified-audit source (msft_o365_audit)."
+            ],
+            "steps": [
+              "Drive the m365_activity_emitter mailbox_enumeration_by_app pattern (fanned across >= 5 distinct mailbox UPNs) into the collector.",
+              "Observe the Analytics alert 'Mailbox enumeration activity by Azure application' fire.",
+              "Confirm the validation XQL shows the Bind burst landed in msft_o365_audit."
+            ],
+            "success_criteria": [
+              "Analytics alert `Mailbox enumeration activity by Azure application` fires within the run window.",
+              "Validation XQL `Mailbox Enumeration by Azure App Landed in Unified Audit Log` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CLOUD-008B",
+            "objective": "The storage-services-exfiltration Analytics alert fires on a bulk OneDrive/SharePoint FileDownloaded / FileSyncDownloadedFull burst.",
+            "preconditions": [
+              "TS-CLOUD-008A collector in place."
+            ],
+            "steps": [
+              "Drive the m365_activity_emitter storage_exfiltration pattern into the collector.",
+              "Observe the Analytics alert 'Microsoft 365 storage services exfiltration activity' fire.",
+              "Confirm the validation XQL shows the download burst landed in msft_o365_audit."
+            ],
+            "success_criteria": [
+              "Analytics alert `Microsoft 365 storage services exfiltration activity` fires within the run window.",
+              "Validation XQL `Microsoft 365 Storage Exfiltration Download Burst Landed in Unified Audit Log` returns >= 1 row."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CLOUD-008C",
+            "objective": "The correlation stitches the enumeration and exfiltration Analytics alerts on the shared identity into one incident.",
+            "preconditions": [
+              "TS-CLOUD-008A and TS-CLOUD-008B completed in the same run window on the same UserId / ClientIP."
+            ],
+            "steps": [
+              "Run both emitter patterns for the same target_user against the same collector.",
+              "Observe CR-CLOUD-0008 raise one collection-to-exfiltration incident."
+            ],
+            "success_criteria": [
+              "Correlation `CR-CLOUD-0008` raises exactly one incident stitching both Analytics alerts on the shared UserId / ClientIP."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scope Azure AD (Entra) application permissions to least privilege and require admin approval for Mail.Read / Files.Read.All app-only grants; inventory consented apps and alert on new high-privilege grants.",
+      "Enforce Conditional Access and app-based Continuous Access Evaluation so a stolen app token cannot silently bind mailboxes or bulk-download storage from an anomalous client IP.",
+      "Apply DLP and download/throttling policies on OneDrive/SharePoint so a mass FileDownloaded burst is rate-limited and flagged."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune the two ABIOCs on per-application mailbox-access volume and per-identity storage-download volume/object-diversity rather than hand-authoring static thresholds.",
+      "Correlate app-driven mailbox enumeration with a subsequent bulk storage-download burst on the shared identity to promote a noisy single-alert into a collection-to-exfiltration incident.",
+      "Validate the msft_o365_audit ingestion path with the two landing XQL queries so a POV proves the unified-audit source is parsed before asserting the analytics fired."
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM Analytics Alert Reference by Data Source — Microsoft 365 storage services exfiltration activity; Mailbox enumeration activity by Azure application",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1114 — Email Collection",
+      "url": "https://attack.mitre.org/techniques/T1114/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1567.002 — Exfiltration Over Web Service: Exfiltration to Cloud Storage",
+      "url": "https://attack.mitre.org/techniques/T1567/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1530 — Data from Cloud Storage",
+      "url": "https://attack.mitre.org/techniques/T1530/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+scenario_id: SIM-ITDR-012
+name: "GlobalProtect Authentication Bypass — Session Without Authentication (PAN-OS CVE-2026-0257)"
+version: "1.0"
+status: active
+
+plane: ITDR
+detection_types:
+  - BIOC
+  - XQL
+  - Correlation
+  - IOC
+
+uc_ref: UCS-ITDR-01
+tc_ref: TC-ITDR-01
+pov_scenario_id: POV-SC-011
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate identity analytics detect living-off-the-land credential abuse alerts"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1190"
+mitre_technique_name: "Exploit Public-Facing Application"
+additional_techniques:
+  - technique: "T1133"
+    name: "External Remote Services"
+  - technique: "T1556"
+    name: "Modify Authentication Process"
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1021"
+    name: "Remote Services"
+
+threat_report: "Unit 42 — Active Exploitation of PAN-OS CVE-2026-0257 (GlobalProtect Authentication Bypass)"
+threat_report_url: "https://unit42.paloaltonetworks.com/active-exploitation-of-pan-os-cve-2026-0257/"
+
+# NON-DESTRUCTIVE. This scenario does not exploit a real PAN-OS device or
+# establish a real VPN tunnel. It emits SAFE-MODE synthetic GlobalProtect
+# gateway-connected log records to a local marker file to model the
+# CVE-2026-0257 auth-bypass session shape (placeholder MACs, template
+# hostnames, fixed OS string, empty source-user domain, no preceding auth
+# event) so the fingerprint BIOCs, the IOC match, and the durable
+# session-without-authentication correlation rule can be validated.
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - nobody
+    - root
+
+push_supported: true
+pull_supported: true
+
+# ── KPI / Methodology Metadata ──────────────────────────────────────────────
+validation_methodology: "Identity Signal Injection & Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  A GlobalProtect gateway-connected success is observed with no preceding
+  successful portal/gateway authentication — the behavioral core of the
+  CVE-2026-0257 bypass. The PoC-fingerprint BIOCs (placeholder MAC/hostname,
+  fixed OS string + empty source-user domain) and the exploitation-infra BIOC
+  fire, the published attacker IP matches a Cortex IOC, and CR-ITDR-0012
+  stitches the signals into one authentication-bypass incident. The durable
+  catch keys on the missing auth event, not the mutable PoC placeholders, so it
+  survives fingerprint churn. Mean time from emission to alert is within budget.
+moat_tier: "LEAD"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# These are GlobalProtect VPN session-shape log records, not a host process
+# tree, so the CGO is the bypassed GlobalProtect gateway that OWNS the sessions
+# (NOT the synthetic beacon) and the connected graph is carried by shared_entity
+# rather than fork/exec: both emitted gateway-connected sessions share the same
+# bypassed gateway and the same defining "no preceding authentication" bypass
+# condition, and the correlation stitch fuses them on that shared entity. This
+# collapses the two orphan session emissions + the stitch from a star-off-the-
+# agent into one connected session-without-authentication incident.
+cgo_anchor:
+  image_name: "GlobalProtect"
+  primary_username: "www-data"
+
+external_tools: []
+
+steps:
+  - id: step-01
+    name: "Emit a GlobalProtect gateway-connected session carrying the PoC placeholder fingerprints"
+    command: "mkdir -p /tmp/cortexsim-itdr-012 && printf '%s\\n' '{\"log_type\":\"globalprotect\",\"event_id\":\"gateway-connected\",\"status\":\"success\",\"public_ip\":\"185.195.232.139\",\"machine_name\":\"WINDOWS-LAPTOP-001\",\"endpoint_mac\":\"aa:bb:cc:dd:ee:ff\",\"endpoint_os_version\":\"Microsoft Windows 10 Pro 64-bit\",\"source_user\":\"guest\",\"source_user_domain\":\"\",\"preceding_auth_event\":\"NONE\",\"note\":\"SAFE-MODE synthetic CVE-2026-0257 PoC fingerprint session\"}' >> /tmp/cortexsim-itdr-012/globalprotect_raw.ndjson && echo cortexsim-itdr-012-poc-fingerprint-session-emitted"
+    identity: www-data
+    mitre_technique: "T1556"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "A gateway-connected session presenting a placeholder PoC MAC (aa:bb:cc:dd:ee:ff) and a template hostname (WINDOWS-LAPTOP-001) — attributes a real endpoint never presents on an established tunnel."
+        ttp_ref: "TTP-2026-0118"
+        detection_id: "bioc-globalprotect-gateway-connected-session-with-placeholder-poc-client-fingerprint"
+      - plane: ITDR
+        type: BIOC
+        description: "The same session presents preceding_auth_event = NONE — a gateway-connected success with no preceding portal/gateway authentication event, the durable fingerprint-independent behavioral core of the bypass."
+        ttp_ref: "TTP-2026-0118"
+        detection_id: "bioc-globalprotect-gateway-connected-success-with-no-preceding-authentication-event"
+      - plane: ITDR
+        type: XQL
+        description: "Validation query confirms the fingerprinted gateway-connected session is observable in the GlobalProtect logs within the run window."
+        ttp_ref: "TTP-2026-0118"
+        detection_id: "xql-globalprotect-poc-fingerprint-session-observed"
+
+  - id: step-02
+    name: "Emit a GlobalProtect gateway-connected session from known CVE-2026-0257 exploitation infrastructure"
+    command: "printf '%s\\n' '{\"log_type\":\"globalprotect\",\"event_id\":\"gateway-connected\",\"status\":\"success\",\"public_ip\":\"146.19.216.119\",\"machine_name\":\"DESKTOP-GP01\",\"endpoint_mac\":\"00:11:22:33:44:55\",\"endpoint_os_version\":\"Microsoft Windows 10 Pro 64-bit\",\"source_user\":\"\",\"source_user_domain\":\"\",\"preceding_auth_event\":\"NONE\",\"note\":\"SAFE-MODE synthetic CVE-2026-0257 exploitation-infra session\"}' >> /tmp/cortexsim-itdr-012/globalprotect_raw.ndjson && echo cortexsim-itdr-012-exploitation-infra-session-emitted"
+    identity: www-data
+    mitre_technique: "T1190"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: ITDR
+        type: BIOC
+        description: "A gateway-connected success whose public source IP (146.19.216.119) matches one of the nine published CVE-2026-0257 exploitation IPs — implements the Unit 42 hunt guidance."
+        ttp_ref: "TTP-2026-0118"
+        detection_id: "bioc-globalprotect-gateway-connection-from-known-cve-2026-0257-exploitation-infrastructure"
+      - plane: ITDR
+        type: IOC
+        description: "The public source IP 146.19.216.119 matches a published CVE-2026-0257 exploitation IOC loaded into Cortex."
+        ttp_ref: "TTP-2026-0118"
+        detection_id: "ioc-ipv4-146-19-216-119"
+      - plane: ITDR
+        type: XQL
+        description: "Hunt query sweeps GlobalProtect logs for successful gateway-connected events from the published exploitation IPs to scope activity."
+        ttp_ref: "TTP-2026-0118"
+        detection_id: "xql-hunt-globalprotect-gateway-connected-events-from-cve-2026-0257-infrastructure"
+
+  - id: step-03
+    name: "Correlation stitches the gateway-connected-without-auth signals into one bypass incident"
+    command: "echo cortexsim-itdr-012-cr-itdr-0012-session-without-authentication-incident-stitched"
+    identity: www-data
+    mitre_technique: "T1556"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: ITDR
+        type: Correlation
+        description: "Durable correlation rule raises one CVE-2026-0257 authentication-bypass incident from a gateway-connected success with no preceding portal/gateway authentication event — keys on the missing auth event, not the mutable PoC placeholders."
+        ttp_ref: "TTP-2026-0118"
+        detection_id: "CR-ITDR-0012"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-itdr-012"
+    - "echo cortexsim-itdr-012-cleanup-complete"

@@ -1,46 +1,54 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getToolAdapters, getToolAdapter } from '../../api/client.js'
+import useShelf from './useShelf.js'
+import { SUPPLY, SUPPLY_LABEL, supplyOf, shortDigest, scenarioIdsFrom } from './supplyState.js'
+import PayloadShelfBanner from './PayloadShelfBanner.jsx'
+import StagePayloadDialog from './StagePayloadDialog.jsx'
+import PayloadComposer from './PayloadComposer.jsx'
+import ProvenanceBlock from './ProvenanceBlock.jsx'
 
 /**
- * ToolAdapterCatalog — surface the static tool-adapter catalog
- * (``tools/packs/*.yml``).
+ * ToolAdapterCatalog — "Tools & Payloads".
  *
- * Distinct from ``AdapterRegistryView``: that component lists the
- * **EAL plugins** the engine *uses* to generate attack signal
- * (browser_attack_runner, oauth_grant_emulator, etc). This one lists the
- * **tool adapters** — the static catalog of offensive / defensive tools
- * a scenario can reference via ``external_tools[].adapter_ref``, each
- * with tier / safety-class / licence trail / Cortex plane mapping.
+ * Distinct from ``AdapterRegistryView``: that lists the **EAL plugins** the
+ * engine uses to generate signal. This lists the **tool adapters** — the static
+ * catalog of tools a scenario references via ``external_tools[].adapter_ref``.
  *
- * Rendered as the "Tool Adapters" tab in the Coverage view-mode toggle
- * (Coverage tab → ATT&CK | PANW Stack | Advantage | EAL Plugins | Tool Adapters).
+ * WHAT THIS SURFACE GAINED, AND WHY IT LIVES HERE
+ * ----------------------------------------------
+ * Every tier-4 pack installs its tool from the public internet ON THE TARGET
+ * HOST at dispatch. That is the first thing a customer's default-deny network
+ * blocks, and a step whose tool never arrived runs anyway and produces a
+ * manufactured false negative in a POV report. So each card now carries its
+ * SUPPLY state (staged here vs fetched there) and, where the pack declares an
+ * artifact, a one-click stage onto this SimCore.
  *
- * Operator UX:
- *   - Filter strip across the top: plane · tier · safety class · category
- *   - Grid of cards, one per adapter
- *   - Each card shows name, version, tier, category, safety chip, planes,
- *     licence, expected MITRE techniques
- *   - Click → drill-down panel with the full pack: install + invoke +
- *     cleanup + ttp_refs + equivalents + author / dates / tags
+ * Staging is an inventory operation on the shelf; composition is a per-run
+ * parameter. Both are properties of an adapter, which is why this is the same
+ * destination rather than an eleventh one — a separate "Payloads" surface would
+ * list `linpeas.sh` in one place and `TOOL-LINPEAS` in another and make the DC
+ * hold the join in their head.
+ *
+ * Filters, selection and the open panel all live in URL params so a DC can send
+ * a colleague "the twelve tools this POV needs, three of them unstaged".
  */
-export default function ToolAdapterCatalog() {
+export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
   const [adapters, setAdapters] = useState([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
-
-  const [selectedId, setSelectedId]         = useState(null)
   const [selectedDetail, setSelectedDetail] = useState(null)
 
-  // Server-side filters — keep these in URL-ish state so a deep link could
-  // pre-select them later. For now they're local-only.
-  const [filterPlane, setFilterPlane]   = useState('all')
-  const [filterTier, setFilterTier]     = useState('all')
-  const [filterSafety, setFilterSafety] = useState('all')
-  const [filterCategory, setFilterCategory] = useState('all')
+  const shelf = useShelf({ adapters })
 
-  // Initial load is unfiltered — gives the user the full picture and the
-  // filter chips are derived from the response so we never offer an
-  // option the catalog can't satisfy.
+  const selectedId    = params.tool || null
+  const panel         = params.panel || null
+  const filterPlane   = params.plane || 'all'
+  const filterTier    = params.tier || 'all'
+  const filterSafety  = params.safety || 'all'
+  const filterCategory = params.category || 'all'
+  const filterSupply  = params.supply || 'all'
+  const search        = params.q || ''
+
   useEffect(() => {
     setLoading(true)
     getToolAdapters()
@@ -49,118 +57,149 @@ export default function ToolAdapterCatalog() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Chip values derived from the loaded corpus — never hard-coded so a
-  // new adapter category doesn't require a UI patch.
-  const planes = useMemo(
-    () => Array.from(new Set(adapters.flatMap((a) => a.planes || []))).sort(),
-    [adapters],
-  )
-  const tiers = useMemo(
-    () => Array.from(new Set(adapters.map((a) => a.tier))).sort((x, y) => x - y),
-    [adapters],
-  )
-  const safetyClasses = useMemo(
-    () => Array.from(new Set(adapters.map((a) => a.safety_class))).sort(),
-    [adapters],
-  )
-  const categories = useMemo(
-    () => Array.from(new Set(adapters.map((a) => a.category))).sort(),
-    [adapters],
-  )
+  // Detail fetch keyed off the URL, so a deep link opens the panel too.
+  useEffect(() => {
+    if (!selectedId) { setSelectedDetail(null); return undefined }
+    let cancelled = false
+    setSelectedDetail(null)
+    getToolAdapter(selectedId)
+      .then((d) => { if (!cancelled) setSelectedDetail(d) })
+      .catch((e) => { if (!cancelled) setSelectedDetail({ _error: e?.message || 'Failed to load adapter detail' }) })
+    return () => { cancelled = true }
+  }, [selectedId])
 
-  // Client-side filter so chip toggles feel instant; the server-side
-  // filter on the endpoint stays as the canonical implementation for
-  // programmatic API consumers + deep-linkable UIs to come.
+  const planes = useMemo(
+    () => Array.from(new Set(adapters.flatMap((a) => a.planes || []))).sort(), [adapters])
+  const tiers = useMemo(
+    () => Array.from(new Set(adapters.map((a) => a.tier))).sort((x, y) => x - y), [adapters])
+  const safetyClasses = useMemo(
+    () => Array.from(new Set(adapters.map((a) => a.safety_class))).sort(), [adapters])
+  const categories = useMemo(
+    () => Array.from(new Set(adapters.map((a) => a.category))).sort(), [adapters])
+
+  const supplyByAdapter = useMemo(() => {
+    const out = {}
+    for (const a of adapters) out[a.adapter_id] = supplyOf(a, shelf.shelf)
+    return out
+  }, [adapters, shelf.shelf])
+
+  // Scenario scoping — `?scenario=SIM-CDR-001` narrows the grid to that
+  // scenario's adapters. Sourced from the shelf's own `used_by` annotation
+  // (which artifact is referenced by which scenario), the only adapter↔scenario
+  // join the API exposes.
+  const scenarioScope = params.scenario || null
+  const scopedAdapterIds = useMemo(() => {
+    if (!scenarioScope) return null
+    const ids = new Set()
+    for (const d of shelf.shelf.declared || []) {
+      if (scenarioIdsFrom(d.used_by).includes(scenarioScope) && d.adapter_id) ids.add(d.adapter_id)
+    }
+    return ids
+  }, [scenarioScope, shelf.shelf])
+
   const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
     return adapters.filter((a) => {
       if (filterPlane    !== 'all' && !(a.planes || []).includes(filterPlane)) return false
       if (filterTier     !== 'all' && a.tier !== Number(filterTier))           return false
       if (filterSafety   !== 'all' && a.safety_class !== filterSafety)         return false
       if (filterCategory !== 'all' && a.category !== filterCategory)           return false
+      if (filterSupply   !== 'all' && supplyByAdapter[a.adapter_id]?.state !== filterSupply) return false
+      if (scopedAdapterIds && !scopedAdapterIds.has(a.adapter_id))             return false
+      if (q) {
+        const hay = `${a.name} ${a.adapter_id} ${(a.tags || []).join(' ')} ${a.category}`.toLowerCase()
+        if (!hay.includes(q)) return false
+      }
       return true
     })
-  }, [adapters, filterPlane, filterTier, filterSafety, filterCategory])
+  }, [adapters, filterPlane, filterTier, filterSafety, filterCategory, filterSupply,
+      search, supplyByAdapter, scopedAdapterIds])
 
-  const handleSelect = async (adapterId) => {
-    setSelectedId(adapterId)
-    setSelectedDetail(null)
-    try {
-      const detail = await getToolAdapter(adapterId)
-      setSelectedDetail(detail)
-    } catch (e) {
-      setSelectedDetail({ _error: e?.message || 'Failed to load adapter detail' })
-    }
-  }
+  const resetFilters = () => setParams({
+    plane: null, tier: null, safety: null, category: null, supply: null, q: null, scenario: null,
+  })
 
-  const resetFilters = () => {
-    setFilterPlane('all')
-    setFilterTier('all')
-    setFilterSafety('all')
-    setFilterCategory('all')
-  }
+  const selectedSupply = selectedDetail && !selectedDetail._error
+    ? supplyOf(selectedDetail, shelf.shelf)
+    : null
+
+  // Scenarios that reference the selected adapter, for the composer's picker.
+  const candidateScenarioIds = useMemo(() => {
+    if (!selectedId) return []
+    const d = (shelf.shelf.declared || []).find((x) => x.adapter_id === selectedId)
+    return scenarioIdsFrom(d?.used_by)
+  }, [selectedId, shelf.shelf])
 
   return (
     <div className="adapter-registry" data-testid="tool-adapter-catalog">
       <div className="adapter-registry__intro">
         <p className="adapter-registry__intro-prose">
-          Static catalog of every offensive and defensive tool CortexSim can
-          reference from a scenario via{' '}
-          <strong>external_tools[].adapter_ref</strong>. Adapters are
-          versioned, licence-tagged, and tier-classified — tier 2 (submodule)
-          through tier 4 (runtime-fetched). Click any card to inspect its
-          install plan, invoke template, cleanup commands, and cross-references
-          to the TTP corpus.
+          Every offensive and defensive tool CortexSim can reference from a scenario via{' '}
+          <strong>external_tools[].adapter_ref</strong>, with the one fact a POV depends on:{' '}
+          <strong>where the bytes come from at run time</strong>. Tier-4 tools install themselves
+          from the public internet <em>on the target host</em> unless their artifact is staged on
+          this SimCore.
         </p>
         <div className="adapter-registry__stats">
-          <div className="stack-coverage__stat">
-            <div className="stack-coverage__stat-value mono">{adapters.length}</div>
-            <div className="stack-coverage__stat-label">adapters</div>
-          </div>
-          <div className="stack-coverage__stat">
-            <div className="stack-coverage__stat-value mono">{categories.length}</div>
-            <div className="stack-coverage__stat-label">categories</div>
-          </div>
-          <div className="stack-coverage__stat">
-            <div className="stack-coverage__stat-value mono">{tiers.length}</div>
-            <div className="stack-coverage__stat-label">tiers</div>
-          </div>
-          <div className="stack-coverage__stat">
-            <div className="stack-coverage__stat-value mono">{visible.length}</div>
-            <div className="stack-coverage__stat-label">visible</div>
-          </div>
+          <Stat value={adapters.length} label="adapters" />
+          <Stat value={shelf.counts.staged} label="staged" testid="stat-staged" />
+          <Stat value={shelf.counts.target_egress} label="target egress" testid="stat-egress" />
+          <Stat value={shelf.counts.unknown} label="unknown" testid="stat-unknown" />
+          <Stat value={visible.length} label="visible" />
         </div>
       </div>
 
-      {error && (
-        <div className="adapter-registry__error mono" role="alert">
-          {error}
+      {error && <div className="adapter-registry__error mono" role="alert">{error}</div>}
+
+      <PayloadShelfBanner
+        counts={shelf.counts}
+        shelf={shelf.shelf}
+        available={shelf.available}
+        error={shelf.error}
+        loading={shelf.loading && shelf.available === null}
+        onShowUnstaged={() => setParams({ supply: SUPPLY.UNSTAGED })}
+        onRetry={shelf.refresh}
+      />
+
+      {scenarioScope && (
+        <div className="adapter-registry__scope mono" data-testid="adapter-scenario-scope">
+          scoped to <strong>{scenarioScope}</strong>
+          {scopedAdapterIds && scopedAdapterIds.size === 0 && (
+            <> — no staged-artifact adapter is annotated as used by it, so this list is empty rather
+              than wrong</>
+          )}
+          <button type="button" className="btn btn--xs" onClick={() => setParams({ scenario: null })}>
+            clear
+          </button>
         </div>
       )}
 
+      <div className="adapter-registry__search">
+        <input
+          type="search"
+          className="adapter-registry__search-input"
+          placeholder="search tools — name, adapter id, tag"
+          aria-label="Search tool adapters"
+          value={search}
+          onChange={(e) => setParams({ q: e.target.value || null })}
+          data-testid="adapter-search"
+        />
+      </div>
+
+      <FilterRow label="plane" active={filterPlane} options={planes}
+        onChange={(v) => setParams({ plane: v === 'all' ? null : v })} />
+      <FilterRow label="tier" active={filterTier} options={tiers.map(String)}
+        onChange={(v) => setParams({ tier: v === 'all' ? null : v })} formatOption={(t) => `T${t}`} />
+      <FilterRow label="safety" active={filterSafety} options={safetyClasses}
+        onChange={(v) => setParams({ safety: v === 'all' ? null : v })} />
+      <FilterRow label="category" active={filterCategory} options={categories}
+        onChange={(v) => setParams({ category: v === 'all' ? null : v })} />
       <FilterRow
-        label="plane"
-        active={filterPlane}
-        options={planes}
-        onChange={setFilterPlane}
-      />
-      <FilterRow
-        label="tier"
-        active={filterTier}
-        options={tiers.map(String)}
-        onChange={setFilterTier}
-        formatOption={(t) => `T${t}`}
-      />
-      <FilterRow
-        label="safety"
-        active={filterSafety}
-        options={safetyClasses}
-        onChange={setFilterSafety}
-      />
-      <FilterRow
-        label="category"
-        active={filterCategory}
-        options={categories}
-        onChange={setFilterCategory}
+        label="supply"
+        active={filterSupply}
+        options={[SUPPLY.STAGED, SUPPLY.UNSTAGED, SUPPLY.RUNTIME_FETCH, SUPPLY.NOT_APPLICABLE, SUPPLY.UNKNOWN]}
+        onChange={(v) => setParams({ supply: v === 'all' ? null : v })}
+        formatOption={(s) => SUPPLY_LABEL[s] || s}
       />
 
       {loading ? (
@@ -183,8 +222,10 @@ export default function ToolAdapterCatalog() {
             <ToolAdapterCard
               key={a.adapter_id}
               adapter={a}
+              supply={supplyByAdapter[a.adapter_id]}
               isSelected={a.adapter_id === selectedId}
-              onSelect={() => handleSelect(a.adapter_id)}
+              onSelect={() => setParams({ tool: a.adapter_id, panel: null })}
+              onStage={() => setParams({ tool: a.adapter_id, panel: 'stage' })}
             />
           ))}
         </div>
@@ -193,25 +234,88 @@ export default function ToolAdapterCatalog() {
       {selectedDetail && (
         <ToolAdapterDetail
           detail={selectedDetail}
-          onClose={() => { setSelectedId(null); setSelectedDetail(null) }}
-          onNavigateAdapter={handleSelect}
-          onNavigateTtp={(ttpId) => {
-            // No TTP-card UI yet (see PR #46 NOT-list). Surface the
-            // TTP id via the global custom-event channel so a future
-            // TTP browser can subscribe, and offer a copy-to-clipboard
-            // fallback so the DC can paste it into the detection_scanner
-            // browser today.
-            try {
-              window.dispatchEvent(new CustomEvent('cortex:navigate-ttp', {
-                detail: { ttpId },
-              }))
-              if (navigator?.clipboard?.writeText) {
-                navigator.clipboard.writeText(ttpId).catch(() => {})
-              }
-            } catch { /* no-op */ }
-          }}
+          supply={selectedSupply}
+          shelf={shelf.shelf}
+          onClose={() => setParams({ tool: null, panel: null })}
+          onStage={() => setParams({ panel: 'stage' })}
+          onCompose={() => setParams({ panel: 'compose' })}
+          onNavigateAdapter={(id) => setParams({ tool: id, panel: null })}
+          onNavigateTtp={(ttpId) => onNavigate('ttps', { ttp: ttpId })}
         />
       )}
+
+      {panel === 'stage' && selectedDetail && !selectedDetail._error && selectedSupply && (
+        <StagePayloadDialog
+          adapter={selectedDetail}
+          supply={selectedSupply}
+          job={shelf.jobs[selectedId] || null}
+          writable={shelf.shelf.writable}
+          distDir={shelf.shelf.distDir}
+          onStage={() => shelf.stage(selectedId)}
+          onClose={() => { shelf.clearJob(selectedId); setParams({ panel: null }) }}
+          onCompose={() => { shelf.clearJob(selectedId); setParams({ panel: 'compose' }) }}
+        />
+      )}
+
+      {panel === 'compose' && selectedDetail && !selectedDetail._error && selectedSupply && (
+        <PayloadComposer
+          adapter={selectedDetail}
+          supply={selectedSupply}
+          candidateScenarioIds={candidateScenarioIds}
+          initialScenarioId={params.scenario || null}
+          onClose={() => setParams({ panel: null })}
+          onArm={(scenarioId, plan) => onNavigate('guided', {
+            arm: scenarioId,
+            plan: encodePlan(scenarioId, plan),
+          })}
+        />
+      )}
+
+      {panel && !selectedId && (
+        <div className="adapter-registry__error mono" role="alert">
+          ?panel={panel} needs a ?tool=&lt;adapter_id&gt; to act on — nothing was opened.
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The plan rides the URL so the guided flow is deep-linkable and reload-safe.
+ * Over 1500 chars it is stashed in sessionStorage and only a key travels — a
+ * truncated URL is a payload that quietly runs under the wrong name.
+ */
+export function encodePlan(scenarioId, plan) {
+  const artifacts = (plan?.artifacts || []).map((a) => ({
+    adapter_id: a.adapter_id, payload_name: a.name, sha256: a.sha256,
+    dest_path: a.dest_path, mode: a.mode || '0755', renamed: Boolean(a.renamed),
+  }))
+  const json = JSON.stringify({ v: 1, scenario_id: scenarioId, artifacts })
+  const encoded = btoa(unescape(encodeURIComponent(json))).replace(/=+$/, '')
+  if (encoded.length <= 1500) return encoded
+  const key = `cortexsim.payloadPlan.${scenarioId}`
+  try { window.sessionStorage.setItem(key, json) } catch { /* private mode */ }
+  return `ref:${key}`
+}
+
+export function decodePlan(encoded) {
+  if (!encoded) return null
+  try {
+    if (encoded.startsWith('ref:')) {
+      const raw = window.sessionStorage.getItem(encoded.slice(4))
+      return raw ? JSON.parse(raw) : null
+    }
+    return JSON.parse(decodeURIComponent(escape(atob(encoded))))
+  } catch {
+    return null
+  }
+}
+
+function Stat({ value, label, testid }) {
+  return (
+    <div className="stack-coverage__stat" data-testid={testid}>
+      <div className="stack-coverage__stat-value mono">{value}</div>
+      <div className="stack-coverage__stat-label">{label}</div>
     </div>
   )
 }
@@ -245,11 +349,10 @@ function FilterRow({ label, active, options, onChange, formatOption }) {
 
 /* ─── Card ────────────────────────────────────────────────────────── */
 
-function ToolAdapterCard({ adapter, isSelected, onSelect }) {
+function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
   const tids    = adapter.expected_techniques || []
   const planes  = adapter.planes || []
   const safety  = adapter.safety_class || ''
-  const safetyChip = safetyChipVariant(safety)
 
   return (
     <article
@@ -269,11 +372,39 @@ function ToolAdapterCard({ adapter, isSelected, onSelect }) {
       <div className="adapter-card__category mono">
         T{adapter.tier} · {adapter.category} · {adapter.target_platform || 'any'}
       </div>
-      <div className="adapter-card__desc">
+
+      {/* Supply first — before this work the first thing a DC read was the
+          licence, which says nothing about whether the tool will be there. */}
+      <div className="adapter-card__supply">
         <span
-          className={'chip chip--' + safetyChip}
-          title={`safety class: ${safety}`}
+          className={supply?.chipClass || 'chip'}
+          data-testid={`supply-chip-${adapter.adapter_id}`}
+          title={supply?.egressLabel}
         >
+          {supply?.label || SUPPLY_LABEL[SUPPLY.UNKNOWN]}
+        </span>
+        {supply?.actionable && (
+          <button
+            type="button"
+            className="btn btn--xs"
+            data-testid={`stage-button-${adapter.adapter_id}`}
+            onClick={(e) => { e.stopPropagation(); onStage() }}
+          >
+            Stage ▸
+          </button>
+        )}
+      </div>
+      <div className="adapter-card__egress mono">{supply?.egressLabel}</div>
+
+      {supply?.state === SUPPLY.STAGED && (
+        <div className="adapter-card__provenance mono">
+          sha256 {shortDigest(supply.sha256)} · {supply.license || '—'}
+          {supply.pinned === false && <span className="chip chip--pending" style={{ marginLeft: 4 }}>UNPINNED</span>}
+        </div>
+      )}
+
+      <div className="adapter-card__desc">
+        <span className={'chip chip--' + safetyChipVariant(safety)} title={`safety class: ${safety}`}>
           {safety}
         </span>
         {' '}
@@ -285,9 +416,7 @@ function ToolAdapterCard({ adapter, isSelected, onSelect }) {
         {planes.length > 0 && (
           <div className="adapter-card__tids">
             {planes.map((p) => (
-              <span key={p} className="chip chip--signal" style={{ fontSize: 9 }}>
-                {p}
-              </span>
+              <span key={p} className="chip chip--signal" style={{ fontSize: 9 }}>{p}</span>
             ))}
           </div>
         )}
@@ -308,7 +437,9 @@ function ToolAdapterCard({ adapter, isSelected, onSelect }) {
 
 /* ─── Detail panel ───────────────────────────────────────────────── */
 
-function ToolAdapterDetail({ detail, onClose, onNavigateAdapter, onNavigateTtp }) {
+function ToolAdapterDetail({
+  detail, supply, shelf, onClose, onStage, onCompose, onNavigateAdapter, onNavigateTtp,
+}) {
   if (detail._error) {
     return (
       <div className="competitive__detail">
@@ -344,11 +475,22 @@ function ToolAdapterDetail({ detail, onClose, onNavigateAdapter, onNavigateTtp }
         <button type="button" className="btn" onClick={onClose}>Close</button>
       </div>
 
+      {/* SUPPLY FIRST. "Will this tool be there, and who has to reach the
+          internet for it" outranks the repo URL. */}
+      <DetailSection label="Supply">
+        <SupplyDetail
+          supply={supply}
+          detail={detail}
+          install={install}
+          shelf={shelf}
+          onStage={onStage}
+          onCompose={onCompose}
+        />
+      </DetailSection>
+
       <DetailSection label="Upstream">
         <div className="mono" style={{ fontSize: 12 }}>
-          <a href={upstream.repo} target="_blank" rel="noreferrer">
-            {upstream.repo}
-          </a>
+          <a href={upstream.repo} target="_blank" rel="noreferrer">{upstream.repo}</a>
         </div>
         <div className="mono" style={{ fontSize: 11, color: 'var(--c-text-secondary)' }}>
           {upstream.license} · {upstream.attribution}
@@ -379,6 +521,10 @@ function ToolAdapterDetail({ detail, onClose, onNavigateAdapter, onNavigateTtp }
             ['runtime_install_command',  install.runtime_install_command],
             ['binary',                   install.binary],
             ['build_cmd',                install.build_cmd],
+            ['artifact.filename',        install.artifact?.filename],
+            ['artifact.url',             install.artifact?.url],
+            ['artifact.sha256',          install.artifact?.sha256],
+            ['artifact.stage_path',      install.artifact?.stage_path],
           ]}
         />
       </DetailSection>
@@ -397,11 +543,8 @@ function ToolAdapterDetail({ detail, onClose, onNavigateAdapter, onNavigateTtp }
             <pre
               className="mono"
               style={{
-                background: 'var(--c-bg-elevated)',
-                padding: 8,
-                fontSize: 11,
-                borderRadius: 4,
-                overflow: 'auto',
+                background: 'var(--c-bg-elevated)', padding: 8, fontSize: 11,
+                borderRadius: 4, overflow: 'auto',
               }}
             >
               {JSON.stringify(invoke.default_args, null, 2)}
@@ -422,23 +565,14 @@ function ToolAdapterDetail({ detail, onClose, onNavigateAdapter, onNavigateTtp }
         <DetailSection label="Cross-references">
           {ttpRefs.length > 0 && (
             <div style={{ marginBottom: 6 }}>
-              <span
-                className="mono"
-                style={{ fontSize: 10, color: 'var(--c-text-muted)' }}
-              >
-                ttp_refs:
-              </span>
+              <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>ttp_refs:</span>
               {ttpRefs.map((r) => (
                 <button
                   key={r}
                   type="button"
                   className="chip chip--clickable"
-                  style={{
-                    marginLeft: 4,
-                    border: 'none',
-                    cursor: onNavigateTtp ? 'pointer' : 'default',
-                  }}
-                  title="Copy TTP id to clipboard (TTP browser navigation lands in a follow-up PR)"
+                  style={{ marginLeft: 4, border: 'none', cursor: 'pointer' }}
+                  title="Open this TTP card"
                   data-testid={`ttp-ref-chip-${r}`}
                   onClick={() => onNavigateTtp && onNavigateTtp(r)}
                 >
@@ -449,22 +583,13 @@ function ToolAdapterDetail({ detail, onClose, onNavigateAdapter, onNavigateTtp }
           )}
           {equivs.length > 0 && (
             <div>
-              <span
-                className="mono"
-                style={{ fontSize: 10, color: 'var(--c-text-muted)' }}
-              >
-                equivalents:
-              </span>
+              <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>equivalents:</span>
               {equivs.map((r) => (
                 <button
                   key={r}
                   type="button"
                   className="chip chip--clickable"
-                  style={{
-                    marginLeft: 4,
-                    border: 'none',
-                    cursor: onNavigateAdapter ? 'pointer' : 'default',
-                  }}
+                  style={{ marginLeft: 4, border: 'none', cursor: 'pointer' }}
                   title="Open this adapter's detail panel"
                   data-testid={`equivalent-chip-${r}`}
                   onClick={() => onNavigateAdapter && onNavigateAdapter(r)}
@@ -480,12 +605,79 @@ function ToolAdapterDetail({ detail, onClose, onNavigateAdapter, onNavigateTtp }
       {(detail.tags || []).length > 0 && (
         <DetailSection label="Tags">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {detail.tags.map((t) => (
-              <span key={t} className="chip" style={{ fontSize: 9 }}>{t}</span>
-            ))}
+            {detail.tags.map((t) => <span key={t} className="chip" style={{ fontSize: 9 }}>{t}</span>)}
           </div>
         </DetailSection>
       )}
+    </div>
+  )
+}
+
+function SupplyDetail({ supply, detail, install, shelf, onStage, onCompose }) {
+  if (!supply) return <p className="mono">unknown</p>
+
+  return (
+    <div className="supply-detail" data-testid="supply-detail">
+      <div className="supply-detail__head">
+        <span className={supply.chipClass}>{supply.label}</span>
+        <span className="mono supply-detail__egress">{supply.egressLabel}</span>
+      </div>
+
+      {supply.state === SUPPLY.UNKNOWN && (
+        <p className="supply-detail__note">
+          This SimCore did not report shelf state, so this is neither &ldquo;staged&rdquo; nor
+          &ldquo;not staged&rdquo;. Do not plan egress on the strength of this card.
+        </p>
+      )}
+
+      {supply.state === SUPPLY.RUNTIME_FETCH && (
+        <>
+          <p className="supply-detail__note">
+            This tool is installed <strong>by the target host</strong> at run time, with the command
+            below. A default-deny egress policy — which is what the customers who buy Cortex run —
+            blocks it. The step then fails, or worse, runs without the tool and the absent detection
+            reads as a miss.
+          </p>
+          {install.runtime_install_command && (
+            <pre className="supply-detail__cmd mono">{install.runtime_install_command}</pre>
+          )}
+          <p className="supply-detail__note supply-detail__note--muted">
+            No <span className="mono">install.artifact</span> is declared on this pack, so the
+            console cannot stage it: the URL is never guessed out of that shell string. Most of these
+            are apt/pip/git-clone installs that are not single-file artifacts at all. Declare an
+            artifact block in <span className="mono">tools/packs/{'{tool}'}.yml</span> to make it
+            stageable.
+          </p>
+        </>
+      )}
+
+      {(supply.state === SUPPLY.STAGED || supply.state === SUPPLY.UNSTAGED) && (
+        <ProvenanceBlock supply={supply} adapter={detail} />
+      )}
+
+      {supply.state === SUPPLY.UNSTAGED && (
+        <p className="supply-detail__note">
+          The bytes are not on this SimCore, so the target fetches them itself at run time. Staging
+          moves that request onto this host, where internet egress is already accepted, and makes
+          the artifact checksummable before it reaches the customer.
+        </p>
+      )}
+
+      <div className="supply-detail__actions">
+        {supply.actionable && shelf?.writable !== false && (
+          <button type="button" className="btn btn--primary btn--xs" onClick={onStage}>
+            Stage on SimCore ▸
+          </button>
+        )}
+        {supply.actionable && shelf?.writable === false && (
+          <button type="button" className="btn btn--xs" onClick={onStage}>Stage offline ▸</button>
+        )}
+        {supply.state === SUPPLY.STAGED && (
+          <button type="button" className="btn btn--primary btn--xs" onClick={onCompose}>
+            Compose into a run ▸
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -502,35 +694,31 @@ function DetailSection({ label, children }) {
 function KeyValueGrid({ rows }) {
   const present = rows.filter(([, v]) => v !== undefined && v !== null && v !== '')
   if (present.length === 0) {
-    return (
-      <p className="mono" style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>
-        (none)
-      </p>
-    )
+    return <p className="mono" style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>(none)</p>
   }
   return (
     <div className="adapter-schema">
       {present.map(([k, v]) => (
         <div key={k} className="adapter-schema__row">
           <div className="adapter-schema__name mono">{k}</div>
-          <div className="adapter-schema__desc mono" style={{ whiteSpace: 'pre-wrap' }}>
-            {String(v)}
-          </div>
+          <div className="adapter-schema__desc mono" style={{ whiteSpace: 'pre-wrap' }}>{String(v)}</div>
         </div>
       ))}
     </div>
   )
 }
 
+/**
+ * Maps onto chip modifiers that EXIST. The previous 'warn'/'danger' values had
+ * no CSS anywhere in the tree, so every safety chip silently fell through to the
+ * base `.chip` — a class of bug worth naming: styling that was never rendered.
+ */
 function safetyChipVariant(safety) {
-  // Maps onto the existing chip-modifier palette: signal (blue), warn
-  // (yellow), danger (red). Keeps the visual grammar consistent with
-  // chips elsewhere in the console.
   switch (safety) {
     case 'safe':              return 'signal'
-    case 'dual-use-lab-only': return 'warn'
-    case 'c2-framework':      return 'danger'
-    case 'destructive':       return 'danger'
+    case 'dual-use-lab-only': return 'pending'
+    case 'c2-framework':      return 'missed'
+    case 'destructive':       return 'missed'
     default:                  return 'signal'
   }
 }

@@ -1,0 +1,101 @@
+{
+  "$generated": {
+    "by": "core/engine/payload_shelf.py  (python3 -m engine.payload_shelf --write)",
+    "from": "tools/packs/*.yml  ->  install.artifact",
+    "do_not_edit": "payloads[] is GENERATED. Edit the adapter pack's install.artifact block, then run `python3 -m engine.payload_shelf --write`. CI fails on drift.",
+    "unbound": "unbound[] is the ONLY hand-authored list here, and it is a MIGRATION BUCKET that must reach zero. An entry belongs here only while an artifact is stageable but no adapter pack declares it yet. It is staged like any other artifact, but nothing can bind a scenario to it, so no composition can resolve it and no consumer can be handed it. Each entry names the pack file that would close it in `pack_todo`.",
+    "pinning": "sha256 is a PIN. Unpinned, the builder records whatever it downloaded and every consumer then verifies against THAT and passes — the DC silently ships a different tool than the one they tested. Pinned to a moving URL, the build fails loudly the next time upstream ships. Pinning converts a silent substitution into a loud build failure.",
+    "policy": "docs/reference/payload-shelf.md"
+  },
+  "payloads": [
+    {
+      "name": "LinEnum.sh",
+      "url": "https://raw.githubusercontent.com/rebootuser/LinEnum/c47f9b226d3ce2848629f25fe142c1b2986bc427/LinEnum.sh",
+      "sha256": "bdefadb0a866f3e289711afccb46fa2fa1081ccfa3e89c22fdddbd57e48dda5b",
+      "kind": "file",
+      "license": "MIT",
+      "adapter_id": "TOOL-LINENUM",
+      "pin_type": "commit",
+      "pin_ref": "c47f9b226d3ce2848629f25fe142c1b2986bc427",
+      "used_by": "(no scenario references this adapter yet)"
+    },
+    {
+      "name": "amicontained-linux-amd64",
+      "url": "https://github.com/genuinetools/amicontained/releases/download/v0.4.9/amicontained-linux-amd64",
+      "sha256": "d8c49e2cf44ee9668219acd092ed961fc1aa420a6e036e0822d7a31033776c9f",
+      "kind": "file",
+      "license": "MIT",
+      "adapter_id": "TOOL-AMICONTAINED",
+      "pin_type": "release-tag",
+      "pin_ref": "v0.4.9",
+      "used_by": "(no scenario references this adapter yet)"
+    },
+    {
+      "name": "deepce.sh",
+      "url": "https://raw.githubusercontent.com/stealthcopter/deepce/420b1d1ddb636f6bd277a105f580cd09b03517cc/deepce.sh",
+      "sha256": "2c8301c3e8d12c01f6ad39e9513f5a7011ccaaee7eee1f40951a38b756d3bf98",
+      "kind": "file",
+      "license": "GPL-3.0",
+      "adapter_id": "TOOL-DEEPCE",
+      "pin_type": "commit",
+      "pin_ref": "420b1d1ddb636f6bd277a105f580cd09b03517cc",
+      "used_by": "SIM-CDR-001, SIM-CDR-003"
+    },
+    {
+      "name": "linpeas.sh",
+      "url": "https://github.com/carlospolop/PEASS-ng/releases/download/20260803-00785084/linpeas.sh",
+      "sha256": "0ea7e9ce5fcca464b5998cb73930e36647ebf9b38590fe250bbd5664fe8670a5",
+      "kind": "file",
+      "license": "GPL-2.0-or-later",
+      "adapter_id": "TOOL-LINPEAS",
+      "pin_type": "release-tag",
+      "pin_ref": "20260803-00785084",
+      "used_by": "SIM-CDR-001, SIM-EDR-022"
+    },
+    {
+      "name": "lse.sh",
+      "url": "https://github.com/diego-treitos/linux-smart-enumeration/releases/download/4.14nw/lse.sh",
+      "sha256": "ccb6a164caa590bc60615e7a4d5ecff9162b86dc8c782a15b1cccedee02ca095",
+      "kind": "file",
+      "license": "GPL-3.0",
+      "adapter_id": "TOOL-LSE",
+      "pin_type": "release-tag",
+      "pin_ref": "4.14nw",
+      "used_by": "(no scenario references this adapter yet)"
+    },
+    {
+      "name": "pspy64",
+      "url": "https://github.com/DominicBreuker/pspy/releases/download/v1.2.1/pspy64",
+      "sha256": "c93f29a5cc1347bdb90e14a12424e6469c8cfea9a20b800bc249755f0043a3bb",
+      "kind": "file",
+      "license": "GPL-3.0",
+      "adapter_id": "TOOL-PSPY",
+      "pin_type": "release-tag",
+      "pin_ref": "v1.2.1",
+      "used_by": "SIM-EDR-022"
+    },
+    {
+      "name": "suid3num.py",
+      "url": "https://raw.githubusercontent.com/Anon-Exploiter/SUID3NUM/881b48866741ee78a0d79d4c54c64c53feb3f655/suid3num.py",
+      "sha256": "25a070b7756010f5acb1052de1ba93c894fefbcbf0d9c540c2df582f348c11cd",
+      "kind": "file",
+      "license": "MIT",
+      "adapter_id": "TOOL-SUID3NUM",
+      "pin_type": "commit",
+      "pin_ref": "881b48866741ee78a0d79d4c54c64c53feb3f655",
+      "used_by": "SIM-EDR-022"
+    },
+    {
+      "name": "traitor-amd64",
+      "url": "https://github.com/liamg/traitor/releases/download/v0.0.14/traitor-amd64",
+      "sha256": "fdfbfc07248c3359d9f1f536a406d4268f01ed63a856bd6cef9dccb3cf4f2376",
+      "kind": "file",
+      "license": "MIT",
+      "adapter_id": "TOOL-TRAITOR",
+      "pin_type": "release-tag",
+      "pin_ref": "v0.0.14",
+      "used_by": "(no scenario references this adapter yet)"
+    }
+  ],
+  "unbound": []
+}

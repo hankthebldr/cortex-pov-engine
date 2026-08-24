@@ -1,0 +1,65 @@
+title: "Identity to Endpoint to Network Hands-on-Keyboard Campaign \u2014 Cross-Plane XSIAM Stitch (T1078 / T1059 / T1071) \u2014 MP-008 Identity Sign-In Anomaly on a Privileged Account"
+id: ttp-2026-0104-abioc-01
+status: experimental
+description: |
+  A privileged/service account whose learned Cortex sign-in profile is a narrow, stable geography authenticates successfully from an improbable second country while a burst of MFA challenges is pushed at it. The ABIOC anchors the impossible-travel-plus-MFA-fatigue deviation to the account's learned baseline rather than to any single failed logon, catching the social-engineered takeover front-end of a Scattered Spider / Octo Tempest intrusion.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = okta_sso
+    | filter eventType = "user.authentication.sso" or eventType = "user.mfa.factor.activate" or eventType = "user.mfa.factor.challenge"
+    | filter actor_alternate_id in ("svc-backup", "www-data", "nobody")
+    | comp count_distinct(client_geo_country) as countries, count() as mfa_prompts by actor_alternate_id
+    | filter countries >= 2 and mfa_prompts >= 5
+    | sort desc mfa_prompts
+    | fields actor_alternate_id, countries, mfa_prompts
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+    - attack.t1621
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Identity to Endpoint to Network Hands-on-Keyboard Campaign \u2014 Cross-Plane XSIAM Stitch (T1078 / T1059 / T1071) \u2014 MP-008 Hands-on-Keyboard Endpoint Behavioral Deviation"
+id: ttp-2026-0104-abioc-02
+status: experimental
+description: |
+  Immediately after the anomalous sign-in, the same account, whose learned endpoint baseline is narrow non-interactive automation, parents an interactive shell (the causality-group-owner of the burst) and runs a rapid living-off-the-land discovery burst. Every utility is a legitimate admin tool; the ABIOC fires on the interactive-lineage-plus-diversity deviation, keyed on the causality_actor_process (the owning shell) and its instance_id plus actor_effective_username (the dropped svc-account identity) rather than on any single child image, so the whole fan-out threads to one process-lineage owner.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_effective_username in ("svc-backup", "www-data", "nobody")
+    | filter causality_actor_process_image_name in ("bash", "sh", "zsh", "sshd")
+    | filter action_process_image_name in ("whoami", "id", "uname", "hostname", "ss", "netstat", "cat", "curl")
+    | comp count_distinct(action_process_image_name) as distinct_tools, count() as burst by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id
+    | filter distinct_tools >= 4
+    | sort desc distinct_tools
+    | fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_actor_process_instance_id, distinct_tools, burst
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+    - attack.t1078.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

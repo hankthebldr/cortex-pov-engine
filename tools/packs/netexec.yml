@@ -1,0 +1,68 @@
+adapter_id: TOOL-NETEXEC
+name: NetExec
+version: "1.3.0"
+
+tier: 4
+category: identity-credential
+
+upstream:
+  repo: https://github.com/Pennyw0rth/NetExec
+  license: BSD-2-Clause
+  attribution: NetExec team (mpgn / Marshall) — CrackMapExec successor
+
+cortex_signal:
+  planes:
+    - ITDR
+  expected_techniques:
+    - T1021      # Remote Services
+    - T1021.002  # Remote Services: SMB/Windows Admin Shares
+    - T1110      # Brute Force
+
+safety_class: dual-use-lab-only
+
+install:
+  # Tier 4 (runtime-fetched): the `nxc` console entrypoint is the CrackMapExec
+  # successor. pipx is the upstream-recommended install; pip3 is the fallback.
+  runtime_install_command: "command -v nxc >/dev/null 2>&1 || pipx install netexec 2>/dev/null || pip3 install --no-input netexec"
+  binary: nxc
+  # ── Payload-shelf exemption (TA-13) ──────────────────────────────────────
+  artifact_exempt:
+    reason_code: LANGUAGE_PACKAGE_MANAGER
+    reason: >-
+      NetExec installs from the Python (pipx/pip) package index along with its
+      dependency tree. The shelf stages one file, and there is no single file
+      that runs. Staging it would mean hosting a package mirror, so this tool
+      needs internet access on the target host.
+
+invoke:
+  target_platform: linux
+  # Native NetExec CLI: `nxc <protocol> <target> [auth/action flags]`.
+  # Substituted verbatim (NO WRAPPER CODE). Targets ONLY the ITDR AD lab
+  # (the itdr IaC module's DC/workstations) — never arbitrary hosts.
+  run_template: "{binary} {protocol} {target} {flags}"
+  default_args:
+    protocol: "smb"
+    target: "127.0.0.1"
+    flags: "-u '' -p '' --shares"
+  identity_required: root
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-netexec 2>/dev/null || true"
+    - "rm -rf ~/.nxc/logs/* 2>/dev/null || true"
+
+ttp_refs: []
+
+equivalents:
+  - TOOL-IMPACKET
+  - TOOL-HYDRA
+
+author: Henry Reed
+created: "2026-07-24"
+last_updated: "2026-07-24"
+tags:
+  - smb
+  - lateral-movement
+  - password-spray
+  - crackmapexec-successor
+  - runtime-fetched

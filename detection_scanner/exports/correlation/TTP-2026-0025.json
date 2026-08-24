@@ -8,7 +8,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(CDR-004 Service Account Token Read And Copied In Pod) OR BIOC(CDR-004 kubectl All Namespaces Enumeration From Pod) OR BIOC(CDR-004 Cluster Wide Pod Discovery Audit Anomaly) OR BIOC(CDR-004 kubectl Exec Into Adjacent Pod Lateral Movement) OR BIOC(CDR-004 Pod Exec Subresource Create Audit Anomaly) OR BIOC(CDR-004 Malicious CronJob Creation Via kubectl From Pod) OR BIOC(CDR-004 CronJob Resource Create Audit Anomaly)",
+      "logic": "BIOC(CDR-004 Service Account Token Read And Copied In Pod) OR BIOC(CDR-004 kubectl All Namespaces Enumeration From Pod) OR BIOC(CDR-004 Cluster Wide Pod Discovery Audit Anomaly) OR BIOC(CDR-004 kubectl Exec Into Adjacent Pod Lateral Movement) OR BIOC(CDR-004 Pod Exec Subresource Create Audit Anomaly) OR BIOC(CDR-004 Malicious CronJob Creation Via kubectl From Pod) OR BIOC(CDR-004 CronJob Resource Create Audit Anomaly) GROUPED BY container_id, causality_id, user_username WITHIN 300s",
       "name": "Kubernetes Lateral Movement Chain \u2014 Runtime And Audit",
       "rule_id": "CR-CDR-0004",
       "severity": "high"

@@ -1,0 +1,15 @@
+{
+  "mitre_techniques": [
+    "T1526"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Fires when abioc `Microsoft SharePoint enumeration activity` and abioc `Microsoft OneDrive enumeration activity` both observe the same UserId and ClientIP within a 30-minute window, stitching the SharePoint page/search sweep and the OneDrive file sweep into one Discovery-stage cloud-repository enumeration incident rather than two independent alerts.",
+      "name": "SharePoint + OneDrive cloud-repository enumeration discovery stitch",
+      "rule_id": "CR-CLOUD-0009",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0165"
+}

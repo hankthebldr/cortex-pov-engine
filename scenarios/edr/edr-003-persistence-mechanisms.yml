@@ -9,9 +9,10 @@ detection_types:
   - XQL
 
 uc_ref: UCS-EDR-03
-tc_ref: TC-EDR-03
-uc_name: "Persistence Mechanism Detection"
-tc_name: "Linux Persistence Installation"
+tc_ref: TC-EDR-05
+pov_scenario_id: POV-SC-045
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate causality graph provides full process chain and causality owner attribution"
 
 mitre_tactic: "TA0003"
 mitre_tactic_name: "Persistence"
@@ -27,6 +28,17 @@ additional_techniques:
 
 threat_report: "Unit42 - TeamTNT Targets Exposed Docker APIs"
 threat_report_url: "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# TeamTNT/Watchdog gain initial access through an exposed web/Docker service.
+# The Causality Group Owner is that web daemon (apache2, running as www-data),
+# whose descendant root shell then layers persistence. Every persistence exec
+# below is a child of that same operator shell (step-01 stands in for the
+# session anchor), so the CGO owns one connected process-lineage chain instead
+# of five independent nodes hanging off the synthetic beacon.
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
 
 execution_identity:
   default: root
@@ -77,6 +89,11 @@ steps:
       echo '[*] Cron persistence payload staged (NOT installed — display only for safety)'
     identity: root
     mitre_technique: "T1053.003"
+    # Root step: the operator's first persistence action in the shell that
+    # descends from the apache2 CGO. No causality block → links from the CGO.
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: 'schtasks /create /tn "SystemHealthMonitor" /tr "C:\\Windows\\Temp\\beacon.exe" /sc minute /mo 15 /ru SYSTEM'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -111,6 +128,13 @@ steps:
       cat /tmp/cortexsim-backdoor.service
     identity: root
     mitre_technique: "T1543.002"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'sc.exe create SysHealthMon binPath= "C:\\Windows\\Temp\\beacon.exe" start= auto'
+      macos: 'sudo cp com.cortexsim.beacon.plist /Library/LaunchDaemons/ && sudo launchctl load /Library/LaunchDaemons/com.cortexsim.beacon.plist'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -133,6 +157,13 @@ steps:
         echo '[*] useradd failed (expected in containers or without root)'
     identity: root
     mitre_technique: "T1136.001"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'net user cortexsim_testuser TempP@ss123 /add && net localgroup administrators cortexsim_testuser /add'
+      macos: 'sudo sysadminctl -addUser cortexsim_testuser -password TempP@ss123 -admin'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -156,6 +187,12 @@ steps:
       echo '[*] SSH key generated and staged at /tmp/ (NOT injected into real user accounts)'
     identity: root
     mitre_technique: "T1098.004"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: 'ssh-keygen -t ed25519 -f $env:TEMP\cortexsim_key -N "" ; Add-Content $env:USERPROFILE\.ssh\authorized_keys (Get-Content $env:TEMP\cortexsim_key.pub)'
     expected_detections:
       - plane: EDR
         type: BIOC
@@ -178,6 +215,13 @@ steps:
       echo '[*] Profile persistence payload staged at /tmp/ (NOT written to real .bashrc/.profile)'
     identity: root
     mitre_technique: "T1546.004"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    platforms: ["linux", "windows", "macos"]
+    platform_variants:
+      windows: 'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v SysHealth /d "C:\\Windows\\Temp\\beacon.exe" /f'
+      macos: 'echo "nohup /tmp/.cortexsim_beacon &>/dev/null &" >> ~/.zshrc'
     expected_detections:
       - plane: EDR
         type: BIOC

@@ -46,8 +46,8 @@
     }
   },
   "identity": {
-    "name": "Prisma Browser \u2014 Sideloaded Risky Extension Install (T1176)",
-    "summary": "A user attempts to sideload an unsigned Chrome extension whose manifest declares overbroad permissions \u2014 `<all_urls>` host access plus `cookies`, `webRequest`, and `webRequestBlocking`. Managed Prisma Browser extension policy blocks the install and logs the attempt; a KOI code scan independently flags the manifest, and the extension permission risk score exceeds threshold.",
+    "name": "Prisma Browser — Sideloaded Risky Extension Install (T1176)",
+    "summary": "A user attempts to sideload an unsigned Chrome extension whose manifest declares overbroad permissions — `<all_urls>` host access plus `cookies`, `webRequest`, and `webRequestBlocking`. Managed Prisma Browser extension policy blocks the install and logs the attempt; a KOI code scan independently flags the manifest, and the extension permission risk score exceeds threshold.",
     "description": "Malicious browser extensions are a durable persistence and data-theft foothold: with `<all_urls>` + `cookies` + `webRequest(Blocking)` an extension can read every page, exfiltrate session cookies, and rewrite traffic. This scenario sideloads the `ai-page-summarizer` extension from the cortex-malicious-agentic-pack, whose `manifest.json` declares exactly those overbroad permissions. The cortex-browser-attacker EAL plugin drives the managed Prisma Browser to attempt the install; the managed-extension policy blocks it and emits a `prisma_browser_events` record with `action=extension-install`, `extension_id`, the declared permission set, a permission risk score, and `outcome=blocked`. In parallel a KOI code scan of the artifact tree flags the manifest's broad scopes and the unapproved publisher signature. Detection layers: a BIOC on the policy-blocked sideload; analytics on permission risk score over threshold; KOI analytics on manifest scope and publisher signature; and a JSONL outcome=blocked delivery check. A correlation rule fuses the policy-block BIOC with the risk-score analytic into one persistence-attempt incident.",
     "severity": "high",
     "confidence": "high"
@@ -94,7 +94,7 @@
   "execution": {
     "target_platform": "windows",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "browser_attack_runner \u2014 campaign scenarios/browser/campaigns/risky-extension-install.yml (navigate + install_extension actions)",
+    "framework_reference_id": "browser_attack_runner — campaign scenarios/browser/campaigns/risky-extension-install.yml (navigate + install_extension actions)",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -154,8 +154,8 @@
     ],
     "biocs": [
       {
-        "name": "Prisma Browser \u2014 sideloaded extension blocked by managed-extension policy",
-        "description": "Prisma Browser \u2014 sideloaded extension blocked by managed-extension policy. An unsigned/sideloaded extension install attempt is denied by managed-browser policy and logged with outcome=blocked.",
+        "name": "Prisma Browser — sideloaded extension blocked by managed-extension policy",
+        "description": "Prisma Browser — sideloaded extension blocked by managed-extension policy. An unsigned/sideloaded extension install attempt is denied by managed-browser policy and logged with outcome=blocked.",
         "logic": "dataset = prisma_browser_events\n| filter action = \"extension-install\"\n| filter install_source in (\"sideload\", \"crx\", \"developer-mode\")\n| filter outcome = \"blocked\"\n| filter extension_id != null",
         "severity": "high",
         "mitre_technique_ids": [
@@ -166,21 +166,21 @@
     "xql_queries": [
       {
         "purpose": "validation",
-        "name": "Code scan \u2014 extension manifest declares <all_urls> + cookies + webRequest + webRequestBlocking",
+        "name": "Code scan — extension manifest declares <all_urls> + cookies + webRequest + webRequestBlocking",
         "query": "dataset = koi_code_scan_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter artifact_type = \"browser-extension\"\n| filter manifest_host_permissions contains \"<all_urls>\"\n| filter manifest_permissions contains \"cookies\" and manifest_permissions contains \"webRequest\"\n| fields _time, artifact_path, extension_id, manifest_host_permissions, manifest_permissions\n| sort desc _time",
         "expected_rows_min": 1,
         "dataset": "koi_code_scan_events"
       },
       {
         "purpose": "validation",
-        "name": "Prisma Browser \u2014 extension permission risk score exceeds threshold",
+        "name": "Prisma Browser — extension permission risk score exceeds threshold",
         "query": "dataset = prisma_browser_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"extension-install\"\n| filter extension_permission_risk_score >= 70\n| fields _time, user, extension_id, extension_permission_risk_score, outcome\n| sort desc _time",
         "expected_rows_min": 1,
         "dataset": "prisma_browser_events"
       },
       {
         "purpose": "validation",
-        "name": "KOI \u2014 extension manifest signature does not match approved publisher list",
+        "name": "KOI — extension manifest signature does not match approved publisher list",
         "query": "dataset = koi_code_scan_events\n| filter _time > to_timestamp(current_time() - 1800)\n| filter artifact_type = \"browser-extension\"\n| filter publisher_approved = false or signature_valid = false\n| fields _time, extension_id, publisher, publisher_approved, signature_valid\n| sort desc _time",
         "expected_rows_min": 1,
         "dataset": "koi_code_scan_events"
@@ -195,14 +195,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Browser Risky Extension Sideload \u2014 Overbroad Permissions",
+        "name": "Browser Risky Extension Sideload — Overbroad Permissions",
         "rule_id": "CR-BROWSER-0003",
-        "logic": "BIOC(Prisma Browser \u2014 sideloaded extension blocked by managed-extension policy)"
+        "logic": "BIOC(Prisma Browser — sideloaded extension blocked by managed-extension policy)"
       }
     ],
     "analytics_modules": [
-      "Prisma Browser \u2014 Extension permission risk scoring",
-      "Cortex KOI \u2014 Browser-extension manifest + publisher-signature analysis"
+      "Prisma Browser — Extension permission risk scoring",
+      "Cortex KOI — Browser-extension manifest + publisher-signature analysis"
     ]
   },
   "panw_mapping": {
@@ -238,14 +238,14 @@
         "evidence_query": "Correlation CR-BROWSER-0003 raises a persistence-attempt incident on a blocked risky-extension sideload."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-WEB-019",
+        "threat_scenario_id": "TS-WEB-019",
         "name": "Managed-Browser Extension Risk Policy",
         "description": "Block and detect sideloaded extensions with overbroad permissions in the managed Prisma Browser, with KOI manifest + publisher corroboration.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-WEB-019A",
+            "threat_step_id": "TS-WEB-019A",
             "objective": "Overbroad-permission sideload is blocked and logged by Prisma Browser policy.",
             "preconditions": [
               "Managed Prisma Browser with extension policy enforced.",
@@ -256,14 +256,14 @@
               "Observe the blocked-install alert and KOI manifest finding in the Cortex console."
             ],
             "success_criteria": [
-              "BIOC `Prisma Browser \u2014 sideloaded extension blocked by managed-extension policy` fires within 60s.",
+              "BIOC `Prisma Browser — sideloaded extension blocked by managed-extension policy` fires within 60s.",
               "Permission-risk-score and KOI manifest XQL queries return >= 1 row.",
               "outcome=blocked recorded in browser-attacker JSONL."
             ],
             "expected_score_weight": 0.7
           },
           {
-            "test_case_id": "TC-WEB-019B",
+            "threat_step_id": "TS-WEB-019B",
             "objective": "Policy block and risk-score analytic stitch into one incident.",
             "success_criteria": [
               "Correlation `CR-BROWSER-0003` produces a single persistence-attempt incident."
@@ -296,7 +296,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1176 \u2014 Browser Extensions",
+      "title": "MITRE ATT&CK T1176 — Browser Extensions",
       "url": "https://attack.mitre.org/techniques/T1176/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

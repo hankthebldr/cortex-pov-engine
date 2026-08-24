@@ -1,0 +1,350 @@
+{
+  "id": "TTP-2026-0168",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-01T00:00:00+00:00",
+    "updated_at": "2026-08-01T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-tim",
+      "threat-intel",
+      "enforcement-reversibility",
+      "edl",
+      "intel-to-enforcement",
+      "rollback",
+      "false-positive-recovery",
+      "control-test",
+      "correlation",
+      "severity-medium"
+    ],
+    "source_refs": [
+      "SRC-PANW-TECHDOCS",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": false,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Intel-to-Enforcement Rollback — A Withdrawn Indicator Must Retract From the EDL and Restore Traffic Unattended",
+    "summary": "A benign lab-owned control FQDN is promoted as a threat-intel indicator, bound to an enforcement EDL, and proven blocked. The operator then withdraws it and the IDENTICAL request replays: every session must now be allowed. A defender-vantage test of the loop's REVERSIBILITY — the property that decides whether a customer ever lets it run unattended.",
+    "description": "Every intel-to-enforcement conversation a Domain Consultant has ends at the same customer objection: 'what happens when the feed is wrong?'. Automated promotion of indicators onto an External Dynamic List is only adoptable if the retraction path is equally automatic — a security team that has to open a firewall change ticket to undo a false-positive block will not turn automated promotion on, and will not leave it on after the first outage it causes. This card exercises the retraction path directly and it deliberately contains no adversary: the destination is a benign, lab-owned control domain, promoted on purpose so it can be withdrawn on purpose. Four phases. (1) PRE-FLIGHT: confirm the control FQDN is actually carried as a PROMOTED indicator with an EDL binding. This step is the anti-vacuous guard and it is the most important one — if the promote leg never landed, then 'traffic to the control FQDN is allowed' is simply the tenant's steady state, and a rollback test that skipped this check would report a green on a platform that never enforced anything. (2) PHASE A: the estate host beacons to the control FQDN while the indicator is live; the firewall's own action field must carry deny/reset/drop. (3) THE WITHDRAWAL: the DC withdraws the indicator in the Cortex TIM console. CortexSim performs no write against the tenant, so this is declared as an execution prerequisite and asserted only through the intel audit trail — asserted as a POSITIVE record (lifecycle state moved off promoted, actor and timestamp captured) rather than as the absence of the promoted row, because 'no rows' is also what an unreachable dataset returns. (4) PHASE B: the byte-identical request replays to the same FQDN with no firewall policy commit in between, and every session must be allowed. The terminal correlation fuses the two phases on the shared destination into exactly one deny-to-allow transition and requires the allow timestamps to fall after the recorded withdrawal, which is what stops a tenant that never enforced anything from passing on phase B alone. The completeness measurement returns the achieved percentage rather than filtering to the passing range: a partially-retracted EDL then reports 40 percent, which is a specific, actionable finding, instead of returning zero rows and being indistinguishable from a run whose traffic never reached the firewall.",
+    "severity": "medium",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-TIM-007 — Intel-to-enforcement rollback on the TIM plane (defender-vantage control test; a benign lab-owned control FQDN promoted, blocked, withdrawn, and restored).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "A real NGFW (or the lab VM-Series) with an External Dynamic List bound to the Cortex TIM indicator feed, so a promoted indicator becomes an enforced block and a withdrawn one stops being enforced without a policy commit. Without the EDL binding there is no enforcement loop to roll back and the scenario correctly reports nothing rather than a pass.",
+        "check_command": "test -n \"${NDR_STITCHING_PATTERN:-}\" && echo \"ndr_stitching_pattern=${NDR_STITCHING_PATTERN}\""
+      },
+      {
+        "description": "mocktaxii TAXII 2.1 collection reachable so the benign control FQDN is ingested into the XSIAM threat_intel dataset and can be promoted to the EDL.",
+        "check_command": "curl -sf http://localhost:9000/taxii2/ -H 'Accept: application/taxii+json;version=2.1'"
+      },
+      {
+        "description": "OPERATOR ACTION, not automated: between phase A and phase B the DC withdraws the control indicator in the Cortex TIM console. CortexSim is read-only against the tenant and performs no write; the withdrawal is asserted only through the intel audit trail.",
+        "check_command": "echo 'operator gate — withdraw the control indicator in Cortex TIM before phase B'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE / NON-DESTRUCTIVE. No exploitation, no payload delivery, nothing\n# written to the endpoint. The destination is a BENIGN, lab-owned control FQDN\n# that exists purely so an indicator can be promoted and then withdrawn against\n# it. The two phases issue the SAME request; the only variable between them is\n# the indicator's lifecycle state in Cortex TIM.\nset -uo pipefail\nZONE=\"${TIM_ZONE:-cortexsim-tim.internal}\"\nTARGET=\"rollback-control.${ZONE}\"\n\nbeacon() {\n  phase=\"$1\"\n  for i in 1 2 3; do\n    curl -s -o /dev/null -w \"${phase} attempt ${i} http=%{http_code}\\n\" \\\n      --max-time 5 \"http://${TARGET}/health\" || echo \"${phase} attempt ${i} blocked\"\n    sleep 2\n  done\n}\n\necho \"[CortexSim][SAFE-MODE] SIM-TIM-007 phase A — indicator PROMOTED, expecting denies\"\nbeacon phase-a\n\necho \"[CortexSim] OPERATOR ACTION REQUIRED — withdraw the indicator ${TARGET} in Cortex TIM now.\"\nsleep \"${TIM_WITHDRAW_WAIT_SECONDS:-30}\"\n\necho \"[CortexSim][SAFE-MODE] SIM-TIM-007 phase B — indicator WITHDRAWN, expecting allows\"\nbeacon phase-b\necho '[CortexSim] SIM-TIM-007 complete — the deny/allow transition is in the firewall traffic log.'\n",
+      "input_variables": [
+        {
+          "name": "TIM_ZONE",
+          "type": "string",
+          "default": "cortexsim-tim.internal",
+          "description": "Authorised lab DNS zone that hosts the benign control FQDN the indicator is promoted against."
+        },
+        {
+          "name": "TIM_WITHDRAW_WAIT_SECONDS",
+          "type": "string",
+          "default": "30",
+          "description": "Seconds to wait between phase A and phase B for the operator withdrawal plus the EDL refresh interval. Raise it to match the tenant's configured EDL refresh; too short a wait reports a stale EDL as a rollback failure."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Phase A sessions from the estate host to the control FQDN, denied at the enforcement point while the indicator is promoted.",
+        "expected_value": "dst_fqdn = \"rollback-control.<zone>\" and action in (\"deny\", \"reset-both\", \"drop\")"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Phase B sessions to the SAME control FQDN, allowed after the withdrawal, with no firewall policy commit between the phases.",
+        "expected_value": "dst_fqdn = \"rollback-control.<zone>\" and action = \"allow\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "The intel audit record for the withdrawal of the control indicator — actor and timestamp, the audit trail half of the reversibility claim.",
+        "expected_value": "indicator_value = \"rollback-control.<zone>\" and lifecycle_action = \"withdraw\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-TIM-007 cleanup — nothing written on the endpoint (HTTP GETs only).'\necho '[CortexSim] OPERATOR: re-promote or delete the control indicator in Cortex TIM to return the tenant to its starting state.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "rollback-control.cortexsim-tim.internal",
+        "context": "NOT an adversary indicator. A benign, lab-owned control FQDN that exists so an indicator can be promoted onto the enforcement EDL and then withdrawn from it. It is the pivot entity for the whole scenario: phase A and phase B are the same request to this destination, so the deny-to-allow transition is attributable to the indicator's lifecycle state and to nothing else. Never promote this value in a production tenant beyond the run window.",
+        "reputation_required": "any"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "SIM-TIM-007 Feed-Matched Control FQDN Session Denied at the Enforcement Point",
+        "description": "An estate host's session to the feed-matched control FQDN is denied, reset or dropped at the firewall while the indicator is promoted. Keying on the specific control FQDN rather than on a broad 'any EDL-blocked destination' predicate is deliberate: an unqualified rule fires on every legitimate EDL block in the estate and tells the DC nothing about this particular loop. This BIOC establishes the phase-A baseline that the rollback is measured against — without it, the phase-B allow proves nothing.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter dst_fqdn contains \"rollback-control.\"\n| filter action in (\"deny\", \"reset-both\", \"reset-client\", \"reset-server\", \"drop\")\n| comp count() as denied_sessions, earliest(_time) as first_deny, latest(_time) as last_deny by agent_hostname, src_host, dst_fqdn, action\n| filter denied_sessions >= 1\n| fields agent_hostname, src_host, dst_fqdn, action, denied_sessions, first_deny, last_deny",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ]
+      }
+    ],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SIM-TIM-007 Control Indicator Promoted to the EDL",
+        "query": "dataset = threat_intel\n| filter indicator_type = \"DOMAIN\"\n| filter indicator_value contains \"rollback-control.\"\n| filter lifecycle_state = \"promoted\" and enforcement_target contains \"EDL\"\n| comp count() as promoted_indicators, latest(_time) as promoted_at by indicator_value, lifecycle_state, enforcement_target\n| filter promoted_indicators >= 1\n| fields indicator_value, lifecycle_state, enforcement_target, promoted_indicators, promoted_at",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "SIM-TIM-007 Phase A Sessions to the Control FQDN Denied While Promoted",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter dst_fqdn contains \"rollback-control.\"\n| filter action in (\"deny\", \"reset-both\", \"reset-client\", \"reset-server\", \"drop\")\n| comp count() as denied_sessions, earliest(_time) as first_deny, latest(_time) as last_deny by dst_fqdn, src_host\n| filter denied_sessions >= 1\n| fields dst_fqdn, src_host, denied_sessions, first_deny, last_deny",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "SIM-TIM-007 Indicator Withdrawal Recorded in the Intel Audit Trail",
+        "query": "dataset = threat_intel\n| filter indicator_value contains \"rollback-control.\"\n| filter lifecycle_action in (\"withdraw\", \"retract\", \"expire\", \"demote\")\n| comp count() as withdrawal_events, latest(_time) as withdrawn_at, values(actor) as withdrawn_by by indicator_value, lifecycle_action\n| filter withdrawal_events >= 1\n| fields indicator_value, lifecycle_action, withdrawal_events, withdrawn_at, withdrawn_by",
+        "expected_rows_min": 1,
+        "dataset": "threat_intel"
+      },
+      {
+        "purpose": "validation",
+        "name": "SIM-TIM-007 Phase B Sessions to the Same FQDN Allowed After Withdrawal",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter dst_fqdn contains \"rollback-control.\"\n| filter action = \"allow\"\n| comp count() as allowed_sessions, earliest(_time) as first_allow, latest(_time) as last_allow by dst_fqdn, src_host\n| filter allowed_sessions >= 1\n| fields dst_fqdn, src_host, allowed_sessions, first_allow, last_allow",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "metric",
+        "name": "SIM-TIM-007 Enforcement Rollback Completeness",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter dst_fqdn contains \"rollback-control.\"\n| comp count() as total_sessions, sum(if(action = \"allow\", 1, 0)) as allowed_sessions, sum(if(action in (\"deny\", \"reset-both\", \"reset-client\", \"reset-server\", \"drop\"), 1, 0)) as denied_sessions, earliest(if(action = \"allow\", _time, null)) as first_allow, latest(if(action in (\"deny\", \"reset-both\", \"reset-client\", \"reset-server\", \"drop\"), _time, null)) as last_deny by dst_fqdn\n| alter rollback_completeness_pct = multiply(divide(allowed_sessions, total_sessions), 100)\n| fields dst_fqdn, total_sessions, denied_sessions, allowed_sessions, rollback_completeness_pct, last_deny, first_allow",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "SIM-TIM-007 Enforcement Rollback Transition — One Deny to Allow on a Withdrawn Indicator",
+        "rule_id": "CR-TIM-0007",
+        "logic": "GATE XQL(SIM-TIM-007 Control Indicator Promoted to the EDL) — a promote-leg precondition, not a join participant. Without it a tenant that never enforced anything would satisfy the allow half on its steady state and score a vacuous pass. JOIN BIOC(SIM-TIM-007 Feed-Matched Control FQDN Session Denied at the Enforcement Point) with XQL(SIM-TIM-007 Phase B Sessions to the Same FQDN Allowed After Withdrawal) on the shared dst_fqdn within the correlation window, and require the ORDERING to hold: last_deny < withdrawn_at (from XQL(SIM-TIM-007 Indicator Withdrawal Recorded in the Intel Audit Trail)) < first_allow. The rule raises exactly ONE enforcement-rollback transition per destination. It does NOT raise on an allow with no preceding deny, on a deny with no subsequent allow (the stale-EDL failure — the rollback did not land), or on an allow that precedes the recorded withdrawal (a timing artefact rather than a retraction). The measured share of post-withdrawal allows comes from XQL(SIM-TIM-007 Enforcement Rollback Completeness), which returns the number unfiltered so a partial retraction reports its percentage instead of returning nothing."
+      }
+    ],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "threat-intelligence",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-TIM-007-ROLLBACK-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = threat_intel | filter indicator_value contains \"rollback-control.\" | comp count() as events, values(lifecycle_action) as actions by indicator_value, lifecycle_state | fields indicator_value, lifecycle_state, actions, events"
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "external-dynamic-list",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "TBD-TIM-007-EDL-002"
+        ],
+        "license_required": "base",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_fqdn contains \"rollback-control.\" | comp count() as sessions by dst_fqdn, action | fields dst_fqdn, action, sessions"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-TIM-007-TRANSITION-003"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "CR-TIM-0007 fuses the phase-A denies and the phase-B allows on the shared dst_fqdn into one deny-to-allow transition, gated on the recorded withdrawal falling between them."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-TIM-007",
+        "name": "Intel-to-Enforcement Rollback on a Withdrawn Indicator",
+        "description": "A benign control FQDN is promoted to the enforcement EDL and proven blocked; the operator withdraws the indicator; the identical request is then allowed, and the deny-to-allow transition is fused into a single reversibility assertion.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-TIM-007A",
+            "objective": "Prove the promote leg landed and that the control FQDN is genuinely enforced — the guard that stops the rollback proof being vacuous.",
+            "preconditions": [
+              "mocktaxii armed the benign control FQDN into threat_intel and it was promoted to the enforcement EDL.",
+              "The NGFW carries an EDL bound to the Cortex TIM indicator feed."
+            ],
+            "steps": [
+              "Confirm the control indicator is present with a promoted lifecycle state and an EDL binding.",
+              "Beacon from the estate host to the control FQDN.",
+              "Observe the firewall deny/reset the sessions."
+            ],
+            "success_criteria": [
+              "XQL `SIM-TIM-007 Control Indicator Promoted to the EDL` returns the promoted indicator.",
+              "BIOC `SIM-TIM-007 Feed-Matched Control FQDN Session Denied at the Enforcement Point` fires with denied_sessions >= 1."
+            ],
+            "expected_score_weight": 0.35
+          },
+          {
+            "threat_step_id": "TS-TIM-007B",
+            "objective": "Prove the withdrawal was recorded, as a positive audit record rather than as the absence of the promoted row.",
+            "preconditions": [
+              "The DC withdrew the control indicator in the Cortex TIM console between the two beacon phases."
+            ],
+            "steps": [
+              "Withdraw the indicator in the console.",
+              "Wait out the EDL refresh interval.",
+              "Query the intel audit trail for the withdrawal record."
+            ],
+            "success_criteria": [
+              "XQL `SIM-TIM-007 Indicator Withdrawal Recorded in the Intel Audit Trail` returns the withdrawal with an actor and a timestamp."
+            ],
+            "expected_score_weight": 0.2
+          },
+          {
+            "threat_step_id": "TS-TIM-007C",
+            "objective": "Prove the enforcement retracted unattended — the identical request now completes, with no firewall policy commit in between.",
+            "preconditions": [
+              "The withdrawal is recorded and the EDL refresh interval has elapsed."
+            ],
+            "steps": [
+              "Replay the byte-identical beacon to the same FQDN.",
+              "Observe the firewall allow the sessions.",
+              "Read the rollback-completeness percentage."
+            ],
+            "success_criteria": [
+              "XQL `SIM-TIM-007 Phase B Sessions to the Same FQDN Allowed After Withdrawal` returns allowed_sessions >= 1.",
+              "XQL `SIM-TIM-007 Enforcement Rollback Completeness` reports the achieved percentage of post-withdrawal allows as a number."
+            ],
+            "expected_score_weight": 0.25
+          },
+          {
+            "threat_step_id": "TS-TIM-007D",
+            "objective": "Fuse the two phases into exactly one deny-to-allow transition attributable to the withdrawal.",
+            "preconditions": [
+              "Phase A denies and phase B allows both recorded against the same dst_fqdn inside the correlation window."
+            ],
+            "steps": [
+              "Let the correlation window elapse.",
+              "Observe CR-TIM-0007 raise one transition.",
+              "Confirm the ordering last_deny < withdrawn_at < first_allow holds."
+            ],
+            "success_criteria": [
+              "Correlation `CR-TIM-0007` raises exactly one enforcement-rollback transition for the control FQDN.",
+              "The rule does not raise on an allow with no preceding deny, which is what blocks a vacuous pass."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Bind the enforcement EDL directly to the Cortex TIM indicator feed rather than to a manually curated list, so retraction is a feed operation and not a firewall change ticket.",
+      "Set the EDL refresh interval to a value the security team can state out loud, and publish it — an unstated refresh interval is why a working rollback gets reported as broken.",
+      "Keep a permanently provisioned benign control FQDN in the estate so the promote/withdraw loop can be re-tested on demand after any feed, EDL or policy change, rather than only during a POV."
+    ],
+    "detection_engineering": [
+      "Assert the withdrawal as a POSITIVE audit record (lifecycle action, actor, timestamp), never as the absence of the promoted row: 'no rows' is also what an unreachable dataset, a renamed field and a revoked API key all return, and treating absence as proof turns three different outages into a green.",
+      "Gate the rollback assertion on the promote leg. An allow with no preceding deny is the tenant's steady state, not a retraction, and a rule that omits the gate reports a platform that never enforced anything as a pass.",
+      "Return the rollback-completeness percentage rather than filtering the query to the passing range. A partially-retracted EDL then reports 40% — a specific, actionable finding — instead of returning zero rows and being indistinguishable from a run whose traffic never reached the firewall.",
+      "Alert on the inverse condition in production: an indicator withdrawn more than one EDL refresh interval ago whose destination is still being denied. That is the stale-enforcement failure, and it is the one that causes a customer outage."
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex XSIAM Threat Intelligence Management — indicator lifecycle, promotion and External Dynamic List enforcement",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1071.001 — Application Layer Protocol: Web Protocols",
+      "url": "https://attack.mitre.org/techniques/T1071/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

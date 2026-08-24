@@ -22,6 +22,7 @@ from __future__ import annotations
 from .audit import AuditLogger, ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
 from .campaign import Campaign, CampaignStep, PluginInvocation
+from .delivery import DeliveryLedger, summarise_step_results
 from .executor import CampaignExecutor, ExecutorState
 from .registry import PluginRegistry, get_default_registry
 from .safety import SafetyError, SafetyPolicy
@@ -32,6 +33,7 @@ __all__ = [
     "Campaign",
     "CampaignExecutor",
     "CampaignStep",
+    "DeliveryLedger",
     "ExecutorState",
     "PluginInvocation",
     "PluginRegistry",
@@ -41,4 +43,5 @@ __all__ = [
     "SimulationResult",
     "ecs_event",
     "get_default_registry",
+    "summarise_step_results",
 ]

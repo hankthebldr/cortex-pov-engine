@@ -50,7 +50,11 @@ export default function useResultsData(runId) {
       tid: r.mitre_technique || r.tid || '—',
       plane: (r.plane || '').toUpperCase(),
       detectionType: (r.detection_type || r.type || '').toUpperCase(),
-      alert: r.expected_description || r.description || r.alert_name || '(unnamed)',
+      // `expected_detection` is the column /api/results actually returns
+      // (Result.expected_detection). The other three are legacy/aspirational
+      // names and matched nothing, so every scorecard row read "(unnamed)".
+      alert: r.expected_detection || r.expected_description || r.description
+        || r.alert_name || '(unnamed)',
       mttd: r.mttd_seconds ?? null,
       alertId: r.alert_id || null,
       observed: r.observed,        // true | false | null  (null = pending)

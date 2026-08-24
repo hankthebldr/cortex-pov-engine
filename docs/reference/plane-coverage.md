@@ -46,8 +46,8 @@ A plane is only as strong as its weakest populated layer:
 | TTP detection cards | **63** | all `status: active`; numbered `TTP-2026-0001`..`0063` |
 | TTP cards that are bespoke (not auto-derived from a `SIM-*` scenario) | 6 | `TTP-2026-0001`..`0006` (helpdesk MFA, LSASS dump, AWS IAM/S3 exfil, DCSync, rclone exfil, ESXi mass-encrypt) |
 | EAL plugins | **14** | see plugin table below |
-| Tool adapter packs | **69** | (70 `.yml` files minus `_schema.yml`) — CLAUDE.md "69 packs" ✅ matches |
-| Scenarios wired to an adapter via `adapter_ref` | **27** | matches CLAUDE.md "27 scenarios wired" ✅ |
+| Tool adapter packs | **84** | (85 `.yml` files minus `_schema.yml`) — CLAUDE.md "84 packs" ✅ matches |
+| Scenarios wired to an adapter via `adapter_ref` | **42** | matches CLAUDE.md "42 scenarios wired" ✅ |
 | IaC modules (AWS) | **11** | `base`, `edr`, `cdr`, `content-library`, `itdr`, `ndr`, `cspm`, `asm`, `tim`, `telemetry-replay`, `ai-spm` — CLAUDE.md claims "10 modules" ❌ (ai-spm makes 11; see gap PLANE-DOC-AISPM) |
 
 ### EAL plugin → plane map (all 14)

@@ -5,7 +5,7 @@ import { test, expect, gotoView } from './_fixtures'
  * powers the AI Access / AIRS / Browser / KOI flows.
  *
  * Console v2: the EAL list lives under More ▾ → ATT&CK Coverage → the
- * "EAL Plugins" sub-tab. Asserts the API reports ≥1 plugin and it renders.
+ * Traffic / EAL surface. Asserts the API reports ≥1 plugin and it renders.
  */
 test('EAL Plugins sub-view opens and shows the plugin surface', async ({ page, api, baseURL, request }) => {
   await api.health()
@@ -18,13 +18,23 @@ test('EAL Plugins sub-view opens and shows the plugin surface', async ({ page, a
   expect(Array.isArray(pluginList)).toBe(true)
   expect(pluginList.length).toBeGreaterThan(0)
 
-  // UI: More ▾ → ATT&CK Coverage → EAL Plugins sub-tab
+  // EAL was a sub-tab hanging off ATT&CK Coverage; the destination redesign
+  // promoted it to a first-class surface (Traffic / EAL), so there is no
+  // sub-tab left to click.
   await page.goto('/')
-  await gotoView(page, 'ATT&CK Coverage')
-  await page.getByRole('tab', { name: /^EAL Plugins$/ }).click()
+  await gotoView(page, 'EAL Plugins')
+  // The surface opens on Campaigns; the plugin catalogue is the builder's.
+  await page.getByRole('button', { name: /New Campaign/i }).click()
   await page.waitForLoadState('networkidle')
 
-  // At least one plugin name from the API should surface
+  // At least one plugin name from the API should surface. The builder renders
+  // the catalogue as <option> elements, which Playwright never reports as
+  // visible — assert on the select's option set instead of on visibility, or
+  // this fails for a reason that has nothing to do with the plugin surface.
   const firstName: string = pluginList[0].name
-  await expect(page.getByText(new RegExp(firstName)).first()).toBeVisible({ timeout: 10_000 })
+  const pluginSelect = page.locator('select').filter({ hasText: /pick a plugin/i }).first()
+  await expect(pluginSelect).toBeVisible({ timeout: 10_000 })
+  await expect(
+    pluginSelect.locator('option', { hasText: new RegExp(firstName) }).first(),
+  ).toHaveCount(1)
 })

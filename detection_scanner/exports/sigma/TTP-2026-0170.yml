@@ -1,0 +1,62 @@
+title: "Autonomous Action Audit-Trail Reconstruction Across Three Incident Classes \u2014 Identity Disable, Endpoint Isolate, Cloud Token Revoke \u2014 Identity Anomaly Trigger \u2014 Privileged Principal Sign-In Deviating From Its Learned Access Baseline"
+id: ttp-2026-0170-abioc-01
+status: experimental
+description: |
+  Trigger arm one. A privileged principal authenticates from infrastructure absent from its learned calling baseline. This arm exists to CAUSE an autonomous account-disable, so the action row it produces can be walked backwards; the detection itself is well-trodden ground and is not the claim under test here.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_azure_ad_signin
+    | filter cortexsim_run_tag = "APB001"
+    | filter is_privileged = true and baseline_match = false
+    | comp count() as signins, count_distinct(source_ip) as calling_ips by user_principal_name, result_type
+    | filter signins >= 1
+    | sort desc signins
+    | fields user_principal_name, result_type, calling_ips, signins
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Autonomous Action Audit-Trail Reconstruction Across Three Incident Classes \u2014 Identity Disable, Endpoint Isolate, Cloud Token Revoke \u2014 Endpoint Anomaly Trigger \u2014 Off-Baseline Interpreter Chain on a Server-Role Host"
+id: ttp-2026-0170-abioc-02
+status: experimental
+description: |
+  Trigger arm two. A web-server parent spawns an interactive shell on a host whose learned role never does so. Structurally different from arm one — a process-causality anomaly rather than an identity anomaly — which is the whole reason three arms are run instead of one.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter cortexsim_run_tag = "APB001"
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("httpd", "nginx", "apache2", "w3wp.exe")
+    | filter action_process_image_name in ("bash", "sh", "cmd.exe", "powershell.exe")
+    | comp count() as spawns by agent_hostname, causality_id, causality_actor_process_image_name, action_process_image_name
+    | filter spawns >= 1
+    | fields agent_hostname, causality_id, causality_actor_process_image_name, action_process_image_name, spawns
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

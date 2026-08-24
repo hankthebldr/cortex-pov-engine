@@ -3,6 +3,18 @@
 Phase 2 of the e2e execution methodology
 (docs/design/e2e-execution-methodology.md).
 
+Parametrized over ``(scenario, target)`` PAIRS, not scenarios. A scenario
+whose every step is PowerShell-native has no bash bundle to lint — it has a
+PowerShell bundle. Asserting bash properties over it was the old suite's
+mistake: SIM-EDR-013/-017/-021 failed ``bash -n`` for years because the
+generator emitted PowerShell into a ``.sh``, and SIM-EDR-006 PASSED while
+emitting a bundle that dies at step-01 in front of a customer.
+
+The bash assertions below therefore run for ``posix`` pairs and the
+PowerShell ones for ``windows`` pairs, with a coverage guard
+(``test_every_scenario_has_an_emittable_target``) so a scenario can never fall
+out of BOTH suites silently.
+
 For every scenario YAML in the library, validate that the push-mode
 bash bundle generator produces a well-formed, lint-clean,
 executable-ready script:
@@ -30,6 +42,8 @@ in CI.
 """
 from __future__ import annotations
 
+import functools
+import os
 import pathlib
 import re
 import shutil
@@ -79,12 +93,25 @@ def _label(p: pathlib.Path) -> str:
     return str(rel)
 
 
+@functools.lru_cache(maxsize=None)
 def _load_scenario(path: pathlib.Path) -> dict[str, Any]:
     with open(path) as f:
         return yaml.safe_load(f)
 
 
-# ─── Sanity guard ────────────────────────────────────────────────────
+def _pairs(target: str) -> list[pathlib.Path]:
+    """Scenario paths that can emit a bundle for ``target``."""
+    return [
+        p for p in SCENARIOS
+        if target in _push.emittable_targets(_load_scenario(p))
+    ]
+
+
+POSIX_SCENARIOS = _pairs("posix")
+WINDOWS_SCENARIOS = _pairs("windows")
+
+
+# ─── Sanity guards ───────────────────────────────────────────────────
 
 def test_discovery_found_scenarios():
     """The scenario glob should find at least one YAML.
@@ -98,9 +125,57 @@ def test_discovery_found_scenarios():
     )
 
 
+def test_every_scenario_has_an_emittable_target():
+    """No scenario may fall out of BOTH the bash and the PowerShell suite.
+
+    Parametrizing by (scenario, target) means a scenario the resolver judges
+    unemittable everywhere silently stops being tested. That is precisely the
+    hole this suite exists to close, so the population is pinned at zero.
+    """
+    orphans = [
+        _label(p) for p in SCENARIOS
+        if not _push.emittable_targets(_load_scenario(p))
+    ]
+    assert not orphans, (
+        "scenario(s) can emit no bundle at all — every step lacks BOTH a POSIX "
+        f"and a Windows command: {orphans}"
+    )
+
+
+def test_both_suites_are_populated():
+    """Guard against a resolver regression that empties one side.
+
+    If `emittable_targets` ever started returning ("posix",) unconditionally,
+    every PowerShell test below would vanish into zero parametrized cases and
+    the suite would go green having tested nothing.
+    """
+    assert len(POSIX_SCENARIOS) > 100, f"posix suite collapsed to {len(POSIX_SCENARIOS)}"
+    assert len(WINDOWS_SCENARIOS) >= 12, f"windows suite collapsed to {len(WINDOWS_SCENARIOS)}"
+
+
+def test_windows_native_scenarios_are_not_in_the_bash_suite():
+    """The four PowerShell-native scenarios must NOT emit a bash bundle.
+
+    SIM-EDR-013/-017/-021 are the three long-standing `bash -n` failures and
+    SIM-EDR-006 is the silent one: its PowerShell steps parse as bash, then die
+    at step-01 with `Invoke-AtomicTest: command not found`, `set -e` aborts the
+    run, and a DC reads the empty result as "XSIAM detected nothing" — a
+    manufactured false negative on the customer's stack.
+
+    They are fixed by WITHDRAWING the bash bundle (they gain a real PowerShell
+    one below), not by loosening an assertion.
+    """
+    ids = {_load_scenario(p).get("scenario_id") for p in POSIX_SCENARIOS}
+    for sid in ("SIM-EDR-006", "SIM-EDR-013", "SIM-EDR-017", "SIM-EDR-021"):
+        assert sid not in ids, f"{sid} is PowerShell-native and must not emit a bash bundle"
+    win_ids = {_load_scenario(p).get("scenario_id") for p in WINDOWS_SCENARIOS}
+    for sid in ("SIM-EDR-006", "SIM-EDR-013", "SIM-EDR-017", "SIM-EDR-021"):
+        assert sid in win_ids, f"{sid} must emit a PowerShell bundle"
+
+
 # ─── Per-scenario bundle integrity ──────────────────────────────────
 
-@pytest.mark.parametrize("path", SCENARIOS, ids=_label)
+@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
 def test_bundle_parses_as_bash(path: pathlib.Path):
     """The generated bundle must parse under ``bash -n``.
 
@@ -130,7 +205,7 @@ def test_bundle_parses_as_bash(path: pathlib.Path):
     shutil.which("shellcheck") is None,
     reason="shellcheck not installed",
 )
-@pytest.mark.parametrize("path", SCENARIOS, ids=_label)
+@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
 def test_bundle_passes_shellcheck(path: pathlib.Path):
     """The generated bundle must pass shellcheck severity=warning.
 
@@ -182,7 +257,7 @@ def test_bundle_passes_shellcheck(path: pathlib.Path):
         pathlib.Path(tmp).unlink(missing_ok=True)
 
 
-@pytest.mark.parametrize("path", SCENARIOS, ids=_label)
+@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
 def test_every_step_command_in_bundle(path: pathlib.Path):
     """Every scenario step's `command` must appear in the bundle.
 
@@ -226,7 +301,7 @@ def test_every_step_command_in_bundle(path: pathlib.Path):
         )
 
 
-@pytest.mark.parametrize("path", SCENARIOS, ids=_label)
+@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
 def test_bundle_has_identity_harness(path: pathlib.Path):
     """Bundle must declare the identity harness function used to wrap
     non-root steps.
@@ -252,7 +327,7 @@ def test_bundle_has_identity_harness(path: pathlib.Path):
     )
 
 
-@pytest.mark.parametrize("path", SCENARIOS, ids=_label)
+@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
 def test_bundle_has_cleanup_block(path: pathlib.Path):
     """Bundle must include a cleanup section.
 
@@ -299,7 +374,7 @@ _PY_LEAK = re.compile(
 )
 
 
-@pytest.mark.parametrize("path", SCENARIOS, ids=_label)
+@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
 def test_no_template_placeholder_leaks(path: pathlib.Path):
     """The bundle must not contain unresolved generator-template
     placeholders.
@@ -335,7 +410,7 @@ def test_no_template_placeholder_leaks(path: pathlib.Path):
     )
 
 
-@pytest.mark.parametrize("path", SCENARIOS, ids=_label)
+@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
 def test_bundle_starts_with_shebang(path: pathlib.Path):
     """First line must be a bash shebang.
 
@@ -353,3 +428,249 @@ def test_bundle_starts_with_shebang(path: pathlib.Path):
     assert "bash" in first, (
         f"{_label(path)} bundle shebang doesn't reference bash: {first!r}"
     )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# PowerShell bundle integrity (target=windows)
+# ═════════════════════════════════════════════════════════════════════
+#
+# ON THE SYNTAX GATE, PLAINLY: `pwsh` is NOT present in the cortexsim:dev
+# image and is NOT on the maintainer's host, so `test_ps_bundle_parses_as
+# _powershell` SKIPS in both places today. A skip that reads as a pass is
+# exactly the fake-green this suite exists to kill, so:
+#
+#   * `test_powershell_parser_available_in_ci` FAILS (not skips) when CI=1 and
+#     pwsh is missing — CI must provide the real parser or go red;
+#   * `test_ps_bundle_structural_invariants` is ALWAYS on and is honest about
+#     what it is: bracket/quote balance plus a set of contract assertions. It
+#     is NOT a syntax check and does not pretend to be one.
+#
+# The generated bundles WERE verified against the real
+# System.Management.Automation.Language.Parser (PowerShell 7.4) during
+# development; all 12 parse clean and three execute end-to-end under pwsh.
+
+def _ps_bundle(path: pathlib.Path) -> str:
+    return _push.generate_powershell(_load_scenario(path))
+
+
+def _strip_ps_literals(text: str) -> str:
+    """Blank here-strings and single-quoted regions in a .ps1.
+
+    Scenario command text is embedded as data inside `@'…'@`. It legitimately
+    contains `&&`, `$(`, unbalanced braces and every other construct the
+    structural checks below forbid in CODE. Checking the raw file would flag
+    the payload rather than the generator.
+    """
+    out: list[str] = []
+    in_here = False
+    for line in text.split("\n"):
+        if in_here:
+            if line.startswith("'@") or line.startswith('"@'):
+                in_here = False
+                out.append(line[2:])
+            else:
+                out.append("")
+            continue
+        if line.rstrip().endswith("@'") or line.rstrip().endswith('@"'):
+            in_here = True
+            out.append(line.rstrip()[:-2])
+            continue
+        out.append(re.sub(r"'[^']*'", "''", line))
+    return "\n".join(out)
+
+
+def _ps_code(text: str) -> str:
+    """Executable text only: literals blanked, `#` comments dropped."""
+    stripped = _strip_ps_literals(text)
+    return "\n".join(
+        line for line in stripped.split("\n") if not line.lstrip().startswith("#")
+    )
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
+@pytest.mark.parametrize("path", WINDOWS_SCENARIOS, ids=_label)
+def test_ps_bundle_parses_as_powershell(path: pathlib.Path):
+    """REAL syntax gate: the PowerShell AST parser, on the file.
+
+    `pwsh -Command { … }` does not parse a FILE, so ParseFile is used
+    directly — the same call PSScriptAnalyzer makes.
+    """
+    bundle = _ps_bundle(path)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", delete=False, encoding="utf-8") as f:
+        f.write(bundle)
+        tmp = f.name
+    try:
+        result = subprocess.run(
+            # The path travels in the environment, not as a positional arg:
+            # `pwsh -Command <script> <path>` does NOT populate $args, and
+            # interpolating it into the script would be an injection seam.
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", (
+                "$t=$null; $e=$null; "
+                "[System.Management.Automation.Language.Parser]::ParseFile("
+                "$env:CORTEXSIM_PS1,[ref]$t,[ref]$e) | Out-Null; "
+                "if ($e.Count) { $e | ForEach-Object { "
+                "Write-Output ('line ' + $_.Extent.StartLineNumber + ': ' + $_.Message) }; exit 1 }"
+            )],
+            env={**os.environ, "CORTEXSIM_PS1": tmp},
+            capture_output=True, text=True, timeout=60,
+        )
+        assert result.returncode == 0, (
+            f"PowerShell parse errors in generated bundle for {_label(path)}:\n"
+            f"{result.stdout.strip()}\n{result.stderr.strip()}"
+        )
+    finally:
+        pathlib.Path(tmp).unlink(missing_ok=True)
+
+
+def test_powershell_parser_available_in_ci():
+    """A skipped syntax check in CI is indistinguishable from a passing one."""
+    if os.environ.get("CI"):
+        assert shutil.which("pwsh"), (
+            "CI must provide pwsh — the .ps1 parse gate is not optional. "
+            "Install PowerShell on the runner (mirroring the shellcheck apt step)."
+        )
+
+
+@pytest.mark.parametrize("path", WINDOWS_SCENARIOS, ids=_label)
+def test_ps_bundle_structural_invariants(path: pathlib.Path):
+    """NOT a syntax check — the syntax check is pwsh above, and it skips when
+    pwsh is absent. This proves only the invariants listed below, each of which
+    is a property no parser would catch anyway.
+    """
+    bundle = _ps_bundle(path)
+    code = _ps_code(bundle)
+    label = _label(path)
+
+    # 1. Brackets balance outside literals.
+    for open_c, close_c in (("{", "}"), ("(", ")"), ("[", "]")):
+        assert code.count(open_c) == code.count(close_c), (
+            f"{label}: unbalanced {open_c}{close_c} in generated PowerShell "
+            f"({code.count(open_c)} vs {code.count(close_c)})"
+        )
+
+    # 2. Every here-string that opens must close.
+    assert bundle.count("@'\n") == len(re.findall(r"(?m)^'@", bundle)), (
+        f"{label}: unterminated here-string in generated PowerShell"
+    )
+
+    # 3. Windows PowerShell 5.1 floor — none of these exist before PS7, and
+    #    Server 2016/2019/2022 and Win10/11 ship 5.1, not 7.
+    for op in ("&&", "||", "??"):
+        assert op not in code, (
+            f"{label}: PS7-only operator {op!r} in generated code — breaks the "
+            f"Windows PowerShell 5.1 floor"
+        )
+
+    # 4. Cardinal invariant: self-contained. Nothing is installed, no module
+    #    is pulled, and execution policy is never mutated machine-wide.
+    for forbidden in ("Install-Module", "Install-Package", "Set-ExecutionPolicy",
+                      "Register-PSRepository", "Save-Module"):
+        assert forbidden not in code, (
+            f"{label}: {forbidden} in generated bundle — a bundle must run on a "
+            f"clean host with no installs (Set-ExecutionPolicy is also a "
+            f"machine-scope mutation that fails unelevated)"
+        )
+
+    # 5. Cardinal invariant: no SimCore dependency at runtime.
+    for phone_home in ("/api/", "Invoke-RestMethod", "$Server", "$SimCore"):
+        assert phone_home not in code, (
+            f"{label}: {phone_home} in generated bundle — a push bundle must "
+            f"never call back to SimCore"
+        )
+
+    # 6. Lifecycle: transcript, script-scope finally, cleanup, harness.
+    for required in ("Start-Transcript", "Stop-Transcript", "function Invoke-CsCleanup",
+                     "function Invoke-CsStep", "function Resolve-CsIdentity"):
+        assert required in code, f"{label}: generated bundle missing {required!r}"
+    assert re.search(r"(?m)^finally \{", code), (
+        f"{label}: no script-scope finally block — cleanup would not run on error "
+        f"(the PowerShell analogue of bash's `trap cleanup EXIT`)"
+    )
+
+    # 7. No unresolved @@PLACEHOLDER@@ (the ps1 analogue of the {scenario_id}
+    #    leak test; the syntax differs because the generator uses @@…@@
+    #    substitution, not str.format — PowerShell is full of literal braces).
+    leaks = re.findall(r"@@[A-Z0-9_]+@@", bundle)
+    assert not leaks, f"{label}: unresolved template placeholders {sorted(set(leaks))}"
+
+
+@pytest.mark.parametrize("path", WINDOWS_SCENARIOS, ids=_label)
+def test_ps_every_resolved_step_command_in_bundle(path: pathlib.Path):
+    """Every resolved step's command text must appear verbatim in the bundle.
+
+    The whole point of the Windows target is that the authored
+    `platform_variants['windows']` command — 17.5 KB across the corpus that the
+    bash generator silently dropped on the floor — actually reaches the host.
+    """
+    scenario = _load_scenario(path)
+    bundle = _ps_bundle(path)
+    resolution = _push.resolve_target(scenario, "windows")
+    assert resolution.steps, f"{_label(path)} resolved zero windows steps"
+    for res in resolution.steps:
+        witness = next(
+            (ln.strip() for ln in res.command.splitlines()
+             if ln.strip() and not ln.strip().startswith("#")),
+            None,
+        )
+        assert witness, f"{_label(path)} {res.step_id} has no executable line"
+        # Here-string embedding is verbatim — no escaping, so no normalization.
+        assert witness in bundle, (
+            f"{_label(path)} {res.step_id} command missing from PowerShell bundle "
+            f"(witness: {witness[:80]!r})"
+        )
+
+
+@pytest.mark.parametrize("path", WINDOWS_SCENARIOS, ids=_label)
+def test_ps_bundle_header_and_bom(path: pathlib.Path):
+    """UTF-8 BOM + comment banner + the documented invocation line.
+
+    The BOM is load-bearing, not cosmetic: Windows PowerShell 5.1 reads a
+    BOM-less file as ANSI and mangles the em-dashes the corpus puts INSIDE
+    string literals (SIM-EDR-017 step-04's marker banner). Mojibake in a marker
+    string breaks the grep a DC runs to prove the step executed.
+    """
+    bundle = _ps_bundle(path)
+    assert bundle.startswith("﻿"), f"{_label(path)}: .ps1 must carry a UTF-8 BOM for PS 5.1"
+    first = bundle[1:].splitlines()[0]
+    assert first.startswith("# ="), f"{_label(path)}: expected comment banner, got {first!r}"
+    assert "-ExecutionPolicy Bypass -File" in bundle, (
+        f"{_label(path)}: header must document the Mark-of-the-Web-safe invocation"
+    )
+
+
+@pytest.mark.parametrize("path", WINDOWS_SCENARIOS, ids=_label)
+def test_ps_identity_degradation_is_surfaced(path: pathlib.Path):
+    """A step that cannot reach its declared identity must SAY so.
+
+    Windows has no credential-free non-interactive impersonation, so a step
+    declaring `www-data` runs as the invoking user. Reporting that as success
+    would put a false causality chain into the POV readout — the marker is what
+    keeps the story honest.
+    """
+    bundle = _ps_bundle(path)
+    assert "cortexsim-identity-degraded" in bundle, (
+        f"{_label(path)}: no identity-degradation marker — the bundle would "
+        f"silently claim identities it never achieved"
+    )
+
+
+def test_ps_generator_refuses_unsatisfiable_target():
+    """A scenario with no Windows command must raise, not emit a partial bundle.
+
+    A partial bundle is worse than none: it runs green, emits a subset of the
+    attack, and the missing detections read as a customer-stack failure.
+    """
+    posix_only = next(
+        p for p in POSIX_SCENARIOS
+        if "windows" not in _push.emittable_targets(_load_scenario(p))
+    )
+    scenario = _load_scenario(posix_only)
+    with pytest.raises(_push.BundleTargetUnsatisfiable) as exc:
+        _push.generate_powershell(scenario)
+    body = exc.value.to_error()
+    assert body["code"] == "BUNDLE_TARGET_UNSATISFIABLE"
+    assert set(body) == {"error", "code", "detail"}
+    # The offending steps must be NAMED — "it didn't work" is not actionable.
+    first_unresolved = exc.value.unresolved[0][0]
+    assert first_unresolved in body["detail"]
+    assert "WINDOWS_COMMAND_UNAVAILABLE" in body["detail"]

@@ -1,0 +1,357 @@
+{
+  "id": "TTP-2026-0173",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-02T00:00:00+00:00",
+    "updated_at": "2026-08-02T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-ai-access",
+      "token-jacking",
+      "llm-api-key",
+      "resource-hijacking",
+      "unauthorized-compute",
+      "baseline-arm",
+      "behavioural-baseline",
+      "f2",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Token Jacking — A Stolen LLM Provider API Key Replayed From Foreign Infrastructure for Unauthorized Compute",
+    "summary": "Runs a baseline arm (the key used normally from corporate egress) and then an anomalous arm (the same key replayed from foreign infrastructure at sustained volume, on models the key has never called). The detection must come from the key's own calling and consumption baseline, not from a geo-IP rule — the baseline arm is what makes that distinction testable.",
+    "description": "Unit 42's 2026 incident-response research names token jacking directly: exposed credentials used to reach cloud AI services and LLM API tokens, potentially generating millions of dollars in unauthorized compute charges billed to the victim, with the trend moving beyond simple misuse toward adversaries training their own models on someone else's account. This card matters because its direction is the INVERSE of the five AI Access scenarios already shipped. Those detect secrets leaking OUT to an LLM provider — the employee-DLP frame. This one detects a provider key that already leaked being USED, from somewhere it has never been used from, to buy compute the victim pays for. The two are different detections against different telemetry and a corpus that only carries the first has a blind spot exactly where the money is. Design deliberately includes a BASELINE ARM, and it is the difference between a real detection and a geo-IP rule. First the key is exercised normally: modest request volume, the models this key always calls, from corporate egress. Only then does the anomalous arm run — the same key, sustained high-volume inference, from infrastructure absent from its history, against model endpoints it has never touched. If a platform alerts on the anomalous arm but ALSO alerts on the baseline arm, it has matched on 'traffic to an LLM provider', which the customer's proxy already does for free. If it alerts on neither, the key's baseline never formed. The claim is only interesting in the third case: baseline silent, anomalous arm loud. One further reason this scenario earns its place in a POV: it produces a dollar figure. Inference spend against the compromised key over the run window is a CFO-legible number, and there are very few artifacts in a security POV that convert cleanly into a line on someone's cloud bill.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Unit 42 2026 Global Incident Response Report — token jacking: exposed credentials used to reach cloud AI services and LLM API tokens for unauthorized compute at the victim's expense"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2026-02-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.001",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1496",
+        "name": "Resource Hijacking",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Traffic Content",
+      "Application Log: Application Log Content",
+      "Cloud Service: Cloud Service Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-AIACC-006 — stolen LLM provider key replayed from off-baseline infrastructure, with a baseline arm.",
+    "prerequisites": [
+      {
+        "description": "AI Access Security or an equivalent egress path is ingesting LLM provider traffic so per-key calling location, model mix and token consumption are queryable.",
+        "check_command": "true"
+      },
+      {
+        "description": "The key has enough operating history for a calling and consumption baseline to exist. Without the baseline arm having run first, the anomalous arm is only distinguishable by source IP, which is a geo rule and not the claim.",
+        "check_command": "true"
+      }
+    ],
+    "privilege_required": "user",
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SAFE-MODE: no real provider is called and no real key is used. The canary key\n# below is a synthetic string that exists only to be matched. Requests target\n# 127.0.0.1; the arms are modelled with markers.\nset -euo pipefail\nD=/tmp/cortexsim-aiacc006\nRUN_TAG=\"${CORTEXSIM_RUN_TAG:-AIACC006}\"\nCANARY_KEY=\"${CORTEXSIM_CANARY_KEY:-sk-cortexsim-canary-0006}\"\nmkdir -p \"$D\"\n# (1) BASELINE ARM — the key used normally, from corporate egress, on the models\n#     it always calls. This arm MUST NOT alert; if it does, the detection is a\n#     proxy rule about talking to an LLM provider, not a baseline.\nfor N in 1 2 3 4 5; do\n  printf '{\"run_tag\":\"%s\",\"arm\":\"baseline\",\"cortexsim_label\":\"benign\",\"api_key_id\":\"%s\",\"source\":\"corporate_egress\",\"model\":\"gpt-4o-mini\",\"prompt_tokens\":800,\"completion_tokens\":400}\\n' \"$RUN_TAG\" \"$CANARY_KEY\" \"$N\"\ndone > \"$D/baseline-arm.ndjson\"\n# (2) ANOMALOUS ARM — same key, foreign infrastructure, sustained volume, models\n#     this key has never called.\nfor N in $(seq 1 40); do\n  printf '{\"run_tag\":\"%s\",\"arm\":\"anomalous\",\"cortexsim_label\":\"malicious\",\"api_key_id\":\"%s\",\"source_ip\":\"198.51.100.66\",\"model\":\"gpt-4o-large\",\"prompt_tokens\":16000,\"completion_tokens\":8000,\"user_agent\":\"aiohttp/3.12.15 tokenjack/1.0\"}\\n' \"$RUN_TAG\" \"$CANARY_KEY\"\ndone > \"$D/anomalous-arm.ndjson\"\ncurl -s --max-time 5 -A \"aiohttp/3.12.15 tokenjack/1.0\" -o /dev/null \"https://127.0.0.1/v1/chat/completions\" 2>/dev/null || true\necho cortexsim-aiacc006-token-jacking-arms-emitted",
+      "input_variables": [
+        {
+          "name": "CORTEXSIM_CANARY_KEY",
+          "type": "string",
+          "default": "sk-cortexsim-canary-0006",
+          "description": "Synthetic canary key id. Never a real provider credential — it exists only so the two arms can be attributed to one key."
+        },
+        {
+          "name": "CORTEXSIM_RUN_TAG",
+          "type": "string",
+          "default": "AIACC006",
+          "description": "Run-scoped tag stamped onto every emitted record."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Baseline-arm requests to the provider from corporate egress on the key's usual model, at modest volume.",
+        "expected_value": "arm = \"baseline\" and source = \"corporate_egress\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Anomalous-arm requests carrying the same key id from infrastructure absent from its history, at sustained volume on unfamiliar models.",
+        "expected_value": "arm = \"anomalous\" and user_agent = \"aiohttp/3.12.15 tokenjack/1.0\""
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "Inference spend accounting for the compromised key over the run window — the CFO-legible number.",
+        "expected_value": "sum(prompt_tokens + completion_tokens) by api_key_id"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-aiacc006; echo '[CortexSim] SIM-AIACC-006 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "user-agent",
+        "value": "aiohttp/3.12.15 tokenjack/1.0",
+        "context": "Async automation client string carried by the replay tooling on the anomalous arm. Shipped as an IOC because it is cheap and immediate, and explicitly NOT as the primary detection: a user-agent is a one-line change for the adversary, which is precisely why the two ABIOCs carry the claim and this indicator only corroborates.",
+        "reputation_required": "any",
+        "cortex_severity_override": "medium"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "LLM Provider API Key Replayed From Infrastructure Absent From Its Learned Calling Baseline",
+        "description": "The primary claim. The key itself is valid and the traffic is well-formed TLS to a legitimate provider, so nothing about the request is malformed or blockable. The anomaly is that this key has a calling history and this call is not in it. Anchored per API key id rather than per user, because the credential is the actor: whoever holds it is indistinguishable from its owner by every other signal.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter cortexsim_run_tag = \"AIACC006\"\n| filter app in (\"openai-api\", \"anthropic-api\", \"google-gemini-api\", \"ssl\")\n| comp count() as requests, count_distinct(source_ip) as calling_ips, count_distinct(dest_fqdn) as providers by api_key_id, user_agent\n| filter requests >= 20 and calling_ips >= 2\n| sort desc requests\n| fields api_key_id, user_agent, providers, calling_ips, requests",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004",
+          "T1552.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The API key identity owns this chain. The baseline arm and the anomalous arm share the key and nothing else, which is what makes the calling-location delta attributable rather than merely coincident."
+      },
+      {
+        "name": "Sustained Inference Spend Deviating From the Key's Learned Token-Consumption Envelope",
+        "description": "The second delta, and the one that survives an adversary who proxies through the victim's own egress to defeat the location signal. Token consumption per key has a shape — request cadence, prompt and completion size, model mix — and unauthorized compute has a different one because its purpose is different. This is also the detection that produces the dollar figure, which is the rarest thing in a security POV: a finding that converts directly into a line on the cloud bill.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter cortexsim_run_tag = \"AIACC006\"\n| filter app in (\"openai-api\", \"anthropic-api\", \"google-gemini-api\", \"ssl\")\n| comp sum(prompt_tokens) as prompt_total, sum(completion_tokens) as completion_total, count() as requests, count_distinct(model_name) as models by api_key_id\n| alter total_tokens = add(prompt_total, completion_total)\n| filter total_tokens >= 500000 and models >= 2\n| sort desc total_tokens\n| fields api_key_id, models, requests, prompt_total, completion_total, total_tokens",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1496"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Same API key identity, joined to the calling-location deviation on api_key_id so the two deltas raise one incident about one credential rather than two anomalies about traffic."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Baseline Arm — The Same Key Used Normally From Corporate Egress Before the Anomalous Arm",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"AIACC006\" and cortexsim_label = \"benign\"\n| comp count() as requests, sum(prompt_tokens) as prompt_total, count_distinct(model_name) as models by api_key_id, source_ip\n| filter requests >= 1\n| sort desc requests\n| fields api_key_id, source_ip, models, requests, prompt_total",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "Model and Endpoint Mix First Seen for This API Key",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"AIACC006\"\n| filter model_first_seen_for_key = true\n| comp count() as requests, count_distinct(model_name) as novel_models by api_key_id, dest_fqdn\n| filter novel_models >= 1\n| sort desc novel_models\n| fields api_key_id, dest_fqdn, novel_models, requests",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "Unauthorized Inference Spend Accounting for the Compromised Key",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 7200)\n| filter cortexsim_run_tag = \"AIACC006\" and cortexsim_label = \"malicious\"\n| comp sum(prompt_tokens) as prompt_total, sum(completion_tokens) as completion_total, count() as requests by api_key_id, source_ip\n| alter unauthorized_tokens = add(prompt_total, completion_total)\n| sort desc unauthorized_tokens\n| fields api_key_id, source_ip, requests, unauthorized_tokens",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "AI Provider API Keys Ranked by Calling-Location Spread",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 86400)\n| filter app in (\"openai-api\", \"anthropic-api\", \"google-gemini-api\")\n| comp count_distinct(source_ip) as calling_ips, count_distinct(model_name) as models, count() as requests by api_key_id\n| sort desc calling_ips\n| limit 100\n| fields api_key_id, calling_ips, models, requests",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Token Jacking Stitch — Off-Baseline Key Replay With Unauthorized Inference Spend",
+        "rule_id": "CR-AIACC-0006",
+        "logic": "ABIOC(LLM Provider API Key Replayed From Infrastructure Absent From Its Learned Calling Baseline) AND ABIOC(Sustained Inference Spend Deviating From the Key's Learned Token-Consumption Envelope) observed on the SAME api_key_id within the run window, corroborated by XQL(Model and Endpoint Mix First Seen for This API Key) and by the replay client's user-agent indicator — ONE token-jacking incident about ONE credential. The BASELINE ARM is the discriminator and is asserted as part of the verdict rather than reported beside it: the same key must be shown used normally from corporate egress in the same window, and that arm must NOT raise this incident. Alerting on both arms means the platform matched on 'traffic to an LLM provider', which the customer's proxy already does; alerting on neither means the key's baseline never formed and the result is pending, not fail. The incident carries the unauthorized inference spend as its headline figure, because it is the rare security finding that converts directly into a line on the cloud bill."
+      }
+    ],
+    "analytics_modules": [
+      "Cortex AI Access Security — per-key calling-location and model-mix baselining for LLM provider traffic",
+      "Cortex XSIAM Analytics — token-consumption envelope profiling per credential"
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-AIACC006-TOKENJACK",
+          "CR-AIACC-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter cortexsim_run_tag = \"AIACC006\" | comp count_distinct(source_ip) as calling_ips, sum(prompt_tokens) as prompt_total by api_key_id"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-AIACC-006",
+        "name": "Token Jacking — Stolen LLM Provider Key Replayed for Unauthorized Compute",
+        "description": "Proves the platform separates a stolen AI provider key being used from a legitimate one being used, by baselining the key rather than by matching the destination — and quantifies the unauthorized inference spend the victim would otherwise pay for silently.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-AIACC-006A",
+            "objective": "The baseline arm runs and does NOT alert — the key used normally from corporate egress on its usual models.",
+            "preconditions": [
+              "LLM provider traffic is ingested with per-key attribution."
+            ],
+            "steps": [
+              "Exercise the key at modest volume from corporate egress on its usual model.",
+              "Confirm the baseline-arm query returns rows.",
+              "Confirm no token-jacking incident is raised by this arm alone."
+            ],
+            "success_criteria": [
+              "The baseline-arm query returns rows, proving the arm ran.",
+              "No incident is attributed to the baseline arm."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-AIACC-006B",
+            "objective": "The anomalous arm is detected on the key's own calling and consumption baselines.",
+            "preconditions": [
+              "TS-AIACC-006A completed so a contrast exists."
+            ],
+            "steps": [
+              "Replay the same key from infrastructure absent from its history.",
+              "Drive sustained volume on models the key has never called.",
+              "Observe both ABIOCs fire on the same api_key_id."
+            ],
+            "success_criteria": [
+              "ABIOC `LLM Provider API Key Replayed From Infrastructure Absent From Its Learned Calling Baseline` fires.",
+              "ABIOC `Sustained Inference Spend Deviating From the Key's Learned Token-Consumption Envelope` fires.",
+              "Both attribute to one api_key_id."
+            ],
+            "expected_score_weight": 0.45
+          },
+          {
+            "threat_step_id": "TS-AIACC-006C",
+            "objective": "The unauthorized inference spend is quantified for the compromised key.",
+            "preconditions": [
+              "Token accounting fields are present in the ingested provider telemetry."
+            ],
+            "steps": [
+              "Sum prompt and completion tokens for the malicious-labelled arm.",
+              "Report the figure alongside the incident."
+            ],
+            "success_criteria": [
+              "The spend-accounting query returns a non-zero unauthorized token total for the key.",
+              "The figure is attributable to the anomalous arm, not to the whole key."
+            ],
+            "expected_score_weight": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scope LLM provider keys per workload and pin them to an egress identity or IP set, so a key used from anywhere else fails rather than merely looks unusual.",
+      "Set hard per-key spend and rate ceilings at the provider. A ceiling converts token jacking from an unbounded bill into a bounded one before anyone has to notice it.",
+      "Rotate provider keys on a schedule and scan repositories, CI logs and container images for them — the 2026 pattern starts with an exposed credential, not with an intrusion."
+    ],
+    "detection_engineering": [
+      "Baseline the KEY, not the user. Whoever holds a valid provider key is indistinguishable from its owner by every signal except how they use it.",
+      "Always run the baseline arm. Without it, a detection on the anomalous arm is indistinguishable from a geo-IP rule, and the customer will correctly point that out.",
+      "Pair the location delta with the consumption envelope. Location alone is defeated by proxying through the victim's own egress; consumption alone is noisy on a growing workload."
+    ],
+    "response_playbook": "XSOAR-PB-LLMProviderKeyRevokeAndSpendReport-v1"
+  },
+  "references": [
+    {
+      "title": "AI, Automation and Attacks: Unpacking the Unit 42 2026 Global Incident Response Report",
+      "url": "https://unit42.paloaltonetworks.com/ai-incident-response-report/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1552.001 — Unsecured Credentials: Credentials In Files",
+      "url": "https://attack.mitre.org/techniques/T1552/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1496 — Resource Hijacking",
+      "url": "https://attack.mitre.org/techniques/T1496/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex AI Access Security — visibility and control for employee and workload LLM usage",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

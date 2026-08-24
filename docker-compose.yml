@@ -16,8 +16,16 @@ services:
       - ./scenarios:/app/scenarios:ro
       - ./detection_scanner:/app/detection_scanner:ro
       - ./tools:/app/tools:ro
+      # UC/TC master index — same reason: the registry (and therefore strict ref
+      # validation, /api/uctc and /api/pov) reads it from <base>/docs/uc_tc_mapping.
+      - ./docs/uc_tc_mapping:/app/docs/uc_tc_mapping:ro
       - ./sources:/app/sources:ro
       - ./scripts:/app/scripts
+      # Beacon binaries + generated enroll.sh, published by
+      # scripts/lab/publish-agent.sh. Mounted into the static tree so victims
+      # can one-line install over the port SimCore already exposes:
+      #   curl -fsSL http://<cp>:8888/agent/enroll.sh | CORTEXSIM_TOKEN=… bash
+      - ./dist/agent:/app/core/static/agent:ro
       - simcore_db:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:

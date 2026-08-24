@@ -1,0 +1,130 @@
+title: "CL-UNK-1068 Web-Shell w3wp CGO to python.exe Side-Load Mimikatz, SAM-Hive Theft and FRP Tunnel (T1505.003 / T1003 / T1574.001) \u2014 CL-UNK-1068 IIS Worker w3wp Spawns Command Shell Web Shell CGO"
+id: ttp-2026-0135-bioc-01
+status: experimental
+description: |
+  The IIS worker process w3wp.exe spawns an interactive command shell (cmd.exe / powershell.exe) — the web-shell code-execution event that makes w3wp.exe the Causality Group Owner of the intrusion. A legitimate IIS app pool almost never shells out; this is the root node every downstream detection stitches back to.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = "w3wp.exe"
+    | filter actor_process_image_name = "w3wp.exe"
+    | filter action_process_image_name in ("cmd.exe", "powershell.exe", "pwsh.exe")
+    | comp count() as shell_spawns by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_name
+    | filter shell_spawns >= 1
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_name, shell_spawns
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1505/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1505.003
+    - attack.t1059
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-UNK-1068 Web-Shell w3wp CGO to python.exe Side-Load Mimikatz, SAM-Hive Theft and FRP Tunnel (T1505.003 / T1003 / T1574.001) \u2014 CL-UNK-1068 SAM and SYSTEM Registry Hive Save Under Web Shell Causality"
+id: ttp-2026-0135-bioc-02
+status: experimental
+description: |
+  reg.exe writes the HKLM\SAM and HKLM\SYSTEM hives to disk ('reg save') for offline credential cracking, and the process is owned by the w3wp.exe web-shell causality rather than an admin console. Keying on causality_actor_process_instance_id ties the hive theft to the same web shell that spawned the shell, distinguishing malicious offline-cracking prep from legitimate backup tooling.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = "w3wp.exe"
+    | filter action_process_image_name = "reg.exe"
+    | filter action_process_command_line contains "save" and (action_process_command_line contains "hklm\\sam" or action_process_command_line contains "hklm\\system")
+    | comp count() as hive_saves by agent_hostname, causality_actor_process_instance_id, actor_process_image_name, action_process_command_line
+    | filter hive_saves >= 1
+    | fields agent_hostname, causality_actor_process_instance_id, actor_process_image_name, action_process_command_line, hive_saves
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.002
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-UNK-1068 Web-Shell w3wp CGO to python.exe Side-Load Mimikatz, SAM-Hive Theft and FRP Tunnel (T1505.003 / T1003 / T1574.001) \u2014 CL-UNK-1068 certutil Encode Fileless Loot Staging Under Web Shell Causality"
+id: ttp-2026-0135-bioc-03
+status: experimental
+description: |
+  certutil.exe is abused with '-encode' to base64 the collected WinRAR loot archive for fileless exfil back through the web shell. The staging process is owned by the w3wp.exe causality, so this is not an admin using certutil for certificate work — it is the collection/exfil-prep stage of the same intrusion.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name = "w3wp.exe"
+    | filter action_process_image_name = "certutil.exe"
+    | filter action_process_command_line contains "encode"
+    | comp count() as encode_ops by agent_hostname, causality_actor_process_instance_id, actor_process_image_name, action_process_command_line
+    | filter encode_ops >= 1
+    | fields agent_hostname, causality_actor_process_instance_id, actor_process_image_name, action_process_command_line, encode_ops
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1027/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1027
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "CL-UNK-1068 Web-Shell w3wp CGO to python.exe Side-Load Mimikatz, SAM-Hive Theft and FRP Tunnel (T1505.003 / T1003 / T1574.001) \u2014 CL-UNK-1068 python DLL Side Load In Memory Credential Theft Under Web Shell Causality"
+id: ttp-2026-0135-abioc-04
+status: experimental
+description: |
+  A legitimately-signed python.exe / pythonw.exe loads a non-standard python20.dll from a web-writable path (inetpub / temp / programdata) rather than its own install tree — the DLL-side-load that deobfuscates and runs Mimikatz shellcode entirely in memory. This is the crucial causality nuance: the LOLBin's actor_process_image_name is the trusted 'python.exe', so an image-name rule misses it; the ABIOC anchors the anomaly to causality_actor_process_image_name / causality_actor_process_instance_id tracing python.exe back to the w3wp.exe web shell, and to the learned baseline that this host's python.exe never loads python20.dll. Auto-tuned behavioral ML, not a static signature.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.MODULE and event_sub_type = ENUM.MODULE_LOAD
+    | filter causality_actor_process_image_name = "w3wp.exe"
+    | filter action_process_image_name in ("python.exe", "pythonw.exe")
+    | filter action_module_name = "python20.dll"
+    | filter action_module_path contains "\\inetpub" or action_module_path contains "\\temp" or action_module_path contains "\\programdata"
+    | comp count() as sideloads by agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_name, action_module_path
+    | filter sideloads >= 1
+    | fields agent_hostname, causality_actor_process_image_name, causality_actor_process_instance_id, action_process_image_name, action_module_path, sideloads
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1574/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1574.001
+    - attack.t1003.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

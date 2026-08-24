@@ -1,0 +1,352 @@
+{
+  "id": "TTP-2026-0107",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T01:35:39+00:00",
+    "updated_at": "2026-07-24T01:35:39+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-behavioral-anomaly",
+      "actor-handala-hack-group",
+      "actor-void-manticore",
+      "iran-mois",
+      "mdm-abuse",
+      "intune-remote-wipe",
+      "identity-weaponized-destruction",
+      "severity-critical",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "identity"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Identity-Weaponized MDM Mass Device Wipe — Compromised Intune Admin RemoteWipe at Tenant Scale (Cortex Identity ABIOC)",
+    "summary": "CortexSim models Handala Hack Group (Void Manticore) destructive-via-Intune tradecraft: a phished Global/Intune admin is modeled broadcasting native RemoteWipe/FactoryReset device actions. No wiper malware drops; the destructive act is an authenticated cloud API call EDR never sees. The auto-tuned ABIOC fires on the deviation from the admin's learned device-action baseline.",
+    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the user, endpoint, and network behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the IDENTITY plane against a destructive cloud-management abuse the endpoint agent is structurally blind to. It models the Handala Hack Group (aka Void Manticore, COBALT MYSTIQUE, Storm-1084/Storm-0842), assessed as a state-directed front for Iran's Ministry of Intelligence and Security (MOIS): the primary vector for recent destructive operations is the exploitation of identity through phishing and administrative access through Microsoft Intune. The reported vector is the exploitation of identity through phishing and administrative access through Microsoft Intune, with the attackers gaining access to corporate networks and deleting servers and workstations to disrupt operations; the bulletin names no device count and no specific device-action command. CortexSim models this destructive-via-Intune vector as a burst of native Intune RemoteWipe/FactoryReset device actions issued by a phished standing-privilege admin — the specific Intune device-action names are the engine's detection-substrate choice, not a sourced mechanism detail. In that modeled instantiation the operator, having phished a highly privileged identity that holds standing Global Administrator / Intune Administrator rights, accesses the cloud-based MDM console and issues built-in remote-wipe / factory-reset device actions across the managed tenant. Because no traditional wiper malware is dropped, EDR and antivirus remain largely blind: the destructive commands are authenticated, authorized, and delivered directly from trusted vendor infrastructure. Cortex has learned that this admin identity's device-management baseline is config-and-read governance — it enrolls devices, pushes compliance policies, and occasionally wipes a single lost/stolen device, but never issues a burst of destructive device actions and, for many admins, has never issued a factory-reset at all. The scenario injects two behavioral deviations from that learned baseline: (a) a burst of RemoteWipe/FactoryReset device actions at a volume that dwarfs the account's learned device-action cadence, and (b) a first-seen destructive device action on a standing-privilege admin whose learned history contains none. A hand-authored BIOC keyed on a specific bad principal or a wiper signature would miss this — every action uses a legitimate Intune device-management API — which is exactly the point: the auto-tuned ABIOC fires on the deviation from the account's learned behavior and anchors it to the causality chain (phished-admin risky sign-in -> MDM console access -> tenant-scale wipe broadcast). Two ABIOCs cover the burst-scale and first-seen deviation shapes; a validation XQL surfaces the wipe burst across the estate and a hunt XQL stitches the preceding risky/impossible-travel sign-in of the same admin; a correlation rule fuses them into a single identity-weaponized mass-device-wipe incident the DC presents as proof that Cortex's behavioral analytics caught a destructive cloud action no endpoint sensor and no static rule was written for.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Handala Hack Group",
+        "aliases": [
+          "Void Manticore",
+          "COBALT MYSTIQUE",
+          "Storm-1084",
+          "Storm-0842"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Iran MOIS-directed identity-weaponized destructive operations abusing Microsoft Intune remote-wipe at tenant scale (2025-2026)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2025-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "name": "Phishing",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1485",
+        "name": "Data Destruction",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Cloud Service: Cloud Service Modification",
+      "User Account: User Account Authentication",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ITDR-011 — Identity-weaponized MDM mass device wipe (compromised Intune admin RemoteWipe/FactoryReset broadcast) for Cortex identity ABIOC validation.",
+    "privilege_required": "cloud-iam-user",
+    "prerequisites": [
+      {
+        "description": "Cortex XSIAM ingesting Entra ID / Intune directory-audit logs into the msft_o365_audit dataset (DeviceManagement device-action events) and Entra ID sign-in logs into msft_azure_ad_signin (sign-in-risk events) so both the device-action audit and sign-in-risk telemetry reach analytics.",
+        "check_command": "id svc-backup"
+      },
+      {
+        "description": "A baseline window has elapsed during which the Intune/Global admin identity performed only config-and-read device governance so Cortex learned the admin device-action profile.",
+        "check_command": "id svc-backup"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE. No device is wiped. Emit SAFE-MODE marker files standing\n# in for a burst of native Intune RemoteWipe/FactoryReset device actions\n# initiated by a compromised standing-privilege admin whose learned Cortex\n# baseline never issues destructive device actions at this scale.\nset -euo pipefail\nWIPE_DIR=\"/tmp/cortexsim-itdr-011/wiped-devices\"\nmkdir -p \"$WIPE_DIR\"\nfor i in $(seq 1 \"${WIPE_COUNT:-30}\"); do\n  echo \"SAFE-MODE RemoteWipe marker device-$i initiated_by=${INTUNE_ADMIN_UPN:-intune-admin@cortexsim-canary.invalid} action=RemoteFactoryReset\" > \"$WIPE_DIR/device-$i.wipe\"\ndone\necho '[CortexSim] SIM-ITDR-011 identity-weaponized mass device-wipe broadcast emitted (SAFE-MODE markers, nothing wiped)'",
+      "input_variables": [
+        {
+          "name": "INTUNE_ADMIN_UPN",
+          "type": "string",
+          "default": "intune-admin@cortexsim-canary.invalid",
+          "description": "The learned Intune/Global admin identity whose device-action baseline the injected RemoteWipe/FactoryReset burst deviates from."
+        },
+        {
+          "name": "WIPE_COUNT",
+          "type": "integer",
+          "default": "30",
+          "description": "Number of SAFE-MODE remote-wipe marker files to emit, standing in for the tenant-scale device-action burst."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "A burst of Intune RemoteWipe/FactoryReset device actions initiated by an admin identity whose learned baseline never issues destructive device actions at this scale.",
+        "expected_value": "category = \"DeviceManagement\" and activity_display_name in (RemoteWipe, RemoteFactoryReset) and wipe_actions >= 25"
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "A preceding risky / impossible-travel sign-in of the same admin identity that precedes the wipe broadcast in the causality chain.",
+        "expected_value": "category = \"SignInLogs\" and risk_state = \"atRisk\" and initiating_user_principal_name = INTUNE_ADMIN_UPN"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-itdr-011; echo '[CortexSim] SIM-ITDR-011 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "ITDR-011 Anomalous Bulk Remote-Wipe Broadcast from Privileged Intune Identity",
+        "description": "An Intune/Global admin identity whose learned Cortex behavioral profile is config-and-read device governance suddenly issues a burst of native RemoteWipe/FactoryReset device actions across the managed estate at a volume that dwarfs its learned device-action cadence. Every action uses a legitimate Intune device-management API and is authenticated, authorized, and delivered from trusted Microsoft infrastructure, so no wiper signature exists to key on; the ABIOC fires on the burst-scale deviation from the account's learned behavior and anchors it to the causality chain (phished-admin risky sign-in -> MDM console access -> tenant-scale wipe broadcast) rather than to any known-bad principal.",
+        "logic": "dataset = msft_o365_audit\n| filter category = \"DeviceManagement\" and activity_display_name in (\"Remote Wipe device action\", \"RemoteWipe\", \"Factory reset device action\", \"RemoteFactoryReset\")\n| filter _time > to_timestamp(current_time() - 3600)\n| comp count() as wipe_actions_now, count_distinct(target_device_id) as devices_targeted, earliest(_time) as first_wipe by initiating_user_principal_name\n| join type=left (dataset = msft_o365_audit\n| filter category = \"DeviceManagement\" and activity_display_name in (\"Remote Wipe device action\", \"RemoteWipe\", \"Factory reset device action\", \"RemoteFactoryReset\")\n| filter _time < to_timestamp(current_time() - 3600)\n| comp count() as learned_wipe_cadence by initiating_user_principal_name) as baseline baseline.initiating_user_principal_name = initiating_user_principal_name\n| alter learned_wipe_cadence = coalesce(learned_wipe_cadence, 0)\n| filter wipe_actions_now >= 25 and wipe_actions_now > learned_wipe_cadence * 5\n| sort desc wipe_actions_now\n| fields initiating_user_principal_name, wipe_actions_now, learned_wipe_cadence, devices_targeted, first_wipe",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1485",
+          "T1078.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned admin device-action baseline (config-and-read governance, at most an occasional single-device wipe) -> phished/compromised standing-privilege admin -> burst of RemoteWipe/FactoryReset device actions across the estate that diverges from the baseline, anchored to the initiating identity and its preceding risky sign-in."
+      },
+      {
+        "name": "ITDR-011 First-Seen Destructive Device Action on a Standing-Privilege Admin",
+        "description": "A standing-privilege Global/Intune admin whose learned device-management history contains no destructive device actions issues a RemoteWipe/FactoryReset for the first time. Because Handala/Void Manticore abuse legitimate MDM commands rather than dropping malware, the first destructive action is itself the signal: the ABIOC fires on the first-seen deviation from the account's learned config-only device baseline, anchored to the standing-privilege identity, catching the destructive cloud action before a burst threshold is even reached.",
+        "logic": "dataset = msft_o365_audit\n| filter category = \"DeviceManagement\" and activity_display_name in (\"Remote Wipe device action\", \"RemoteWipe\", \"Factory reset device action\", \"RemoteFactoryReset\")\n| filter _time > to_timestamp(current_time() - 3600)\n| comp count() as destructive_actions_now, earliest(_time) as first_seen_destructive by initiating_user_principal_name\n| join type=left (dataset = msft_o365_audit\n| filter category = \"DeviceManagement\" and activity_display_name in (\"Remote Wipe device action\", \"RemoteWipe\", \"Factory reset device action\", \"RemoteFactoryReset\")\n| filter _time < to_timestamp(current_time() - 3600)\n| comp count() as prior_destructive_actions by initiating_user_principal_name) as history history.initiating_user_principal_name = initiating_user_principal_name\n| alter prior_destructive_actions = coalesce(prior_destructive_actions, 0)\n| filter destructive_actions_now >= 1 and prior_destructive_actions = 0\n| sort desc destructive_actions_now\n| fields initiating_user_principal_name, destructive_actions_now, prior_destructive_actions, first_seen_destructive",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1485",
+          "T1078.004"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned standing-privilege admin baseline (device enrollment / compliance policy pushes, zero factory-resets) -> first-ever destructive device action issued by that identity, anchored to the standing-privilege account and flagged before the burst threshold is met."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-011 Mass Remote-Wipe Burst Surfaced Across Managed Estate",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 1800)\n| filter category = \"DeviceManagement\" and activity_display_name contains \"Wipe\"\n| comp count() as wipe_actions, count_distinct(target_device_id) as devices_targeted, earliest(_time) as first_wipe by initiating_user_principal_name\n| filter wipe_actions >= 1\n| sort desc devices_targeted\n| fields initiating_user_principal_name, wipe_actions, devices_targeted, first_wipe",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ITDR-011 Phished-Admin Risky Sign-In Precursor to Wipe Broadcast",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 3600)\n| filter category = \"SignInLogs\"\n| filter initiating_user_principal_name in (\"intune-admin@cortexsim-canary.invalid\", \"global-admin@cortexsim-canary.invalid\", \"mdm-admin@cortexsim-canary.invalid\")\n| filter risk_level_during_signin in (\"high\", \"medium\") or risk_state = \"atRisk\"\n| comp count() as risky_signins, values(ip_address) as source_ips, earliest(_time) as first_risky by initiating_user_principal_name\n| filter risky_signins >= 1\n| sort desc risky_signins\n| fields initiating_user_principal_name, risky_signins, source_ips, first_risky",
+        "expected_rows_min": 0,
+        "dataset": "msft_azure_ad_signin"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Identity-Weaponized Mass Device Wipe — ABIOC Causality Stitch",
+        "rule_id": "CR-ITDR-0011",
+        "logic": "ABIOC(ITDR-011 Anomalous Bulk Remote-Wipe Broadcast from Privileged Intune Identity) AND ABIOC(ITDR-011 First-Seen Destructive Device Action on a Standing-Privilege Admin) — fuses the burst-scale and first-seen behavioral deviations on the same tenant and admin identity, correlated with that identity's preceding risky / impossible-travel sign-in, into a single identity-weaponized mass-device-wipe incident anchored to the phished-admin causality chain (phished-admin risky sign-in -> MDM console access -> tenant-scale RemoteWipe/FactoryReset broadcast)."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-identity Intune device-management action cadence and first-seen destructive actions",
+        "validated": true,
+        "note": "Exercised by ABIOC `ITDR-011 Anomalous Bulk Remote-Wipe Broadcast from Privileged Intune Identity` and ABIOC `ITDR-011 First-Seen Destructive Device Action on a Standing-Privilege Admin`."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-ABIOC-ITDR-0011-BULKWIPE",
+          "TBD-XSIAM-ABIOC-ITDR-0011-FIRSTSEEN"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_o365_audit | filter category = \"DeviceManagement\" and activity_display_name contains \"Wipe\" | comp count() as wipe_actions, count_distinct(target_device_id) as devices_targeted by initiating_user_principal_name | filter wipe_actions >= 25 | sort desc wipe_actions"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "itdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-ITDR-0011-DESTRUCTIVE-MDM-ACTION"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_azure_ad_signin | filter category = \"SignInLogs\" | filter initiating_user_principal_name = \"intune-admin@cortexsim-canary.invalid\" and risk_state = \"atRisk\""
+      },
+      {
+        "module": "cortex-xsoar",
+        "submodule": "playbook",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "TBD-XSOAR-ITDR-0011-MASSWIPE-CONTAIN"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Playbook XSOAR-PB-IdentityWeaponizedMassDeviceWipeContainment-v1 triggers on CR-ITDR-0011: disable the compromised admin identity, revoke its sessions/tokens, freeze pending Intune device actions, and open a P1 destruction incident with the wiped-device inventory attached."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-ITDR-011",
+        "name": "Identity-Weaponized MDM Mass Device Wipe Detection via Cortex ABIOC",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn an Intune/Global admin's config-and-read device-management baseline and detect a tenant-scale RemoteWipe/FactoryReset broadcast — and the first-ever destructive device action — issued by that compromised identity, anchored to its phished-admin causality chain, where no endpoint sensor sees the destruction and no static rule was written for the legitimate Intune device-management APIs involved. A correlation rule stitches the deviations into one incident and an XSOAR playbook contains the identity.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-ITDR-011A",
+            "objective": "Cortex learns the admin device-action baseline and an injected tenant-scale RemoteWipe/FactoryReset burst fires the bulk-wipe ABIOC and surfaces the burst in the estate.",
+            "preconditions": [
+              "XSIAM ingesting Entra ID + Intune device-management audit logs into msft_azure_ad_signin.",
+              "Baseline window elapsed with the admin identity performing only config-and-read device governance."
+            ],
+            "steps": [
+              "Let the admin device-action baseline window elapse.",
+              "Broadcast a burst of RemoteWipe/FactoryReset device actions from the compromised admin identity.",
+              "Observe the bulk-wipe ABIOC fire and the estate-wide burst validation query return the wipe count and devices targeted."
+            ],
+            "success_criteria": [
+              "ABIOC `ITDR-011 Anomalous Bulk Remote-Wipe Broadcast from Privileged Intune Identity` fires.",
+              "Validation XQL `ITDR-011 Mass Remote-Wipe Burst Surfaced Across Managed Estate` returns >= 1 row with wipe_actions and devices_targeted populated."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-ITDR-011B",
+            "objective": "The first-seen ABIOC fires on the destructive device action and the correlation rule stitches the deviations, correlated with the preceding risky sign-in, into one incident an XSOAR playbook contains.",
+            "preconditions": [
+              "The admin identity's learned history contains no prior destructive device actions.",
+              "A preceding risky / impossible-travel sign-in of the same admin identity is present in msft_azure_ad_signin."
+            ],
+            "steps": [
+              "Issue the first-ever RemoteWipe/FactoryReset from the standing-privilege admin identity.",
+              "Observe the first-seen ABIOC fire and the risky-sign-in hunt surface the precursor.",
+              "Observe CR-ITDR-0011 raise one stitched identity-weaponized mass-device-wipe incident and the XSOAR containment playbook engage."
+            ],
+            "success_criteria": [
+              "ABIOC `ITDR-011 First-Seen Destructive Device Action on a Standing-Privilege Admin` fires.",
+              "Correlation `CR-ITDR-0011` raises one stitched identity-weaponized mass-device-wipe incident.",
+              "XSOAR playbook `XSOAR-PB-IdentityWeaponizedMassDeviceWipeContainment-v1` disables the compromised admin identity and revokes its sessions."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Eliminate standing privileges: remove permanent Global Administrator / Intune Administrator rights and require PIM just-in-time elevation with approval and phishing-resistant MFA for any privileged device-management access path.",
+      "Harden Entra ID administrator accounts and enforce session/token security (short-lived tokens, sign-in-risk-based conditional access, continuous access evaluation) so a phished admin cannot silently reach the MDM console.",
+      "Gate destructive Intune device actions (RemoteWipe / FactoryReset) behind a second-approver / break-glass workflow and rate-limit bulk device actions; treat cloud-based management platforms as critical infrastructure and maintain offline, air-gapped, immutable backups."
+    ],
+    "detection_engineering": [
+      "Let Cortex auto-tune ABIOCs against the learned per-identity Intune device-action cadence and first-seen destructive-action baseline rather than hand-authoring static rules for individual admins or device ids — the destructive command is legitimate, so the deviation is the signal.",
+      "Alert on any privileged admin issuing a burst of RemoteWipe/FactoryReset device actions that exceeds its learned device-action cadence.",
+      "Alert on the first-ever destructive device action from a standing-privilege admin, and correlate it with the identity's preceding risky / impossible-travel sign-in to anchor the phished-admin causality chain."
+    ],
+    "response_playbook": "XSOAR-PB-IdentityWeaponizedMassDeviceWipeContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 Threat Bulletin (March 2026) — Handala Hack Group / Void Manticore identity-weaponized destructive operations via Microsoft Intune",
+      "url": "https://unit42.paloaltonetworks.com/threat-bulletin/march-2026/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1485 — Data Destruction",
+      "url": "https://attack.mitre.org/techniques/T1485/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
+      "url": "https://attack.mitre.org/techniques/T1078/004/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

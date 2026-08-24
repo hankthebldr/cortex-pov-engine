@@ -1,0 +1,21 @@
+{
+  "mitre_techniques": [
+    "T1189",
+    "T1204.001",
+    "T1059.004",
+    "T1583.001",
+    "T1656",
+    "T1657",
+    "T1552"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(Browsing Agent Sensitive-Origin Action After Hidden-DOM Ingest Outside Task Manifest) AND (ABIOC(Browsing Agent Process Spawns Shell After DOM-Hidden Ingest) OR XQL(SIM-BROWSER-006 IDPI Domain and Payment Egress Hunt)) \u2014 fuses the off-manifest sensitive-origin action that follows a hidden-DOM ingest, the browser-engine-parents-shell lineage, and the IDPI/payment egress on the same agent_hostname and browser_session_id within a 5-minute window into a single web-based indirect-prompt-injection incident anchored to the page-load -> hidden-ingest -> off-manifest-navigation causality chain.",
+      "name": "Web-Based Indirect Prompt Injection Incident \u2014 Browsing-Agent Causality Stitch",
+      "rule_id": "CR-BROWSER-0006",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0114"
+}

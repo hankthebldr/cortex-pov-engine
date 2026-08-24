@@ -6,7 +6,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "XQL(EMAIL-003 BEC Executive Impersonation Display-Name Spoof) FOLLOWED_BY msft_o365 mailbox-rule change OR xdr_data endpoint activity for the same recipient within 4h",
+      "logic": "XQL(EMAIL-003 BEC Executive Impersonation Display-Name Spoof) FOLLOWED_BY msft_o365 mailbox-rule change OR xdr_data endpoint activity (causality_actor_effective_username) for the same recipient GROUPED BY user_principal WITHIN 4h \u2014 a shared_entity stitch on the recipient user_principal that fuses the email impostor signal and the identity/endpoint follow-on into ONE BEC incident.",
       "name": "BEC Executive Impersonation \u2014 Email to Identity Stitch",
       "rule_id": "CR-EMAIL-0003",
       "severity": "high"

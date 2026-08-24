@@ -45,7 +45,7 @@
   "identity": {
     "name": "Help-Desk MFA Reset via Voice Impersonation (Muddled Libra Pattern)",
     "summary": "An attacker impersonates a legitimate employee on a voice call to the IT help desk, citing a 'lost phone' or 'failed MFA enrollment,' and pressures the agent into resetting the MFA method and/or password. The attacker then enrolls their own device, completing account takeover without ever touching the endpoint.",
-    "description": "This is the signature initial-access pattern attributed to Muddled Libra / Scattered Spider / UNC3944 throughout 2024\u20132026. The attacker pre-stages a target dossier (LinkedIn, breach data, third-party HR leaks), calls the service desk with convincing context (employee ID, manager name, recent project), and exploits agent workflow gaps \u2014 typically the lack of out-of-band employee verification. Once MFA is reset, the attacker authenticates to the IdP (Okta, Entra ID), pivots into VPN/SaaS, and proceeds to lateral movement and data exfiltration within hours. Per the 2025 Unit 42 Global IR Report, 65% of initial access in 2024\u20132025 was identity-driven; ~50% of Muddled Libra cases ended in DragonForce ransomware.",
+    "description": "This is the signature initial-access pattern attributed to Muddled Libra / Scattered Spider / UNC3944 throughout 2024–2026. The attacker pre-stages a target dossier (LinkedIn, breach data, third-party HR leaks), calls the service desk with convincing context (employee ID, manager name, recent project), and exploits agent workflow gaps — typically the lack of out-of-band employee verification. Once MFA is reset, the attacker authenticates to the IdP (Okta, Entra ID), pivots into VPN/SaaS, and proceeds to lateral movement and data exfiltration within hours. Per the 2025 Unit 42 Global IR Report, 65% of initial access in 2024–2025 was identity-driven; ~50% of Muddled Libra cases ended in DragonForce ransomware.",
     "severity": "critical",
     "confidence": "high"
   },
@@ -149,7 +149,7 @@
     ],
     "payload": {
       "interpreter": "api-call",
-      "code": "# Simulation: an offline tabletop + scripted API calls reproduce the post-vishing state.\n# Step 1 \u2014 Help-desk agent (lab role) resets the victim's MFA enrollment via Okta admin API.\ncurl -sS -X POST \"https://${OKTA_TENANT}.okta.com/api/v1/users/${VICTIM_ID}/lifecycle/reset_factors\" \\\n  -H \"Authorization: SSWS ${OKTA_HELPDESK_TOKEN}\" \\\n  -H \"Accept: application/json\"\n\n# Step 2 \u2014 Attacker enrolls their own factor (TOTP).\ncurl -sS -X POST \"https://${OKTA_TENANT}.okta.com/api/v1/users/${VICTIM_ID}/factors\" \\\n  -H \"Authorization: SSWS ${OKTA_HELPDESK_TOKEN}\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"factorType\":\"token:software:totp\",\"provider\":\"OKTA\"}'\n\n# Step 3 \u2014 Attacker authenticates from a new geo + new device fingerprint.\ncurl -sS -X POST \"https://${OKTA_TENANT}.okta.com/api/v1/authn\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\":\"${VICTIM_USERNAME}\",\"password\":\"${RESET_PASSWORD}\"}'",
+      "code": "# Simulation: an offline tabletop + scripted API calls reproduce the post-vishing state.\n# Step 1 — Help-desk agent (lab role) resets the victim's MFA enrollment via Okta admin API.\ncurl -sS -X POST \"https://${OKTA_TENANT}.okta.com/api/v1/users/${VICTIM_ID}/lifecycle/reset_factors\" \\\n  -H \"Authorization: SSWS ${OKTA_HELPDESK_TOKEN}\" \\\n  -H \"Accept: application/json\"\n\n# Step 2 — Attacker enrolls their own factor (TOTP).\ncurl -sS -X POST \"https://${OKTA_TENANT}.okta.com/api/v1/users/${VICTIM_ID}/factors\" \\\n  -H \"Authorization: SSWS ${OKTA_HELPDESK_TOKEN}\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"factorType\":\"token:software:totp\",\"provider\":\"OKTA\"}'\n\n# Step 3 — Attacker authenticates from a new geo + new device fingerprint.\ncurl -sS -X POST \"https://${OKTA_TENANT}.okta.com/api/v1/authn\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"username\":\"${VICTIM_USERNAME}\",\"password\":\"${RESET_PASSWORD}\"}'",
       "input_variables": [
         {
           "name": "OKTA_TENANT",
@@ -231,7 +231,7 @@
     "xql_queries": [
       {
         "purpose": "validation",
-        "name": "Confirm reset \u2192 enroll \u2192 sign-in chain fired in last 30 min",
+        "name": "Confirm reset → enroll → sign-in chain fired in last 30 min",
         "query": "dataset = saas_okta_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type in (\"user.account.reset_factors\", \"user.mfa.factor.activate\", \"user.session.start\")\n| fields _time, event_type, actor.alternateId, target[0].alternateId, client.userAgent, client.geographicalContext.country\n| sort _time desc",
         "expected_rows_min": 3,
         "dataset": "saas_okta_raw"
@@ -245,14 +245,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Identity Threat \u2014 Help-Desk-Assisted Account Takeover",
+        "name": "Identity Threat — Help-Desk-Assisted Account Takeover",
         "rule_id": "CR-IDENT-0001",
         "logic": "BIOC(Okta MFA Reset Followed by Factor Enrollment From New Device) AND BIOC(Anomalous Sign-In Risk High within 1h)"
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Identity Threat Module \u2014 anomalous sign-in",
-      "Cortex XSIAM Analytics \u2014 impossible travel"
+      "Cortex XSIAM Identity Threat Module — anomalous sign-in",
+      "Cortex XSIAM Analytics — impossible travel"
     ]
   },
   "panw_mapping": {
@@ -283,7 +283,7 @@
           "XSOAR-PB-IdentityTakeoverResponse-v2"
         ],
         "license_required": "base",
-        "evidence_query": "Playbook: Identity Takeover Response \u2014 disable user, kill sessions, force password reset, notify SOC."
+        "evidence_query": "Playbook: Identity Takeover Response — disable user, kill sessions, force password reset, notify SOC."
       },
       {
         "module": "prisma-access",
@@ -294,15 +294,15 @@
         "license_required": "advanced"
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-IDENT-001",
+        "threat_scenario_id": "TS-IDENT-001",
         "name": "Identity-Driven Initial Access Defense",
         "description": "Detect and respond to help-desk social-engineering attempts that result in MFA bypass and account takeover.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-IDENT-001A",
-            "objective": "XSIAM Identity Threat Module raises a high-severity incident within 5 minutes of the reset\u2192enroll\u2192sign-in chain.",
+            "threat_step_id": "TS-IDENT-001A",
+            "objective": "XSIAM Identity Threat Module raises a high-severity incident within 5 minutes of the reset→enroll→sign-in chain.",
             "preconditions": [
               "Okta cloud connector configured and ingesting events.",
               "Identity Threat Module enabled with default policy."
@@ -314,15 +314,15 @@
               "Wait up to 5 minutes; observe XSIAM Incidents view."
             ],
             "success_criteria": [
-              "Incident created with name matching `Identity Threat \u2014 Help-Desk-Assisted Account Takeover`.",
+              "Incident created with name matching `Identity Threat — Help-Desk-Assisted Account Takeover`.",
               "Incident severity = High or Critical.",
               "Incident timeline shows all three Okta events grouped under one alert chain.",
-              "XQL validation query returns \u22653 rows."
+              "XQL validation query returns ≥3 rows."
             ],
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-IDENT-001B",
+            "threat_step_id": "TS-IDENT-001B",
             "objective": "XSOAR automatically initiates Identity Takeover Response playbook.",
             "success_criteria": [
               "Playbook `XSOAR-PB-IdentityTakeoverResponse-v2` is invoked.",
@@ -332,7 +332,7 @@
             "expected_score_weight": 0.3
           },
           {
-            "test_case_id": "TC-IDENT-001C",
+            "threat_step_id": "TS-IDENT-001C",
             "objective": "Prisma Access SAML anomaly signal correlates with XSIAM incident.",
             "success_criteria": [
               "Prisma Access logs show signal `SAML-Auth-AnomalousDeviceGeo` for the same principal within the incident window.",
@@ -347,12 +347,12 @@
   "remediation_guidance": {
     "preventive_controls": [
       "Out-of-band identity verification at help desk (manager callback, video confirmation, or hardware-bound challenge).",
-      "FIDO2 phishing-resistant MFA \u2014 disallow SMS/voice/TOTP for privileged roles.",
+      "FIDO2 phishing-resistant MFA — disallow SMS/voice/TOTP for privileged roles.",
       "Conditional access requiring compliant managed device for sensitive apps.",
       "Help-desk role hardened: no MFA reset without ticket + secondary approver."
     ],
     "detection_engineering": [
-      "Monitor reset\u2192enroll\u2192sign-in chains with new device fingerprint as a single correlated event.",
+      "Monitor reset→enroll→sign-in chains with new device fingerprint as a single correlated event.",
       "Baseline help-desk admin behavior; alert on cross-region or out-of-span resets.",
       "Correlate Okta events with Prisma Access SAML telemetry."
     ],
@@ -380,7 +380,7 @@
       "publisher_id": "SRC-UNIT42"
     },
     {
-      "title": "MITRE ATT&CK T1556.006 \u2014 Multi-Factor Authentication",
+      "title": "MITRE ATT&CK T1556.006 — Multi-Factor Authentication",
       "url": "https://attack.mitre.org/techniques/T1556/006/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -391,7 +391,7 @@
       "entry_version": "1.0.0",
       "date": "2026-05-13",
       "author": "Henry Reed",
-      "change": "Initial entry \u2014 schema validation example."
+      "change": "Initial entry — schema validation example."
     }
   ]
 }

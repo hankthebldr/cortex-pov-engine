@@ -313,14 +313,14 @@
         "evidence_query": "Playbook: snapshot the discovered external footprint, flag any net-new subdomain/cert, and notify the identity team of harvested-email exposure for targeted-phishing readiness."
       }
     ],
-    "use_cases": [
+    "threat_scenarios": [
       {
-        "use_case_id": "UC-ASM-072",
+        "threat_scenario_id": "TS-ASM-072",
         "name": "Pre-Intrusion Reconnaissance Detection — Open-Source Victim-Info Gathering",
         "description": "Validate that Cortex surfaces passive OSINT reconnaissance (subdomain enumeration, cert harvesting, identity harvesting) against the organisation and correlates it with the external footprint Cortex ASM/Xpanse independently discovers.",
-        "test_cases": [
+        "threat_steps": [
           {
-            "test_case_id": "TC-ASM-072A",
+            "threat_step_id": "TS-ASM-072A",
             "objective": "The OSINT harvesting egress fires its NGFW BIOCs and is confirmed in telemetry.",
             "preconditions": [
               "Target organisation domain set; outbound DNS + HTTPS egress forwarded to XSIAM.",
@@ -339,7 +339,7 @@
             "expected_score_weight": 0.5
           },
           {
-            "test_case_id": "TC-ASM-072B",
+            "threat_step_id": "TS-ASM-072B",
             "objective": "The recon is correlated with the independently-discovered external footprint into one incident.",
             "steps": [
               "Inspect Cortex ASM/Xpanse for the subdomain/cert/identity discovery delta.",

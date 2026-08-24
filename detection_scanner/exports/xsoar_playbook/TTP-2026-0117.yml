@@ -1,0 +1,27 @@
+id: cortexsim-ttp-2026-0117-response
+version: 1
+name: "CortexSim — AWS IAM Roles Anywhere Trust-Anchor Abuse for Certificate-Backed Persistence (T1098.001 / T1550.001 / T1078.004)"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0117.
+  Triggered by Cortex correlation rules: CR-CDR-0018, CR-CDR-0018-PIVOT.
+  Reference playbook in panw_mapping: XSOAR-PB-RolesAnywhereTrustAnchorAbuse-v1
+triggers:
+  - correlation_rule_id: CR-CDR-0018
+  - correlation_rule_id: CR-CDR-0018-PIVOT
+  - playbook_rule_id: TBD-XSOAR-001
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0117
+  cortexsim_version: 1.0

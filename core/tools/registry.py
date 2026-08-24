@@ -13,9 +13,26 @@ plane, description[, port, health_check]).
 STATIC_TOOL_REGISTRY: dict = {
     "signalbench": {
         "source_path": "sources/signalbench",
-        "build_cmd": "cargo build --release",
-        "binary": "sources/signalbench/target/release/signalbench",
-        "run_template": "{binary} --technique {mitre_id} --count {count} --output json",
+        # TWO PHASES, and phase 1 is not optional: src/techniques/software.rs
+        # does include_bytes!("../../embedded_binaries/pacemaker_helper") and
+        # embedded_binaries/ is NOT in the upstream git tree — it is produced by
+        # the separate helpers/pacemaker crate. The old bare "cargo build
+        # --release" failed rc=101 for every DC who ever ran it, naming a file
+        # nobody can find rather than the crate that makes it. Prefer
+        # `make rust-dist`, which does this in a musl container and needs no
+        # toolchain on the target at all.
+        "build_cmd": (
+            "cd helpers/pacemaker && cargo build --release && cd ../.. && "
+            "mkdir -p embedded_binaries && "
+            "cp helpers/pacemaker/target/release/pacemaker_helper embedded_binaries/ && "
+            "cargo build --release"
+        ),
+        "binary": "rust-dist/cortexsim-tool-signalbench-linux-amd64",
+        # Subcommand CLI: `signalbench run T1082 T1016`. The previous template
+        # passed --technique/--count/--output, NONE of which exist — clap
+        # rejected it outright with "unexpected argument '--technique' found".
+        # Verified by executing the baked binary.
+        "run_template": "{binary} run {mitre_id}",
         "type": "binary",
         "plane": ["edr"],
         "description": "MITRE-mapped endpoint telemetry generator",
@@ -43,8 +60,12 @@ STATIC_TOOL_REGISTRY: dict = {
     "ackbarx": {
         "source_path": "sources/ackbarx",
         "build_cmd": "cargo build --release",
-        "binary": "sources/ackbarx/target/release/ackbarx",
-        "run_template": "{binary} --listen-port 162 --forward-url {xsiam_endpoint}",
+        "binary": "rust-dist/cortexsim-tool-ackbarx-linux-amd64",
+        # ackbarx is CONFIG-FILE driven. It has no --listen-port and no
+        # --forward-url; the previous template died with "unexpected argument
+        # '--listen-port' found". Generate a config with --generate-config (or
+        # --generate-simple-config) and pass it with -c. Verified by execution.
+        "run_template": "{binary} --config {config_path}",
         "type": "service",
         "plane": ["ndr"],
         "description": "SNMP trap forwarder to XSIAM HTTP endpoints",
@@ -52,7 +73,7 @@ STATIC_TOOL_REGISTRY: dict = {
     "xdrtop": {
         "source_path": "sources/xdrtop",
         "build_cmd": "cargo build --release",
-        "binary": "sources/xdrtop/target/release/xdrtop",
+        "binary": "rust-dist/cortexsim-tool-xdrtop-linux-amd64",
         "run_template": "{binary}",
         "type": "binary",
         "plane": ["all"],

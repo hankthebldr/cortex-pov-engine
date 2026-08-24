@@ -11,7 +11,7 @@ dataset = xdr_data
 | filter lower(target_process_image_name) = "lsass.exe"
 | filter actor_effective_username not in ("NT AUTHORITY\\SYSTEM", "NT AUTHORITY\\LOCAL SERVICE")
 | filter requested_access_mask contains "0x10"
-| fields _time, src_host, actor_process_image_name, actor_effective_username, requested_access_mask
+| fields _time, src_host, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, causality_id, actor_effective_username, requested_access_mask
 
 ## BIOC — ITDR-007 Abnormal DACL Write To AdminSDHolder Or Privileged Group
 # severity: high
@@ -44,7 +44,7 @@ dataset = xdr_data
 | filter action_type = ENUM.PROCESS_START
 | filter actor_effective_username = "NT AUTHORITY\\SYSTEM"
 | filter lower(causality_actor_process_image_name) in ("w3wp.exe", "sqlservr.exe", "printspoofer64.exe", "printspoofer.exe")
-| fields _time, src_host, causality_actor_process_image_name, action_process_image_name, actor_effective_username
+| fields _time, src_host, causality_actor_process_image_name, causality_actor_process_instance_id, causality_id, action_process_image_name, actor_process_instance_id, actor_effective_username
 
 ## BIOC — ITDR-007 Access Token Theft And Impersonation Via Token Duplication
 # severity: high
@@ -55,7 +55,7 @@ dataset = xdr_data
 | filter action_type = ENUM.PROCESS_TOKEN
 | filter lower(target_process_image_name) in ("winlogon.exe", "lsass.exe", "services.exe")
 | filter actor_effective_username not in ("NT AUTHORITY\\SYSTEM")
-| fields _time, src_host, actor_process_image_name, actor_effective_username, target_process_image_name
+| fields _time, src_host, actor_process_image_name, actor_process_instance_id, causality_actor_process_image_name, causality_id, actor_effective_username, target_process_image_name
 
 ## VALIDATION — ITDR-007 Validate LSASS Credential Access By Non-System Process
 # purpose: validation

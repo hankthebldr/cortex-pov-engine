@@ -1,0 +1,27 @@
+id: cortexsim-ttp-2026-0170-response
+version: 1
+name: "CortexSim — Autonomous Action Audit-Trail Reconstruction Across Three Incident Classes — Identity Disable, Endpoint Isolate, Cloud Token Revoke"
+description: |
+  Auto-generated XSOAR playbook stub from detection_scanner TTP TTP-2026-0170.
+  Triggered by Cortex correlation rules: CR-APB-0001.
+  Reference playbook in panw_mapping: XSOAR-PB-GovernedAutonomyAuditReconstruction-v1
+triggers:
+  - correlation_rule_id: CR-APB-0001
+  - playbook_rule_id: TBD-AGENTIX-APB001-AUDIT
+  - playbook_rule_id: CR-APB-0001
+tasks:
+  isolate_host:
+    integration: CortexXDR
+    command: xdr-endpoint-isolate
+    when: alert.severity in ["High", "Critical"]
+  open_investigation:
+    integration: ServiceNow
+    command: servicenow-create-record
+    record_type: incident
+  notify_soc:
+    integration: Slack
+    command: slack-notify
+    channel: "#cortex-soc"
+output:
+  ttp_ref: TTP-2026-0170
+  cortexsim_version: 1.0

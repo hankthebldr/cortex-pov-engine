@@ -1,0 +1,63 @@
+title: "Scattered Spider Pre-Attack OSINT + Help-Desk Profiling Stitched to External Footprint \u2014 Vishing-Precursor Recon Correlation \u2014 Cortex ASM Discovery of Externally-Exposed Federated-Identity and App/CSP Surface"
+id: ttp-2026-0151-bioc-01
+status: experimental
+description: |
+  Cortex ASM/Xpanse product capability: discovery of the target org's OWN externally-exposed SaaS applications, cloud-service-provider tenants, and federated-identity login portal — the public attack surface that supplies a vishing operator the pretext material (which IdP, which help desk). This is a defensive exposure-management finding over the org's public footprint, NOT attacker-attributed enumeration: ASM independently surfaces what is externally reachable. An org exposing three or more distinct federated-identity/app services publicly is the exposure signal that feeds the identity-takeover pretext. Every discovered service is a legitimate public endpoint, so this is a behavioural/exposure BIOC, not an IOC match.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = asm_findings
+    | filter finding_category in ("federated_idp_portal", "saas_app_discovery", "csp_tenant_discovery")
+    | filter exposure_state = "externally_exposed"
+    | comp count_distinct(discovered_service) as exposed_services by target_org
+    | filter exposed_services >= 3
+    | sort desc exposed_services
+    | fields target_org, exposed_services
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1589/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1589
+    - attack.t1593.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Scattered Spider Pre-Attack OSINT + Help-Desk Profiling Stitched to External Footprint \u2014 Vishing-Precursor Recon Correlation \u2014 Anomalous Inbound Account-Recovery Cadence on Externally-Exposed Personnel"
+id: ttp-2026-0151-abioc-02
+status: experimental
+description: |
+  An auto-tuned behavioural deviation: help-desk-mediated account-recovery / MFA-reset events cluster against identities that Cortex ASM flagged as externally exposed, at a cadence that exceeds the learned per-identity help-desk-contact baseline. Muddled Libra makes repeated low-pressure calls, each time impersonating a locked-out employee, so the tell is a burst of recovery events on exposed privileged personnel — not any single reset, which is routine. The ABIOC anchors the deviation to the identity's learned recovery baseline plus the ASM exposure flag rather than to a known-bad value.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = okta_sso
+    | filter eventtype in ("user.account.unlock", "user.mfa.factor.reset", "help_desk.account_recovery")
+    | filter target_user_exposure_flag = true
+    | comp count() as recovery_events by client_org, target_user, bin(_time, 30m)
+    | filter recovery_events >= 2
+    | sort desc recovery_events
+    | fields client_org, target_user, recovery_events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1598/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1598
+    - attack.t1589
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

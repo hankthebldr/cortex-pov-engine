@@ -8,7 +8,7 @@
   "rules": [
     {
       "description": null,
-      "logic": "BIOC(CDR-005 WildFire Known Bad ELF Download In Container) OR BIOC(CDR-005 WildFire ELF Execution In Container) OR BIOC(CDR-005 Downloaded Binary Executed By Service Account In Container) OR BIOC(CDR-005 Periodic Outbound HTTP Beacon From Container) OR BIOC(CDR-005 Post Execution C2 Network Activity In Container) OR BIOC(CDR-005 Mass File Modification Ransomware Pattern In Container) OR BIOC(CDR-005 Bulk Enc Extension Rename After Execution In Container)",
+      "logic": "BIOC(CDR-005 WildFire Known Bad ELF Download In Container) OR BIOC(CDR-005 WildFire ELF Execution In Container) OR BIOC(CDR-005 Downloaded Binary Executed By Service Account In Container) OR BIOC(CDR-005 Periodic Outbound HTTP Beacon From Container) OR BIOC(CDR-005 Post Execution C2 Network Activity In Container) OR BIOC(CDR-005 Mass File Modification Ransomware Pattern In Container) OR BIOC(CDR-005 Bulk Enc Extension Rename After Execution In Container) GROUPED BY container_id, causality_id WITHIN 300s",
       "name": "WildFire Malware Kill Chain \u2014 Download Execute Beacon Encrypt",
       "rule_id": "CR-CDR-0005",
       "severity": "high"

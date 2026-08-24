@@ -28,16 +28,38 @@
                                  DC downloads + runs offline
 ```
 
-- **No Cortex API connection.** SimCore generates signals *into* the customer
-  environment; it never reads alerts out. Detection confirmation is a manual DC
-  action via `PUT /api/results/{id}/validate`.
+- **The Cortex connection is OPT-IN, READ-ONLY, and no longer hypothetical**
+  *(corrected 2026-08-06 — this bullet previously read "No Cortex API
+  connection … it never reads alerts out", which has been false since the
+  measurement loop landed and directly contradicted `CLAUDE.md`)*. SimCore's
+  primary job is still to generate signal **into** the customer environment, and
+  it **never writes** to Cortex (`CORTEXSIM_XSIAM_ALLOW_WRITE` /
+  `_ALLOW_DESTRUCTIVE` default off). But when a credential is configured it
+  **does** read out: `core/connectors/` pulls observed alerts to auto-validate
+  seeded `Result` rows (evidence-backed MTTD), and `core/integrations/xsiam/`
+  runs read-only XQL for Tier-2 verification and assertion probes.
+  `PUT /api/results/{id}/validate` remains the manual, offline path — it is the
+  fallback, not the only mechanism. See §1.15.
 - **Transport is plain JSON over HTTP, plus Server-Sent Events for live updates.**
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **All 11 routers** are mounted under `/api` in `core/main.py` (the 11th is the
-  new `events` router). Plus one app-level route: `GET /api/health`, and a static
-  file mount at `/`. **65 HTTP routes total** (64 `@router` routes + `/api/health`).
+- **133 HTTP routes total** (counted 2026-08-06 against the built image, see
+  below). Routers under `/api`, plus the app-level `GET /api/health` and a static
+  file mount at `/`. Per-prefix: `runs` 17 · `agents` 14 · `eal` 13 ·
+  `credentials` 10 · `uctc` 9 · `tools` 8 · `ttps` 8 · `xsiam` 8 · `shelf` 7 ·
+  `k8s` 6 · `assertions` 6 · `scenarios` 5 · `infra` 4 · `results` 4 · `pov` 3 ·
+  `connectors` 2 · `mitre` 2 · `run` 1 · `events` 1 · `health` 1, plus 5
+  FastAPI-owned docs/openapi routes.
+
+> **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
+> here was two content passes stale. The command is the ground truth:
+>
+> ```bash
+> docker run --rm -v "$PWD:/app" -w /app -e CORTEXSIM_BASE_DIR=/app cortexsim:dev \
+>   python -c "import sys;sys.path.insert(0,'core');from main import app;\
+> print(len([r for r in app.routes if getattr(r,'methods',None)]))"
+> ```
 
 ---
 
@@ -65,15 +87,34 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
-| GET | `/api/scenarios` | List scenarios; optional filters | query: `plane`, `uc_ref`, `ttp_ref` | `{"scenarios":[<scenario.to_dict()>],"total":N}` |
-| GET | `/api/scenarios/{scenario_id}` | Single scenario detail | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
+| GET | `/api/scenarios` | List scenarios (**summary projection**); optional filters | query: `plane`, `uc_ref`, `ttp_ref`, `entitlement` | `{"scenarios":[<summary>],"total":N,"projection":"summary"}` |
+| GET | `/api/scenarios/{scenario_id}` | Single scenario detail (**full document**) | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
 | GET | `/api/scenarios/{scenario_id}/infra-hints` | Resolve `external_tools[].adapter_ref` → IaC module suggestions | — | `{scenario_id, plane, adapter_refs[], resolved_adapters[], unresolved_refs[], suggested_modules[]}` |
-| GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=bash\|k8s` (default `bash`) | `PlainTextResponse` shell/yaml w/ `Content-Disposition` attachment; 400 `INVALID_FORMAT` |
+| GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=bash\|k8s\|powershell\|auto` (default `auto`) | `PlainTextResponse` shell/`.ps1`/yaml w/ `Content-Disposition`; 400 `INVALID_FORMAT`; 409 `BUNDLE_TARGET_UNSATISFIABLE` |
 
 - `plane` is upper-cased server-side; `uc_ref` exact-match; `ttp_ref` filtered in
-  Python (full scan of `steps[].expected_detections[].ttp_ref`, justified by small
-  catalog ~50-69 scenarios).
-- `download` calls `push_generator.generate_bash` / `generate_k8s` directly — see §4.
+  Python against the ORM rows (so the list projection does not affect it).
+- **List projection (contract change, 2026-08-02).** The list response is a
+  SUMMARY row, not a detail document — the full corpus serialised to 1293 KB and
+  ~66 % of that was step `command` text and per-detection `description` prose no
+  list view renders. Measured **1293.2 KB → 431.2 KB (-66.7 %)**. Each step keeps
+  only `{id, name, mitre_technique, expected_detections:[{type, plane}]}` — the
+  fields the console actually reads off a list row (technique/detection-type/plane
+  facets in `FilterPalette`, `useScenarioFilter`, `ScenarioGrid`,
+  `StackCoverageView`, and `steps.length` in `AppConsole`). Four top-level fields
+  are dropped whole: `cleanup`, `external_tools`, `success_criteria`, and the
+  unprojected `steps` payload. The envelope carries `projection: "summary"` so a
+  consumer can tell a summary row from a detail document without guessing at
+  missing keys. **`GET /api/scenarios/{id}` is unchanged** and remains the source
+  for commands, cleanup, identity, causality, `platform_variants`,
+  `detection_id`/`ttp_ref` and `verification_xql`.
+- `download` dispatches through `push_generator.resolve_target` — see §4. `auto`
+  prefers POSIX for back-compat and falls back to `windows`. **409, not 400**, is
+  returned when the request is well-formed but the scenario's content cannot
+  satisfy the target; the `detail` names every offending step, its reason code
+  and the fix. `k8s` is gated on the POSIX resolution (its Job runs `/bin/bash -c`
+  in `ubuntu:22.04`). `X-CortexSim-Bundle-Target` is always set;
+  `X-CortexSim-Bundle-Alternates` appears when both targets are emittable.
 
 ### 1.3 Runs (`core/api/runs.py`, **no router prefix** — routes are absolute)
 
@@ -92,7 +133,8 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
 | POST | `/api/runs/{run_id}/output` | Agent streams output (append) | `OutputRequest`: `{output}` | `{"status":"ok","run_id"}`; 404 |
-| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary}` | `{"status":"complete"\|"failed","run_id"}`; 404 |
+| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary}` | `{"status":"complete"\|"failed","run_id","tc_verdict"}`; 404 |
+| POST | `/api/runs/{run_id}/verify` | **Tier-2** verification against a registered XSIAM tenant (outbound XQL) | query: `force=0\|1` | `{run_id, tc_verdict, reverified, tenant, queries_issued, reason?}`; 200 + `pending` + `reason:"no_tenant_integration"` when no credential; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/abort` | Operator-initiated abort | — | `{"status":"aborted"\|<terminal>,"run_id","was_terminal"}`; 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
 | GET | `/api/runs/{run_id}/events` | SSE stream scoped to one run (+ global) | — | `text/event-stream` |
@@ -157,9 +199,18 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
-| GET | `/api/agents/install` | Generate ready-to-run installer script | query: `os=linux\|windows`, `id`, `server?`, `interval` | `PlainTextResponse` bash (`.sh`) or PowerShell (`.ps1`); 400 `BAD_OS` |
+| GET | `/api/agents/install` | Generate ready-to-run installer script | query: `os=linux\|macos\|darwin\|windows`, `token?`, `id`, `server?`, `interval`, `mode=service\|foreground`, `uninstall=0\|1` | `PlainTextResponse` bash (`.sh`) or PowerShell (`.ps1`); 400 `BAD_OS` |
+| GET | `/api/agents/binaries` | Inventory the prebuilt beacon shelf | — | `{"binaries":[{os,arch,filename,size_bytes,sha256,modified_at}],"total":N}` |
+| GET | `/api/agents/binary` | Download a prebuilt beacon | query: `os`, `arch` (`uname` spellings accepted) | `FileResponse` + `X-CortexSim-Agent-SHA256`; 400 `BAD_OS`/`BAD_ARCH`; 404 `AGENT_BINARY_UNAVAILABLE` |
+| GET | `/api/agents/binary/sha256` | Expected digest for a target | query: `os`, `arch` | `PlainTextResponse` hex digest; same 400/404 |
+| POST | `/api/agents/install/telemetry` | Installer reports its terminal stage/code | `InstallTelemetry` (length-capped, control chars stripped) | `{"status":"recorded"}`; also an `agent.install` SSE frame |
+| GET | `/api/agents/install/attempts` | Read recent install attempts | query: `limit` (default 25) | `{"attempts":[…],"total":N}` — in-memory deque (100), lost on restart |
+| POST | `/api/agents/enroll/tokens` | Mint a TTL / max-uses / revocable enrollment token | `{label?, ttl_seconds?, max_uses?}` (`ttl_seconds` default 3600, `ge=60`, `le=2_592_000`) | token (revealed once) |
+| GET | `/api/agents/enroll/tokens` | List token metadata (never the secret) | — | `{"tokens":[…]}` |
+| DELETE | `/api/agents/enroll/tokens/{token_id}` | Revoke a token | — | `{"status":"revoked"}` |
+| POST | `/api/agents/enroll` | Redeem a token; SimCore **assigns** the agent id | `EnrollRequest`: `{token, hostname, os, capabilities[], desired_name?}` | `{"status":"enrolled","agent_id"}`; 4xx `ENROLL_DENIED` |
 | GET | `/api/agents` | List registered agents (newest `last_seen` first) | — | `{"agents":[<agent.to_dict()>],"total":N}` |
-| POST | `/api/agents/register` | Register/re-register a beacon (idempotent) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[]}` | `{"status":"registered","agent_id","message"}` |
+| POST | `/api/agents/register` | Register/re-register a beacon (idempotent, legacy self-asserted id) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[]}` | `{"status":"registered","agent_id","message"}` |
 | DELETE | `/api/agents/{agent_id}` | Prune a beacon row (does not touch run history) | — | `{"status":"deleted","agent_id"}`; 404 `AGENT_NOT_FOUND` |
 | GET | `/api/agents/{agent_id}/tasks` | Beacon polls for next task; bumps `last_seen` | — | `{"task":<task.to_dict()>}` or `{"task":null}`; 404 if agent unknown |
 
@@ -173,9 +224,74 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   `main.py` lifespan, 30s interval) recomputes each agent's derived status and emits
   `agent.status` SSE frames on the global bus when one flips. `GET /api/agents` adds a
   `last_seen_age_seconds` field per row (GAP-AGENT-001, **closed 2026-06-08**).
-- The installer builds the stdlib-only Go beacon **on the target** (`go install
-  github.com/hankthebldr/cortexsim/agent@latest` or local `CORTEXSIM_SRC` build).
-  No binary hosting. Requires Go 1.21+ on the target.
+- **The installer needs no compiler and no public-internet egress on the target**
+  (changed 2026-07-31; it previously ran `go install …@latest` against
+  proxy.golang.org, which no hardened endpoint allows). SimCore *serves* the
+  beacon: `{linux,darwin}×{amd64,arm64}` + `windows/amd64` are cross-compiled into
+  `/app/agent-dist`
+  by the `agent-builder` stage of `core/Dockerfile` (baked into the image, and
+  **not** shadowed by any compose mount) or on a host-run dev SimCore by
+  `make agent-dist` → `scripts/build-agent-dist.sh`. `CORTEXSIM_AGENT_DIST` points
+  at an scp'd drop instead. With an empty shelf `/api/agents/binary` returns a 404
+  that names what *is* available and the command that fixes it.
+- Acquisition order in the script: `CORTEXSIM_BIN` (pre-staged — fully air-gapped)
+  → download from this SimCore + sha256 verify → `CORTEXSIM_SRC` local source build
+  (dev escape hatch, needs Go) → fail `BINARY_UNAVAILABLE`. A checksum mismatch is a
+  hard stop, never a silent fallthrough to a compiler.
+- `?mode=service` (**default**) installs a supervisor so the beacon survives the
+  SSH session and a reboot — systemd system unit as root (`Restart=always`), a
+  `--user` unit otherwise (with the `runuser`/linger caveat printed), or a launchd
+  `LaunchDaemon`/`LaunchAgent` on macOS. With no supervisor present it detaches via
+  `setsid`+`nohup` and reports `DEGRADED_NO_SUPERVISOR` rather than claiming a
+  service exists (verified on a bare `ubuntu:22.04` target: "no service manager
+  available — detaching the beacon with setsid/nohup", pid printed, exit 0).
+  **Caveat — that degrade only fires when `systemctl` is ABSENT.** On a host
+  where the `systemctl` *binary* exists but systemd is not PID 1 (Docker, WSL
+  without systemd, LXC, chroot), `cs_install_systemd()` probes
+  `command -v systemctl` alone, so it enters the systemd branch and hard-fails
+  `SERVICE_START_FAILED` (`cs_fail` calls `exit 1`, not `return 1`, so the nohup
+  fallback is unreachable). The DC is left with the binary installed, a unit file
+  written, **no beacon running**, an enrolled agent row that reads `online` for
+  ~30s before drifting stale, and a `fix:` line recommending `journalctl` on a
+  host with no journal. Fix is queued as a handoff patch against
+  `core/api/agents.py` (probe the live manager — `systemctl is-system-running ||
+  [ -d /run/systemd/system ]` — and make the residual failure `return 1` so it
+  degrades instead of dying). `?mode=foreground` keeps the old babysat behaviour;
+  `?uninstall=1` returns an idempotent best-effort removal script.
+  `CORTEXSIM_BIN_DIR` / `CORTEXSIM_LOG` relocate the install prefix and log.
+- Every stage exits with a stable code, printed as `stage= code= / what: / fix:`
+  **and** POSTed to `/api/agents/install/telemetry`: `OK` · `UNSUPPORTED_OS` ·
+  `UNSUPPORTED_ARCH` · `CURL_MISSING` · `SERVER_UNREACHABLE` · `ENROLL_DENIED` ·
+  `NO_AGENT_ID` · `BINARY_FETCH_FAILED` · `BINARY_UNAVAILABLE` · `CHECKSUM_MISMATCH` ·
+  `CHECKSUM_SKIPPED` · `BIN_NOT_EXECUTABLE` · `BIN_INSTALL_FAILED` ·
+  `SOURCE_BUILD_FAILED` · `SERVICE_START_FAILED` · `DEGRADED_NO_SUPERVISOR`.
+- **Windows beacon: SERVABLE (2026-08-05).** `scripts/build-agent-dist.sh` and the
+  `agent-builder` stage in `core/Dockerfile` both cross-compile `windows/amd64` to
+  `cortexsim-agent-windows-amd64.exe`, so a deployed image serves it from
+  `GET /api/agents/binary?os=windows` (verified: HTTP 200, `PE32+ executable
+  (console) x86-64`, 5,797,888 B, `X-CortexSim-Agent-SHA256` equal to the
+  in-image digest) and `?os=windows` returns a PowerShell installer with **no**
+  preflight refusal. `_WINDOWS_PREFLIGHT_UNAVAILABLE` remains, correctly, as a
+  statement about a deployment built without the agent-builder stage.
+  <br>The earlier note here blamed `scripts/build-agent-dist.sh` for omitting
+  `windows/amd64`. **That was the wrong cause with the right conclusion**: the
+  script has carried the target since the build-tag split; the omission was in
+  the `core/Dockerfile` agent-builder loop, so `make agent-dist` on a dev box
+  emitted 5 binaries while every *deployed image* shipped 4 and 404'd — with
+  remediation text advising the DC to rebuild the image, the one action that
+  provably could not fix it. Nothing caught it because CI's `agent` job proves
+  the beacon *compiles* for Windows and `make agent-dist` proves the *script*
+  emits it; no gate ever looked inside `/app/agent-dist`. Two now do:
+  `tests/installer/test_agent_dist_matrix_parity.py` (static, parses both files,
+  fails closed if either parser matches nothing) and `make check-agent-shelf`
+  (runs `sha256sum -c` against the **built image** with no host mount, so source
+  drift cannot fake it).
+  <br>**Still unproven: no Windows host has executed the beacon or the PowerShell
+  installer.** Serving, digesting and installer emission are verified; `sc.exe`
+  service creation and PS 5.1 execution are not. Push mode (§1.2
+  `format=powershell`) remains the path with end-to-end evidence behind it.
+- The Go beacon treats **SIGHUP** as a graceful shutdown; previously a hangup hit
+  the default disposition and killed the beacon when the terminal went away.
 
 ### 1.7 MITRE (`core/api/mitre.py`, prefix `/mitre`)
 
@@ -210,8 +326,13 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 | GET | `/api/eal/campaigns` | List campaigns (newest first) | — | `{"campaigns":[...],"total":N}` |
 | GET | `/api/eal/campaigns/{campaign_id}` | Single campaign | — | `<EalCampaign.to_dict()>`; 404 `CAMPAIGN_NOT_FOUND` |
 | POST | `/api/eal/campaigns/{campaign_id}/launch` | Launch campaign in background (dry-run default) | `LaunchRequest`: `{dry_run?, operator?}` | `LaunchResponse`: `{run_id, campaign_id, status, dry_run}`; 404; 422 `SPEC_INVALID`/`SAFETY_VIOLATION` |
+| GET | `/api/eal/campaigns/{campaign_id}/collectors` | Resolve every step's collector destination (secret-free) + warnings | — | `{collectors:[{scheme,host,port,path,dataset,auth_header,auth_scheme,token_configured}],destinations:[…],warnings:[…]}` |
+| POST | `/api/eal/campaigns/{campaign_id}/collectors/preflight` | Canary-POST one discard-safe record per collector | — | per-collector verdict in the delivery taxonomy; non-allowlisted hosts are `target_not_authorised` and **never contacted** |
+| POST | `/api/eal/campaigns/{campaign_id}/bundle` | Pre-render records into a self-contained offline bundle | — | `{bundle_id, download_url, records, skipped_steps[]}` (201) |
+| GET | `/api/eal/bundles/{bundle_id}/download` | Download the bundle tar.gz | — | `FileResponse` gzip; 404 |
 | GET | `/api/eal/runs` | List EAL runs | query: `campaign_id?` | `{"runs":[...],"total":N}` |
-| GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>`; 404 `RUN_NOT_FOUND` |
+| GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>` incl. the campaign-level `delivery` rollup; 404 `RUN_NOT_FOUND` |
+| POST | `/api/eal/runs/{run_id}/abort` | Cooperative abort of a live campaign | — | `AbortResponse` |
 
 - **This is a parallel run/lifecycle subsystem** distinct from the `Run`/agent
   system. EAL campaigns run via FastAPI `BackgroundTasks` (in-process async),
@@ -219,9 +340,32 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   (`pending` → terminal). Cross-link: it shares the `consent`/`simulation_authorized`
   safety-gate philosophy with the orchestrator but enforces it via `SafetyPolicy`
   pre-flight, returning 422 `SAFETY_VIOLATION`.
-- **GAP-API-011:** EAL runs also have no abort endpoint — once a background task
-  is launched it runs to completion or crash. EAL run statuses are a *different
-  enum* (`pending`/`success`/`failed`/etc. from the executor) than core Runs.
+- **Delivery is accounted, not assumed** (2026-07-31). Collector-POST plugins
+  (every analytics log-streamer + `email_emitter`) previously counted any POST that
+  did not raise as a delivered record — a 401 from a Broker VM, a 404 on a mistyped
+  path, or a 302 to a captive portal all produced `status="success"` and a green
+  campaign that ingested nothing. Only **2xx** now delivers; `events_emitted` /
+  `bytes_sent` report what the collector **accepted**, `detail.delivery` carries
+  attempted-vs-delivered, and the step status derives success / partial / error
+  against a 12-code taxonomy with a remediation line each. `GET /api/eal/runs/{id}`
+  gains a campaign-level `delivery_verdict` (`delivered` / `partial` /
+  `not_delivered` / `not_applicable`) computed at read time — no schema migration,
+  and pre-ledger runs render `not_applicable`. **Not applied** to
+  `oauth_grant_emulator` / `llm_provider_egress` / `agentic_egress`: those POST to
+  real third-party endpoints where a 4xx is the expected outcome, so the same rule
+  would manufacture a false red.
+- **To emit from inside the customer network**, use the offline bundle — record
+  building is a pure function, so SimCore pre-renders every record and the artifact
+  only POSTs bytes via stdlib `urllib` (no pip install, no SimCore at run time,
+  same invariant as a push bundle). Credentials are never written into a bundle;
+  the manifest names an env var the operator exports. Steps that cannot be
+  pre-rendered (C2 beacon, DNS tunnel, browser driver) are listed in
+  `skipped_steps`. **There is still no way to dispatch an EAL campaign to an
+  enrolled beacon** — the executor runs in SimCore's own process.
+- EAL run statuses are a *different enum* (`pending`/`success`/`failed`/etc. from
+  the executor) than core Runs. Abort is cooperative and cannot pre-empt an
+  in-flight bundle send. Bundle artifacts accumulate under `data/eal_bundles` with
+  no retention sweep (same as `infra/blueprints`).
 
 ### 1.10 Credentials (`core/api/credentials.py`, prefix `/credentials`)
 
@@ -278,11 +422,160 @@ Authoring surface (gated on `CORTEXSIM_AUTHORING_ENABLED=true`, else 403 `AUTHOR
 
 - Both return `text/event-stream` and emit one SSE frame per event. The browser
   consumes them with `EventSource.onmessage` + `JSON.parse`; each event carries a
-  `{type, run_id, ts, data}` envelope (`run.status`, `run.output`, `agent.status`, …).
+  `{type, run_id, ts, data}` envelope (`run.status`, `run.output`, `result.observed`,
+  `agent.status`, `agent.install`, `run.verdict`, …).
+- **`run.verdict` (new, 2026-08-02)** is published whenever `Run.tc_verdict` is
+  written — i.e. from `complete_run` (seeds the verdict, typically `pending` at
+  t=0) and from `connectors/service.py::apply_verdicts`, the single funnel for
+  manual `/observations`, credential-backed `/reconcile` and the auto sweep. It
+  is the frame that tells a console the POV pass/fail readout moved. Note that
+  `core/events.py`'s module docstring still enumerates only the original four
+  types and has not been updated.
 - Backed by an in-process `event_bus` (`core/events.py`). The orchestrator and the
   `/abort`, `/output`, `/complete`, and heartbeat-sweep paths publish to it; the SSE
   endpoint subscribes and relays. An initial comment frame fires so
   `EventSource.onopen` triggers promptly (GAP-API-002, **closed 2026-06-08**).
+
+### 1.13 POV scoping (`core/api/pov.py`, prefix `/pov`)
+
+Answers "what can this tenant license, and what would they have to buy to run
+the rest of the POV". Backed by the v2.2 index registry, not by the scenario
+corpus alone — every capability it names resolves to a real `PAN-*` part number.
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/pov/profiles` | Canned tenant entitlement tiers | — | `ng-siem-bare` · `enterprise` · `premium` |
+| GET | `/api/pov/capabilities` | Every licensable capability + its SKU | — | capability → `PAN-*` part number |
+| POST | `/api/pov/scope` | Scope the corpus to an entitlement set | `{profile}` **or** `{base_platform[], addons[]}` | in-scope scenarios + the generated upsell list |
+
+- Entitlements always resolve through `registry.entitlements_for*`, which walks
+  the use case and drops capacity SKUs. Reading `TestCase.required_addon` raw
+  would disagree with this endpoint on the same test case.
+
+### 1.14 UC / TC index (`core/api/uctc.py`, prefix `/uctc`)
+
+The FY27 v2.2 master index as a **read-only** in-product surface, joined to the
+engine's own evidence (`Scenario.tc_refs` → `Run.tc_verdict`). Backs the
+console's **UC / TC Index** destination (`#/uctc`). Authoring stays in
+`docs/uc_tc_mapping/` + `scripts/uctc_crosswalk_v2.2.py` — there is no write path.
+
+| Method | Full path | Purpose | Response |
+|--------|-----------|---------|----------|
+| GET | `/api/uctc/summary` | Header counts + evidence rollup in one call | totals, per class/tier/priority/sheet tallies |
+| GET | `/api/uctc/use-cases` | The 49 UCs with per-UC coverage arithmetic | query: `sheet?`, `subdomain?`, `evidenced=all\|yes\|no\|partial` |
+| GET | `/api/uctc/use-cases/{uc_id}` | One UC + its UCS groups + child TCs | 404 `UC_NOT_FOUND` |
+| GET | `/api/uctc/test-cases` | The main table, all 266 rows, unpaginated | filters: `uc_id`, `ucs_id`, `validation_class`, `tier`, `priority`, `sheet`, `pov_scenario_id`, `evidenced`, `scoreable`, `plane` |
+| GET | `/api/uctc/test-cases/{tc_id}` | Full detail: measurement contract, entitlement, payload, evidencing scenarios, run verdicts | 404 `TC_NOT_FOUND` |
+| GET | `/api/uctc/coverage` | Every rollup at once (by UC / plane / class / tier / priority / sheet) | worst-covered UC first |
+| GET | `/api/uctc/gaps` | Unevidenced TCs — the build backlog | defaults `validation_class=DET,HNT`; P1 first |
+| GET | `/api/uctc/payloads` | POV-SC payloads + engine usage + `needs_split` | query: `in_use?` |
+| GET | `/api/uctc/by-scenario/{scenario_id}` | Forward view for a deep link | resolved/unresolved refs + tier delta; 404 `SCENARIO_NOT_FOUND` |
+
+- **Every** response carries `{index_loaded, index_version}`. The registry is
+  fail-soft (the prod image has historically shipped without `docs/`), so a
+  stripped deploy returns **200 with `index_loaded: false`** and empty
+  collections. Callers must render that as degraded, never as "0 test cases".
+- Evidence is keyed on `Scenario.tc_refs` **only**. Joining through
+  `pov_scenario_id` would over-claim: `POV-SC-001` binds 21 test cases.
+- Active scenarios only unless `include_inactive=true`.
+- `is_scoreable` is surfaced deliberately — 57 of the 107 detection-backable
+  rows carry no measurable threshold, so `pass` is impossible for them by
+  construction.
+
+### 1.15 Payload shelf (`core/api/payloads.py`, prefixes `/shelf` **and** `/k8s`)
+
+Staged, digest-pinned tool artifacts, so a scenario's tooling does **not** have to
+be fetched from the public internet by the target host at dispatch. Contract:
+[`payload-shelf.md`](payload-shelf.md).
+
+**Two prefixes, one implementation.** `_register_shelf_routes` registers the same
+handler functions on both routers. `/api/k8s/*` stays mounted **forever** — every
+manifest this engine has emitted hard-codes `$CORTEXSIM_SERVER/api/k8s/payloads`
+and `/api/k8s/payload/$PN` inside `k8s_manifest._SERVED_FETCH`, and those files
+live in customers' GitOps repos. It is an additional mount, **not a redirect**: a
+redirect would make a stale manifest silently keep working, so the drift would
+never be discovered.
+
+| Method | Full path | Auth | Purpose | Response |
+|--------|-----------|------|---------|----------|
+| GET | `/api/shelf/payloads` · `/api/k8s/payloads` | **always open** | Inventory + reachability probe + `declared[]` | staged names, sizes, digests |
+| GET | `/api/shelf/payload/{name}` · `/api/k8s/payload/{name}` | shelf token | The bytes | `X-CortexSim-Payload-SHA256`, `-Name`, `Cache-Control: no-store`; 404 `PAYLOAD_UNAVAILABLE` |
+| GET | `/api/shelf/payload/{name}/sha256` (+ `/api/k8s/…`) | shelf token | Bare hex, **humans only** | a consumer using this verifies nothing |
+| GET | `/api/shelf/artifacts` | open | The DERIVED declaration | `{staged[], unstaged[], unpinned[], artifacts[]}` |
+| POST | `/api/shelf/compose` | shelf token | Resolve a digest-bound plan, or refuse | 409 `PAYLOAD_NOT_STAGED` / `PAYLOAD_PIN_MISMATCH`; 400 `BAD_CONSUMER` |
+| GET | `/api/shelf/resolve/{scenario_id}` | shelf token | Console preflight for one scenario | same shape, `consumer=console` |
+| POST | `/api/shelf/stage` | shelf token | Pull a public tool onto **this SimCore** | 201 + `pack_snippet` + `DECLARE_IN_PACK`; 409 `SHELF_EGRESS_DISABLED`; 502 `PAYLOAD_FETCH_FAILED` |
+
+- **`/payloads` is unauthenticated in every mode** — it is the manifest's
+  reachability probe, and a probe that can fail for two reasons (no route / bad
+  credential) sends a DC to argue with the customer's network team about an auth
+  problem that does not exist.
+- The **digest is recomputed from the shelf bytes at compose time** and baked
+  into what the consumer carries. The consumer verifies against a value it
+  carried **in**, never one it fetched from the server it is trusting.
+- `composition_id` is deterministic (it excludes `server_url`), so a POV report
+  can cite it and two DCs can compare.
+- **`air_gapped` + `unstaged_adapters[]` are the anti-false-green fields.** A
+  shelf covering two of a scenario's five tools must be legible, not silent.
+  ⚠ **Known defect:** an `adapter_ref` that is not in the catalog is silently
+  dropped rather than landing in `unstaged_adapters[]` — `payload-shelf.md` §9
+  item 12.
+- ⚠ **Known defect:** `GET /api/shelf/artifacts` reports
+  `used_by = "(no scenario references this adapter yet)"` for every artifact,
+  because the handler calls `declared_artifacts()` without `scenarios=`. The
+  generated `payloads/sources.json` — same function, called with it — is
+  correct. §9 item 13.
+
+**Agent capability `artifact-fetch`.** A beacon that can stage artifacts
+advertises `artifact-fetch` alongside `shell` / `identity-harness` on all three
+`GOOS` (`agent/capabilities.go`). `GET /api/agents/{id}/tasks` **refuses** to
+hand an artifact-carrying task to an agent that lacks it — **409
+`AGENT_CANNOT_STAGE_ARTIFACTS`** naming the artifact, the agent's actual roster
+and the re-install one-liner — and fails the run rather than letting it hang in
+`running`. Without that gate an old beacon would silently drop the unknown
+`artifacts` key and run every step **without its tooling**: a manufactured false
+negative delivered by the back-compat mechanism itself. Optional
+`--artifact-token` / `CORTEXSIM_ARTIFACT_TOKEN` carries a shelf bearer token;
+note that `scripts/build-agent-dist.sh` and `GET /api/agents/install` do **not**
+yet bake it into the systemd unit, so shelf `token` mode + a beacon is currently
+unreachable in the field (it 403s with `ARTIFACT_FORBIDDEN` naming the fix).
+
+### 1.15 Cortex connector — the measurement loop (`core/api/connectors.py`, prefix `/connectors`)
+
+> Added to this table 2026-08-06. Every call below is **opt-in and read-only**;
+> none writes to Cortex. With no credential configured they answer **200 with a
+> `pending`-shaped result**, never an error and never a green.
+
+| method | path | purpose | notable response |
+|---|---|---|---|
+| GET | `/api/connectors` | List connector kinds and, per kind, whether a usable integration credential is **configured** and **verified** | includes `preflight_url`; reports **both** credential kinds (`xsiam` = alert read-back, `xsiam_tenant` = XQL) |
+| POST | `/api/connectors/{kind}/preflight` | **Staged tenant preflight** — "is my connection working?" answered *before* the POV | `{tenant, kind, base_url_host, overall, stages[], queries_issued, capabilities_confirmed[], capabilities_denied[], proves}` |
+| POST | `/api/runs/{run_id}/observations` | Manual batch ingest of alerts a DC exported from the console — no credential, fully offline | seeded `Result` rows gain `observed_at` → MTTD |
+| POST | `/api/runs/{run_id}/reconcile?connector=xsiam` | Credential-backed pull for the run's window | same funnel (`apply_verdicts`) as the manual path |
+| POST | `/api/runs/{run_id}/verify` | **Tier-2** verification via read-only XQL (see §1.3) | 200 + `pending` + `reason` when no credential |
+
+**Preflight stages**, in order, each with a stable `code` and a `remediation`
+naming the consequence *in verdict terms*: `config` → `dns_tls` → `auth` →
+`scope_alerts` (kind `xsiam`) / `scope_xql` (kind `xsiam_tenant`) → `datasets`
+(opt-in, priced one XQL query per dataset) → `clock`. **Every stage runs even
+when an earlier one degraded**, and a skipped stage is reported explicitly as
+`SKIPPED` / `PF_SKIPPED_UNREACHABLE` — an absent stage would read as "fine". Only
+an unreachable host short-circuits.
+
+`queries_issued` is in every response **on purpose**: a preflight driven by an
+injected transport reports `0`, and the `proves` string says so verbatim, so a
+mocked green can never be quoted as "connection validated".
+
+> **Wire caveat (open as of 2026-08-06).** The console's Readiness surface calls
+> `POST /api/xsiam/tenants/{name}/preflight` for `kind: xsiam_tenant`. **That
+> route does not exist** — it returns **405**, which the client's 404-only
+> fallback does not catch, so the DC sees `preflight failed: Method Not Allowed`.
+> The working route for both kinds is `POST /api/connectors/{kind}/preflight`.
+> See `ui/src/components/console/ReadinessView.jsx::TenantRow.runPreflight`.
+
+**Still undocumented in this table:** `/api/xsiam` (the ~116-operation read-only
+Cortex operation catalog) and the `/api/runs/*` storyline + causality routes.
+Both are covered by their own design docs.
 
 ---
 
@@ -490,23 +783,34 @@ POST /api/run {mode:"pull", target_agent_id:"jumpbox-01", identity:"..."}
    DC later: PUT /api/results/{id}/validate to confirm detections (MTTD)
 ```
 
-- **Queue is in-memory and ephemeral** (`orchestrator._queue`). Restarting SimCore
-  loses all undelivered tasks; the durable `Run` row is left at `running` with no
-  way to recover the task — GAP-API-005 (high).
+- **The queue is durable** (GAP-API-005 closed). `orchestrator._queue` is a
+  write-through cache over the `queued_tasks` table and is rehydrated by
+  `orchestrator.rehydrate()` at boot; a SimCore restart restores undelivered
+  tasks and fails any orphaned `running` run whose task was lost.
 - `_resolve_adapter_placeholders` substitutes `{adapter:TOOL-XYZ}` in step commands
   with the adapter's rendered `run_template`; unresolved placeholders are left raw
-  so the agent surfaces the failure instead of silently no-op'ing.
+  so the agent surfaces the failure instead of silently no-op'ing. ⚠ Note
+  `generate_bash` does **not** substitute them — a push bundle would ship the
+  literal string `{adapter:TOOL-LINPEAS}`. No shipped scenario uses the
+  placeholder, which is why this has never been caught.
 
-> ⚠️ **GAP-AGENT-002 (critical) — Task wire-shape mismatch.** The orchestrator's
-> `Task.to_dict()` emits `{task_id, run_id, scenario_id, steps:[...],
-> identity_context, created_at}` (a list of steps + a string identity context).
-> The Go beacon's `Task` struct (`agent/beacon/client.go` lines 24-38) expects
-> `{run_id, scenario_id, command:string, identity:{mode,username}}` — a single
-> flat command + a structured identity object. The fields **do not line up**:
-> the agent has no `steps` handling, gets an empty `Command`, and `Identity`
-> (mode/username) is never populated by the server. A real pull-mode run today
-> would dispatch an empty command. This is the single biggest blocker for the
-> pull path working end-to-end.
+> ✅ **GAP-AGENT-002 is CLOSED.** The historical wire-shape mismatch (server
+> emitting `steps[]`, beacon expecting a flat `command`) no longer exists. Verified
+> 2026-08-05 by a real pull-mode launch of `SIM-EDR-022` against a compiled beacon:
+> the task was received (`steps=5`), executed as a causality-chained run under an
+> `apache2` CGO, and reported per-step output and completion.
+
+> ⚠️ **The artifact-staging phase is NOT wired into launch.** `Task.artifacts`
+> exists on the wire, round-trips durably, and the beacon honours it: it stages
+> **all-or-nothing before any step runs**, verifying each artifact's sha256
+> against the digest carried in the task, and on failure emits a per-step
+> `ARTIFACT NOT STAGED` frame plus exit **78** (`EX_CONFIG`) with *"THIS STEP DID
+> NOT RUN … NOT a gap in the customer's detection coverage"*. But
+> **`_handle_pull` never calls `payload_shelf.compose()`**, so `Task.artifacts`
+> is `[]` on every real launch and nothing is ever staged; and `compose()` emits
+> `url`/`dest_path` while the beacon's `ArtifactSpec` requires `path`/`dest`, so
+> even a wired call would be refused with `ARTIFACT_SPEC_INVALID`. See
+> [`payload-shelf.md`](payload-shelf.md) §9 items 5 and 5a.
 
 ### 3.2 Push mode (`_handle_push`)
 

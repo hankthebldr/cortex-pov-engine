@@ -1,0 +1,18 @@
+{
+  "mitre_techniques": [
+    "T1584.001",
+    "T1584.006",
+    "T1071.001",
+    "T1590.002"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(Owned Subdomain Resolving to an Unclaimed Third-Party Provider Endpoint) AND ABIOC(Periodic Low-Variance Egress to an Owned Subdomain Whose Resolution Target Left the Estate) observed on the SAME FQDN inside the correlation window, promoted by XQL(Locally-Minted Indicator Promoted to the Enforcement List Within the Push Budget) and terminating in XQL(Exposure Queue Re-Ranks the Dangling Record Above Higher-Severity Unexploited Findings) \u2014 a genuine three-plane stitch across ASM inventory, TIM enforcement and NDR behaviour on one shared name. Neither contributing signal is sufficient alone and the rule is written so that neither can carry it: the inventory finding on its own is a posture item that sits in a queue for a quarter, and the beaconing on its own is indistinguishable from an unfamiliar internal service, because the name genuinely belongs to the customer. The NEGATIVE CONTROL is asserted as part of the verdict rather than reported beside it: reputation, URL category, parent-domain age and threat-feed match must ALL return benign for the takeover host. If any of them flags it, the detection may have come from a reputation signal and the scenario's central claim \u2014 that this is detectable when every reputation-based control passes \u2014 is unproven. The terminal assertion is a PRIORITISATION assertion: once exploitation intel lands, the dangling exposure must re-rank above higher-base-severity findings that are not being exploited. A queue that does not move has understood the finding and done nothing with it.",
+      "name": "Dangling-Record Takeover Weaponized as Allowlisted C2 \u2014 ASM to TIM to NDR Stitch",
+      "rule_id": "CR-TIM-0008",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0174"
+}

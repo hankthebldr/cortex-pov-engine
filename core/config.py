@@ -33,6 +33,35 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
     CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
 
+    # Auto-verify phase of the reconcile sweep. OFF by default and, unlike
+    # reconcile, it runs XQL against the customer's tenant — a metered resource
+    # their own analysts share. Requires an integration of kind 'xsiam_tenant'
+    # (the reconcile 'xsiam' credential is a DIFFERENT kind and does NOT enable
+    # this). Piggybacks on the auto-reconcile timer, so it does nothing unless
+    # CORTEXSIM_AUTO_RECONCILE is also on — main.py warns at boot if it is not.
+    #
+    # Offline scoring (Run.tc_verdict from local MTTD + thresholds) is NOT
+    # gated by this: it makes zero outbound calls, so gating it would gate
+    # honesty rather than risk.
+    CORTEXSIM_AUTO_VERIFY: bool = False
+    CORTEXSIM_AUTO_VERIFY_MAX_ATTEMPTS: int = 3           # give up after N sweeps
+    CORTEXSIM_AUTO_VERIFY_BACKOFF_SECONDS: int = 600      # doubled per attempt, capped at 4h
+    CORTEXSIM_AUTO_VERIFY_MAX_QUERIES_PER_SWEEP: int = 50  # hard stop on tenant queries
+    CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS: int = 3600   # XQL lookback per query
+
+    # UC/TC foreign-key strictness. When false (the default for one release),
+    # a scenario whose uc_ref/tc_ref does not resolve against the master index
+    # snapshot logs S-10/S-11/S-12 as a WARNING and still loads. When true, the
+    # same conditions reject the scenario at boot.
+    #
+    # Flipped true at the Phase 1 DoD: `docs/uc_tc_mapping/crosswalk-v2.2.csv`
+    # now covers all 161 scenarios and the corpus boots with zero
+    # S-10/S-11/S-12/S-15. Keeping it on is what stops the join rotting again —
+    # a new scenario with an unresolvable ref fails at boot instead of silently
+    # inflating the coverage number. Set false to load a corpus mid-re-key.
+    CORTEXSIM_STRICT_REFS: bool = True
+
+
     # XSIAM API harness — master safety switches for the operation executor.
     # Both OFF by default: the harness pulls freely from a configured tenant
     # (read ops), but any write/delete operation additionally requires the
@@ -42,6 +71,13 @@ class Settings(BaseSettings):
     CORTEXSIM_XSIAM_ALLOW_WRITE: bool = False
     CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE: bool = False
 
+    # SQLAlchemy statement echo. Previously tied to CORTEXSIM_ENV=development,
+    # which meant a dev boot log carried every aiosqlite statement TWICE (once
+    # from the sqlalchemy.engine logger, once through the app formatter). A DC
+    # reading the boot log for a real error scrolled past hundreds of duplicated
+    # lines to find it. Opt in explicitly when you actually want statement-level
+    # tracing.
+    CORTEXSIM_SQL_ECHO: bool = False
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

@@ -1,0 +1,371 @@
+{
+  "id": "TTP-2026-0127",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-24T02:50:00+00:00",
+    "updated_at": "2026-07-24T02:50:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-itdr",
+      "vector-privilege-escalation",
+      "technique-dmsa",
+      "badsuccessor",
+      "active-directory",
+      "windows-server-2025",
+      "abioc",
+      "analytics-behavioral-ioc",
+      "identity",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "BadSuccessor dMSA Privilege Escalation (Windows Server 2025) — Create + Dual-Attribute Write + Privileged-TGT Lineage ABIOC",
+    "summary": "An identity that never provisions managed-service accounts creates a delegated MSA outside the default container and, in one session, writes msDS-DelegatedMSAState=2 plus msDS-ManagedAccountPrecededByLink to a Domain-Admin target. The dMSA inherits DA rights; the ABIOC fires on this create-and-modify lineage and the correlation rule fuses it with the dMSA TGT and logon into one ITDR incident.",
+    "description": "BadSuccessor abuses delegated Managed Service Accounts (dMSAs), introduced in Windows Server 2025, to escalate from any principal holding CreateChild rights on an OU to full domain compromise (Unit 42 / Akamai disclosure, August 2025 — no Microsoft patch at publication). The attacker creates a dMSA object and simulates a completed account-migration by writing two LDAP attributes: msDS-DelegatedMSAState set to value 2 (migration complete) and msDS-ManagedAccountPrecededByLink set to the distinguished name of a privileged target (e.g. a Domain Admin). Active Directory then treats the dMSA as the successor of the superseded account, so the KDC issues the dMSA a TGT (PAC) carrying the target's group memberships — the privilege-inheritance moment — which the attacker uses (via Rubeus dMSA authentication) to act as the privileged principal. This card exercises Cortex ITDR / XDR Identity Analytics on the create-and-modify LINEAGE rather than any single known-bad command: the auto-tuned ABIOC anchors on a learned identity baseline that never creates dMSAs, then fires when that identity both creates a dMSA outside CN=Managed Service Accounts (Security event 5137) and, within the same subject_logon_id, writes the two privileged attributes (Security event 5136 on GUIDs 2f5c138a-bd38-4016-88b4-0ec87cbb4919 (State) and a0945b2b-57a2-43bd-b327-4d112a4e8bd1 (PrecededByLink)). A deterministic BIOC keys on the Security event 4662 Write-Property (access mask 0x20) against the msDS-DelegatedManagedServiceAccount object-type GUID 0feb936f-47b3-49f2-9386-1dedc2c23765 for the audit-log-driven catch. Validation XQL confirms the dMSA creation and the dual-attribute write are observable; a hunt query surfaces the dMSA TGT (Security event 2946) and the inherited-privilege logon (Security event 4624). The correlation rule stitches the full chain — 5137 create -> dual 5136 write in one session -> 2946 TGT -> 4624 logon — into a single ITDR privilege-escalation incident the DC presents as end-to-end evidence of the BadSuccessor storyline. Recon tooling (Akamai Get-BadSuccessorOUPermissions.ps1) and the SharpSuccessor PoC are named in the source; no real IOC values were published, so none are asserted here.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1098",
+        "name": "Account Manipulation",
+        "tactic_ids": [
+          "TA0004",
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1136",
+        "subtechnique_id": "T1136.002",
+        "name": "Create Account: Domain Account",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.002",
+        "name": "Valid Accounts: Domain Accounts",
+        "tactic_ids": [
+          "TA0004",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Privilege Escalation",
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1550",
+        "subtechnique_id": "T1550.003",
+        "name": "Use Alternate Authentication Material: Pass the Ticket",
+        "tactic_ids": [
+          "TA0008",
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Lateral Movement",
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Active Directory: Active Directory Object Creation",
+      "Active Directory: Active Directory Object Modification",
+      "Active Directory: Active Directory Credential Request",
+      "Logon Session: Logon Session Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-ITDR-013 — BadSuccessor dMSA create-and-modify lineage for Cortex ITDR / XDR Identity Analytics ABIOC validation",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Windows Server 2025 domain functional level with dMSA support and Windows Security auditing (Directory Service Changes + object access) enabled so events 5137/5136/4662/2946/4624 reach the Cortex agent / ingestion.",
+        "check_command": "Get-ADObject -SearchBase (Get-ADDomain).DistinguishedName -LDAPFilter '(objectClass=msDS-DelegatedManagedServiceAccount)'"
+      },
+      {
+        "description": "A baseline window has elapsed during which the acting identity performed only its normal duties (never provisioning a managed-service account) so Cortex learned an identity profile that does not create dMSAs.",
+        "check_command": "whoami"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NON-DESTRUCTIVE: no dMSA is actually created. SAFE-MODE marker files stand in\n# for each stage of the BadSuccessor chain so the run is observable without\n# mutating Active Directory. On a sanctioned Windows Server 2025 lab the real\n# stages are: SharpSuccessor.exe creates the dMSA outside CN=Managed Service\n# Accounts (5137), writes msDS-DelegatedMSAState=2 and\n# msDS-ManagedAccountPrecededByLink=<DA DN> in one session (5136), then Rubeus\n# requests the dMSA TGT (2946) and authenticates (4624).\nset -euo pipefail\nMARK=/tmp/cortexsim-itdr-013\nmkdir -p \"$MARK\"\necho '[CortexSim] SAFE-MODE 5137: dMSA created outside CN=Managed Service Accounts' | tee \"$MARK/5137-dmsa-create.marker\"\nprintf 'SAFE-MODE 5136 msDS-DelegatedMSAState=2\\nSAFE-MODE 5136 msDS-ManagedAccountPrecededByLink=%s\\n' \"${DA_TARGET_DN}\" | tee \"$MARK/5136-dual-attr-write.marker\"\necho '[CortexSim] SAFE-MODE 2946/4624: dMSA privileged TGT minted and used to authenticate' | tee \"$MARK/2946-4624-inherited-priv.marker\"\n",
+      "input_variables": [
+        {
+          "name": "DA_TARGET_DN",
+          "type": "string",
+          "default": "CN=Administrator,CN=Users,DC=corp,DC=local",
+          "description": "Distinguished name of the privileged target the dMSA is made the successor of (written to msDS-ManagedAccountPrecededByLink)."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "Windows Security event 5137 recording a dMSA object created outside the default CN=Managed Service Accounts container by a non-administrative identity.",
+        "expected_value": "event_id = 5137 and object_class = \"msDS-DelegatedManagedServiceAccount\""
+      },
+      {
+        "artifact_type": "auth-event",
+        "description": "Two Windows Security event 5136 attribute modifications in one logon session: msDS-DelegatedMSAState set to 2 and msDS-ManagedAccountPrecededByLink set to a privileged DN.",
+        "expected_value": "event_id = 5136 and attribute_ldap_display_name in (\"msDS-DelegatedMSAState\", \"msDS-ManagedAccountPrecededByLink\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-itdr-013; echo '[CortexSim] SIM-ITDR-013 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [
+      {
+        "name": "ITDR-013 Write-Property 4662 On dMSA Object-Type By Non-Admin",
+        "description": "Deterministic audit-log catch: Windows Security event 4662 with access mask 0x20 (Write Property) against the msDS-DelegatedManagedServiceAccount object-type GUID 0feb936f-47b3-49f2-9386-1dedc2c23765, performed by a non-administrative subject. This is the direct signature of a low-privileged identity mutating dMSA attributes — the BadSuccessor write step — complementing the behavioral ABIOC with an evidence-grade rule keyed to the exact object type and access mask from the Unit 42 disclosure.",
+        "logic": "dataset = msft_windows_security\n| filter event_id = 4662\n| filter properties contains \"0feb936f-47b3-49f2-9386-1dedc2c23765\"\n| filter access_mask = \"0x20\"\n| filter subject_user_name not in (\"Administrator\", \"SYSTEM\")\n| comp count() as write_property_events by host_name, subject_user_name, object_name\n| filter write_property_events >= 1\n| fields host_name, subject_user_name, object_name, write_property_events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1098"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "ITDR-013 dMSA Created Outside Managed Service Accounts Container By Non-Privileged Identity",
+        "description": "An identity whose learned Cortex profile never provisions managed-service accounts creates a delegated MSA (Security event 5137) outside the default CN=Managed Service Accounts container. The ABIOC anchors the deviation to the learned per-identity provisioning baseline rather than to any bad command — dMSA creation is a legitimate operation, so the catch comes from WHO is doing it and WHERE, the opening move of the BadSuccessor chain.",
+        "logic": "dataset = msft_windows_security\n| filter event_id = 5137\n| filter object_class = \"msDS-DelegatedManagedServiceAccount\"\n| filter object_dn not contains \"CN=Managed Service Accounts\"\n| filter subject_user_name not in (\"Administrator\", \"SYSTEM\")\n| comp count() as dmsa_creations by host_name, subject_user_name, subject_logon_id, object_dn\n| filter dmsa_creations >= 1\n| fields host_name, subject_user_name, subject_logon_id, object_dn, dmsa_creations",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1136.002",
+          "T1098"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned identity baseline (never provisions managed-service accounts) -> the same identity creates a dMSA object outside the default CN=Managed Service Accounts container, anchored to the originating subject_logon_id."
+      },
+      {
+        "name": "ITDR-013 dMSA Dual Privileged-Attribute Write Lineage In One Logon Session",
+        "description": "Within one logon session the acting identity writes BOTH msDS-DelegatedMSAState=2 (migration complete) and msDS-ManagedAccountPrecededByLink pointing at a privileged DN on the freshly created dMSA (two Security event 5136 records on GUIDs 2f5c138a-bd38-4016-88b4-0ec87cbb4919 and a0945b2b-57a2-43bd-b327-4d112a4e8bd1). The ABIOC fires on this create-and-modify LINEAGE — a genuine dMSA migration is performed by an administrator over time, not by a non-admin who just created the object seconds earlier — anchoring the two attribute writes to the same subject_logon_id as the creation.",
+        "logic": "dataset = msft_windows_security\n| filter event_id = 5136\n| filter attribute_ldap_display_name in (\"msDS-DelegatedMSAState\", \"msDS-ManagedAccountPrecededByLink\")\n| filter (attribute_ldap_display_name = \"msDS-DelegatedMSAState\" and attribute_value = \"2\") or attribute_ldap_display_name = \"msDS-ManagedAccountPrecededByLink\"\n| comp count_distinct(attribute_ldap_display_name) as attrs_written, values(attribute_value) as written_values by host_name, subject_logon_id, object_dn\n| filter attrs_written >= 2\n| fields host_name, subject_logon_id, object_dn, attrs_written, written_values",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1098",
+          "T1078.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "dMSA creation event (5137) -> two privileged-attribute writes (State=2 + PrecededByLink to a DA distinguished name) under the same subject_logon_id within seconds, the create-and-modify lineage no legitimate migration exhibits from a non-admin identity."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ITDR-013 Validate dMSA Creation Outside Managed Service Accounts Container",
+        "query": "dataset = msft_windows_security\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_id = 5137\n| filter object_class = \"msDS-DelegatedManagedServiceAccount\"\n| filter object_dn not contains \"CN=Managed Service Accounts\"\n| comp count() as dmsa_created by host_name, subject_user_name, object_dn\n| filter dmsa_created >= 1\n| fields host_name, subject_user_name, object_dn, dmsa_created",
+        "expected_rows_min": 1,
+        "dataset": "msft_windows_security"
+      },
+      {
+        "purpose": "validation",
+        "name": "ITDR-013 Validate Dual Privileged-Attribute Write On dMSA",
+        "query": "dataset = msft_windows_security\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_id = 5136\n| filter attribute_ldap_display_name in (\"msDS-DelegatedMSAState\", \"msDS-ManagedAccountPrecededByLink\")\n| comp count_distinct(attribute_ldap_display_name) as attrs by host_name, subject_logon_id\n| filter attrs >= 2\n| fields host_name, subject_logon_id, attrs",
+        "expected_rows_min": 1,
+        "dataset": "msft_windows_security"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ITDR-013 Hunt dMSA Privileged TGT And Inherited-Privilege Logon",
+        "query": "dataset = msft_windows_security\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_id in (2946, 4624)\n| filter account_name = \"websvc-dmsa$\"\n| comp count() as inherited_priv_events by host_name, account_name, event_id\n| filter inherited_priv_events >= 1\n| fields host_name, account_name, event_id, inherited_priv_events",
+        "expected_rows_min": 0,
+        "dataset": "msft_windows_security"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "ITDR-013 BadSuccessor dMSA Privilege-Escalation Chain Stitch",
+        "rule_id": "CR-ITDR-0013",
+        "logic": "ABIOC(\"ITDR-013 dMSA Created Outside Managed Service Accounts Container By Non-Privileged Identity\") AND ABIOC(\"ITDR-013 dMSA Dual Privileged-Attribute Write Lineage In One Logon Session\") joined on the same host_name and subject_logon_id within 600 seconds — the create-and-modify pairing shares the attacker's originating logon session (the 5137 creation and both 5136 writes carry one subject_logon_id). That lineage is then joined to XQL(\"ITDR-013 Hunt dMSA Privileged TGT And Inherited-Privilege Logon\") on the created-dMSA IDENTITY, not on subject_logon_id: the sAMAccountName / object_dn of the dMSA created in the 5137 event (websvc-dmsa$) equals the account_name authenticating in the 2946 TGT mint and 4624 logon, which run under the dMSA's OWN new logon session and therefore do NOT carry the attacker's subject_logon_id — within the same 600-second window and host_name. Fuses the create-and-modify dMSA lineage (5137 create -> dual 5136 write under one subject_logon_id) with the privileged-TGT mint (2946) and the inherited-privilege logon (4624) bound by dMSA identity into a single ITDR privilege-escalation incident, evidencing the BadSuccessor storyline end to end."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XDR Identity Analytics — dMSA / managed-service-account provisioning baseline",
+        "validated": true,
+        "note": "Backed by ABIOC 'ITDR-013 dMSA Dual Privileged-Attribute Write Lineage In One Logon Session' on this card."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "identity-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-ITDR-001",
+          "TBD-XSIAM-ITDR-002"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_windows_security | filter event_id = 5136 | filter attribute_ldap_display_name in (\"msDS-DelegatedMSAState\", \"msDS-ManagedAccountPrecededByLink\") | comp count_distinct(attribute_ldap_display_name) as attrs by subject_logon_id, object_dn | filter attrs >= 2"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "identity-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-IDA-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = msft_windows_security | filter event_id = 4662 | filter properties contains \"0feb936f-47b3-49f2-9386-1dedc2c23765\" | filter access_mask = \"0x20\""
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-ITDR-013",
+        "name": "BadSuccessor dMSA Privilege Escalation Detection via Cortex ITDR / XDR Identity Analytics",
+        "description": "Cortex Identity Analytics learns that an identity never provisions managed-service accounts, then detects the BadSuccessor create-and-modify dMSA lineage and stitches it with the privileged-TGT mint and inherited-privilege logon into a single ITDR privilege-escalation incident — proving domain-compromise-in-progress detection on a Windows Server 2025 technique with no vendor patch.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-ITDR-013A",
+            "objective": "Both ABIOCs fire on the anomalous create-and-modify dMSA lineage from a non-privileged identity.",
+            "preconditions": [
+              "Windows Server 2025 lab with dMSA support and Directory Service Changes auditing enabled.",
+              "Baseline window elapsed so the acting identity's profile never provisions managed-service accounts."
+            ],
+            "steps": [
+              "Create a dMSA outside CN=Managed Service Accounts as a non-admin identity.",
+              "Write msDS-DelegatedMSAState=2 and msDS-ManagedAccountPrecededByLink to a DA target in the same session.",
+              "Observe both ABIOCs fire on the create-and-modify lineage."
+            ],
+            "success_criteria": [
+              "ABIOC 'ITDR-013 dMSA Created Outside Managed Service Accounts Container By Non-Privileged Identity' fires on the 5137 creation.",
+              "ABIOC 'ITDR-013 dMSA Dual Privileged-Attribute Write Lineage In One Logon Session' fires on the paired 5136 writes under one subject_logon_id."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-ITDR-013B",
+            "objective": "The correlation rule fuses the lineage with the privileged TGT and inherited-privilege logon into one ITDR incident.",
+            "preconditions": [
+              "Both ABIOCs from TS-ITDR-013A have fired.",
+              "dMSA TGT (2946) and logon (4624) events are ingested within the correlation window."
+            ],
+            "steps": [
+              "Request the dMSA TGT (Rubeus dMSA authentication) and authenticate as the inherited-privilege dMSA.",
+              "Let the XSIAM correlation engine converge over the 600s window.",
+              "Confirm a single stitched incident_id."
+            ],
+            "success_criteria": [
+              "Correlation CR-ITDR-0013 raises exactly one ITDR privilege-escalation incident spanning 5137 -> dual 5136 -> 2946 -> 4624.",
+              "The incident causality chain identifies the dMSA object and the privileged target DN."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-ITDR-013C",
+            "objective": "The deterministic BIOC catches the dMSA attribute write via the 4662 Write-Property audit signature.",
+            "preconditions": [
+              "Object-access auditing enabled on the domain naming context."
+            ],
+            "steps": [
+              "Perform the dMSA attribute write as a non-admin identity.",
+              "Observe the 4662 access-mask-0x20 event on the msDS-DelegatedManagedServiceAccount object type."
+            ],
+            "success_criteria": [
+              "BIOC 'ITDR-013 Write-Property 4662 On dMSA Object-Type By Non-Admin' fires on the write-property event."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Audit and minimize OU permissions: remove CreateChild for 'All Objects' and for the msDS-DelegatedManagedServiceAccount object type from non-tier-0 principals (run Akamai Get-BadSuccessorOUPermissions.ps1 to enumerate who currently holds them).",
+      "Restrict dMSA creation to a dedicated, tightly-scoped administrative role and place all dMSAs in a monitored, permission-locked container.",
+      "Enable Directory Service Changes auditing and object-access auditing (SACLs) on the domain naming context so 5137/5136/4662 events are generated for dMSA objects and attributes."
+    ],
+    "detection_engineering": [
+      "Let Cortex Identity Analytics auto-tune an ABIOC on the per-identity managed-service-account provisioning baseline, then alert on the create-and-modify lineage (5137 creation + dual 5136 attribute write in one subject_logon_id) rather than on any single event.",
+      "Alert on Security event 4662 with access mask 0x20 against the msDS-DelegatedManagedServiceAccount object-type GUID (0feb936f-47b3-49f2-9386-1dedc2c23765) by non-administrative subjects.",
+      "Correlate the dMSA creation and attribute writes with the subsequent dMSA TGT (2946) and logon (4624) to raise a single privilege-escalation incident evidencing the full BadSuccessor chain."
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 — BadSuccessor: Abusing dMSA to Escalate Privileges in Active Directory (Windows Server 2025)",
+      "url": "https://unit42.paloaltonetworks.com/badsuccessor-attack-vector/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1098 — Account Manipulation",
+      "url": "https://attack.mitre.org/techniques/T1098/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK T1550.003 — Use Alternate Authentication Material: Pass the Ticket",
+      "url": "https://attack.mitre.org/techniques/T1550/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM / XDR — Identity Analytics and 'Possible Privilege Escalation using delegated MSA account' alert reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

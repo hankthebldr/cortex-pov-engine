@@ -1,0 +1,200 @@
+scenario_id: SIM-CLOUD-008
+name: "Microsoft 365 Storage Exfiltration + Mailbox Enumeration by an Azure App"
+version: "1.0"
+status: active
+
+plane: CLOUD_APP
+detection_types:
+  - Analytics
+  - XQL
+  - Correlation
+
+uc_ref: UCS-DLP-06
+tc_ref: TC-DLP-11
+tc_refs:
+  - TC-DLP-11
+  - TC-AES-07
+  - TC-DSPM-04
+pov_scenario_id: POV-SC-001
+uc_name: "Data Loss Prevention (DLP)"
+tc_name: "Validate DLP monitors and controls sensitive data movement across sanctioned and unsanctioned SaaS applications"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1567.002"
+mitre_technique_name: "Exfiltration Over Web Service: Exfiltration to Cloud Storage"
+additional_techniques:
+  - technique: "T1114"
+    name: "Email Collection"
+  - technique: "T1530"
+    name: "Data from Cloud Storage"
+
+threat_report: "Cortex XSIAM Analytics Alert Reference — Microsoft 365 / Exchange"
+threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source"
+
+execution_identity:
+  default: container-runtime
+  options:
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "M365 Unified-Audit Signal Injection & Analytics Accuracy"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 90
+  unit: "%"
+success_criteria: |
+  The synthetic Microsoft 365 unified-audit records (mailbox-enumeration-by-app
+  MailItemsAccessed burst, then bulk OneDrive/SharePoint download burst) produce
+  the two expected Cortex XSIAM ABIOC analytics alerts, and the correlation
+  stitches them into one incident. Detection Accuracy is the share of injected
+  patterns that raise the expected alert (target ≥ 90%).
+moat_tier: "LEAD"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# This is a SaaS/M365 identity-correlation scenario, NOT an endpoint
+# process-causality chain: the detections key on the msft_o365_audit unified
+# audit-log shape (MailItemsAccessed Bind / FileDownloaded burst), not on a
+# process tree. There is deliberately NO cgo_anchor — the only endpoint process
+# is the EAL emitter (our tooling/beacon), which the causality contract forbids
+# as a CGO, and the M365 audit dataset carries no causality_actor_process_*
+# fields to anchor. The connected graph forms on the shared IDENTITY: the
+# mailbox-enumeration burst and the storage-exfiltration burst originate from
+# the same target_user (UserId/UPN) and client IP, so they stitch via
+# shared_entity into ONE collection-to-exfiltration incident. step-01 (the
+# mailbox enumeration) is the single root.
+#
+# ── Enumeration breadth dependency (emitter fan-out) ────────────────────────
+# The 'Mailbox enumeration activity by Azure application' Analytics alert keys
+# on ONE Azure app touching MANY distinct mailboxes, so the card's hunt logic
+# gates on `mailboxes_touched >= 5` (not bind-volume alone) to distinguish
+# app-driven enumeration from repeated hammering of a single mailbox. For the
+# alert to fire on emitted data, the m365_activity_emitter mailbox_enumeration_by_app
+# pattern must fan the MailItemsAccessed Bind burst across >= 5 distinct canary
+# mailbox UPNs (holding AppId/ClientAppId/ClientIP constant so the app-identity
+# anchor and the shared-ClientIP correlation pivot to step-02 still hold). That
+# emitter fan-out lives in core/eal_simulator/plugins/m365_activity_emitter.py
+# (outside this scenario's edit scope) and is the open dependency for a live
+# green result on step-01.
+
+steps:
+  - id: step-01
+    name: "Azure app mailbox enumeration — MailItemsAccessed Bind burst into msft_o365_audit"
+    command: |
+      cat > /tmp/cloud-008-enum.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-008
+      name: "Cloud App — M365 mailbox enumeration by Azure app"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - xsiam-collector.cortexsim-canary.invalid
+      dry_run: false
+      tags: [cloud-app, microsoft-365, mailbox-enumeration, oauth-app]
+      steps:
+        - step_id: step-01
+          plugin: m365_activity_emitter
+          params:
+            collector_url: "https://xsiam-collector.cortexsim-canary.invalid/logs/v1/event"
+            event_pattern: mailbox_enumeration_by_app
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            burst_count: 24
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-008-enum.yml --live
+    identity: container-runtime
+    mitre_technique: "T1114"
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Mailbox enumeration activity by Azure application — high-fan-out MailItemsAccessed Bind sweep across many distinct mailboxes attributed to one AppId (XSIAM Analytics alert, not an ABIOC: no process-causality chain)."
+        ttp_ref: "TTP-2026-0164"
+        detection_id: xql-mailbox-enumeration-activity-by-an-azure-application
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Validation — confirms the MailItemsAccessed Bind burst landed in msft_o365_audit within the run window."
+        ttp_ref: "TTP-2026-0164"
+        detection_id: xql-mailbox-enumeration-by-azure-app-landed-in-unified-audit-log
+
+  - id: step-02
+    name: "Bulk OneDrive/SharePoint storage exfiltration — FileDownloaded burst into msft_o365_audit"
+    command: |
+      cat > /tmp/cloud-008-exfil.yml <<'YML'
+      campaign_id: CMP-CLOUDAPP-008
+      name: "Cloud App — M365 storage services exfiltration"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - xsiam-collector.cortexsim-canary.invalid
+      dry_run: false
+      tags: [cloud-app, microsoft-365, storage-exfiltration, onedrive, sharepoint]
+      steps:
+        - step_id: step-01
+          plugin: m365_activity_emitter
+          params:
+            collector_url: "https://xsiam-collector.cortexsim-canary.invalid/logs/v1/event"
+            event_pattern: storage_exfiltration
+            target_user: "ada.lovelace@cortexsim-canary.invalid"
+            burst_count: 20
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cloud-008-exfil.yml --live
+    identity: container-runtime
+    mitre_technique: "T1567.002"
+    platforms: ["linux", "container"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Microsoft 365 storage services exfiltration activity — bulk FileDownloaded/FileSyncDownloadedFull burst out of OneDrive/SharePoint (XSIAM Analytics alert, not an ABIOC: no process-causality chain)."
+        ttp_ref: "TTP-2026-0164"
+        detection_id: xql-microsoft-365-storage-services-exfiltration-activity
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Validation — confirms the bulk download burst landed in msft_o365_audit within the run window."
+        ttp_ref: "TTP-2026-0164"
+        detection_id: xql-microsoft-365-storage-exfiltration-download-burst-landed-in-unified-audit-log
+      - plane: CLOUD_APP
+        type: Correlation
+        description: "Stitches the mailbox-enumeration and storage-exfiltration ABIOCs on the shared UserId/ClientIP into one collection-to-exfiltration incident."
+        ttp_ref: "TTP-2026-0164"
+        detection_id: CR-CLOUD-0008
+
+cleanup:
+  commands:
+    - "rm -f /tmp/cloud-008-enum.yml /tmp/cloud-008-exfil.yml"
+    - "echo 'cortexsim-cloud-008-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-07-25"
+last_updated: "2026-07-25"
+tags:
+  - cloud-app
+  - casb
+  - microsoft-365
+  - exchange-online
+  - onedrive
+  - sharepoint
+  - oauth-app
+  - mailbox-enumeration
+  - data-exfiltration
+  - analytics
+  - eal-plugin
