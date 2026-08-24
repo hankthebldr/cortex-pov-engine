@@ -71,6 +71,7 @@ external_tools:
     source: "https://github.com/carlospolop/PEASS-ng"
     type: script
     install_inline: true
+    adapter_ref: TOOL-LINPEAS
 
 # ── Causality contract ──────────────────────────────────────────────────────
 # The pod's container runtime (containerd-shim → runc → container entrypoint

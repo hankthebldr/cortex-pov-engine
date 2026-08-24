@@ -23,7 +23,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
 .PHONY: help up down build agent-dist test test-backend test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf rust-dist check-rust-recipe \
-        check-rust-shelf check-rust-exec ci clean
+        check-rust-shelf check-rust-exec e2e-tierc ci clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -166,8 +166,13 @@ unscoreable-report: ## regenerate docs/uc_tc_mapping/unscoreable-tcs.md from the
 crosswalk-report: ## UC/TC crosswalk reconciliation summary
 	python3 scripts/uctc_crosswalk_v2.2.py --report
 
-check-adapters: ## tier-2 adapter source preflight (CI 'adapters' job)
+check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
+	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-adapter-wiring.py --list
+
+e2e-tierc: ## Tier-C isolated-execution assertion suite (CI 'e2e-isolated' job, no docker)
+	python3 -m pytest tests/e2e_isolated/test_tier_c_assets.py \
+		tests/e2e_isolated/test_tier_c_isolated_exec.py -v --tb=short
 
 check-streamer: ## analytics-streamer emitter↔card dataset reconcile (fails on a dataset mismatch)
 	python3 scripts/check-streamer-fidelity.py
@@ -181,7 +186,7 @@ coverage-strict: ## coverage report as a hard gate (exit 1 on floor/target breac
 # -----------------------------------------------------------------------------
 # Everything
 # -----------------------------------------------------------------------------
-ci: test validate ## Run every CI gate (backend + agent + ui + detection + adapters)
+ci: test validate e2e-tierc ## Run every CI gate (backend + agent + ui + detection + adapters + e2e-tierc)
 	@echo "All CI gates passed."
 
 clean: ## Remove the built image

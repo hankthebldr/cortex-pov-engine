@@ -194,24 +194,57 @@ newer plugins backfilled) · `GAP-ADAPT-03` (the 4 dead `equivalents[]` refs fix
 - Corpus after this pass: **75 loadable scenarios / 0 rejected**, **76 TTP cards**,
   validator **158 pass / 0 warn / 0 fail**, **494/494 detection_ids resolve**.
 
+### CLOSED in the 2026-08-23 pass (project-init cadence baseline)
+
+- **De-hand-rolling CI lint** **CLOSED** — `scripts/check-adapter-wiring.py` is a
+  new pure-Python (PyYAML-only) lint that flags any scenario naming a tool for
+  which a non-reference-only adapter pack EXISTS but which the scenario never
+  wires via `external_tools[].adapter_ref`. It classifies each bare entry as
+  *candidate* (genuine gap → fails the gate), *redundant* (adapter already wired
+  elsewhere in the same scenario) or *generic* (no pack — correct as-is). Wired
+  into CI as a hard gate in the `adapters` job and into `make check-adapters`.
+  The single real candidate it surfaced — `deepce` in `cdr-003-container-escape`,
+  declared bare while its sibling `cdr-001` wires `TOOL-DEEPCE` — is fixed, so the
+  gate is green at **0 candidates · 11 redundant · 70 generic**. This closes the
+  "no CI lint yet flags `external_tools` without `adapter_ref`" residual; the
+  broader CDR/NDR hand-rolled-`command:` migration remains opportunistic sprint
+  work (the gate now prevents *new* debt).
+- **Tier-C CI wiring** **CLOSED (pure-gate half)** — the Tier-C isolated-execution
+  assertion suite (`tests/e2e_isolated/test_tier_c_{assets,isolated_exec}.py`,
+  driven by `deploy/tier-c/tier_c_assert.py`) now runs as a dedicated hard CI job
+  `e2e-isolated` (stdlib + pyyaml, ~2s, 53 pass / 4 skip) plus `make e2e-tierc`,
+  giving Tier-C a focused red/green signal instead of being buried in the
+  monolithic `backend` image build. The **docker-gated** end-to-end (boot SimCore
+  → detonate a real SIM-EDR-001 bundle through the runner+sinkhole stack) is wired
+  as an opt-in step behind the `tier-c-e2e` PR label, pending live-CI validation
+  before promotion to a default hard gate (tracked in the sprint plan).
+
 ### REMAINS open / deferred
 
 - **`GAP-ADAPT-02` residual wiring** — ~21 tier 1-4 non-c2 adapters remain genuine
   (low-priority) wiring candidates after the 2026-06-15 bundles took the count from
   17 to 34 wired; surfaced by `/api/tools/adapters/coverage`. Most are on-demand
   utilities that don't each warrant a bespoke scenario — wire opportunistically.
-- **De-hand-rolling** — CDR/NDR scenarios still inline raw shell where an equivalent
-  adapter exists (CDR ~96% / NDR ~89% hand-rolled); no CI lint yet flags
-  `external_tools` without `adapter_ref`.
+- **De-hand-rolling (migration half)** — CDR/NDR scenarios still inline raw shell
+  in `command:` blocks where an equivalent adapter exists (CDR ~96% / NDR ~89%
+  hand-rolled). The regression gate now exists (above); migrating the existing
+  hand-rolled blocks to `adapter_ref` is per-scenario sprint work that must
+  re-verify each scenario's expected detections after the swap.
 - **`airs` IaC module** — intentionally NOT built; the 5 AIRS scenarios provision
   only `base` and drive the in-tree `cortex-vulnerable-llm` + `cortex-prompt-attacker`
   via the EAL/adapter path, so there is no dead `airs` reference (see GAP-IAC-002
   correction above).
-- **Tier-C CI wiring** — the path-filtered hard gate for the docker-gated
-  isolated-exec e2e (per the methodology doc's "CI integration" section).
+- **Tier-C docker e2e promotion** — promote the `tier-c-e2e` opt-in step to a
+  default (path-filtered) hard gate once it is validated against live CI; needs a
+  headless bundle-generation + docker-compose run proven green on a real runner.
 - **Live read-only Cortex API poll cadence tuning** — the auto-reconcile loop
   exists and is opt-in; production cadence/back-pressure against a real tenant
   is untuned.
+- **Doc-count drift** — this audit's corpus tallies (75 scenarios / 76 cards) are
+  the 2026-06-15 baseline; `CLAUDE.md` now reports **88 scenarios / 89 cards**
+  after the EMAIL plane, SIM-KOI-006, the CDR lab port and SIM-MP-006 landed. A
+  fresh counted-ground-truth pass through the loader should reconcile the numbers
+  across `CLAUDE.md`, `docs/reference/README.md`, and `scenario-catalog.md`.
 
 > The theme tables below are the **original 2026-06-07 audit** and are retained for
 > traceability. Where a row is listed as CLOSED above, the table entry is historical.

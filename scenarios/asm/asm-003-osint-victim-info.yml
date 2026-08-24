@@ -62,6 +62,7 @@ external_tools:
     source: "https://github.com/laramies/theHarvester"
     type: script
     install_inline: true
+    adapter_ref: TOOL-THEHARVESTER
 
 steps:
   - id: step-01

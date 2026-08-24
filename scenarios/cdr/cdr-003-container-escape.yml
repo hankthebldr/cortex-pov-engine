@@ -61,6 +61,7 @@ external_tools:
     source: "https://github.com/stealthcopter/deepce"
     type: script
     install_inline: true
+    adapter_ref: TOOL-DEEPCE
   - name: nsenter
     source: "system"
     type: binary

@@ -39,7 +39,7 @@
       "adapter_id": "TOOL-DEEPCE",
       "pin_type": "commit",
       "pin_ref": "420b1d1ddb636f6bd277a105f580cd09b03517cc",
-      "used_by": "SIM-CDR-001"
+      "used_by": "SIM-CDR-001, SIM-CDR-003"
     },
     {
       "name": "linpeas.sh",
@@ -50,7 +50,7 @@
       "adapter_id": "TOOL-LINPEAS",
       "pin_type": "release-tag",
       "pin_ref": "20260803-00785084",
-      "used_by": "SIM-EDR-022"
+      "used_by": "SIM-CDR-001, SIM-EDR-022"
     },
     {
       "name": "lse.sh",

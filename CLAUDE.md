@@ -283,14 +283,15 @@ A tier-4 pack may declare **one** staged artifact, `install.artifact` (`filename
 
 ## CI & Quality Gates
 
-`.github/workflows/ci.yml` runs a **6-job matrix** on push / PR / manual dispatch:
+`.github/workflows/ci.yml` runs a **7-job matrix** on push / PR / manual dispatch:
 
 - **backend** — Python test suite (`pytest`, runs inside the prod image; **4365 pass / 0 fail / 237 skip** on the full `tests/` tree as of the 2026-08-05 payload-shelf verification). The three long-standing `edr-013` / `edr-017` / `edr-021` failures — PowerShell steps emitted into a bash bundle — are **closed**: the push generator is now platform-aware and those scenarios resolve `windows`-only, so they emit a `.ps1` and are withdrawn from the bash suite rather than tolerated.
 - **agent** — Go beacon `build` + `vet` + `test -race -count=1`, **plus a cross-compile gate for `GOOS=linux` / `darwin` / `windows`** (`make test-agent-cross` is the local equivalent, and `agent/crosscompile_test.go` runs the same gate inside `go test`). The Windows arm is load-bearing: the beacon silently could not compile for Windows while 71 scenarios declared `platforms: [windows]`.
 - **ui** — vitest (**524 passed**) + `vite build`.
 - **detection** — detection-corpus validator (**346 pass / 0 warn / 0 fail**) + deterministic export regeneration check (`sha256sum -c`, SKELETON=0).
 - **refs** — `make check-refs` (**6 passed**): walks all 170 scenarios through the real loader under `CORTEXSIM_STRICT_REFS=true` so a dangling `uc_ref` / `tc_ref` / `pov_scenario_id` cannot land.
-- **adapters** — `scripts/check-adapter-sources.sh`: tier-2 adapter source trees (git submodules) **must exist on disk** (FAIL if missing — GAP-ADAPT-01 guard); tier-4 runtime-fetched misses are WARN only. **Owed:** `python3 -m engine.payload_shelf --check` and `PAYLOAD_ALLOW_UNPINNED=0` belong in **this** job — not a thirteenth one, because a job that can be skipped reads exactly like a passing one.
+- **adapters** — `scripts/check-adapter-sources.sh`: tier-2 adapter source trees (git submodules) **must exist on disk** (FAIL if missing — GAP-ADAPT-01 guard); tier-4 runtime-fetched misses are WARN only. **Plus** `scripts/check-adapter-wiring.py` (de-hand-rolling gate: FAIL if a scenario names a tool that HAS a non-reference-only adapter pack but never wires it via `external_tools[].adapter_ref`; green at 0 candidates). **Owed:** `python3 -m engine.payload_shelf --check` and `PAYLOAD_ALLOW_UNPINNED=0` belong in **this** job — not a thirteenth one, because a job that can be skipped reads exactly like a passing one.
+- **e2e-isolated** — Tier-C isolated-execution assertion suite (`tests/e2e_isolated/test_tier_c_{assets,isolated_exec}.py` driven by `deploy/tier-c/tier_c_assert.py`; stdlib + pyyaml, no docker) as a hard gate. The docker-gated end-to-end (real SIM-EDR-001 detonation through the runner+sinkhole stack) is an opt-in step behind the `tier-c-e2e` PR label.
 
 App boot on this tree is **133 routes** (126 baseline + 7 shelf routes).
 
