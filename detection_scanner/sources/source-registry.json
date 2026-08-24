@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "registry_version": "1.4.0",
+  "registry_version": "1.4.1",
   "description": "Indexed threat-intel and execution-framework sources for the cortex-pov-engine TTP corpus. Consumed by the cortex-scraper to crawl, parse, and emit candidate TTP drafts. Tier 1 = primary/canonical; Tier 2 = vendor intel; Tier 3 = government; Tier 4 = IR/community; Tier 5 = execution frameworks (payload sources, not intel).",
-  "updated_at": "2026-06-17",
+  "updated_at": "2026-08-24",
   "sources": [
     {
       "id": "SRC-UNIT42",
@@ -56,7 +56,7 @@
         "Unit 42 anatomy of an attack",
         "Unit 42 threat bulletin {month} {year}"
       ],
-      "last_canvassed": null
+      "last_canvassed": "2026-07-24"
     },
     {
       "id": "SRC-MITRE-ATTACK",
