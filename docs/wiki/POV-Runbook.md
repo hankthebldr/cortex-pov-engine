@@ -16,9 +16,12 @@ proof-of-value engagement with CortexSim.
    cd cortex-pov-engine
    ./install.sh   # sets up the docker compose stack on your laptop
    ```
-2. Pull the latest container image:
+2. Confirm the image built. CortexSim is **build-from-source** — there is no
+   published container image to pull, so `install.sh` (or `scripts/dev-up.sh`)
+   builds it locally and that local build is what you carry into the
+   engagement:
    ```bash
-   docker pull ghcr.io/hankthebldr/cortexsim:latest
+   docker compose images simcore    # expect a locally-built cortexsim image
    ```
 3. Confirm the customer's POV scope:
    - Which Cortex products?
