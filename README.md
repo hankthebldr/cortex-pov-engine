@@ -1,45 +1,96 @@
 # CortexSim — Detection Simulation Engine
 
-Enterprise-grade, Cortex-branded detection simulation platform for Palo
-Alto Networks Domain Consultants. Replaces ad-hoc scripts with a
-structured, UC/TC-aligned simulation engine that directly validates
-Cortex detection logic across the XSIAM / XDR / AIRS / Browser / KOI
-surfaces.
+Enterprise detection simulation engine for Palo Alto Networks Cortex
+Domain Consultants. It generates controlled, high-fidelity signal into a
+customer's Cortex environment (XSIAM / XDR / Cortex Cloud) to validate
+detection logic across the full `detection_type` vocabulary —
+**`BIOC · XQL · Analytics · Correlation · IOC · ABIOC`** — plus the XDM
+modeling-rule normalization substrate and cross-plane stitching.
 
-> **Analogy:** MITRE Caldera's opinionated nephew — not a red team C2,
-> but a *detection quality assurance engine*. Controlled, high-fidelity
-> signal generation that validates BIOC, Analytics, IOC, prompt-injection
-> classifiers, and stitch/grouping logic in XSIAM/XDR.
+> **Analogy:** MITRE Caldera's opinionated nephew — not a red-team C2, but a
+> *detection quality-assurance engine*. Real binaries, real process causality,
+> real telemetry, measured against the same UC/TC the customer is buying.
 
 ---
 
-## Quick Deploy
+## Honesty contract — read this first
 
-Landing page with the latest install one-liners and verified downloads:
-**https://hankthebldr.github.io/cortexsim/**
+This repository distinguishes three things that are easy to conflate, and
+refuses to report them as one number:
 
-### Prerequisites
-- Ubuntu 22.04 LTS+ or Debian 12+ jumpbox (or laptop for dev mode)
-- Python 3.11+
-- Internet access (for dependency installation and submodule clone)
+| Term | Meaning | Count |
+|---|---|---|
+| **Authored** | A scenario or assertion exists and loads clean | 170 scenarios · 20 assertions |
+| **Executed** | It has run end-to-end through a beacon or push bundle | partial (see [`docs/reference/`](docs/reference/README.md)) |
+| **Tenant-verified** | It has run against a **live Cortex tenant** and the result was read back | **0** |
 
-### One-line install — Linux
+***tenant-verified is 0.*** Every green in the test suite, in the console, and in
+this file comes from an injected transport or `httpx.MockTransport`. **Authored is
+not proven.** The console's *Readiness* surface (`#/readiness`) states this verbatim
+and renders the connector ladder as four never-collapsed rungs —
+**AUTHORED · CONFIGURED · REACHABLE · VERIFIED**.
+
+---
+
+## Current state — counted, not estimated
+
+All figures below were re-measured on **2026-08-28** by running the real scenario
+loader (`core/engine/scenario_loader.py`) and the real EAL plugin registry against
+this tree. Where any prose in `docs/` disagrees, **re-run the count and the count wins.**
+
+| Surface | Count |
+|---|---|
+| Loadable scenarios | **170** (0 rejected, 0 dangling refs) |
+| Detection planes | **15**, all `status: active` |
+| Scenario steps · step-detections | **654 · 1096** |
+| TTP detection cards | **170** (`detection_scanner/ttps/*.json`) |
+| Assertion artifacts (POS/PLT/AUT) | **20** (13 · 4 · 3) |
+| EAL simulator plugins | **21** |
+| Tool-adapter packs | **91** (8 payload-shelf-backed · 48 exemption-declared) |
+| AWS IaC modules | **11** |
+| HTTP routes at boot | **133** |
+| MITRE ATT&CK tactics covered | **14** |
+
+Reproduce the scenario census yourself:
+
 ```bash
-git clone https://github.com/hankthebldr/cortex-pov-engine.git
-cd cortex-pov-engine
-./install.sh
+make validate && make check-refs && make coverage-strict
 ```
 
-`install.sh` handles everything: system deps, submodules, Go agent
-build, Rust tool builds, React UI build, Docker Compose startup.
+### Detection-type distribution (scenario-level declarations)
 
-### Local dev (no Docker)
+| Type | Scenarios | |
+|---|---:|---|
+| XQL | 160 | `████████████████████` |
+| Correlation | 114 | `██████████████` |
+| BIOC | 105 | `█████████████` |
+| ABIOC | 66 | `████████` |
+| IOC | 40 | `█████` |
+| Analytics | 23 | `███` |
 
-One command — the Docker-free twin of `scripts/dev-up.sh`. Generates `.env`,
-creates the venv, builds the React UI into `core/static/`, launches SimCore, and
-polls `/api/health` until it reports ok. Use it when the Docker daemon is
-unavailable or the image registry is unreachable (sandboxed CI runners, cloud
-dev containers):
+ABIOC = PANW-authored, auto-tuned behavioral ML with a causality chain. XDM modeling
+rules are a normalization **substrate** (`detections.modeling_rules[]`) — surfaced and
+exported, counted informationally, *not* a `detection_type`.
+
+---
+
+## Quick start
+
+### Local dev — Docker
+
+```bash
+cp .env.example .env        # set CORTEXSIM_MASTER_KEY etc.
+./scripts/dev-up.sh         # builds the image + brings up SimCore on :8888
+```
+
+`scripts/dev-up.sh` is the canonical easy-deploy entry point. `.env.example`
+documents every required and optional env var, including the master-key guard the
+compose stack enforces.
+
+### Local dev — no Docker
+
+The Docker-free twin. Generates `.env`, creates the venv, builds the React UI into
+`core/static/`, launches SimCore, and polls `/api/health` until it reports ok:
 
 ```bash
 ./scripts/dev-up-native.sh              # full bring-up
@@ -47,8 +98,8 @@ dev containers):
 ./scripts/dev-up-native.sh --stop       # stop the running instance
 ```
 
-Or by hand. Note the UI build step: SimCore serves the SPA from `core/static/`,
-so without it `/` returns 404 while the API still answers:
+By hand — note the UI build step. SimCore serves the SPA from `core/static/`, so
+without it `/` returns 404 while the API still answers:
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
@@ -58,162 +109,353 @@ cd core && CORTEXSIM_ENV=development CORTEXSIM_BASE_DIR=$(pwd)/.. \
   uvicorn main:app --host 0.0.0.0 --port 8888 --reload
 ```
 
----
+### Full bootstrap — Linux jumpbox
 
-## Releases & Packaging
-
-- **Container image:** [`ghcr.io/hankthebldr/cortexsim`](https://github.com/hankthebldr/cortexsim/pkgs/container/cortexsim) — multi-arch (`linux/amd64`, `linux/arm64`), tagged `:vX.Y.Z` and `:latest`.
-- **GitHub Releases:** https://github.com/hankthebldr/cortexsim/releases — every `v*.*.*` tag publishes the image, stage-2 installer bundles, `manifest.json`, and `SHA256SUMS` via [`.github/workflows/release.yml`](.github/workflows/release.yml).
-- **Landing page:** [`docs/site/`](docs/site/) — Cortex-branded GitHub Pages site, redeployed on every release by [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
-- **Cutting a release:** `git tag v0.1.0 && git push origin v0.1.0` (or `Actions → Release → Run workflow`).
-
----
-
-## What Gets Deployed
-
-```
-SimCore  (FastAPI, port 8888)   →  React UI + REST API + EAL simulator
-cortexsim-agent                 →  pull-model execution agent
-EAL Traffic Simulator           →  /api/eal/* — campaign launcher + plugins
-cortex-vulnerable-llm           →  AIRS canary target (Phase 2)
-cortex-prompt-attacker          →  AIRS probe runner (Phase 3)
-```
-
-### Manage SimCore
 ```bash
-docker compose up -d --build       # start
-docker compose ps                  # status
-docker compose logs -f simcore     # live logs
-docker compose down                # stop
+git clone https://github.com/hankthebldr/cortex-pov-engine.git
+cd cortex-pov-engine
+./install.sh    # system deps, submodules, Go agent, Rust tools, React build, compose up
 ```
 
-### Run the pull agent
-```bash
-./bin/cortexsim-agent --server http://localhost:8888 --id my-jumpbox --interval 10
-```
-
----
-
-## Detection Planes
-
-| Plane | Cortex Engine | Status |
-|-------|---------------|--------|
-| **CDR** | Cortex Cloud / Prisma Cloud Compute | 5 scenarios + IaC module (EKS) |
-| **EDR** | Cortex XDR Agent | 5 scenarios + IaC module (diverse Linux targets) |
-| **NDR** | Network Security / Firewall Analytics | 5 scenarios + IaC module + EAL simulator |
-| **ITDR** | Cortex ITDR | 5 scenarios — synthetic IdP audit-log emission via `idp_signin_emulator` EAL plugin (impossible travel, MFA fatigue, credential stuffing, token replay, lockout) — plus IaC module (AD lab w/ seeded roastable accounts) |
-| **CSPM** | Cortex Cloud Posture Management | IaC module (intentional misconfigs) |
-| **ASM** | Cortex Attack Surface Management | IaC module (multi-service exposed host) |
-| **TIM** | Cortex Threat Intel Management | IaC module (TAXII + fake C2) |
-| **Cloud App** | Cortex Cloud App Security | 5 scenarios — outbound OAuth 2.0 authorize requests to Okta / Microsoft / Google with planted risky scopes via `oauth_grant_emulator` EAL plugin |
-| **Analytics** | XSIAM Correlation Engine | 3 multi-plane stitching scenarios |
-| **AI_ACCESS** | Cortex AI Access Security | 5 scenarios — outbound to OpenAI / Gemini / Anthropic via `llm_provider_egress` EAL plugin with planted DLP markers |
-| **AIRS** | Cortex AI Runtime Security | 5 scenarios driven by `cortex-prompt-attacker` against `cortex-vulnerable-llm` (OWASP LLM01–LLM10) |
-| **BROWSER** | Prisma Browser | 5 scenarios — `cortex-browser-attacker` (Playwright) + `browser_attack_runner` EAL plugin drives real Prisma Browser / Chromium |
-| **KOI** | Agentic endpoint / supply-chain | 5 scenarios — `cortex-malicious-agentic-pack` artifact tree + `agentic_egress` EAL plugin emulating Claude Desktop / pip / VS Code / Chrome consumer fetches |
+> **Build from source.** CortexSim is not currently distributed as a tagged release or
+> a published container image — there is no `ghcr.io` package and no GitHub Release to
+> download. `.github/workflows/release.yml` implements that pipeline and fires on a
+> `v*.*.*` tag, but **no tag has ever been cut**, so every artifact you run comes from
+> this tree. Clone and build.
 
 ---
 
 ## Architecture
 
+Three tiers, plus a signal-injection subsystem that sits beside them.
+
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  SimCore (FastAPI, port 8888)                                    │
+┌───────────────────────────────────────────────────────────────────────┐
+│  SimCore — FastAPI, port 8888, 133 routes                             │
 │  ┌──────────┐ ┌─────────────┐ ┌────────────┐ ┌──────────────┐ │
 │  │ Scenario │ │ Orchestrator│ │ Tool       │ │ EAL Simulator│ │
 │  │ Loader   │ │ (pull/push) │ │ Instantiator│ │ /api/eal/*   │ │
 │  └──────────┘ └─────────────┘ └────────────┘ └──────────────┘ │
-│       ↓             ↓                ↓               ↓           │
-│  scenarios/    Agent Task        sources/       plugin registry  │
-│   (YAML)        Queue           (submodules)    + 6 built-ins    │
-└──────────────────────────────────────────────────────────────────┘
-         ↑ HTTP poll              ↑ native CLI          ↑ HTTP API
-┌────────────────┐         ┌──────────────────────┐ ┌─────────────┐
-│ cortexsim-agent│         │ signalbench / ackbarx│ │ React UI    │
-│ (pull model)   │         │ mocktaxii / xdrtop   │ │ /api/eal/UI │
-└────────────────┘         └──────────────────────┘ └─────────────┘
+│  ┌──────────┐ ┌─────────────┐ ┌────────────┐ ┌──────────────┐ │
+│  │ UC/TC    │ │ Assertions  │ │ Payload    │ │ Connectors   │ │
+│  │ Registry │ │ (POS/PLT/AUT)│ │ Shelf      │ │ (read-back)  │ │
+│  └──────────┘ └─────────────┘ └────────────┘ └──────────────┘ │
+└───────────────────────────────────────────────────────────────────────┘
+      ↑ HTTP poll             ↑ native CLI          ↑ HTTP API
+┌────────────────┐    ┌──────────────────────┐  ┌─────────────┐
+│ cortexsim-agent│    │ signalbench / ackbarx│  │ React UI    │
+│ Go, pull model │    │ mocktaxii / xdrtop   │  │ (SPA at /)  │
+└────────────────┘    └──────────────────────┘  └─────────────┘
 ```
 
-**Three execution surfaces:**
+1. **SimCore** (`core/`) — FastAPI orchestrator. Loads scenarios from YAML, manages
+   tool lifecycle, dispatches tasks to agents or generates push bundles.
+2. **cortexsim-agent** (`agent/`) — Go pull-model beacon, stdlib only. Polls SimCore
+   for tasks, executes via the identity harness, streams output back.
+3. **React UI** (`ui/`) — SPA served by SimCore's static mount at `/`.
 
-- **Pull (agent)** — agent polls SimCore, receives task, executes with
-  identity harness, streams output back.
-- **Push (bundle)** — SimCore generates a self-contained bash bundle or
-  K8s YAML; DC downloads and executes offline.
-- **EAL simulator (/api/eal/*)** — declarative network-traffic
-  campaigns; plugin-based; supports C2 beaconing, DNS tunnelling, bulk
-  exfil, Stratum cryptojacking, SMB sweep, AIRS probe attacks.
+### Execution modes
 
-**Identity harness** — every TTP step runs via a service account
-(`www-data`, `postgres`, `node`, `nobody`, etc.) to create realistic
-process causality chains in XSIAM.
+- **Pull** — agent polls SimCore, receives a task, resolves identity agent-side,
+  executes, POSTs per-step output. Live progress over SSE
+  (`GET /api/runs/{id}/events`); operators can abort mid-run. The task queue is
+  **durable** — a write-through cache over the `queued_tasks` table, rehydrated on
+  startup, so a SimCore restart restores undelivered tasks.
+- **Push** — SimCore generates a self-contained bash bundle or PowerShell `.ps1` or
+  K8s YAML. Executes on a clean Ubuntu 22.04 (or Windows PS 5.1) host with **no
+  SimCore dependency at runtime**.
+- **EAL simulator** (`/api/eal/*`) — declarative traffic and log-emission campaigns
+  for signal shapes the identity harness cannot produce.
+
+### Identity harness
+
+Every TTP step runs via a service account (`www-data`, `postgres`, `node`, `nobody`)
+to create realistic process-causality chains in XSIAM. Push and pull resolve a step's
+identity from one shared spec (`spec/identity_harness.json`); a Go test guards drift.
+
+**Windows never fakes identity.** Windows has no credential-free unattended
+impersonation, so `identity.ResolveFor` collapses every non-direct identity to
+`direct` and writes an explicit `IDENTITY NOT HONOURED` degradation into the run
+record. A Windows beacon registers `["shell","powershell"]` and does **not** claim
+`identity-harness`.
+
+### Causality contract
+
+Optional, additive, back-compat. Declaring `cgo_anchor` (scenario-level) plus
+per-step `causality` collapses the causality graph's synthetic `cortexsim-agent` star
+into one connected CGO→process→process spine. 100% of process-lineage-spine scenarios
+yield a connected `proc:`-sourced chain.
+
+---
+
+## Detection planes
+
+| Plane | Cortex engine | Scenarios |
+|---|---|---:|
+| **CDR** | Cortex Cloud / Prisma Cloud Compute | 26 |
+| **ANALYTICS** | XSIAM Correlation Engine (multi-plane stitching) | 23 |
+| **EDR** | Cortex XDR Agent | 22 |
+| **ITDR** | Cortex ITDR | 20 |
+| **NDR** | Network Security / Firewall Analytics | 12 |
+| **CLOUD_APP** | Cortex Cloud App Security | 10 |
+| **TIM** | Cortex Threat Intel Management | 9 |
+| **KOI** | Agentic endpoint / supply chain | 8 |
+| **AI_SPM** | Cortex AI Security Posture Management | 7 |
+| **AI_ACCESS** | Cortex AI Access Security | 6 |
+| **ASM** | Cortex Attack Surface Management | 6 |
+| **BROWSER** | Prisma Browser | 6 |
+| **AIRS** | Cortex AI Runtime Security | 5 |
+| **CSPM** | Cortex Cloud Posture Management | 5 |
+| **EMAIL** | XSIAM / NG-SIEM (Proofpoint TAP + M365 ingestion) | 5 |
+| | **Total** | **170** |
+
+EMAIL is third-party log ingestion + correlation, **not** a first-party PANW product
+surface. Full inventory: [`docs/reference/scenario-catalog.md`](docs/reference/scenario-catalog.md).
+
+> **In development:** a 16th plane (**DLP**) is being authored. It is *not* included in
+> any count above — its 5 scenarios are currently rejected by the loader (`plane` is not
+> yet in the schema enum) and are not committed.
+
+---
+
+## UC/TC alignment — the FY27 v2.2 index
+
+The FY27 Use-Case / Test-Case master index is the sales-motion source of truth:
+**49 UC · 203 UCS · 266 TC · 140 POV-SC payloads · 38 SKU**, snapshotted at
+`docs/uc_tc_mapping/_v2.2-source/` and loaded at boot into frozen dataclasses.
+
+**Scenario refs are a validated foreign key into that index, not free text.** The
+loader enforces codes **S-10** through **S-16**; ERRORs reject when
+`CORTEXSIM_STRICT_REFS` is true, and **it defaults true**. `make check-refs` walks the
+real corpus through the real loader under strict mode — that gate is what makes the
+enforcement meaningful.
+
+### Coverage by validation class — read this before quoting a number
+
+The index is not one population. A flat percentage hides which mechanism owes the work.
+
+| class | total | by scenario | by assertion | union | open | index-scoreable | **tenant-verified** |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| DET | 102 | 63 | 0 | 63 | 39 | 49 | **0** |
+| HNT | 5 | 4 | 0 | 4 | 1 | 1 | **0** |
+| POS | 110 | 18 | 11 | 19 | 91 | 19 | **0** |
+| PLT | 43 | 1 | 4 | 5 | 38 | 16 | **0** |
+| AUT | 6 | 0 | 3 | 3 | 3 | 6 | **0** |
+| **all** | **266** | **86** | **18** | **94** | **172** | **91** | **0** |
+
+*index-scoreable* is how many rows carry a measurable threshold at all. Nobody should
+report the union as coverage.
+
+---
+
+## Assertions — the second proof mechanism
+
+140 of the index's open rows are **not detections** and cannot be closed by authoring
+more scenario YAML. POS asks whether a posture state *holds*; PLT whether a capability
+is *present*; AUT whether an outcome *occurs inside a budget*.
+
+`core/engine/assertions.py` + `assertions/{pos,plt,aut}/*.yml` are the artifact type
+for those, mirroring `Scenario`/`Run`/`Result` with `Assertion`/`AssertionRun`/
+`AssertionCheck` so **`verifier.score_run` scores both with no parallel scorer.**
+
+Five read-only XQL probes ship: `xql_rows`, `xql_distinct`, `xql_scalar`, `xql_ratio`
+(refuses to call 0-of-0 100%), and `xql_latency` (measures in the *platform's* clock,
+never wall-clock). Thresholds live in the artifact, never in the query —
+`| filter sla <= 300` returns zero rows for a tenant that took 412 s, indistinguishable
+from one that never responded.
+
+**The guard: an assertion that cannot fail does not load, proven by execution at load
+time.** `A-17` builds measurements across the probe's declared domain plus the
+neighbourhood of the authored threshold, pushes each through the *real* evaluator, and
+rejects unless the check produces **both** a `fail` and a `pass`. `A-18` requires an
+authored `negative_control` and proves it really evaluates `fail`.
+
+**No tenant is never green.** No integration / unreachable / 401 / 429 / bad dataset /
+`PRECURSOR_MISSING` / `POPULATION_EMPTY` / dry run all resolve **`pending`**. Only
+`NOT_ENTITLED` resolves `not_applicable`.
+
+Contract + authoring guide: [`docs/uc_tc_mapping/assertions.md`](docs/uc_tc_mapping/assertions.md).
+
+---
+
+## The measurement loop — optional, read-only
+
+**The Cortex connection is OPT-IN and READ-ONLY.** SimCore's job is to generate signal
+INTO the environment; it **never writes** to Cortex —
+`CORTEXSIM_XSIAM_ALLOW_WRITE` and `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE` stay default-off.
+Nothing is polled without a flag.
+
+When a credential is configured it reads out on three opt-in paths:
+
+1. **Tenant health/metrics** — `/healthcheck`, XQL over `metrics_*`.
+2. **Alert read-back** (`core/connectors/`) — pulls observed alerts and a pure
+   `matcher` auto-validates seeded `Result` rows on technique / detection-id / name
+   within a time window → real, evidence-backed MTTD, no manual checkbox.
+3. **Tier-2 verification XQL** — `POST /api/runs/{id}/verify`, its own flag
+   (`CORTEXSIM_AUTO_VERIFY`) and its own credential kind (`xsiam_tenant`, not
+   reconcile's `xsiam`). Configuring reconcile does not authorise XQL.
+
+**Preflight before the POV, not during it.** `POST /api/connectors/{kind}/preflight`
+answers "is my connection working?" *before* the customer is watching — staged
+(config → dns_tls → auth → scope → datasets → clock), every stage reported even when
+an earlier one degraded, and every response carries `queries_issued` so a preflight run
+against an injected transport cannot be quoted as tenant proof.
+
+**Scoring runs in two tiers.** Tier 1 is offline, makes no outbound calls, and is
+deliberately **not** flag-gated — gating it would gate honesty, not risk. Tier 2 is
+opt-in, quota-disciplined (max attempts, exponential backoff, per-sweep query cap,
+circuit breaker), and a spent budget degrades to `pending`, never `fail`.
+
+> **Quantified limit:** only **59 of 170** scenarios declare an MTTD-shaped primary KPI,
+> the only KPI the engine measures natively. The rest declare thresholds nothing
+> produces a `measured_value` for, so `score_run` returns `pending` permanently. Wiring
+> the caller did not create these — it made them visible.
 
 ---
 
 ## EAL Traffic Simulator
 
-A plugin-based subsystem under `core/eal_simulator/` that emits
-controlled network telemetry to validate Palo Alto Networks NGFW
-**Enhanced Application Logs** and Cortex XDR / XSIAM NDR analytics.
+`core/eal_simulator/` hosts **21 plugins** in two families.
 
-Built-in plugins:
+**Signal injection** — network / identity / SaaS / AI / browser / email shapes the
+identity harness cannot produce:
 
-| Plugin | Purpose | EAL targets |
-|--------|---------|------------|
-| `c2_http_beacon` | Periodic HTTP/S beacon | Unusual UA, periodic beaconing, DGA URI |
-| `dns_tunnel_exfil` | DNS-tunneling exfiltration | DNS tunnelling, anomalous volume, high-entropy labels |
-| `bulk_https_exfil` | Large outbound transfer | Anomalous data transfer size |
-| `stratum_tcp_connect` | Cryptojacking JSON-RPC | Cryptojacking App-ID |
-| `smb_rpc_sweep` | Lateral SMB / RPC sweep | Host sweeping, anomalous SMB / RPC |
-| `airs_prompt_attack` | AIRS validation runner | AIRS prompt-injection / tool-abuse / RAG / DoS |
-| `llm_provider_egress` | AI Access — outbound to public AI providers | AI Access — generative-AI App-ID, DLP secret/PII, jailbreak fingerprint |
-| `agentic_egress` | KOI — agentic supply-chain artifact fetch | KOI — typosquat package fetch, extension marketplace risk, agentic skill fetch with hidden injection |
-| `browser_attack_runner` | Prisma Browser drive via Playwright | Prisma Browser — credential paste, drive-by download, risky extension install, cross-origin DLP, screen-capture |
+| Plugin | Purpose |
+|---|---|
+| `c2_http_beacon` | Periodic HTTP/S beacon — unusual UA, DGA URI |
+| `dns_tunnel_exfil` | DNS-tunnelling exfiltration, high-entropy labels |
+| `bulk_https_exfil` | Large outbound transfer |
+| `stratum_tcp_connect` | Cryptojacking JSON-RPC |
+| `smb_rpc_sweep` | Lateral SMB / RPC sweep |
+| `ftp_egress` · `ssh_egress` | Cleartext FTP STOR · SSH outbound + KEXINIT |
+| `airs_prompt_attack` | AIRS validation runner |
+| `llm_provider_egress` | Outbound to OpenAI / Gemini / Anthropic with planted DLP markers |
+| `agentic_egress` | KOI agentic supply-chain artifact fetch |
+| `browser_attack_runner` | Prisma Browser drive via Playwright |
+| `oauth_grant_emulator` | OAuth 2.0 authorize with planted risky scopes |
+| `idp_signin_emulator` | Synthetic IdP sign-in audit events |
+| `email_emitter` | Synthetic Proofpoint TAP / M365 events |
 
-```bash
-# Inspect available plugins
-python -m scripts.eal_simulator.cli list-plugins | jq .
+**Analytics log-streamers** — POST shape-true audit JSON to an operator-supplied
+collector (HTTP log collector / XSIAM Broker VM) so a customer can validate their
+Analytics / ABIOC detections fire on that data source:
+`cloud_audit_emitter`, `cloud_storage_compute_emitter`, `azure_audit_emitter`,
+`k8s_audit_emitter`, `m365_activity_emitter`, `ad_windows_emitter`, `ngfw_eal_emitter`.
 
-# Run a campaign
-python -m scripts.eal_simulator.cli run path/to/campaign.yml --live
-```
+**Delivery is accounted, not assumed.** Only **2xx** counts as delivered.
+`events_emitted` / `bytes_sent` report what the collector **accepted**; a 401 from a
+Broker VM, a 404 on a mistyped path, and a 302 to a captive portal are each a distinct
+code in a 12-code taxonomy with a remediation line. Runs expose a campaign-level
+`delivery_verdict`. `GET /api/eal/campaigns/{id}/collectors` (+ `/preflight`) settles
+"will this ingest?" before the customer is watching.
 
-Full design: [`docs/eal-simulator/architecture.md`](./docs/eal-simulator/architecture.md).
+Catalog: [`docs/reference/eal-plugin-catalog.md`](docs/reference/eal-plugin-catalog.md).
 
 ---
 
-## AIRS Validation Stack (Phase 2 + 3)
+## Tool adapters and the payload shelf
 
-For AI Runtime Security POVs the repo ships a self-contained
-canary + attacker pair so the customer's AIRS layer can be validated
+**91 adapter packs** across a 5-tier model (1 in-tree · 2 submodule · 3 IaC-provisioned
+· 4 runtime-fetched · 5 external-only). One YAML per tool under `tools/packs/<tool>.yml`
+tells the engine where a tool lives, how to install and invoke it, its dual-use safety
+class, and which Cortex plane its signal lands on. Scenarios reference adapters by id
+(`external_tools[].adapter_ref: TOOL-NMAP`) instead of hand-rolling CLI.
+
+### Why the payload shelf exists
+
+Every tier-4 pack installs its tool **from the public internet, on the target host, at
+dispatch**. Customers who buy Cortex run default-deny egress — that is the first thing
+their network blocks. A step whose tool never arrived **runs anyway**, produces no
+detection, and the absent detection reads in a POV report as *"Cortex missed it"*: a
+manufactured false negative on the customer's own stack, in a document a DC shows a
+customer.
+
+A tier-4 pack may declare one staged artifact (`install.artifact`), validated by
+seventeen `TA-01..TA-17` codes. One resolver walks
+`scenario → adapter_ref → pack → artifact → shelf` and **refuses at compose time** with
+`PAYLOAD_NOT_STAGED` or `PAYLOAD_PIN_MISMATCH` (409).
+
+**The integrity model:** the digest is recomputed from the shelf bytes on the DC's own
+SimCore at compose time and baked into whatever the consumer carries. The consumer
+verifies against a value it **carried in**, never one it fetched from the server it is
+trusting.
+
+The **destination path** is overridable, which makes a **rename negative control**
+expressible: stage `linpeas` as `/tmp/.cache/sysinfo.sh` and the filename-keyed BIOCs
+correctly go dark while the behavioural ones must still fire. Every rename emits
+`FILENAME_KEYED_DETECTIONS_SUPPRESSED` stating the inverted reading.
+
+State: `tier4 staged 8 · exempt 48 · undeclared 0`. Every tier-4 pack declares
+**exactly one** of `install.artifact` or `install.artifact_exempt {reason_code, reason}`
+— `TA-13` *rejects* a pack declaring neither. Details:
+[`docs/reference/payload-shelf.md`](docs/reference/payload-shelf.md) and
+[`docs/tool-adapters.md`](docs/tool-adapters.md).
+
+---
+
+## Agent onboarding
+
+The front door is the **enrollment-token** flow. Mint a TTL / max-uses / revocable
+token, run one line on the jumpbox, and SimCore *assigns* the agent id — no more
+self-asserted `--id`:
+
+```bash
+curl -fsSL '<server>/api/agents/install?os=linux' | CORTEXSIM_TOKEN='cxs_…' bash
+```
+
+The console emits the token as an env var so it stays out of shell history and proxy
+logs. The script needs **no Go toolchain and no public-internet egress on the target**
+— it downloads the prebuilt beacon from *this* SimCore and sha256-verifies it.
+
+`?mode=service` (default) installs a systemd unit (Linux) or launchd job (macOS) so the
+beacon survives the SSH session and a reboot, degrading honestly to `setsid`+`nohup`
+with a `DEGRADED_NO_SUPERVISOR` code when no supervisor exists. `?uninstall=1` returns
+an idempotent removal script. Every stage exits with a stable code that is both printed
+and POSTed to `/api/agents/install/telemetry`, readable at
+`GET /api/agents/install/attempts` — so "ran the one-liner, nothing appeared" has an
+answer.
+
+**Beacon build matrix — five targets:** `linux/{amd64,arm64}`,
+`darwin/{amd64,arm64}`, `windows/amd64` (`.exe`).
+
+```bash
+make agent-dist    # cross-compile the matrix -> agent-dist/ + SHA256SUMS
+```
+
+`docker build` bakes the matrix into the image; a **host-run dev SimCore needs
+`make agent-dist` once** or `/api/agents/binary` returns an actionable 404.
+
+> **Windows caveat.** `GET /api/agents/binary?os=windows&arch=amd64` serves a verified
+> `PE32+`, and `?os=windows` returns a PowerShell installer with no preflight refusal.
+> **Still unproven: no Windows host has executed the beacon or the installer.** Serving
+> a correct PE is not the same as `sc.exe` service creation working on Server 2022.
+
+---
+
+## AIRS validation stack
+
+A self-contained canary + attacker pair, so a customer's AIRS layer can be validated
 without a real LLM, real keys, or any external dependency.
 
 ```
 ┌──────────────────────┐  HTTP  ┌──────────────────────┐
 │ cortex-prompt-       │ ─────> │ cortex-vulnerable-   │
-│ attacker (Phase 3)   │        │ llm (Phase 2)        │
+│ attacker             │        │ llm                  │
 │ probes/mutators/     │        │ Flask + canary       │
 │ scorers              │ <───── │ OWASP LLM01..LLM10   │
 └──────────────────────┘ JSONL  └──────────────────────┘
-        │                              ↑
-        │                              │
-        └─────► airs_prompt_attack ────┘
-                EAL plugin (forwards Attempts → ECS audit pipeline)
 ```
 
-**Canary**: deterministic regex-driven Flask app with one blueprint per
-OWASP LLM Top 10 (v2025/2.0) class. **No real LLM calls. No keys. Ever.**
+**Canary** — deterministic regex-driven Flask app, one blueprint per OWASP LLM Top 10
+class. **No real LLM calls. No keys. Ever.**
 
-**Attacker**: Probe → Mutator → Target → Scorer pipeline. Probes are
-**promptmap-compatible YAML** (no GPL code is imported — schema mirrored
-only). Mutator chain is PyRIT-shape (composable, stateless). JSONL
-output mirrors NVIDIA garak's `Attempt` field naming.
+**Attacker** — Probe → Mutator → Target → Scorer pipeline. Probes are
+promptmap-compatible YAML (schema mirrored only, no GPL imports); the mutator chain is
+PyRIT-shape; JSONL output mirrors NVIDIA garak's `Attempt` field naming.
 
 ```bash
-# Stand the canary up locally
 cortex-vulnerable-llm serve --port 8089 --vuln all
 
-# Run the LLM01 probe pack against it
 cortex-prompt-attacker run \
     --probes scenarios/airs/probes/llm01/ \
     --target-url http://127.0.0.1:8089/owasp/llm01/chat \
@@ -221,80 +463,137 @@ cortex-prompt-attacker run \
     --out /tmp/airs-001.jsonl
 ```
 
-See [`sources/cortex-vulnerable-llm/README.md`](./sources/cortex-vulnerable-llm/README.md)
-and [`sources/cortex-prompt-attacker/README.md`](./sources/cortex-prompt-attacker/README.md).
-Design grounded in
-[`docs/eal-simulator/research-dvllm-prompt-attacker.md`](./docs/eal-simulator/research-dvllm-prompt-attacker.md).
+---
+
+## IaC topology generator
+
+Produces Terraform bundles Torque can consume as blueprints. AWS is feature-complete
+with **11 modules** covering every active plane: `base`, `edr`, `cdr`,
+`content-library`, `itdr`, `ndr`, `cspm`, `asm`, `tim`, `telemetry-replay`, `ai-spm`.
+
+```
+POST /api/infra/generate              # generate a bundle
+GET  /api/infra/modules[?provider=aws]
+GET  /api/infra/bundles/{id}/download
+```
+
+Module metadata lives in each module's `README.md` frontmatter, not in Python — adding
+a module is filesystem-only. GCP (Phase C) and Azure (Phase D) ports are pending; an
+`onprem` provider (Ansible + Docker Compose) is design-only.
+
+Catalog: [`docs/reference/iac-module-catalog.md`](docs/reference/iac-module-catalog.md).
 
 ---
 
-## Repository Layout
+## Repository layout
 
 ```
 cortex-pov-engine/
-├── install.sh              ← jumpbox bootstrap (one-liner)
+├── install.sh              ← jumpbox bootstrap
 ├── docker-compose.yml      ← SimCore container
-├── .gitmodules             ← 10 tool submodules
+├── Makefile                ← every gate: validate, check-refs, coverage, ci
 ├── core/                   ← SimCore FastAPI app (Python 3.11)
-│   ├── api/                  ← REST routers (scenarios, runs, eal, infra, ...)
-│   └── eal_simulator/        ← EAL traffic simulator + plugins
-├── agent/                  ← Go pull-model beacon agent
-├── ui/                     ← React 18 + Vite frontend
-├── scenarios/              ← YAML scenario library (UC/TC tagged)
-│   ├── cdr/   edr/   ndr/   itdr/   multi_plane/
-│   ├── ai_access/   airs/   browser/   koi/
-│   └── airs/probes/          ← cortex-prompt-attacker probe pack
-├── sources/                ← submodules + in-tree tools
-│   ├── cortex-vulnerable-llm/    (in-tree, Phase 2)
-│   ├── cortex-prompt-attacker/   (in-tree, Phase 3)
-│   ├── signalbench/  mocktaxii/  ackbarx/  xdrtop/  ...
-├── infra/                  ← IaC modules (Terraform; AWS/GCP/Azure)
-├── deploy/                 ← Helm charts (eal-simulator)
-├── scripts/                ← operator CLIs (eal_simulator, etc.)
-├── tests/                  ← pytest suite (CortexSim core)
+│   ├── api/                  REST routers — 133 routes
+│   ├── engine/               scenario_loader · orchestrator · push_generator
+│   │                         uctc_registry · verifier · assertions · payload_shelf
+│   ├── connectors/           optional read-back measurement loop
+│   ├── integrations/xsiam/   ~116 read-only operation packs + Tier-2 XQL
+│   ├── eal_simulator/        EAL traffic simulator + 21 plugins
+│   └── planes/               declarative PlaneDescriptor registry (15 planes)
+├── agent/                  ← Go pull-model beacon (stdlib only, 5-target matrix)
+├── ui/                     ← React 18 + Vite console
+├── scenarios/              ← 170 scenario YAMLs, per plane
+├── assertions/{pos,plt,aut}← 20 POS/PLT/AUT artifacts
+├── detection_scanner/ttps/ ← 170 TTP detection cards
+├── tools/packs/            ← 91 tool-adapter packs
+├── payloads/               ← digest-pinned payload shelf (generated manifest)
+├── infra/modules/aws/      ← 11 Terraform modules
+├── sources/                ← 10 submodules + 4 in-tree tools
+├── deploy/                 ← Helm charts + Tier-C isolated-exec harness
+├── spec/                   ← identity_harness.json (shared push/pull spec)
+├── tests/                  ← pytest suite
 └── docs/
-    └── eal-simulator/      ← architecture + runbook + research briefs
+    ├── reference/            ← counted ground truth — the authority
+    ├── uc_tc_mapping/        ← FY27 v2.2 index + assertions contract
+    ├── site/                 ← GitHub Pages landing page
+    └── wiki/                 ← GitHub wiki source
 ```
 
 ---
 
-## Roadmap
+## CI and quality gates
 
-| Phase | Component | Status |
-|-------|-----------|--------|
-| 1 | Schema + 20 declarative scenarios across `AI_ACCESS / AIRS / BROWSER / KOI` | ✅ shipped |
-| 2 | `sources/cortex-vulnerable-llm/` — Flask canary, OWASP LLM01–10 | ✅ shipped |
-| 3 | `sources/cortex-prompt-attacker/` + `airs_prompt_attack` EAL plugin | ✅ shipped |
-| 4 | `llm_provider_egress` EAL plugin (replaces curl in AI_ACCESS scenarios) | ✅ shipped |
-| 5 | `sources/cortex-malicious-agentic-pack/` + `agentic_egress` plugin | ✅ shipped |
-| 6 | `sources/cortex-browser-attacker/` (Playwright + JSONL audit) | ✅ shipped |
-| 7 | UI for EAL Simulator + Validation Wizard | ✅ shipped |
-| 8 | POV report generator + ATT&CK Navigator export | ✅ shipped |
-| 9 | Cloud App (CASB) plane + Identity (ITDR) plane — `oauth_grant_emulator` + `idp_signin_emulator` EAL plugins, 10 scenarios | ✅ shipped |
+`.github/workflows/ci.yml` runs a **7-job matrix**; `.github/workflows/test.yml` adds a
+second layer.
+
+| Job | What it proves |
+|---|---|
+| `backend` | pytest inside the prod image |
+| `agent` | Go `build` + `vet` + `test -race`, **plus cross-compile for linux / darwin / windows** |
+| `ui` | vitest + `vite build` |
+| `detection` | corpus validator **346 pass / 0 warn / 0 fail** + deterministic export regeneration (`sha256sum -c`) |
+| `refs` | `make check-refs` — all 170 scenarios through the real loader under `CORTEXSIM_STRICT_REFS=true` |
+| `adapters` | tier-2 source trees must exist on disk; de-hand-rolling gate (a scenario naming a tool that HAS an adapter pack must wire it) |
+| `e2e-isolated` | Tier-C isolated-execution assertion suite |
+
+The Windows cross-compile arm is load-bearing: the beacon silently could not compile
+for Windows while 71 scenarios declared `platforms: [windows]`.
+
+```bash
+make -n ci    # enumerate the local equivalents
+```
 
 ---
 
-## Test
+## Documentation map
+
+| Doc | What it is |
+|---|---|
+| [`docs/reference/README.md`](docs/reference/README.md) | **Counted ground truth.** When a doc and the code disagree, re-run the count. |
+| [`docs/reference/scenario-catalog.md`](docs/reference/scenario-catalog.md) | Every scenario, enumerated |
+| [`docs/reference/adapter-catalog.md`](docs/reference/adapter-catalog.md) | Every adapter pack + tier-4 exemption triage |
+| [`docs/reference/payload-shelf.md`](docs/reference/payload-shelf.md) | Shelf design, integrity model, open items by owner |
+| [`docs/reference/api-and-agent-surface.md`](docs/reference/api-and-agent-surface.md) | Full HTTP + agent surface incl. installer exit codes |
+| [`docs/uc_tc_mapping/README.md`](docs/uc_tc_mapping/README.md) | FY27 v2.2 index, S-10..S-16 enforcement |
+| [`docs/uc_tc_mapping/assertions.md`](docs/uc_tc_mapping/assertions.md) | POS/PLT/AUT contract + authoring guide |
+| [`docs/tool-adapters.md`](docs/tool-adapters.md) | Adapter framework, shipped vs pending |
+| [`docs/operator-runbook.md`](docs/operator-runbook.md) | DC playbook for a live engagement |
+| [`CLAUDE.md`](CLAUDE.md) | Working agreement for AI agents in this repo |
+| Wiki | https://github.com/hankthebldr/cortex-pov-engine/wiki |
+| Pages | https://hankthebldr.github.io/cortex-pov-engine/ |
+
+---
+
+## Testing
 
 ```bash
-# Core CortexSim suite
-pytest tests/ --ignore=tests/installer
+make test                 # full suite
+make validate             # detection-corpus validator
+make check-refs           # UC/TC foreign-key integrity, strict mode
+make coverage-strict      # MITRE / plane / detection-type floors — exits non-zero below floor
+make test-agent-cross     # beacon cross-compile gate
 
-# Per-package suites (in-tree tools)
+.venv/bin/pytest tests/ -v
 pytest sources/cortex-vulnerable-llm/tests/
 pytest sources/cortex-prompt-attacker/tests/
 ```
 
----
-
-## No Cortex API Connection Required
-
-SimCore is fully standalone. It generates signals *into* the customer's
-Cortex environment via agent-based execution and EAL traffic generation;
-it does not read alerts *out of* Cortex. The DC validates detections
-manually in the XSIAM console (or via the customer's own analytics
-pipeline).
+See [`TESTING.md`](TESTING.md) for the tier model.
 
 ---
 
-*CortexSim | Owner: Henry Reed, DC2 GTM NAM Cortex*
+## Contributing
+
+- **Scenarios are YAML source-of-truth.** The DB stores run history only.
+- **Schema validation is strict.** Invalid files are rejected at startup, not tolerated.
+- **No wrapper code around external tools.** The Tool Instantiation Layer calls real
+  binaries with their native CLI flags.
+- **Push bundles must be self-contained** — clean Ubuntu 22.04, no SimCore at runtime.
+- **All API responses are structured JSON**, including errors:
+  `{"error": "...", "code": "...", "detail": "..."}`.
+- **Do not edit source files under `sources/`** — they are submodules.
+- **Never commit `.terraform/`**, `agent-dist/`, or `rust-dist/` — build artifacts.
+
+---
+
+*CortexSim · Palo Alto Networks Cortex Domain Consulting · Owner: Henry Reed*
