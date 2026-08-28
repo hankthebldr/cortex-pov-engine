@@ -4,13 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CortexSim — Detection Simulation Engine</title>
-  <meta name="description" content="Enterprise detection simulation engine for Palo Alto Networks Cortex (XSIAM/XDR). Validate BIOC, Analytics, IOC and stitching with high-fidelity, controlled signals." />
+  <meta name="description" content="Enterprise detection simulation engine for Palo Alto Networks Cortex (XSIAM/XDR). 170 UC/TC-aligned scenarios across 15 detection planes validating BIOC, XQL, Analytics, Correlation, IOC and ABIOC." />
   <meta name="theme-color" content="#003366" />
   <meta property="og:title" content="CortexSim — Detection Simulation Engine" />
-  <meta property="og:description" content="Controlled, high-fidelity signal generation for Cortex XSIAM/XDR detection validation." />
+  <meta property="og:description" content="170 scenarios across 15 Cortex detection planes. Controlled, high-fidelity signal generation for XSIAM/XDR detection validation." />
   <meta property="og:type" content="website" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="preconnect" href="https://api.github.com" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -25,9 +24,9 @@
       </a>
       <nav class="cs-nav" aria-label="Primary">
         <a href="#platform">Platform</a>
-        <a href="#install">Install</a>
-        <a href="#downloads">Downloads</a>
-        <a href="#verify">Verify</a>
+        <a href="#coverage">Coverage</a>
+        <a href="#build">Build</a>
+        <a href="#proof">Proof</a>
         <a href="https://github.com/__GH_OWNER__/__GH_REPO__" rel="noopener">GitHub &rarr;</a>
       </nav>
     </div>
@@ -40,17 +39,18 @@
         <h1>Detection simulation,<br/>engineered for the&nbsp;POV.</h1>
         <p class="cs-lede">
           CortexSim drives controlled, high-fidelity signal into XSIAM and XDR &mdash; so you
-          can validate BIOC, Analytics, IOC and cross-plane stitching against the same
+          can validate BIOC, XQL, Analytics, Correlation, IOC and ABIOC against the same
           UC/TC the customer is buying. No C2. No mocks. Real binaries, real causality, real telemetry.
         </p>
         <div class="cs-hero__cta">
-          <a class="cs-btn cs-btn--primary" href="#install">Get the install one-liner</a>
-          <a class="cs-btn cs-btn--ghost" id="cs-latest-link" href="https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest">Latest release &rarr;</a>
+          <a class="cs-btn cs-btn--primary" href="#build">Clone and build</a>
+          <a class="cs-btn cs-btn--ghost" href="https://github.com/__GH_OWNER__/__GH_REPO__/wiki" rel="noopener">Read the wiki &rarr;</a>
         </div>
         <dl class="cs-hero__stats">
-          <div><dt>Container image</dt><dd id="cs-image-ref">ghcr.io/&hellip;/cortexsim:latest</dd></div>
-          <div><dt>Latest version</dt><dd id="cs-version">loading&hellip;</dd></div>
-          <div><dt>Published</dt><dd id="cs-published">&mdash;</dd></div>
+          <div><dt>Detection planes</dt><dd>15</dd></div>
+          <div><dt>Loadable scenarios</dt><dd>170</dd></div>
+          <div><dt>Step-detections</dt><dd>1096</dd></div>
+          <div><dt>Tenant-verified</dt><dd>0 &mdash; see Proof</dd></div>
         </dl>
       </div>
     </section>
@@ -59,54 +59,93 @@
       <div class="cs-section__inner">
         <h2>Platform at a glance</h2>
         <p class="cs-section__lede">
-          One engine, every Cortex detection plane. Each tile is a live
-          plane with UC/TC-aligned, MITRE-mapped scenarios driving real
-          signal into the customer's tenant.
+          One engine, every Cortex detection plane. Each tile is a live plane with
+          UC/TC-aligned, MITRE-mapped scenarios driving real signal into the
+          customer's tenant. Counts are re-measured by running the real scenario
+          loader against the tree &mdash; not estimated.
         </p>
 
         <dl class="cs-statband">
-          <div><dt>Detection planes</dt><dd>13</dd></div>
-          <div><dt>Active scenarios</dt><dd>53+</dd></div>
-          <div><dt>AWS IaC modules</dt><dd>10</dd></div>
-          <div><dt>MITRE-mapped</dt><dd>100%</dd></div>
+          <div><dt>Detection planes</dt><dd>15</dd></div>
+          <div><dt>Scenarios</dt><dd>170</dd></div>
+          <div><dt>TTP cards</dt><dd>170</dd></div>
+          <div><dt>EAL plugins</dt><dd>21</dd></div>
+          <div><dt>Adapter packs</dt><dd>91</dd></div>
+          <div><dt>AWS IaC modules</dt><dd>11</dd></div>
         </dl>
 
         <div class="cs-board" role="list" aria-label="Detection plane coverage">
           <article class="cs-plane" role="listitem">
             <span class="cs-plane__dot" data-state="live"></span>
+            <h3>CDR</h3>
+            <p class="cs-plane__engine">Cortex Cloud &middot; Prisma Compute</p>
+            <span class="cs-plane__count">26 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>Analytics</h3>
+            <p class="cs-plane__engine">XSIAM Correlation Engine</p>
+            <span class="cs-plane__count">23 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
             <h3>EDR</h3>
             <p class="cs-plane__engine">Cortex XDR Agent</p>
-            <span class="cs-plane__count">5 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>CDR</h3>
-            <p class="cs-plane__engine">Cortex Cloud / Prisma Compute</p>
-            <span class="cs-plane__count">5 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>NDR</h3>
-            <p class="cs-plane__engine">Network Security &middot; FW Analytics</p>
-            <span class="cs-plane__count">5 scenarios</span>
+            <span class="cs-plane__count">22 scenarios</span>
           </article>
           <article class="cs-plane" role="listitem">
             <span class="cs-plane__dot" data-state="live"></span>
             <h3>ITDR</h3>
             <p class="cs-plane__engine">Cortex ITDR</p>
-            <span class="cs-plane__count">5 scenarios</span>
+            <span class="cs-plane__count">20 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>NDR</h3>
+            <p class="cs-plane__engine">Network Security &middot; FW Analytics</p>
+            <span class="cs-plane__count">12 scenarios</span>
           </article>
           <article class="cs-plane" role="listitem">
             <span class="cs-plane__dot" data-state="live"></span>
             <h3>Cloud App</h3>
             <p class="cs-plane__engine">Cortex Cloud App Security</p>
-            <span class="cs-plane__count">5 scenarios</span>
+            <span class="cs-plane__count">10 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>TIM</h3>
+            <p class="cs-plane__engine">Threat Intel Management</p>
+            <span class="cs-plane__count">9 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>KOI</h3>
+            <p class="cs-plane__engine">Agentic endpoint &middot; supply chain</p>
+            <span class="cs-plane__count">8 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>AI-SPM</h3>
+            <p class="cs-plane__engine">AI Security Posture Management</p>
+            <span class="cs-plane__count">7 scenarios</span>
           </article>
           <article class="cs-plane" role="listitem">
             <span class="cs-plane__dot" data-state="live"></span>
             <h3>AI Access</h3>
             <p class="cs-plane__engine">Cortex AI Access Security</p>
-            <span class="cs-plane__count">5 scenarios</span>
+            <span class="cs-plane__count">6 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>ASM</h3>
+            <p class="cs-plane__engine">Attack Surface Management</p>
+            <span class="cs-plane__count">6 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>Browser</h3>
+            <p class="cs-plane__engine">Prisma Browser</p>
+            <span class="cs-plane__count">6 scenarios</span>
           </article>
           <article class="cs-plane" role="listitem">
             <span class="cs-plane__dot" data-state="live"></span>
@@ -116,124 +155,204 @@
           </article>
           <article class="cs-plane" role="listitem">
             <span class="cs-plane__dot" data-state="live"></span>
-            <h3>Browser</h3>
-            <p class="cs-plane__engine">Prisma Browser</p>
-            <span class="cs-plane__count">5 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>KOI</h3>
-            <p class="cs-plane__engine">Agentic / supply-chain</p>
-            <span class="cs-plane__count">5 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>Analytics</h3>
-            <p class="cs-plane__engine">XSIAM Correlation Engine</p>
-            <span class="cs-plane__count">3 multi-plane</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="iac"></span>
             <h3>CSPM</h3>
-            <p class="cs-plane__engine">Cortex Cloud Posture Mgmt</p>
-            <span class="cs-plane__count">IaC module</span>
+            <p class="cs-plane__engine">Cloud Posture Management</p>
+            <span class="cs-plane__count">5 scenarios</span>
+          </article>
+          <article class="cs-plane" role="listitem">
+            <span class="cs-plane__dot" data-state="live"></span>
+            <h3>Email</h3>
+            <p class="cs-plane__engine">XSIAM / NG-SIEM ingestion</p>
+            <span class="cs-plane__count">5 scenarios</span>
           </article>
           <article class="cs-plane" role="listitem">
             <span class="cs-plane__dot" data-state="iac"></span>
-            <h3>ASM</h3>
-            <p class="cs-plane__engine">Attack Surface Mgmt</p>
-            <span class="cs-plane__count">IaC module</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="iac"></span>
-            <h3>TIM</h3>
-            <p class="cs-plane__engine">Threat Intel Mgmt</p>
-            <span class="cs-plane__count">IaC module</span>
+            <h3>DLP</h3>
+            <p class="cs-plane__engine">In development &mdash; not loadable</p>
+            <span class="cs-plane__count">0 scenarios</span>
           </article>
         </div>
 
-        <p class="cs-board__legend">
-          <span class="cs-legend"><span class="cs-plane__dot" data-state="live"></span> Active scenarios</span>
-          <span class="cs-legend"><span class="cs-plane__dot" data-state="iac"></span> IaC topology module</span>
+        <p class="cs-board__legend cs-legend">
+          <span class="cs-plane__dot" data-state="live"></span> active &amp; loading
+          &nbsp;&nbsp;
+          <span class="cs-plane__dot" data-state="iac"></span> in development
         </p>
       </div>
     </section>
 
-    <section id="install" class="cs-section">
+    <section id="coverage" class="cs-section cs-section--alt">
       <div class="cs-section__inner">
-        <h2>One-line install</h2>
+        <h2>What the corpus actually covers</h2>
         <p class="cs-section__lede">
-          Stage-1 cradles are tiny, hand-auditable, and verify the rest of the install against the release manifest's SHA-256 digests.
+          170 scenarios decompose into 654 executable steps carrying 1096 expected
+          detections, spanning 14 MITRE ATT&amp;CK tactics. The
+          <code>detection_type</code> vocabulary is six values; XDM modeling rules are
+          a normalization <em>substrate</em>, counted informationally rather than as a type.
         </p>
 
         <div class="cs-grid cs-grid--two">
           <article class="cs-card">
             <header class="cs-card__head">
-              <span class="cs-pill">Linux</span>
-              <span class="cs-card__sub">Ubuntu 22.04 / Debian 12 / RHEL 9</span>
+              <span class="cs-pill">Detection types</span>
+              <span class="cs-card__sub">scenarios declaring each</span>
             </header>
-            <pre class="cs-code"><button class="cs-copy" data-copy="cs-cmd-linux" aria-label="Copy">copy</button><code id="cs-cmd-linux">curl -fsSL https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest/download/install.sh | sudo bash</code></pre>
-            <p class="cs-card__note">Add <code>--demo-mode</code> after <code>bash -s --</code> to emit ATT&amp;CK-annotated install telemetry.</p>
+            <div class="cs-table-wrap">
+              <table class="cs-table">
+                <thead><tr><th scope="col">Type</th><th scope="col">Scenarios</th></tr></thead>
+                <tbody>
+                  <tr><td>XQL</td><td>160</td></tr>
+                  <tr><td>Correlation</td><td>114</td></tr>
+                  <tr><td>BIOC</td><td>105</td></tr>
+                  <tr><td>ABIOC</td><td>66</td></tr>
+                  <tr><td>IOC</td><td>40</td></tr>
+                  <tr><td>Analytics</td><td>23</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="cs-card__note">ABIOC = PANW-authored, auto-tuned behavioral ML with a causality chain.</p>
           </article>
 
           <article class="cs-card">
             <header class="cs-card__head">
-              <span class="cs-pill cs-pill--alt">Windows</span>
-              <span class="cs-card__sub">Windows 10 2004+ / Server 2022 (WSL2)</span>
+              <span class="cs-pill cs-pill--alt">Proof mechanisms</span>
+              <span class="cs-card__sub">detections are not the only artifact</span>
             </header>
-            <pre class="cs-code"><button class="cs-copy" data-copy="cs-cmd-win" aria-label="Copy">copy</button><code id="cs-cmd-win">iex (iwr -useb https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest/download/install.ps1)</code></pre>
-            <p class="cs-card__note">Self-elevates via UAC, enables WSL2, runs the same Linux container under a Windows service.</p>
+            <div class="cs-table-wrap">
+              <table class="cs-table">
+                <thead><tr><th scope="col">Artifact</th><th scope="col">Asks</th><th scope="col">Count</th></tr></thead>
+                <tbody>
+                  <tr><td>Scenario</td><td>Does the detection fire?</td><td>170</td></tr>
+                  <tr><td>POS assertion</td><td>Does a posture state hold?</td><td>13</td></tr>
+                  <tr><td>PLT assertion</td><td>Is a capability present?</td><td>4</td></tr>
+                  <tr><td>AUT assertion</td><td>Does an outcome hit its budget?</td><td>3</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="cs-card__note">140 UC/TC index rows are <em>not</em> detections and cannot be closed by authoring more scenario YAML.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="build" class="cs-section">
+      <div class="cs-section__inner">
+        <h2>Clone and build</h2>
+        <p class="cs-section__lede">
+          CortexSim is distributed as source. There is no tagged release and no
+          published container image &mdash; the release pipeline exists in
+          <code>.github/workflows/release.yml</code> and fires on a <code>v*.*.*</code>
+          tag, but no tag has been cut. Everything you run comes from the tree.
+        </p>
+
+        <div class="cs-grid cs-grid--two">
+          <article class="cs-card">
+            <header class="cs-card__head">
+              <span class="cs-pill">Docker</span>
+              <span class="cs-card__sub">canonical local bring-up</span>
+            </header>
+            <pre class="cs-code"><button class="cs-copy" data-copy="cs-cmd-docker" aria-label="Copy">copy</button><code id="cs-cmd-docker">git clone https://github.com/__GH_OWNER__/__GH_REPO__.git
+cd __GH_REPO__
+cp .env.example .env
+./scripts/dev-up.sh</code></pre>
+            <p class="cs-card__note">Builds the image and brings SimCore up on <code>:8888</code>.</p>
+          </article>
+
+          <article class="cs-card">
+            <header class="cs-card__head">
+              <span class="cs-pill cs-pill--alt">No Docker</span>
+              <span class="cs-card__sub">sandboxed runners, dev containers</span>
+            </header>
+            <pre class="cs-code"><button class="cs-copy" data-copy="cs-cmd-native" aria-label="Copy">copy</button><code id="cs-cmd-native">./scripts/dev-up-native.sh              # full bring-up
+./scripts/dev-up-native.sh --skip-ui    # reuse core/static/
+./scripts/dev-up-native.sh --stop       # stop</code></pre>
+            <p class="cs-card__note">Generates <code>.env</code>, builds the venv and the React UI, polls <code>/api/health</code>.</p>
           </article>
         </div>
 
         <details class="cs-details">
-          <summary>Container only (existing Docker host)</summary>
-          <pre class="cs-code"><code id="cs-cmd-docker">docker run -d --name cortexsim -p 8888:8888 \
-  ghcr.io/__GH_OWNER__/cortexsim:latest</code></pre>
+          <summary>Full jumpbox bootstrap (Ubuntu 22.04 / Debian 12)</summary>
+          <pre class="cs-code"><code>git clone https://github.com/__GH_OWNER__/__GH_REPO__.git
+cd __GH_REPO__
+./install.sh</code></pre>
+          <p class="cs-card__note">System deps, submodules, Go beacon, Rust tools, React build, compose up.</p>
+        </details>
+
+        <details class="cs-details">
+          <summary>Enroll a beacon on a target host</summary>
+          <pre class="cs-code"><code>curl -fsSL '&lt;server&gt;/api/agents/install?os=linux' | CORTEXSIM_TOKEN='cxs_…' bash</code></pre>
+          <p class="cs-card__note">Needs no Go toolchain and no public-internet egress on the target &mdash; the beacon is downloaded from your own SimCore and sha256-verified. Installs a systemd unit or launchd job by default.</p>
         </details>
       </div>
     </section>
 
-    <section id="downloads" class="cs-section cs-section--alt">
+    <section id="proof" class="cs-section cs-section--alt">
       <div class="cs-section__inner">
-        <h2>Release artifacts</h2>
-        <p class="cs-section__lede" id="cs-release-meta">Loading the latest release&hellip;</p>
+        <h2>Proof, not claims</h2>
+        <p class="cs-section__lede">
+          This project refuses to report three different things as one number. A
+          scenario that loads is not a scenario that ran, and a scenario that ran
+          against a mock is not evidence about a customer's tenant.
+        </p>
+
         <div class="cs-table-wrap">
-          <table class="cs-table" id="cs-asset-table">
+          <table class="cs-table">
             <thead>
-              <tr><th scope="col">Artifact</th><th scope="col">Size</th><th scope="col">SHA-256</th></tr>
+              <tr><th scope="col">Rung</th><th scope="col">What it proves</th><th scope="col">What it does not</th><th scope="col">Count</th></tr>
             </thead>
-            <tbody><tr><td colspan="3" class="cs-empty">&hellip;</td></tr></tbody>
+            <tbody>
+              <tr>
+                <td><strong>Authored</strong></td>
+                <td>The artifact exists and loads clean under strict validation.</td>
+                <td>That it has ever executed.</td>
+                <td>170 + 20</td>
+              </tr>
+              <tr>
+                <td><strong>Configured</strong></td>
+                <td>A tenant credential is present in the encrypted vault.</td>
+                <td>That the tenant is reachable.</td>
+                <td>&mdash;</td>
+              </tr>
+              <tr>
+                <td><strong>Reachable</strong></td>
+                <td>Preflight resolved DNS/TLS, auth, scope, datasets and clock skew.</td>
+                <td>That any detection fired.</td>
+                <td>&mdash;</td>
+              </tr>
+              <tr>
+                <td><strong>Verified</strong></td>
+                <td>A run executed against a live tenant and the alert was read back.</td>
+                <td>&mdash;</td>
+                <td><strong>0</strong></td>
+              </tr>
+            </tbody>
           </table>
         </div>
+
+        <p class="cs-section__lede">
+          <strong>Tenant-verified is 0.</strong> No run and no assertion in this
+          repository has ever executed against a live Cortex tenant. Every green in
+          the test suite and in the console comes from an injected transport.
+          <em>Authored is not proven</em> &mdash; the console's Readiness surface states
+          this verbatim, and every preflight response carries
+          <code>queries_issued</code> so a mocked green cannot be quoted as tenant proof.
+        </p>
       </div>
     </section>
 
-    <section id="verify" class="cs-section">
-      <div class="cs-section__inner">
-        <h2>Verify before you run</h2>
-        <p class="cs-section__lede">Every release ships <code>SHA256SUMS</code> and a structured <code>manifest.json</code>. Audit, then execute.</p>
-        <pre class="cs-code"><code>curl -fsSLO https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest/download/install.sh
-curl -fsSLO https://github.com/__GH_OWNER__/__GH_REPO__/releases/latest/download/SHA256SUMS
-sha256sum --check --ignore-missing SHA256SUMS
-# install.sh: OK
-sudo bash install.sh</code></pre>
-      </div>
-    </section>
-
-    <section class="cs-section cs-section--alt">
+    <section class="cs-section">
       <div class="cs-section__inner cs-grid cs-grid--three">
         <article class="cs-feature">
-          <h3>Plane coverage</h3>
-          <p>EDR, CDR, NDR, ITDR, CSPM, ASM, TIM, AI Access, AIRS, Browser, KOI, plus multi-plane Analytics stitching.</p>
-        </article>
-        <article class="cs-feature">
           <h3>UC/TC aligned</h3>
-          <p>Every scenario maps to MITRE ATT&amp;CK and to the use cases your customer signed for &mdash; not a generic atomic test.</p>
+          <p>Every scenario maps to MITRE ATT&amp;CK and to a validated foreign key in the FY27 v2.2 index &mdash; 266 test cases, enforced at load time. Not a generic atomic test.</p>
         </article>
         <article class="cs-feature">
-          <h3>POV-ready report</h3>
-          <p>Per-run Cortex-branded markdown export with coverage, MTTD per detection, and gap callouts.</p>
+          <h3>Survives default-deny</h3>
+          <p>The payload shelf stages digest-pinned tool artifacts on your own SimCore, so a blocked download can't masquerade in a POV report as &ldquo;Cortex missed it.&rdquo;</p>
+        </article>
+        <article class="cs-feature">
+          <h3>Measured, not ticked</h3>
+          <p>Opt-in, read-only alert read-back auto-validates seeded results into evidence-backed MTTD. SimCore never writes to Cortex.</p>
         </article>
       </div>
     </section>
@@ -245,14 +364,13 @@ sudo bash install.sh</code></pre>
       <p>
         <a href="https://github.com/__GH_OWNER__/__GH_REPO__" rel="noopener">Source</a>
         &middot;
-        <a href="https://github.com/__GH_OWNER__/__GH_REPO__/releases" rel="noopener">Releases</a>
+        <a href="https://github.com/__GH_OWNER__/__GH_REPO__/wiki" rel="noopener">Wiki</a>
         &middot;
         <a href="https://github.com/__GH_OWNER__/__GH_REPO__/issues" rel="noopener">Issues</a>
       </p>
     </div>
   </footer>
 
-  <script>window.CS_REPO = { owner: "__GH_OWNER__", name: "__GH_REPO__" };</script>
   <script src="app.js" defer></script>
 </body>
 </html>
