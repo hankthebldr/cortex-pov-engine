@@ -1,376 +1,651 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CortexSim — Detection Simulation Engine</title>
-  <meta name="description" content="Enterprise detection simulation engine for Palo Alto Networks Cortex (XSIAM/XDR). 170 UC/TC-aligned scenarios across 15 detection planes validating BIOC, XQL, Analytics, Correlation, IOC and ABIOC." />
-  <meta name="theme-color" content="#003366" />
-  <meta property="og:title" content="CortexSim — Detection Simulation Engine" />
-  <meta property="og:description" content="170 scenarios across 15 Cortex detection planes. Controlled, high-fidelity signal generation for XSIAM/XDR detection validation." />
-  <meta property="og:type" content="website" />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="stylesheet" href="style.css" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CortexSim — Detection Simulation Engine</title>
+<meta name="description" content="Briefing memo: CortexSim drives controlled, high-fidelity signal into Cortex XSIAM/XDR. 170 UC/TC-aligned scenarios across 15 detection planes." />
+<meta name="theme-color" content="#0a0e0b" />
+<meta property="og:title" content="CortexSim — Detection Simulation Engine" />
+<meta property="og:description" content="170 scenarios across 15 Cortex detection planes. Controlled signal generation for XSIAM/XDR detection validation." />
+<meta property="og:type" content="website" />
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+/* ══════════ One Cortex — memo tokens ══════════ */
+:root{
+  --paper:#fafbfa; --surface:#ffffff;
+  --ink:#101411; --ink-muted:#565D5A;
+  --hairline:#D6DAD4; --line:rgba(10,20,12,.16);
+  --cortex-green:#00cc66; --cortex-green-text:#00994d;
+  --cortex-green-50:rgba(0,204,102,.08); --cortex-green-100:rgba(0,204,102,.20);
+  --warn:#e87a4f;
+  --font-sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --col:760px;
+  --wide:1080px;
+}
+:root[data-theme="dark"]{
+  --paper:#0a0e0b; --surface:#101511;
+  --ink:#E6EAE3; --ink-muted:#A2ABA0;
+  --hairline:#333B33; --line:rgba(255,255,255,.16);
+  --cortex-green-text:#3ddd8c;
+  --cortex-green-50:rgba(0,204,102,.10); --cortex-green-100:rgba(0,204,102,.24);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--font-sans); font-size:16px; line-height:1.62;
+  font-feature-settings:"kern" 1;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--col); margin:0 auto; padding:0 28px}
+.wrap--wide{max-width:var(--wide)}
+
+/* ══════════ masthead ══════════ */
+.masthead{
+  border-bottom:1px solid var(--hairline);
+  position:sticky; top:0; z-index:10;
+  background:var(--paper);
+}
+.masthead__in{
+  max-width:var(--wide); margin:0 auto; padding:14px 28px;
+  display:flex; align-items:center; gap:14px;
+}
+.dot{width:9px;height:9px;border-radius:999px;background:var(--cortex-green);flex:none}
+.masthead__name{
+  font-family:var(--font-mono); font-size:12px; font-weight:700;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink);
+}
+.masthead__class{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--ink-muted);
+  padding-left:14px; border-left:1px solid var(--hairline);
+}
+.masthead__sp{margin-left:auto}
+.tgl{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-muted);
+  background:none; border:1px solid var(--hairline); border-radius:2px;
+  padding:5px 10px; cursor:pointer;
+}
+.tgl:hover{color:var(--ink); border-color:var(--cortex-green)}
+
+/* ══════════ memo header ══════════ */
+.head{padding:56px 0 0}
+.eyebrow{
+  font-family:var(--font-mono); font-size:11px; font-weight:500;
+  letter-spacing:.16em; text-transform:uppercase; color:var(--cortex-green-text);
+  margin:0 0 18px;
+}
+h1{
+  font-size:44px; line-height:1.1; font-weight:600; letter-spacing:-.02em;
+  margin:0 0 20px;
+}
+.emph{color:var(--cortex-green-text)}
+.re{
+  font-size:18px; line-height:1.5; color:var(--ink-muted);
+  margin:0 0 28px; padding-bottom:28px; border-bottom:1px solid var(--hairline);
+}
+.re b{color:var(--ink); font-weight:600}
+.meta{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:18px 24px; margin:0 0 8px; padding-bottom:36px;
+  border-bottom:1px solid var(--hairline);
+}
+.meta div{margin:0}
+.meta dt{
+  font-family:var(--font-mono); font-size:10px; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink-muted);
+  margin:0 0 5px;
+}
+.meta dd{margin:0; font-size:14px; color:var(--ink)}
+
+/* ══════════ bluf ══════════ */
+.bluf{
+  margin:40px 0 0; padding:26px 28px;
+  border-left:2px solid var(--cortex-green);
+  background:var(--cortex-green-50);
+}
+.bluf__k{
+  font-family:var(--font-mono); font-size:10px; font-weight:700;
+  letter-spacing:.16em; text-transform:uppercase; color:var(--cortex-green-text);
+  margin:0 0 10px;
+}
+.bluf p{margin:0; font-size:17px; line-height:1.6}
+.bluf p + p{margin-top:12px}
+
+/* ══════════ sections ══════════ */
+.sec{padding:56px 0 0}
+.sechead{display:flex; gap:16px; align-items:baseline; margin:0 0 8px}
+.sechead__i{
+  font-family:var(--font-mono); font-size:12px; font-weight:700;
+  color:var(--cortex-green-text); flex:none; padding-top:2px;
+}
+h2{font-size:26px; line-height:1.25; font-weight:600; letter-spacing:-.01em; margin:0}
+h3{
+  font-size:13px; font-weight:600; margin:30px 0 10px;
+  font-family:var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+  color:var(--ink-muted);
+}
+p{margin:0 0 16px}
+a{color:var(--cortex-green-text); text-decoration:none; border-bottom:1px solid var(--cortex-green-100)}
+a:hover{border-bottom-color:var(--cortex-green)}
+code{
+  font-family:var(--font-mono); font-size:.86em;
+  background:var(--cortex-green-50); padding:1px 5px; border-radius:2px;
+}
+strong{font-weight:600}
+.lede{font-size:17px; color:var(--ink-muted); margin:0 0 24px}
+
+/* ══════════ figures ══════════ */
+figure{margin:32px 0; padding:0}
+figure svg{display:block; width:100%; height:auto}
+figcaption{
+  font-family:var(--font-mono); font-size:11px; line-height:1.6;
+  letter-spacing:.04em; color:var(--ink-muted);
+  margin-top:12px; padding-top:10px; border-top:1px solid var(--hairline);
+}
+figcaption b{color:var(--ink); font-weight:500}
+
+/* ══════════ tables ══════════ */
+.tw{overflow-x:auto; margin:24px 0}
+table{border-collapse:collapse; width:100%; font-size:14px}
+th{
+  font-family:var(--font-mono); font-size:10px; font-weight:500;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--ink-muted);
+  text-align:left; padding:0 14px 9px 0; border-bottom:1px solid var(--hairline);
+  white-space:nowrap;
+}
+td{padding:10px 14px 10px 0; border-bottom:1px solid var(--hairline); vertical-align:top}
+tbody tr:last-child td{border-bottom:none}
+td.n,th.n{text-align:right; font-family:var(--font-mono); padding-right:0}
+tr.tot td{font-weight:600; border-top:1px solid var(--line)}
+.mono{font-family:var(--font-mono); font-size:13px}
+
+/* ══════════ code block ══════════ */
+pre{
+  font-family:var(--font-mono); font-size:13px; line-height:1.7;
+  background:var(--surface); border:1px solid var(--hairline);
+  border-left:2px solid var(--cortex-green);
+  padding:16px 18px; overflow-x:auto; margin:0 0 18px;
+}
+pre code{background:none; padding:0; font-size:inherit}
+
+/* ══════════ callout ══════════ */
+.note{
+  border-left:2px solid var(--warn);
+  padding:18px 22px; margin:26px 0; font-size:15px;
+  background:var(--surface);
+}
+.note__k{
+  font-family:var(--font-mono); font-size:10px; font-weight:700;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--warn);
+  margin:0 0 8px;
+}
+.note p:last-child{margin:0}
+
+/* ══════════ footer ══════════ */
+footer{
+  margin-top:72px; border-top:1px solid var(--hairline);
+  padding:26px 0 56px;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.06em;
+  color:var(--ink-muted);
+}
+footer p{margin:0 0 6px}
+footer a{border-bottom:none}
+
+@media (max-width:640px){
+  h1{font-size:32px}
+  h2{font-size:22px}
+  .wrap{padding:0 20px}
+  .masthead__in{padding:12px 20px}
+  .masthead__class{display:none}
+}
+</style>
 </head>
 <body>
-  <header class="cs-header">
-    <div class="cs-header__inner">
-      <a class="cs-brand" href="./" aria-label="CortexSim home">
-        <svg class="cs-brand__mark" width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
-          <path d="M16 2 L29 9 V23 L16 30 L3 23 V9 Z" fill="none" stroke="#00C0E8" stroke-width="2"/>
-          <circle cx="16" cy="16" r="4" fill="#00C0E8"/>
-        </svg>
-        <span class="cs-brand__name">Cortex<strong>Sim</strong></span>
-      </a>
-      <nav class="cs-nav" aria-label="Primary">
-        <a href="#platform">Platform</a>
-        <a href="#coverage">Coverage</a>
-        <a href="#build">Build</a>
-        <a href="#proof">Proof</a>
-        <a href="https://github.com/__GH_OWNER__/__GH_REPO__" rel="noopener">GitHub &rarr;</a>
-      </nav>
-    </div>
+
+<div class="masthead">
+  <div class="masthead__in">
+    <span class="dot"></span>
+    <span class="masthead__name">CortexSim</span>
+    <span class="masthead__class">Briefing Memo</span>
+    <span class="masthead__sp"></span>
+    <button class="tgl" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'">Theme</button>
+  </div>
+</div>
+
+<main>
+<div class="wrap">
+
+  <header class="head">
+    <p class="eyebrow">Palo Alto Networks · Cortex Domain Consulting</p>
+    <h1>Detection simulation,<br/>engineered for the <span class="emph">POV</span>.</h1>
+    <p class="re">
+      <b>Re:</b> What CortexSim is, what its corpus currently covers, and
+      precisely how far its evidence goes.
+    </p>
+    <dl class="meta">
+      <div><dt>For</dt><dd>Cortex Domain Consultants</dd></div>
+      <div><dt>From</dt><dd>Henry Reed</dd></div>
+      <div><dt>Counts measured</dt><dd>2026-08-28</dd></div>
+      <div><dt>Source</dt><dd><a href="https://github.com/__GH_OWNER__/__GH_REPO__">__GH_OWNER__/__GH_REPO__</a></dd></div>
+    </dl>
   </header>
 
-  <main>
-    <section class="cs-hero">
-      <div class="cs-hero__inner">
-        <p class="cs-eyebrow">Palo Alto Networks &middot; Cortex Domain Consulting</p>
-        <h1>Detection simulation,<br/>engineered for the&nbsp;POV.</h1>
-        <p class="cs-lede">
-          CortexSim drives controlled, high-fidelity signal into XSIAM and XDR &mdash; so you
-          can validate BIOC, XQL, Analytics, Correlation, IOC and ABIOC against the same
-          UC/TC the customer is buying. No C2. No mocks. Real binaries, real causality, real telemetry.
-        </p>
-        <div class="cs-hero__cta">
-          <a class="cs-btn cs-btn--primary" href="#build">Clone and build</a>
-          <a class="cs-btn cs-btn--ghost" href="https://github.com/__GH_OWNER__/__GH_REPO__/wiki" rel="noopener">Read the wiki &rarr;</a>
-        </div>
-        <dl class="cs-hero__stats">
-          <div><dt>Detection planes</dt><dd>15</dd></div>
-          <div><dt>Loadable scenarios</dt><dd>170</dd></div>
-          <div><dt>Step-detections</dt><dd>1096</dd></div>
-          <div><dt>Tenant-verified</dt><dd>0 &mdash; see Proof</dd></div>
-        </dl>
-      </div>
-    </section>
+  <div class="bluf">
+    <p class="bluf__k">Bottom line up front</p>
+    <p>
+      CortexSim drives controlled, high-fidelity signal into a customer's XSIAM or
+      XDR tenant so a DC can prove detection logic against the same UC/TC the
+      customer is buying — <strong>170 scenarios across 15 detection planes</strong>,
+      every one a validated foreign key into the FY27 v2.2 index rather than a
+      generic atomic test.
+    </p>
+    <p>
+      The number that governs how you use it is the last one:
+      <strong>tenant-verified is 0.</strong> The corpus is authored and it loads
+      clean, but nothing in this repository has executed against a live Cortex
+      tenant. Authored is not proven, and the engine is built to keep those two
+      apart rather than average them together.
+    </p>
+  </div>
 
-    <section id="platform" class="cs-section cs-section--board">
-      <div class="cs-section__inner">
-        <h2>Platform at a glance</h2>
-        <p class="cs-section__lede">
-          One engine, every Cortex detection plane. Each tile is a live plane with
-          UC/TC-aligned, MITRE-mapped scenarios driving real signal into the
-          customer's tenant. Counts are re-measured by running the real scenario
-          loader against the tree &mdash; not estimated.
-        </p>
+  <!-- ── 01 ─────────────────────────────────────────────── -->
+  <section class="sec">
+    <div class="sechead"><span class="sechead__i">01</span><h2>What the engine does</h2></div>
+    <p class="lede">
+      Not a red-team C2 — a detection quality-assurance engine. Real binaries,
+      real process causality, real telemetry.
+    </p>
+    <p>
+      SimCore loads a YAML corpus, resolves each step's service-account identity,
+      and delivers the step to the customer's environment by one of three
+      surfaces. Signal flows one way, into the tenant. The read-back path that
+      closes the loop into measured MTTD is <em>opt-in</em>, read-only, and off
+      until a credential is configured — SimCore never writes to Cortex.
+    </p>
 
-        <dl class="cs-statband">
-          <div><dt>Detection planes</dt><dd>15</dd></div>
-          <div><dt>Scenarios</dt><dd>170</dd></div>
-          <div><dt>TTP cards</dt><dd>170</dd></div>
-          <div><dt>EAL plugins</dt><dd>21</dd></div>
-          <div><dt>Adapter packs</dt><dd>91</dd></div>
-          <div><dt>AWS IaC modules</dt><dd>11</dd></div>
-        </dl>
+    <figure>
+      <svg viewBox="0 0 720 292" role="img" aria-label="Signal path from the YAML corpus through SimCore and three delivery surfaces into the customer tenant, with an optional read-back loop.">
+        <defs>
+          <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L8 4 L0 8 z" fill="var(--cortex-green)"/>
+          </marker>
+          <marker id="arm" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0 0 L8 4 L0 8 z" fill="var(--ink-muted)"/>
+          </marker>
+        </defs>
+        <g font-family="var(--font-mono)" font-size="10">
 
-        <div class="cs-board" role="list" aria-label="Detection plane coverage">
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>CDR</h3>
-            <p class="cs-plane__engine">Cortex Cloud &middot; Prisma Compute</p>
-            <span class="cs-plane__count">26 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>Analytics</h3>
-            <p class="cs-plane__engine">XSIAM Correlation Engine</p>
-            <span class="cs-plane__count">23 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>EDR</h3>
-            <p class="cs-plane__engine">Cortex XDR Agent</p>
-            <span class="cs-plane__count">22 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>ITDR</h3>
-            <p class="cs-plane__engine">Cortex ITDR</p>
-            <span class="cs-plane__count">20 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>NDR</h3>
-            <p class="cs-plane__engine">Network Security &middot; FW Analytics</p>
-            <span class="cs-plane__count">12 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>Cloud App</h3>
-            <p class="cs-plane__engine">Cortex Cloud App Security</p>
-            <span class="cs-plane__count">10 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>TIM</h3>
-            <p class="cs-plane__engine">Threat Intel Management</p>
-            <span class="cs-plane__count">9 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>KOI</h3>
-            <p class="cs-plane__engine">Agentic endpoint &middot; supply chain</p>
-            <span class="cs-plane__count">8 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>AI-SPM</h3>
-            <p class="cs-plane__engine">AI Security Posture Management</p>
-            <span class="cs-plane__count">7 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>AI Access</h3>
-            <p class="cs-plane__engine">Cortex AI Access Security</p>
-            <span class="cs-plane__count">6 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>ASM</h3>
-            <p class="cs-plane__engine">Attack Surface Management</p>
-            <span class="cs-plane__count">6 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>Browser</h3>
-            <p class="cs-plane__engine">Prisma Browser</p>
-            <span class="cs-plane__count">6 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>AIRS</h3>
-            <p class="cs-plane__engine">Cortex AI Runtime Security</p>
-            <span class="cs-plane__count">5 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>CSPM</h3>
-            <p class="cs-plane__engine">Cloud Posture Management</p>
-            <span class="cs-plane__count">5 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="live"></span>
-            <h3>Email</h3>
-            <p class="cs-plane__engine">XSIAM / NG-SIEM ingestion</p>
-            <span class="cs-plane__count">5 scenarios</span>
-          </article>
-          <article class="cs-plane" role="listitem">
-            <span class="cs-plane__dot" data-state="iac"></span>
-            <h3>DLP</h3>
-            <p class="cs-plane__engine">In development &mdash; not loadable</p>
-            <span class="cs-plane__count">0 scenarios</span>
-          </article>
-        </div>
+          <!-- corpus -->
+          <rect x="1" y="76" width="118" height="66" fill="var(--surface)" stroke="var(--hairline)"/>
+          <text x="60" y="101" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="700">CORPUS</text>
+          <text x="60" y="117" text-anchor="middle" fill="var(--ink-muted)">170 scenarios</text>
+          <text x="60" y="130" text-anchor="middle" fill="var(--ink-muted)">170 TTP cards</text>
 
-        <p class="cs-board__legend cs-legend">
-          <span class="cs-plane__dot" data-state="live"></span> active &amp; loading
-          &nbsp;&nbsp;
-          <span class="cs-plane__dot" data-state="iac"></span> in development
-        </p>
-      </div>
-    </section>
+          <line x1="119" y1="109" x2="163" y2="109" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
 
-    <section id="coverage" class="cs-section cs-section--alt">
-      <div class="cs-section__inner">
-        <h2>What the corpus actually covers</h2>
-        <p class="cs-section__lede">
-          170 scenarios decompose into 654 executable steps carrying 1096 expected
-          detections, spanning 14 MITRE ATT&amp;CK tactics. The
-          <code>detection_type</code> vocabulary is six values; XDM modeling rules are
-          a normalization <em>substrate</em>, counted informationally rather than as a type.
-        </p>
+          <!-- simcore -->
+          <rect x="167" y="46" width="132" height="126" fill="var(--surface)" stroke="var(--cortex-green)" stroke-width="1.5"/>
+          <text x="233" y="70" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="700">SIMCORE</text>
+          <line x1="183" y1="80" x2="283" y2="80" stroke="var(--hairline)"/>
+          <text x="233" y="97" text-anchor="middle" fill="var(--ink-muted)">loader · strict refs</text>
+          <text x="233" y="112" text-anchor="middle" fill="var(--ink-muted)">identity harness</text>
+          <text x="233" y="127" text-anchor="middle" fill="var(--ink-muted)">payload shelf</text>
+          <text x="233" y="142" text-anchor="middle" fill="var(--ink-muted)">orchestrator</text>
+          <text x="233" y="160" text-anchor="middle" fill="var(--cortex-green)" font-size="9" letter-spacing="1">133 ROUTES</text>
 
-        <div class="cs-grid cs-grid--two">
-          <article class="cs-card">
-            <header class="cs-card__head">
-              <span class="cs-pill">Detection types</span>
-              <span class="cs-card__sub">scenarios declaring each</span>
-            </header>
-            <div class="cs-table-wrap">
-              <table class="cs-table">
-                <thead><tr><th scope="col">Type</th><th scope="col">Scenarios</th></tr></thead>
-                <tbody>
-                  <tr><td>XQL</td><td>160</td></tr>
-                  <tr><td>Correlation</td><td>114</td></tr>
-                  <tr><td>BIOC</td><td>105</td></tr>
-                  <tr><td>ABIOC</td><td>66</td></tr>
-                  <tr><td>IOC</td><td>40</td></tr>
-                  <tr><td>Analytics</td><td>23</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="cs-card__note">ABIOC = PANW-authored, auto-tuned behavioral ML with a causality chain.</p>
-          </article>
+          <!-- fan out -->
+          <path d="M299 109 H326 V37 H370" fill="none" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <line x1="299" y1="109" x2="370" y2="109" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <path d="M299 109 H326 V181 H370" fill="none" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
 
-          <article class="cs-card">
-            <header class="cs-card__head">
-              <span class="cs-pill cs-pill--alt">Proof mechanisms</span>
-              <span class="cs-card__sub">detections are not the only artifact</span>
-            </header>
-            <div class="cs-table-wrap">
-              <table class="cs-table">
-                <thead><tr><th scope="col">Artifact</th><th scope="col">Asks</th><th scope="col">Count</th></tr></thead>
-                <tbody>
-                  <tr><td>Scenario</td><td>Does the detection fire?</td><td>170</td></tr>
-                  <tr><td>POS assertion</td><td>Does a posture state hold?</td><td>13</td></tr>
-                  <tr><td>PLT assertion</td><td>Is a capability present?</td><td>4</td></tr>
-                  <tr><td>AUT assertion</td><td>Does an outcome hit its budget?</td><td>3</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="cs-card__note">140 UC/TC index rows are <em>not</em> detections and cannot be closed by authoring more scenario YAML.</p>
-          </article>
-        </div>
-      </div>
-    </section>
+          <!-- surfaces -->
+          <rect x="374" y="15" width="150" height="44" fill="var(--surface)" stroke="var(--hairline)"/>
+          <text x="386" y="34" fill="var(--ink)" font-weight="700">PULL — beacon</text>
+          <text x="386" y="49" fill="var(--ink-muted)">Go, 5-target matrix</text>
 
-    <section id="build" class="cs-section">
-      <div class="cs-section__inner">
-        <h2>Clone and build</h2>
-        <p class="cs-section__lede">
-          CortexSim is distributed as source. There is no tagged release and no
-          published container image &mdash; the release pipeline exists in
-          <code>.github/workflows/release.yml</code> and fires on a <code>v*.*.*</code>
-          tag, but no tag has been cut. Everything you run comes from the tree.
-        </p>
+          <rect x="374" y="87" width="150" height="44" fill="var(--surface)" stroke="var(--hairline)"/>
+          <text x="386" y="106" fill="var(--ink)" font-weight="700">PUSH — bundle</text>
+          <text x="386" y="121" fill="var(--ink-muted)">bash · ps1 · k8s</text>
 
-        <div class="cs-grid cs-grid--two">
-          <article class="cs-card">
-            <header class="cs-card__head">
-              <span class="cs-pill">Docker</span>
-              <span class="cs-card__sub">canonical local bring-up</span>
-            </header>
-            <pre class="cs-code"><button class="cs-copy" data-copy="cs-cmd-docker" aria-label="Copy">copy</button><code id="cs-cmd-docker">git clone https://github.com/__GH_OWNER__/__GH_REPO__.git
+          <rect x="374" y="159" width="150" height="44" fill="var(--surface)" stroke="var(--hairline)"/>
+          <text x="386" y="178" fill="var(--ink)" font-weight="700">EAL — collector</text>
+          <text x="386" y="193" fill="var(--ink-muted)">21 plugins</text>
+
+          <line x1="524" y1="37" x2="576" y2="90" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <line x1="524" y1="109" x2="576" y2="109" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <line x1="524" y1="181" x2="576" y2="128" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
+
+          <!-- tenant -->
+          <rect x="580" y="61" width="138" height="96" fill="var(--cortex-green-50)" stroke="var(--cortex-green)" stroke-width="1.5"/>
+          <text x="649" y="88" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="700">CUSTOMER</text>
+          <text x="649" y="103" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="700">TENANT</text>
+          <line x1="596" y1="114" x2="702" y2="114" stroke="var(--cortex-green-100)"/>
+          <text x="649" y="131" text-anchor="middle" fill="var(--ink-muted)">XSIAM · XDR</text>
+          <text x="649" y="145" text-anchor="middle" fill="var(--ink-muted)">Cortex Cloud</text>
+
+          <!-- read-back -->
+          <path d="M649 157 V246 H233 V172" fill="none" stroke="var(--ink-muted)" stroke-width="1.2"
+                stroke-dasharray="4 4" marker-end="url(#arm)"/>
+          <rect x="352" y="228" width="178" height="36" fill="var(--paper)" stroke="var(--hairline)" stroke-dasharray="3 3"/>
+          <text x="441" y="244" text-anchor="middle" fill="var(--ink-muted)" font-weight="700">READ-BACK — opt-in</text>
+          <text x="441" y="257" text-anchor="middle" fill="var(--ink-muted)">alert pull → matcher → MTTD</text>
+
+          <text x="1" y="284" fill="var(--ink-muted)" font-size="9" letter-spacing=".08em">SOLID = SIGNAL IN, ALWAYS  ·  DASHED = READ-ONLY, FLAG-GATED, DEFAULT OFF</text>
+        </g>
+      </svg>
+      <figcaption>
+        <b>Figure 1 — Signal path.</b> Three delivery surfaces, one direction. Push
+        bundles execute on a clean host with no SimCore dependency at runtime; the
+        beacon needs no Go toolchain and no public-internet egress on the target.
+        The dashed return leg is the only path that reads from the tenant, and it
+        does not run unless a credential is configured.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ── 02 ─────────────────────────────────────────────── -->
+  <section class="sec">
+    <div class="sechead"><span class="sechead__i">02</span><h2>What the corpus covers</h2></div>
+    <p class="lede">
+      170 scenarios decompose into 654 executable steps carrying 1096 expected
+      detections across 14 MITRE ATT&amp;CK tactics.
+    </p>
+    <p>
+      Counts are re-measured by running the engine's own loader over the tree, not
+      estimated from file counts. The two differ: the tree holds 175 scenario YAMLs
+      and the loader accepts 170 — the DLP plane is authored but rejected, and a
+      count that reported 175 would be the exact false-green the loader exists to
+      catch.
+    </p>
+
+    <figure>
+      <svg viewBox="0 0 720 372" role="img" aria-label="Horizontal bar chart of scenario counts for each of the fifteen active detection planes plus the in-development DLP plane.">
+        <g font-family="var(--font-mono)" font-size="10.5">
+          <!-- rows: label, engine, count, y -->
+          <!-- scale: 26 scenarios = 380px -->
+
+          <g>
+            <text x="0" y="16" fill="var(--ink)" font-weight="700">CDR</text>
+            <text x="112" y="16" fill="var(--ink-muted)" font-size="9.5">Cortex Cloud · Prisma Compute</text>
+            <rect x="300" y="6" width="355" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="16" fill="var(--ink)" text-anchor="end" font-weight="700">26</text>
+          </g>
+          <g>
+            <text x="0" y="38" fill="var(--ink)" font-weight="700">ANALYTICS</text>
+            <text x="112" y="38" fill="var(--ink-muted)" font-size="9.5">XSIAM Correlation Engine</text>
+            <rect x="300" y="28" width="314" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="38" fill="var(--ink)" text-anchor="end" font-weight="700">23</text>
+          </g>
+          <g>
+            <text x="0" y="60" fill="var(--ink)" font-weight="700">EDR</text>
+            <text x="112" y="60" fill="var(--ink-muted)" font-size="9.5">Cortex XDR Agent</text>
+            <rect x="300" y="50" width="300" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="60" fill="var(--ink)" text-anchor="end" font-weight="700">22</text>
+          </g>
+          <g>
+            <text x="0" y="82" fill="var(--ink)" font-weight="700">ITDR</text>
+            <text x="112" y="82" fill="var(--ink-muted)" font-size="9.5">Cortex ITDR</text>
+            <rect x="300" y="72" width="273" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="82" fill="var(--ink)" text-anchor="end" font-weight="700">20</text>
+          </g>
+          <g>
+            <text x="0" y="104" fill="var(--ink)" font-weight="700">NDR</text>
+            <text x="112" y="104" fill="var(--ink-muted)" font-size="9.5">Network Security · FW Analytics</text>
+            <rect x="300" y="94" width="164" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="104" fill="var(--ink)" text-anchor="end" font-weight="700">12</text>
+          </g>
+          <g>
+            <text x="0" y="126" fill="var(--ink)" font-weight="700">CLOUD_APP</text>
+            <text x="112" y="126" fill="var(--ink-muted)" font-size="9.5">Cortex Cloud App Security</text>
+            <rect x="300" y="116" width="137" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="126" fill="var(--ink)" text-anchor="end" font-weight="700">10</text>
+          </g>
+          <g>
+            <text x="0" y="148" fill="var(--ink)" font-weight="700">TIM</text>
+            <text x="112" y="148" fill="var(--ink-muted)" font-size="9.5">Threat Intel Management</text>
+            <rect x="300" y="138" width="123" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="148" fill="var(--ink)" text-anchor="end" font-weight="700">9</text>
+          </g>
+          <g>
+            <text x="0" y="170" fill="var(--ink)" font-weight="700">KOI</text>
+            <text x="112" y="170" fill="var(--ink-muted)" font-size="9.5">Agentic endpoint · supply chain</text>
+            <rect x="300" y="160" width="109" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="170" fill="var(--ink)" text-anchor="end" font-weight="700">8</text>
+          </g>
+          <g>
+            <text x="0" y="192" fill="var(--ink)" font-weight="700">AI_SPM</text>
+            <text x="112" y="192" fill="var(--ink-muted)" font-size="9.5">AI Security Posture Mgmt</text>
+            <rect x="300" y="182" width="96" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="192" fill="var(--ink)" text-anchor="end" font-weight="700">7</text>
+          </g>
+          <g>
+            <text x="0" y="214" fill="var(--ink)" font-weight="700">AI_ACCESS</text>
+            <text x="112" y="214" fill="var(--ink-muted)" font-size="9.5">Cortex AI Access Security</text>
+            <rect x="300" y="204" width="82" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="214" fill="var(--ink)" text-anchor="end" font-weight="700">6</text>
+          </g>
+          <g>
+            <text x="0" y="236" fill="var(--ink)" font-weight="700">ASM</text>
+            <text x="112" y="236" fill="var(--ink-muted)" font-size="9.5">Attack Surface Management</text>
+            <rect x="300" y="226" width="82" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="236" fill="var(--ink)" text-anchor="end" font-weight="700">6</text>
+          </g>
+          <g>
+            <text x="0" y="258" fill="var(--ink)" font-weight="700">BROWSER</text>
+            <text x="112" y="258" fill="var(--ink-muted)" font-size="9.5">Prisma Browser</text>
+            <rect x="300" y="248" width="82" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="258" fill="var(--ink)" text-anchor="end" font-weight="700">6</text>
+          </g>
+          <g>
+            <text x="0" y="280" fill="var(--ink)" font-weight="700">AIRS</text>
+            <text x="112" y="280" fill="var(--ink-muted)" font-size="9.5">Cortex AI Runtime Security</text>
+            <rect x="300" y="270" width="68" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="280" fill="var(--ink)" text-anchor="end" font-weight="700">5</text>
+          </g>
+          <g>
+            <text x="0" y="302" fill="var(--ink)" font-weight="700">CSPM</text>
+            <text x="112" y="302" fill="var(--ink-muted)" font-size="9.5">Cloud Posture Management</text>
+            <rect x="300" y="292" width="68" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="302" fill="var(--ink)" text-anchor="end" font-weight="700">5</text>
+          </g>
+          <g>
+            <text x="0" y="324" fill="var(--ink)" font-weight="700">EMAIL</text>
+            <text x="112" y="324" fill="var(--ink-muted)" font-size="9.5">XSIAM / NG-SIEM ingestion</text>
+            <rect x="300" y="314" width="68" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="324" fill="var(--ink)" text-anchor="end" font-weight="700">5</text>
+          </g>
+
+          <line x1="0" y1="338" x2="720" y2="338" stroke="var(--hairline)"/>
+
+          <g opacity="0.55">
+            <text x="0" y="358" fill="var(--ink-muted)" font-weight="700">DLP</text>
+            <text x="112" y="358" fill="var(--ink-muted)" font-size="9.5">In development — loader rejects</text>
+            <rect x="300" y="348" width="68" height="12" fill="none" stroke="var(--ink-muted)" stroke-dasharray="3 3"/>
+            <text x="692" y="358" fill="var(--ink-muted)" text-anchor="end" font-weight="700">0</text>
+          </g>
+        </g>
+      </svg>
+      <figcaption>
+        <b>Figure 2 — Plane coverage.</b> Fifteen planes carry loadable scenarios.
+        DLP is drawn hollow: five scenarios are authored, the loader rejects all
+        five, and they are excluded from every count on this page.
+      </figcaption>
+    </figure>
+
+    <h3>Detection-type distribution</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Type</th><th>What it is</th><th class="n">Scenarios</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">XQL</td><td>Query-defined detection</td><td class="n">160</td></tr>
+          <tr><td class="mono">Correlation</td><td>Multi-source stitched rule</td><td class="n">114</td></tr>
+          <tr><td class="mono">BIOC</td><td>Behavioral IOC</td><td class="n">105</td></tr>
+          <tr><td class="mono">ABIOC</td><td>PANW-authored, auto-tuned behavioral ML</td><td class="n">66</td></tr>
+          <tr><td class="mono">IOC</td><td>Atomic indicator</td><td class="n">40</td></tr>
+          <tr><td class="mono">Analytics</td><td>Baseline-deviation analytic</td><td class="n">23</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      XDM modeling rules are a normalization <em>substrate</em>, surfaced and
+      exported but counted informationally — not a seventh
+      <code>detection_type</code>.
+    </p>
+  </section>
+
+  <!-- ── 03 ─────────────────────────────────────────────── -->
+  <section class="sec">
+    <div class="sechead"><span class="sechead__i">03</span><h2>Detections are not the only proof</h2></div>
+    <p>
+      140 rows in the FY27 index are not detections at all, and no amount of
+      additional scenario YAML can close them. A posture question asks whether a
+      state <em>holds</em>; a platform question asks whether a capability is
+      <em>present</em>; an automation question asks whether an outcome lands
+      <em>inside a budget</em>. Those get assertion artifacts, scored by the same
+      verifier as scenarios — no parallel scorer.
+    </p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Artifact</th><th>Asks</th><th class="n">Count</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">170</td></tr>
+          <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">13</td></tr>
+          <tr><td class="mono">PLT</td><td>Is a capability present?</td><td class="n">4</td></tr>
+          <tr><td class="mono">AUT</td><td>Does an outcome hit its budget?</td><td class="n">3</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>An assertion that cannot fail does not load.</strong> At load time the
+      guard builds measurements across the probe's declared domain plus the
+      neighbourhood of the authored threshold, pushes each through the real
+      evaluator, and rejects the artifact unless it produces both a pass and a
+      fail. A row-count check written as <code>expected_rows_min: 0</code> is
+      refused with <em>"this check can never fail and therefore proves nothing."</em>
+    </p>
+  </section>
+
+  <!-- ── 04 ─────────────────────────────────────────────── -->
+  <section class="sec">
+    <div class="sechead"><span class="sechead__i">04</span><h2>How far the evidence goes</h2></div>
+    <p class="lede">
+      Four rungs, never collapsed into one number. A scenario that loads is not a
+      scenario that ran, and a scenario that ran against a mock is not evidence
+      about a customer's tenant.
+    </p>
+
+    <figure>
+      <svg viewBox="0 0 720 250" role="img" aria-label="Four-rung evidence ladder: authored, configured, reachable, verified — with verified at zero.">
+        <g font-family="var(--font-mono)" font-size="10.5">
+
+          <!-- rung 1 -->
+          <rect x="0" y="6" width="720" height="52" fill="var(--cortex-green-50)" stroke="var(--cortex-green)"/>
+          <text x="18" y="28" fill="var(--ink)" font-size="12" font-weight="700" letter-spacing=".08em">AUTHORED</text>
+          <text x="18" y="45" fill="var(--ink-muted)">exists · loads clean under strict validation</text>
+          <text x="470" y="28" fill="var(--ink-muted)" font-size="9.5">does not prove it ever executed</text>
+          <text x="702" y="40" fill="var(--cortex-green-text)" text-anchor="end" font-size="22" font-weight="700">190</text>
+
+          <!-- rung 2 -->
+          <rect x="0" y="64" width="720" height="52" fill="var(--surface)" stroke="var(--hairline)"/>
+          <text x="18" y="86" fill="var(--ink)" font-size="12" font-weight="700" letter-spacing=".08em">CONFIGURED</text>
+          <text x="18" y="103" fill="var(--ink-muted)">tenant credential present in the encrypted vault</text>
+          <text x="470" y="86" fill="var(--ink-muted)" font-size="9.5">does not prove the tenant is reachable</text>
+          <text x="702" y="98" fill="var(--ink-muted)" text-anchor="end" font-size="22" font-weight="700">—</text>
+
+          <!-- rung 3 -->
+          <rect x="0" y="122" width="720" height="52" fill="var(--surface)" stroke="var(--hairline)"/>
+          <text x="18" y="144" fill="var(--ink)" font-size="12" font-weight="700" letter-spacing=".08em">REACHABLE</text>
+          <text x="18" y="161" fill="var(--ink-muted)">preflight cleared dns/tls · auth · scope · datasets · clock</text>
+          <text x="470" y="144" fill="var(--ink-muted)" font-size="9.5">does not prove any detection fired</text>
+          <text x="702" y="156" fill="var(--ink-muted)" text-anchor="end" font-size="22" font-weight="700">—</text>
+
+          <!-- rung 4 -->
+          <rect x="0" y="180" width="720" height="52" fill="none" stroke="var(--warn)" stroke-width="1.5"/>
+          <text x="18" y="202" fill="var(--warn)" font-size="12" font-weight="700" letter-spacing=".08em">VERIFIED</text>
+          <text x="18" y="219" fill="var(--ink-muted)">ran against a live tenant · alert read back</text>
+          <text x="702" y="214" fill="var(--warn)" text-anchor="end" font-size="22" font-weight="700">0</text>
+
+          <text x="0" y="246" fill="var(--ink-muted)" font-size="9" letter-spacing=".08em">EVERY GREEN IN THE TEST SUITE AND THE CONSOLE COMES FROM AN INJECTED TRANSPORT</text>
+        </g>
+      </svg>
+      <figcaption>
+        <b>Figure 3 — The evidence ladder.</b> 170 scenarios plus 20 assertions are
+        authored. Zero have executed against a live Cortex tenant. Every preflight
+        response carries <code>queries_issued</code> for exactly this reason — so a
+        run against a mock transport cannot later be quoted as tenant proof.
+      </figcaption>
+    </figure>
+
+    <div class="note">
+      <p class="note__k">Read this before quoting a coverage number</p>
+      <p>
+        The index is not one population. Of its 266 test cases, 94 are evidenced by
+        a scenario or an assertion and 172 remain open — but only 91 carry a
+        measurable threshold at all. A flat percentage hides which mechanism owes
+        the work, and none of it is tenant-verified.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── 05 ─────────────────────────────────────────────── -->
+  <section class="sec">
+    <div class="sechead"><span class="sechead__i">05</span><h2>Getting it running</h2></div>
+    <p>
+      CortexSim is distributed as source. There is no tagged release and no
+      published container image — the release pipeline exists and fires on a
+      <code>v*.*.*</code> tag, but no tag has been cut. Everything you run comes
+      from the tree.
+    </p>
+
+    <h3>Docker — canonical bring-up</h3>
+<pre><code>git clone https://github.com/__GH_OWNER__/__GH_REPO__.git
 cd __GH_REPO__
 cp .env.example .env
 ./scripts/dev-up.sh</code></pre>
-            <p class="cs-card__note">Builds the image and brings SimCore up on <code>:8888</code>.</p>
-          </article>
 
-          <article class="cs-card">
-            <header class="cs-card__head">
-              <span class="cs-pill cs-pill--alt">No Docker</span>
-              <span class="cs-card__sub">sandboxed runners, dev containers</span>
-            </header>
-            <pre class="cs-code"><button class="cs-copy" data-copy="cs-cmd-native" aria-label="Copy">copy</button><code id="cs-cmd-native">./scripts/dev-up-native.sh              # full bring-up
+    <h3>No Docker</h3>
+<pre><code>./scripts/dev-up-native.sh              # full bring-up
 ./scripts/dev-up-native.sh --skip-ui    # reuse core/static/
 ./scripts/dev-up-native.sh --stop       # stop</code></pre>
-            <p class="cs-card__note">Generates <code>.env</code>, builds the venv and the React UI, polls <code>/api/health</code>.</p>
-          </article>
-        </div>
 
-        <details class="cs-details">
-          <summary>Full jumpbox bootstrap (Ubuntu 22.04 / Debian 12)</summary>
-          <pre class="cs-code"><code>git clone https://github.com/__GH_OWNER__/__GH_REPO__.git
-cd __GH_REPO__
-./install.sh</code></pre>
-          <p class="cs-card__note">System deps, submodules, Go beacon, Rust tools, React build, compose up.</p>
-        </details>
+    <h3>Enroll a beacon on a target host</h3>
+<pre><code>curl -fsSL '&lt;server&gt;/api/agents/install?os=linux' \
+  | CORTEXSIM_TOKEN='cxs_…' bash</code></pre>
+    <p>
+      No Go toolchain and no public-internet egress required on the target — the
+      beacon is downloaded from your own SimCore and sha256-verified, then
+      installed as a systemd unit or launchd job so it survives the SSH session.
+      That property is the same reason the <strong>payload shelf</strong> exists:
+      customers who buy Cortex run default-deny egress, and a tier-4 tool that
+      never arrived produces no detection, which reads in a POV report as
+      <em>"Cortex missed it"</em> — a manufactured false negative on the customer's
+      own stack.
+    </p>
 
-        <details class="cs-details">
-          <summary>Enroll a beacon on a target host</summary>
-          <pre class="cs-code"><code>curl -fsSL '&lt;server&gt;/api/agents/install?os=linux' | CORTEXSIM_TOKEN='cxs_…' bash</code></pre>
-          <p class="cs-card__note">Needs no Go toolchain and no public-internet egress on the target &mdash; the beacon is downloaded from your own SimCore and sha256-verified. Installs a systemd unit or launchd job by default.</p>
-        </details>
-      </div>
-    </section>
+    <h3>Verify the counts on this page</h3>
+<pre><code>make validate && make check-refs && make coverage-strict</code></pre>
+  </section>
 
-    <section id="proof" class="cs-section cs-section--alt">
-      <div class="cs-section__inner">
-        <h2>Proof, not claims</h2>
-        <p class="cs-section__lede">
-          This project refuses to report three different things as one number. A
-          scenario that loads is not a scenario that ran, and a scenario that ran
-          against a mock is not evidence about a customer's tenant.
-        </p>
+</div>
+</main>
 
-        <div class="cs-table-wrap">
-          <table class="cs-table">
-            <thead>
-              <tr><th scope="col">Rung</th><th scope="col">What it proves</th><th scope="col">What it does not</th><th scope="col">Count</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><strong>Authored</strong></td>
-                <td>The artifact exists and loads clean under strict validation.</td>
-                <td>That it has ever executed.</td>
-                <td>170 + 20</td>
-              </tr>
-              <tr>
-                <td><strong>Configured</strong></td>
-                <td>A tenant credential is present in the encrypted vault.</td>
-                <td>That the tenant is reachable.</td>
-                <td>&mdash;</td>
-              </tr>
-              <tr>
-                <td><strong>Reachable</strong></td>
-                <td>Preflight resolved DNS/TLS, auth, scope, datasets and clock skew.</td>
-                <td>That any detection fired.</td>
-                <td>&mdash;</td>
-              </tr>
-              <tr>
-                <td><strong>Verified</strong></td>
-                <td>A run executed against a live tenant and the alert was read back.</td>
-                <td>&mdash;</td>
-                <td><strong>0</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+<footer>
+  <div class="wrap">
+    <p>CortexSim · Palo Alto Networks · Cortex Domain Consulting</p>
+    <p>
+      <a href="https://github.com/__GH_OWNER__/__GH_REPO__">Source</a> ·
+      <a href="https://github.com/__GH_OWNER__/__GH_REPO__/wiki">Wiki</a> ·
+      <a href="https://github.com/__GH_OWNER__/__GH_REPO__/issues">Issues</a>
+    </p>
+  </div>
+</footer>
 
-        <p class="cs-section__lede">
-          <strong>Tenant-verified is 0.</strong> No run and no assertion in this
-          repository has ever executed against a live Cortex tenant. Every green in
-          the test suite and in the console comes from an injected transport.
-          <em>Authored is not proven</em> &mdash; the console's Readiness surface states
-          this verbatim, and every preflight response carries
-          <code>queries_issued</code> so a mocked green cannot be quoted as tenant proof.
-        </p>
-      </div>
-    </section>
-
-    <section class="cs-section">
-      <div class="cs-section__inner cs-grid cs-grid--three">
-        <article class="cs-feature">
-          <h3>UC/TC aligned</h3>
-          <p>Every scenario maps to MITRE ATT&amp;CK and to a validated foreign key in the FY27 v2.2 index &mdash; 266 test cases, enforced at load time. Not a generic atomic test.</p>
-        </article>
-        <article class="cs-feature">
-          <h3>Survives default-deny</h3>
-          <p>The payload shelf stages digest-pinned tool artifacts on your own SimCore, so a blocked download can't masquerade in a POV report as &ldquo;Cortex missed it.&rdquo;</p>
-        </article>
-        <article class="cs-feature">
-          <h3>Measured, not ticked</h3>
-          <p>Opt-in, read-only alert read-back auto-validates seeded results into evidence-backed MTTD. SimCore never writes to Cortex.</p>
-        </article>
-      </div>
-    </section>
-  </main>
-
-  <footer class="cs-footer">
-    <div class="cs-footer__inner">
-      <p>&copy; <span id="cs-year"></span> Palo Alto Networks &middot; Cortex Domain Consulting</p>
-      <p>
-        <a href="https://github.com/__GH_OWNER__/__GH_REPO__" rel="noopener">Source</a>
-        &middot;
-        <a href="https://github.com/__GH_OWNER__/__GH_REPO__/wiki" rel="noopener">Wiki</a>
-        &middot;
-        <a href="https://github.com/__GH_OWNER__/__GH_REPO__/issues" rel="noopener">Issues</a>
-      </p>
-    </div>
-  </footer>
-
-  <script src="app.js" defer></script>
 </body>
 </html>
