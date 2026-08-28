@@ -4,9 +4,14 @@
 - [[Architecture]]
 - [[Roadmap]]
 
+### Catalog
+
+- [[Scenario Index]]
+- [[ATT-CK-Coverage]]
+- [[Detection Planes]]
+
 ### Detection
 
-- [[Detection Planes]]
 - [[EAL Simulator]]
 - [[AIRS Validation]]
 - [[KOI Validation]]
@@ -26,5 +31,5 @@
 ### Repo
 
 - [Source](https://github.com/hankthebldr/cortex-pov-engine)
-- [Releases](https://github.com/hankthebldr/cortex-pov-engine/releases)
+- [Landing page](https://hankthebldr.github.io/cortex-pov-engine/)
 - [Issues](https://github.com/hankthebldr/cortex-pov-engine/issues)

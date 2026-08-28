@@ -1,4 +1,4 @@
-Auto-generated from `docs/wiki/` in
-[`hankthebldr/cortex-pov-engine`](https://github.com/hankthebldr/cortex-pov-engine).
-Edits in the wiki UI are overwritten on every merge to `main` —
-edit the source markdown instead.
+Narrative pages are authored in `docs/wiki/`; the scenario catalog is
+regenerated from the live corpus by `scripts/gen_wiki.py`. Both publish from
+[`hankthebldr/cortex-pov-engine`](https://github.com/hankthebldr/cortex-pov-engine)
+on every merge to `main` — edits made in the wiki UI are overwritten.
