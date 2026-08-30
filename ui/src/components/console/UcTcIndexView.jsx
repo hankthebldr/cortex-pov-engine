@@ -23,6 +23,7 @@ import {
   readPath,
 } from './uctcMechanisms.js'
 import './UcTcIndexView.css'
+import '../../styles/destinations/uctc.css'
 
 /**
  * UcTcIndexView — read-only browser over the FY27 v2.2 master
@@ -443,6 +444,11 @@ export default function UcTcIndexView({
   /* ── render ── */
   return (
     <div className="adapter-registry uctc" data-testid="uctc-index">
+      <div className="uctc__pagehead">
+        <div className="uctc__pagehead-bar" aria-hidden="true" />
+        <div className="uctc__pagehead-eyebrow mono">Analyze · UC / TC Index</div>
+        <h1 className="uctc__pagehead-title">UC / TC Index</h1>
+      </div>
       <div className="adapter-registry__intro">
         <p className="adapter-registry__intro-prose">
           The FY27 master <strong>Use-Case / Test-Case index</strong> —{' '}
