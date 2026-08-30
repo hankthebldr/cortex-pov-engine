@@ -6,7 +6,18 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
  *
  * The cutout is drawn with a very large box-shadow spread rather than an SVG
  * mask: it needs no extra element, scales to any viewport, and degrades to a
- * plain dim layer if the rect is unavailable.
+ * plain dim layer if the rect is unavailable. When a cutout rect IS resolved,
+ * the box-shadow spread is the only dimming — the full-viewport `.tour__dim`
+ * layer is deliberately not rendered, because it would sit on top of the
+ * "hole" and swallow both the visual cutout and clicks on the spotlit
+ * element (`pointer-events: none` on the cutout div only stops the cutout
+ * div itself from capturing the click; it does nothing about a dim layer
+ * underneath it).
+ *
+ * Focus is trapped inside the bubble — Tab/Shift+Tab wrap within the
+ * ordered set [bubble, Skip, Back?, Next/Done] — and restored to whatever
+ * had focus before the tour opened once the bubble unmounts or the stop
+ * changes.
  */
 export default function TourSpotlight({ stop, index, total, onNext, onPrev, onExit }) {
   const [rect, setRect] = useState(null)
@@ -29,16 +40,49 @@ export default function TourSpotlight({ stop, index, total, onNext, onPrev, onEx
 
   useEffect(() => {
     if (!stop) return undefined
+    const getFocusables = () => {
+      const root = bubbleRef.current
+      if (!root) return []
+      return [root, ...Array.from(root.querySelectorAll('button'))]
+    }
     const onKey = (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); onExit() }
-      else if (e.key === 'Enter') { e.preventDefault(); onNext() }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onExit()
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        onNext()
+      } else if (e.key === 'Tab') {
+        const items = getFocusables()
+        if (items.length === 0) return
+        e.preventDefault()
+        const activeIndex = items.indexOf(document.activeElement)
+        let nextIndex
+        if (e.shiftKey) {
+          nextIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1
+        } else {
+          nextIndex = activeIndex === -1 || activeIndex === items.length - 1 ? 0 : activeIndex + 1
+        }
+        items[nextIndex].focus()
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [stop, onExit, onNext])
 
   useEffect(() => {
-    if (stop && bubbleRef.current) bubbleRef.current.focus()
+    if (!stop) return undefined
+    const previouslyFocused = document.activeElement
+    if (bubbleRef.current) bubbleRef.current.focus()
+    return () => {
+      if (
+        previouslyFocused &&
+        typeof previouslyFocused.focus === 'function' &&
+        document.contains(previouslyFocused)
+      ) {
+        previouslyFocused.focus()
+      }
+    }
   }, [stop])
 
   if (!stop) return null
@@ -50,7 +94,7 @@ export default function TourSpotlight({ stop, index, total, onNext, onPrev, onEx
 
   return (
     <div className="tour" data-testid="tour-spotlight">
-      <div className="tour__dim" aria-hidden="true" />
+      {!cut && <div className="tour__dim" aria-hidden="true" />}
       {cut && (
         <div
           className="tour__cutout"

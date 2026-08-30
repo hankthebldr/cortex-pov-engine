@@ -58,4 +58,55 @@ describe('TourSpotlight', () => {
     const { container } = render(<TourSpotlight stop={null} index={-1} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
     expect(container.firstChild).toBeNull()
   })
+
+  it('restores focus to the previously focused element on exit', () => {
+    const trigger = document.createElement('button')
+    trigger.textContent = 'Open tour'
+    document.body.appendChild(trigger)
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+
+    const { unmount } = render(<TourSpotlight stop={STOP} index={0} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+    expect(document.activeElement).not.toBe(trigger)
+
+    unmount()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('Tab from the last focusable wraps to the first (the dialog itself)', () => {
+    render(<TourSpotlight stop={STOP} index={1} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+    const dlg = screen.getByRole('dialog')
+    const buttons = screen.getAllByRole('button')
+    const last = buttons[buttons.length - 1]
+    last.focus()
+    expect(document.activeElement).toBe(last)
+
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(dlg)
+  })
+
+  it('Shift+Tab from the first focusable (the dialog) wraps to the last', () => {
+    render(<TourSpotlight stop={STOP} index={1} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+    const dlg = screen.getByRole('dialog')
+    const buttons = screen.getAllByRole('button')
+    const last = buttons[buttons.length - 1]
+    dlg.focus()
+    expect(document.activeElement).toBe(dlg)
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last)
+  })
+
+  it('omits the dim layer and relies on the cutout box-shadow when the anchor resolves', () => {
+    const { container } = render(<TourSpotlight stop={STOP} index={0} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+    expect(container.querySelector('.tour__dim')).toBeNull()
+    expect(container.querySelector('.tour__cutout')).not.toBeNull()
+  })
+
+  it('falls back to the full dim layer when the anchor element is missing', () => {
+    const missing = { ...STOP, anchor: 'does-not-exist' }
+    const { container } = render(<TourSpotlight stop={missing} index={0} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+    expect(container.querySelector('.tour__dim')).not.toBeNull()
+    expect(container.querySelector('.tour__cutout')).toBeNull()
+  })
 })
