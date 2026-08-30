@@ -242,6 +242,18 @@ steps:
       # across environments. Keys must be in the platforms enum; the loader
       # warns (non-fatal) if a variant key is not also listed in `platforms`.
 
+    requires_interpreters: ["python"]
+    # (optional) Logical interpreters (e.g. "python") this step's command
+    # depends on but does not itself install — e.g. a downloaded tool that
+    # shells out to python internally. The beacon checks the target's real
+    # PATH (with alias awareness — "python" is satisfied by python3, python3.11,
+    # etc.) BEFORE running the command; if it is genuinely absent and the run
+    # was not authorized to deliver a system update, the command is NEVER run
+    # and the step reports a distinguishable, non-zero
+    # RUNTIME_DEPENDENCY_MISSING result instead of silently executing (and
+    # possibly masking a failure inside) a command whose dependency is not
+    # there. See docs/design/agent-runtime-dependencies.md.
+
   - id: "step-02"
     name: "Download and execute tool"
     command: "curl -sSL https://example.com/tool.sh | bash"
