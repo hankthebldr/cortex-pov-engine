@@ -6760,3 +6760,127 @@
   background: var(--cortex-light-bg); border-radius: 0 0 6px 6px;
   border: 1px solid var(--cortex-border); border-top: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   TtpBrowserView (console/TtpBrowserView.jsx) — inline-style extraction
+   Design-ref token pass. See .design-ref/00-tokens.css for the target
+   vocabulary; this file's own --c-* / --fs-* set is what's actually
+   wired to .theme-console today, so rules below lean on those — the
+   raw --cortex-* rename is a separate migration.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Compact toolbar / copy buttons (component-scoped sizes) ───────── */
+.theme-console .ttp-btn--sm  { height: 28px; padding: 0 10px; }
+.theme-console .ttp-btn--xs  { height: 22px; padding: 0 8px; margin-left: 4px; }
+.theme-console .ttp-btn--copy { height: 20px; padding: 0 8px; font-size: 10px; }
+
+/* ── Small / muted chip modifiers (mirrors chip--signal/--detected) ── */
+.theme-console .chip--xs { font-size: 9px; }
+.theme-console .chip--muted { color: var(--c-text-muted); }
+
+/* ── TTP card body ───────────────────────────────────────────────── */
+.theme-console .ttp-card__title { font-size: 12px; display: block; margin-bottom: 4px; }
+.theme-console .ttp-card__summary { font-size: 11px; color: var(--c-text-secondary); }
+.theme-console .adapter-card__tids--spaced { margin-top: 4px; }
+.theme-console .adapter-card__det-kinds {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
+}
+
+/* ── Detail panel: action row, chip rows, small notes ───────────────── */
+.theme-console .ttp-detail__actions { display: flex; gap: 8px; }
+.theme-console .ttp-detail__summary { white-space: pre-line; font-size: 12px; }
+.theme-console .ttp-detail__chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.theme-console .ttp-detail__chip-row--tight { display: flex; flex-wrap: wrap; gap: 4px; }
+.theme-console .ttp-detail__note { font-size: 10px; color: var(--c-text-muted); margin: 0 0 6px; }
+.theme-console .ttp-detail__meta-tag { margin-left: 4px; font-size: 9px; opacity: 0.6; }
+.theme-console .ttp-detail__meta-tag--loose { opacity: 0.7; }
+
+/* ── Generic 2px-cell table (MITRE technique table + run history) ──── */
+.theme-console .ttp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.theme-console .ttp-table thead tr { text-align: left; color: var(--c-text-muted); }
+.theme-console .ttp-table th,
+.theme-console .ttp-table td { padding: 2px 6px 2px 0; }
+.theme-console .ttp-table th--num,
+.theme-console .ttp-table td--num { text-align: right; }
+.theme-console .ttp-table td--sm { font-size: 10px; }
+
+/* ── Run-history clickable row + coverage badge ─────────────────────── */
+.theme-console .ttp-run-row { cursor: pointer; }
+.theme-console .ttp-run-row__badge--pass    { background: var(--c-detected-soft); }
+.theme-console .ttp-run-row__badge--fail    { background: var(--c-missed-soft); }
+.theme-console .ttp-run-row__badge--partial { background: var(--c-pending-soft); }
+
+/* ── Detections accordion (BIOC / XQL / correlation body reveal) ───── */
+.theme-console .ttp-detections__group-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.theme-console .ttp-detections__group-count { font-size: 10px; opacity: 0.7; }
+.theme-console .ttp-detection-item__head {
+  width: 100%; text-align: left; background: none; border: 0;
+  padding: 6px 4px; cursor: pointer; border-top: 1px solid var(--c-hairline);
+}
+.theme-console .ttp-detection-item__head-row { display: flex; align-items: baseline; gap: 8px; }
+.theme-console .ttp-detection-item__caret { font-size: 9px; opacity: 0.5; }
+.theme-console .ttp-detection-item__name { font-size: 11px; font-weight: 500; flex: 1; }
+.theme-console .ttp-detection-item__severity { font-size: 9px; }
+.theme-console .ttp-detection-item__id { font-size: 9px; opacity: 0.6; }
+.theme-console .ttp-detection-item__preview {
+  font-size: 10px; color: var(--c-text-muted); margin: 2px 0 0 16px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.theme-console .ttp-detection-item__body { padding: 4px 4px 8px 16px; }
+.theme-console .ttp-detection-item__desc { font-size: 11px; color: var(--c-text-secondary); margin: 0 0 6px; }
+.theme-console .ttp-detection-item__body-head {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+}
+.theme-console .ttp-detection-item__body-key { font-size: 9px; opacity: 0.6; }
+.theme-console .ttp-detection-item__pre {
+  font-size: 10px;
+  background: var(--c-void);
+  border: 1px solid var(--c-hairline);
+  padding: 6px 8px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.theme-console .ttp-detection-item__no-body { font-size: 10px; color: var(--c-text-muted); }
+
+/* ── Launch-all modal ───────────────────────────────────────────────── */
+.theme-console .ttp-launcher-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.theme-console .ttp-launcher {
+  width: min(640px, 92vw); max-height: 88vh;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  border-radius: 6px; padding: 20px 22px;
+  display: flex; flex-direction: column; gap: 14px;
+  overflow: hidden;
+}
+.theme-console .ttp-launcher__head { display: flex; justify-content: space-between; align-items: baseline; }
+.theme-console .ttp-launcher__title { margin: 0; font-size: 16px; }
+.theme-console .ttp-launcher__table-wrap {
+  flex: 1; overflow-y: auto; border: 1px solid var(--c-hairline); border-radius: 4px;
+}
+.theme-console .ttp-launcher-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.theme-console .ttp-launcher-table thead tr { text-align: left; color: var(--c-text-muted); }
+.theme-console .ttp-launcher-table th,
+.theme-console .ttp-launcher-table td { padding: 6px 8px; }
+.theme-console .ttp-launcher-table th--check { width: 32px; }
+.theme-console .ttp-launcher-table__sub { font-size: 10px; color: var(--c-text-muted); }
+.theme-console .ttp-launcher__row { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+.theme-console .ttp-launcher__field { font-size: 11px; }
+.theme-console .ttp-launcher__field--grow { font-size: 11px; flex: 1; }
+.theme-console .ttp-launcher__select { font-size: 11px; padding: 2px 4px; }
+.theme-console .ttp-launcher__input {
+  font-size: 11px; padding: 2px 6px; width: 220px;
+  background: var(--c-surface); border: 1px solid var(--c-hairline); color: var(--c-text);
+}
+.theme-console .ttp-launcher__footer-row { display: flex; justify-content: space-between; align-items: baseline; }
+.theme-console .ttp-launcher__count { font-size: 10px; color: var(--c-text-muted); }
+.theme-console .ttp-launcher__summary {
+  font-size: 11px; padding-top: 8px; border-top: 1px solid var(--c-hairline);
+}
+.theme-console .ttp-launcher__fail-list { margin: 6px 0 0; padding-left: 18px; }
+.theme-console .ttp-launcher__fail-item { color: var(--c-missed); }
