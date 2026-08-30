@@ -1,0 +1,801 @@
+/* ═══════════════════════════════════════════════════════════════════
+   destinations/run-detail.css — the Run Detail destination
+   PANW redesign · ref: .design-ref/03-rundetail-name.html
+
+   Cortex green (--ac / --ac-str) is the primary accent in both themes.
+   --orange is reserved for warn/gap signal only and is NOT used here —
+   warn/pending states use --warn, hard failures use --crit, and
+   secondary/informational references (TTP refs, XQL annotations, the
+   XSIAM-stitch plane) use --info. Tokens come from cortex-tokens.css
+   (:root light / [data-theme="dark"]); this file only consumes var(--x),
+   it never redefines a token.
+
+   AppConsole (the only shell that mounts RunDetailView / EvidenceView /
+   NarrativeTimeline) always renders `.theme-console`, which still paints
+   its own fixed-dark `--c-void` background and never sets [data-theme] —
+   so RunDetailView.jsx, EvidenceView.jsx and NarrativeTimeline.jsx each
+   pin `data-theme="dark"` on their own root element (same pattern as
+   LabView.jsx / environments.css) to resolve the new tokens to their
+   dark values instead of quietly falling through to :root light on top
+   of a dark shell. Every rule below is scoped under one of:
+     .theme-console .run-detail        (RunDetailView.jsx)
+     .theme-console .evidence          (EvidenceView.jsx — also reachable
+                                         standalone, e.g. console-smoke.test)
+     .theme-console .narrative__timeline (NarrativeTimeline.jsx only — the
+                                         surrounding .narrative/__header/
+                                         __footer belong to InflightView.jsx,
+                                         a file this pass does not own)
+   so nothing here can leak onto a destination another agent owns.
+
+   Loaded via component-level `import '.../destinations/run-detail.css'`
+   in each of the three owned files (not main.jsx, to avoid colliding with
+   concurrent agents' edits there); every selector carries at least the
+   same specificity as the legacy .theme-console rule it replaces, so
+   load order isn't load-bearing.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────────────────────────────────────────────────
+   RunDetailView.jsx — header, status pills, sub-tabs, failure banner
+   ─────────────────────────────────────────────────────────────────── */
+
+.theme-console .run-detail {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.theme-console .run-detail.run-detail--empty {
+  max-width: none;
+  margin: 0;
+}
+
+.theme-console .run-detail__back {
+  display: inline-block;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--tx3);
+  cursor: pointer;
+  transition: color 120ms ease-out;
+}
+.theme-console .run-detail__back:hover,
+.theme-console .run-detail__back:focus-visible {
+  color: var(--tx);
+}
+.theme-console .run-detail__back:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.theme-console .run-detail .run-detail__head {
+  align-items: flex-start;
+  margin-bottom: 18px;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.theme-console .run-detail .run-detail__head-main {
+  min-width: 0;
+}
+.theme-console .run-detail__accent-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ac-str);
+  margin-bottom: 10px;
+}
+
+.theme-console .run-detail .run-detail__eyebrow {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ac);
+  margin-bottom: 6px;
+}
+
+.theme-console .run-detail .run-detail__head h1 {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 23px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+  margin: 0;
+}
+
+.theme-console .run-detail .run-detail__head .view-head__meta {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--tx2);
+}
+.theme-console .run-detail .run-detail__head .view-head__meta strong {
+  color: var(--tx);
+  font-weight: 600;
+}
+
+/* status + live pills — previously entirely unstyled */
+.theme-console .run-detail .run-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+.theme-console .run-detail .run-status--completed { color: var(--ac-str); }
+.theme-console .run-detail .run-status--running    { color: var(--info); }
+.theme-console .run-detail .run-status--pending     { color: var(--warn); }
+.theme-console .run-detail .run-status--failed,
+.theme-console .run-detail .run-status--aborted    { color: var(--crit); }
+.theme-console .run-detail .run-status--unknown    { color: var(--tx3); }
+
+.theme-console .run-detail .run-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ac-tx);
+  background: var(--ac);
+  border-radius: 3px;
+  padding: 2px 6px 2px 5px;
+}
+.theme-console .run-detail .run-live-pill::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ac-tx);
+  animation: run-detail-live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes run-detail-live-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* run-failure banner */
+.theme-console .run-detail .run-failure {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--crit);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--crit) 12%, transparent);
+}
+.theme-console .run-detail .run-failure__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.theme-console .run-detail .run-failure__tag {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--crit);
+  border: 1px solid var(--crit);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+.theme-console .run-detail .run-failure__lede {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--tx2);
+}
+.theme-console .run-detail .run-failure__output {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--ink);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink-tx2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.theme-console .run-detail .run-failure__nooutput {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--tx3);
+}
+
+/* sub-tabs (Live / Evidence / Storyline / Causality) */
+.theme-console .run-detail .run-detail__subtabs {
+  display: flex;
+  gap: 2px;
+  height: auto;
+  border: none;
+  border-bottom: 1px solid var(--bd);
+  border-radius: 0;
+  background: transparent;
+  margin: 0 0 18px;
+  overflow-x: auto;
+}
+.theme-console .run-detail .run-detail__subtabs button {
+  flex: none;
+  min-width: 0;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--tx3);
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease-out, border-color 120ms ease-out;
+}
+.theme-console .run-detail .run-detail__subtabs button:hover:not(.is-active) {
+  color: var(--tx);
+  background: transparent;
+}
+.theme-console .run-detail .run-detail__subtabs button.is-active {
+  color: var(--tx);
+  font-weight: 700;
+  border-bottom-color: var(--ac);
+  background: transparent;
+}
+.theme-console .run-detail .run-detail__subtabs button:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+
+.theme-console .run-detail .run-detail__panel {
+  background: transparent;
+}
+
+.theme-console .run-detail .run-detail__empty {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--tx3);
+  font-size: 12px;
+}
+
+/* ───────────────────────────────────────────────────────────────────
+   EvidenceView.jsx — KPI row, scorecard table, empty state, and the
+   in-tab children rendered exclusively within it (drawer / histogram /
+   compare / export menu) — restyled by CSS override only, their own
+   JSX is untouched.
+   ─────────────────────────────────────────────────────────────────── */
+
+.theme-console .evidence {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.theme-console .evidence .view-head {
+  margin-bottom: 18px;
+}
+.theme-console .evidence .view-head h1 {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+.theme-console .evidence .view-head__meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--tx2);
+}
+.theme-console .evidence .view-head__meta strong {
+  color: var(--tx);
+}
+
+.theme-console .evidence .evidence-header__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.theme-console .evidence .evidence__mode-toggle {
+  height: 32px;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  background: var(--s2);
+  overflow: hidden;
+}
+.theme-console .evidence .evidence__mode-toggle button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--tx2);
+}
+.theme-console .evidence .evidence__mode-toggle button:hover:not(:disabled) {
+  color: var(--tx);
+  background: var(--s3);
+}
+.theme-console .evidence .evidence__mode-toggle button.is-active {
+  background: var(--ac-soft);
+  color: var(--ac);
+}
+
+.theme-console .evidence .evidence-empty__title {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  color: var(--tx);
+}
+.theme-console .evidence .evidence-empty__desc {
+  color: var(--tx2);
+}
+
+/* ── KPI row ──────────────────────────────────────────────────────── */
+
+.theme-console .evidence .kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(192px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.theme-console .evidence .kpi {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--bd2);
+  border-radius: 8px;
+  padding: 14px 16px 13px;
+}
+.theme-console .evidence .kpi--ac   { border-top-color: var(--ac-str); }
+.theme-console .evidence .kpi--info { border-top-color: var(--info); }
+.theme-console .evidence .kpi--warn { border-top-color: var(--warn); }
+.theme-console .evidence .kpi--tx   { border-top-color: var(--bd2); }
+
+.theme-console .evidence .kpi__label {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 0;
+}
+.theme-console .evidence .kpi__value {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+  margin-top: 9px;
+}
+.theme-console .evidence .kpi__value--detected { color: var(--ac-str); }
+.theme-console .evidence .kpi__value--signal   { color: var(--info); }
+.theme-console .evidence .kpi__value--pending  { color: var(--warn); }
+.theme-console .evidence .kpi__value--missed   { color: var(--crit); }
+.theme-console .evidence .kpi__suffix { color: var(--tx2); }
+.theme-console .evidence .kpi__meta {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--tx2);
+  line-height: 1.4;
+}
+
+/* ── Scorecard table ──────────────────────────────────────────────── */
+
+.theme-console .evidence .scorecard {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.theme-console .evidence .scorecard__head {
+  background: var(--thead);
+  border-bottom: none;
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: #fff;
+}
+.theme-console .evidence .scorecard__row {
+  border-bottom: 1px solid var(--bd);
+  border-top: none;
+  background: var(--s1);
+}
+.theme-console .evidence .scorecard__row:nth-child(even) {
+  background: var(--s2);
+}
+.theme-console .evidence .scorecard__row:hover {
+  background: var(--ac-soft);
+}
+.theme-console .evidence .scorecard__row--selected {
+  background: var(--ac-soft);
+}
+.theme-console .evidence .scorecard__row--selected::before {
+  background: var(--ac-str);
+  box-shadow: none;
+  width: 3px;
+}
+.theme-console .evidence .scorecard__row:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+.theme-console .evidence .scorecard__tid { color: var(--info); }
+.theme-console .evidence .scorecard__plane { color: var(--tx2); }
+.theme-console .evidence .scorecard__alert { color: var(--tx); }
+.theme-console .evidence .scorecard__mttd { color: var(--ac-str); }
+.theme-console .evidence .scorecard__id { color: var(--tx3); }
+.theme-console .evidence .scorecard-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--tx3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.theme-console .evidence .scorecard__status {
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.theme-console .evidence .scorecard__status--detected {
+  color: var(--ac-str);
+  background: transparent;
+  border-color: var(--ac-str);
+}
+.theme-console .evidence .scorecard__status--missed {
+  color: var(--crit);
+  background: transparent;
+  border-color: var(--crit);
+}
+.theme-console .evidence .scorecard__status--pending {
+  color: var(--warn);
+  background: transparent;
+  border-color: var(--warn);
+}
+
+.theme-console .evidence .row-action {
+  border-radius: 4px;
+  border: 1px solid var(--bd2);
+  color: var(--tx2);
+  background: var(--s1);
+}
+.theme-console .evidence .row-action--detected:hover {
+  color: var(--ac-str);
+  border-color: var(--ac-str);
+}
+.theme-console .evidence .row-action--missed:hover {
+  color: var(--crit);
+  border-color: var(--crit);
+}
+
+/* ── Detection drawer (Evidence drill-down) ──────────────────────── */
+
+.theme-console .evidence .detection-drawer {
+  background: var(--s1);
+  border-left: 1px solid var(--bd2);
+  box-shadow: -16px 0 48px -8px rgba(0, 0, 0, 0.45);
+}
+.theme-console .evidence .detection-drawer__head,
+.theme-console .evidence .detection-drawer__status-row,
+.theme-console .evidence .detection-drawer__section {
+  border-bottom-color: var(--bd);
+}
+.theme-console .evidence .detection-drawer__eyebrow { color: var(--ac); }
+.theme-console .evidence .detection-drawer__title {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  color: var(--tx);
+}
+.theme-console .evidence .detection-drawer__plane,
+.theme-console .evidence .detection-drawer__section-title,
+.theme-console .evidence .detection-drawer__kv dt,
+.theme-console .evidence .detection-drawer__hint {
+  color: var(--tx3);
+}
+.theme-console .evidence .detection-drawer__kv dd { color: var(--tx); }
+.theme-console .evidence .detection-drawer__mttd { color: var(--ac-str) !important; }
+.theme-console .evidence .detection-drawer__alert-id {
+  background: var(--s2);
+  border-color: var(--bd);
+}
+.theme-console .evidence .detection-drawer__alert-id .mono { color: var(--info); }
+.theme-console .evidence .detection-drawer__copy {
+  color: var(--tx2);
+  border-color: var(--bd2);
+}
+.theme-console .evidence .detection-drawer__copy:hover {
+  color: var(--ac);
+  border-color: var(--ac);
+}
+.theme-console .evidence .detection-drawer__notes {
+  color: var(--tx);
+  background: var(--s2);
+  border-color: var(--bd);
+}
+.theme-console .evidence .detection-drawer__notes:focus { border-color: var(--ac); }
+.theme-console .evidence .detection-drawer__actions {
+  background: var(--s2);
+  border-top-color: var(--bd);
+}
+
+/* ── MTTD histogram ───────────────────────────────────────────────── */
+
+.theme-console .evidence .mttd-histogram {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+}
+.theme-console .evidence .mttd-histogram__title { color: var(--tx); }
+.theme-console .evidence .mttd-histogram__stat-label,
+.theme-console .evidence .mttd-histogram__hint { color: var(--tx3); }
+.theme-console .evidence .mttd-histogram__stat-value { color: var(--tx); }
+.theme-console .evidence .mttd-histogram__stat--alert .mttd-histogram__stat-value { color: var(--ac-str); }
+.theme-console .evidence .mttd-histogram__bar { background: var(--ac-soft); }
+.theme-console .evidence .mttd-histogram__bar--median { background: var(--ac-str); }
+.theme-console .evidence .mttd-histogram__label { color: var(--tx3); }
+.theme-console .evidence .mttd-histogram__empty-state { color: var(--tx3); }
+
+/* ── Export menu ──────────────────────────────────────────────────── */
+
+.theme-console .evidence .export-menu__primary {
+  background: var(--ac);
+  color: var(--ac-tx);
+  border-color: var(--ac);
+}
+.theme-console .evidence .export-menu__dropdown {
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  box-shadow: var(--shadow);
+}
+.theme-console .evidence .export-menu__section-label { color: var(--tx3); }
+.theme-console .evidence .export-menu__item { color: var(--tx); }
+.theme-console .evidence .export-menu__item:hover:not(:disabled),
+.theme-console .evidence .export-menu__item:focus-visible {
+  background: var(--s2);
+}
+.theme-console .evidence .export-menu__item--primary .export-menu__item-label { color: var(--ac); }
+.theme-console .evidence .export-menu__item-sub { color: var(--tx3); }
+
+/* ── Multi-run compare ────────────────────────────────────────────── */
+
+.theme-console .evidence .multirun__intro { color: var(--tx2); }
+.theme-console .evidence .multirun__run-pill {
+  background: var(--s1);
+  border-color: var(--bd2);
+  color: var(--tx2);
+}
+.theme-console .evidence .multirun__run-pill.is-picked {
+  background: var(--ac-soft);
+  border-color: var(--ac-line);
+  color: var(--tx);
+}
+.theme-console .evidence .multirun__kpi-pct { color: var(--tx); }
+.theme-console .evidence .multirun__kpi-delta--up   { color: var(--ac-str); }
+.theme-console .evidence .multirun__kpi-delta--down { color: var(--crit); }
+.theme-console .evidence .multirun__cell--detected { background: var(--ac-soft); color: var(--ac-str); }
+.theme-console .evidence .multirun__cell--missed   { background: color-mix(in srgb, var(--crit) 16%, transparent); color: var(--crit); }
+.theme-console .evidence .multirun__cell--pending  { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.theme-console .evidence .multirun__matrix th { color: var(--tx3); }
+.theme-console .evidence .multirun__row-desc { color: var(--tx2); }
+
+/* ───────────────────────────────────────────────────────────────────
+   NarrativeTimeline.jsx — the Live-tab hero kill-chain timeline
+   ─────────────────────────────────────────────────────────────────── */
+
+.theme-console .narrative__timeline .tl-track {
+  background: linear-gradient(90deg, transparent, var(--bd2) 20%, var(--bd2) 80%, transparent);
+}
+.theme-console .narrative__timeline .tl-track-progress {
+  background: linear-gradient(90deg, var(--info), var(--ac-str));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ac-str) 45%, transparent);
+}
+
+.theme-console .narrative__timeline .tl-step__time { color: var(--tx3); }
+.theme-console .narrative__timeline .tl-step__tid { color: var(--info); }
+.theme-console .narrative__timeline .tl-step__name { color: var(--tx); }
+
+.theme-console .narrative__timeline .tl-step__node {
+  background: var(--s1);
+  border-color: var(--info);
+  box-shadow: 0 0 0 4px var(--s0);
+}
+.theme-console .narrative__timeline .tl-step__node::after {
+  background: var(--info);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--info) 45%, transparent);
+}
+.theme-console .narrative__timeline .tl-step--pending .tl-step__node {
+  border-color: var(--warn);
+}
+.theme-console .narrative__timeline .tl-step--pending .tl-step__node::after {
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn);
+}
+.theme-console .narrative__timeline .tl-step--idle .tl-step__node {
+  border-color: var(--bd2);
+}
+.theme-console .narrative__timeline .tl-step--idle .tl-step__node::after {
+  background: var(--bd2);
+  box-shadow: none;
+}
+
+.theme-console .narrative__timeline .tl-step__mttd { color: var(--ac-str); }
+
+.theme-console .narrative__timeline .tl-det {
+  background: var(--s1);
+  border-color: var(--bd);
+  color: var(--tx3);
+}
+.theme-console .narrative__timeline .tl-det__plane { color: var(--tx2); }
+.theme-console .narrative__timeline .tl-det--detected {
+  border-color: var(--ac-str);
+  background: var(--ac-soft);
+  color: var(--ac-str);
+}
+.theme-console .narrative__timeline .tl-det--detected .tl-det__plane { color: var(--ac-str); }
+.theme-console .narrative__timeline .tl-det--pending {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
+}
+.theme-console .narrative__timeline .tl-det--pending .tl-det__plane { color: var(--warn); }
+.theme-console .narrative__timeline .tl-det--missed {
+  border-color: var(--crit);
+  background: color-mix(in srgb, var(--crit) 16%, transparent);
+  color: var(--crit);
+}
+.theme-console .narrative__timeline .tl-det--missed .tl-det__plane { color: var(--crit); }
+
+.theme-console .narrative__timeline .stitch-svg .stitch-path {
+  stroke: var(--info);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--info) 45%, transparent));
+}
+.theme-console .narrative__timeline .narrative__stitch-label {
+  color: var(--info);
+  background: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);
+}
+
+/* run-detail__eyebrow — the "Runs & Proof" breadcrumb label above the
+   masthead h1 (RunDetailView.jsx). Added by the InflightView pass;
+   kept here alongside the rest of the masthead rules above. */
+.theme-console .run-detail .run-detail__eyebrow {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ac);
+  margin-bottom: 2px;
+}
+
+/* ───────────────────────────────────────────────────────────────────
+   InflightView.jsx — the "Live" sub-tab: eyebrow/title/summary header,
+   empty and loading states, and the stats + Screenshot/Export footer.
+   `.narrative__timeline` above (NarrativeTimeline.jsx's own internals)
+   and `.evidence`/`.run-detail` above belong to other passes; this
+   section only touches the wrapper/header/footer chrome InflightView
+   itself renders. Reference: .design-ref/02-runs-amp-proof.html (the
+   "last run" card's pulse + eyebrow + stat-row language — the closest
+   analog in the mockup export to a live run header, since the split
+   03-rundetail-name.html "Live" tab documents a per-step log accordion
+   that belongs to a different data shape than the frames/stitches
+   NarrativeTimeline already renders; restyled in place rather than
+   forcing a layout with no backing data — see the task's gaps note).
+   ─────────────────────────────────────────────────────────────────── */
+
+.theme-console .narrative {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.theme-console .narrative__header {
+  border-bottom-color: var(--bd);
+}
+
+.theme-console .narrative__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'JetBrains Mono', var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--tx2);
+}
+.theme-console .narrative__eyebrow--live { color: var(--ac); }
+.theme-console .narrative__eyebrow--live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ac-str);
+  animation: run-detail-live-pulse 1.6s ease-in-out infinite;
+}
+
+.theme-console .narrative__title {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+}
+
+.theme-console .narrative__summary {
+  font-family: var(--font-ui);
+  font-weight: 400;
+  color: var(--tx2);
+}
+.theme-console .narrative__summary em {
+  color: var(--ac);
+  font-style: normal;
+}
+
+.theme-console .inflight-loading-note {
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--s1);
+  color: var(--tx3);
+}
+
+.theme-console .inflight-empty__title {
+  font-family: 'Montserrat', var(--font-display), sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+.theme-console .inflight-empty__desc {
+  font-family: var(--font-ui);
+  font-weight: 400;
+  color: var(--tx2);
+}
+
+.theme-console .narrative__footer {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.theme-console .narrative__footer p {
+  font-family: var(--font-ui);
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--tx2);
+}
+.theme-console .narrative__footer strong {
+  color: var(--ac);
+  font-weight: 700;
+}
+
+.theme-console .inflight-footer-actions .btn {
+  border-radius: 6px;
+}
+.theme-console .inflight-footer-actions .btn:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console .inflight-footer-actions .btn--primary {
+  background: var(--ac);
+  color: var(--ac-tx);
+  border-color: var(--ac);
+}
+.theme-console .inflight-footer-actions .btn--primary:hover:not(:disabled) {
+  background: var(--ac-str);
+  border-color: var(--ac-str);
+  color: var(--ac-tx);
+}

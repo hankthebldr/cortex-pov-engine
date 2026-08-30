@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import '../../styles/destinations/run-detail.css'
 
 /**
  * NarrativeTimeline — the hero artifact.
@@ -67,7 +68,9 @@ export default function NarrativeTimeline({ frames = [], stitches = [], nowLabel
     frames.length > 1 ? `${Math.max(0, Math.min(100, ((doneCount - 0.5) / (frames.length - 1)) * 100))}%` : '0%'
 
   return (
-    <div className="narrative__timeline" ref={containerRef}>
+    // data-theme="dark" pins the PANW token set to its dark values for this
+    // subtree — see the matching note in RunDetailView.jsx.
+    <div className="narrative__timeline" ref={containerRef} data-theme="dark">
       {nowLabel && (
         <div className="narrative__now-label mono">{nowLabel}</div>
       )}

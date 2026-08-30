@@ -6,6 +6,7 @@ import CausalityGraph from '../CausalityGraph.jsx'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { scenarioIdOf } from '../../api/ids.js'
+import '../../styles/destinations/run-detail.css'
 
 /**
  * Last few lines of a run's captured output — the actual reason it died.
@@ -84,10 +85,10 @@ export default function RunDetailView({
 
   if (!runId) {
     return (
-      <div className="runs-surface">
+      <div className="runs-surface run-detail run-detail--empty" data-theme="dark">
         <div className="view-head">
           <div><h1>Run detail</h1></div>
-          <button className="btn" onClick={onBack}>← All runs</button>
+          <button type="button" className="run-detail__back" onClick={onBack}>← All runs</button>
         </div>
         <div className="run-detail__empty mono">no run selected</div>
       </div>
@@ -95,9 +96,19 @@ export default function RunDetailView({
   }
 
   return (
-    <div className="runs-surface run-detail">
-      <div className="view-head">
-        <div>
+    // data-theme="dark" pins this destination's subtree (Live / Evidence / Storyline /
+    // Causality) to the PANW dark token set from cortex-tokens.css — AppConsole is the
+    // only shell that ever mounts this component and it never sets [data-theme] itself,
+    // so without this the new --ac/--s1/--tx tokens would resolve to their :root LIGHT
+    // values on top of the console's always-dark void background. See gaps in the task
+    // report for the follow-up once the shell wires a real theme toggle.
+    <div className="runs-surface run-detail" data-theme="dark">
+      <button type="button" className="run-detail__back" onClick={onBack}>← All runs</button>
+
+      <div className="view-head run-detail__head">
+        <div className="run-detail__head-main">
+          <div className="run-detail__accent-bar" aria-hidden="true" />
+          <div className="run-detail__eyebrow">Runs &amp; Proof</div>
           <h1 className={scenarioName ? undefined : 'mono'}>
             {scenarioName || descriptor.scenarioId || runId}
           </h1>
@@ -121,7 +132,6 @@ export default function RunDetailView({
             {run?.target && <> · <span className="mono">{run.target}</span></>}
           </div>
         </div>
-        <button className="btn" onClick={onBack}>← All runs</button>
       </div>
 
       {/* The run died and the console knew — say it here, once, at the top,

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import '../../styles/destinations/run-detail.css'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
@@ -62,7 +63,7 @@ export default function EvidenceView({
 
   if (!targetRunId) {
     return (
-      <div className="evidence evidence-empty">
+      <div className="evidence evidence-empty" data-theme="dark">
         <h1 className="evidence-empty__title">No run to validate</h1>
         <p className="evidence-empty__desc">
           Launch a scenario from the Operations tab. The detection scorecard
@@ -73,7 +74,10 @@ export default function EvidenceView({
   }
 
   return (
-    <div className="evidence">
+    // data-theme="dark" pins the PANW token set (--ac/--s1/--tx/…) to their dark
+    // values — AppConsole is the only shell that mounts this view and never sets
+    // [data-theme] itself; see the matching note in RunDetailView.jsx.
+    <div className="evidence" data-theme="dark">
       <div className="view-head">
         <div>
           <h1>Evidence</h1>
@@ -92,7 +96,7 @@ export default function EvidenceView({
           </div>
         </div>
         <div className="evidence-header__actions">
-          <div className="lab__segmented" role="tablist" aria-label="Evidence view mode">
+          <div className="lab__segmented evidence__mode-toggle" role="tablist" aria-label="Evidence view mode">
             <button
               type="button"
               role="tab"
@@ -174,6 +178,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           label="Coverage"
           value="n/a"
           meta={`run ${runStatus} — signal never generated`}
+          tone="tx"
         />
       ) : (
         <Kpi
@@ -182,6 +187,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           suffix="%"
           valueClass="kpi__value--detected"
           meta={`${kpis.detected} / ${kpis.total} detections confirmed`}
+          tone="ac"
         />
       )}
       <Kpi
@@ -190,26 +196,29 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         suffix={kpis.median != null ? 's' : ''}
         valueClass="kpi__value--signal"
         meta={kpis.median != null ? 'across confirmed detections' : 'no detections yet'}
+        tone={kpis.median != null ? 'ac' : 'tx'}
       />
       <Kpi
         label="XSIAM Stitch"
         value={kpis.stitched}
         suffix={` / ${kpis.total > 0 ? kpis.total : 0}`}
         meta="analytics-plane detections observed"
+        tone="info"
       />
       <Kpi
         label="Pending"
         value={kpis.pending}
         valueClass="kpi__value--pending"
         meta="awaiting validation"
+        tone={kpis.pending > 0 ? 'warn' : 'tx'}
       />
     </div>
   )
 }
 
-function Kpi({ label, value, suffix = '', meta = '', valueClass = '' }) {
+function Kpi({ label, value, suffix = '', meta = '', valueClass = '', tone = 'tx' }) {
   return (
-    <div className="kpi">
+    <div className={`kpi kpi--${tone}`}>
       <div className="kpi__label">{label}</div>
       <div className={'kpi__value ' + valueClass}>
         {value}
