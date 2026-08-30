@@ -95,7 +95,7 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
       <div className="panel-card-header">
         <h3>Launch Panel</h3>
         {scenario && (
-          <span className="badge badge-teal text-mono" style={{ textTransform: 'none' }}>
+          <span className="badge badge-teal text-mono launch-panel__badge">
             {scenario.scenario_id || scenario.id}
           </span>
         )}
@@ -103,12 +103,12 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
 
       <div className="panel-card-body">
         {!scenario ? (
-          <div className="empty-state" style={{ padding: '24px 0' }}>
+          <div className="empty-state launch-panel__empty">
             <div className="empty-state-icon">&#9654;</div>
             <p>Select a scenario to configure and launch a simulation.</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="launch-panel__body">
 
             {/* Mode toggle */}
             <div className="form-group">
@@ -131,7 +131,7 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
                   &#9650; Push
                 </button>
               </div>
-              <span style={{ fontSize: '11px', color: 'var(--cortex-steel)', marginTop: '2px' }}>
+              <span className="launch-panel__hint launch-panel__hint--top">
                 {mode === 'pull'
                   ? 'Agent polls SimCore and executes steps via Identity Harness'
                   : 'Generate a self-contained script for manual deployment'}
@@ -154,7 +154,7 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
-                <span style={{ fontSize: '11px', color: 'var(--cortex-steel)' }}>
+                <span className="launch-panel__hint">
                   Service account used for process causality chain generation
                 </span>
               </div>
@@ -165,16 +165,9 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
               <div className="form-group">
                 <label className="form-label" htmlFor="agent-select">Target Agent</label>
                 {agents.length === 0 ? (
-                  <div style={{
-                    padding: '10px 12px',
-                    background: 'rgba(243,156,18,0.08)',
-                    border: '1px solid rgba(243,156,18,0.3)',
-                    borderRadius: 'var(--radius-md)',
-                    fontSize: '12px',
-                    color: '#c47d00',
-                  }}>
+                  <div className="launch-panel__agent-warning">
                     &#9888; No agents connected. Start an agent with:{' '}
-                    <code style={{ fontFamily: 'var(--font-mono)' }}>
+                    <code className="launch-panel__code">
                       ./bin/cortexsim-agent --server http://localhost:8888
                     </code>
                   </div>
@@ -200,7 +193,7 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
             {mode === 'push' && (
               <div className="form-group">
                 <label className="form-label">Script Format</label>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div className="launch-panel__push-row">
                   <div className="segmented-control">
                     <button
                       className={pushFormat === 'bash' ? 'active' : ''}
@@ -229,7 +222,7 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
                     )}
                   </button>
                 </div>
-                <span style={{ fontSize: '11px', color: 'var(--cortex-steel)' }}>
+                <span className="launch-panel__hint">
                   {pushFormat === 'bash'
                     ? 'Self-contained bash script — runs on any Ubuntu 22.04 box'
                     : 'K8s YAML manifest — apply with kubectl apply -f <file>'}
@@ -240,12 +233,11 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
             <hr className="divider" />
 
             {/* Launch button row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="launch-panel__actions">
               <button
-                className="btn btn-primary btn-lg"
+                className="btn btn-primary btn-lg launch-panel__launch-btn"
                 onClick={handleLaunch}
                 disabled={disabled || (mode === 'pull' && agents.length === 0)}
-                style={{ minWidth: '140px' }}
               >
                 {launching ? (
                   <><span className="spinner" /> Launching…</>
@@ -256,13 +248,7 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
 
               {/* Status feedback */}
               {lastRun && (
-                <div style={{
-                  fontSize: '13px',
-                  color: lastRun.status === 'success' ? 'var(--cortex-success)' : 'var(--cortex-danger)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}>
+                <div className={`launch-panel__status launch-panel__status--${lastRun.status === 'success' ? 'success' : 'error'}`}>
                   <span>{lastRun.status === 'success' ? '✓' : '✕'}</span>
                   {lastRun.message}
                 </div>
