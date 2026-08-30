@@ -1,10 +1,13 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import ConsoleHeader from './ConsoleHeader.jsx'
 import TelemetryStrip from './TelemetryStrip.jsx'
 import DestinationNav from './DestinationNav.jsx'
 import CommandStrip from './CommandStrip.jsx'
 import CommandPalette from './CommandPalette.jsx'
 import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverlay.jsx'
+import { useTour } from '../onboarding/useTour.js'
+import TourSpotlight from '../onboarding/TourSpotlight.jsx'
+import { TOUR_STOPS } from '../onboarding/tourStops.js'
 
 /**
  * AppShell — Mission Ops Console layout wrapper.
@@ -64,14 +67,25 @@ export default function AppShell({
     })
   }, [])
 
-  // First-run help overlay — appears once per browser, then suppressed.
-  useEffect(() => {
-    if (shouldShowOnFirstRun()) {
-      const t = setTimeout(() => setHelpOpen(true), 400)
-      return () => clearTimeout(t)
-    }
-    return undefined
-  }, [])
+  // `onNavigate` reaches AppShell as a prop — its identity is stable when the
+  // caller (AppConsole) is wired correctly, but AppShell's own default value
+  // (`() => {}`) is a fresh function every render, and nothing here forces a
+  // caller to memoize. useTour's navigate effect lists `onNavigate` in its
+  // dependency array, so an unstable identity re-fires it every render. A
+  // ref-backed wrapper is stable regardless of what the caller passes, so it
+  // is handed to useTour instead of the raw prop.
+  const onNavigateRef = useRef(onNavigate)
+  useEffect(() => { onNavigateRef.current = onNavigate }, [onNavigate])
+  const stableOnNavigate = useCallback((...args) => onNavigateRef.current(...args), [])
+
+  // First-run tour — appears once per browser (unless the help overlay was
+  // already dismissed first), then suppressed. Replaces the old first-run
+  // help-overlay auto-open.
+  const tour = useTour({
+    stops: TOUR_STOPS,
+    onNavigate: stableOnNavigate,
+    autoStart: shouldShowOnFirstRun(),
+  })
 
   // Global ⌘K / ⌘/ / ⌘E handlers (preserved from the stepper shell).
   useEffect(() => {
@@ -154,7 +168,19 @@ export default function AppShell({
       <HelpOverlay
         open={helpOpen}
         onClose={handleCloseHelp}
+        onTour={() => { setHelpOpen(false); tour.start() }}
       />
+
+      {tour.active && (
+        <TourSpotlight
+          stop={tour.stop}
+          index={tour.index}
+          total={tour.total}
+          onNext={tour.next}
+          onPrev={tour.prev}
+          onExit={tour.exit}
+        />
+      )}
     </div>
   )
 }
