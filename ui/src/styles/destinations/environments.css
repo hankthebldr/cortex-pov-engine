@@ -1,0 +1,632 @@
+/* ═══════════════════════════════════════════════════════════════════
+   destinations/environments.css — the Environments destination
+   (LabView.jsx — IaC topology generator) + the legacy escape-hatch
+   InfraGenerator.jsx (App.jsx, ?theme=legacy).
+
+   Design contract: .design-ref/12-environments.html + 00-tokens.css.
+   Cortex green (--ac / --ac-str) is the accent; --orange is reserved
+   for warn/gap signal only — never used decoratively here.
+
+   Scope note: LabView renders inside the Mission Ops Console shell
+   (.theme-console), whose chrome (header/nav rail/workspace) is still
+   on the OLD dark-only --c-* palette and doesn't (yet) set
+   [data-theme]. LabView's root pins `data-theme="dark"` (same pattern
+   as RunDetailView/EvidenceView/NarrativeTimeline) so the new
+   --ac/--s1/--tx tokens resolve to their DARK values here, matching
+   the shell's always-dark void background instead of clashing with
+   it. That is a known interim seam, not a contrast bug — see the
+   task handoff notes for the shell-level follow-up (a real theme
+   toggle) this implies.
+   This file is intentionally new — cortex-console.css's superseded
+   `.theme-console .lab*` block (and the legacy `.infra-*` rules) are
+   left untouched; selectors here share their specificity and win by
+   load order (imported after cortex-console.css in main.jsx).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Destination surface ─────────────────────────────────────────── */
+.theme-console .lab {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* Eyebrow + accent bar — additive chrome inside the shared .view-head,
+   matching the mockup's category-label pattern without redefining
+   .view-head itself (that convention is shared across every
+   destination and out of this file's scope). */
+.theme-console .lab__accent-bar {
+  width: 56px;
+  height: 4px;
+  background: var(--ac-str);
+  border-radius: 2px;
+  margin-bottom: 10px;
+}
+.theme-console .lab__eyebrow {
+  font-family: var(--font-ui);
+  font: 600 9px/1 var(--font-ui);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .lab .view-head {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .lab .view-head h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 25px;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+  margin-top: 6px;
+}
+.theme-console .lab .view-head__meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--tx2);
+  margin-top: 7px;
+}
+.theme-console .lab .view-head__meta strong,
+.theme-console .lab .view-head__meta .mono {
+  color: var(--tx);
+}
+
+.theme-console .lab__head-actions .btn {
+  height: 32px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--tx);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-console .lab__head-actions .btn:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console .lab__head-actions .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Environment context ribbon (active tenant + agent) ──────────── */
+.theme-console .lab__ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.theme-console .lab__scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 10px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+}
+.theme-console .lab__scope-chip__label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .lab__scope-chip__value {
+  font-size: 11px;
+  color: var(--tx);
+}
+.theme-console .lab__scope-chip__value--empty {
+  color: var(--tx3);
+  font-style: italic;
+}
+.theme-console .lab__scope-chip__detail {
+  color: var(--tx2);
+}
+.theme-console .lab__scope-chip__manage.linklike {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ac);
+  background: transparent;
+  border: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.theme-console .lab__scope-chip__manage.linklike:hover {
+  background: var(--ac-soft);
+  text-decoration: none;
+}
+
+/* ── Inline error banner ─────────────────────────────────────────── */
+.theme-console .lab__error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  background: var(--s1);
+  border: 1px solid var(--crit);
+  border-left: 3px solid var(--crit);
+  border-radius: 6px;
+  color: var(--crit);
+  font-size: 12px;
+}
+.theme-console .lab__error-dismiss {
+  margin-left: auto;
+  height: 24px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  color: var(--crit);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-console .lab__error-dismiss:hover {
+  background: var(--crit);
+  color: var(--s1);
+}
+
+/* ── Provider + region row ───────────────────────────────────────── */
+.theme-console .lab__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.theme-console .lab__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.theme-console .lab__label {
+  font-family: var(--font-ui);
+  font: 600 9px/1.4 var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .lab__required {
+  color: var(--crit);
+  margin-left: 2px;
+}
+.theme-console .lab__hint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--tx3);
+  margin-top: 1px;
+}
+.theme-console .lab__input {
+  height: 34px;
+  padding: 0 11px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--tx);
+  background: var(--s2);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+.theme-console .lab__input.mono {
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .lab__input:focus {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 3px var(--ac-soft);
+}
+.theme-console .lab__input::placeholder {
+  color: var(--tx3);
+}
+
+/* segmented control — provider picker */
+.theme-console .lab__segmented {
+  display: inline-flex;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--s2);
+  height: 34px;
+}
+.theme-console .lab__segmented button {
+  flex: 1;
+  min-width: 56px;
+  padding: 0 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--tx2);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.theme-console .lab__segmented button:hover:not(:disabled) {
+  color: var(--tx);
+  background: var(--s1);
+}
+.theme-console .lab__segmented button:focus-visible {
+  outline: 2px solid var(--ac);
+  outline-offset: -2px;
+}
+.theme-console .lab__segmented button.is-active {
+  background: var(--ac-soft);
+  color: var(--ac);
+  font-weight: 700;
+}
+.theme-console .lab__segmented button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Sections ─────────────────────────────────────────────────────── */
+.theme-console .lab__section {
+  margin-bottom: 28px;
+}
+.theme-console .lab__section-title {
+  font-family: var(--font-ui);
+  font: 600 9px/1 var(--font-ui);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .lab__caption {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--tx3);
+  font-weight: 400;
+}
+.theme-console .lab__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--tx3);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: var(--s2);
+  border: 1px dashed var(--bd2);
+  border-radius: 8px;
+}
+
+/* ── Module grid / cards ──────────────────────────────────────────── */
+.theme-console .lab__module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+}
+
+.theme-console .lab-module {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 15px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--bd2);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+}
+.theme-console .lab-module:hover {
+  border-color: var(--bd2);
+  transform: translateY(-1px);
+}
+.theme-console .lab-module:focus-within {
+  outline: 2px solid var(--ac);
+  outline-offset: 1px;
+}
+.theme-console .lab-module--checked {
+  border-color: var(--ac-line);
+  border-top-color: var(--ac);
+  background: var(--ac-soft);
+}
+.theme-console .lab-module--locked {
+  cursor: not-allowed;
+  border-top-color: var(--tx3);
+}
+.theme-console .lab-module input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: var(--ac);
+  width: 15px;
+  height: 15px;
+  cursor: inherit;
+  flex: none;
+}
+
+.theme-console .lab-module__body {
+  flex: 1;
+  min-width: 0;
+}
+.theme-console .lab-module__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 5px;
+}
+.theme-console .lab-module__name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tx);
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .lab-module--checked .lab-module__name {
+  color: var(--ac);
+}
+.theme-console .lab-module__deps {
+  font-size: 9px;
+  color: var(--tx3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.theme-console .lab-module__desc {
+  font-size: 12px;
+  color: var(--tx2);
+  line-height: 1.45;
+  margin-bottom: 6px;
+}
+.theme-console .lab-module__tools {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--tx3);
+}
+
+/* ── Scenario hint row ────────────────────────────────────────────── */
+.theme-console .lab__hint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.theme-console .lab__hint-input {
+  max-width: 220px;
+}
+.theme-console [data-testid="scenario-hint-apply"] {
+  height: 34px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--tx);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-console [data-testid="scenario-hint-apply"]:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console [data-testid="scenario-hint-apply"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.theme-console .lab__hint-error {
+  color: var(--crit);
+  font-size: 11px;
+}
+.theme-console .lab__hint-result {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--ac);
+}
+.theme-console .lab__hint-warn {
+  color: var(--warn);
+}
+
+/* ── Adapter auto-pull picker ─────────────────────────────────────── */
+.theme-console .lab__adapter-lede {
+  font-size: 12px;
+  color: var(--tx2);
+  margin: 0 0 12px;
+}
+.theme-console .lab__adapter-hint {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--ac);
+}
+.theme-console .lab__adapter-group {
+  margin-bottom: 12px;
+}
+.theme-console .lab__adapter-group__label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 6px;
+}
+.theme-console .lab__adapter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.theme-console .lab__adapter-chip__check {
+  color: var(--ac);
+  margin-right: 4px;
+}
+.theme-console .lab__adapter-chip__version {
+  margin-left: 6px;
+  color: var(--tx3);
+}
+
+/* ── Parameters ───────────────────────────────────────────────────── */
+.theme-console .lab__param-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+/* ── Generate row ─────────────────────────────────────────────────── */
+.theme-console .lab__generate-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 32px;
+  padding-top: 18px;
+  border-top: 1px solid var(--bd);
+}
+.theme-console .lab__generate-row .btn--primary {
+  height: 34px;
+  padding: 0 16px;
+  background: var(--ac);
+  color: var(--ac-tx);
+  border: 1px solid var(--ac);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.theme-console .lab__generate-row .btn--primary:hover:not(:disabled) {
+  background: var(--ac-str);
+  border-color: var(--ac-str);
+}
+.theme-console .lab__generate-row .btn--primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.theme-console .lab__validation {
+  font-size: 11px;
+  color: var(--crit);
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .lab__last-bundle {
+  font-size: 11px;
+  color: var(--ac-str);
+  letter-spacing: var(--tracking-mono);
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.theme-console .lab__auto-pulled {
+  color: var(--tx3);
+}
+.theme-console .lab__last-bundle-download,
+.theme-console .lab__bundle-row-download {
+  height: 27px;
+  padding: 0 11px;
+  margin-left: 8px;
+  background: transparent;
+  border: 1px solid var(--bd2);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx);
+  cursor: pointer;
+}
+.theme-console .lab__last-bundle-download:hover,
+.theme-console .lab__bundle-row-download:hover {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+
+/* ── Bundle history table ─────────────────────────────────────────── */
+.theme-console .lab__bundles {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  overflow: hidden;
+  overflow-x: auto;
+}
+.theme-console .lab__bundle-head,
+.theme-console .lab__bundle-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 180px 80px 110px;
+  gap: 14px;
+  padding: 10px 16px;
+  align-items: center;
+  min-width: 640px;
+}
+.theme-console .lab__bundle-head {
+  background: var(--thead);
+  font-family: var(--font-ui);
+  font: 600 9px/1 var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fff;
+}
+.theme-console .lab__bundle-head__size {
+  text-align: right;
+}
+.theme-console .lab__bundle-row {
+  border-top: 1px solid var(--bd);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.theme-console .lab__bundle-row:hover {
+  background: var(--ac-soft);
+}
+.theme-console .lab__bundle-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ac);
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .lab__bundle-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--tx2);
+  letter-spacing: var(--tracking-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.theme-console .lab__bundle-created {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--tx3);
+  letter-spacing: var(--tracking-mono);
+}
+.theme-console .lab__bundle-size {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--tx2);
+  letter-spacing: var(--tracking-mono);
+  text-align: right;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .theme-console .lab__row,
+  .theme-console .lab__param-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   InfraGenerator.jsx — legacy escape-hatch (?theme=legacy, App.jsx).
+   Not console-scoped (renders outside .theme-console). Its shell
+   (.panel-card) and most colors already flow through the --cortex-*
+   alias table onto the new tokens; these overrides close the two
+   spots that were still hardcoded off-token, and add the same
+   green-accent state language used above. Structure/behaviour is
+   otherwise untouched — this is the legacy app's shared panel
+   convention, not owned by this destination.
+   ═══════════════════════════════════════════════════════════════════ */
+.infra-module-card--checked {
+  border: 2px solid var(--cortex-teal);
+  background: var(--ac-soft, var(--cortex-light-bg));
+}
+.infra-error {
+  background: var(--s2, var(--cortex-light-bg));
+  border-color: var(--cortex-danger);
+}
+.infra-generated {
+  color: var(--cortex-success);
+}

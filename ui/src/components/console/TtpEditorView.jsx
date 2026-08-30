@@ -6,6 +6,7 @@ import {
   updateTtp,
   promoteTtp,
 } from '../../api/client.js'
+import '../../styles/destinations/ttp-detail.css'
 
 /**
  * TtpEditorView — minimal authoring surface for issue #59.
@@ -148,7 +149,7 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
 
   if (authoringDisabled) {
     return (
-      <div className="competitive__detail" data-testid="ttp-editor">
+      <div className="competitive__detail ttp-editor" data-testid="ttp-editor">
         <div className="competitive__detail-head">
           <h3 className="competitive__detail-title">TTP Editor — disabled</h3>
           <button type="button" className="btn" onClick={onClose}>Close</button>
@@ -162,7 +163,7 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
   }
 
   return (
-    <div className="competitive__detail" data-testid="ttp-editor">
+    <div className="competitive__detail ttp-editor" data-testid="ttp-editor">
       <div className="competitive__detail-head">
         <div>
           <div className="competitive__detail-eyebrow mono">
@@ -187,7 +188,7 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
           )}
           <button
             type="button"
-            className="btn"
+            className="btn btn--primary"
             data-testid="ttp-editor-save"
             disabled={!canSave}
             onClick={handleSave}
