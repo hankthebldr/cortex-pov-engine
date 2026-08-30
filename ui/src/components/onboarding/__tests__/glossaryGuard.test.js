@@ -17,8 +17,15 @@ function walk(dir, out = []) {
 // text for <Term k="..."> usages. This is a source-text guard, not a parser —
 // a good-enough regex strip is enough to keep doc-comment prose (which is
 // free to mention <Term k="..."> as an example) from tripping the scanner.
+//
+// The line-comment strip only treats `//` as a comment when it is at the
+// start of a line (modulo leading whitespace) or preceded by whitespace and
+// NOT by `:` — a bare `/\/\/.*$/` cannot tell a real comment from `//` inside
+// a string or URL scheme (e.g. `"see https://example.com"`), and would eat
+// everything after it on the line, including a real <Term k="...">. That is
+// exactly the silent under-report this guard exists to prevent.
 function stripComments(src) {
-  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
 
 function findTermUsages(files) {
@@ -31,6 +38,27 @@ function findTermUsages(files) {
   }
   return usages
 }
+
+describe('stripComments', () => {
+  it('does not eat a <Term> that shares a line with a :// URL', () => {
+    // Regression guard for the reviewer-caught defect: a naive `//.*$` line-
+    // comment strip cannot distinguish a real comment from `//` inside a
+    // string or URL scheme, so it silently truncated everything after the
+    // URL — including a real <Term k="..."> later on the same line. That is
+    // exactly the failure mode this whole guard exists to prevent: a clean
+    // scan that is actually under-reporting.
+    const src = '  console.log("see https://example.com"); <Term k="leaked">x</Term>'
+    expect(stripComments(src)).toContain('<Term k="leaked">')
+  })
+
+  it('still strips a genuine line comment', () => {
+    // The fix must not simply disable line-comment stripping — that would
+    // pass the assertion above while silently re-breaking Part 3 (the
+    // restored glossary.js doc comment would trip the guard again).
+    const src = '  const x = 1 // a real comment mentioning <Term k="fake">\n'
+    expect(stripComments(src)).not.toContain('<Term k="fake">')
+  })
+})
 
 describe('glossary guard', () => {
   it('every <Term k="..."> in the UI resolves to a glossary entry', () => {
