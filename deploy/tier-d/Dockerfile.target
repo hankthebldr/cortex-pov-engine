@@ -37,9 +37,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                             scenario reaches the public internet, that too —
 #                             the harness reports egress-dependent steps
 #                             separately rather than hiding them)
+#   python3   -> SIM-EDR-001 step-05 downloads the REAL mimipenguin.sh, which
+#                shells out to python internally. Without it, mimipenguin
+#                dies with "Error: No supported version of 'python' found" —
+#                a genuine ENVIRONMENT gap that the scenario's own
+#                `|| echo '[*] ... complete'` fallback masks as exit_code=0,
+#                so the harness reports OK when the tool the step downloaded
+#                never actually ran. Measured on a real run (2026-08-30).
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
         bash coreutils findutils grep sed gawk procps binutils iproute2 \
-        curl ca-certificates passwd login sudo \
+        curl ca-certificates passwd login sudo python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------

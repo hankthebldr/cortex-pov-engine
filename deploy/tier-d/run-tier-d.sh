@@ -107,6 +107,29 @@ TOKEN="$(curl -fsS -X POST -H 'Content-Type: application/json' \
 
 # `--mode=foreground` BLOCKS by design (it babysits the beacon), so it must be
 # run detached. Running it attached is the mistake that looks like a hang.
+#
+# Selecting "the first online agent" is WRONG on a shared docker host: this
+# machine can (and did, in testing) already have another beacon online — e.g.
+# a leftover container from a previous manual run — with the SAME hostname as
+# this target (containers on `--network host` inherit the host's kernel
+# hostname). /api/agents has no field that says "this is the one MY install
+# just enrolled", so two agents can legitimately share agent-id-prefix
+# "<hostname>-..." and differ only in the random suffix. Picking online[0] by
+# recency raced and silently ran the scenario against the WRONG, unprovisioned
+# container — the exact www-data/nologin defect this harness exists to catch,
+# reintroduced by the harness's own agent-selection bug.
+#
+# Fix: correlate by TIME + the install script's own telemetry, not by guessing
+# from agent state. The installer POSTs `stage=run code=OK agent_id=<id>` to
+# /api/agents/install/telemetry the moment it starts the beacon (see
+# core/api/agents.py InstallTelemetry) — that record IS the ground truth for
+# "which agent id did THIS install produce". We only accept a telemetry row
+# timestamped at or after the moment we kicked off this install.
+# Naive-UTC on purpose, to lexically compare against the server's own
+# `datetime.utcnow().isoformat()` timestamps in install/telemetry — a
+# timezone-aware ("+00:00"-suffixed) string would compare unreliably against
+# the server's un-suffixed one.
+INSTALL_START_TS="$(python3 -W ignore -c 'from datetime import datetime; print(datetime.utcnow().isoformat())')"
 log "running the real installer one-liner on the target (detached)"
 docker exec -d \
   -e CORTEXSIM_TOKEN="$TOKEN" \
@@ -118,12 +141,21 @@ docker exec -d \
 log "waiting for the beacon to check in"
 AGENT_ID=""
 for _ in $(seq 1 40); do
-  AGENT_ID="$(curl -fsS "${SIMCORE}/api/agents" \
-    | python3 -c '
-import sys,json
-d=json.load(sys.stdin); a=d if isinstance(d,list) else d.get("agents",[])
-live=[x for x in a if x.get("status")=="online"]
-print(live[0]["agent_id"] if live else "")' 2>/dev/null || true)"
+  AGENT_ID="$(curl -fsS "${SIMCORE}/api/agents/install/attempts?limit=20" \
+    | python3 -c "
+import sys, json
+start = '${INSTALL_START_TS}'
+d = json.load(sys.stdin)
+attempts = d.get('attempts', [])
+# newest-first; take the first 'run'/OK attempt reported at-or-after our own
+# install start with a non-empty agent_id — i.e. OUR install, not someone
+# else's beacon that happens to still be alive on this host.
+for a in attempts:
+    if (a.get('stage') == 'run' and a.get('code') == 'OK'
+            and a.get('agent_id') and a.get('reported_at', '') >= start):
+        print(a['agent_id'])
+        break
+" 2>/dev/null || true)"
   [ -n "$AGENT_ID" ] && break
   sleep 2
 done
@@ -132,6 +164,16 @@ done
   curl -fsS "${SIMCORE}/api/agents/install/attempts" | tail -c 800 >&2 || true
   exit 2
 }
+# Belt-and-suspenders: confirm the correlated agent is actually online before
+# trusting it to run the scenario.
+LIVE_CHECK="$(curl -fsS "${SIMCORE}/api/agents" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+a = d if isinstance(d, list) else d.get('agents', [])
+match = [x for x in a if x.get('agent_id') == '${AGENT_ID}']
+print(match[0].get('status', '') if match else '')" 2>/dev/null || true)"
+[ "$LIVE_CHECK" = "online" ] || { err "correlated agent ${AGENT_ID} is not online (status='${LIVE_CHECK}')"; exit 2; }
 ok "beacon online: ${AGENT_ID}"
 
 # ---------------------------------------------------------------------------
@@ -178,11 +220,16 @@ ok "terminal status: ${STATUS}  (run.json saved)"
 # ---------------------------------------------------------------------------
 # 5. Classify — the part that makes this a harness rather than a smoke test
 # ---------------------------------------------------------------------------
+# `|| RC=$?` is load-bearing, not decoration: under `set -e`, classify.py
+# returning 1 (an ENGINE-class verdict) would otherwise terminate the script
+# on THAT statement, before the `log "artifacts in..."` line below ever runs —
+# so the one message that tells the operator where verdict.json landed would
+# silently vanish on exactly the run that most needs it read.
+RC=0
 python3 "${SCRIPT_DIR}/classify.py" \
   --run "${RESULTS_DIR}/run.json" \
   --scenario "$SCENARIO" \
-  --out "${RESULTS_DIR}/verdict.json"
-RC=$?
+  --out "${RESULTS_DIR}/verdict.json" || RC=$?
 
 log "artifacts in ${RESULTS_DIR}"
 exit $RC
