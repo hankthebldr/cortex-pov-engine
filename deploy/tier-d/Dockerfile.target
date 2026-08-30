@@ -1,0 +1,102 @@
+# ===========================================================================
+# CortexSim Tier-D target — a PROVISIONED Ubuntu host for pull-mode e2e.
+# ---------------------------------------------------------------------------
+# Why this image exists
+#
+# A bare `ubuntu:22.04` cannot run this corpus. Measured on the real tree:
+# `www-data` ships with `/usr/sbin/nologin` and no `/var/www`, so the identity
+# harness's `runuser -l www-data` dies with "This account is currently not
+# available" — exit 1, in 7ms, before the TTP does anything at all.
+#
+# That failure is the most dangerous one this product has, because in a POV
+# readout it is indistinguishable from "the technique ran and Cortex missed
+# it." It did not run. The host was wrong.
+#
+# This image provisions every non-direct identity the corpus actually uses, so
+# a failed step means the TTP failed — not that the target was unprepared.
+#
+# Identity counts are measured from scenarios/**/*.yml, not guessed:
+#   www-data 103 · svc-account 80 · svc-backup 26 · node 11 · user 7
+#   runner 6 · app 6 · vertex-agent 5 · developer 1 · nobody 1
+#
+# NOTE: svc-account, user, runner, app, vertex-agent and developer are NOT in
+# spec/identity_harness.json's `service_accounts` list. They resolve through the
+# spec's "unknown username -> runuser best-effort + WARN" path. That is 105
+# steps relying on a fallback rather than a declared account; provisioning them
+# here makes the harness honest about what it is exercising.
+# ===========================================================================
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Toolchain the corpus's Linux steps actually invoke.
+#   binutils  -> `strings` (proc/environ scraping steps)
+#   procps    -> `ps` (process enumeration)
+#   iproute2  -> `ss`/`ip` (network steps)
+#   ca-certificates + curl -> beacon download from SimCore (and, where a
+#                             scenario reaches the public internet, that too —
+#                             the harness reports egress-dependent steps
+#                             separately rather than hiding them)
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+        bash coreutils findutils grep sed gawk procps binutils iproute2 \
+        curl ca-certificates passwd login sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# Identity provisioning.
+#
+# Two distinct problems are fixed per account:
+#   1. a LOGIN SHELL — `runuser -l` refuses an account whose shell is nologin
+#   2. a HOME DIRECTORY that exists — runuser warns and cds to / otherwise,
+#      which changes the process's cwd and therefore its causality story
+#
+# www-data already exists in the base image with nologin + a missing /var/www,
+# so it is repaired rather than created.
+# ---------------------------------------------------------------------------
+RUN set -eux; \
+    # --- repair the pre-existing accounts the base image ships broken -------
+    usermod --shell /bin/bash --home /var/www www-data; \
+    install -d -o www-data -g www-data -m 0755 /var/www; \
+    usermod --shell /bin/bash nobody || true; \
+    \
+    # --- declared service accounts from spec/identity_harness.json ----------
+    for u in postgres mysql node python3 svc-backup; do \
+        if ! getent passwd "$u" >/dev/null; then \
+            useradd --create-home --shell /bin/bash "$u"; \
+        else \
+            usermod --shell /bin/bash "$u"; \
+            install -d -o "$u" -g "$u" -m 0755 "/home/$u" || true; \
+        fi; \
+    done; \
+    \
+    # --- identities the corpus uses that the spec does NOT declare ----------
+    # (see the header note: 105 steps ride the unknown-username fallback)
+    for u in svc-account user runner app vertex-agent developer; do \
+        useradd --create-home --shell /bin/bash "$u"; \
+    done
+
+# Credential-shaped bait so credential-sweep steps have something to find.
+# These are inert fixtures, not real secrets — a sweep that finds nothing on an
+# empty host reports a false negative just as loudly as a broken one.
+RUN set -eux; \
+    for u in svc-account svc-backup user developer; do \
+        h="/home/$u"; \
+        printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI%s cortexsim-fixture\n' "$u" > "$h/.ssh_fixture_pub"; \
+        printf '# cortexsim tier-d fixture — inert\nhost=localhost\nuser=%s\n' "$u" > "$h/.pgpass"; \
+        printf 'cd /tmp\nls -la\n' > "$h/.bash_history"; \
+        chown -R "$u:$u" "$h"; \
+        chmod 600 "$h/.pgpass" "$h/.bash_history"; \
+    done
+
+# A couple of long-lived, honestly-named processes so process-enumeration and
+# /proc/<pid>/environ steps have live targets. These are `sleep` processes with
+# a descriptive argv — NOT binaries masquerading as sshd/apache, because a fake
+# process name would make the target lie to the sensor exactly the way the
+# corpus's echo-only steps do.
+COPY tier-d-processes.sh /usr/local/bin/tier-d-processes.sh
+RUN chmod +x /usr/local/bin/tier-d-processes.sh
+
+LABEL org.cortexsim.role="tier-d-target" \
+      org.cortexsim.description="Provisioned Ubuntu target for pull-mode e2e validation"
+
+CMD ["/usr/local/bin/tier-d-processes.sh"]
