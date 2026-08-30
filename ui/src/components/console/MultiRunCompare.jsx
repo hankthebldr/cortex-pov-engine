@@ -86,7 +86,7 @@ export default function MultiRunCompare() {
       </div>
 
       <div className="multirun__picker">
-        <div className="competitive__filter-label mono" style={{ marginBottom: 8 }}>
+        <div className="competitive__filter-label mono compare-runs__avail-label">
           available runs · pick up to 4
         </div>
         {loadingRuns ? (

@@ -137,14 +137,7 @@ export default function ScenarioGrid({
 }) {
   if (scenarios.length === 0) {
     return (
-      <div style={{
-        padding: 48,
-        textAlign: 'center',
-        color: 'var(--c-text-muted)',
-        fontFamily: 'var(--font-mono)',
-        fontSize: 12,
-        letterSpacing: '0.04em',
-      }}>
+      <div className="scenario-grid-empty">
         No scenarios match the current filter.
       </div>
     )

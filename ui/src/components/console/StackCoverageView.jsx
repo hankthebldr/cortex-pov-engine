@@ -236,7 +236,7 @@ function SelectedCellPanel({ cell, scenarios, onClose, onFilterByCell }) {
           </div>
           <h3 className="stack-coverage__panel-title">{tactic?.label}</h3>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="stack-coverage__cell-actions">
           <button
             type="button"
             className="btn btn--primary"

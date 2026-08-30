@@ -146,10 +146,9 @@ export default function RunDetailView({
       )}
 
       <div
-        className="lab__segmented"
+        className="lab__segmented run-detail__subtabs"
         role="tablist"
         aria-label="Run detail views"
-        style={{ marginBottom: 12 }}
       >
         {RUN_SUBTABS.map((t) => (
           <button

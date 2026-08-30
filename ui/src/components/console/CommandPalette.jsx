@@ -107,7 +107,7 @@ export default function CommandPalette({
 
         <div className="cmd-palette__results">
           {grouped.length === 0 && (
-            <div className="cmd-section-label" style={{ paddingBottom: 24 }}>
+            <div className="cmd-section-label cmd-palette__empty">
               no matches — try a different scenario id or TID
             </div>
           )}

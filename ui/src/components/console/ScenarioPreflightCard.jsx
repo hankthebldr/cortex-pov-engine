@@ -41,8 +41,7 @@ export default function ScenarioPreflightCard({
       <div className="launch-card__kicker">
         Preflight
         <span
-          className={PF_CHIP[pf.verdict]}
-          style={{ marginLeft: 8 }}
+          className={PF_CHIP[pf.verdict] + ' preflight-verdict'}
           data-testid="preflight-verdict"
           data-verdict={pf.verdict}
         >
