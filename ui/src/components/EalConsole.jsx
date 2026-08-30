@@ -78,8 +78,8 @@ export default function EalConsole({ onMessage, onClose }) {
   return (
     <section className="eal-console">
       <header className="eal-console__head">
-        <h2 style={{ margin: 0, fontSize: '18px' }}>
-          <span style={{ color: 'var(--cortex-teal)' }}>EAL</span> Traffic Simulator
+        <h2 className="eal-console__title">
+          <span className="eal-console__title-accent">EAL</span> Traffic Simulator
         </h2>
         <nav className="eal-console__tabs">
           <button
@@ -103,9 +103,8 @@ export default function EalConsole({ onMessage, onClose }) {
         </nav>
         {onClose && (
           <button
-            className="btn btn-sm btn-secondary"
+            className="btn btn-sm btn-secondary eal-console__close"
             onClick={onClose}
-            style={{ marginLeft: 'auto' }}
           >
             Close
           </button>
@@ -171,8 +170,8 @@ function EalCampaignsList({ campaigns, loading, onLaunch, onRefresh }) {
 
   return (
     <div className="eal-campaigns">
-      <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: '8px' }}>
-        <p className="muted small" style={{ margin: 0 }}>
+      <div className="flex-row eal-list__toolbar">
+        <p className="muted small eal-list__count">
           {campaigns.length} campaign(s)
         </p>
         <button className="btn btn-sm btn-secondary" onClick={onRefresh}>Refresh</button>
@@ -186,7 +185,7 @@ function EalCampaignsList({ campaigns, loading, onLaunch, onRefresh }) {
             <th>Authorized</th>
             <th>Allowlist</th>
             <th>Created</th>
-            <th style={{ width: '180px' }}>Actions</th>
+            <th className="eal-table__col-actions">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -226,10 +225,9 @@ function EalCampaignsList({ campaigns, loading, onLaunch, onRefresh }) {
                     Dry-run
                   </button>
                   <button
-                    className="btn btn-sm btn-navy"
+                    className="btn btn-sm btn-navy eal-campaigns__run-live-btn"
                     disabled={busyId === c.campaign_id || !c.simulation_authorized}
                     onClick={() => setConfirmLive(c)}
-                    style={{ marginLeft: '6px' }}
                     title={c.simulation_authorized
                       ? 'Run live against the campaign target_allowlist'
                       : 'Live execution requires simulation_authorized=true'}
@@ -246,7 +244,7 @@ function EalCampaignsList({ campaigns, loading, onLaunch, onRefresh }) {
       {confirmLive && (
         <div className="modal-backdrop" onClick={() => setConfirmLive(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Confirm live campaign launch</h3>
+            <h3 className="eal-modal__title">Confirm live campaign launch</h3>
             <p>
               <strong>{confirmLive.campaign_id}</strong> — {confirmLive.name}
             </p>
@@ -265,7 +263,7 @@ function EalCampaignsList({ campaigns, loading, onLaunch, onRefresh }) {
               Every request carries an <code>X-Simulation-Run-ID</code>{' '}
               header for SOC filtering.
             </p>
-            <div className="flex-row" style={{ gap: '8px', justifyContent: 'flex-end' }}>
+            <div className="flex-row eal-modal__actions">
               <button className="btn btn-sm btn-secondary" onClick={() => setConfirmLive(null)}>
                 Cancel
               </button>
@@ -299,8 +297,8 @@ function EalRunsList({ runs, loading, openRunId, onOpenRun, onRefresh, onMessage
 
   return (
     <div className="eal-runs">
-      <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: '8px' }}>
-        <p className="muted small" style={{ margin: 0 }}>{runs.length} run(s)</p>
+      <div className="flex-row eal-list__toolbar">
+        <p className="muted small eal-list__count">{runs.length} run(s)</p>
         <button className="btn btn-sm btn-secondary" onClick={onRefresh}>Refresh</button>
       </div>
       <table className="cs-table">
