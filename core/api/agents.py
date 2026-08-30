@@ -51,6 +51,12 @@ class RegisterRequest(BaseModel):
     hostname: str
     os: str
     capabilities: list[str] = []
+    # The beacon's own honest snapshot of which logical interpreters resolve
+    # on ITS host right now (executor.AvailableLogicalNames()). Optional/
+    # back-compat: an older beacon binary that omits this field registers
+    # exactly as before, with an empty roster (advisory-only — see
+    # engine.runtime_preflight and docs/design/agent-runtime-dependencies.md).
+    interpreters: list[str] = []
 
 
 class MintTokenRequest(BaseModel):
@@ -64,6 +70,12 @@ class EnrollRequest(BaseModel):
     hostname: str
     os: str
     capabilities: list[str] = []
+    # See RegisterRequest.interpreters. In practice the shell installer (not
+    # Go code) drives this call, so it is usually empty here and gets its
+    # real value moments later when the just-started compiled beacon binary
+    # calls Register() for itself — kept here for API symmetry and so a
+    # future Go-driven enroll path does not need a schema change.
+    interpreters: list[str] = []
     # Optional client-suggested name; sanitised + suffixed for uniqueness.
     desired_name: Optional[str] = Field(default=None, max_length=60)
 
@@ -1047,25 +1059,76 @@ async def register_agent(
             hostname=body.hostname,
             os=body.os,
             capabilities=body.capabilities,
+            interpreters=body.interpreters,
             registered_at=now,
             last_seen=now,
             status="online",
         )
         db.add(agent)
-        logger.info("register_agent NEW agent_id=%s hostname=%s os=%s", body.agent_id, body.hostname, body.os)
+        logger.info("register_agent NEW agent_id=%s hostname=%s os=%s interpreters=%s",
+                     body.agent_id, body.hostname, body.os, body.interpreters)
     else:
         existing.hostname = body.hostname
         existing.os = body.os
         existing.capabilities = body.capabilities
+        existing.interpreters = body.interpreters
         existing.last_seen = now
         existing.status = "online"
-        logger.info("register_agent UPDATED agent_id=%s", body.agent_id)
+        logger.info("register_agent UPDATED agent_id=%s interpreters=%s", body.agent_id, body.interpreters)
 
     await db.commit()
     return {
         "status": "registered",
         "agent_id": body.agent_id,
         "message": "Agent registered successfully",
+    }
+
+
+@router.get("/{agent_id}/preflight")
+async def agent_runtime_preflight(
+    agent_id: str,
+    scenario_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Target-readiness preflight: "can THIS HOST run this scenario?"
+
+    ``POST /api/connectors/{kind}/preflight`` answers "is my TENANT reachable"
+    before a POV; nothing answered "can this endpoint run this scenario"
+    before this (docs/design/agent-runtime-dependencies.md). Compares the
+    scenario's declared per-step ``requires_interpreters`` against this
+    agent's advertised interpreter roster.
+
+    ADVISORY ONLY — the agent's roster is a snapshot from its last
+    registration. A gap reported here is real evidence a run should not be
+    launched yet; a clean report is NOT proof the run will succeed, because
+    the beacon re-checks the real target live at execution time regardless
+    (that live check, not this endpoint, is what makes "a missing dependency
+    never presents as success" true).
+    """
+    from models import Scenario  # noqa: PLC0415
+    from engine.runtime_preflight import evaluate_runtime_readiness  # noqa: PLC0415
+
+    agent_row = (await db.execute(
+        select(Agent).where(Agent.agent_id == agent_id)
+    )).scalar_one_or_none()
+    if agent_row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "Agent not found", "code": "AGENT_NOT_FOUND",
+            "detail": f"no agent registered with id '{agent_id}'"})
+
+    scenario_row = (await db.execute(
+        select(Scenario).where(Scenario.scenario_id == scenario_id)
+    )).scalar_one_or_none()
+    if scenario_row is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "Scenario not found", "code": "SCENARIO_NOT_FOUND",
+            "detail": f"no scenario with id '{scenario_id}'"})
+
+    readiness = evaluate_runtime_readiness(scenario_row, agent_row.interpreters)
+    return {
+        "agent_id": agent_id,
+        "scenario_id": scenario_id,
+        **readiness.to_dict(),
     }
 
 
@@ -1163,6 +1226,7 @@ async def enroll_agent(body: EnrollRequest, db: AsyncSession = Depends(get_db)):
     db.add(Agent(
         agent_id=agent_id, hostname=body.hostname, os=body.os,
         capabilities=body.capabilities or ["shell", "identity-harness"],
+        interpreters=body.interpreters,
         registered_at=now, last_seen=now, status="online",
     ))
     token_row.used_count += 1

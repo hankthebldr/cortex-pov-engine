@@ -178,6 +178,21 @@ class Run(Base):
     tc_verdict: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # pass|fail|pending|not_applicable
     tc_verdict_detail: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # ── Runtime-dependency posture (docs/design/agent-runtime-dependencies.md) ─
+    # runtime_install_authorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
+    # an explicit, per-run, off-by-default record of whether THIS run was
+    # permitted to have the beacon attempt a package-manager install to
+    # satisfy a step's declared `requires_interpreters`. Recorded regardless of
+    # whether any step actually needed it, so "was this run allowed to mutate
+    # the target" is answerable from the run record alone, not reconstructed
+    # from log lines.
+    runtime_install_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # runtime_dependency_gaps is the PREFLIGHT snapshot (advisory — see
+    # engine.runtime_preflight) taken at launch time: which steps declared an
+    # interpreter the target agent's last-registered roster did not have.
+    # None when nothing was declared/checked; [] when checked and clean.
+    runtime_dependency_gaps: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
+
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
     results: Mapped[list["Result"]] = relationship("Result", back_populates="run_rel")
@@ -193,6 +208,8 @@ class Run(Base):
             "status": self.status,
             "tc_verdict": self.tc_verdict,
             "tc_verdict_detail": self.tc_verdict_detail,
+            "runtime_install_authorized": self.runtime_install_authorized,
+            "runtime_dependency_gaps": self.runtime_dependency_gaps,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "output": self.output,
@@ -576,6 +593,14 @@ class Agent(Base):
     hostname: Mapped[str] = mapped_column(String, nullable=False)
     os: Mapped[str] = mapped_column(String, nullable=False)
     capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # The beacon's own honest snapshot of which logical interpreters
+    # (executor.AvailableLogicalNames(), e.g. ["python"]) resolve on ITS host
+    # right now, sent at registration. Consumed by
+    # engine.runtime_preflight.evaluate_runtime_readiness — advisory only; the
+    # beacon re-checks live at execution time regardless (see
+    # docs/design/agent-runtime-dependencies.md), so a stale value here can
+    # under-report readiness but can never cause a false success.
+    interpreters: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     registered_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     status: Mapped[str] = mapped_column(String, nullable=False, default="online")  # online | stale | offline (derived from last_seen at read time)
@@ -587,6 +612,7 @@ class Agent(Base):
             "hostname": self.hostname,
             "os": self.os,
             "capabilities": self.capabilities,
+            "interpreters": self.interpreters,
             "registered_at": self.registered_at.isoformat() if self.registered_at else None,
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "status": self.status,

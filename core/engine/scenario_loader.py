@@ -154,6 +154,18 @@ class StepSchema(BaseModel):
     causality: Optional[StepCausalitySchema] = None
     platforms: list[str] = Field(default_factory=list)
     platform_variants: dict[str, str] = Field(default_factory=dict)
+    # ── Runtime-dependency contract (optional, additive, back-compat) ───────
+    # Logical interpreters (e.g. "python") this step's COMMAND depends on but
+    # does not itself install — the gap SIM-EDR-001 step-05 exposed: it
+    # downloads mimipenguin.sh, which shells out to `python` internally, and
+    # the step's own `|| echo '... complete'` fallback silently absorbed the
+    # failure when python was absent, reporting exit_code=0. Declaring this
+    # does not change what the step runs; it lets the beacon check for the
+    # dependency BEFORE running the command and refuse to run it (rather than
+    # let a masked failure report success) when it is genuinely absent — see
+    # agent/beacon/client.go::resolveRuntimeDeps and
+    # docs/design/agent-runtime-dependencies.md.
+    requires_interpreters: list[str] = Field(default_factory=list)
 
     @field_validator("platforms")
     @classmethod

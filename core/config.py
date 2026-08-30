@@ -71,6 +71,17 @@ class Settings(BaseSettings):
     CORTEXSIM_XSIAM_ALLOW_WRITE: bool = False
     CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE: bool = False
 
+    # Same posture, different surface: a pull-mode step whose declared
+    # `requires_interpreters` is absent on the target may EITHER be reported
+    # honestly as an environment gap (the default — nothing is ever installed
+    # on a customer host implicitly) OR, if the operator explicitly authorizes
+    # it for a run (LaunchRequest.allow_runtime_install=true) AND this
+    # deployment-wide flag is also on, the beacon may attempt a package-manager
+    # install to satisfy it. Both gates must be true — mirroring
+    # CORTEXSIM_XSIAM_ALLOW_WRITE's two-key posture — so a single mis-set
+    # request body can never mutate a customer endpoint on its own.
+    CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL: bool = False
+
     # SQLAlchemy statement echo. Previously tied to CORTEXSIM_ENV=development,
     # which meant a dev boot log carried every aiosqlite statement TWICE (once
     # from the sqlalchemy.engine logger, once through the app formatter). A DC

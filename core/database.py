@@ -172,6 +172,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_results_columns)
         await conn.run_sync(_migrate_scenarios_columns)
         await conn.run_sync(_migrate_assertion_columns)
+        await conn.run_sync(_migrate_runtime_dependency_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -310,6 +311,33 @@ def _migrate_assertion_columns(connection) -> None:
             if col_name in existing:
                 continue
             connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
+
+
+def _migrate_runtime_dependency_columns(connection) -> None:
+    """Add the runtime-dependency preflight/install columns to ``agents`` and
+    ``runs`` if absent (docs/design/agent-runtime-dependencies.md). Same
+    rationale as the other migration helpers here: ``create_all`` never adds a
+    COLUMN to an existing table.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+
+    if "agents" in tables:
+        existing = {col["name"] for col in inspector.get_columns("agents")}
+        if "interpreters" not in existing:
+            connection.execute(text("ALTER TABLE agents ADD COLUMN interpreters JSON"))
+
+    if "runs" in tables:
+        existing = {col["name"] for col in inspector.get_columns("runs")}
+        for col_name, col_type in [
+            ("runtime_install_authorized", "BOOLEAN"),
+            ("runtime_dependency_gaps", "JSON"),
+        ]:
+            if col_name in existing:
+                continue
+            connection.execute(text(f"ALTER TABLE runs ADD COLUMN {col_name} {col_type}"))
 
 
 async def get_db():

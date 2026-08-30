@@ -80,6 +80,13 @@ class Task:
     # same server it is trusting — the identical anchoring
     # ``k8s_manifest._resolve_payloads`` uses for the pod.
     artifacts: list[dict[str, Any]] = field(default_factory=list)
+    # See docs/design/agent-runtime-dependencies.md. Mirrors
+    # CORTEXSIM_XSIAM_ALLOW_WRITE's posture: only True when BOTH the launch
+    # request explicitly asked for it AND CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL
+    # is set on this deployment (see launch()). When True, the beacon may
+    # attempt a package-manager install to satisfy a step's declared
+    # `requires_interpreters` instead of refusing to run it.
+    runtime_install_authorized: bool = False
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict[str, Any]:
@@ -99,6 +106,10 @@ class Task:
         # shipped before artifact staging existed.
         if self.artifacts:
             payload["artifacts"] = self.artifacts
+        # Omitted when False — matches Go's `omitempty` on the bool field, so a
+        # task for any run that never touched this feature is byte-identical.
+        if self.runtime_install_authorized:
+            payload["runtime_install_authorized"] = True
         return payload
 
     def requires_artifact_fetch(self) -> bool:
@@ -164,6 +175,7 @@ class Orchestrator:
         target_agent_id: Optional[str] = None,
         identity: Optional[str] = None,
         consent: Optional[dict[str, bool]] = None,
+        allow_runtime_install: bool = False,
     ) -> LaunchResult:
         """
         Create a Run record and route to pull or push path.
@@ -185,10 +197,23 @@ class Orchestrator:
         The last two are ORTHOGONAL, not nested: a manifest that wants wildcard
         RBAC and touches no node needs only the first.
 
+        ``allow_runtime_install`` (docs/design/agent-runtime-dependencies.md) —
+        per-run authorization for the beacon to attempt a package-manager
+        install when a step's declared ``requires_interpreters`` is absent on
+        the target, instead of refusing to run the step. Mirrors
+        ``CORTEXSIM_XSIAM_ALLOW_WRITE``'s two-key posture: this flag ALONE does
+        nothing — it also requires ``CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL`` on
+        this deployment. The EFFECTIVE (both-gates) value is what is recorded
+        on the Run and threaded onto the Task; a request that asked for it on a
+        deployment that has not enabled it is recorded honestly as False, not
+        silently upgraded or silently dropped without a trace.
+
         Missing consent aborts the launch with a structured error and creates
         no Run record.
         """
-        from models import Run, Scenario  # noqa: PLC0415
+        from config import settings as _settings  # noqa: PLC0415
+        from models import Agent, Run, Scenario  # noqa: PLC0415
+        from engine.runtime_preflight import evaluate_runtime_readiness  # noqa: PLC0415
 
         # Fetch scenario
         result = await db.execute(
@@ -217,6 +242,32 @@ class Orchestrator:
                 error_detail=_refusal_detail(gate_error),
             )
 
+        # Two-key gate — same posture as CORTEXSIM_XSIAM_ALLOW_WRITE. A single
+        # mis-set request body can never authorize a target mutation on its own.
+        runtime_install_authorized = bool(
+            allow_runtime_install and _settings.CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL
+        )
+
+        # ADVISORY preflight (docs/design/agent-runtime-dependencies.md):
+        # visible before dispatch, never the enforcement. Only meaningful for a
+        # pull-mode launch against a known agent; push mode and an unresolved
+        # target record no gaps here (None, not [] — "not checked", not
+        # "checked and clean").
+        runtime_dependency_gaps: Optional[list[dict[str, Any]]] = None
+        if mode == "pull" and target_agent_id:
+            agent_row = (await db.execute(
+                select(Agent).where(Agent.agent_id == target_agent_id)
+            )).scalar_one_or_none()
+            if agent_row is not None:
+                readiness = evaluate_runtime_readiness(scenario, agent_row.interpreters)
+                runtime_dependency_gaps = [g.to_dict() for g in readiness.gaps]
+                if readiness.gaps:
+                    logger.warning(
+                        "Runtime-dependency preflight gap scenario=%s agent=%s gaps=%s "
+                        "(advisory — the beacon still checks live at execution time)",
+                        scenario_id, target_agent_id, runtime_dependency_gaps,
+                    )
+
         run_id = str(uuid.uuid4())
         now = datetime.utcnow()
 
@@ -228,6 +279,8 @@ class Orchestrator:
             identity_context=identity,
             status="pending",
             started_at=now,
+            runtime_install_authorized=runtime_install_authorized,
+            runtime_dependency_gaps=runtime_dependency_gaps,
         )
         db.add(run)
         await db.commit()
@@ -244,7 +297,10 @@ class Orchestrator:
         )
 
         if mode == "pull":
-            return await self._handle_pull(run_id, scenario, target_agent_id, identity, db)
+            return await self._handle_pull(
+                run_id, scenario, target_agent_id, identity, db,
+                runtime_install_authorized=runtime_install_authorized,
+            )
         elif mode == "push":
             return await self._handle_push(run_id, scenario, db)
         else:
@@ -265,6 +321,7 @@ class Orchestrator:
         target_agent_id: Optional[str],
         identity: Optional[str],
         db: AsyncSession,
+        runtime_install_authorized: bool = False,
     ) -> LaunchResult:
         from models import Run  # noqa: PLC0415
 
@@ -308,6 +365,7 @@ class Orchestrator:
             identity_default=execution_identity.get("default"),
             cgo_anchor=getattr(scenario, "cgo_anchor", None),
             artifacts=artifacts,
+            runtime_install_authorized=runtime_install_authorized,
         )
         self._enqueue(target_agent_id, task)
         # Mirror the task to the durable queue so a restart can rehydrate it.
@@ -673,6 +731,11 @@ def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
             # without the tool it needs and report green. That is the same
             # manufactured false negative arriving by a side door.
             artifacts=payload.get("artifacts") or [],
+            # Same rehydrate-honesty rationale as artifacts immediately above:
+            # a restart must not silently DROP an operator's runtime-install
+            # authorization for an in-flight run, which would make the
+            # rehydrated task refuse a step the operator explicitly permitted.
+            runtime_install_authorized=bool(payload.get("runtime_install_authorized", False)),
             created_at=datetime.fromisoformat(created) if created else datetime.utcnow(),
         )
     except (KeyError, TypeError, ValueError):  # pragma: no cover - defensive
