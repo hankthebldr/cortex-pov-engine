@@ -5949,6 +5949,7 @@
 
 /* Scenario → infra-hints quick-fill row */
 .theme-console .lab__hint-row { display: flex; gap: 8px; align-items: center; }
+.theme-console .lab__hint-input { max-width: 260px; }
 .theme-console .lab__hint-error { color: var(--c-missed); font-size: 11px; }
 .theme-console .lab__hint-result { font-size: 11px; color: var(--c-text-secondary); margin-top: 6px; }
 .theme-console .lab__hint-warn { color: var(--c-pending); }
@@ -6142,3 +6143,34 @@
 .empty-state--compact {
   padding: var(--space-6);
 }
+
+/* ── UcTcIndexView (console/UcTcIndexView.jsx) — inline-style normalization ──
+   Static color/layout rules moved out of inline style={{}} props. Tone
+   classes name the SAME --c-* token the inline style set, so this is a
+   pure lift with no visual change. Bar-segment width stays inline because
+   it is a runtime-computed percentage (pct()) — that value has no static
+   class to move into. */
+.theme-console .uctc__btn--clear { height: 28px; padding: 0 10px; }
+.theme-console .uctc__btn-inline { height: 22px; padding: 0 8px; }
+.theme-console .uctc__btn-inline--ml4 { height: 22px; padding: 0 8px; margin-left: 4px; }
+.theme-console .uctc__btn-inline--ml6 { height: 22px; padding: 0 8px; margin-left: 6px; }
+.theme-console .uctc__rail-empty { padding: 16px; }
+
+/* Tone text colors — one class per --c-* token these inline styles used. */
+.theme-console .uctc__tone-detected { color: var(--c-detected); }
+.theme-console .uctc__tone-pending { color: var(--c-pending); }
+.theme-console .uctc__tone-missed { color: var(--c-missed); }
+.theme-console .uctc__tone-muted { color: var(--c-text-muted); }
+.theme-console .uctc__tone-action { color: var(--c-action); }
+.theme-console .uctc__tone-signal { color: var(--c-signal); }
+
+/* Legend swatch backgrounds (ClassStrip legend). */
+.theme-console .uctc__legendswatch--detected { background: var(--c-detected); }
+.theme-console .uctc__legendswatch--pending { background: var(--c-pending); }
+.theme-console .uctc__legendswatch--hairline { background: var(--c-hairline-strong); }
+
+/* Stacked-bar segment backgrounds — pairs with the shared .coverage__summary-seg
+   layout class; width stays inline (see note above). */
+.theme-console .uctc__bar-seg--detected { background: var(--c-detected); }
+.theme-console .uctc__bar-seg--pending { background: var(--c-pending); }
+.theme-console .uctc__bar-seg--hairline { background: var(--c-hairline-strong); }
