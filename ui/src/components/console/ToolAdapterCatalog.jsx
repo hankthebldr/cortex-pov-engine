@@ -209,8 +209,7 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
           no adapters match the current filters —{' '}
           <button
             type="button"
-            className="btn"
-            style={{ height: 22, padding: '0 8px', marginLeft: 4 }}
+            className="btn adapter-registry__clear-btn"
             onClick={resetFilters}
           >
             clear filters
@@ -399,7 +398,7 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
       {supply?.state === SUPPLY.STAGED && (
         <div className="adapter-card__provenance mono">
           sha256 {shortDigest(supply.sha256)} · {supply.license || '—'}
-          {supply.pinned === false && <span className="chip chip--pending" style={{ marginLeft: 4 }}>UNPINNED</span>}
+          {supply.pinned === false && <span className="chip chip--pending adapter-card__unpinned">UNPINNED</span>}
         </div>
       )}
 
@@ -408,7 +407,7 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
           {safety}
         </span>
         {' '}
-        <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>
+        <span className="mono adapter-card__license">
           · {adapter.license}
         </span>
       </div>
@@ -416,14 +415,14 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
         {planes.length > 0 && (
           <div className="adapter-card__tids">
             {planes.map((p) => (
-              <span key={p} className="chip chip--signal" style={{ fontSize: 9 }}>{p}</span>
+              <span key={p} className="chip chip--signal tool-adapter-catalog__chip-sm">{p}</span>
             ))}
           </div>
         )}
         {tids.length > 0 && (
-          <div className="adapter-card__tids" style={{ marginTop: 4 }}>
+          <div className="adapter-card__tids adapter-card__tids--gap">
             {tids.slice(0, 6).map((t) => (
-              <span key={t} className="chip" style={{ fontSize: 9 }}>{t}</span>
+              <span key={t} className="chip tool-adapter-catalog__chip-sm">{t}</span>
             ))}
             {tids.length > 6 && (
               <span className="adapter-card__more mono">+{tids.length - 6}</span>
@@ -489,22 +488,22 @@ function ToolAdapterDetail({
       </DetailSection>
 
       <DetailSection label="Upstream">
-        <div className="mono" style={{ fontSize: 12 }}>
+        <div className="mono tool-adapter-catalog__repo">
           <a href={upstream.repo} target="_blank" rel="noreferrer">{upstream.repo}</a>
         </div>
-        <div className="mono" style={{ fontSize: 11, color: 'var(--c-text-secondary)' }}>
+        <div className="mono tool-adapter-catalog__repo-meta">
           {upstream.license} · {upstream.attribution}
         </div>
       </DetailSection>
 
       <DetailSection label="Cortex signal">
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        <div className="tool-adapter-catalog__chip-row">
           {(detail.cortex_signal?.planes || []).map((p) => (
             <span key={p} className="chip chip--signal">{p}</span>
           ))}
         </div>
         {(detail.cortex_signal?.expected_techniques || []).length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+          <div className="tool-adapter-catalog__chip-row tool-adapter-catalog__chip-row--top">
             {detail.cortex_signal.expected_techniques.map((t) => (
               <span key={t} className="chip">{t}</span>
             ))}
@@ -539,14 +538,8 @@ function ToolAdapterDetail({
         />
         {invoke.default_args && Object.keys(invoke.default_args).length > 0 && (
           <>
-            <div className="competitive__detail-label" style={{ marginTop: 8 }}>default_args</div>
-            <pre
-              className="mono"
-              style={{
-                background: 'var(--c-bg-elevated)', padding: 8, fontSize: 11,
-                borderRadius: 4, overflow: 'auto',
-              }}
-            >
+            <div className="competitive__detail-label competitive__detail-label--top">default_args</div>
+            <pre className="mono tool-adapter-catalog__args-pre">
               {JSON.stringify(invoke.default_args, null, 2)}
             </pre>
           </>
@@ -555,7 +548,7 @@ function ToolAdapterDetail({
 
       {cleanup.commands && cleanup.commands.length > 0 && (
         <DetailSection label="Cleanup">
-          <ul className="mono" style={{ fontSize: 11, paddingLeft: 18, margin: 0 }}>
+          <ul className="mono tool-adapter-catalog__cleanup-list">
             {cleanup.commands.map((c, i) => <li key={i}>{c}</li>)}
           </ul>
         </DetailSection>
@@ -564,14 +557,13 @@ function ToolAdapterDetail({
       {(ttpRefs.length > 0 || equivs.length > 0) && (
         <DetailSection label="Cross-references">
           {ttpRefs.length > 0 && (
-            <div style={{ marginBottom: 6 }}>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>ttp_refs:</span>
+            <div className="tool-adapter-catalog__xref-block">
+              <span className="mono tool-adapter-catalog__xref-label">ttp_refs:</span>
               {ttpRefs.map((r) => (
                 <button
                   key={r}
                   type="button"
-                  className="chip chip--clickable"
-                  style={{ marginLeft: 4, border: 'none', cursor: 'pointer' }}
+                  className="chip chip--clickable tool-adapter-catalog__xref-chip"
                   title="Open this TTP card"
                   data-testid={`ttp-ref-chip-${r}`}
                   onClick={() => onNavigateTtp && onNavigateTtp(r)}
@@ -583,13 +575,12 @@ function ToolAdapterDetail({
           )}
           {equivs.length > 0 && (
             <div>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>equivalents:</span>
+              <span className="mono tool-adapter-catalog__xref-label">equivalents:</span>
               {equivs.map((r) => (
                 <button
                   key={r}
                   type="button"
-                  className="chip chip--clickable"
-                  style={{ marginLeft: 4, border: 'none', cursor: 'pointer' }}
+                  className="chip chip--clickable tool-adapter-catalog__xref-chip"
                   title="Open this adapter's detail panel"
                   data-testid={`equivalent-chip-${r}`}
                   onClick={() => onNavigateAdapter && onNavigateAdapter(r)}
@@ -604,8 +595,8 @@ function ToolAdapterDetail({
 
       {(detail.tags || []).length > 0 && (
         <DetailSection label="Tags">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {detail.tags.map((t) => <span key={t} className="chip" style={{ fontSize: 9 }}>{t}</span>)}
+          <div className="tool-adapter-catalog__chip-row">
+            {detail.tags.map((t) => <span key={t} className="chip tool-adapter-catalog__chip-sm">{t}</span>)}
           </div>
         </DetailSection>
       )}
@@ -694,14 +685,14 @@ function DetailSection({ label, children }) {
 function KeyValueGrid({ rows }) {
   const present = rows.filter(([, v]) => v !== undefined && v !== null && v !== '')
   if (present.length === 0) {
-    return <p className="mono" style={{ fontSize: 11, color: 'var(--c-text-muted)' }}>(none)</p>
+    return <p className="mono tool-adapter-catalog__empty-note">(none)</p>
   }
   return (
     <div className="adapter-schema">
       {present.map(([k, v]) => (
         <div key={k} className="adapter-schema__row">
           <div className="adapter-schema__name mono">{k}</div>
-          <div className="adapter-schema__desc mono" style={{ whiteSpace: 'pre-wrap' }}>{String(v)}</div>
+          <div className="adapter-schema__desc mono adapter-schema__desc--pre">{String(v)}</div>
         </div>
       ))}
     </div>

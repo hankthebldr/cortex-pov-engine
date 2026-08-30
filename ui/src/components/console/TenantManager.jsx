@@ -31,38 +31,29 @@ function StepIndicator({ current }) {
     { n: 3, label: 'Review' },
   ]
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 28 }}>
+    <div className="tenant-mgr__steps">
       {steps.map((s, i) => {
         const done    = current > s.n
         const active  = current === s.n
-        const circleStyle = {
-          width: 26, height: 26, borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-mono)',
-          flexShrink: 0,
-          background: done    ? 'var(--cortex-navy)'
-                    : active  ? 'var(--cortex-teal)'
-                               : 'var(--cortex-border)',
-          color: (done || active) ? '#fff' : 'var(--cortex-steel)',
-        }
-        const labelStyle = {
-          fontSize: 11, fontWeight: active ? 700 : 400,
-          color: active ? 'var(--cortex-navy)'
-               : done   ? 'var(--cortex-teal)'
-                        : 'var(--cortex-steel)',
-          marginLeft: 6,
-        }
+        const circleClass = [
+          'tenant-mgr__step-circle',
+          done   && 'tenant-mgr__step-circle--done',
+          active && 'tenant-mgr__step-circle--active',
+          !done && !active && 'tenant-mgr__step-circle--pending',
+        ].filter(Boolean).join(' ')
+        const labelClass = [
+          'tenant-mgr__step-label',
+          active && 'tenant-mgr__step-label--active',
+          done   && 'tenant-mgr__step-label--done',
+        ].filter(Boolean).join(' ')
         return (
           <React.Fragment key={s.n}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div style={circleStyle}>{done ? '✓' : s.n}</div>
-              <span style={labelStyle}>{s.label}</span>
+            <div className="tenant-mgr__step">
+              <div className={circleClass}>{done ? '✓' : s.n}</div>
+              <span className={labelClass}>{s.label}</span>
             </div>
             {i < steps.length - 1 && (
-              <div style={{
-                flex: 1, height: 1, margin: '0 10px',
-                background: current > s.n ? 'var(--cortex-teal)' : 'var(--cortex-border)',
-              }} />
+              <div className={`tenant-mgr__step-connector${current > s.n ? ' tenant-mgr__step-connector--done' : ''}`} />
             )}
           </React.Fragment>
         )
@@ -73,26 +64,27 @@ function StepIndicator({ current }) {
 
 function FieldRow({ label, hint, required, error, children }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label style={{
-        display: 'block', fontSize: 11, fontWeight: 600,
-        color: 'var(--cortex-navy)', marginBottom: 5, letterSpacing: '0.04em',
-        textTransform: 'uppercase',
-      }}>
-        {label}{required && <span style={{ color: 'var(--cortex-danger)', marginLeft: 2 }}>*</span>}
+    <div className="tenant-mgr__field">
+      <label className="tenant-mgr__field-label">
+        {label}{required && <span className="tenant-mgr__field-required">*</span>}
       </label>
       {children}
       {hint && !error && (
-        <div style={{ fontSize: 10, color: 'var(--cortex-steel)', marginTop: 4 }}>{hint}</div>
+        <div className="tenant-mgr__field-hint">{hint}</div>
       )}
       {error && (
-        <div style={{ fontSize: 10, color: 'var(--cortex-danger)', marginTop: 4 }}>{error}</div>
+        <div className="tenant-mgr__field-error">{error}</div>
       )}
     </div>
   )
 }
 
 function Field({ value, onChange, placeholder, type = 'text', mono = false, error }) {
+  const className = [
+    'tenant-mgr__input',
+    mono && 'tenant-mgr__input--mono',
+    error && 'tenant-mgr__input--error',
+  ].filter(Boolean).join(' ')
   return (
     <input
       type={type}
@@ -100,20 +92,7 @@ function Field({ value, onChange, placeholder, type = 'text', mono = false, erro
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       autoComplete={type === 'password' ? 'new-password' : 'off'}
-      style={{
-        width: '100%', boxSizing: 'border-box',
-        padding: '8px 10px',
-        border: `1px solid ${error ? 'var(--cortex-danger)' : 'var(--cortex-border)'}`,
-        borderRadius: 'var(--radius-sm)',
-        fontFamily: mono ? 'var(--font-mono)' : 'var(--font-primary)',
-        fontSize: 12,
-        color: 'var(--cortex-navy)',
-        outline: 'none',
-        background: '#fff',
-        transition: 'border-color 0.12s',
-      }}
-      onFocus={e => { e.target.style.borderColor = 'var(--cortex-teal)' }}
-      onBlur={e => { e.target.style.borderColor = error ? 'var(--cortex-danger)' : 'var(--cortex-border)' }}
+      className={className}
     />
   )
 }
@@ -121,25 +100,14 @@ function Field({ value, onChange, placeholder, type = 'text', mono = false, erro
 function HealthPill({ ok, testing, error: errText }) {
   if (testing) {
     return (
-      <span style={{
-        padding: '2px 9px', borderRadius: 12, fontSize: 10, fontWeight: 700,
-        fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',
-        background: 'rgba(0,192,232,0.15)', color: 'var(--cortex-teal)',
-        border: '1px solid var(--cortex-teal)',
-        animation: 'pulse 1s ease-in-out infinite',
-      }}>
+      <span className="tenant-mgr__pill tenant-mgr__pill--testing">
         TESTING…
       </span>
     )
   }
   if (ok === true) {
     return (
-      <span style={{
-        padding: '2px 9px', borderRadius: 12, fontSize: 10, fontWeight: 700,
-        fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',
-        background: 'rgba(0,184,148,0.15)', color: 'var(--cortex-success)',
-        border: '1px solid var(--cortex-success)',
-      }}>
+      <span className="tenant-mgr__pill tenant-mgr__pill--ok">
         HEALTHY
       </span>
     )
@@ -148,24 +116,14 @@ function HealthPill({ ok, testing, error: errText }) {
     return (
       <span
         title={errText || 'Test failed'}
-        style={{
-          padding: '2px 9px', borderRadius: 12, fontSize: 10, fontWeight: 700,
-          fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',
-          background: 'rgba(231,76,60,0.10)', color: 'var(--cortex-danger)',
-          border: '1px solid var(--cortex-danger)',
-          cursor: errText ? 'help' : 'default',
-        }}>
+        className={`tenant-mgr__pill tenant-mgr__pill--fail${errText ? ' tenant-mgr__pill--hint' : ''}`}
+      >
         FAILED
       </span>
     )
   }
   return (
-    <span style={{
-      padding: '2px 9px', borderRadius: 12, fontSize: 10, fontWeight: 700,
-      fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',
-      background: 'rgba(107,126,142,0.12)', color: 'var(--cortex-steel)',
-      border: '1px solid var(--cortex-border)',
-    }}>
+    <span className="tenant-mgr__pill tenant-mgr__pill--unknown">
       NOT TESTED
     </span>
   )
@@ -176,7 +134,7 @@ function HealthPill({ ok, testing, error: errText }) {
 function Step1({ form, onChange, errors }) {
   return (
     <div>
-      <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--cortex-navy)', margin: '0 0 20px' }}>
+      <h3 className="tenant-mgr__section-title">
         Identify the tenant
       </h3>
       <FieldRow
@@ -232,50 +190,44 @@ function Step1({ form, onChange, errors }) {
 function Step2({ form, onChange, errors }) {
   return (
     <div>
-      <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--cortex-navy)', margin: '0 0 20px' }}>
+      <h3 className="tenant-mgr__section-title">
         API credentials
       </h3>
 
       <FieldRow label="Auth Mode" required>
-        <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+        <div className="tenant-mgr__radio-row">
           {[
             { value: 'standard', label: 'Standard',  available: true  },
             { value: 'advanced', label: 'Advanced',  available: false },
-          ].map(opt => (
-            <label key={opt.value} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '7px 12px',
-              border: form.auth_mode === opt.value
-                ? '1.5px solid var(--cortex-teal)'
-                : '1px solid var(--cortex-border)',
-              borderRadius: 'var(--radius-sm)',
-              background: form.auth_mode === opt.value ? 'rgba(0,192,232,0.07)' : '#fff',
-              cursor: opt.available ? 'pointer' : 'not-allowed',
-              opacity: opt.available ? 1 : 0.45,
-              fontSize: 12,
-              fontWeight: form.auth_mode === opt.value ? 700 : 400,
-              color: 'var(--cortex-navy)',
-              userSelect: 'none',
-            }}>
-              <input
-                type="radio"
-                name="auth_mode"
-                value={opt.value}
-                checked={form.auth_mode === opt.value}
-                disabled={!opt.available}
-                onChange={() => opt.available && onChange('auth_mode', opt.value)}
-                style={{ accentColor: 'var(--cortex-teal)' }}
-              />
-              {opt.label}
-              {!opt.available && (
-                <span style={{ fontSize: 9, color: 'var(--cortex-steel)', marginLeft: 2 }}>
-                  (Slice 2)
-                </span>
-              )}
-            </label>
-          ))}
+          ].map(opt => {
+            const selected = form.auth_mode === opt.value
+            const optionClass = [
+              'tenant-mgr__radio-option',
+              selected && 'tenant-mgr__radio-option--selected',
+              !opt.available && 'tenant-mgr__radio-option--disabled',
+            ].filter(Boolean).join(' ')
+            return (
+              <label key={opt.value} className={optionClass}>
+                <input
+                  type="radio"
+                  name="auth_mode"
+                  value={opt.value}
+                  checked={selected}
+                  disabled={!opt.available}
+                  onChange={() => opt.available && onChange('auth_mode', opt.value)}
+                  className="tenant-mgr__radio-input"
+                />
+                {opt.label}
+                {!opt.available && (
+                  <span className="tenant-mgr__radio-note">
+                    (Slice 2)
+                  </span>
+                )}
+              </label>
+            )
+          })}
         </div>
-        <div style={{ fontSize: 10, color: 'var(--cortex-steel)', marginTop: 5 }}>
+        <div className="tenant-mgr__radio-hint">
           Standard auth uses static headers: x-xdr-auth-id + Authorization.
         </div>
       </FieldRow>
@@ -332,55 +284,41 @@ function Step3({ form, saving, testResult, onSaveAndTest, onSaveOnly }) {
 
   return (
     <div>
-      <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--cortex-navy)', margin: '0 0 20px' }}>
+      <h3 className="tenant-mgr__section-title">
         Review & activate
       </h3>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24 }}>
+      <table className="tenant-mgr__table">
         <tbody>
           {rows.map(r => (
-            <tr key={r.label} style={{ borderBottom: '1px solid var(--cortex-border)' }}>
-              <td style={{
-                padding: '7px 0', fontSize: 11, fontWeight: 600, width: 110,
-                color: 'var(--cortex-steel)', textTransform: 'uppercase', letterSpacing: '0.04em',
-              }}>{r.label}</td>
-              <td style={{
-                padding: '7px 0', fontSize: 12,
-                fontFamily: r.mono ? 'var(--font-mono)' : 'var(--font-primary)',
-                color: 'var(--cortex-navy)',
-              }}>{r.value || <span style={{ color: 'var(--cortex-steel)' }}>—</span>}</td>
+            <tr key={r.label} className="tenant-mgr__table-row">
+              <td className="tenant-mgr__table-label">{r.label}</td>
+              <td className={`tenant-mgr__table-value${r.mono ? ' tenant-mgr__table-value--mono' : ''}`}>
+                {r.value || <span className="tenant-mgr__table-empty">—</span>}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
 
       {testResult && !testResult.ok && (
-        <div style={{
-          padding: '10px 14px', marginBottom: 16,
-          background: 'rgba(231,76,60,0.08)', border: '1px solid var(--cortex-danger)',
-          borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--cortex-danger)',
-        }}>
+        <div className="tenant-mgr__alert tenant-mgr__alert--error">
           <strong>Test failed:</strong>{' '}
           {testResult.error || 'The tenant did not respond as expected.'}
         </div>
       )}
       {testResult && testResult.ok && (
-        <div style={{
-          padding: '10px 14px', marginBottom: 16,
-          background: 'rgba(0,184,148,0.08)', border: '1px solid var(--cortex-success)',
-          borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--cortex-success)',
-        }}>
+        <div className="tenant-mgr__alert tenant-mgr__alert--success">
           Tenant is reachable.{' '}
           {testResult.status?.status && <span>Status: <strong>{testResult.status.status}</strong></span>}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+      <div className="tenant-mgr__actions">
         <button
-          className="btn btn-primary"
+          className="btn btn-primary tenant-mgr__btn-wide"
           onClick={onSaveAndTest}
           disabled={saving}
-          style={{ minWidth: 130 }}
         >
           {saving ? 'Saving…' : '✦ Save & Test'}
         </button>
@@ -392,7 +330,7 @@ function Step3({ form, saving, testResult, onSaveAndTest, onSaveOnly }) {
           Save without testing
         </button>
       </div>
-      <div style={{ fontSize: 10, color: 'var(--cortex-steel)', marginTop: 8 }}>
+      <div className="tenant-mgr__footnote">
         The API key is encrypted with CORTEXSIM_SECRET before storage. It is never logged or returned in API responses.
       </div>
     </div>
@@ -411,47 +349,30 @@ function TenantRow({ tenant, active, onSelect, onTest, onDelete, testing }) {
   return (
     <div
       aria-current={active ? 'true' : undefined}
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'auto 1fr auto auto',
-        gap: 14, alignItems: 'start',
-        padding: '14px 12px 14px 10px',
-        borderBottom: '1px solid var(--cortex-border)',
-        borderLeft: `3px solid ${active ? 'var(--cortex-teal)' : 'transparent'}`,
-        background: active ? 'rgba(0,192,232,0.05)' : 'transparent',
-      }}
+      className={`tenant-mgr__row${active ? ' tenant-mgr__row--active' : ''}`}
     >
       {/* Active selector */}
       {active ? (
         <span
           aria-label="Active tenant"
-          style={{
-            alignSelf: 'center',
-            padding: '2px 8px', borderRadius: 12, fontSize: 9, fontWeight: 800,
-            fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',
-            background: 'var(--cortex-teal)', color: '#fff', whiteSpace: 'nowrap',
-          }}
+          className="tenant-mgr__badge-active"
         >
           ● ACTIVE
         </span>
       ) : (
         <button
-          className="btn btn-sm btn-secondary"
+          className="btn btn-sm btn-secondary tenant-mgr__btn-align"
           onClick={() => onSelect(name)}
           aria-pressed={false}
           aria-label={`Set ${name} as active tenant`}
-          style={{ alignSelf: 'center', whiteSpace: 'nowrap' }}
         >
           Set active
         </button>
       )}
 
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontWeight: 700,
-            fontSize: 12, color: 'var(--cortex-navy)',
-          }}>
+        <div className="tenant-mgr__row-head">
+          <span className="tenant-mgr__row-name">
             {tenant.name}
           </span>
           <HealthPill
@@ -460,14 +381,14 @@ function TenantRow({ tenant, active, onSelect, onTest, onDelete, testing }) {
             error={tenant.last_verified_error}
           />
         </div>
-        <div style={{ fontSize: 11, color: 'var(--cortex-steel)', fontFamily: 'var(--font-mono)' }}>
+        <div className="tenant-mgr__row-url">
           {cfg.base_url || '—'}
         </div>
-        <div style={{ fontSize: 10, color: 'var(--cortex-steel)', marginTop: 3 }}>
+        <div className="tenant-mgr__row-meta">
           Region: {cfg.region || '—'} · Auth: {cfg.auth_mode || 'standard'} · Key ID: {cfg.api_key_id || '—'}
           {verAt && <span> · Tested: {verAt}</span>}
           {tenant.last_verified_error && (
-            <span style={{ color: 'var(--cortex-danger)', marginLeft: 6 }}>
+            <span className="tenant-mgr__row-meta-error">
               ↳ {tenant.last_verified_error}
             </span>
           )}
@@ -475,23 +396,17 @@ function TenantRow({ tenant, active, onSelect, onTest, onDelete, testing }) {
       </div>
 
       <button
-        className="btn btn-sm btn-secondary"
+        className="btn btn-sm btn-secondary tenant-mgr__btn-nowrap"
         onClick={() => onTest(name)}
         disabled={testing}
-        style={{ whiteSpace: 'nowrap' }}
       >
         {testing ? 'Testing…' : '▸ Test'}
       </button>
 
       <button
-        className="btn btn-sm"
+        className="btn btn-sm tenant-mgr__btn-delete"
         onClick={() => onDelete(name)}
         aria-label={`Remove tenant ${name}`}
-        style={{
-          background: 'none', border: '1px solid var(--cortex-border)',
-          color: 'var(--cortex-danger)', cursor: 'pointer',
-          padding: '4px 10px', borderRadius: 'var(--radius-sm)', fontSize: 11,
-        }}
       >
         ✕
       </button>
@@ -657,33 +572,25 @@ export default function TenantManager() {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div style={{ padding: '20px 24px', maxWidth: 900 }}>
+    <div className="tenant-mgr">
 
       {/* ── Delete confirm overlay ────────────────────────────────────────── */}
       {pendingDelete && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 300,
-          background: 'rgba(0,0,0,0.45)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div style={{
-            background: '#fff', borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-lg)', padding: 28, minWidth: 360,
-          }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--cortex-navy)', marginTop: 0 }}>
+        <div className="tenant-mgr__overlay">
+          <div className="tenant-mgr__dialog">
+            <h3 className="tenant-mgr__dialog-title">
               Remove tenant?
             </h3>
-            <p style={{ fontSize: 12, color: 'var(--cortex-steel)', marginBottom: 20 }}>
-              The encrypted API key for <strong style={{ fontFamily: 'var(--font-mono)' }}>{pendingDelete}</strong> will be permanently deleted. This action cannot be undone.
+            <p className="tenant-mgr__dialog-text">
+              The encrypted API key for <strong className="tenant-mgr__mono">{pendingDelete}</strong> will be permanently deleted. This action cannot be undone.
             </p>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div className="tenant-mgr__dialog-actions">
               <button className="btn btn-secondary btn-sm" onClick={() => setPendingDelete(null)}>
                 Cancel
               </button>
               <button
-                className="btn btn-sm"
+                className="btn btn-sm tenant-mgr__btn-delete-confirm"
                 onClick={handleDeleteConfirmed}
-                style={{ background: 'var(--cortex-danger)', color: '#fff', border: 'none' }}
               >
                 Delete
               </button>
@@ -693,38 +600,32 @@ export default function TenantManager() {
       )}
 
       {/* ── View header ───────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--cortex-navy)' }}>
+      <div className="tenant-mgr__header">
+        <div className="tenant-mgr__header-row">
+          <h2 className="tenant-mgr__title">
             XSIAM Tenants
           </h2>
-          <span style={{ fontSize: 11, color: 'var(--cortex-steel)' }}>
+          <span className="tenant-mgr__subtitle">
             Register and manage XSIAM tenant connections for health & metrics
           </span>
         </div>
-        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--cortex-steel)' }}>
+        <div className="tenant-mgr__scope-line">
           Active scope:{' '}
           {activeTenant ? (
-            <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--cortex-teal)' }}>
+            <strong className="tenant-mgr__scope-value">
               {activeKey}
             </strong>
           ) : (
-            <span style={{ fontStyle: 'italic' }}>none selected</span>
+            <span className="tenant-mgr__scope-empty">none selected</span>
           )}
-          <span style={{ marginLeft: 6 }}>— shared with the global header switcher.</span>
+          <span className="tenant-mgr__scope-suffix">— shared with the global header switcher.</span>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32, alignItems: 'start' }}>
+      <div className="tenant-mgr__layout">
 
         {/* ── LEFT: Wizard ──────────────────────────────────────────────── */}
-        <div style={{
-          background: '#fff',
-          border: '1px solid var(--cortex-border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '24px 24px 20px',
-          boxShadow: 'var(--shadow-sm)',
-        }}>
+        <div className="tenant-mgr__card">
           <StepIndicator current={step} />
 
           {step === 1 && <Step1 form={form} onChange={handleChange} errors={errors} />}
@@ -740,7 +641,7 @@ export default function TenantManager() {
           )}
 
           {step < 3 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24 }}>
+            <div className="tenant-mgr__nav">
               {step > 1 ? (
                 <button className="btn btn-secondary btn-sm" onClick={handleBack}>← Back</button>
               ) : <div />}
@@ -751,7 +652,7 @@ export default function TenantManager() {
           )}
 
           {step === 3 && (
-            <div style={{ marginTop: 16 }}>
+            <div className="tenant-mgr__nav-single">
               <button className="btn btn-secondary btn-sm" onClick={handleBack}>← Back</button>
             </div>
           )}
@@ -759,43 +660,29 @@ export default function TenantManager() {
 
         {/* ── RIGHT: Registered tenants ─────────────────────────────────── */}
         <div>
-          <div style={{
-            display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12,
-          }}>
-            <h3 style={{ margin: 0, fontSize: 12, fontWeight: 700,
-              color: 'var(--cortex-navy)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          <div className="tenant-mgr__list-header">
+            <h3 className="tenant-mgr__list-title">
               Registered Tenants
             </h3>
-            <span style={{
-              background: 'var(--cortex-teal)', color: '#fff',
-              fontSize: 9, fontWeight: 800, padding: '1px 6px',
-              borderRadius: 10, fontFamily: 'var(--font-mono)',
-            }}>
+            <span className="tenant-mgr__count-badge">
               {tenants.length}
             </span>
           </div>
 
           {actionError && (
-            <div style={{ fontSize: 11, color: 'var(--cortex-danger)', marginBottom: 10 }}>
+            <div className="tenant-mgr__error-banner">
               {actionError}
             </div>
           )}
 
           {tenants.length === 0 && loading?.tenants && (
-            <div style={{
-              padding: '24px 0', textAlign: 'center',
-              fontSize: 11, color: 'var(--cortex-steel)',
-            }}>
+            <div className="tenant-mgr__empty">
               Loading tenants…
             </div>
           )}
 
           {tenants.length === 0 && !loading?.tenants && (
-            <div style={{
-              padding: '24px 0', textAlign: 'center',
-              fontSize: 11, color: 'var(--cortex-steel)',
-              border: '1px dashed var(--cortex-border)', borderRadius: 'var(--radius-sm)',
-            }}>
+            <div className="tenant-mgr__empty tenant-mgr__empty--bordered">
               No tenants registered yet.
               <br />Use the wizard to add your first XSIAM tenant.
             </div>

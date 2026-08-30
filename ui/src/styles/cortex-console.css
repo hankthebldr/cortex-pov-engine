@@ -6884,3 +6884,203 @@
 }
 .theme-console .ttp-launcher__fail-list { margin: 6px 0 0; padding-left: 18px; }
 .theme-console .ttp-launcher__fail-item { color: var(--c-missed); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   TenantManager (console/TenantManager.jsx) — inline-style normalization
+   pass. Uses the existing --cortex-* / --font-* / --radius-* / --shadow-*
+   token set (cortex-theme.css), matching the component's prior inline
+   values 1:1. Scoped under .theme-console per the AppShell wrapper.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .tenant-mgr { padding: 20px 24px; max-width: 900px; }
+
+/* ── Step indicator ──────────────────────────────────────────────────── */
+.theme-console .tenant-mgr__steps { display: flex; align-items: center; gap: 0; margin-bottom: 28px; }
+.theme-console .tenant-mgr__step { display: flex; align-items: center; }
+.theme-console .tenant-mgr__step-circle {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; font-family: var(--font-mono);
+  flex-shrink: 0;
+  background: var(--cortex-border); color: var(--cortex-steel);
+}
+.theme-console .tenant-mgr__step-circle--done { background: var(--cortex-navy); color: #fff; }
+.theme-console .tenant-mgr__step-circle--active { background: var(--cortex-teal); color: #fff; }
+.theme-console .tenant-mgr__step-label { font-size: 11px; font-weight: 400; color: var(--cortex-steel); margin-left: 6px; }
+.theme-console .tenant-mgr__step-label--active { font-weight: 700; color: var(--cortex-navy); }
+.theme-console .tenant-mgr__step-label--done { color: var(--cortex-teal); }
+.theme-console .tenant-mgr__step-connector { flex: 1; height: 1px; margin: 0 10px; background: var(--cortex-border); }
+.theme-console .tenant-mgr__step-connector--done { background: var(--cortex-teal); }
+
+/* ── Field row / input ───────────────────────────────────────────────── */
+.theme-console .tenant-mgr__field { margin-bottom: 16px; }
+.theme-console .tenant-mgr__field-label {
+  display: block; font-size: 11px; font-weight: 600;
+  color: var(--cortex-navy); margin-bottom: 5px; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.theme-console .tenant-mgr__field-required { color: var(--cortex-danger); margin-left: 2px; }
+.theme-console .tenant-mgr__field-hint { font-size: 10px; color: var(--cortex-steel); margin-top: 4px; }
+.theme-console .tenant-mgr__field-error { font-size: 10px; color: var(--cortex-danger); margin-top: 4px; }
+.theme-console .tenant-mgr__input {
+  width: 100%; box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-primary);
+  font-size: 12px;
+  color: var(--cortex-navy);
+  outline: none;
+  background: #fff;
+  transition: border-color 0.12s;
+}
+.theme-console .tenant-mgr__input--mono { font-family: var(--font-mono); }
+.theme-console .tenant-mgr__input--error { border-color: var(--cortex-danger); }
+.theme-console .tenant-mgr__input:focus { border-color: var(--cortex-teal); }
+
+/* ── Health pill ─────────────────────────────────────────────────────── */
+.theme-console .tenant-mgr__pill {
+  padding: 2px 9px; border-radius: 12px; font-size: 10px; font-weight: 700;
+  font-family: var(--font-mono); letter-spacing: 0.06em;
+}
+.theme-console .tenant-mgr__pill--testing {
+  background: rgba(0,192,232,0.15); color: var(--cortex-teal);
+  border: 1px solid var(--cortex-teal);
+  animation: pulse 1s ease-in-out infinite;
+}
+.theme-console .tenant-mgr__pill--ok {
+  background: rgba(0,184,148,0.15); color: var(--cortex-success);
+  border: 1px solid var(--cortex-success);
+}
+.theme-console .tenant-mgr__pill--fail {
+  background: rgba(231,76,60,0.10); color: var(--cortex-danger);
+  border: 1px solid var(--cortex-danger);
+  cursor: default;
+}
+.theme-console .tenant-mgr__pill--fail.tenant-mgr__pill--hint { cursor: help; }
+.theme-console .tenant-mgr__pill--unknown {
+  background: rgba(107,126,142,0.12); color: var(--cortex-steel);
+  border: 1px solid var(--cortex-border);
+}
+
+/* ── Section title (shared by Step1/Step2/Step3) ────────────────────── */
+.theme-console .tenant-mgr__section-title { font-size: 13px; font-weight: 700; color: var(--cortex-navy); margin: 0 0 20px; }
+
+/* ── Step 2: auth-mode radios ────────────────────────────────────────── */
+.theme-console .tenant-mgr__radio-row { display: flex; gap: 10px; margin-top: 4px; }
+.theme-console .tenant-mgr__radio-option {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  cursor: pointer;
+  opacity: 1;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--cortex-navy);
+  user-select: none;
+}
+.theme-console .tenant-mgr__radio-option--selected {
+  border: 1.5px solid var(--cortex-teal);
+  background: rgba(0,192,232,0.07);
+  font-weight: 700;
+}
+.theme-console .tenant-mgr__radio-option--disabled { cursor: not-allowed; opacity: 0.45; }
+.theme-console .tenant-mgr__radio-input { accent-color: var(--cortex-teal); }
+.theme-console .tenant-mgr__radio-note { font-size: 9px; color: var(--cortex-steel); margin-left: 2px; }
+.theme-console .tenant-mgr__radio-hint { font-size: 10px; color: var(--cortex-steel); margin-top: 5px; }
+
+/* ── Step 3: review table + alerts + actions ─────────────────────────── */
+.theme-console .tenant-mgr__table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+.theme-console .tenant-mgr__table-row { border-bottom: 1px solid var(--cortex-border); }
+.theme-console .tenant-mgr__table-label {
+  padding: 7px 0; font-size: 11px; font-weight: 600; width: 110px;
+  color: var(--cortex-steel); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.theme-console .tenant-mgr__table-value { padding: 7px 0; font-size: 12px; font-family: var(--font-primary); color: var(--cortex-navy); }
+.theme-console .tenant-mgr__table-value--mono { font-family: var(--font-mono); }
+.theme-console .tenant-mgr__table-empty { color: var(--cortex-steel); }
+.theme-console .tenant-mgr__alert { padding: 10px 14px; margin-bottom: 16px; border-radius: var(--radius-sm); font-size: 12px; }
+.theme-console .tenant-mgr__alert--error { background: rgba(231,76,60,0.08); border: 1px solid var(--cortex-danger); color: var(--cortex-danger); }
+.theme-console .tenant-mgr__alert--success { background: rgba(0,184,148,0.08); border: 1px solid var(--cortex-success); color: var(--cortex-success); }
+.theme-console .tenant-mgr__actions { display: flex; gap: 10px; align-items: center; }
+.theme-console .tenant-mgr__btn-wide { min-width: 130px; }
+.theme-console .tenant-mgr__footnote { font-size: 10px; color: var(--cortex-steel); margin-top: 8px; }
+
+/* ── Tenant list rows ─────────────────────────────────────────────────── */
+.theme-console .tenant-mgr__row {
+  display: grid; grid-template-columns: auto 1fr auto auto;
+  gap: 14px; align-items: start;
+  padding: 14px 12px 14px 10px;
+  border-bottom: 1px solid var(--cortex-border);
+  border-left: 3px solid transparent;
+  background: transparent;
+}
+.theme-console .tenant-mgr__row--active { border-left-color: var(--cortex-teal); background: rgba(0,192,232,0.05); }
+.theme-console .tenant-mgr__badge-active {
+  align-self: center;
+  padding: 2px 8px; border-radius: 12px; font-size: 9px; font-weight: 800;
+  font-family: var(--font-mono); letter-spacing: 0.06em;
+  background: var(--cortex-teal); color: #fff; white-space: nowrap;
+}
+.theme-console .tenant-mgr__btn-align { align-self: center; white-space: nowrap; }
+.theme-console .tenant-mgr__btn-nowrap { white-space: nowrap; }
+.theme-console .tenant-mgr__row-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.theme-console .tenant-mgr__row-name { font-family: var(--font-mono); font-weight: 700; font-size: 12px; color: var(--cortex-navy); }
+.theme-console .tenant-mgr__row-url { font-size: 11px; color: var(--cortex-steel); font-family: var(--font-mono); }
+.theme-console .tenant-mgr__row-meta { font-size: 10px; color: var(--cortex-steel); margin-top: 3px; }
+.theme-console .tenant-mgr__row-meta-error { color: var(--cortex-danger); margin-left: 6px; }
+.theme-console .tenant-mgr__btn-delete {
+  background: none; border: 1px solid var(--cortex-border);
+  color: var(--cortex-danger); cursor: pointer;
+  padding: 4px 10px; border-radius: var(--radius-sm); font-size: 11px;
+}
+
+/* ── Delete-confirm overlay ───────────────────────────────────────────── */
+.theme-console .tenant-mgr__overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+}
+.theme-console .tenant-mgr__dialog {
+  background: #fff; border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg); padding: 28px; min-width: 360px;
+}
+.theme-console .tenant-mgr__dialog-title { font-size: 14px; font-weight: 700; color: var(--cortex-navy); margin-top: 0; }
+.theme-console .tenant-mgr__dialog-text { font-size: 12px; color: var(--cortex-steel); margin-bottom: 20px; }
+.theme-console .tenant-mgr__mono { font-family: var(--font-mono); }
+.theme-console .tenant-mgr__dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.theme-console .tenant-mgr__btn-delete-confirm { background: var(--cortex-danger); color: #fff; border: none; }
+
+/* ── View header ──────────────────────────────────────────────────────── */
+.theme-console .tenant-mgr__header { margin-bottom: 28px; }
+.theme-console .tenant-mgr__header-row { display: flex; align-items: baseline; gap: 12px; }
+.theme-console .tenant-mgr__title { margin: 0; font-size: 16px; font-weight: 800; color: var(--cortex-navy); }
+.theme-console .tenant-mgr__subtitle { font-size: 11px; color: var(--cortex-steel); }
+.theme-console .tenant-mgr__scope-line { margin-top: 8px; font-size: 11px; color: var(--cortex-steel); }
+.theme-console .tenant-mgr__scope-value { font-family: var(--font-mono); color: var(--cortex-teal); }
+.theme-console .tenant-mgr__scope-empty { font-style: italic; }
+.theme-console .tenant-mgr__scope-suffix { margin-left: 6px; }
+
+/* ── Two-column layout ────────────────────────────────────────────────── */
+.theme-console .tenant-mgr__layout { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+.theme-console .tenant-mgr__card {
+  background: #fff;
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--radius-md);
+  padding: 24px 24px 20px;
+  box-shadow: var(--shadow-sm);
+}
+.theme-console .tenant-mgr__nav { display: flex; justify-content: space-between; margin-top: 24px; }
+.theme-console .tenant-mgr__nav-single { margin-top: 16px; }
+.theme-console .tenant-mgr__list-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.theme-console .tenant-mgr__list-title { margin: 0; font-size: 12px; font-weight: 700; color: var(--cortex-navy); text-transform: uppercase; letter-spacing: 0.06em; }
+.theme-console .tenant-mgr__count-badge {
+  background: var(--cortex-teal); color: #fff;
+  font-size: 9px; font-weight: 800; padding: 1px 6px;
+  border-radius: 10px; font-family: var(--font-mono);
+}
+.theme-console .tenant-mgr__error-banner { font-size: 11px; color: var(--cortex-danger); margin-bottom: 10px; }
+.theme-console .tenant-mgr__empty { padding: 24px 0; text-align: center; font-size: 11px; color: var(--cortex-steel); }
+.theme-console .tenant-mgr__empty--bordered { border: 1px dashed var(--cortex-border); border-radius: var(--radius-sm); }
