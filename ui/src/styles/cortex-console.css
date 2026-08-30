@@ -693,6 +693,12 @@
   padding: 16px 20px;
   border-bottom: 1px solid var(--c-hairline);
 }
+/* a11y fix: this input had `outline: 0` and no replacement focus style —
+   invisible to a keyboard user who tabs away (e.g. to a result row) and
+   back, since nothing else in the palette signals which control has focus. */
+.theme-console .cmd-palette__input:focus-within {
+  border-bottom-color: var(--c-signal);
+}
 .theme-console .cmd-palette__input input {
   flex: 1;
   background: transparent;
