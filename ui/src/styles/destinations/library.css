@@ -1,0 +1,702 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Library destination — Scenario Grid + Inspector
+   PANW redesign · ref: .design-ref/01-scenario-library.html
+
+   Cortex green (--ac / --ac-str) is the primary accent in both themes.
+   --orange is reserved for warn/gap signal only and is NOT used here —
+   warn states use --warn; secondary/informational planes use --info.
+   Tokens come from cortex-tokens.css (:root light / [data-theme="dark"]);
+   this file only consumes var(--x), it never redefines a token.
+
+   Every selector is scoped under .theme-console .library-layout so
+   nothing here can leak onto a destination another agent owns — the
+   Library surface (app/destinations.jsx → LibrarySurface) is the only
+   place ConsoleRail + OperationsView + ScenarioGrid + ScenarioInspector
+   + PinButton render together, so scoping here is exact, not defensive
+   guesswork.
+
+   Loaded after cortex-console.css in main.jsx; the extra .library-layout
+   ancestor also gives every rule higher specificity than the legacy
+   .theme-console rules it replaces, so load order isn't load-bearing.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .library-layout {
+  padding: 22px 26px 30px;
+  align-items: start;
+}
+
+/* ── View head ─────────────────────────────────────────────────────── */
+
+.theme-console .library-layout .operations {
+  background: transparent;
+}
+
+.theme-console .library-layout .view-head {
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.theme-console .library-layout .ops-accent-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ac-str);
+  margin-bottom: 10px;
+}
+.theme-console .library-layout .ops-eyebrow {
+  font-family: 'Montserrat', var(--font-primary), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.theme-console .library-layout .view-head h1 {
+  font-family: 'Montserrat', var(--font-primary), sans-serif;
+  font-size: 25px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+  margin: 0;
+}
+
+.theme-console .library-layout .view-head__meta {
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--tx2);
+  margin-top: 7px;
+}
+.theme-console .library-layout .view-head__meta strong {
+  color: var(--tx);
+  font-weight: 600;
+}
+.theme-console .library-layout .view-head__meta .mono {
+  font-family: var(--font-mono);
+}
+.theme-console .library-layout .ops-head__total {
+  color: var(--tx3);
+}
+
+/* ── Toolbar (search / filter / new scenario) ────────────────────────── */
+
+.theme-console .library-layout .ops-toolbar {
+  gap: 8px;
+}
+
+.theme-console .library-layout .ops-search {
+  height: 32px;
+  min-width: 260px;
+  padding: 0 11px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  color: var(--tx);
+  font-size: 12px;
+}
+.theme-console .library-layout .ops-search::placeholder {
+  color: var(--tx3);
+}
+.theme-console .library-layout .ops-search:focus {
+  outline: none;
+  border-color: var(--ac);
+  background: var(--s1);
+}
+
+.theme-console .library-layout .ops-toolbar .btn {
+  height: 32px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--tx);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  gap: 8px;
+}
+.theme-console .library-layout .ops-toolbar .btn:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--tx);
+}
+.theme-console .library-layout .ops-toolbar .btn:disabled {
+  color: var(--tx3);
+  border-color: var(--bd);
+  cursor: not-allowed;
+}
+.theme-console .library-layout .ops-toolbar .btn--primary {
+  background: var(--ac);
+  color: var(--ac-tx);
+  border-color: var(--ac);
+  font-weight: 700;
+}
+.theme-console .library-layout .ops-toolbar .btn--primary:hover:not(:disabled) {
+  background: var(--ac-str);
+  border-color: var(--ac-str);
+}
+.theme-console .library-layout .ops-toolbar .kbd {
+  background: var(--s3);
+  border-color: var(--bd2);
+  color: var(--tx2);
+  border-bottom-width: 1px;
+}
+.theme-console .library-layout .ops-toolbar .btn--primary .kbd,
+.theme-console .library-layout .ops-filter-kbd {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: transparent;
+  color: var(--ac-tx);
+}
+
+/* ── Active-filter chip strip ─────────────────────────────────────────── */
+
+.theme-console .library-layout .filter-chip-strip {
+  margin-top: 10px;
+  gap: 6px;
+}
+.theme-console .library-layout .filter-chip-strip__chip {
+  height: auto;
+  padding: 4px 8px;
+  background: var(--ac-soft);
+  color: var(--ac);
+  border: 1px solid var(--ac-line);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: none;
+}
+.theme-console .library-layout .filter-chip-strip__chip:hover {
+  background: var(--ac-line);
+}
+.theme-console .library-layout .filter-chip-strip__x {
+  color: inherit;
+}
+.theme-console .library-layout .filter-chip-strip__clear-all {
+  color: var(--tx3);
+  font-size: 10px;
+}
+.theme-console .library-layout .filter-chip-strip__clear-all:hover {
+  color: var(--tx);
+}
+
+/* ── History-mode strip (All / Never run / Already run) ─────────────── */
+
+.theme-console .library-layout .ops-history-strip {
+  display: inline-flex;
+  width: auto;
+  margin: 0 0 16px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  padding: 3px;
+  gap: 2px;
+}
+.theme-console .library-layout .ops-history-strip button {
+  height: 27px;
+  padding: 0 11px;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--tx2);
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  gap: 6px;
+}
+.theme-console .library-layout .ops-history-strip button:hover:not(.is-active) {
+  color: var(--tx);
+}
+.theme-console .library-layout .ops-history-strip button.is-active {
+  background: var(--s1);
+  color: var(--tx);
+  box-shadow: 0 1px 2px rgba(10, 30, 20, 0.08);
+}
+.theme-console .library-layout .ops-history-strip__count {
+  background: var(--s3);
+  border-color: var(--bd2);
+  color: var(--tx3);
+}
+.theme-console .library-layout .ops-history-strip button.is-active .ops-history-strip__count {
+  background: var(--ac-soft);
+  color: var(--ac);
+  border-color: var(--ac-line);
+}
+
+.theme-console .library-layout .ops-loading-note,
+.theme-console .library-layout .scenario-grid-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--tx3);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+/* ── Scenario card grid ───────────────────────────────────────────────── */
+
+.theme-console .library-layout .scenario-grid {
+  grid-template-columns: repeat(auto-fill, minmax(286px, 1fr));
+  gap: 12px;
+}
+
+.theme-console .library-layout .scenario-card {
+  padding: 13px 15px 12px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--bd2);
+  border-radius: 8px;
+  transition: border-color 140ms ease-out, transform 140ms ease-out, box-shadow 140ms ease-out;
+}
+.theme-console .library-layout .scenario-card:hover,
+.theme-console .library-layout .scenario-card:focus-visible {
+  border-color: var(--bd2);
+  border-top-color: var(--ac-str);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.theme-console .library-layout .scenario-card--selected {
+  border-color: var(--ac-line);
+  border-top-color: var(--ac-str);
+  background: var(--ac-soft);
+}
+.theme-console .library-layout .scenario-card--selected::before {
+  background: var(--ac-str);
+  box-shadow: none;
+}
+.theme-console .library-layout .scenario-card--pinned {
+  border-top-color: var(--ac-str);
+}
+.theme-console .library-layout .scenario-card--pinned::after {
+  border-top-color: var(--ac-str) transparent transparent transparent;
+}
+
+.theme-console .library-layout .scenario-card__corner {
+  top: 10px;
+  right: 10px;
+}
+
+.theme-console .library-layout .sc-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--tx);
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.theme-console .library-layout .sc-id__pin-marker {
+  color: var(--ac-str);
+  font-size: 8px;
+}
+
+.theme-console .library-layout .sc-title {
+  font-family: 'Montserrat', var(--font-primary), sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  color: var(--tx);
+  min-height: 36px;
+  margin: 8px 0 0;
+}
+
+.theme-console .library-layout .sc-meta {
+  gap: 4px;
+  margin: 9px 0 0;
+}
+
+.theme-console .library-layout .chip {
+  height: auto;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  background: transparent;
+  color: var(--tx2);
+  border: 1px solid var(--bd2);
+}
+.theme-console .library-layout .chip--plane-edr {
+  color: var(--ac);
+  background: transparent;
+  border-color: var(--ac);
+}
+.theme-console .library-layout .chip--plane-analytics {
+  color: var(--ac);
+  background: transparent;
+  border-color: var(--ac);
+}
+.theme-console .library-layout .chip--plane-cdr,
+.theme-console .library-layout .chip--plane-ndr {
+  color: var(--info);
+  background: transparent;
+  border-color: var(--info);
+}
+.theme-console .library-layout .chip--plane-itdr {
+  color: var(--warn);
+  background: transparent;
+  border-color: var(--warn);
+}
+
+.theme-console .library-layout .sc-tids {
+  gap: 4px;
+  margin: 9px 0 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--tx2);
+}
+.theme-console .library-layout .sc-tids span {
+  padding: 3px 6px;
+  background: var(--s3);
+  border-radius: 3px;
+}
+.theme-console .library-layout .sc-tids span::after {
+  content: '';
+}
+
+.theme-console .library-layout .sc-footer {
+  padding-top: 9px;
+  margin-top: 11px;
+  border-top: 1px solid var(--bd);
+}
+.theme-console .library-layout .sc-actor {
+  font-size: 10px;
+  color: var(--tx3);
+}
+.theme-console .library-layout .sc-actor strong {
+  color: var(--tx2);
+  font-weight: 600;
+}
+
+.theme-console .library-layout .plane-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bd2);
+}
+.theme-console .library-layout .plane-dot--on {
+  background: var(--ac-str);
+  box-shadow: 0 0 0 2px var(--ac-soft);
+}
+
+/* ── Per-card run-history badge ───────────────────────────────────────── */
+
+.theme-console .library-layout .sc-history {
+  margin-top: 9px;
+  gap: 6px;
+  font-size: 9px;
+  color: var(--tx3);
+}
+.theme-console .library-layout .sc-history__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.theme-console .library-layout .sc-history.is-ok .sc-history__dot { background: var(--ac-str); }
+.theme-console .library-layout .sc-history.is-fail .sc-history__dot { background: var(--crit); }
+.theme-console .library-layout .sc-history.is-run .sc-history__dot { background: var(--info); }
+.theme-console .library-layout .sc-history.is-idle .sc-history__dot { background: var(--bd2); }
+.theme-console .library-layout .sc-history__count { color: var(--tx2); }
+.theme-console .library-layout .sc-history__ago { color: var(--tx3); }
+
+/* ── Card pin button ───────────────────────────────────────────────────── */
+
+.theme-console .library-layout .pin-btn--card {
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  color: var(--tx3);
+}
+.theme-console .library-layout .pin-btn--card:hover {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console .library-layout .pin-btn--card.is-pinned {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-tx);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Scenario inspector drawer
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .library-layout .inspector {
+  background: var(--s1);
+  border-left: 1px solid var(--bd);
+  box-shadow: -16px 0 48px -8px rgba(10, 30, 20, 0.18);
+}
+
+.theme-console .library-layout .insp-launch {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--bd);
+  background: linear-gradient(180deg, var(--ac-soft), transparent);
+}
+.theme-console .library-layout .insp-launch__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--tx3);
+  letter-spacing: 0.04em;
+}
+.theme-console .library-layout .insp-launch__title {
+  font-family: 'Montserrat', var(--font-primary), sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+  margin-top: 4px;
+}
+.theme-console .library-layout .insp-launch__actions {
+  gap: 8px;
+  margin-top: 12px;
+}
+.theme-console .library-layout .insp-launch .btn {
+  height: 32px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  border: 1px solid var(--bd2);
+  color: var(--tx);
+  background: transparent;
+}
+.theme-console .library-layout .insp-launch .btn--primary {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-tx);
+  font-weight: 700;
+}
+.theme-console .library-layout .insp-launch .btn--primary:hover:not(:disabled) {
+  background: var(--ac-str);
+  border-color: var(--ac-str);
+}
+.theme-console .library-layout .insp-launch__arrow { color: inherit; }
+.theme-console .library-layout .insp-launch__kbd {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: transparent;
+  color: inherit;
+}
+.theme-console .library-layout .insp-launch__status {
+  margin-top: 10px;
+  font-size: 11px;
+}
+.theme-console .library-layout .insp-launch__status--success { color: var(--ac-str); }
+.theme-console .library-layout .insp-launch__status--missed { color: var(--crit); }
+
+.theme-console .library-layout .pin-btn--inspector {
+  border: 1px solid var(--bd2);
+  color: var(--tx2);
+  background: transparent;
+}
+.theme-console .library-layout .pin-btn--inspector:hover {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console .library-layout .pin-btn--inspector.is-pinned {
+  border-color: var(--ac);
+  color: var(--ac);
+  background: var(--ac-soft);
+}
+
+.theme-console .library-layout .insp-section {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .library-layout .insp-section__title {
+  font-family: 'Montserrat', var(--font-primary), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 10px;
+}
+.theme-console .library-layout .insp-section__title-hint {
+  font-family: var(--font-mono);
+  color: var(--tx3);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.theme-console .library-layout .insp-config__row {
+  margin-bottom: 8px;
+}
+.theme-console .library-layout .insp-config__label {
+  font-size: 10px;
+  color: var(--tx3);
+}
+.theme-console .library-layout .insp-segmented {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 2px;
+}
+.theme-console .library-layout .insp-segmented button {
+  border-radius: 4px;
+  color: var(--tx2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.theme-console .library-layout .insp-segmented button.is-active {
+  background: var(--ac);
+  color: var(--ac-tx);
+}
+.theme-console .library-layout .insp-segmented button:disabled {
+  color: var(--tx3);
+}
+.theme-console .library-layout .insp-select {
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--s2);
+  color: var(--tx);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.theme-console .library-layout .insp-select:focus {
+  border-color: var(--ac);
+  outline: none;
+}
+.theme-console .library-layout .insp-config__no-agents {
+  color: var(--warn);
+}
+.theme-console .library-layout .insp-config__row--actions .btn--xs {
+  height: 27px;
+  padding: 0 11px;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  border: 1px solid var(--bd2);
+  background: transparent;
+  color: var(--tx);
+}
+.theme-console .library-layout .insp-config__row--actions .btn--xs:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+
+.theme-console .library-layout .insp-kv dt {
+  font-size: 10px;
+  color: var(--tx3);
+}
+.theme-console .library-layout .insp-kv dd {
+  font-size: 12px;
+  color: var(--tx);
+}
+.theme-console .library-layout .insp-tags { color: var(--tx2); }
+
+/* ── Tools & payload supply ───────────────────────────────────────────── */
+
+.theme-console .library-layout .insp-tool {
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--s2);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.theme-console .library-layout .insp-tool--unwired {
+  border-style: dashed;
+}
+.theme-console .library-layout .insp-tool__id {
+  color: var(--tx);
+}
+.theme-console .library-layout .insp-tool__egress {
+  color: var(--tx3);
+}
+.theme-console .library-layout .insp-tool__warn {
+  color: var(--warn);
+  border-left: 3px solid var(--warn);
+  padding-left: 9px;
+}
+
+/* ── Expected detection matrix ────────────────────────────────────────── */
+
+.theme-console .library-layout .insp-detection-matrix {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .library-layout .dmx-row {
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 0 6px 6px 0;
+  background: var(--s2);
+  padding: 9px 11px;
+  margin-bottom: 6px;
+}
+.theme-console .library-layout .dmx-step {
+  color: var(--tx3);
+  font-family: var(--font-mono);
+}
+.theme-console .library-layout .dmx-body__tid {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--tx3);
+}
+.theme-console .library-layout .dmx-body__desc {
+  font-size: 11px;
+  color: var(--tx);
+}
+.theme-console .library-layout .insp-matrix-empty {
+  color: var(--tx3);
+}
+
+/* ── Run history ───────────────────────────────────────────────────────── */
+
+.theme-console .library-layout .insp-history {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .library-layout .insp-history__count {
+  color: var(--tx3);
+}
+.theme-console .library-layout .insp-history__empty {
+  color: var(--tx3);
+}
+.theme-console .library-layout .insp-history__row {
+  border-radius: 6px;
+  background: var(--s2);
+  margin-bottom: 4px;
+}
+.theme-console .library-layout .insp-history__row--completed { border-left: 2px solid var(--ac-str); }
+.theme-console .library-layout .insp-history__row--failed    { border-left: 2px solid var(--crit); }
+.theme-console .library-layout .insp-history__row--aborted   { border-left: 2px solid var(--warn); }
+.theme-console .library-layout .insp-history__row--running   { border-left: 2px solid var(--info); }
+.theme-console .library-layout .insp-history__row--pending,
+.theme-console .library-layout .insp-history__row--unknown   { border-left: 2px solid var(--bd2); }
+.theme-console .library-layout .insp-history__glyph {
+  color: var(--tx3);
+}
+.theme-console .library-layout .insp-history__row--completed .insp-history__glyph { color: var(--ac-str); }
+.theme-console .library-layout .insp-history__row--failed    .insp-history__glyph { color: var(--crit); }
+.theme-console .library-layout .insp-history__row--aborted   .insp-history__glyph { color: var(--warn); }
+.theme-console .library-layout .insp-history__row--running   .insp-history__glyph { color: var(--info); }
+.theme-console .library-layout .insp-history__id { color: var(--tx); }
+.theme-console .library-layout .insp-history__when,
+.theme-console .library-layout .insp-history__status {
+  color: var(--tx3);
+}
+.theme-console .library-layout .insp-history__row-btn:hover,
+.theme-console .library-layout .insp-history__row-btn:focus-visible {
+  background: var(--ac-soft);
+}
+.theme-console .library-layout .insp-history__arrow { color: var(--tx3); }
+.theme-console .library-layout .insp-history__row-btn:hover .insp-history__arrow,
+.theme-console .library-layout .insp-history__row-btn:focus-visible .insp-history__arrow {
+  color: var(--ac);
+}
+
+.theme-console .library-layout .insp-footer {
+  padding: 12px 20px;
+  color: var(--tx3);
+  font-size: 10px;
+}

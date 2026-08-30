@@ -81,7 +81,15 @@ export default function AdapterRegistryView() {
   }
 
   return (
-    <div className="adapter-registry">
+    <div className="adapter-registry tools-destination">
+      <div className="tools-destination__head">
+        <div className="tools-destination__head-copy">
+          <div className="tools-destination__accent-bar" aria-hidden="true" />
+          <div className="tools-destination__eyebrow mono">Analyze</div>
+          <h1 className="tools-destination__title">Adapter Registry</h1>
+        </div>
+      </div>
+
       <div className="adapter-registry__intro">
         <p className="adapter-registry__intro-prose">
           Every attack adapter that ships with this CortexSim build. Adapters

@@ -9,6 +9,7 @@ import './styles/destinations/tenants.css'
 import './styles/destinations/eal.css'
 import './styles/destinations/adapters.css'
 import './styles/destinations/environments.css'
+import './styles/destinations/readiness.css'
 
 /**
  * Theme router — URL flag selects the shell.

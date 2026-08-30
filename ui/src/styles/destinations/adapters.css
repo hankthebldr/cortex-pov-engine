@@ -1,0 +1,623 @@
+/* ═══════════════════════════════════════════════════════════════════
+   destinations/adapters.css — "Tools & Payloads" (#/adapters) restyle
+   Cortex POV Engine · PANW redesign
+
+   Scope: every rule below is anchored under `.tools-destination`, the
+   wrapper class added to ToolAdapterCatalog.jsx's and
+   AdapterRegistryView.jsx's root elements. `.theme-console` still wraps
+   the whole app and still defines the legacy --c-* palette (see
+   cortex-console.css); this file does not touch that palette or any
+   rule outside this ancestor, so every other still-unmigrated
+   destination (coverage, competitive, ttps, uctc, multirun, lab, …)
+   keeps rendering exactly as it did. Colour comes ONLY from the new
+   token contract (styles/cortex-tokens.css): --ac/--ac-str is the
+   primary accent in both themes, --orange is reserved for warn/gap
+   signal and is never used decoratively. Spacing/radius/motion custom
+   properties (--s-*, --r-*, --dur-fast, --ease-out, --tracking-mono)
+   are shared, theme-agnostic numbers defined once on `.theme-console`
+   and are reused here rather than redeclared.
+
+   Components rendered exclusively inside this destination and safe to
+   restyle by class (no JSX here belongs to another surface):
+     ToolAdapterCatalog, AdapterRegistryView, PayloadShelfBanner,
+     StagePayloadDialog, PayloadComposer, ProvenanceBlock.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .tools-destination {
+  max-width: 100%;
+  color: var(--tx);
+  font-family: var(--font-primary, 'Inter', sans-serif);
+}
+.theme-console .tools-destination .mono {
+  font-family: var(--font-mono);
+}
+
+/* ── Page head ─────────────────────────────────────────────────────── */
+.theme-console .tools-destination__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-5);
+  margin-bottom: var(--s-5);
+}
+.theme-console .tools-destination__accent-bar {
+  width: 56px;
+  height: 4px;
+  background: var(--ac-str);
+  margin-bottom: 10px;
+  border-radius: 2px;
+}
+.theme-console .tools-destination__eyebrow {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .tools-destination__title {
+  margin: 6px 0 0;
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  font-size: 25px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+}
+
+/* ── Intro / stats strip ───────────────────────────────────────────── */
+.theme-console .tools-destination .adapter-registry__intro {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+.theme-console .tools-destination .adapter-registry__intro-prose {
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  font-weight: 400;
+  color: var(--tx2);
+}
+.theme-console .tools-destination .adapter-registry__intro-prose strong {
+  color: var(--tx);
+  font-weight: 600;
+}
+.theme-console .tools-destination .stack-coverage__stat-value {
+  font-family: var(--font-mono);
+  color: var(--ac);
+}
+.theme-console .tools-destination .stack-coverage__stat-label {
+  font-family: var(--font-mono);
+  color: var(--tx3);
+}
+
+.theme-console .tools-destination .adapter-registry__error {
+  background: var(--ac-soft);
+  color: var(--crit);
+  border: 1px solid var(--crit);
+  border-radius: var(--r-chip);
+}
+
+/* ── Payload shelf banner ─────────────────────────────────────────── *
+ * The banner's own logic already decides tone via its `--*` modifier
+ * classes; the redesign only needs to route each modifier onto the new
+ * tokens. `--pending` states (a gap the target has to reach the
+ * internet for) get --orange — the one deliberate use of it here,
+ * matching the design's own "orange is warn/gap" rule. */
+.theme-console .tools-destination .payload-banner {
+  background: var(--s1);
+  border: 1px solid var(--orange);
+  border-left-width: 3px;
+  border-radius: 8px;
+}
+.theme-console .tools-destination .payload-banner__tag {
+  color: var(--orange);
+  font-weight: 700;
+}
+.theme-console .tools-destination .payload-banner--readonly,
+.theme-console .tools-destination .payload-banner--unknown {
+  border-color: var(--bd2);
+}
+.theme-console .tools-destination .payload-banner--unknown .payload-banner__tag,
+.theme-console .tools-destination .payload-banner--readonly .payload-banner__tag {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .payload-banner--muted {
+  border-color: var(--bd);
+  color: var(--tx3);
+}
+.theme-console .tools-destination .payload-banner__msg {
+  color: var(--tx);
+}
+.theme-console .tools-destination .payload-banner__msg--unknown,
+.theme-console .tools-destination .payload-banner__msg--unbound {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .payload-banner__detail {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .payload-banner__why {
+  border-top-color: var(--bd);
+  color: var(--tx2);
+}
+.theme-console .tools-destination .payload-banner__recipe,
+.theme-console .tools-destination .stage-dialog__recipe,
+.theme-console .tools-destination .supply-detail__cmd {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  color: var(--tx);
+}
+
+/* ── Scope pill (?scenario=…) ─────────────────────────────────────── */
+.theme-console .tools-destination .adapter-registry__scope {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--tx2);
+}
+.theme-console .tools-destination .adapter-registry__scope strong {
+  color: var(--ac);
+}
+
+/* ── Search + filters ──────────────────────────────────────────────── */
+.theme-console .tools-destination .adapter-registry__search-input {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  color: var(--tx);
+  font-family: var(--font-primary, 'Inter', sans-serif);
+}
+.theme-console .tools-destination .adapter-registry__search-input:focus {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 3px var(--ac-soft);
+}
+.theme-console .tools-destination .adapter-registry__search-input::placeholder {
+  color: var(--tx3);
+}
+
+.theme-console .tools-destination .competitive__filter-label {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .competitive__filter {
+  height: 24px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--tx2);
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out);
+}
+.theme-console .tools-destination .competitive__filter:hover {
+  border-color: var(--ac-line);
+  color: var(--tx);
+}
+.theme-console .tools-destination .competitive__filter.is-active {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-tx);
+  font-weight: 700;
+}
+
+.theme-console .tools-destination .adapter-registry__clear-btn,
+.theme-console .tools-destination .btn {
+  font-family: var(--font-mono);
+  color: var(--tx);
+  background: transparent;
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+}
+.theme-console .tools-destination .btn:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console .tools-destination .btn:disabled {
+  opacity: 0.45;
+}
+.theme-console .tools-destination .btn--primary {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-tx);
+  font-weight: 700;
+}
+.theme-console .tools-destination .btn--primary:hover:not(:disabled) {
+  background: var(--ac-str);
+  border-color: var(--ac-str);
+  color: var(--ac-tx);
+  box-shadow: none;
+}
+.theme-console .tools-destination .btn--danger:hover,
+.theme-console .tools-destination .btn--danger-solid:hover:not(:disabled) {
+  border-color: var(--crit);
+  color: var(--crit);
+}
+
+.theme-console .tools-destination .coverage__empty {
+  color: var(--tx3);
+}
+
+/* ── Card grid ─────────────────────────────────────────────────────── */
+.theme-console .tools-destination .adapter-registry__grid {
+  grid-template-columns: repeat(auto-fill, minmax(308px, 1fr));
+  gap: 12px;
+}
+
+.theme-console .tools-destination .adapter-card {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 15px 16px;
+  min-height: 0;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+}
+.theme-console .tools-destination .adapter-card:hover,
+.theme-console .tools-destination .adapter-card:focus-visible {
+  border-color: var(--ac-line);
+  transform: translateY(-1px);
+  outline: none;
+}
+.theme-console .tools-destination .adapter-card--selected {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 1px var(--ac-soft);
+}
+.theme-console .tools-destination .adapter-card--selected::before {
+  background: var(--ac);
+  box-shadow: none;
+}
+
+.theme-console .tools-destination .adapter-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.theme-console .tools-destination .adapter-card__id {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--tx3);
+  word-break: break-word;
+}
+.theme-console .tools-destination .adapter-card__head {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+.theme-console .tools-destination .adapter-card__name {
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: normal;
+  color: var(--tx);
+}
+.theme-console .tools-destination .adapter-card__version {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .adapter-card__category {
+  color: var(--tx3);
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+.theme-console .tools-destination .adapter-card__supply:empty {
+  display: none;
+}
+.theme-console .tools-destination .adapter-card__egress {
+  color: var(--tx3);
+  line-height: 1.5;
+}
+.theme-console .tools-destination .adapter-card__provenance {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .adapter-card__unpinned {
+  margin-left: 4px;
+}
+.theme-console .tools-destination .adapter-card__desc {
+  margin-top: 10px;
+  padding-top: 11px;
+  border-top: 1px solid var(--bd);
+  color: var(--tx2);
+}
+.theme-console .tools-destination .adapter-card__license {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .adapter-card__meta {
+  border-top-color: var(--bd);
+}
+.theme-console .tools-destination .adapter-card__more {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .adapter-card__targets {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .adapter-card__targets-label {
+  color: var(--tx3);
+}
+
+/* ── Chips ─────────────────────────────────────────────────────────
+ * chip--detected = staged / good → green (--ac). chip--pending = not
+ * staged / fetches at run time / unpinned → orange, this surface's
+ * literal supply GAP. chip--missed = c2-framework / destructive safety
+ * class, or a licence mismatch → --crit (a sharper severity than a
+ * supply gap, kept distinct on purpose). Bare .chip and chip--signal
+ * stay neutral / informational. */
+.theme-console .tools-destination .chip {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--tx3);
+  background: transparent;
+  border: 1px solid var(--bd2);
+  border-radius: 3px;
+  padding: 3px 6px;
+  height: auto;
+  text-transform: uppercase;
+}
+.theme-console .tools-destination .chip--signal {
+  color: var(--info);
+  border-color: var(--info);
+  background: transparent;
+}
+.theme-console .tools-destination .chip--detected {
+  color: var(--ac);
+  border-color: var(--ac);
+  background: transparent;
+}
+.theme-console .tools-destination .chip--pending {
+  color: var(--orange);
+  border-color: var(--orange);
+  background: transparent;
+}
+.theme-console .tools-destination .chip--missed {
+  color: var(--crit);
+  border-color: var(--crit);
+  background: transparent;
+}
+.theme-console .tools-destination .chip--clickable {
+  cursor: pointer;
+}
+.theme-console .tools-destination .chip--clickable:hover {
+  color: var(--ac);
+  border-color: var(--ac);
+}
+.theme-console .tools-destination .tool-adapter-catalog__chip-sm {
+  font-size: 9px;
+}
+
+/* ── Detail panel ──────────────────────────────────────────────────── */
+.theme-console .tools-destination .competitive__detail {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 10px;
+  padding: 20px 22px;
+}
+.theme-console .tools-destination .competitive__detail-eyebrow {
+  color: var(--ac);
+  font-family: var(--font-mono);
+}
+.theme-console .tools-destination .competitive__detail-title {
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  font-weight: 800;
+  color: var(--tx);
+}
+.theme-console .tools-destination .competitive__detail-section p {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .competitive__detail-label {
+  font-family: var(--font-mono);
+  color: var(--tx3);
+}
+
+.theme-console .tools-destination .tool-adapter-catalog__repo a {
+  color: var(--ac);
+}
+.theme-console .tools-destination .tool-adapter-catalog__repo-meta {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .tool-adapter-catalog__args-pre {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  color: var(--tx);
+  padding: 10px 11px;
+}
+.theme-console .tools-destination .tool-adapter-catalog__cleanup-list {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .tool-adapter-catalog__xref-label {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .tool-adapter-catalog__empty-note {
+  color: var(--tx3);
+}
+
+/* Key/value grid — the KeyValueGrid two-column render (Install / Invoke
+   sections) is marked `.adapter-schema--kv` so it gets a real 2-column
+   template instead of AdapterRegistryView's 3-column
+   name/type/description one; both share `.adapter-schema__row` today,
+   and forcing a 2-cell row through a 160/90/1fr template crammed every
+   description into a 90px column. */
+.theme-console .tools-destination .adapter-schema {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+.theme-console .tools-destination .adapter-schema__row {
+  grid-template-columns: 150px 70px 1fr;
+  border-bottom-color: var(--bd);
+}
+.theme-console .tools-destination .adapter-schema--kv .adapter-schema__row {
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
+}
+.theme-console .tools-destination .adapter-schema__name {
+  color: var(--tx);
+}
+.theme-console .tools-destination .adapter-schema__required {
+  color: var(--crit);
+}
+.theme-console .tools-destination .adapter-schema__type {
+  color: var(--orange);
+}
+.theme-console .tools-destination .adapter-schema__desc {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .adapter-schema__desc--pre {
+  font-family: var(--font-mono);
+}
+.theme-console .tools-destination .adapter-schema__default {
+  color: var(--tx3);
+}
+
+/* ── Supply detail + provenance ───────────────────────────────────── */
+.theme-console .tools-destination .supply-detail__egress {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .supply-detail__note {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .supply-detail__note--muted {
+  color: var(--tx3);
+}
+
+.theme-console .tools-destination .provenance__row {
+  border-bottom-color: var(--bd);
+}
+.theme-console .tools-destination .provenance__key {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .provenance__link {
+  color: var(--ac);
+}
+.theme-console .tools-destination .provenance__unpinned {
+  color: var(--orange);
+}
+.theme-console .tools-destination .provenance__muted {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .provenance__warn {
+  color: var(--crit);
+}
+.theme-console .tools-destination .provenance__copy {
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+  color: var(--tx2);
+}
+.theme-console .tools-destination .provenance__copy:hover {
+  color: var(--ac);
+  border-color: var(--ac);
+}
+.theme-console .tools-destination .provenance__hint {
+  color: var(--tx3);
+}
+
+/* ── Stage dialog (nested here, not a portal — scoping still applies) ─ */
+.theme-console .tools-destination .confirm-dialog__backdrop {
+  background: rgba(6, 18, 12, 0.6);
+}
+.theme-console .tools-destination .confirm-dialog {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.theme-console .tools-destination .confirm-dialog__title {
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  color: var(--tx);
+}
+.theme-console .tools-destination .confirm-dialog__body,
+.theme-console .tools-destination .stage-dialog__lede {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .confirm-dialog__body strong {
+  color: var(--tx);
+}
+.theme-console .tools-destination .stage-dialog__warn {
+  color: var(--orange);
+}
+.theme-console .tools-destination .stage-dialog__ok {
+  color: var(--ac);
+}
+.theme-console .tools-destination .stage-dialog__fail {
+  color: var(--crit);
+}
+.theme-console .tools-destination .stage-dialog__note,
+.theme-console .tools-destination .stage-dialog__detail {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .stage-dialog__spinner {
+  border-color: var(--bd2);
+  border-top-color: var(--ac);
+}
+.theme-console .tools-destination .stage-dialog__snippet pre {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  color: var(--tx);
+}
+.theme-console .tools-destination .launch-blockers__item {
+  color: var(--orange);
+}
+.theme-console .tools-destination .launch-result__code {
+  color: var(--tx3);
+}
+
+/* ── Payload composer (light pass — its own file, restyled by class
+   only; it renders exclusively inside this destination) ─────────────── */
+.theme-console .tools-destination .payload-compose__cmd-pre,
+.theme-console .tools-destination .payload-compose__snippet {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  color: var(--tx);
+}
+.theme-console .tools-destination .payload-compose__cmd-pre--new {
+  border-color: var(--ac-line);
+}
+.theme-console .tools-destination .payload-compose__warn {
+  color: var(--orange);
+}
+.theme-console .tools-destination .payload-compose__ok {
+  color: var(--ac);
+}
+.theme-console .tools-destination .payload-compose__error {
+  color: var(--crit);
+}
+.theme-console .tools-destination .payload-compose__muted,
+.theme-console .tools-destination .payload-compose__note {
+  color: var(--tx3);
+}
+.theme-console .tools-destination .payload-compose__preset {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+.theme-console .tools-destination .payload-compose__preset:hover {
+  border-color: var(--ac-line);
+}
+.theme-console .tools-destination .launch-select,
+.theme-console .tools-destination .launch-field input,
+.theme-console .tools-destination .launch-field select {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  color: var(--tx);
+}
+.theme-console .tools-destination .launch-field__label {
+  color: var(--tx3);
+}
+
+/* ── AdapterRegistryView-only bits ────────────────────────────────── */
+.theme-console .tools-destination .adapter-detail__eal-targets {
+  color: var(--tx2);
+}
+.theme-console .tools-destination .adapter-detail__no-params {
+  color: var(--tx3);
+}

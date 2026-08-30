@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import '../../styles/destinations/library.css'
 import ScenarioGrid from './ScenarioGrid.jsx'
 import ScenarioInspector from './ScenarioInspector.jsx'
 import FilterPalette from './FilterPalette.jsx'
@@ -220,6 +221,8 @@ export default function OperationsView({
     <div className="operations grid-bg">
       <div className="view-head">
         <div>
+          <div className="ops-accent-bar" aria-hidden="true" />
+          <div className="ops-eyebrow">Operate · Phase 2</div>
           <h1>Library</h1>
           <div className="view-head__meta">
             Plane: <strong>{headMeta.planeLabel}</strong>

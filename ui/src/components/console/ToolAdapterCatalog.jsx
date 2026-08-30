@@ -131,7 +131,15 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
   }, [selectedId, shelf.shelf])
 
   return (
-    <div className="adapter-registry" data-testid="tool-adapter-catalog">
+    <div className="adapter-registry tools-destination" data-testid="tool-adapter-catalog">
+      <div className="tools-destination__head">
+        <div className="tools-destination__head-copy">
+          <div className="tools-destination__accent-bar" aria-hidden="true" />
+          <div className="tools-destination__eyebrow mono">Analyze</div>
+          <h1 className="tools-destination__title">Tools &amp; Payloads</h1>
+        </div>
+      </div>
+
       <div className="adapter-registry__intro">
         <p className="adapter-registry__intro-prose">
           Every offensive and defensive tool CortexSim can reference from a scenario via{' '}
@@ -364,6 +372,18 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect() }
       }}
     >
+      <div className="adapter-card__top">
+        <span className="adapter-card__id mono">{adapter.adapter_id}</span>
+        {/* Supply first — before this work the first thing a DC read was the
+            licence, which says nothing about whether the tool will be there. */}
+        <span
+          className={supply?.chipClass || 'chip'}
+          data-testid={`supply-chip-${adapter.adapter_id}`}
+          title={supply?.egressLabel}
+        >
+          {supply?.label || SUPPLY_LABEL[SUPPLY.UNKNOWN]}
+        </span>
+      </div>
       <div className="adapter-card__head">
         <div className="adapter-card__name mono">{adapter.name}</div>
         <div className="adapter-card__version mono">v{adapter.version}</div>
@@ -372,16 +392,7 @@ function ToolAdapterCard({ adapter, supply, isSelected, onSelect, onStage }) {
         T{adapter.tier} · {adapter.category} · {adapter.target_platform || 'any'}
       </div>
 
-      {/* Supply first — before this work the first thing a DC read was the
-          licence, which says nothing about whether the tool will be there. */}
       <div className="adapter-card__supply">
-        <span
-          className={supply?.chipClass || 'chip'}
-          data-testid={`supply-chip-${adapter.adapter_id}`}
-          title={supply?.egressLabel}
-        >
-          {supply?.label || SUPPLY_LABEL[SUPPLY.UNKNOWN]}
-        </span>
         {supply?.actionable && (
           <button
             type="button"
@@ -688,7 +699,7 @@ function KeyValueGrid({ rows }) {
     return <p className="mono tool-adapter-catalog__empty-note">(none)</p>
   }
   return (
-    <div className="adapter-schema">
+    <div className="adapter-schema adapter-schema--kv">
       {present.map(([k, v]) => (
         <div key={k} className="adapter-schema__row">
           <div className="adapter-schema__name mono">{k}</div>
