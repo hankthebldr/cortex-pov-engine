@@ -346,70 +346,80 @@ function TenantRow({ tenant, active, onSelect, onTest, onDelete, testing }) {
     ? new Date(tenant.last_verified_at).toLocaleString(undefined, { hour12: false })
     : null
 
+  const rows = [
+    { k: 'Base URL', v: cfg.base_url || '—' },
+    { k: 'Region',   v: cfg.region || '—' },
+    { k: 'Auth',     v: cfg.auth_mode || 'standard' },
+    { k: 'Key ID',   v: cfg.api_key_id || '—' },
+    ...(verAt ? [{ k: 'Tested', v: verAt }] : []),
+  ]
+
   return (
     <div
       aria-current={active ? 'true' : undefined}
       className={`tenant-mgr__row${active ? ' tenant-mgr__row--active' : ''}`}
     >
-      {/* Active selector */}
-      {active ? (
-        <span
-          aria-label="Active tenant"
-          className="tenant-mgr__badge-active"
-        >
-          ● ACTIVE
+      <div className="tenant-mgr__row-top">
+        <span className="tenant-mgr__row-name">
+          {tenant.name}
         </span>
-      ) : (
-        <button
-          className="btn btn-sm btn-secondary tenant-mgr__btn-align"
-          onClick={() => onSelect(name)}
-          aria-pressed={false}
-          aria-label={`Set ${name} as active tenant`}
-        >
-          Set active
-        </button>
-      )}
-
-      <div>
-        <div className="tenant-mgr__row-head">
-          <span className="tenant-mgr__row-name">
-            {tenant.name}
-          </span>
-          <HealthPill
-            ok={testing ? undefined : tenant.last_verified_ok}
-            testing={testing}
-            error={tenant.last_verified_error}
-          />
-        </div>
-        <div className="tenant-mgr__row-url">
-          {cfg.base_url || '—'}
-        </div>
-        <div className="tenant-mgr__row-meta">
-          Region: {cfg.region || '—'} · Auth: {cfg.auth_mode || 'standard'} · Key ID: {cfg.api_key_id || '—'}
-          {verAt && <span> · Tested: {verAt}</span>}
-          {tenant.last_verified_error && (
-            <span className="tenant-mgr__row-meta-error">
-              ↳ {tenant.last_verified_error}
-            </span>
-          )}
-        </div>
+        <HealthPill
+          ok={testing ? undefined : tenant.last_verified_ok}
+          testing={testing}
+          error={tenant.last_verified_error}
+        />
       </div>
 
-      <button
-        className="btn btn-sm btn-secondary tenant-mgr__btn-nowrap"
-        onClick={() => onTest(name)}
-        disabled={testing}
-      >
-        {testing ? 'Testing…' : '▸ Test'}
-      </button>
+      <div className="tenant-mgr__row-grid">
+        {rows.map(r => (
+          <div key={r.k} className="tenant-mgr__row-cell">
+            <span className="tenant-mgr__row-k">{r.k}</span>
+            <span className="tenant-mgr__row-v">{r.v}</span>
+          </div>
+        ))}
+      </div>
 
-      <button
-        className="btn btn-sm tenant-mgr__btn-delete"
-        onClick={() => onDelete(name)}
-        aria-label={`Remove tenant ${name}`}
-      >
-        ✕
-      </button>
+      {tenant.last_verified_error && (
+        <div className="tenant-mgr__row-error">
+          ↳ {tenant.last_verified_error}
+        </div>
+      )}
+
+      <div className="tenant-mgr__row-actions">
+        {active ? (
+          <span
+            aria-label="Active tenant"
+            className="tenant-mgr__badge-active"
+          >
+            ● ACTIVE
+          </span>
+        ) : (
+          <button
+            className="btn btn-sm btn-secondary tenant-mgr__btn-align"
+            onClick={() => onSelect(name)}
+            aria-pressed={false}
+            aria-label={`Set ${name} as active tenant`}
+          >
+            Set active
+          </button>
+        )}
+
+        <button
+          className="btn btn-sm btn-secondary tenant-mgr__btn-nowrap"
+          onClick={() => onTest(name)}
+          disabled={testing}
+        >
+          {testing ? 'Testing…' : '▸ Test'}
+        </button>
+
+        <button
+          className="btn btn-sm tenant-mgr__btn-delete"
+          onClick={() => onDelete(name)}
+          aria-label={`Remove tenant ${name}`}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   )
 }
@@ -601,6 +611,8 @@ export default function TenantManager() {
 
       {/* ── View header ───────────────────────────────────────────────────── */}
       <div className="tenant-mgr__header">
+        <div className="tenant-mgr__accent-bar" />
+        <div className="tenant-mgr__eyebrow">Manage · Phase 1</div>
         <div className="tenant-mgr__header-row">
           <h2 className="tenant-mgr__title">
             XSIAM Tenants
@@ -688,20 +700,22 @@ export default function TenantManager() {
             </div>
           )}
 
-          {tenants.map(t => {
-            const key = tenantKey(t)
-            return (
-              <TenantRow
-                key={key}
-                tenant={t}
-                active={key === activeKey}
-                onSelect={handleSelect}
-                testing={!!testing[key]}
-                onTest={handleTest}
-                onDelete={name => setPendingDelete(name)}
-              />
-            )
-          })}
+          <div className="tenant-mgr__list">
+            {tenants.map(t => {
+              const key = tenantKey(t)
+              return (
+                <TenantRow
+                  key={key}
+                  tenant={t}
+                  active={key === activeKey}
+                  onSelect={handleSelect}
+                  testing={!!testing[key]}
+                  onTest={handleTest}
+                  onDelete={name => setPendingDelete(name)}
+                />
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>
