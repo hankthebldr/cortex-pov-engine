@@ -403,7 +403,7 @@ function PayloadPlanCard({
       <div className="launch-card__kicker">
         Payload plan
         {onEdit && artifacts.length > 0 && (
-          <button type="button" className="btn btn--xs" style={{ marginLeft: 8 }} onClick={onEdit}>
+          <button type="button" className="btn btn--xs launch-edit-btn" onClick={onEdit}>
             Edit ▸
           </button>
         )}
@@ -447,7 +447,7 @@ function PayloadPlanCard({
           </span>
           . A default-deny egress policy blocks that, and the step then runs without its tool.
           {onGoShelf && (
-            <button type="button" className="btn btn--xs" style={{ marginLeft: 8 }} onClick={onGoShelf}>
+            <button type="button" className="btn btn--xs launch-edit-btn" onClick={onGoShelf}>
               Stage them ▸
             </button>
           )}

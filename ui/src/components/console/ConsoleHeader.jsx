@@ -87,13 +87,9 @@ export default function ConsoleHeader({
             onClick={() => onNavigate('runs', { run: activeRun.runId, tab: 'live' })}
             title="Jump to the live run"
             aria-label={`Live run ${activeRun.scenarioId || ''} — open in Runs & Proof`}
-            style={{ cursor: 'pointer' }}
           >
-            <span className="env-pill__dot" style={{
-              background: 'var(--cortex-teal, #00C0E8)',
-              boxShadow: '0 0 6px var(--cortex-teal, #00C0E8)',
-            }} />
-            <span className="env-pill__label" style={{ color: 'var(--cortex-teal, #00C0E8)' }}>LIVE</span>
+            <span className="env-pill__dot live-pill__dot" />
+            <span className="env-pill__label live-pill__label">LIVE</span>
             <span className="env-pill__meta mono">
               {activeRun.scenarioId} · {activeRun.step}/{activeRun.totalSteps} · {fmtElapsed(activeRun.elapsed)}
             </span>

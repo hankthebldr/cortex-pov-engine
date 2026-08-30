@@ -88,7 +88,7 @@ export default function NarrativeTimeline({ frames = [], stitches = [], nowLabel
         <div
           key={`label-${p.id}`}
           className="narrative__stitch-label"
-          style={{ left: p.labelX, top: p.labelY, transform: 'translate(-50%, -100%)' }}
+          style={{ left: p.labelX, top: p.labelY }}
         >
           {p.label}
         </div>

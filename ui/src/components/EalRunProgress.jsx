@@ -93,7 +93,7 @@ export default function EalRunProgress({ runId, onClose, onMessage }) {
   return (
     <div className="eal-run-progress">
       <header className="eal-run-progress__head">
-        <div className="flex-row" style={{ gap: '12px' }}>
+        <div className="flex-row eal-run-progress__meta-row">
           <span className={`pill pill-${tone(run?.status)}`}>{run?.status || '–'}</span>
           {isLive && <span className="muted small">live (polling every 2s)</span>}
           <span className="muted small">run {run?.run_id?.slice(0, 12)}…</span>
@@ -153,7 +153,7 @@ export default function EalRunProgress({ runId, onClose, onMessage }) {
       )}
 
       {run?.error && (
-        <div className="error-banner" style={{ marginTop: '8px' }}>
+        <div className="error-banner eal-run-progress__error-banner">
           <strong>Run-level error:</strong> <code className="mono small">{run.error}</code>
         </div>
       )}

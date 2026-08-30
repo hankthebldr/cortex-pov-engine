@@ -239,7 +239,7 @@ export default function EalCampaignBuilder({ onCreated, onError }) {
         {loadingMeta && <p className="muted">Loading schema…</p>}
 
         {pluginMeta && Object.keys(properties).length > 0 && (
-          <div className="form-grid" style={{ marginTop: '8px' }}>
+          <div className="form-grid eal-builder__form-grid">
             {Object.entries(properties).map(([key, prop]) => (
               <SchemaField
                 key={key}
@@ -261,7 +261,7 @@ export default function EalCampaignBuilder({ onCreated, onError }) {
         </div>
       )}
 
-      <div className="flex-row" style={{ gap: '8px', justifyContent: 'flex-end' }}>
+      <div className="flex-row eal-builder__actions-row">
         <button
           className="btn btn-navy"
           disabled={submitting || !selectedPlugin}
