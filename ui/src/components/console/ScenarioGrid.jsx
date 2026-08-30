@@ -22,7 +22,7 @@ const DIFFICULTY_LABEL = {
 /**
  * ScenarioCard — single scenario card for the operations grid.
  */
-function ScenarioCard({ scenario, isSelected, isPinned, onSelect, onTogglePin, history = null }) {
+function ScenarioCard({ scenario, isSelected, isPinned, isFirst, onSelect, onTogglePin, history = null }) {
   const id      = scenario.scenario_id || scenario.id
   const planes  = collectPlanes(scenario)
   const tids    = collectTechniques(scenario).slice(0, 6)
@@ -33,6 +33,7 @@ function ScenarioCard({ scenario, isSelected, isPinned, onSelect, onTogglePin, h
 
   return (
     <article
+      data-tour-id={isFirst ? 'scenario-card-first' : undefined}
       className={
         'scenario-card' +
         (isSelected ? ' scenario-card--selected' : '') +
@@ -157,7 +158,7 @@ export default function ScenarioGrid({
 
   return (
     <div className="scenario-grid">
-      {ordered.map((s) => {
+      {ordered.map((s, i) => {
         const id = s.scenario_id || s.id
         const history = historyByScenario && historyByScenario.get
           ? historyByScenario.get(id)
@@ -165,6 +166,7 @@ export default function ScenarioGrid({
         return (
           <ScenarioCard
             key={id}
+            isFirst={i === 0}
             scenario={s}
             isSelected={id === selectedScenarioId}
             isPinned={isPinned(id)}

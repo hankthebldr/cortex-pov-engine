@@ -51,6 +51,7 @@ export default function DestinationNav({
                 key={item.id}
                 type="button"
                 data-testid={`dest-button-${item.id}`}
+                data-tour-id={`nav-${item.id}`}
                 className={'plane-item' + (isActive ? ' plane-item--active' : '')}
                 aria-current={isActive ? 'page' : undefined}
                 onClick={() => onNavigate(item.id)}

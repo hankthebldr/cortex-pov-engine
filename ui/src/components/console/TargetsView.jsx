@@ -242,7 +242,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
           <div className="target-col__title">
             <span className="plane-dot plane-dot--detected" /> Pull agents
             <span className="target-col__count">{agents.length}</span>
-            <button type="button" className="btn btn--xs target-col__action" onClick={() => setDeployOpen(true)}>
+            <button type="button" className="btn btn--xs target-col__action" data-tour-id="agent-enroll" onClick={() => setDeployOpen(true)}>
               + Deploy agent
             </button>
           </div>
