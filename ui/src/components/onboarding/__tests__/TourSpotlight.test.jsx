@@ -97,16 +97,36 @@ describe('TourSpotlight', () => {
     expect(document.activeElement).toBe(last)
   })
 
-  it('omits the dim layer and relies on the cutout box-shadow when the anchor resolves', () => {
+  it('renders four dim shutters framing the cutout when the anchor resolves, and no full-viewport dim', () => {
     const { container } = render(<TourSpotlight stop={STOP} index={0} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+    expect(container.querySelectorAll('.tour__shutter').length).toBe(4)
     expect(container.querySelector('.tour__dim')).toBeNull()
     expect(container.querySelector('.tour__cutout')).not.toBeNull()
   })
 
-  it('falls back to the full dim layer when the anchor element is missing', () => {
+  it('falls back to a single full-viewport dim layer, with no shutters, when the anchor element is missing', () => {
     const missing = { ...STOP, anchor: 'does-not-exist' }
     const { container } = render(<TourSpotlight stop={missing} index={0} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
     expect(container.querySelector('.tour__dim')).not.toBeNull()
+    expect(container.querySelectorAll('.tour__shutter').length).toBe(0)
     expect(container.querySelector('.tour__cutout')).toBeNull()
+  })
+
+  it('does not bounce focus to the external trigger while navigating between stops', () => {
+    const trigger = document.createElement('button')
+    trigger.textContent = 'Open tour'
+    document.body.appendChild(trigger)
+    trigger.focus()
+    const triggerFocusSpy = vi.spyOn(trigger, 'focus')
+
+    const STOP2 = { id: 'b', anchor: 'anchor-a', destination: 'library', title: 'Second stop', body: 'Second stop body text.' }
+    const STOP3 = { id: 'c', anchor: 'anchor-a', destination: 'library', title: 'Third stop', body: 'Third stop body text.' }
+
+    const { rerender } = render(<TourSpotlight stop={STOP} index={0} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+    rerender(<TourSpotlight stop={STOP2} index={1} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+    rerender(<TourSpotlight stop={STOP3} index={2} total={5} onNext={vi.fn()} onPrev={vi.fn()} onExit={vi.fn()} />)
+
+    expect(triggerFocusSpy).not.toHaveBeenCalled()
+    expect(document.activeElement).not.toBe(trigger)
   })
 })

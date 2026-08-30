@@ -4,24 +4,28 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
  * TourSpotlight — dim layer with a cutout over the anchored element, plus a
  * bubble beside it.
  *
- * The cutout is drawn with a very large box-shadow spread rather than an SVG
- * mask: it needs no extra element, scales to any viewport, and degrades to a
- * plain dim layer if the rect is unavailable. When a cutout rect IS resolved,
- * the box-shadow spread is the only dimming — the full-viewport `.tour__dim`
- * layer is deliberately not rendered, because it would sit on top of the
- * "hole" and swallow both the visual cutout and clicks on the spotlit
- * element (`pointer-events: none` on the cutout div only stops the cutout
- * div itself from capturing the click; it does nothing about a dim layer
- * underneath it).
+ * The "hole" is a `pointer-events: none` bordered box (no box-shadow — a
+ * shadow is paint-only and does not participate in hit-testing) surrounded
+ * by four `position: fixed` dim "shutters" (top/bottom/left/right), each
+ * `pointer-events: auto`. That combination is what makes a click on the
+ * spotlit element land while every other pixel of the dimmed background
+ * still swallows the click. Degrades to a single full-viewport `.tour__dim`
+ * layer when the anchor can't be measured (nothing to cut a hole around).
  *
  * Focus is trapped inside the bubble — Tab/Shift+Tab wrap within the
- * ordered set [bubble, Skip, Back?, Next/Done] — and restored to whatever
- * had focus before the tour opened once the bubble unmounts or the stop
- * changes.
+ * ordered set [bubble, Skip, Back?, Next/Done] — and restored, once, to
+ * whatever had focus before the tour opened, in an unmount cleanup. That
+ * restore is deliberately mount-scoped (captured once via a ref, restored
+ * once on unmount) rather than re-keyed on `stop`: tying it to `stop`
+ * bounces focus out to the external trigger and back on every Next/Back,
+ * which is spurious churn a screen-reader user would hear on every step.
+ * Focusing the bubble itself DOES need to re-run per stop — that stays a
+ * separate effect.
  */
 export default function TourSpotlight({ stop, index, total, onNext, onPrev, onExit }) {
   const [rect, setRect] = useState(null)
   const bubbleRef = useRef(null)
+  const previouslyFocusedRef = useRef(null)
 
   useLayoutEffect(() => {
     if (!stop) { setRect(null); return undefined }
@@ -70,19 +74,21 @@ export default function TourSpotlight({ stop, index, total, onNext, onPrev, onEx
     return () => document.removeEventListener('keydown', onKey)
   }, [stop, onExit, onNext])
 
+  // Mount-scoped: capture the pre-tour focus once, restore it once, on
+  // unmount only. NOT keyed on `stop` — see the header comment.
   useEffect(() => {
-    if (!stop) return undefined
-    const previouslyFocused = document.activeElement
-    if (bubbleRef.current) bubbleRef.current.focus()
+    previouslyFocusedRef.current = document.activeElement
     return () => {
-      if (
-        previouslyFocused &&
-        typeof previouslyFocused.focus === 'function' &&
-        document.contains(previouslyFocused)
-      ) {
-        previouslyFocused.focus()
+      const el = previouslyFocusedRef.current
+      if (el && typeof el.focus === 'function' && document.contains(el)) {
+        el.focus()
       }
     }
+  }, [])
+
+  // Per-stop: move focus into the bubble on every stop change.
+  useEffect(() => {
+    if (stop && bubbleRef.current) bubbleRef.current.focus()
   }, [stop])
 
   if (!stop) return null
@@ -95,6 +101,30 @@ export default function TourSpotlight({ stop, index, total, onNext, onPrev, onEx
   return (
     <div className="tour" data-testid="tour-spotlight">
       {!cut && <div className="tour__dim" aria-hidden="true" />}
+      {cut && (
+        <>
+          <div
+            className="tour__shutter"
+            aria-hidden="true"
+            style={{ left: 0, top: 0, width: '100vw', height: cut.top }}
+          />
+          <div
+            className="tour__shutter"
+            aria-hidden="true"
+            style={{ left: 0, top: cut.top + cut.height, width: '100vw', bottom: 0 }}
+          />
+          <div
+            className="tour__shutter"
+            aria-hidden="true"
+            style={{ left: 0, top: cut.top, width: cut.left, height: cut.height }}
+          />
+          <div
+            className="tour__shutter"
+            aria-hidden="true"
+            style={{ left: cut.left + cut.width, top: cut.top, right: 0, height: cut.height }}
+          />
+        </>
+      )}
       {cut && (
         <div
           className="tour__cutout"

@@ -931,10 +931,14 @@ ul.bullet { margin: 4px 0 0 0; padding-left: 18px; font-size: 12px; }
   position: fixed; inset: 0; z-index: 900;
   background: rgba(0, 20, 40, 0.62);
 }
+.tour__shutter {
+  position: fixed; z-index: 900;
+  background: rgba(0, 20, 40, 0.62);
+  pointer-events: auto;
+}
 .tour__cutout {
   position: fixed; z-index: 901; border-radius: 6px;
   border: 2px solid var(--cortex-teal, #00C0E8);
-  box-shadow: 0 0 0 9999px rgba(0, 20, 40, 0.62);
   pointer-events: none;
 }
 .tour__bubble {
