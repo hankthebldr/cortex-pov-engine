@@ -20,6 +20,12 @@
    `ttpb-*` vocabulary specific to this file.
    ============================================================ */
 
+/* a11y fix: .ttpb never painted its own root background, so the shared
+   shell's permanently-dark background (cortex-console.css .theme-console.shell)
+   showed through and collided with this file's light-theme text tokens
+   (near-invisible text). Same root cause/fix as library.css. */
+.theme-console .ttpb { background: var(--s0); }
+
 .ttpb-intro {
   margin: 4px 0 16px;
   max-width: 78ch;

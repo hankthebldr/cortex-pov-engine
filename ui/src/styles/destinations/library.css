@@ -21,6 +21,14 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 .theme-console .library-layout {
+  /* a11y fix: the shared shell (.theme-console.shell, cortex-console.css)
+     paints a permanently-dark, non-theme-aware background — nothing below
+     it in the ancestor chain painted an opaque surface, so plain text using
+     the new light-theme --tx color rendered near-black-on-near-black
+     (measured contrast ~1.03:1) anywhere this destination didn't happen to
+     sit on its own card/chip. Painting the real theme-aware surface here
+     closes that for the whole destination in one place. */
+  background: var(--s0);
   padding: 22px 26px 30px;
   align-items: start;
 }

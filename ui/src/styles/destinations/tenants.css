@@ -23,6 +23,11 @@
    ============================================================ */
 
 .theme-console .tenant-mgr {
+  /* a11y fix: paint the real surface here — the shared shell background
+     never varies by theme, so without this, plain text using the new
+     light-theme text tokens goes near-invisible. Same root cause/fix as
+     library.css. */
+  background: var(--s0);
   padding: 22px 26px 30px;
   max-width: 1040px;
 }

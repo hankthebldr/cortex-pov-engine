@@ -24,6 +24,11 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 .theme-console .tools-destination {
+  /* a11y fix: paint the real surface here — the shared shell background
+     never varies by theme, so without this, plain text using the new
+     light-theme text tokens goes near-invisible. Same root cause/fix as
+     library.css. */
+  background: var(--s0);
   max-width: 100%;
   color: var(--tx);
   font-family: var(--font-primary, 'Inter', sans-serif);

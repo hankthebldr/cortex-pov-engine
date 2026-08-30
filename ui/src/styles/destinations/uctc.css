@@ -32,6 +32,12 @@
    ============================================================ */
 
 .uctc {
+  /* a11y fix: paint the real surface — the shared shell background never
+     varies by theme, so without this, plain text using the new light-theme
+     text tokens (e.g. .uctc__cell-title) rendered near-invisible (measured
+     ~1.03:1) over most of the table body. Same root cause/fix as
+     library.css. */
+  background: var(--s0);
   --uctc-rail: 248px;
 }
 

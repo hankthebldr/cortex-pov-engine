@@ -26,6 +26,11 @@
    own test file, with no ancestor `.coverage`. ─────────────────── */
 .theme-console .coverage,
 .theme-console .stack-coverage {
+  /* a11y fix: paint the real surface here — the shared shell background
+     never varies by theme, so without this, plain text using the new
+     light-theme text tokens goes near-invisible wherever this destination
+     doesn't sit on its own card. Same root cause/fix as library.css. */
+  background: var(--s0);
   --c-void:            var(--s0);
   --c-surface:         var(--s1);
   --c-surface-raised:  var(--s2);
