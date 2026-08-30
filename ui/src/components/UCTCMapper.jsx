@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { getScenario } from '../api/client.js'
+import '../styles/destinations/uc-detail.css'
 
 // ─── Detection type badge ─────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ export default function UCTCMapper({ scenario }) {
   const steps = data?.steps || []
 
   return (
-    <div className="panel-card">
+    <div className="panel-card uc-detail">
       <div className="panel-card-header">
         <h3>UC / TC Chain</h3>
         <div className="uctc-header__badges">
