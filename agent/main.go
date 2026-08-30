@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/hankthebldr/cortexsim/agent/beacon"
+	"github.com/hankthebldr/cortexsim/agent/executor"
 )
 
 const (
@@ -103,9 +104,19 @@ func main() {
 
 	capabilities := agentCapabilities(runtime.GOOS)
 
-	log.Printf("registering — hostname=%s os=%s capabilities=%v", hostname, runtime.GOOS, capabilities)
+	// Honest, live snapshot of what interpreters this host actually has right
+	// now — never a guess, never derived from GOOS. SimCore uses it to
+	// preflight a scenario's declared `requires_interpreters` before dispatch;
+	// the beacon re-checks live at execution time regardless (see
+	// resolveRuntimeDeps in agent/beacon/client.go), so a stale registration
+	// snapshot can never cause a silent false success — only a slower-to-refuse
+	// one, which the beacon's own live check closes.
+	interpreters := executor.AvailableLogicalNames()
 
-	if err := client.Register(hostname, runtime.GOOS, capabilities); err != nil {
+	log.Printf("registering — hostname=%s os=%s capabilities=%v interpreters=%v",
+		hostname, runtime.GOOS, capabilities, interpreters)
+
+	if err := client.Register(hostname, runtime.GOOS, capabilities, interpreters); err != nil {
 		// Registration failure is logged as a warning but does not abort startup —
 		// SimCore may be momentarily unavailable and the first poll can re-register.
 		log.Printf("WARNING: registration failed (will retry on next poll cycle): %v", err)
