@@ -5823,3 +5823,220 @@
 .theme-console .rdy-comp__code {
   font-size: 10px; letter-spacing: 0.06em; color: var(--c-text-secondary);
 }
+
+/* ── GlobalContextBar / SwitcherPill (tenant + agent dropdown pill) ──── */
+.theme-console .switcher { position: relative; }
+.theme-console .switcher__pill--empty { opacity: 0.65; }
+.theme-console .switcher__meta {
+  text-transform: uppercase; font-size: 9px; letter-spacing: 0.08em;
+}
+.theme-console .switcher__caret { color: var(--c-text-muted); font-size: 9px; }
+.theme-console .switcher__menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 210;
+  min-width: 240px; max-height: 340px; overflow-y: auto;
+  background: var(--c-surface-modal); border: 1px solid var(--c-hairline-strong);
+  border-radius: 4px; padding: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.theme-console .switcher__empty-msg {
+  padding: 10px 12px; color: var(--c-text-muted);
+  font-family: var(--font-mono); font-size: 11px;
+}
+.theme-console .switcher__option {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 10px; border: none; text-align: left;
+  background: transparent; color: var(--c-text); cursor: pointer; border-radius: 3px;
+}
+.theme-console .switcher__option--active { background: var(--c-surface-raised); }
+.theme-console .switcher__option-dot { flex-shrink: 0; }
+.theme-console .switcher__option-info { display: flex; flex-direction: column; min-width: 0; }
+.theme-console .switcher__option-label {
+  font-size: 12px; font-weight: 400; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.theme-console .switcher__option-label--active { font-weight: 600; }
+.theme-console .switcher__option-meta {
+  font-size: 10px; color: var(--c-text-muted); font-family: var(--font-mono);
+}
+.theme-console .switcher__option-check {
+  margin-left: auto; color: var(--cortex-teal, #00C0E8); font-size: 11px;
+}
+.theme-console .switcher__footer {
+  border-top: 1px solid var(--c-hairline); margin-top: 4px; padding-top: 4px;
+}
+.theme-console .switcher__manage {
+  display: block; width: 100%; padding: 8px 10px; border: none;
+  background: transparent; color: var(--cortex-teal, #00C0E8);
+  cursor: pointer; text-align: left; font-size: 11px;
+  font-family: var(--font-mono); letter-spacing: 0.03em;
+}
+
+/* ── ResultsValidationWizard (inline-style normalization pass) ───────
+   ui/src/components/ResultsValidationWizard.jsx — base .results-wizard*
+   rules live in cortex-theme.css; these are the classes that replace
+   the component's former inline style={{}} props. No raw hex values
+   were introduced — every rule here is layout-only (spacing/width). */
+.results-wizard__title { margin: 0; font-size: 18px; }
+.results-wizard__run-tag { margin-left: 8px; }
+.results-wizard__toolbar { gap: 6px; margin-left: auto; }
+.results-wizard__filter { width: auto; }
+.results-wizard__th--narrow { width: 70px; }
+.results-wizard__th--xql { width: 300px; }
+.results-wizard__th--mttd { width: 90px; }
+.results-wizard__th--notes { width: 180px; }
+.results-wizard__th--status { width: 120px; }
+.results-wizard__row-toggle { width: 100%; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   LabView — inline-style normalization pass (console/LabView.jsx).
+   Tokens only (--c-* console scale + --cortex-teal fallback pattern
+   already used by this component). No new colour values introduced —
+   every rule below reproduces a value the component's own inline
+   styles already carried.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .lab__head-actions { display: flex; gap: 8px; }
+
+/* Environment context ribbon */
+.theme-console .lab__ribbon {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  padding: 8px 12px; margin-bottom: 14px;
+  border: 1px solid var(--c-hairline);
+  border-radius: 4px;
+  background: var(--c-surface-raised);
+}
+
+/* Inline error banner */
+.theme-console .lab__error {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 12px; margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--c-missed);
+  border: 1px solid var(--c-missed);
+  border-radius: 4px;
+  background: var(--c-missed-soft);
+}
+.theme-console .lab__error-dismiss { margin-left: 10px; height: 22px; }
+
+/* Scope chip (Tenant / Agent) inside the ribbon */
+.theme-console .lab__scope-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.theme-console .lab__scope-chip__label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--c-text-muted);
+}
+.theme-console .lab__scope-chip__value { color: var(--cortex-teal, #00C0E8); font-weight: 600; }
+.theme-console .lab__scope-chip__value--empty { color: var(--c-text-muted); font-style: italic; font-weight: 400; }
+.theme-console .lab__scope-chip__detail { margin-left: 4px; color: var(--c-text-muted); font-weight: 400; }
+.theme-console .lab__scope-chip__manage {
+  background: none; border: none; padding: 0;
+  font-size: 11px; color: var(--cortex-teal, #00C0E8); cursor: pointer;
+}
+
+/* Last-bundle result chip */
+.theme-console .lab__auto-pulled { margin-left: 8px; }
+.theme-console .lab__last-bundle-download { margin-left: 10px; height: 24px; }
+
+/* Bundle history head — right-align the Size column */
+.theme-console .lab__bundle-head__size { text-align: right; }
+
+/* Bundle row download button */
+.theme-console .lab__bundle-row-download { height: 26px; }
+
+/* Small muted caption appended to a section title (hint row / adapter picker) */
+.theme-console .lab__caption {
+  font-size: 11px; color: var(--c-text-muted); font-weight: 400; margin-left: 6px;
+}
+
+/* Scenario → infra-hints quick-fill row */
+.theme-console .lab__hint-row { display: flex; gap: 8px; align-items: center; }
+.theme-console .lab__hint-error { color: var(--c-missed); font-size: 11px; }
+.theme-console .lab__hint-result { font-size: 11px; color: var(--c-text-secondary); margin-top: 6px; }
+.theme-console .lab__hint-warn { color: var(--c-pending); }
+
+/* Adapter auto-pull picker */
+.theme-console .lab__adapter-lede { font-size: 11px; color: var(--c-text-secondary); margin: 4px 0 10px; }
+.theme-console .lab__adapter-hint { margin-left: 6px; }
+.theme-console .lab__adapter-group { margin-bottom: 8px; }
+.theme-console .lab__adapter-group__label {
+  font-size: 10px; color: var(--c-text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+}
+.theme-console .lab__adapter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.theme-console .lab__adapter-chip__check { margin-right: 4px; }
+.theme-console .lab__adapter-chip__version { margin-left: 6px; font-size: 9px; opacity: 0.7; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * EalConsole.jsx — inline-style normalization (design-contract pass)
+ * Tokens only (--cortex-navy / --cortex-teal / --cortex-steel, per
+ * cortex-theme.css :root). EalConsole renders inside app-main-panel, NOT
+ * the .theme-console shell, so these are bare selectors matching the
+ * existing .eal-console__* convention in cortex-theme.css — not scoped
+ * under .theme-console.
+ * ───────────────────────────────────────────────────────────────────────── */
+.eal-console__title { margin: 0; font-size: 18px; }
+.eal-console__title-accent { color: var(--cortex-teal); }
+.eal-console__close { margin-left: auto; }
+.eal-list__toolbar { justify-content: space-between; margin-bottom: 8px; }
+.eal-list__count { margin: 0; }
+.eal-table__col-actions { width: 180px; }
+.eal-campaigns__run-live-btn { margin-left: 6px; }
+.eal-modal__title { margin-top: 0; }
+.eal-modal__actions { gap: 8px; justify-content: flex-end; }
+
+/* ── ToolStatusPanel (inline-style normalization pass) ────────────────
+   ui/src/components/ToolStatusPanel.jsx — replaces the component's
+   former inline style={{}} props. Tokens are the existing --cortex-*
+   set from cortex-theme.css; no new tokens introduced. */
+.tsp-row { border-bottom: 1px solid var(--cortex-border); padding: 10px 0; }
+.tsp-row__head { display: flex; align-items: center; gap: 8px; }
+.tsp-row__toggle {
+  background: transparent; border: none; cursor: pointer; text-align: left;
+  flex: 1; padding: 0; display: flex; align-items: center; gap: 6px;
+}
+.tsp-row__name {
+  font-size: 13px; font-weight: 600; color: var(--cortex-navy);
+  font-family: var(--font-mono);
+}
+.tsp-row__port { font-size: 10px; color: var(--cortex-steel); }
+.tsp-row__caret {
+  font-size: 9px; color: var(--cortex-steel); margin-left: auto;
+  transition: transform var(--transition-fast); transform: rotate(0deg);
+}
+.tsp-row__caret--open { transform: rotate(90deg); }
+.tsp-row__actions { display: flex; gap: 4px; flex-shrink: 0; }
+.tsp-row__desc { margin-top: 8px; margin-left: 24px; font-size: 12px; color: var(--cortex-steel); line-height: 1.5; }
+.tsp-row__plane { margin-top: 4px; }
+.tsp-row__plane-label { font-weight: 600; }
+
+.tsp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.tsp-header__label { margin: 0; }
+.tsp-header__meta { display: flex; gap: 8px; align-items: center; }
+.tsp-live { font-size: 10px; color: var(--cortex-steel); display: flex; align-items: center; gap: 4px; }
+.tsp-live__dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--cortex-success);
+  display: inline-block; animation: tsp-pulse 2s infinite;
+}
+@keyframes tsp-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+.tsp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 16px; }
+.tsp-stat {
+  text-align: center; padding: 8px 4px; background: var(--cortex-light-bg);
+  border-radius: var(--radius-sm); border: 1px solid var(--cortex-border);
+}
+.tsp-stat__count { font-size: 18px; font-weight: 700; line-height: 1; }
+.tsp-stat__count--success { color: var(--cortex-success); }
+.tsp-stat__count--warning { color: var(--cortex-warning); }
+.tsp-stat__count--steel { color: var(--cortex-steel); }
+.tsp-stat__label { font-size: 10px; color: var(--cortex-steel); margin-top: 2px; }
+
+.tsp-loading { display: flex; align-items: center; gap: 10px; padding: 16px 0; }
+.tsp-loading__text { font-size: 12px; }
+.tsp-error {
+  padding: 12px; background: rgba(231,76,60,0.06); border: 1px solid rgba(231,76,60,0.2);
+  border-radius: var(--radius-md); font-size: 12px; color: var(--cortex-danger);
+}
+.tsp-empty { padding: 24px 0; }
+.tsp-install-all { margin-top: 16px; }
