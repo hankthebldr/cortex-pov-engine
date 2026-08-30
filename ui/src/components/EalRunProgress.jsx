@@ -112,6 +112,7 @@ export default function EalRunProgress({ runId, onClose, onMessage }) {
       )}
 
       {steps.length > 0 && (
+        <div className="eal-table-wrap">
         <table className="cs-table">
           <thead>
             <tr>
@@ -150,6 +151,7 @@ export default function EalRunProgress({ runId, onClose, onMessage }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {run?.error && (

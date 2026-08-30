@@ -75,40 +75,61 @@ export default function EalConsole({ onMessage, onClose }) {
     refreshCampaigns()
   }, [onMessage, refreshCampaigns])
 
+  const runningCount = runs.filter(r => r.status === 'running' || r.status === 'pending').length
+  const heroMeta = campaigns.length === 0
+    ? 'Enterprise Activity Layer · no campaigns persisted yet'
+    : `Enterprise Activity Layer · ${campaigns.length} campaign${campaigns.length === 1 ? '' : 's'}` +
+      (runningCount > 0 ? ` · ${runningCount} run${runningCount === 1 ? '' : 's'} in progress` : '')
+
   return (
     <section className="eal-console">
       <header className="eal-console__head">
-        <h2 className="eal-console__title">
-          <span className="eal-console__title-accent">EAL</span> Traffic Simulator
-        </h2>
-        <nav className="eal-console__tabs">
+        <div className="eal-console__hero">
+          <div className="eal-console__heading">
+            <div className="eal-console__accent-bar" aria-hidden="true" />
+            <div className="eal-console__eyebrow">Traffic</div>
+            <h2 className="eal-console__title">
+              <span className="eal-console__title-accent">EAL</span> Traffic Simulator
+            </h2>
+            <p className="eal-console__meta">{heroMeta}</p>
+          </div>
+          <div className="eal-console__actions">
+            <button
+              className={`btn btn-navy eal-console__build-btn ${tab === 'new' ? 'is-active' : ''}`}
+              onClick={() => setTab('new')}
+            >
+              + New Campaign
+            </button>
+            {onClose && (
+              <button
+                className="btn btn-sm btn-secondary eal-console__close"
+                onClick={onClose}
+              >
+                Close
+              </button>
+            )}
+          </div>
+        </div>
+        <nav className="eal-console__tabs" role="tablist" aria-label="EAL views">
           <button
-            className={`btn btn-sm ${tab === 'campaigns' ? 'btn-navy' : 'btn-secondary'}`}
+            role="tab"
+            aria-selected={tab === 'campaigns'}
+            className={`eal-console__tab ${tab === 'campaigns' ? 'is-active' : ''}`}
             onClick={() => setTab('campaigns')}
           >
-            Campaigns {campaigns.length > 0 && <span className="badge">{campaigns.length}</span>}
+            Campaigns
+            {campaigns.length > 0 && <span className="badge eal-console__tab-count">{campaigns.length}</span>}
           </button>
           <button
-            className={`btn btn-sm ${tab === 'new' ? 'btn-navy' : 'btn-secondary'}`}
-            onClick={() => setTab('new')}
-          >
-            + New Campaign
-          </button>
-          <button
-            className={`btn btn-sm ${tab === 'runs' ? 'btn-navy' : 'btn-secondary'}`}
+            role="tab"
+            aria-selected={tab === 'runs'}
+            className={`eal-console__tab ${tab === 'runs' ? 'is-active' : ''}`}
             onClick={() => setTab('runs')}
           >
-            Runs {runs.length > 0 && <span className="badge">{runs.length}</span>}
+            Runs
+            {runs.length > 0 && <span className="badge eal-console__tab-count">{runs.length}</span>}
           </button>
         </nav>
-        {onClose && (
-          <button
-            className="btn btn-sm btn-secondary eal-console__close"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        )}
       </header>
 
       <div className="eal-console__body">
@@ -176,6 +197,7 @@ function EalCampaignsList({ campaigns, loading, onLaunch, onRefresh }) {
         </p>
         <button className="btn btn-sm btn-secondary" onClick={onRefresh}>Refresh</button>
       </div>
+      <div className="eal-table-wrap">
       <table className="cs-table">
         <thead>
           <tr>
@@ -240,6 +262,7 @@ function EalCampaignsList({ campaigns, loading, onLaunch, onRefresh }) {
           })}
         </tbody>
       </table>
+      </div>
 
       {confirmLive && (
         <div className="modal-backdrop" onClick={() => setConfirmLive(null)}>
@@ -301,6 +324,7 @@ function EalRunsList({ runs, loading, openRunId, onOpenRun, onRefresh, onMessage
         <p className="muted small eal-list__count">{runs.length} run(s)</p>
         <button className="btn btn-sm btn-secondary" onClick={onRefresh}>Refresh</button>
       </div>
+      <div className="eal-table-wrap">
       <table className="cs-table">
         <thead>
           <tr>
@@ -337,6 +361,7 @@ function EalRunsList({ runs, loading, openRunId, onOpenRun, onRefresh, onMessage
           ))}
         </tbody>
       </table>
+      </div>
 
       {openRunId && (
         <EalRunProgress

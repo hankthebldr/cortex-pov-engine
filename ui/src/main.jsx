@@ -5,6 +5,10 @@ import AppConsole from './AppConsole.jsx'
 import './styles/cortex-tokens.css'
 import './styles/cortex-theme.css'
 import './styles/cortex-console.css'
+import './styles/destinations/tenants.css'
+import './styles/destinations/eal.css'
+import './styles/destinations/adapters.css'
+import './styles/destinations/environments.css'
 
 /**
  * Theme router — URL flag selects the shell.

@@ -1,0 +1,238 @@
+/* ============================================================
+   Traffic / EAL destination — design-contract restyle
+   Ref: .design-ref/11-traffic-eal.html (Cortex POV Engine mockup)
+
+   This file is additive: base component classes (.eal-console,
+   .btn, .cs-table, .pill, .badge, .modal, .empty-state, .muted)
+   stay defined in cortex-theme.css / cortex-console.css. Every
+   rule below is scoped under .eal-console (or a class introduced
+   by EalConsole.jsx / EalRunProgress.jsx) so it only ever touches
+   the EAL destination.
+
+   Mockup's own tokens carried literally where they pass contrast;
+   where they don't (see the contrast notes inline) the nearest
+   compliant token from the same family is used instead — never
+   silently, always noted here and in the task's reported gaps.
+   ============================================================ */
+
+.eal-console {
+  padding: 20px 26px 30px;
+  gap: 20px;
+}
+
+/* ── Hero header: accent bar + eyebrow + title + meta + CTA ──────────────
+   Mirrors the mockup's section-header pattern (56×4 accent bar, 9px
+   uppercase eyebrow, 800-weight Montserrat title, muted meta line,
+   primary action top-right) reused across every destination. */
+.eal-console .eal-console__head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.eal-console__hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.eal-console__accent-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ac-str);
+  margin-bottom: 10px;
+}
+
+.eal-console__eyebrow {
+  font: 600 9px/1 'Montserrat', sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  /* Mockup specifies --tx3 here; on this app's --s0/--s1 backgrounds
+     --tx3 measures ~3.1:1 against white, under the 4.5:1 AA floor for
+     text at this size. --tx2 (~6.5:1 light / ~7.4:1 dark) is the
+     nearest token in the same "muted label" family that clears AA in
+     both themes, so it's used here instead of the literal token. */
+  color: var(--tx2);
+}
+
+.eal-console__title {
+  margin: 6px 0 0;
+  font: 800 22px/1.15 'Montserrat', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.eal-console__meta {
+  margin-top: 7px;
+  font-size: 13px;
+  color: var(--tx2);
+}
+
+.eal-console__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+/* Primary CTA ("+ New Campaign", the app's equivalent of the mockup's
+   "Build campaign" button). Deliberately styled as .btn-navy (ink fill,
+   white text — ~19:1 contrast in both themes) rather than a solid --ac
+   fill: white-on---ac measures ~3.1:1 in light mode at this font size,
+   under the 4.5:1 AA floor for button text, so the ink/--ac-tx-safe
+   pairing is used for the filled CTA instead. The green accent still
+   reads as primary via the underline tabs + accent bar. */
+.eal-console__build-btn.is-active {
+  box-shadow: inset 0 0 0 2px var(--ac-str);
+}
+
+/* ── Tab strip: underline tabs, not pill buttons ──────────────────────── */
+.eal-console__tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.eal-console__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 2px;
+  margin: 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font: 500 12px 'Montserrat', sans-serif;
+  color: var(--tx2);
+  cursor: pointer;
+}
+
+.eal-console__tab:hover {
+  color: var(--tx);
+}
+
+.eal-console__tab.is-active {
+  color: var(--tx);
+  font-weight: 700;
+  border-bottom-color: var(--ac);
+}
+
+.eal-console__tab-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+  margin-left: 0;
+  border-radius: 8px;
+  background: var(--s3);
+  color: var(--tx2);
+}
+
+.eal-console__body {
+  margin-top: 4px;
+}
+
+/* ── List toolbar ──────────────────────────────────────────────────────── */
+.eal-console .eal-list__toolbar {
+  margin-bottom: 10px;
+}
+
+/* ── Table shell: rounded card, tinted head, zebra rows, mono ids ────────
+   Mockup uses a solid --thead (#999999 light) bar with white text; on
+   this app's light palette that pairing measures ~2.85:1, under both
+   the 4.5:1 (text) and 3:1 (non-text) AA floors. --s3/--tx2 (the same
+   pairing used for the eyebrow above) keeps the same "tinted uppercase
+   label row" structure at ~5.7:1/7.4:1 in light/dark. */
+.eal-table-wrap {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.eal-table-wrap .cs-table {
+  font-size: 12px;
+  margin: 0;
+}
+
+.eal-table-wrap .cs-table th {
+  background: var(--s3);
+  color: var(--tx2);
+  font: 600 9px/1 'Montserrat', sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--bd);
+  white-space: nowrap;
+}
+
+.eal-table-wrap .cs-table td {
+  padding: 11px 14px;
+}
+
+.eal-table-wrap .cs-table tbody tr:nth-child(even) td {
+  background: var(--s2);
+}
+
+.eal-table-wrap .cs-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── Status chips ── mono, uppercase, letter-spaced — same palette as
+   the shared .pill-* classes (only typography changes, so the
+   background/foreground contrast already proven safe elsewhere in the
+   app is unchanged here). */
+.eal-console .pill {
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+/* ── Empty state / modal shell alignment ─────────────────────────────── */
+.eal-console .empty-state {
+  border-radius: 10px;
+}
+
+.eal-console .modal {
+  border-radius: 10px;
+}
+
+.eal-console .eal-modal__title {
+  font: 700 15px/1.3 'Montserrat', sans-serif;
+  color: var(--tx);
+}
+
+/* ── Run progress detail panel ────────────────────────────────────────── */
+.eal-run-progress {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-top: 14px;
+}
+
+.eal-run-progress__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.eal-run-progress__meta-row {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.eal-run-progress__error-banner {
+  border-radius: 6px;
+}
