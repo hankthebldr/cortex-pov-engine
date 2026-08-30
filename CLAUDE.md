@@ -10,6 +10,62 @@ CortexSim — an enterprise detection simulation engine for Palo Alto Networks D
 
 > ***tenant-verified is 0.*** No run and no assertion in this repo has ever been executed against a live Cortex tenant. Every green in the test suite, the console and this file comes from an injected transport. **Authored is not proven** — do not report the two as one number. The console's Readiness surface states this verbatim and is the right model to copy.
 
+## Branching & Contribution Model
+
+**Read `CONTRIBUTING.md` before opening a PR.** Summary of the rules that bind
+your behaviour in this repo:
+
+```
+  feature/*  fix/*  docs/*  chore/*   ->  dev  ->  main
+             QA Gate A  ^                  QA Gate B  ^
+```
+
+- **Never commit or push directly to `main`.** `main` is what a DC deploys into a
+  customer lab; it only ever advances by a merge from `dev` (or an expedited
+  `hotfix/*` PR, which must then be merged back down into `dev` in the same pass).
+- **Cut every topic branch from `dev`**, named `<type>/<area>-<slug>` where type is
+  `feature|fix|docs|chore|hotfix` and area is one of `api agent ui scenarios ttp
+  adapters shelf infra docker ci docs deps`. One branch, one task — if describing
+  it needs the word "and", it is two branches.
+- **Rebase topic branches onto `dev`; merge `dev` into `main`.** Never rebase `dev`
+  or `main`.
+- **Commit aggressively at sensible boundaries, staging by name.** `git add <path>`
+  only — never `git add -A`, `git add .`, or `git commit -a`. A release-prep pass
+  is 6-8 commits, not one and not forty.
+- **Do not open PRs unless asked.** Commits land on the topic branch; `gh pr create`
+  waits for an explicit "open a PR" / "ship it".
+- **Force-push, `reset --hard`, and branch deletion still require confirmation.**
+
+### The two gates, in one line each
+
+- **Gate A (`feature/*` -> `dev`)** — all 8 CI jobs green, plus the author's own
+  evidence in the PR body: what was observably wrong, how the fix was verified,
+  and **proof the new guard fails without the fix**. A test never observed failing
+  is an assumption with good syntax.
+- **Gate B (`dev` -> `main`)** — releasable-into-a-customer-lab: image *parity*
+  (the built image ships what the tree has, not merely compiles), counted ground
+  truth regenerated into README/CLAUDE.md, CHANGELOG updated, and every public
+  claim in the README actually backed.
+
+### Gate A5 — the honesty checks that no CI job can express
+
+These are the ones that matter most here, because the failure mode is not a red
+build but a **false claim about a customer's security coverage**:
+
+- **Authored is not proven.** `tenant-verified` is 0 and stays 0 until a run
+  executes against a live Cortex tenant. Never report the two as one number.
+- **A zero is degraded, not ok.** "None shipped" and "none authored" must never
+  render as the same response.
+- **Tolerance hides bugs.** An unrecognized shape must raise, not read as empty —
+  the tolerant fix keeps the bug and greens the test.
+- **No write path to Cortex.** `CORTEXSIM_XSIAM_ALLOW_WRITE` /
+  `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE` stay default-off.
+
+> **Squash-merge trap.** A squash-merged PR leaves your local branch showing
+> "unmerged" commits whose content is already on the target. Judge by content, not
+> commit count: `git diff <target>..<branch> --diff-filter=A --name-only`, then
+> check whether those files exist on the target. Commit counts lie; blobs do not.
+
 ## Build & Run Commands
 
 ### Quick start (local dev)
