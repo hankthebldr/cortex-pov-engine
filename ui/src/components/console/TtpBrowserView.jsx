@@ -181,9 +181,8 @@ export default function TtpBrowserView({ initialTtpId = null }) {
         {hasActiveFilters && (
           <button
             type="button"
-            className="btn"
+            className="btn ttp-btn--sm"
             data-testid="ttp-clear-filters"
-            style={{ height: 28, padding: '0 10px' }}
             onClick={resetFilters}
           >
             Clear
@@ -191,9 +190,8 @@ export default function TtpBrowserView({ initialTtpId = null }) {
         )}
         <button
           type="button"
-          className="btn"
+          className="btn ttp-btn--sm"
           data-testid="ttp-author-new"
-          style={{ height: 28, padding: '0 10px' }}
           title="Author a new TTP card (requires CORTEXSIM_AUTHORING_ENABLED=true on the server)"
           onClick={() => setEditorMode('new')}
         >
@@ -212,8 +210,7 @@ export default function TtpBrowserView({ initialTtpId = null }) {
           no TTPs match the current filters —{' '}
           <button
             type="button"
-            className="btn"
-            style={{ height: 22, padding: '0 8px', marginLeft: 4 }}
+            className="btn ttp-btn--xs"
             onClick={resetFilters}
           >
             clear filters
@@ -331,10 +328,10 @@ function TtpCard({ ttp, isSelected, onSelect }) {
         {ttp.status} · {ttp.simulation_class || 'other'} · {ttp.kill_chain_phase || '—'}
       </div>
       <div className="adapter-card__desc">
-        <strong style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+        <strong className="ttp-card__title">
           {ttp.name}
         </strong>
-        <span style={{ fontSize: 11, color: 'var(--c-text-secondary)' }}>
+        <span className="ttp-card__summary">
           {(ttp.summary || '').slice(0, 200)}
           {(ttp.summary || '').length > 200 ? '…' : ''}
         </span>
@@ -343,7 +340,7 @@ function TtpCard({ ttp, isSelected, onSelect }) {
         {techniques.length > 0 && (
           <div className="adapter-card__tids">
             {techniques.slice(0, 4).map((t) => (
-              <span key={t} className="chip" style={{ fontSize: 9 }}>{t}</span>
+              <span key={t} className="chip chip--xs">{t}</span>
             ))}
             {techniques.length > 4 && (
               <span className="adapter-card__more mono">+{techniques.length - 4}</span>
@@ -351,15 +348,14 @@ function TtpCard({ ttp, isSelected, onSelect }) {
           </div>
         )}
         {(tactics.length > 0 || platforms.length > 0) && (
-          <div className="adapter-card__tids" style={{ marginTop: 4 }}>
+          <div className="adapter-card__tids adapter-card__tids--spaced">
             {tactics.map((t) => (
-              <span key={t} className="chip chip--signal" style={{ fontSize: 9 }}>{t}</span>
+              <span key={t} className="chip chip--signal chip--xs">{t}</span>
             ))}
             {platforms.map((p) => (
               <span
                 key={p}
-                className="chip"
-                style={{ fontSize: 9, color: 'var(--c-text-muted)' }}
+                className="chip chip--xs chip--muted"
               >
                 {p}
               </span>
@@ -369,7 +365,7 @@ function TtpCard({ ttp, isSelected, onSelect }) {
         {/* Detection-kind chips — Correlation/XQL stand out at a glance so a
             DC can spot stitching coverage without opening the card. */}
         {totalDetections > 0 && (
-          <div className="adapter-card__det-kinds" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+          <div className="adapter-card__det-kinds">
             {[
               { type: 'BIOC',        n: counts.biocs },
               { type: 'XQL',         n: counts.xql_queries },
@@ -434,7 +430,7 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
             {identity.name || detail.id}
           </h3>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="ttp-detail__actions">
           <button
             type="button"
             className="btn"
@@ -479,28 +475,28 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
 
       {identity.summary && (
         <DetailSection label="Summary">
-          <p style={{ whiteSpace: 'pre-line', fontSize: 12 }}>{identity.summary}</p>
+          <p className="ttp-detail__summary">{identity.summary}</p>
         </DetailSection>
       )}
 
       {techniques.length > 0 && (
         <DetailSection label="MITRE ATT&CK">
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+          <table className="ttp-table">
             <thead>
-              <tr style={{ textAlign: 'left', color: 'var(--c-text-muted)' }}>
-                <th style={{ padding: '2px 6px 2px 0' }}>Technique</th>
-                <th style={{ padding: '2px 6px 2px 0' }}>Name</th>
-                <th style={{ padding: '2px 6px 2px 0' }}>Tactics</th>
+              <tr>
+                <th>Technique</th>
+                <th>Name</th>
+                <th>Tactics</th>
               </tr>
             </thead>
             <tbody>
               {techniques.map((t, i) => (
                 <tr key={i}>
-                  <td className="mono" style={{ padding: '2px 6px 2px 0' }}>
+                  <td className="mono">
                     {t.subtechnique_id || t.technique_id}
                   </td>
-                  <td style={{ padding: '2px 6px 2px 0' }}>{t.name}</td>
-                  <td className="mono" style={{ padding: '2px 6px 2px 0' }}>
+                  <td>{t.name}</td>
+                  <td className="mono">
                     {(t.tactic_ids || []).join(', ')}
                   </td>
                 </tr>
@@ -512,7 +508,7 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
 
       {actors.length > 0 && (
         <DetailSection label="Threat actors">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div className="ttp-detail__chip-row">
             {actors.map((a, i) => (
               <span
                 key={i}
@@ -521,12 +517,12 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
               >
                 {a.name}
                 {a.unit42_actor_id && (
-                  <span className="mono" style={{ marginLeft: 4, fontSize: 9, opacity: 0.6 }}>
+                  <span className="mono ttp-detail__meta-tag">
                     u42
                   </span>
                 )}
                 {a.mitre_group_id && (
-                  <span className="mono" style={{ marginLeft: 4, fontSize: 9, opacity: 0.6 }}>
+                  <span className="mono ttp-detail__meta-tag">
                     {a.mitre_group_id}
                   </span>
                 )}
@@ -542,12 +538,12 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
 
       {products.length > 0 && (
         <DetailSection label="Cortex products">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <div className="ttp-detail__chip-row--tight">
             {products.map((p, i) => (
               <span key={i} className="chip chip--signal">
                 {p.module}
                 {p.submodule && (
-                  <span className="mono" style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>
+                  <span className="mono ttp-detail__meta-tag ttp-detail__meta-tag--loose">
                     / {p.submodule}
                   </span>
                 )}
@@ -564,13 +560,12 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
       {adapters.length > 0 && (
         <DetailSection label="Referenced by tool adapters">
           <p
-            className="mono"
-            style={{ fontSize: 10, color: 'var(--c-text-muted)', margin: '0 0 6px' }}
+            className="mono ttp-detail__note"
           >
             Adapters in <span className="mono">tools/packs/</span> that
             cite this TTP in <span className="mono">ttp_refs[]</span>:
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <div className="ttp-detail__chip-row--tight">
             {adapters.map((a) => (
               <span
                 key={a.adapter_id}
@@ -579,7 +574,7 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
                 data-testid={`ttp-adapter-ref-${a.adapter_id}`}
               >
                 {a.name}
-                <span className="mono" style={{ marginLeft: 4, fontSize: 9, opacity: 0.6 }}>
+                <span className="mono ttp-detail__meta-tag">
                   T{a.tier}
                 </span>
               </span>
@@ -590,9 +585,9 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
 
       {tags.length > 0 && (
         <DetailSection label="Tags">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <div className="ttp-detail__chip-row--tight">
             {tags.map((t) => (
-              <span key={t} className="chip" style={{ fontSize: 9 }}>{t}</span>
+              <span key={t} className="chip chip--xs">{t}</span>
             ))}
           </div>
         </DetailSection>
@@ -620,14 +615,14 @@ function DetailSection({ label, children }) {
 function RunHistory({ runs }) {
   if (runs === null || runs === undefined) {
     return (
-      <div className="coverage__empty mono" style={{ fontSize: 11 }} data-testid="ttp-runs-loading">
+      <div className="coverage__empty mono" data-testid="ttp-runs-loading">
         loading run history…
       </div>
     )
   }
   if (runs._error) {
     return (
-      <div className="adapter-registry__error mono" style={{ fontSize: 11 }}>
+      <div className="adapter-registry__error mono">
         couldn't load run history
       </div>
     )
@@ -635,29 +630,30 @@ function RunHistory({ runs }) {
   const rows = runs.runs || []
   if (rows.length === 0) {
     return (
-      <div className="coverage__empty mono" style={{ fontSize: 11 }} data-testid="ttp-runs-empty">
+      <div className="coverage__empty mono" data-testid="ttp-runs-empty">
         no runs have exercised this TTP yet
       </div>
     )
   }
   return (
     <table
-      style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}
+      className="ttp-table"
       data-testid="ttp-runs-table"
     >
       <thead>
-        <tr style={{ textAlign: 'left', color: 'var(--c-text-muted)' }}>
-          <th style={{ padding: '2px 6px 2px 0' }}>Run</th>
-          <th style={{ padding: '2px 6px 2px 0' }}>Scenario</th>
-          <th style={{ padding: '2px 6px 2px 0' }}>Started</th>
-          <th style={{ padding: '2px 6px 2px 0', textAlign: 'right' }}>Coverage</th>
-          <th style={{ padding: '2px 6px 2px 0', textAlign: 'right' }}>Min MTTD</th>
+        <tr>
+          <th>Run</th>
+          <th>Scenario</th>
+          <th>Started</th>
+          <th className="th--num">Coverage</th>
+          <th className="th--num">Min MTTD</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r) => (
           <tr
             key={r.run_id}
+            className="ttp-run-row"
             data-testid={`ttp-run-${r.run_id}`}
             onClick={() => {
               window.dispatchEvent(new CustomEvent('cortex:navigate-run', {
@@ -674,31 +670,28 @@ function RunHistory({ runs }) {
                 }))
               }
             }}
-            style={{ cursor: 'pointer' }}
             title={`Open run ${r.run_id} in the validation wizard`}
           >
-            <td className="mono" style={{ padding: '2px 6px 2px 0' }}>{r.run_id}</td>
-            <td className="mono" style={{ padding: '2px 6px 2px 0' }}>{r.scenario_id}</td>
-            <td className="mono" style={{ padding: '2px 6px 2px 0', fontSize: 10 }}>
+            <td className="mono">{r.run_id}</td>
+            <td className="mono">{r.scenario_id}</td>
+            <td className="mono td--sm">
               {formatStartedAt(r.started_at)}
             </td>
-            <td className="mono" style={{ padding: '2px 6px 2px 0', textAlign: 'right' }}>
+            <td className="mono td--num">
               <span
-                className="chip"
-                style={{
-                  fontSize: 9,
-                  background:
-                    r.observed === r.expected
-                      ? 'var(--c-success-bg, rgba(0,255,160,0.1))'
-                      : r.observed === 0
-                        ? 'var(--c-error-bg, rgba(255,80,80,0.1))'
-                        : 'var(--c-warning-bg, rgba(255,200,0,0.1))',
-                }}
+                className={
+                  'chip chip--xs ' +
+                  (r.observed === r.expected
+                    ? 'ttp-run-row__badge--pass'
+                    : r.observed === 0
+                      ? 'ttp-run-row__badge--fail'
+                      : 'ttp-run-row__badge--partial')
+                }
               >
                 {r.observed}/{r.expected}
               </span>
             </td>
-            <td className="mono" style={{ padding: '2px 6px 2px 0', textAlign: 'right' }}>
+            <td className="mono td--num">
               {formatMttd(r.min_mttd_seconds)}
             </td>
           </tr>
@@ -748,7 +741,7 @@ function DetectionsBreakdown({ detections }) {
   const hasAny = kinds.some(({ key }) => (detections[key] || []).length > 0)
   if (!hasAny) {
     return (
-      <div className="coverage__empty mono" style={{ fontSize: 11 }}>
+      <div className="coverage__empty mono">
         no detections shipped with this card
       </div>
     )
@@ -762,12 +755,10 @@ function DetectionsBreakdown({ detections }) {
           <div key={key} className="ttp-detections__group">
             <div
               className="ttp-detections__group-head"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}
             >
               <DetectionTypeChip type={DETECTION_KIND_CHIP[key] || label} />
               <span
-                className="competitive__detail-label mono"
-                style={{ fontSize: 10, opacity: 0.7 }}
+                className="competitive__detail-label mono ttp-detections__group-count"
               >
                 {items.length}
               </span>
@@ -820,28 +811,18 @@ function DetectionItem({ kind, index, item, bodyKey }) {
         data-testid={`ttp-det-${kind}-${index}`}
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        style={{
-          width: '100%',
-          textAlign: 'left',
-          background: 'none',
-          border: 0,
-          padding: '6px 4px',
-          cursor: 'pointer',
-          borderTop: '1px solid var(--c-border-subtle, rgba(255,255,255,0.05))',
-        }}
       >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span className="mono" style={{ fontSize: 9, opacity: 0.5 }}>
+        <div className="ttp-detection-item__head-row">
+          <span className="mono ttp-detection-item__caret">
             {expanded ? '▼' : '▶'}
           </span>
-          <span style={{ fontSize: 11, fontWeight: 500, flex: 1 }}>{name}</span>
+          <span className="ttp-detection-item__name">{name}</span>
           {severity && (
-            <span className="chip" style={{ fontSize: 9 }}>{severity}</span>
+            <span className="chip chip--xs">{severity}</span>
           )}
           {detId && (
             <span
-              className="mono"
-              style={{ fontSize: 9, opacity: 0.6 }}
+              className="mono ttp-detection-item__id"
               title={detId}
             >
               {detId}
@@ -850,44 +831,30 @@ function DetectionItem({ kind, index, item, bodyKey }) {
         </div>
         {desc && !expanded && (
           <div
-            style={{
-              fontSize: 10,
-              color: 'var(--c-text-muted)',
-              marginLeft: 16,
-              marginTop: 2,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
+            className="ttp-detection-item__preview"
           >
             {desc}
           </div>
         )}
       </button>
       {expanded && (
-        <div className="ttp-detection-item__body" style={{ padding: '4px 4px 8px 16px' }}>
+        <div className="ttp-detection-item__body">
           {desc && (
-            <p style={{ fontSize: 11, color: 'var(--c-text-secondary)', margin: '0 0 6px' }}>
+            <p className="ttp-detection-item__desc">
               {desc}
             </p>
           )}
           {body ? (
             <>
               <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 4,
-                }}
+                className="ttp-detection-item__body-head"
               >
-                <span className="mono" style={{ fontSize: 9, opacity: 0.6 }}>
+                <span className="mono ttp-detection-item__body-key">
                   {bodyKey}
                 </span>
                 <button
                   type="button"
-                  className="btn"
-                  style={{ height: 20, padding: '0 8px', fontSize: 10 }}
+                  className="btn ttp-btn--copy"
                   onClick={handleCopy}
                   data-testid={`ttp-det-copy-${kind}-${index}`}
                 >
@@ -897,17 +864,6 @@ function DetectionItem({ kind, index, item, bodyKey }) {
               <pre
                 className="mono ttp-detection-item__pre"
                 data-testid={`ttp-det-body-${kind}-${index}`}
-                style={{
-                  fontSize: 10,
-                  background: 'var(--c-bg-subtle, rgba(0,0,0,0.25))',
-                  border: '1px solid var(--c-border-subtle, rgba(255,255,255,0.05))',
-                  padding: '6px 8px',
-                  margin: 0,
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  maxHeight: 260,
-                  overflowY: 'auto',
-                }}
               >
                 {tokeniserFor(kind)(body).map((tok, ti) => (
                   <span key={ti} className={`syn syn-${tok.type}`}>
@@ -917,7 +873,7 @@ function DetectionItem({ kind, index, item, bodyKey }) {
               </pre>
             </>
           ) : (
-            <p className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>
+            <p className="mono ttp-detection-item__no-body">
               (no body in corpus entry)
             </p>
           )}
@@ -1007,39 +963,26 @@ function LaunchAllModal({ ttpId, onClose }) {
       aria-label="Launch scenarios for this TTP"
       data-testid="ttp-launcher-modal"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 50,
-      }}
     >
       <div
         className="ttp-launcher"
-        style={{
-          width: 'min(640px, 92vw)', maxHeight: '88vh',
-          background: 'var(--c-surface-raised, #121a26)',
-          border: '1px solid var(--c-hairline, rgba(255,255,255,0.08))',
-          borderRadius: 6, padding: '20px 22px',
-          display: 'flex', flexDirection: 'column', gap: 14,
-          overflow: 'hidden',
-        }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div className="ttp-launcher__head">
           <div>
             <div className="competitive__detail-eyebrow mono">{ttpId}</div>
-            <h3 style={{ margin: 0, fontSize: 16 }}>Launch all citing scenarios</h3>
+            <h3 className="ttp-launcher__title">Launch all citing scenarios</h3>
           </div>
           <button type="button" className="btn" onClick={onClose}>Close</button>
         </div>
 
         {scenarios === null && !error && (
-          <div className="coverage__empty mono" style={{ fontSize: 11 }}>loading scenarios…</div>
+          <div className="coverage__empty mono">loading scenarios…</div>
         )}
         {error && (
           <div className="adapter-registry__error mono" role="alert">{error}</div>
         )}
         {scenarios && scenarios.length === 0 && !error && (
-          <div className="coverage__empty mono" style={{ fontSize: 11 }} data-testid="ttp-launcher-empty">
+          <div className="coverage__empty mono" data-testid="ttp-launcher-empty">
             no scenarios cite this TTP in their expected_detections — author one or
             add a <span className="mono">ttp_ref</span> entry to an existing
             step.
@@ -1049,25 +992,21 @@ function LaunchAllModal({ ttpId, onClose }) {
         {scenarios && scenarios.length > 0 && (
           <>
             <div
-              style={{
-                flex: 1, overflowY: 'auto',
-                border: '1px solid var(--c-hairline, rgba(255,255,255,0.08))',
-                borderRadius: 4,
-              }}
+              className="ttp-launcher__table-wrap"
             >
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <table className="ttp-launcher-table">
                 <thead>
-                  <tr style={{ textAlign: 'left', color: 'var(--c-text-muted)' }}>
-                    <th style={{ padding: '6px 8px', width: 32 }}></th>
-                    <th style={{ padding: '6px 8px' }}>Scenario</th>
-                    <th style={{ padding: '6px 8px' }}>Plane</th>
-                    <th style={{ padding: '6px 8px' }}>Technique</th>
+                  <tr>
+                    <th className="th--check"></th>
+                    <th>Scenario</th>
+                    <th>Plane</th>
+                    <th>Technique</th>
                   </tr>
                 </thead>
                 <tbody>
                   {scenarios.map((s) => (
                     <tr key={s.scenario_id} data-testid={`ttp-launcher-row-${s.scenario_id}`}>
-                      <td style={{ padding: '4px 8px' }}>
+                      <td>
                         <input
                           type="checkbox"
                           checked={selected.has(s.scenario_id)}
@@ -1075,32 +1014,32 @@ function LaunchAllModal({ ttpId, onClose }) {
                           aria-label={`Include ${s.scenario_id}`}
                         />
                       </td>
-                      <td className="mono" style={{ padding: '4px 8px' }}>
+                      <td className="mono">
                         <div>{s.scenario_id}</div>
-                        <div style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>{s.name}</div>
+                        <div className="ttp-launcher-table__sub">{s.name}</div>
                       </td>
-                      <td className="mono" style={{ padding: '4px 8px' }}>{s.plane}</td>
-                      <td className="mono" style={{ padding: '4px 8px' }}>{s.mitre_technique || '—'}</td>
+                      <td className="mono">{s.plane}</td>
+                      <td className="mono">{s.mitre_technique || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
-              <label style={{ fontSize: 11 }}>
+            <div className="ttp-launcher__row">
+              <label className="ttp-launcher__field">
                 Mode:{' '}
                 <select
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
                   data-testid="ttp-launcher-mode"
-                  style={{ fontSize: 11, padding: '2px 4px' }}
+                  className="ttp-launcher__select"
                 >
                   <option value="push">push</option>
                   <option value="pull">pull</option>
                 </select>
               </label>
-              <label style={{ fontSize: 11, flex: 1 }}>
+              <label className="ttp-launcher__field--grow">
                 Identity (optional):{' '}
                 <input
                   type="text"
@@ -1108,17 +1047,13 @@ function LaunchAllModal({ ttpId, onClose }) {
                   onChange={(e) => setIdentity(e.target.value)}
                   placeholder="leave blank for scenario default"
                   data-testid="ttp-launcher-identity"
-                  style={{
-                    fontSize: 11, padding: '2px 6px', width: 220,
-                    background: 'var(--c-surface)', border: '1px solid var(--c-hairline)',
-                    color: 'var(--c-text-primary)',
-                  }}
+                  className="ttp-launcher__input"
                 />
               </label>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>
+            <div className="ttp-launcher__footer-row">
+              <span className="mono ttp-launcher__count">
                 {selected.size} of {scenarios.length} selected
               </span>
               <button
@@ -1136,15 +1071,14 @@ function LaunchAllModal({ ttpId, onClose }) {
 
         {launchSummary && (
           <div
-            className="mono"
-            style={{ fontSize: 11, paddingTop: 8, borderTop: '1px solid var(--c-hairline)' }}
+            className="mono ttp-launcher__summary"
             data-testid="ttp-launcher-summary"
           >
             <div>launched <strong>{launchSummary.ok.length}</strong>, failed <strong>{launchSummary.failed.length}</strong></div>
             {launchSummary.failed.length > 0 && (
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              <ul className="ttp-launcher__fail-list">
                 {launchSummary.failed.map((f) => (
-                  <li key={f.scenario_id} style={{ color: 'var(--c-error, salmon)' }}>
+                  <li key={f.scenario_id} className="ttp-launcher__fail-item">
                     {f.scenario_id}: {f.error}
                   </li>
                 ))}
