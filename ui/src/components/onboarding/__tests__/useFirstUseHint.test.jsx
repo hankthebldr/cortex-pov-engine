@@ -60,3 +60,42 @@ describe('FirstUseHint', () => {
     expect(container.firstChild).toBeNull()
   })
 })
+
+describe('FirstUseHint with hook integration', () => {
+  it('persists when control is USED, but NOT when dismissed', () => {
+    // Harness: render the hook + component wired together
+    function HarnessWithDismiss() {
+      const { show, onUse } = useFirstUseHint('launch')
+      const [hidden, setHidden] = React.useState(false)
+      return (
+        <FirstUseHint
+          show={show && !hidden}
+          text="Launch runs the armed scenario."
+          onDismiss={() => { setHidden(true) }}
+        />
+      )
+    }
+
+    const { rerender } = render(<HarnessWithDismiss />)
+
+    // Click dismiss button
+    const dismissBtn = screen.getByLabelText('Dismiss hint')
+    act(() => { dismissBtn.click() })
+
+    // Hint should be hidden in the UI
+    expect(screen.queryByText(/Launch runs the armed scenario/)).not.toBeInTheDocument()
+
+    // BUT storage should still be null (not persisted)
+    expect(window.localStorage.getItem('cortexsim.onboarding.hint.launch')).toBeNull()
+
+    // Re-render with a fresh hook
+    function HarnessFresh() {
+      const { show } = useFirstUseHint('launch')
+      return <FirstUseHint show={show} text="Launch runs the armed scenario." onDismiss={() => {}} />
+    }
+    rerender(<HarnessFresh />)
+
+    // Hint should return because the control was never USED
+    expect(screen.getByText(/Launch runs the armed scenario/)).toBeTruthy()
+  })
+})
