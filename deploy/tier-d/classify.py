@@ -45,6 +45,11 @@ ENVIRONMENT_PATTERNS = [
      "step needs public-internet egress the target does not have"),
     (r"PAYLOAD_NOT_STAGED",
      "a shelf-backed tool was never staged on this SimCore"),
+    (r"RUNTIME_DEPENDENCY_MISSING",
+     "a step-declared interpreter (docs/design/agent-runtime-dependencies.md) "
+     "was not found on the target and no authorized install could supply it — "
+     "the step's own command was NEVER executed, so any absent detection here "
+     "is not a Cortex miss"),
     (r"Permission denied",
      "target filesystem/permission state does not support the step"),
 ]

@@ -178,6 +178,31 @@ def test_classify_missing_tool_is_environment(tmp_path):
     assert verdict["counts"]["ENGINE"] == 0
 
 
+def test_classify_runtime_dependency_missing_is_environment_not_ok(tmp_path):
+    """The defect this repo shipped, made permanent as a regression guard:
+    SIM-EDR-001 step-05 downloads mimipenguin.sh, which shells out to python.
+    On a target with no python, the OLD code let the step's own
+    `|| echo '... complete'` fallback report exit_code=0/OK. The fix
+    (agent/beacon/client.go::resolveRuntimeDeps) refuses to run the step's
+    real command at all and reports RUNTIME_DEPENDENCY_MISSING with exit 127
+    instead — this must classify ENVIRONMENT (the TTP never ran), never OK,
+    and must NOT fail the harness (CortexSim itself is not broken)."""
+    body = (
+        "--- STDERR ---\n"
+        "!! RUNTIME_DEPENDENCY_MISSING: python (no interpreter path and no "
+        "authorized runtime install)\n"
+    )
+    steps = [_step(1, 1, "step-05", "T1003", "root", body, 127)]
+    run_path = tmp_path / "run.json"
+    _write(run_path, _run_json(status="failed", tc_verdict="pending", steps_text=steps))
+
+    rc, verdict, _ = _classify(run_path, tmp_path / "verdict.json")
+    assert rc == 0, "an ENVIRONMENT-only gap must not fail the harness"
+    assert verdict["counts"] == {"OK": 0, "ENGINE": 0, "ENVIRONMENT": 1, "TTP": 0}
+    assert verdict["steps"][0]["class"] == "ENVIRONMENT"
+    assert "NEVER executed" in verdict["steps"][0]["reason"]
+
+
 # ─── Docker + SimCore-gated end-to-end ─────────────────────────────────────
 
 def _docker_available() -> bool:

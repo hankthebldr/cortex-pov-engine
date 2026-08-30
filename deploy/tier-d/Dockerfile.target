@@ -37,16 +37,23 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                             scenario reaches the public internet, that too —
 #                             the harness reports egress-dependent steps
 #                             separately rather than hiding them)
-#   python3   -> SIM-EDR-001 step-05 downloads the REAL mimipenguin.sh, which
-#                shells out to python internally. Without it, mimipenguin
-#                dies with "Error: No supported version of 'python' found" —
-#                a genuine ENVIRONMENT gap that the scenario's own
-#                `|| echo '[*] ... complete'` fallback masks as exit_code=0,
-#                so the harness reports OK when the tool the step downloaded
-#                never actually ran. Measured on a real run (2026-08-30).
+#
+# python3 is DELIBERATELY NOT installed here. SIM-EDR-001 step-05 downloads
+# the REAL mimipenguin.sh, which shells out to python internally; without an
+# interpreter it dies with "Error: No supported version of 'python' found".
+# Adding python3 to this image was the FIRST fix tried (2026-08-30) and it was
+# wrong: it makes the lab pass while fixing nothing on a customer host, whose
+# packages this repo does not control. The real fix lives in the execution
+# path itself — the scenario now declares `requires_interpreters: [python]`
+# and the beacon (agent/beacon/client.go::resolveRuntimeDeps) checks for a
+# real interpreter BEFORE running the step, refusing to run (and refusing to
+# let a masked `|| echo` absorb the gap) when one is genuinely absent, unless
+# the run explicitly authorized a system update. This image is deliberately
+# left WITHOUT python3 so Tier-D keeps proving that behaviour honestly rather
+# than proving a lab-only workaround. See docs/design/agent-runtime-dependencies.md.
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
         bash coreutils findutils grep sed gawk procps binutils iproute2 \
-        curl ca-certificates passwd login sudo python3 \
+        curl ca-certificates passwd login sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
