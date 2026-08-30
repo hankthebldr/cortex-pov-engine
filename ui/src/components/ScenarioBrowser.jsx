@@ -16,19 +16,9 @@ function PlaneBadge({ plane }) {
   return <span className={`badge ${cls}`}>{plane}</span>
 }
 
-function ModeBadge({ label, color }) {
+function ModeBadge({ label, variant }) {
   return (
-    <span style={{
-      fontSize: '10px',
-      fontWeight: 700,
-      padding: '2px 6px',
-      borderRadius: '3px',
-      background: `rgba(${color}, 0.1)`,
-      color: `rgb(${color})`,
-      border: `1px solid rgba(${color}, 0.25)`,
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-    }}>
+    <span className={`scn-browser__mode-badge scn-browser__mode-badge--${variant}`}>
       {label}
     </span>
   )
@@ -74,18 +64,18 @@ export default function ScenarioBrowser({ selectedPlane, selectedScenario, onSel
         <h3>
           Scenario Library
           {selectedPlane && (
-            <span style={{ marginLeft: '8px', fontWeight: 400, color: 'var(--cortex-teal)', textTransform: 'none' }}>
+            <span className="scn-browser__header-suffix">
               — {selectedPlane}
             </span>
           )}
         </h3>
-        <span style={{ fontSize: '12px', color: 'var(--cortex-steel)' }}>
+        <span className="scn-browser__meta-sm">
           {loading ? 'Loading…' : `${filtered.length} scenario${filtered.length !== 1 ? 's' : ''}`}
         </span>
       </div>
 
       {/* Search bar */}
-      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--cortex-border)' }}>
+      <div className="scn-browser__search-bar">
         <div className="search-input-wrapper">
           <span className="search-icon">&#128269;</span>
           <input
@@ -99,16 +89,16 @@ export default function ScenarioBrowser({ selectedPlane, selectedScenario, onSel
       </div>
 
       {/* Table */}
-      <div style={{ overflowX: 'auto' }}>
+      <div className="scn-browser__table-scroll">
         {loading ? (
           <div className="empty-state">
-            <div className="spinner" style={{ margin: '0 auto var(--space-4)' }} />
+            <div className="spinner scn-browser__spinner" />
             <p>Loading scenarios…</p>
           </div>
         ) : error ? (
           <div className="empty-state">
             <div className="empty-state-icon">⚠</div>
-            <p style={{ color: 'var(--cortex-danger)' }}>{error}</p>
+            <p className="scn-browser__error-text">{error}</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="empty-state">
@@ -116,9 +106,8 @@ export default function ScenarioBrowser({ selectedPlane, selectedScenario, onSel
             <p>No scenarios found{searchQuery ? ` for "${searchQuery}"` : ''}</p>
             {searchQuery && (
               <button
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm scn-browser__clear-btn"
                 onClick={() => setSearchQuery('')}
-                style={{ marginTop: '12px' }}
               >
                 Clear search
               </button>
@@ -149,28 +138,19 @@ export default function ScenarioBrowser({ selectedPlane, selectedScenario, onSel
                   >
                     {/* Scenario Name */}
                     <td>
-                      <div style={{ fontWeight: 500, color: 'var(--cortex-navy)' }}>
+                      <div className="scn-browser__name">
                         {scenario.name}
                       </div>
-                      <div style={{
-                        fontSize: '11px',
-                        color: 'var(--cortex-steel)',
-                        fontFamily: 'var(--font-mono)',
-                        marginTop: '2px',
-                      }}>
+                      <div className="scn-browser__id">
                         {scenario.scenario_id}
                       </div>
                     </td>
 
                     {/* MITRE Tactic */}
                     <td>
-                      <div style={{ fontSize: '12px' }}>{scenario.mitre_tactic_name || '—'}</div>
+                      <div className="scn-browser__tactic-name">{scenario.mitre_tactic_name || '—'}</div>
                       {scenario.mitre_tactic && (
-                        <div style={{
-                          fontSize: '10px',
-                          fontFamily: 'var(--font-mono)',
-                          color: 'var(--cortex-steel)',
-                        }}>
+                        <div className="scn-browser__tactic-code">
                           {scenario.mitre_tactic}
                         </div>
                       )}
@@ -178,14 +158,14 @@ export default function ScenarioBrowser({ selectedPlane, selectedScenario, onSel
 
                     {/* UC Ref */}
                     <td>
-                      <span className="text-mono" style={{ fontSize: '12px' }}>
+                      <span className="text-mono scn-browser__ref">
                         {scenario.uc_ref || '—'}
                       </span>
                     </td>
 
                     {/* TC Ref */}
                     <td>
-                      <span className="text-mono" style={{ fontSize: '12px' }}>
+                      <span className="text-mono scn-browser__ref">
                         {scenario.tc_ref || '—'}
                       </span>
                     </td>
@@ -197,15 +177,15 @@ export default function ScenarioBrowser({ selectedPlane, selectedScenario, onSel
 
                     {/* Push / Pull badges */}
                     <td>
-                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                      <div className="scn-browser__badges">
                         {scenario.pull_supported && (
-                          <ModeBadge label="Pull" color="0, 184, 148" />
+                          <ModeBadge label="Pull" variant="pull" />
                         )}
                         {scenario.push_supported && (
-                          <ModeBadge label="Push" color="0, 192, 232" />
+                          <ModeBadge label="Push" variant="push" />
                         )}
                         {!scenario.pull_supported && !scenario.push_supported && (
-                          <span style={{ fontSize: '12px', color: 'var(--cortex-steel)' }}>—</span>
+                          <span className="scn-browser__meta-sm">—</span>
                         )}
                       </div>
                     </td>
