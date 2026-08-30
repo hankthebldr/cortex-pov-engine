@@ -1,7 +1,7 @@
 /**
  * glossary — every CortexSim term defined exactly once.
  *
- * Referenced by key via &lt;Term k="key"&gt;. Never inline a definition as a title=
+ * Referenced by key via <Term k="...">. Never inline a definition as a title=
  * string: the same term appears on several surfaces and duplicated prose drifts.
  */
 export const GLOSSARY = {
