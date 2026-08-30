@@ -3,31 +3,26 @@ import { getScenario } from '../api/client.js'
 
 // ─── Detection type badge ─────────────────────────────────────────────────────
 
+// GAP-2: the detection-type vocabulary now spans BIOC | XQL | Analytics |
+// Correlation | IOC. Correlation is the headline XSIAM differentiator —
+// given a distinct violet treatment so it stands out in the UC/TC chain.
+// Each key maps to a static CSS modifier class (uctc-badge--<key>) instead
+// of an inline style object — the palette is a closed vocabulary, so the
+// per-type variance is expressed as classes, not runtime style computation.
+const DETECTION_BADGE_CLASS = {
+  BIOC: 'uctc-badge--bioc',
+  XQL: 'uctc-badge--xql',
+  ANALYTICS: 'uctc-badge--analytics',
+  CORRELATION: 'uctc-badge--correlation',
+  IOC: 'uctc-badge--ioc',
+}
+
 function DetectionBadge({ type }) {
-  // GAP-2: the detection-type vocabulary now spans BIOC | XQL | Analytics |
-  // Correlation | IOC. Correlation is the headline XSIAM differentiator —
-  // given a distinct violet treatment so it stands out in the UC/TC chain.
-  const styles = {
-    BIOC:        { bg: 'rgba(0,51,102,0.1)',     color: 'var(--cortex-navy)' },
-    XQL:         { bg: 'rgba(0,192,232,0.12)',   color: '#007da3' },
-    Analytics:   { bg: 'rgba(107,126,142,0.12)', color: 'var(--cortex-steel)' },
-    Correlation: { bg: 'rgba(142,124,255,0.14)', color: '#5b46d9' },
-    IOC:         { bg: 'rgba(243,156,18,0.12)',  color: '#c47d00' },
-  }
   // Match case-insensitively so a card emitting 'correlation' still resolves.
-  const key = Object.keys(styles).find((k) => k.toLowerCase() === (type || '').toLowerCase())
-  const s = styles[key] || { bg: 'rgba(107,126,142,0.1)', color: 'var(--cortex-steel)' }
+  const key = Object.keys(DETECTION_BADGE_CLASS).find((k) => k === (type || '').toUpperCase())
+  const modifier = DETECTION_BADGE_CLASS[key] || 'uctc-badge--default'
   return (
-    <span style={{
-      fontSize: '10px',
-      fontWeight: 700,
-      padding: '2px 7px',
-      borderRadius: '3px',
-      background: s.bg,
-      color: s.color,
-      textTransform: 'uppercase',
-      letterSpacing: '0.04em',
-    }}>
+    <span className={`uctc-badge ${modifier}`}>
       {type}
     </span>
   )
@@ -39,133 +34,57 @@ function StepCard({ step, index, isLast }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div style={{ display: 'flex', gap: '12px', paddingBottom: isLast ? 0 : '4px' }}>
+    <div className={`uctc-step${isLast ? ' uctc-step--last' : ''}`}>
       {/* Timeline spine */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-        <div style={{
-          width: '28px',
-          height: '28px',
-          borderRadius: '50%',
-          background: 'var(--cortex-navy)',
-          color: 'var(--cortex-white)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '11px',
-          fontWeight: 700,
-          flexShrink: 0,
-          zIndex: 1,
-        }}>
+      <div className="uctc-step__spine">
+        <div className="uctc-step__num">
           {index + 1}
         </div>
-        {!isLast && (
-          <div style={{
-            width: '2px',
-            flex: 1,
-            background: 'var(--cortex-border)',
-            marginTop: '4px',
-            marginBottom: '4px',
-          }} />
-        )}
+        {!isLast && <div className="uctc-step__connector" />}
       </div>
 
       {/* Step content */}
-      <div style={{ flex: 1, marginBottom: isLast ? 0 : '12px' }}>
+      <div className={`uctc-step__content${isLast ? ' uctc-step__content--last' : ''}`}>
         <button
           onClick={() => setExpanded(v => !v)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            width: '100%',
-            background: 'transparent',
-            border: 'none',
-            textAlign: 'left',
-            cursor: 'pointer',
-            padding: '2px 0',
-            marginBottom: '6px',
-          }}
+          className="uctc-step__toggle"
           aria-expanded={expanded}
         >
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--cortex-navy)', flex: 1 }}>
+          <span className="uctc-step__name">
             {step.name}
           </span>
           {step.mitre_technique && (
-            <span style={{
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)',
-              color: 'var(--cortex-steel)',
-              flexShrink: 0,
-            }}>
+            <span className="uctc-step__mitre">
               {step.mitre_technique}
             </span>
           )}
-          <span style={{
-            fontSize: '10px',
-            color: 'var(--cortex-steel)',
-            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-            transition: 'transform var(--transition-fast)',
-          }}>
+          <span className={`uctc-step__chevron${expanded ? ' uctc-step__chevron--expanded' : ''}`}>
             &#9658;
           </span>
         </button>
 
         {/* Command preview */}
         {step.command && (
-          <pre style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            background: '#0d1f2d',
-            color: '#a8d8ea',
-            padding: '8px 12px',
-            borderRadius: 'var(--radius-md)',
-            overflowX: 'auto',
-            margin: '0 0 8px 0',
-            border: '1px solid rgba(255,255,255,0.06)',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-          }}>
+          <pre className="uctc-step__command">
             {step.command}
           </pre>
         )}
 
         {/* Expected detections — collapsible */}
         {expanded && step.expected_detections && step.expected_detections.length > 0 && (
-          <div style={{ marginTop: '8px' }}>
-            <p style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              color: 'var(--cortex-steel)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              marginBottom: '6px',
-            }}>
+          <div className="uctc-step__detections">
+            <p className="uctc-step__detections-label">
               Expected Detections
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div className="uctc-step__detections-list">
               {step.expected_detections.map((det, di) => (
-                <div key={di} style={{
-                  background: 'var(--cortex-light-bg)',
-                  border: '1px solid var(--cortex-border)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '8px 12px',
-                  display: 'flex',
-                  gap: '8px',
-                  alignItems: 'flex-start',
-                }}>
+                <div key={di} className="uctc-detection-row">
                   <DetectionBadge type={det.type} />
-                  <div style={{ flex: 1 }}>
-                    <span style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: 'var(--cortex-steel)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
-                      marginRight: '6px',
-                    }}>
+                  <div className="uctc-detection-row__content">
+                    <span className="uctc-detection-row__plane">
                       {det.plane}
                     </span>
-                    <span style={{ fontSize: '12px', color: '#1A2B3C' }}>
+                    <span className="uctc-detection-row__desc">
                       {det.description}
                     </span>
                   </div>
@@ -209,7 +128,7 @@ export default function UCTCMapper({ scenario }) {
     <div className="panel-card">
       <div className="panel-card-header">
         <h3>UC / TC Chain</h3>
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        <div className="uctc-header__badges">
           {data?.uc_ref && <span className="badge badge-navy">{data.uc_ref}</span>}
           {data?.tc_ref && <span className="badge badge-teal">{data.tc_ref}</span>}
         </div>
@@ -217,59 +136,46 @@ export default function UCTCMapper({ scenario }) {
 
       <div className="panel-card-body">
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 0' }}>
+          <div className="uctc-loading">
             <div className="spinner" />
-            <span className="text-muted" style={{ fontSize: '13px' }}>Loading scenario detail…</span>
+            <span className="text-muted uctc-loading__text">Loading scenario detail…</span>
           </div>
         ) : (
           <>
             {/* UC Header */}
-            <div style={{
-              background: 'rgba(0,51,102,0.04)',
-              border: '1px solid rgba(0,51,102,0.12)',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px 16px',
-              marginBottom: '20px',
-            }}>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--cortex-steel)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div className="uctc-uc-header">
+              <div className="uctc-uc-header__row">
+                <span className="uctc-uc-header__label">
                   Use Case
                 </span>
                 {data?.uc_ref && (
-                  <span className="text-mono" style={{ fontSize: '11px', color: 'var(--cortex-teal)' }}>
+                  <span className="text-mono uctc-uc-header__ref">
                     {data.uc_ref}
                   </span>
                 )}
               </div>
-              <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--cortex-navy)', marginBottom: '4px' }}>
+              <p className="uctc-uc-header__name">
                 {data?.uc_name || data?.name || '—'}
               </p>
               {data?.tc_name && (
-                <p style={{ fontSize: '12px', color: 'var(--cortex-steel)' }}>
-                  <strong style={{ fontWeight: 600 }}>TC: </strong>{data.tc_name}
+                <p className="uctc-uc-header__tc">
+                  <strong className="uctc-uc-header__tc-strong">TC: </strong>{data.tc_name}
                 </p>
               )}
 
               {/* MITRE info */}
               {(data?.mitre_tactic || data?.mitre_technique) && (
-                <div style={{
-                  marginTop: '10px',
-                  paddingTop: '10px',
-                  borderTop: '1px solid rgba(0,51,102,0.1)',
-                  display: 'flex',
-                  gap: '16px',
-                  flexWrap: 'wrap',
-                }}>
+                <div className="uctc-mitre">
                   {data.mitre_tactic && (
                     <div>
-                      <span style={{ fontSize: '10px', color: 'var(--cortex-steel)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block' }}>
+                      <span className="uctc-mitre__label">
                         Tactic
                       </span>
-                      <span className="text-mono" style={{ fontSize: '12px', color: 'var(--cortex-navy)', fontWeight: 600 }}>
+                      <span className="text-mono uctc-mitre__value">
                         {data.mitre_tactic}
                       </span>
                       {data.mitre_tactic_name && (
-                        <span style={{ fontSize: '12px', color: '#1A2B3C', marginLeft: '6px' }}>
+                        <span className="uctc-mitre__name">
                           {data.mitre_tactic_name}
                         </span>
                       )}
@@ -277,14 +183,14 @@ export default function UCTCMapper({ scenario }) {
                   )}
                   {data.mitre_technique && (
                     <div>
-                      <span style={{ fontSize: '10px', color: 'var(--cortex-steel)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block' }}>
+                      <span className="uctc-mitre__label">
                         Technique
                       </span>
-                      <span className="text-mono" style={{ fontSize: '12px', color: 'var(--cortex-navy)', fontWeight: 600 }}>
+                      <span className="text-mono uctc-mitre__value">
                         {data.mitre_technique}
                       </span>
                       {data.mitre_technique_name && (
-                        <span style={{ fontSize: '12px', color: '#1A2B3C', marginLeft: '6px' }}>
+                        <span className="uctc-mitre__name">
                           {data.mitre_technique_name}
                         </span>
                       )}
@@ -295,15 +201,15 @@ export default function UCTCMapper({ scenario }) {
 
               {/* Threat report ref */}
               {data?.threat_report && (
-                <div style={{ marginTop: '8px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--cortex-steel)' }}>
+                <div className="uctc-threat">
+                  <span className="uctc-threat__label">
                     Unit 42 ref:{' '}
                     {data.threat_report_url ? (
                       <a href={data.threat_report_url} target="_blank" rel="noopener noreferrer">
                         {data.threat_report}
                       </a>
                     ) : (
-                      <span style={{ color: '#1A2B3C' }}>{data.threat_report}</span>
+                      <span className="uctc-threat__value">{data.threat_report}</span>
                     )}
                   </span>
                 </div>
@@ -312,12 +218,12 @@ export default function UCTCMapper({ scenario }) {
 
             {/* Steps timeline */}
             {steps.length === 0 ? (
-              <div className="empty-state" style={{ padding: '20px 0' }}>
+              <div className="empty-state uctc-empty-state">
                 <p>No execution steps defined for this scenario.</p>
               </div>
             ) : (
               <div>
-                <p className="section-label" style={{ marginBottom: '16px' }}>
+                <p className="section-label uctc-steps-label">
                   Execution Steps ({steps.length})
                 </p>
                 {steps.map((step, i) => (

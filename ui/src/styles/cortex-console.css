@@ -5824,6 +5824,41 @@
   font-size: 10px; letter-spacing: 0.06em; color: var(--c-text-secondary);
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   ToolAdapterCatalog — inline-style normalization
+   (ui/src/components/console/ToolAdapterCatalog.jsx)
+   All 22 former inline `style={{…}}` props on this component now land
+   here. Every one was a static value — no computed/prop-driven styling
+   was migrated.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.theme-console .adapter-registry__clear-btn { height: 22px; padding: 0 8px; margin-left: 4px; }
+
+.theme-console .adapter-card__unpinned { margin-left: 4px; }
+.theme-console .adapter-card__license { font-size: 10px; color: var(--c-text-muted); }
+.theme-console .adapter-card__tids--gap { margin-top: 4px; }
+
+.theme-console .tool-adapter-catalog__chip-sm { font-size: 9px; }
+.theme-console .tool-adapter-catalog__chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.theme-console .tool-adapter-catalog__chip-row--top { margin-top: 6px; }
+.theme-console .tool-adapter-catalog__repo { font-size: 12px; }
+.theme-console .tool-adapter-catalog__repo-meta { font-size: 11px; color: var(--c-text-secondary); }
+.theme-console .tool-adapter-catalog__args-pre {
+  background: var(--c-bg-elevated);
+  padding: 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  overflow: auto;
+}
+.theme-console .tool-adapter-catalog__cleanup-list { font-size: 11px; padding-left: 18px; margin: 0; }
+.theme-console .tool-adapter-catalog__xref-block { margin-bottom: 6px; }
+.theme-console .tool-adapter-catalog__xref-label { font-size: 10px; color: var(--c-text-muted); }
+.theme-console .tool-adapter-catalog__xref-chip { margin-left: 4px; border: none; cursor: pointer; }
+.theme-console .tool-adapter-catalog__empty-note { font-size: 11px; color: var(--c-text-muted); }
+
+.theme-console .competitive__detail-label--top { margin-top: 8px; }
+.theme-console .adapter-schema__desc--pre { white-space: pre-wrap; }
+
 /* ── GlobalContextBar / SwitcherPill (tenant + agent dropdown pill) ──── */
 .theme-console .switcher { position: relative; }
 .theme-console .switcher__pill--empty { opacity: 0.65; }
@@ -6634,4 +6669,94 @@
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MitreHeatmap.jsx — inline-style normalization
+   Component renders outside .theme-console (legacy light shell), so
+   these rules are intentionally unscoped and rely on the global
+   :root --cortex-* tokens defined in cortex-theme.css.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Status color variants (shared: cell / badge / swatch) ─────────── */
+.mitre-heatmap-status--detected          { background: var(--cortex-success); color: #fff; }
+.mitre-heatmap-status--run-not-detected  { background: var(--cortex-warning); color: #fff; }
+.mitre-heatmap-status--not-run           { background: var(--cortex-steel);   color: #fff; }
+.mitre-heatmap-status--no-scenario       { background: #E8ECF0;               color: var(--cortex-steel); }
+
+/* ── Technique cell ──────────────────────────────────────────────── */
+.mitre-heatmap__cell {
+  border-radius: 4px; padding: 6px 8px; font-size: 11px;
+  font-family: var(--font-mono); cursor: pointer; min-width: 90px;
+  text-align: center; line-height: 1.3; border: 2px solid transparent;
+  transition: border 0.15s ease; position: relative;
+}
+.mitre-heatmap__cell:hover { border-color: var(--cortex-teal); }
+.mitre-heatmap__cell-id { font-weight: 700; font-size: 11px; }
+.mitre-heatmap__cell-name {
+  font-size: 9px; opacity: 0.9; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; max-width: 100px;
+}
+.mitre-heatmap__cell-detections { font-size: 9px; margin-top: 2px; font-weight: 600; }
+
+/* ── Technique detail popup ─────────────────────────────────────── */
+.mitre-heatmap__detail {
+  background: white; border: 1px solid var(--cortex-border);
+  border-radius: var(--radius-md); padding: 16px 20px; margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+.mitre-heatmap__detail-head {
+  display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;
+}
+.mitre-heatmap__detail-title-row { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.mitre-heatmap__detail-id {
+  font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--cortex-navy);
+}
+.mitre-heatmap__detail-badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.mitre-heatmap__detail-name { font-size: 14px; color: var(--cortex-navy); font-weight: 500; }
+.mitre-heatmap__detail-close {
+  background: none; border: none; cursor: pointer; font-size: 18px;
+  color: var(--cortex-steel); padding: 0 4px;
+}
+.mitre-heatmap__detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+.mitre-heatmap__detail-label { color: var(--cortex-steel); }
+.mitre-heatmap__detail-tactic-value { font-weight: 500; }
+.mitre-heatmap__detail-plane-badge { font-size: 10px; margin-right: 4px; }
+.mitre-heatmap__detail-scenarios { font-family: var(--font-mono); font-weight: 500; }
+.mitre-heatmap__detail-detections { font-family: var(--font-mono); font-weight: 700; }
+.mitre-heatmap__detail-detections--positive { color: var(--cortex-success); }
+.mitre-heatmap__detail-detections--zero { color: var(--cortex-steel); }
+.mitre-heatmap__detail-coverage { margin-left: 6px; font-weight: 600; }
+
+/* ── Summary bar ─────────────────────────────────────────────────── */
+.mitre-heatmap__summary { margin-bottom: 20px; }
+.mitre-heatmap__summary-bar { display: flex; height: 24px; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+.mitre-heatmap__summary-segment {
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-size: 11px; font-weight: 600; font-family: var(--font-mono);
+  min-width: 30px;
+}
+.mitre-heatmap__summary-legend { display: flex; gap: 16px; font-size: 11px; }
+.mitre-heatmap__summary-legend-item { display: flex; align-items: center; gap: 4px; }
+.mitre-heatmap__summary-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.mitre-heatmap__summary-total-label { color: var(--cortex-steel); }
+
+/* ── Loading / error / empty states ─────────────────────────────── */
+.mitre-heatmap__spinner { margin: 0 auto var(--space-4); }
+.mitre-heatmap__error-text { color: var(--cortex-danger); }
+.mitre-heatmap__empty-icon { font-size: 28px; }
+
+/* ── Matrix layout ───────────────────────────────────────────────── */
+.mitre-heatmap__matrix { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; }
+.mitre-heatmap__tactic-col { min-width: 120px; flex: 0 0 auto; }
+.mitre-heatmap__tactic-head {
+  background: var(--cortex-navy); color: white; padding: 8px; border-radius: 6px 6px 0 0;
+  text-align: center; font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.3px; line-height: 1.3;
+}
+.mitre-heatmap__tactic-name { font-size: 9px; opacity: 0.8; font-weight: 400; margin-top: 2px; }
+.mitre-heatmap__tactic-body {
+  display: flex; flex-direction: column; gap: 4px; padding: 4px;
+  background: var(--cortex-light-bg); border-radius: 0 0 6px 6px;
+  border: 1px solid var(--cortex-border); border-top: none;
 }

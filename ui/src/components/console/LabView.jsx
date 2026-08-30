@@ -282,7 +282,7 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
             {' · '}<span className="mono">{bundles.length} bundle{bundles.length === 1 ? '' : 's'}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="lab__head-actions">
           <button className="btn" onClick={refreshModules} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh modules'}
           </button>
@@ -297,17 +297,6 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
       <div
         className="lab__ribbon"
         data-testid="env-ribbon"
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 10,
-          alignItems: 'center',
-          padding: '8px 12px',
-          marginBottom: 14,
-          border: '1px solid var(--c-hairline, rgba(255,255,255,0.08))',
-          borderRadius: 4,
-          background: 'var(--c-surface-raised, rgba(255,255,255,0.03))',
-        }}
       >
         <ScopeChip
           label="Tenant"
@@ -328,24 +317,11 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
           className="lab__error mono"
           role="alert"
           data-testid="lab-error"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '8px 12px',
-            marginBottom: 14,
-            fontSize: 12,
-            color: 'var(--c-missed, #f2777a)',
-            border: '1px solid var(--c-missed, #f2777a)',
-            borderRadius: 4,
-            background: 'rgba(242,119,122,0.08)',
-          }}
         >
           <span aria-hidden="true">! </span>{localError}
           <button
             type="button"
-            className="btn"
-            style={{ marginLeft: 10, height: 22 }}
+            className="btn lab__error-dismiss"
             onClick={() => setLocalError(null)}
             aria-label="Dismiss error"
           >
@@ -507,7 +483,6 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
               && lastBundle.auto_included_modules.length > 0 && (
               <span
                 className="lab__auto-pulled"
-                style={{ marginLeft: 8 }}
                 title="Modules auto-included from selected adapter_refs"
               >
                 · +{lastBundle.auto_included_modules.join(', +')} (auto)
@@ -515,8 +490,7 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
             )}
             <button
               type="button"
-              className="btn"
-              style={{ marginLeft: 10, height: 24 }}
+              className="btn lab__last-bundle-download"
               onClick={() => handleDownload(lastBundle.bundle_id)}
             >
               Download tar.gz
@@ -534,7 +508,7 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
               <div>Bundle ID</div>
               <div>Provider · modules</div>
               <div>Created</div>
-              <div style={{ textAlign: 'right' }}>Size</div>
+              <div className="lab__bundle-head__size">Size</div>
               <div></div>
             </div>
             {bundles.slice(0, 12).map((b) => (
@@ -557,44 +531,28 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
  */
 function ScopeChip({ label, value, detail, onManage }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-      <span
-        className="mono"
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          color: 'var(--c-text-muted, #6B7E8E)',
-        }}
-      >
+    <span className="lab__scope-chip">
+      <span className="mono lab__scope-chip__label">
         {label}
       </span>
       {value ? (
-        <span className="mono" style={{ color: 'var(--cortex-teal, #00C0E8)', fontWeight: 600 }}>
+        <span className="mono lab__scope-chip__value">
           {value}
           {detail && (
-            <span style={{ marginLeft: 4, color: 'var(--c-text-muted, #6B7E8E)', fontWeight: 400 }}>
+            <span className="lab__scope-chip__detail">
               · {detail}
             </span>
           )}
         </span>
       ) : (
-        <span className="mono" style={{ color: 'var(--c-text-muted, #6B7E8E)', fontStyle: 'italic' }}>
+        <span className="mono lab__scope-chip__value lab__scope-chip__value--empty">
           none
         </span>
       )}
       <button
         type="button"
-        className="linklike"
+        className="linklike lab__scope-chip__manage"
         onClick={onManage}
-        style={{
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          fontSize: 11,
-          color: 'var(--cortex-teal, #00C0E8)',
-          cursor: 'pointer',
-        }}
       >
         Manage…
       </button>
@@ -677,8 +635,7 @@ function BundleRow({ bundle, onDownload }) {
       <div className="lab__bundle-size mono">{sizeKb} KB</div>
       <button
         type="button"
-        className="btn"
-        style={{ height: 26 }}
+        className="btn lab__bundle-row-download"
         onClick={() => onDownload(bundle.bundle_id)}
       >
         Download
@@ -746,20 +703,14 @@ function ScenarioHintRow({ modules, onApplyHint, onError }) {
     <div className="lab__section" data-testid="scenario-hint-row">
       <div className="lab__section-title">
         Hint from scenario{' '}
-        <span className="mono" style={{
-          fontSize: 11,
-          color: 'var(--c-text-muted)',
-          fontWeight: 400,
-          marginLeft: 6,
-        }}>
+        <span className="mono lab__caption">
           (auto-fills modules + adapter chips from external_tools[])
         </span>
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div className="lab__hint-row">
         <input
           type="text"
-          className="lab__input mono"
-          style={{ maxWidth: 260 }}
+          className="lab__input mono lab__hint-input"
           placeholder="SIM-EDR-001"
           value={scenarioId}
           onChange={(e) => setScenarioId(e.target.value)}
@@ -776,28 +727,25 @@ function ScenarioHintRow({ modules, onApplyHint, onError }) {
           {loading ? 'Resolving…' : 'Apply hint'}
         </button>
         {inlineError && (
-          <span className="mono" style={{ color: 'var(--c-missed)', fontSize: 11 }}>
+          <span className="mono lab__hint-error">
             ! {inlineError}
           </span>
         )}
       </div>
       {lastHint && !inlineError && (
-        <div
-          className="mono"
-          style={{ fontSize: 11, color: 'var(--c-text-secondary)', marginTop: 6 }}
-        >
+        <div className="mono lab__hint-result">
           ✓ {lastHint.plane} · refs: {lastHint.adapter_refs.length || '—'}
           {lastHint.suggested_modules.length > 0 && (
             <span> · +{lastHint.suggested_modules.join(', +')}</span>
           )}
           {lastHint.unresolved_refs.length > 0 && (
-            <span style={{ color: 'var(--c-pending)' }}>
+            <span className="lab__hint-warn">
               {' '}· {lastHint.unresolved_refs.length} unresolved (
               {lastHint.unresolved_refs.join(', ')})
             </span>
           )}
           {missingFromCatalog.length > 0 && (
-            <span style={{ color: 'var(--c-pending)' }}>
+            <span className="lab__hint-warn">
               {' '}· not in catalog: {missingFromCatalog.join(', ')}
             </span>
           )}
@@ -859,39 +807,28 @@ function AdapterAutoPullPicker({
     <div className="lab__section" data-testid="adapter-auto-pull">
       <div className="lab__section-title">
         Tool adapters{' '}
-        <span className="mono" style={{
-          fontSize: 11,
-          color: 'var(--c-text-muted)',
-          fontWeight: 400,
-          marginLeft: 6,
-        }}>
+        <span className="mono lab__caption">
           (tier 3 only · backend auto-includes each adapter's iac_module)
         </span>
       </div>
-      <p className="mono" style={{ fontSize: 11, color: 'var(--c-text-secondary)', margin: '4px 0 10px' }}>
+      <p className="mono lab__adapter-lede">
         Tick adapters your scenario will reference via{' '}
         <span className="mono">external_tools[].adapter_ref</span>.
         {tickedCount > 0
           ? ` ${tickedCount} ticked.`
           : ' None ticked — bundle stays as-is.'}
         {moduleHints.length > 0 && (
-          <span style={{ marginLeft: 6 }}>
+          <span className="lab__adapter-hint">
             ▸ likely +<span className="mono">{moduleHints.join(', +')}</span>
           </span>
         )}
       </p>
       {groups.map(([bucket, list]) => (
-        <div key={bucket} style={{ marginBottom: 8 }}>
-          <div className="mono" style={{
-            fontSize: 10,
-            color: 'var(--c-text-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: 0.5,
-            marginBottom: 4,
-          }}>
+        <div key={bucket} className="lab__adapter-group">
+          <div className="mono lab__adapter-group__label">
             {bucket}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div className="lab__adapter-chips">
             {list.map((a) => {
               const ticked = selectedAdapters.has(a.adapter_id)
               return (
@@ -903,9 +840,9 @@ function AdapterAutoPullPicker({
                   onClick={() => onToggleAdapter(a.adapter_id)}
                   title={`${a.adapter_id} · v${a.version} · ${a.safety_class} · ${a.license}`}
                 >
-                  {ticked && <span style={{ marginRight: 4 }}>✓</span>}
+                  {ticked && <span className="lab__adapter-chip__check">✓</span>}
                   {a.name}
-                  <span className="mono" style={{ marginLeft: 6, fontSize: 9, opacity: 0.7 }}>
+                  <span className="mono lab__adapter-chip__version">
                     v{a.version}
                   </span>
                 </button>
