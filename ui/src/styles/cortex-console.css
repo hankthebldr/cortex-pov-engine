@@ -6800,9 +6800,9 @@
 .theme-console .ttp-table thead tr { text-align: left; color: var(--c-text-muted); }
 .theme-console .ttp-table th,
 .theme-console .ttp-table td { padding: 2px 6px 2px 0; }
-.theme-console .ttp-table th--num,
-.theme-console .ttp-table td--num { text-align: right; }
-.theme-console .ttp-table td--sm { font-size: 10px; }
+.theme-console .ttp-table .th--num,
+.theme-console .ttp-table .td--num { text-align: right; }
+.theme-console .ttp-table .td--sm { font-size: 10px; }
 
 /* ── Run-history clickable row + coverage badge ─────────────────────── */
 .theme-console .ttp-run-row { cursor: pointer; }
@@ -6867,7 +6867,7 @@
 .theme-console .ttp-launcher-table thead tr { text-align: left; color: var(--c-text-muted); }
 .theme-console .ttp-launcher-table th,
 .theme-console .ttp-launcher-table td { padding: 6px 8px; }
-.theme-console .ttp-launcher-table th--check { width: 32px; }
+.theme-console .ttp-launcher-table .th--check { width: 32px; }
 .theme-console .ttp-launcher-table__sub { font-size: 10px; color: var(--c-text-muted); }
 .theme-console .ttp-launcher__row { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
 .theme-console .ttp-launcher__field { font-size: 11px; }
