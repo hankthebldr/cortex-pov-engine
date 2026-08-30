@@ -7,6 +7,7 @@ import {
 } from '../../api/client.js'
 import { agentIdOf } from '../../api/ids.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
+import '../../styles/destinations/agents.css'
 
 // Compact relative time for last-seen ("12s" / "5m" / "3h" / "2d").
 function relTime(iso) {
@@ -216,6 +217,10 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     <div className="targets">
       <header className="view-head">
         <div>
+          <div className="agents-kicker" aria-hidden="true">
+            <span className="agents-kicker__bar" />
+            <span className="agents-kicker__label">Manage</span>
+          </div>
           <h1>Agents &amp; targets</h1>
           <p className="view-head__meta">
             Manage where the simulation runs and pick the <strong>active agent</strong>. The active
