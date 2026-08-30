@@ -968,6 +968,16 @@ ul.bullet { margin: 4px 0 0 0; padding-left: 18px; font-size: 12px; }
   border-radius: 6px; font-size: 12px; line-height: 1.45; color: #d7e3ec;
 }
 
+/* ── First-use hints on consequential controls ──────────────────────────── */
+.first-use-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: 4px; font-size: 11px;
+  background: rgba(0, 192, 232, 0.12);
+  border: 1px solid var(--cortex-teal, #00C0E8);
+  color: var(--cortex-teal, #00C0E8);
+}
+.first-use-hint__x { background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; }
+
 @media (prefers-reduced-motion: reduce) {
   .tour__cutout, .tour__bubble { transition: none !important; }
 }
