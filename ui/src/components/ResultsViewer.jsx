@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getRuns, getResultsForRun, validateResult, downloadReport } from '../api/client.js'
 import { runIdOf } from '../api/ids.js'
+import Term from './onboarding/Term.jsx'
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -85,7 +86,7 @@ function MTTDSummary({ mttd }) {
       marginBottom: '16px',
     }}>
       <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: 0.7, marginBottom: '6px' }}>
-        Mean Time to Detect (MTTD)
+        Mean Time to Detect (<Term k="mttd">MTTD</Term>)
       </div>
       <div style={{ display: 'flex', gap: '24px', alignItems: 'baseline' }}>
         <div>
