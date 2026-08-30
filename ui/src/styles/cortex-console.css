@@ -6174,3 +6174,464 @@
 .theme-console .uctc__bar-seg--detected { background: var(--c-detected); }
 .theme-console .uctc__bar-seg--pending { background: var(--c-pending); }
 .theme-console .uctc__bar-seg--hairline { background: var(--c-hairline-strong); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ResultsViewer.jsx — inline-style normalization
+   Rendered outside .theme-console (App.jsx legacy light shell), so
+   these are unscoped global classes using the --cortex-* / --space-*
+   / --radius-* / --font-mono tokens from cortex-theme.css, matching
+   this component's existing panel-card/badge/data-table classes.
+   One inline style remains by design: coverage-bar-fill's `width` is
+   a runtime-computed percentage with no static class to move into.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── CoverageBar ─────────────────────────────────────────────────── */
+.rv-cov { margin-bottom: 8px; }
+.rv-cov__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.rv-cov__label { font-size: 12px; font-weight: 600; color: var(--cortex-navy); }
+.rv-cov__pct { font-size: 12px; font-family: var(--font-mono); font-weight: 700; }
+.rv-cov__pct--good { color: var(--cortex-success); }
+.rv-cov__pct--warn { color: var(--cortex-warning); }
+.rv-cov__pct--bad { color: var(--cortex-danger); }
+
+/* ── MTTDSummary ─────────────────────────────────────────────────── */
+.rv-mttd {
+  background: var(--cortex-navy); color: white;
+  border-radius: var(--radius-md); padding: 12px 16px;
+  margin-bottom: 16px;
+}
+.rv-mttd__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.7; margin-bottom: 6px; }
+.rv-mttd__body { display: flex; gap: 24px; align-items: baseline; }
+.rv-mttd__avg { font-size: 24px; font-weight: 700; font-family: var(--font-mono); color: var(--cortex-teal); }
+.rv-mttd__avg-unit { font-size: 11px; opacity: 0.7; margin-left: 6px; }
+.rv-mttd__stats { font-size: 12px; opacity: 0.8; font-family: var(--font-mono); }
+
+/* ── DetectionRow ────────────────────────────────────────────────── */
+.rv-det-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--cortex-border);
+  opacity: 1;
+}
+.rv-det-row--saving { opacity: 0.6; }
+.rv-det-toggle {
+  width: 24px; height: 24px; border-radius: 4px;
+  border: 2px solid var(--cortex-border);
+  background: transparent; color: var(--cortex-steel);
+  cursor: pointer; flex-shrink: 0; margin-top: 2px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700;
+}
+.rv-det-toggle--observed {
+  border-color: var(--cortex-success);
+  background: var(--cortex-success);
+  color: white;
+}
+.rv-det-row__body { flex: 1; min-width: 0; }
+.rv-det-row__badges { display: flex; gap: 6px; align-items: center; margin-bottom: 3px; flex-wrap: wrap; }
+.badge--sm { font-size: 10px; }
+.rv-det-row__mttd { font-size: 11px; font-family: var(--font-mono); color: var(--cortex-teal); font-weight: 600; }
+.rv-det-row__step-name { font-size: 11px; font-weight: 600; color: var(--cortex-navy); margin-bottom: 2px; }
+.rv-det-row__desc { font-size: 12px; color: #1A2B3C; margin: 0; }
+.rv-det-row__notes {
+  font-size: 11px; color: var(--cortex-steel);
+  margin: 3px 0 0; font-style: italic; cursor: pointer;
+}
+.rv-det-row__actions { display: flex; gap: 8px; margin-top: 4px; }
+.rv-det-row__notes-toggle {
+  font-size: 11px; color: var(--cortex-teal);
+  background: none; border: none; cursor: pointer;
+  padding: 0; text-decoration: underline;
+}
+.rv-det-row__notes-editor { margin-top: 6px; display: flex; gap: 6px; }
+.rv-det-row__notes-input {
+  flex: 1; font-size: 12px; padding: 4px 8px;
+  border: 1px solid var(--cortex-border); border-radius: 4px;
+  font-family: var(--font-mono);
+}
+.rv-det-row__btn-sm { font-size: 11px; padding: 4px 8px; }
+
+/* ── RunDetail ───────────────────────────────────────────────────── */
+.rv-run-detail {
+  background: var(--cortex-light-bg);
+  border: 1px solid var(--cortex-border);
+  border-radius: var(--radius-md);
+  margin: 4px 0 12px 0;
+  padding: 16px 20px;
+}
+.rv-run-detail__loading { display: flex; gap: 10px; align-items: center; }
+.rv-run-detail__loading-text { font-size: 12px; }
+.rv-run-detail__error { font-size: 12px; color: var(--cortex-danger); }
+.rv-run-detail__empty { font-size: 12px; color: var(--cortex-steel); }
+.rv-run-detail__report-row { margin-bottom: 12px; text-align: right; }
+.rv-run-detail__report-btn { font-size: 12px; }
+.rv-run-detail__coverage { margin-bottom: 16px; }
+.rv-run-detail__validate-label { margin-bottom: 4px; }
+.rv-run-detail__validate-hint { font-size: 11px; color: var(--cortex-steel); margin-bottom: 12px; }
+.rv-run-detail__step-group { margin-bottom: 8px; }
+
+/* ── Main ResultsViewer ──────────────────────────────────────────── */
+.rv-header__actions { display: flex; gap: 8px; }
+.rv-body { padding: 0; }
+.rv-loading-spinner { margin: 0 auto var(--space-4); }
+.rv-table-wrap { overflow-x: auto; }
+.rv-row { cursor: pointer; }
+.rv-row__scenario-id { font-size: 13px; font-weight: 500; color: var(--cortex-navy); }
+.rv-row__run-id { font-size: 11px; color: var(--cortex-steel); font-family: var(--font-mono); }
+.rv-row__time { font-size: 12px; }
+.rv-row__detail-cell { padding: 4px 16px 4px; background: var(--cortex-light-bg); }
+
+/* ============================================================
+   InfraGenerator (ui/src/components/InfraGenerator.jsx)
+   Inline-style normalization pass — see CLAUDE.md design contract.
+   Rendered outside .theme-console (App.jsx), so these are
+   unscoped, component-owned classes prefixed `infra-`.
+   ============================================================ */
+.infra-module-card {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 6px;
+  cursor: pointer;
+  background: var(--cortex-white, #fff);
+  opacity: 1;
+  transition: border-color 0.12s;
+}
+.infra-module-card--checked {
+  border: 2px solid var(--cortex-teal);
+  background: rgba(0, 192, 232, 0.08);
+}
+.infra-module-card--disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+.infra-module-card__checkbox { margin-top: 4px; }
+.infra-module-card__body { flex: 1; }
+.infra-module-card__head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 3px;
+}
+.infra-module-card__name {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--cortex-navy);
+}
+.infra-module-card__badge { font-size: 10px; }
+.infra-module-card__deps { font-size: 11px; color: var(--cortex-steel); }
+.infra-module-card__desc {
+  font-size: 12px;
+  color: var(--cortex-navy);
+  margin-bottom: 4px;
+}
+.infra-module-card__tools { font-size: 11px; color: var(--cortex-steel); }
+
+.infra-bundle-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--cortex-border);
+}
+.infra-bundle-row__info { flex: 1; }
+.infra-bundle-row__id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--cortex-teal);
+}
+.infra-bundle-row__meta { font-size: 11px; color: var(--cortex-steel); }
+
+.infra-error {
+  padding: 10px;
+  background: #FEF0F0;
+  border: 1px solid var(--cortex-danger);
+  border-radius: 4px;
+  color: var(--cortex-danger);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.infra-config-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.infra-field { flex: 1; }
+.infra-field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--cortex-steel);
+}
+.infra-field-label--tight { margin-bottom: 3px; }
+.infra-field-required { color: var(--cortex-danger); }
+
+.infra-provider-buttons { display: flex; gap: 6px; }
+.infra-provider-btn { text-transform: uppercase; }
+
+.infra-region-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.infra-section { margin-bottom: 16px; }
+.infra-module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px;
+}
+.infra-params-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.infra-generate-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.infra-generated {
+  font-size: 12px;
+  color: var(--cortex-success);
+  font-family: var(--font-mono);
+}
+.infra-generated__btn { margin-left: 8px; }
+
+.infra-param-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.infra-param-input--mono { font-family: var(--font-mono); }
+
+/* ============================================================
+   UCTCMapper (ui/src/components/UCTCMapper.jsx)
+   Inline-style normalization pass — 40 style={{}} props moved to
+   these classes. Renders outside .theme-console (App.jsx, not the
+   console shell), so these are unscoped and use the --cortex-*
+   tokens the component already referenced. No new token names.
+   ============================================================ */
+
+.uctc-header__badges { display: flex; gap: 6px; align-items: center; }
+
+/* ── Loading state ─────────────────────────────────────────────────── */
+.uctc-loading { display: flex; align-items: center; gap: 10px; padding: 12px 0; }
+.uctc-loading__text { font-size: 13px; }
+
+/* ── UC header block ───────────────────────────────────────────────── */
+.uctc-uc-header {
+  background: rgba(0, 51, 102, 0.04);
+  border: 1px solid rgba(0, 51, 102, 0.12);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+.uctc-uc-header__row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.uctc-uc-header__label {
+  font-size: 10px; font-weight: 700; color: var(--cortex-steel);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.uctc-uc-header__ref { font-size: 11px; color: var(--cortex-teal); }
+.uctc-uc-header__name { font-size: 14px; font-weight: 600; color: var(--cortex-navy); margin-bottom: 4px; }
+.uctc-uc-header__tc { font-size: 12px; color: var(--cortex-steel); }
+.uctc-uc-header__tc-strong { font-weight: 600; }
+
+/* ── MITRE tactic/technique row ────────────────────────────────────── */
+.uctc-mitre {
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(0, 51, 102, 0.1);
+  display: flex; gap: 16px; flex-wrap: wrap;
+}
+.uctc-mitre__label {
+  font-size: 10px; color: var(--cortex-steel); text-transform: uppercase;
+  letter-spacing: 0.05em; display: block;
+}
+.uctc-mitre__value { font-size: 12px; color: var(--cortex-navy); font-weight: 600; }
+.uctc-mitre__name { font-size: 12px; color: #1A2B3C; margin-left: 6px; }
+
+/* ── Threat report ref ─────────────────────────────────────────────── */
+.uctc-threat { margin-top: 8px; }
+.uctc-threat__label { font-size: 11px; color: var(--cortex-steel); }
+.uctc-threat__value { color: #1A2B3C; }
+
+/* ── Steps list overrides (base classes: .empty-state / .section-label) */
+.uctc-empty-state { padding: 20px 0; }
+.uctc-steps-label { margin-bottom: 16px; }
+
+/* ── Step card (timeline row) ──────────────────────────────────────── */
+.uctc-step { display: flex; gap: 12px; padding-bottom: 4px; }
+.uctc-step--last { padding-bottom: 0; }
+
+.uctc-step__spine { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
+.uctc-step__num {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--cortex-navy); color: var(--cortex-white);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0; z-index: 1;
+}
+.uctc-step__connector { width: 2px; flex: 1; background: var(--cortex-border); margin-top: 4px; margin-bottom: 4px; }
+
+.uctc-step__content { flex: 1; margin-bottom: 12px; }
+.uctc-step__content--last { margin-bottom: 0; }
+
+.uctc-step__toggle {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: transparent; border: none; text-align: left; cursor: pointer;
+  padding: 2px 0; margin-bottom: 6px;
+}
+.uctc-step__name { font-size: 13px; font-weight: 600; color: var(--cortex-navy); flex: 1; }
+.uctc-step__mitre { font-size: 11px; font-family: var(--font-mono); color: var(--cortex-steel); flex-shrink: 0; }
+.uctc-step__chevron {
+  font-size: 10px; color: var(--cortex-steel);
+  transform: rotate(0deg); transition: transform var(--transition-fast);
+}
+.uctc-step__chevron--expanded { transform: rotate(90deg); }
+
+.uctc-step__command {
+  font-family: var(--font-mono); font-size: 11px;
+  background: #0d1f2d; color: #a8d8ea;
+  padding: 8px 12px; border-radius: var(--radius-md); overflow-x: auto;
+  margin: 0 0 8px 0; border: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: pre-wrap; word-break: break-all;
+}
+
+.uctc-step__detections { margin-top: 8px; }
+.uctc-step__detections-label {
+  font-size: 11px; font-weight: 700; color: var(--cortex-steel);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;
+}
+.uctc-step__detections-list { display: flex; flex-direction: column; gap: 6px; }
+
+.uctc-detection-row {
+  background: var(--cortex-light-bg); border: 1px solid var(--cortex-border);
+  border-radius: var(--radius-sm); padding: 8px 12px;
+  display: flex; gap: 8px; align-items: flex-start;
+}
+.uctc-detection-row__content { flex: 1; }
+.uctc-detection-row__plane {
+  font-size: 11px; font-weight: 600; color: var(--cortex-steel);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px;
+}
+.uctc-detection-row__desc { font-size: 12px; color: #1A2B3C; }
+
+/* ── Detection-type badge (DetectionBadge) ─────────────────────────── */
+/* Closed vocabulary (BIOC/XQL/Analytics/Correlation/IOC + default), so
+   the per-type colour is a modifier class, not a runtime style object. */
+.uctc-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.uctc-badge--bioc        { background: rgba(0, 51, 102, 0.1);   color: var(--cortex-navy); }
+.uctc-badge--xql         { background: rgba(0, 192, 232, 0.12); color: #007da3; }
+.uctc-badge--analytics   { background: rgba(107, 126, 142, 0.12); color: var(--cortex-steel); }
+.uctc-badge--correlation { background: rgba(142, 124, 255, 0.14); color: #5b46d9; }
+.uctc-badge--ioc         { background: rgba(243, 156, 18, 0.12); color: #c47d00; }
+.uctc-badge--default     { background: rgba(107, 126, 142, 0.1); color: var(--cortex-steel); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ScenarioBrowser (ui/src/components/ScenarioBrowser.jsx)
+   Inline-style normalization pass — static layout/color rules only,
+   no new colour values. ScenarioBrowser renders in the legacy shell
+   (App.jsx), not the .theme-console redesign tree, so these rules are
+   deliberately UNSCOPED (no ".theme-console" prefix) and reference the
+   global --cortex-* tokens (cortex-theme.css :root) the component's
+   removed inline styles already used, so current rendering is
+   unchanged. --cortex-success/--cortex-teal via color-mix() reproduce
+   the prior rgba(0,184,148,...) / rgba(0,192,232,...) tints exactly.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.scn-browser__mode-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.scn-browser__mode-badge--pull {
+  background: color-mix(in srgb, var(--cortex-success) 10%, transparent);
+  color: var(--cortex-success);
+  border: 1px solid color-mix(in srgb, var(--cortex-success) 25%, transparent);
+}
+.scn-browser__mode-badge--push {
+  background: color-mix(in srgb, var(--cortex-teal) 10%, transparent);
+  color: var(--cortex-teal);
+  border: 1px solid color-mix(in srgb, var(--cortex-teal) 25%, transparent);
+}
+
+.scn-browser__header-suffix {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--cortex-teal);
+  text-transform: none;
+}
+
+.scn-browser__meta-sm {
+  font-size: 12px;
+  color: var(--cortex-steel);
+}
+
+.scn-browser__search-bar {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--cortex-border);
+}
+
+.scn-browser__table-scroll {
+  overflow-x: auto;
+}
+
+.scn-browser__spinner {
+  margin: 0 auto var(--space-4);
+}
+
+.scn-browser__error-text {
+  color: var(--cortex-danger);
+}
+
+.scn-browser__clear-btn {
+  margin-top: 12px;
+}
+
+.scn-browser__name {
+  font-weight: 500;
+  color: var(--cortex-navy);
+}
+
+.scn-browser__id {
+  font-size: 11px;
+  color: var(--cortex-steel);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+.scn-browser__tactic-name {
+  font-size: 12px;
+}
+
+.scn-browser__tactic-code {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--cortex-steel);
+}
+
+.scn-browser__ref {
+  font-size: 12px;
+}
+
+.scn-browser__badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}

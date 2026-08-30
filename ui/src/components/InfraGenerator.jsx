@@ -19,42 +19,37 @@ const DEFAULT_REGION = 'us-east-1'
 
 function ModuleCard({ module, checked, onToggle }) {
   const isBase = module.name === 'base'
+  const cardClass = [
+    'infra-module-card',
+    checked ? 'infra-module-card--checked' : '',
+    isBase ? 'infra-module-card--disabled' : '',
+  ].filter(Boolean).join(' ')
   return (
-    <label style={{
-      display: 'flex',
-      gap: '10px',
-      padding: '12px',
-      border: checked ? '2px solid var(--cortex-teal)' : '1px solid var(--cortex-border)',
-      borderRadius: '6px',
-      cursor: isBase ? 'not-allowed' : 'pointer',
-      background: checked ? 'rgba(0,192,232,0.08)' : 'white',
-      opacity: isBase ? 0.85 : 1,
-      transition: 'border-color 0.12s',
-    }}>
+    <label className={cardClass}>
       <input
         type="checkbox"
         checked={checked}
         disabled={isBase}
         onChange={onToggle}
-        style={{ marginTop: '4px' }}
+        className="infra-module-card__checkbox"
       />
-      <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '3px' }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--cortex-navy)' }}>
+      <div className="infra-module-card__body">
+        <div className="infra-module-card__head">
+          <span className="infra-module-card__name">
             {module.name}
           </span>
-          {isBase && <span className="badge badge-steel" style={{ fontSize: '10px' }}>required</span>}
+          {isBase && <span className="badge badge-steel infra-module-card__badge">required</span>}
           {module.dependencies?.length > 0 && (
-            <span style={{ fontSize: '11px', color: 'var(--cortex-steel)' }}>
+            <span className="infra-module-card__deps">
               requires: {module.dependencies.join(', ')}
             </span>
           )}
         </div>
-        <div style={{ fontSize: '12px', color: 'var(--cortex-navy)', marginBottom: '4px' }}>
+        <div className="infra-module-card__desc">
           {module.description}
         </div>
         {module.content_tools?.length > 0 && (
-          <div style={{ fontSize: '11px', color: 'var(--cortex-steel)' }}>
+          <div className="infra-module-card__tools">
             Content: {module.content_tools.slice(0, 5).join(', ')}
             {module.content_tools.length > 5 && ` +${module.content_tools.length - 5} more`}
           </div>
@@ -66,15 +61,12 @@ function ModuleCard({ module, checked, onToggle }) {
 
 function BundleRow({ bundle, onDownload }) {
   return (
-    <div style={{
-      display: 'flex', gap: '12px', alignItems: 'center',
-      padding: '8px 0', borderBottom: '1px solid var(--cortex-border)',
-    }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--cortex-teal)' }}>
+    <div className="infra-bundle-row">
+      <div className="infra-bundle-row__info">
+        <div className="infra-bundle-row__id">
           {bundle.bundle_id}
         </div>
-        <div style={{ fontSize: '11px', color: 'var(--cortex-steel)' }}>
+        <div className="infra-bundle-row__meta">
           {bundle.provider} · {bundle.modules.join(', ')} · {bundle.created_at?.slice(0, 16) || 'n/a'}
           {' · '}{Math.round((bundle.size_bytes || 0) / 1024)} KB
         </div>
@@ -176,50 +168,44 @@ export default function InfraGenerator() {
 
       <div className="panel-card-body">
         {error && (
-          <div style={{ padding: '10px', background: '#FEF0F0', border: '1px solid var(--cortex-danger)',
-                       borderRadius: '4px', color: 'var(--cortex-danger)', fontSize: '12px', marginBottom: '12px' }}>
+          <div className="infra-error">
             {error}
           </div>
         )}
 
         {/* Provider + Region */}
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px',
-                           textTransform: 'uppercase', letterSpacing: '0.4px', color: 'var(--cortex-steel)' }}>
+        <div className="infra-config-row">
+          <div className="infra-field">
+            <label className="infra-field-label">
               Cloud Provider
             </label>
-            <div style={{ display: 'flex', gap: '6px' }}>
+            <div className="infra-provider-buttons">
               {['aws', 'gcp', 'azure'].map(p => (
                 <button
                   key={p}
-                  className={`btn btn-sm ${provider === p ? '' : 'btn-secondary'}`}
+                  className={`btn btn-sm ${provider === p ? '' : 'btn-secondary'} infra-provider-btn`}
                   onClick={() => setProvider(p)}
                   disabled={p !== 'aws'}
                   title={p === 'aws' ? '' : 'Coming in a future phase'}
-                  style={{ textTransform: 'uppercase' }}
                 >
                   {p}
                 </button>
               ))}
             </div>
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '4px',
-                           textTransform: 'uppercase', letterSpacing: '0.4px', color: 'var(--cortex-steel)' }}>
+          <div className="infra-field">
+            <label className="infra-field-label">
               Region
             </label>
             <input type="text" value={region} onChange={e => setRegion(e.target.value)}
-              style={{ width: '100%', padding: '6px 8px', border: '1px solid var(--cortex-border)',
-                      borderRadius: '4px', fontFamily: 'var(--font-mono)', fontSize: '12px' }} />
+              className="infra-region-input" />
           </div>
         </div>
 
         {/* Modules */}
-        <div style={{ marginBottom: '16px' }}>
+        <div className="infra-section">
           <p className="section-label">Modules</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-                       gap: '8px' }}>
+          <div className="infra-module-grid">
             {modules.map(m => (
               <ModuleCard
                 key={m.name}
@@ -232,9 +218,9 @@ export default function InfraGenerator() {
         </div>
 
         {/* Params */}
-        <div style={{ marginBottom: '16px' }}>
+        <div className="infra-section">
           <p className="section-label">Parameters</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+          <div className="infra-params-grid">
             <LabeledInput label="Project name (lowercase, hyphens)" value={params.project_name}
               onChange={v => updateParam('project_name', v)} placeholder="acme-pov-2026" required />
             <LabeledInput label="Your IP for SSH (CIDR)" value={params.dc_ssh_cidr}
@@ -251,14 +237,14 @@ export default function InfraGenerator() {
         </div>
 
         {/* Generate */}
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px' }}>
+        <div className="infra-generate-row">
           <button className="btn" onClick={handleGenerate} disabled={!canGenerate}>
             {generating ? <span className="spinner" /> : '⚙ Generate Bundle'}
           </button>
           {lastBundle && (
-            <span style={{ fontSize: '12px', color: 'var(--cortex-success)', fontFamily: 'var(--font-mono)' }}>
+            <span className="infra-generated">
               ✓ Generated {lastBundle.bundle_id.slice(0, 8)}…
-              <button className="btn btn-sm btn-secondary" style={{ marginLeft: '8px' }}
+              <button className="btn btn-sm btn-secondary infra-generated__btn"
                 onClick={() => handleDownload(lastBundle.bundle_id)}>
                 Download now
               </button>
@@ -279,24 +265,18 @@ export default function InfraGenerator() {
 }
 
 function LabeledInput({ label, value, onChange, placeholder, type = 'text', required = false }) {
+  const inputClass = `infra-param-input${type === 'number' ? ' infra-param-input--mono' : ''}`
   return (
     <div>
-      <label style={{
-        display: 'block', fontSize: '11px', fontWeight: 600, marginBottom: '3px',
-        textTransform: 'uppercase', letterSpacing: '0.4px', color: 'var(--cortex-steel)',
-      }}>
-        {label}{required && <span style={{ color: 'var(--cortex-danger)' }}> *</span>}
+      <label className="infra-field-label infra-field-label--tight">
+        {label}{required && <span className="infra-field-required"> *</span>}
       </label>
       <input
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        style={{
-          width: '100%', padding: '6px 8px',
-          border: '1px solid var(--cortex-border)', borderRadius: '4px',
-          fontSize: '12px', fontFamily: type === 'number' ? 'var(--font-mono)' : 'inherit',
-        }}
+        className={inputClass}
       />
     </div>
   )
