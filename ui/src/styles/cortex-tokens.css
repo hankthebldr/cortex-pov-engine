@@ -1,0 +1,38 @@
+/* ============================================================
+   CortexSim — Design Token Contract (PANW redesign, 2026-08)
+   Source: .design-ref/00-tokens.css (the mockup's own :root /
+   [data-theme="dark"] token sets). Values below are carried
+   VERBATIM from that reference — do not re-derive or "improve"
+   them here. If a value needs to change, change the reference
+   and re-copy; this file is the contract, not a place to tune.
+
+   LIGHT (:root) is the default theme. DARK ([data-theme="dark"])
+   is opt-in by attribute on the root element. Both are complete,
+   independent token sets — nothing here falls back to computed
+   or mixed colors between themes.
+
+   `ui/src/styles/cortex-theme.css` aliases its legacy
+   `--cortex-*` token names onto this vocabulary immediately
+   below its own import (see that file's :root block for the
+   alias table + the reasoning behind each mapping).
+   ============================================================ */
+
+/* Cortex green is the primary accent. PANW orange is reserved for warn/gap signal. */
+:root {
+  --s0: #F1F3F2; --s1: #FFFFFF; --s2: #F8FAF9; --s3: #EBF0ED;
+  --bd: #E3E9E6; --bd2: #C3CCC8; --thead: #999999;
+  --tx: #0A0F0D; --tx2: #55605C; --tx3: #8B958F;
+  --ac: #00A855; --ac-str: #00CC66; --ac-tx: #FFFFFF; --ac-soft: #E3F6EB; --ac-line: #B4E3C8;
+  --warn: #C7961B; --warn-str: #FFCB06; --crit: #A51B00; --orange: #FA582D; --info: #0090AA;
+  --ink: #06120C; --ink2: #0D1B14; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #9FB0A9;
+  --shadow: 0 4px 14px rgba(10,30,20,.09);
+}
+[data-theme="dark"] {
+  --s0: #070D0A; --s1: #101815; --s2: #16211C; --s3: #1C2822;
+  --bd: #26312A; --bd2: #3A4941; --thead: #26312A;
+  --tx: #F2F6F4; --tx2: #A9B8B2; --tx3: #77867E;
+  --ac: #00CC66; --ac-str: #00CC66; --ac-tx: #04150C; --ac-soft: #0F2C1C; --ac-line: #205339;
+  --warn: #FFCB06; --warn-str: #FFCB06; --crit: #FF6A4D; --orange: #FF7A54; --info: #35D3F0;
+  --ink: #04100A; --ink2: #0A1610; --ink-bd: rgba(255,255,255,.1); --ink-tx2: #9FB0A9;
+  --shadow: 0 6px 22px rgba(0,0,0,.55);
+}

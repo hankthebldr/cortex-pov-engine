@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import AppConsole from './AppConsole.jsx'
+import './styles/cortex-tokens.css'
 import './styles/cortex-theme.css'
 import './styles/cortex-console.css'
 
