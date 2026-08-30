@@ -351,9 +351,6 @@
   background: var(--c-detected);
   box-shadow: 0 0 8px -1px var(--c-detected);
 }
-.theme-console .plane-dot--missed {
-  background: var(--c-missed);
-}
 .theme-console .plane-dot--stitched {
   background: var(--c-signal);
   box-shadow: 0 0 10px -1px var(--c-signal-glow);
@@ -362,23 +359,6 @@
 @keyframes pulse-pending {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.35; }
-}
-
-/* ═══════════════════════════════════════════════════════════════════
-   Stitch line — draws between nodes when XSIAM correlates
-   ═══════════════════════════════════════════════════════════════════ */
-
-.theme-console .stitch-line {
-  stroke: var(--c-stitched);
-  stroke-width: 1.2;
-  stroke-dasharray: 2 3;
-  opacity: 0.8;
-  filter: drop-shadow(0 0 3px var(--c-signal-glow));
-  animation: draw-stitch var(--dur-stitch) var(--ease-out) forwards;
-}
-@keyframes draw-stitch {
-  from { stroke-dashoffset: 200; opacity: 0; }
-  to   { stroke-dashoffset: 0;   opacity: 0.8; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -567,7 +547,6 @@
   grid-template-columns: var(--w-rail) 1fr;
   min-height: 0;
 }
-.theme-console .workspace--no-rail { grid-template-columns: 1fr; }
 .theme-console .workspace--rail-collapsed {
   grid-template-columns: var(--w-rail-collapsed) 1fr;
 }
@@ -659,46 +638,6 @@
   position: relative;
   overflow: hidden;
 }
-.theme-console .tabs {
-  display: flex;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--c-hairline);
-  background: var(--c-surface);
-}
-.theme-console .tab {
-  height: 40px;
-  padding: 0 16px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text-muted);
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
-}
-.theme-console .tab:hover { color: var(--c-text-secondary); }
-.theme-console .tab--active { color: var(--c-signal); border-bottom-color: var(--c-signal); }
-.theme-console .tab__badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 16px;
-  padding: 0 5px;
-  font-size: 9px;
-  color: var(--c-text-muted);
-  background: var(--c-surface-raised);
-  border-radius: 2px;
-}
-.theme-console .tab__badge--live {
-  color: var(--c-pending);
-  background: var(--c-pending-soft);
-  animation: pulse-pending 1.4s var(--ease-in-out) infinite;
-}
-.theme-console .tab--active .tab__badge { color: var(--c-signal); background: var(--c-signal-soft); }
 
 /* ─── View / step panel container ─── */
 .theme-console .view {
@@ -1218,10 +1157,6 @@
    Narrative timeline (In-Flight tab — the hero artifact)
    ═══════════════════════════════════════════════════════════════════ */
 
-.theme-console .narrative {
-  max-width: 1180px;
-  margin: 0 auto;
-}
 .theme-console .narrative__header {
   margin-bottom: 32px;
   padding-bottom: 20px;
@@ -1467,15 +1402,9 @@
   font-weight: 400;
 }
 
-
 /* ═══════════════════════════════════════════════════════════════════
    Evidence view — KPI row + scorecard
    ═══════════════════════════════════════════════════════════════════ */
-
-.theme-console .evidence {
-  max-width: 1180px;
-  margin: 0 auto;
-}
 
 .theme-console .kpi-row {
   display: grid;
@@ -1512,7 +1441,6 @@
 .theme-console .kpi__value--signal   { color: var(--c-signal); }
 .theme-console .kpi__value--detected { color: var(--c-detected); }
 .theme-console .kpi__value--pending  { color: var(--c-pending); }
-.theme-console .kpi__value--missed   { color: var(--c-missed); }
 
 .theme-console .kpi__meta {
   margin-top: 8px;
@@ -2071,18 +1999,6 @@
    Lab view — IaC topology generator
    ═══════════════════════════════════════════════════════════════════ */
 
-.theme-console .lab {
-  max-width: 1180px;
-  margin: 0 auto;
-}
-
-.theme-console .lab__row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
 .theme-console .lab__field {
   display: flex;
   flex-direction: column;
@@ -2122,10 +2038,6 @@
   border-radius: 3px;
   outline: none;
   transition: border-color var(--dur-fast) var(--ease-out);
-}
-.theme-console .lab__input.mono {
-  font-family: var(--font-mono);
-  letter-spacing: var(--tracking-mono);
 }
 .theme-console .lab__input:focus {
   border-color: var(--c-signal);
@@ -2172,9 +2084,6 @@
 }
 
 /* sections */
-.theme-console .lab__section {
-  margin-bottom: 28px;
-}
 .theme-console .lab__section-title {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -2241,10 +2150,6 @@
   cursor: inherit;
 }
 
-.theme-console .lab-module__body {
-  flex: 1;
-  min-width: 0;
-}
 .theme-console .lab-module__head {
   display: flex;
   flex-wrap: wrap;
@@ -2280,11 +2185,6 @@
 }
 
 /* parameter grid */
-.theme-console .lab__param-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 14px;
-}
 
 /* generate row */
 .theme-console .lab__generate-row {
@@ -4005,47 +3905,6 @@
   color: var(--c-text-muted);
 }
 
-/* ── TTP detection-body syntax highlighting (issue #57) ─────────────── */
-/* Custom 1-KB tokeniser per syntaxHighlight.js; classes are applied to
-   every span inside .ttp-detection-item__pre. Themed against the
-   Cortex token set so the BIOC / XQL / Sigma body reads cleanly on
-   the navy <pre> background.                                          */
-
-.theme-console .ttp-detection-item__pre .syn {
-  color: inherit;
-}
-
-.theme-console .ttp-detection-item__pre .syn-keyword {
-  color: var(--cortex-teal, #00C0E8);
-  font-weight: 600;
-}
-
-.theme-console .ttp-detection-item__pre .syn-builtin {
-  color: #8fd1ff;
-}
-
-.theme-console .ttp-detection-item__pre .syn-string {
-  color: #f5a524;
-}
-
-.theme-console .ttp-detection-item__pre .syn-number {
-  color: #c9b3ff;
-}
-
-.theme-console .ttp-detection-item__pre .syn-operator {
-  color: var(--c-text-muted, #8a9cb1);
-}
-
-.theme-console .ttp-detection-item__pre .syn-comment {
-  color: #6b7e8e;
-  font-style: italic;
-}
-
-.theme-console .ttp-detection-item__pre .syn-ident,
-.theme-console .ttp-detection-item__pre .syn-plain {
-  color: inherit;
-}
-
 .theme-console .adapter-registry__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -5055,12 +4914,6 @@
 .theme-console .target-card__pill--stale { color: var(--c-pending); background: var(--c-pending-soft); }
 .theme-console .target-card__pill--ready { color: var(--c-signal); background: var(--c-signal-soft); }
 .theme-console .target-card__sub { color: var(--c-text-muted); font-size: 12px; margin: 8px 0 0; }
-.theme-console .target-card__cmd {
-  display: block; margin-top: 10px; padding: 8px 10px;
-  background: var(--c-void); border: 1px solid var(--c-hairline);
-  border-radius: 3px; font-family: var(--font-mono); font-size: 10px;
-  color: var(--c-text-secondary); white-space: pre-wrap; word-break: break-all;
-}
 .theme-console .target-card__selected {
   display: block; margin-top: 10px;
   font-family: var(--font-mono); font-size: 10px;
@@ -5647,140 +5500,6 @@
 .theme-console .insp-tool__egress { font-size: 10px; color: var(--c-text-muted); flex: 1 1 100%; }
 .theme-console .insp-tool__warn { margin-top: 8px; font-size: 11px; color: var(--c-pending); line-height: 1.5; }
 
-/* ═══════════════════════════════════════════════════════════════════════
-   READINESS — "am I ready to run this in front of a customer?"
-   Cortex tokens only (--cortex-navy #003366 · --cortex-teal #00C0E8 ·
-   --cortex-steel #6B7E8E, via the console's --c-* aliases). Every state
-   carries a TEXT label as well as a colour: a projector flattens hue and
-   WCAG 1.4.1 does not accept colour as the only signal.
-   ═══════════════════════════════════════════════════════════════════════ */
-
-.theme-console .readiness { display: flex; flex-direction: column; gap: 20px; }
-.theme-console .readiness__loading {
-  padding: 48px; text-align: center; color: var(--c-text-muted);
-  font-family: var(--font-mono); font-size: 12px;
-}
-.theme-console .readiness__head-actions { display: flex; align-items: center; gap: 10px; }
-.theme-console .readiness__stamp { font-size: 10.5px; color: var(--c-text-muted); }
-
-.theme-console .readiness__section {
-  border: 1px solid var(--c-hairline); border-radius: 3px;
-  background: var(--c-surface-raised); padding: 16px 18px;
-}
-.theme-console .readiness__section--gaps { border-left: 2px solid var(--c-text-muted); }
-.theme-console .readiness__h {
-  font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
-  color: var(--c-text); margin: 0 0 4px;
-}
-.theme-console .readiness__h-meta { font-size: 10.5px; color: var(--c-text-muted); font-weight: 400; }
-.theme-console .readiness__lede {
-  font-size: 11.5px; line-height: 1.6; color: var(--c-text-secondary); margin: 0 0 14px;
-}
-.theme-console .readiness__invariant {
-  margin-top: 14px; padding: 10px 12px; font-size: 11.5px; line-height: 1.6;
-  color: var(--c-text); background: var(--c-signal-soft);
-  border-left: 2px solid var(--cortex-teal, #00C0E8); border-radius: 2px;
-}
-.theme-console .readiness__empty {
-  padding: 14px; font-size: 11.5px; line-height: 1.6; color: var(--c-text-secondary);
-  border: 1px dashed var(--c-hairline-strong); border-radius: 3px;
-}
-.theme-console .readiness__empty p { margin: 0 0 10px; }
-
-/* SimCore unreachable — the loud one. */
-.theme-console .readiness__down {
-  border: 1px solid var(--c-missed); background: var(--c-missed-soft);
-  border-radius: 3px; padding: 16px 18px;
-}
-.theme-console .readiness__down-tag {
-  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
-  color: var(--c-missed); font-weight: 700;
-}
-.theme-console .readiness__down-msg { font-size: 12px; line-height: 1.6; color: var(--c-text); margin: 8px 0; }
-.theme-console .readiness__down-hint { font-size: 11px; line-height: 1.6; color: var(--c-text-secondary); margin: 0; }
-
-/* ── The four-rung connector ladder ─────────────────────────────────── */
-.theme-console .readiness__ladder {
-  list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;
-}
-.theme-console .rdy-rung {
-  border: 1px solid var(--c-hairline); border-radius: 3px;
-  background: var(--c-surface); padding: 10px 12px;
-  display: flex; flex-direction: column; gap: 6px;
-}
-.theme-console .rdy-rung--yes { border-color: var(--c-detected); }
-.theme-console .rdy-rung--no { border-color: var(--c-pending); }
-.theme-console .rdy-rung--unknown { border-style: dashed; }
-.theme-console .rdy-rung__top { display: flex; align-items: center; gap: 8px; }
-.theme-console .rdy-rung__n {
-  font-size: 10px; color: var(--c-text-muted);
-  border: 1px solid var(--c-hairline-strong); border-radius: 50%;
-  width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
-}
-.theme-console .rdy-rung__label { font-size: 12px; font-weight: 700; color: var(--c-text); flex: 1; }
-.theme-console .rdy-rung__q { font-size: 11px; color: var(--c-text-secondary); }
-.theme-console .rdy-rung__detail { font-size: 11px; line-height: 1.55; color: var(--c-text); }
-.theme-console .rdy-rung__proves { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
-.theme-console .rdy-rung__proves-yes { font-size: 10.5px; color: var(--c-text-muted); }
-.theme-console .rdy-rung__proves-no { font-size: 10.5px; color: var(--c-pending); }
-
-/* ── Tenants ────────────────────────────────────────────────────────── */
-.theme-console .readiness__tenants { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
-.theme-console .rdy-tenant {
-  border: 1px solid var(--c-hairline); border-radius: 3px;
-  background: var(--c-surface); padding: 10px 12px;
-}
-.theme-console .rdy-tenant__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.theme-console .rdy-tenant__name { font-size: 12px; font-weight: 700; color: var(--c-text); }
-.theme-console .rdy-tenant__kind { font-size: 11px; color: var(--c-text-secondary); margin-top: 4px; }
-.theme-console .rdy-tenant__host { font-size: 10.5px; color: var(--c-text-muted); }
-.theme-console .rdy-tenant__buys { font-size: 10.5px; color: var(--c-text-muted); margin-top: 6px; line-height: 1.6; }
-.theme-console .rdy-tenant__notbuys { color: var(--c-pending); }
-.theme-console .rdy-tenant__caveat {
-  margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--c-pending);
-}
-
-/* ── Preflight stage checklist ──────────────────────────────────────── */
-.theme-console .rdy-preflight {
-  margin-top: 10px; border-top: 1px solid var(--c-hairline); padding-top: 8px;
-  display: flex; flex-direction: column; gap: 6px;
-}
-.theme-console .rdy-preflight--err { color: var(--c-missed); font-size: 11.5px; }
-.theme-console .rdy-preflight--gap { color: var(--c-text-secondary); font-size: 11.5px; line-height: 1.6; }
-.theme-console .rdy-preflight__head { display: flex; align-items: center; gap: 8px; font-size: 10.5px; }
-.theme-console .rdy-preflight__empty { font-size: 11px; color: var(--c-text-muted); }
-.theme-console .rdy-stage { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; }
-.theme-console .rdy-stage__id { font-size: 10.5px; color: var(--c-text-secondary); min-width: 92px; }
-.theme-console .rdy-stage__detail { color: var(--c-text); flex: 1 1 200px; }
-.theme-console .rdy-stage__fix { flex: 1 1 100%; font-size: 10.5px; color: var(--c-pending); line-height: 1.55; }
-
-/* ── Component grid ─────────────────────────────────────────────────── */
-.theme-console .readiness__grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;
-}
-.theme-console .rdy-comp {
-  border: 1px solid var(--c-hairline); border-radius: 3px;
-  background: var(--c-surface); padding: 10px 12px;
-  display: flex; flex-direction: column; gap: 5px;
-}
-.theme-console .rdy-comp--degraded { border-left: 2px solid var(--c-pending); }
-.theme-console .rdy-comp--error { border-left: 2px solid var(--c-missed); }
-.theme-console .rdy-comp--ok { border-left: 2px solid var(--c-detected); }
-.theme-console .rdy-comp__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.theme-console .rdy-comp__label { font-size: 12px; font-weight: 600; color: var(--c-text); }
-.theme-console .rdy-comp__count { font-size: 20px; line-height: 1; color: var(--c-text); }
-.theme-console .rdy-comp__purpose { font-size: 10.5px; color: var(--c-text-muted); line-height: 1.5; }
-.theme-console .rdy-comp__disagree { font-size: 11px; color: var(--c-pending); line-height: 1.6; }
-.theme-console .rdy-comp__detail { font-size: 10.5px; color: var(--c-text-secondary); line-height: 1.55; }
-.theme-console .rdy-comp__fix { font-size: 11px; color: var(--c-text); line-height: 1.6; }
-
-/* ── Gap list ───────────────────────────────────────────────────────── */
-.theme-console .readiness__gaps { margin: 0; padding-left: 18px; }
-.theme-console .readiness__gaps li {
-  font-size: 11px; line-height: 1.65; color: var(--c-text-secondary); margin-bottom: 6px;
-}
-
 /* ── Global degraded banner ─────────────────────────────────────────── */
 .theme-console .readiness-banner {
   border: 1px solid var(--c-pending); background: var(--c-pending-soft);
@@ -5821,9 +5540,6 @@
   border-left: 2px solid var(--c-text-muted); padding-left: 8px;
 }
 .theme-console .preflight__actions { margin-top: 10px; }
-.theme-console .rdy-comp__code {
-  font-size: 10px; letter-spacing: 0.06em; color: var(--c-text-secondary);
-}
 
 /* ═══════════════════════════════════════════════════════════════════
    ToolAdapterCatalog — inline-style normalization
@@ -5973,7 +5689,6 @@
 .theme-console .lab__last-bundle-download { margin-left: 10px; height: 24px; }
 
 /* Bundle history head — right-align the Size column */
-.theme-console .lab__bundle-head__size { text-align: right; }
 
 /* Bundle row download button */
 .theme-console .lab__bundle-row-download { height: 26px; }
@@ -5998,7 +5713,6 @@
   font-size: 10px; color: var(--c-text-muted);
   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
 }
-.theme-console .lab__adapter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .theme-console .lab__adapter-chip__check { margin-right: 4px; }
 .theme-console .lab__adapter-chip__version { margin-left: 6px; font-size: 9px; opacity: 0.7; }
 
@@ -6763,130 +6477,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   TtpBrowserView (console/TtpBrowserView.jsx) — inline-style extraction
-   Design-ref token pass. See .design-ref/00-tokens.css for the target
-   vocabulary; this file's own --c-* / --fs-* set is what's actually
-   wired to .theme-console today, so rules below lean on those — the
-   raw --cortex-* rename is a separate migration.
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* ── Compact toolbar / copy buttons (component-scoped sizes) ───────── */
-.theme-console .ttp-btn--sm  { height: 28px; padding: 0 10px; }
-.theme-console .ttp-btn--xs  { height: 22px; padding: 0 8px; margin-left: 4px; }
-.theme-console .ttp-btn--copy { height: 20px; padding: 0 8px; font-size: 10px; }
-
-/* ── Small / muted chip modifiers (mirrors chip--signal/--detected) ── */
-.theme-console .chip--xs { font-size: 9px; }
-.theme-console .chip--muted { color: var(--c-text-muted); }
-
-/* ── TTP card body ───────────────────────────────────────────────── */
-.theme-console .ttp-card__title { font-size: 12px; display: block; margin-bottom: 4px; }
-.theme-console .ttp-card__summary { font-size: 11px; color: var(--c-text-secondary); }
-.theme-console .adapter-card__tids--spaced { margin-top: 4px; }
-.theme-console .adapter-card__det-kinds {
-  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;
-}
-
-/* ── Detail panel: action row, chip rows, small notes ───────────────── */
-.theme-console .ttp-detail__actions { display: flex; gap: 8px; }
-.theme-console .ttp-detail__summary { white-space: pre-line; font-size: 12px; }
-.theme-console .ttp-detail__chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.theme-console .ttp-detail__chip-row--tight { display: flex; flex-wrap: wrap; gap: 4px; }
-.theme-console .ttp-detail__note { font-size: 10px; color: var(--c-text-muted); margin: 0 0 6px; }
-.theme-console .ttp-detail__meta-tag { margin-left: 4px; font-size: 9px; opacity: 0.6; }
-.theme-console .ttp-detail__meta-tag--loose { opacity: 0.7; }
-
-/* ── Generic 2px-cell table (MITRE technique table + run history) ──── */
-.theme-console .ttp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-.theme-console .ttp-table thead tr { text-align: left; color: var(--c-text-muted); }
-.theme-console .ttp-table th,
-.theme-console .ttp-table td { padding: 2px 6px 2px 0; }
-.theme-console .ttp-table .th--num,
-.theme-console .ttp-table .td--num { text-align: right; }
-.theme-console .ttp-table .td--sm { font-size: 10px; }
-
-/* ── Run-history clickable row + coverage badge ─────────────────────── */
-.theme-console .ttp-run-row { cursor: pointer; }
-.theme-console .ttp-run-row__badge--pass    { background: var(--c-detected-soft); }
-.theme-console .ttp-run-row__badge--fail    { background: var(--c-missed-soft); }
-.theme-console .ttp-run-row__badge--partial { background: var(--c-pending-soft); }
-
-/* ── Detections accordion (BIOC / XQL / correlation body reveal) ───── */
-.theme-console .ttp-detections__group-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.theme-console .ttp-detections__group-count { font-size: 10px; opacity: 0.7; }
-.theme-console .ttp-detection-item__head {
-  width: 100%; text-align: left; background: none; border: 0;
-  padding: 6px 4px; cursor: pointer; border-top: 1px solid var(--c-hairline);
-}
-.theme-console .ttp-detection-item__head-row { display: flex; align-items: baseline; gap: 8px; }
-.theme-console .ttp-detection-item__caret { font-size: 9px; opacity: 0.5; }
-.theme-console .ttp-detection-item__name { font-size: 11px; font-weight: 500; flex: 1; }
-.theme-console .ttp-detection-item__severity { font-size: 9px; }
-.theme-console .ttp-detection-item__id { font-size: 9px; opacity: 0.6; }
-.theme-console .ttp-detection-item__preview {
-  font-size: 10px; color: var(--c-text-muted); margin: 2px 0 0 16px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.theme-console .ttp-detection-item__body { padding: 4px 4px 8px 16px; }
-.theme-console .ttp-detection-item__desc { font-size: 11px; color: var(--c-text-secondary); margin: 0 0 6px; }
-.theme-console .ttp-detection-item__body-head {
-  display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
-}
-.theme-console .ttp-detection-item__body-key { font-size: 9px; opacity: 0.6; }
-.theme-console .ttp-detection-item__pre {
-  font-size: 10px;
-  background: var(--c-void);
-  border: 1px solid var(--c-hairline);
-  padding: 6px 8px;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 260px;
-  overflow-y: auto;
-}
-.theme-console .ttp-detection-item__no-body { font-size: 10px; color: var(--c-text-muted); }
-
-/* ── Launch-all modal ───────────────────────────────────────────────── */
-.theme-console .ttp-launcher-backdrop {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
-  display: flex; align-items: center; justify-content: center; z-index: 50;
-}
-.theme-console .ttp-launcher {
-  width: min(640px, 92vw); max-height: 88vh;
-  background: var(--c-surface-raised);
-  border: 1px solid var(--c-hairline);
-  border-radius: 6px; padding: 20px 22px;
-  display: flex; flex-direction: column; gap: 14px;
-  overflow: hidden;
-}
-.theme-console .ttp-launcher__head { display: flex; justify-content: space-between; align-items: baseline; }
-.theme-console .ttp-launcher__title { margin: 0; font-size: 16px; }
-.theme-console .ttp-launcher__table-wrap {
-  flex: 1; overflow-y: auto; border: 1px solid var(--c-hairline); border-radius: 4px;
-}
-.theme-console .ttp-launcher-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-.theme-console .ttp-launcher-table thead tr { text-align: left; color: var(--c-text-muted); }
-.theme-console .ttp-launcher-table th,
-.theme-console .ttp-launcher-table td { padding: 6px 8px; }
-.theme-console .ttp-launcher-table .th--check { width: 32px; }
-.theme-console .ttp-launcher-table__sub { font-size: 10px; color: var(--c-text-muted); }
-.theme-console .ttp-launcher__row { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }
-.theme-console .ttp-launcher__field { font-size: 11px; }
-.theme-console .ttp-launcher__field--grow { font-size: 11px; flex: 1; }
-.theme-console .ttp-launcher__select { font-size: 11px; padding: 2px 4px; }
-.theme-console .ttp-launcher__input {
-  font-size: 11px; padding: 2px 6px; width: 220px;
-  background: var(--c-surface); border: 1px solid var(--c-hairline); color: var(--c-text);
-}
-.theme-console .ttp-launcher__footer-row { display: flex; justify-content: space-between; align-items: baseline; }
-.theme-console .ttp-launcher__count { font-size: 10px; color: var(--c-text-muted); }
-.theme-console .ttp-launcher__summary {
-  font-size: 11px; padding-top: 8px; border-top: 1px solid var(--c-hairline);
-}
-.theme-console .ttp-launcher__fail-list { margin: 6px 0 0; padding-left: 18px; }
-.theme-console .ttp-launcher__fail-item { color: var(--c-missed); }
-
-/* ═══════════════════════════════════════════════════════════════════
    TenantManager (console/TenantManager.jsx) — inline-style normalization
    pass. Uses the existing --cortex-* / --font-* / --radius-* / --shadow-*
    token set (cortex-theme.css), matching the component's prior inline
@@ -6897,7 +6487,6 @@
 
 /* ── Step indicator ──────────────────────────────────────────────────── */
 .theme-console .tenant-mgr__steps { display: flex; align-items: center; gap: 0; margin-bottom: 28px; }
-.theme-console .tenant-mgr__step { display: flex; align-items: center; }
 .theme-console .tenant-mgr__step-circle {
   width: 26px; height: 26px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -6914,7 +6503,6 @@
 .theme-console .tenant-mgr__step-connector--done { background: var(--cortex-teal); }
 
 /* ── Field row / input ───────────────────────────────────────────────── */
-.theme-console .tenant-mgr__field { margin-bottom: 16px; }
 .theme-console .tenant-mgr__field-label {
   display: block; font-size: 11px; font-weight: 600;
   color: var(--cortex-navy); margin-bottom: 5px; letter-spacing: 0.04em;
@@ -6935,7 +6523,6 @@
   background: #fff;
   transition: border-color 0.12s;
 }
-.theme-console .tenant-mgr__input--mono { font-family: var(--font-mono); }
 .theme-console .tenant-mgr__input--error { border-color: var(--cortex-danger); }
 .theme-console .tenant-mgr__input:focus { border-color: var(--cortex-teal); }
 
@@ -6958,7 +6545,6 @@
   border: 1px solid var(--cortex-danger);
   cursor: default;
 }
-.theme-console .tenant-mgr__pill--fail.tenant-mgr__pill--hint { cursor: help; }
 .theme-console .tenant-mgr__pill--unknown {
   background: rgba(107,126,142,0.12); color: var(--cortex-steel);
   border: 1px solid var(--cortex-border);
@@ -6968,7 +6554,6 @@
 .theme-console .tenant-mgr__section-title { font-size: 13px; font-weight: 700; color: var(--cortex-navy); margin: 0 0 20px; }
 
 /* ── Step 2: auth-mode radios ────────────────────────────────────────── */
-.theme-console .tenant-mgr__radio-row { display: flex; gap: 10px; margin-top: 4px; }
 .theme-console .tenant-mgr__radio-option {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 12px;
@@ -6987,7 +6572,6 @@
   background: rgba(0,192,232,0.07);
   font-weight: 700;
 }
-.theme-console .tenant-mgr__radio-option--disabled { cursor: not-allowed; opacity: 0.45; }
 .theme-console .tenant-mgr__radio-input { accent-color: var(--cortex-teal); }
 .theme-console .tenant-mgr__radio-note { font-size: 9px; color: var(--cortex-steel); margin-left: 2px; }
 .theme-console .tenant-mgr__radio-hint { font-size: 10px; color: var(--cortex-steel); margin-top: 5px; }
@@ -7005,8 +6589,6 @@
 .theme-console .tenant-mgr__alert { padding: 10px 14px; margin-bottom: 16px; border-radius: var(--radius-sm); font-size: 12px; }
 .theme-console .tenant-mgr__alert--error { background: rgba(231,76,60,0.08); border: 1px solid var(--cortex-danger); color: var(--cortex-danger); }
 .theme-console .tenant-mgr__alert--success { background: rgba(0,184,148,0.08); border: 1px solid var(--cortex-success); color: var(--cortex-success); }
-.theme-console .tenant-mgr__actions { display: flex; gap: 10px; align-items: center; }
-.theme-console .tenant-mgr__btn-wide { min-width: 130px; }
 .theme-console .tenant-mgr__footnote { font-size: 10px; color: var(--cortex-steel); margin-top: 8px; }
 
 /* ── Tenant list rows ─────────────────────────────────────────────────── */
@@ -7026,12 +6608,7 @@
   background: var(--cortex-teal); color: #fff; white-space: nowrap;
 }
 .theme-console .tenant-mgr__btn-align { align-self: center; white-space: nowrap; }
-.theme-console .tenant-mgr__btn-nowrap { white-space: nowrap; }
-.theme-console .tenant-mgr__row-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .theme-console .tenant-mgr__row-name { font-family: var(--font-mono); font-weight: 700; font-size: 12px; color: var(--cortex-navy); }
-.theme-console .tenant-mgr__row-url { font-size: 11px; color: var(--cortex-steel); font-family: var(--font-mono); }
-.theme-console .tenant-mgr__row-meta { font-size: 10px; color: var(--cortex-steel); margin-top: 3px; }
-.theme-console .tenant-mgr__row-meta-error { color: var(--cortex-danger); margin-left: 6px; }
 .theme-console .tenant-mgr__btn-delete {
   background: none; border: 1px solid var(--cortex-border);
   color: var(--cortex-danger); cursor: pointer;
@@ -7050,8 +6627,6 @@
 }
 .theme-console .tenant-mgr__dialog-title { font-size: 14px; font-weight: 700; color: var(--cortex-navy); margin-top: 0; }
 .theme-console .tenant-mgr__dialog-text { font-size: 12px; color: var(--cortex-steel); margin-bottom: 20px; }
-.theme-console .tenant-mgr__mono { font-family: var(--font-mono); }
-.theme-console .tenant-mgr__dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
 .theme-console .tenant-mgr__btn-delete-confirm { background: var(--cortex-danger); color: #fff; border: none; }
 
 /* ── View header ──────────────────────────────────────────────────────── */
@@ -7061,8 +6636,6 @@
 .theme-console .tenant-mgr__subtitle { font-size: 11px; color: var(--cortex-steel); }
 .theme-console .tenant-mgr__scope-line { margin-top: 8px; font-size: 11px; color: var(--cortex-steel); }
 .theme-console .tenant-mgr__scope-value { font-family: var(--font-mono); color: var(--cortex-teal); }
-.theme-console .tenant-mgr__scope-empty { font-style: italic; }
-.theme-console .tenant-mgr__scope-suffix { margin-left: 6px; }
 
 /* ── Two-column layout ────────────────────────────────────────────────── */
 .theme-console .tenant-mgr__layout { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
@@ -7074,8 +6647,6 @@
   box-shadow: var(--shadow-sm);
 }
 .theme-console .tenant-mgr__nav { display: flex; justify-content: space-between; margin-top: 24px; }
-.theme-console .tenant-mgr__nav-single { margin-top: 16px; }
-.theme-console .tenant-mgr__list-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
 .theme-console .tenant-mgr__list-title { margin: 0; font-size: 12px; font-weight: 700; color: var(--cortex-navy); text-transform: uppercase; letter-spacing: 0.06em; }
 .theme-console .tenant-mgr__count-badge {
   background: var(--cortex-teal); color: #fff;
