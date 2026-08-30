@@ -1429,6 +1429,7 @@
 
 .theme-console .narrative__stitch-label {
   position: absolute;
+  transform: translate(-50%, -100%);
   font-family: var(--font-mono);
   font-size: 9px;
   letter-spacing: 0.08em;
@@ -7084,3 +7085,243 @@
 .theme-console .tenant-mgr__error-banner { font-size: 11px; color: var(--cortex-danger); margin-bottom: 10px; }
 .theme-console .tenant-mgr__empty { padding: 24px 0; text-align: center; font-size: 11px; color: var(--cortex-steel); }
 .theme-console .tenant-mgr__empty--bordered { border: 1px dashed var(--cortex-border); border-radius: var(--radius-sm); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Inline-style normalization pass (26 lightweight components)
+   Appended, not merged into existing rules above — see per-file sections.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── PlaneSelector.jsx ───
+   Renders outside .theme-console (App.jsx legacy shell, not the console
+   redesign tree — see ConsoleRail for its console-theme counterpart), so
+   these are deliberately UNSCOPED, component-owned classes. */
+.plane-list { display: flex; flex-direction: column; gap: 6px; }
+.plane-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-md);
+  border: 1.5px solid transparent; background: transparent;
+  color: #3a4f62; cursor: pointer; text-align: left; width: 100%;
+  transition: all var(--transition-fast);
+}
+.plane-btn--active {
+  border-color: var(--cortex-teal);
+  background: rgba(0, 192, 232, 0.08);
+  color: var(--cortex-navy);
+}
+.plane-btn__icon { font-size: 18px; line-height: 1; flex-shrink: 0; }
+.plane-btn__text { flex: 1; min-width: 0; }
+.plane-btn__label { display: block; font-size: 13px; font-weight: 500; line-height: 1.2; }
+.plane-btn__label--active { font-weight: 600; }
+.plane-btn__desc {
+  display: block; font-size: 10px; color: var(--cortex-steel);
+  line-height: 1.3; margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.plane-btn__count {
+  font-size: 11px; font-weight: 600; min-width: 20px; height: 20px;
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  background: var(--cortex-light-bg); color: var(--cortex-steel);
+  border: 1px solid var(--cortex-border); flex-shrink: 0;
+}
+.plane-btn__count--active { background: rgba(0,192,232,0.18); color: var(--cortex-teal); }
+.plane-clear-btn { margin-top: 12px; }
+
+/* ─── TtpEditorView.jsx ─── */
+.theme-console .ttp-editor__actions { display: flex; gap: 8px; }
+.theme-console .ttp-editor__saved-msg { color: var(--c-success, #4FD1A1); font-size: 11px; margin-bottom: 8px; }
+.theme-console .ttp-editor__hint { font-size: 10px; color: var(--c-text-muted); margin: 6px 0; }
+.theme-console .ttp-editor__textarea {
+  width: 100%; min-height: 420px; font-size: 11px; padding: 8px 10px;
+  background: var(--c-bg-subtle, rgba(0,0,0,0.25));
+  border: 1px solid var(--c-hairline, rgba(255,255,255,0.08));
+  border-radius: 4px; color: var(--c-text-primary); resize: vertical;
+}
+.theme-console .ttp-editor__textarea--error { border-color: var(--c-error, salmon); }
+.theme-console .ttp-editor__parse-error,
+.theme-console .ttp-editor__validate-error { font-size: 11px; color: var(--c-error, salmon); margin-top: 6px; }
+.theme-console .ttp-editor__validate-path { font-weight: 600; }
+.theme-console .ttp-editor__valid-msg { font-size: 11px; color: var(--c-success, #4FD1A1); margin-top: 6px; }
+
+/* ─── ScenarioInspector.jsx ─── */
+.theme-console .insp-launch__arrow { margin-left: 4px; }
+.theme-console .insp-launch__kbd {
+  background: rgba(5,10,20,0.25); border-color: rgba(5,10,20,0.25); color: var(--c-void);
+}
+/* NOTE: this rule intentionally duplicates a background/border-color pair also
+   used (without the color override) as .ops-filter-kbd below — both are real,
+   distinct component instances and neither should be merged into the other. */
+.theme-console .insp-launch__status {
+  margin-top: 10px; font-size: 10px; letter-spacing: 0.04em;
+}
+.theme-console .insp-launch__status--success { color: var(--c-detected); }
+.theme-console .insp-launch__status--missed { color: var(--c-missed); }
+.theme-console .insp-section__title-hint {
+  margin-left: 6px; font-size: 9px; color: var(--c-text-muted);
+  letter-spacing: 0.04em; text-transform: none;
+}
+.theme-console .insp-config__no-agents { color: var(--c-pending); font-size: 10px; letter-spacing: 0.04em; }
+.theme-console .insp-tags { font-size: 10px; color: var(--c-text-secondary); }
+.theme-console .insp-matrix-empty {
+  color: var(--c-text-muted); font-size: 10px; letter-spacing: 0.04em;
+  text-align: center; padding: 20px 0;
+}
+.theme-console .insp-tool__chip-btn { border: none; cursor: pointer; }
+
+/* ─── EvidenceView.jsx ─── */
+.theme-console .evidence-empty { padding-top: 80px; }
+.theme-console .evidence-empty__title {
+  font-family: var(--font-display); font-size: 28px; font-weight: 400;
+  color: var(--c-text); margin-bottom: 12px;
+}
+.theme-console .evidence-empty__desc {
+  font-family: var(--font-narrative); font-size: 15px; font-weight: 300;
+  color: var(--c-text-secondary); line-height: 1.6; max-width: 640px;
+}
+.theme-console .evidence-header__actions { display: flex; gap: 8px; align-items: center; }
+.theme-console .kpi__suffix { font-size: 22px; color: var(--c-text-muted); }
+.theme-console .scorecard__head-mttd { text-align: right; }
+.theme-console .scorecard-empty {
+  padding: 32px; text-align: center; color: var(--c-text-muted);
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em;
+}
+
+/* ─── destinations.jsx ─── */
+.theme-console .library-layout {
+  display: grid; grid-template-columns: var(--w-rail) 1fr; min-height: 0; height: 100%;
+}
+.theme-console .guided-flow { display: flex; flex-direction: column; gap: 16px; padding: 4px; }
+.theme-console .guided-flow__library-link {
+  background: none; border: none; color: var(--cortex-teal, #00C0E8);
+  cursor: pointer; padding: 0;
+}
+.theme-console .run-list-empty {
+  padding: 48px; text-align: center; color: var(--c-text-muted);
+  font-family: var(--font-mono); font-size: 12px;
+}
+.theme-console .run-list__row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
+  width: 100%; padding: 10px 14px; text-align: left;
+  background: var(--c-surface-raised, rgba(255,255,255,0.03));
+  border: 1px solid var(--c-hairline, rgba(255,255,255,0.08));
+  border-radius: 3px; margin-bottom: 6px; color: var(--c-text); cursor: pointer;
+}
+.theme-console .run-list__scenario { font-size: 12px; }
+.theme-console .run-list__id { font-size: 10px; color: var(--c-text-muted); }
+.theme-console .run-list__status-chip { font-size: 10px; }
+.theme-console .run-list__status-chip--live { color: var(--cortex-teal, #00C0E8); }
+.theme-console .run-list__status-chip--done { color: var(--c-detected, #6ee7a8); }
+.theme-console .run-list__status-chip--pending { color: var(--c-pending, #f5c451); }
+
+/* ─── CoverageView.jsx ─── */
+.theme-console .coverage-color-detected { color: var(--c-detected); }
+.theme-console .coverage-color-pending { color: var(--c-pending); }
+.theme-console .coverage-color-muted { color: var(--c-text-muted); }
+.theme-console .coverage__header-actions { display: flex; gap: 8px; align-items: center; }
+.theme-console .coverage__empty--error { color: var(--c-missed); }
+.theme-console .cov-detail__plane-chip { margin-right: 4px; }
+
+/* ─── OperationsView.jsx ─── */
+.theme-console .ops-head__total { color: var(--c-text-muted); }
+.theme-console .ops-toolbar { display: flex; gap: 8px; align-items: center; }
+.theme-console .ops-search { min-width: 220px; }
+.theme-console .ops-filter-kbd { background: rgba(5,10,20,0.25); border-color: rgba(5,10,20,0.25); }
+.theme-console .ops-loading-note {
+  padding: 48px; text-align: center; color: var(--c-text-muted);
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em;
+}
+
+/* ─── InflightView.jsx ─── */
+.theme-console .inflight-empty { padding-top: 80px; }
+.theme-console .inflight-empty__title {
+  font-family: var(--font-display); font-size: 28px; font-weight: 400;
+  color: var(--c-text); margin-bottom: 12px;
+}
+.theme-console .inflight-empty__desc {
+  font-family: var(--font-narrative); font-size: 15px; font-weight: 300;
+  color: var(--c-text-secondary); line-height: 1.6; max-width: 640px;
+}
+.theme-console .inflight-loading-note {
+  padding: 48px; text-align: center; color: var(--c-text-muted);
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em;
+}
+.theme-console .inflight-footer-actions { display: flex; gap: 8px; }
+
+/* ─── AdapterRegistryView.jsx ─── */
+.theme-console .adapter-detail__tag-chip { font-size: 9px; }
+.theme-console .adapter-detail__desc { white-space: pre-line; }
+.theme-console .adapter-detail__techniques { display: flex; flex-wrap: wrap; gap: 4px; }
+.theme-console .adapter-detail__eal-targets { font-size: 11px; color: var(--c-text-secondary); }
+.theme-console .adapter-detail__no-params { color: var(--c-text-muted); font-size: 11px; }
+
+/* ─── NarrativeTimeline.jsx (all three retained inline — see note below) ─── */
+
+/* ─── FilterPalette.jsx ─── */
+.theme-console .filter-palette__empty { padding-bottom: 24px; }
+.theme-console .filter-palette__match-count { color: var(--c-text-muted); }
+.theme-console .filter-palette__group-label { padding: 0; }
+
+/* ─── ConsoleHeader.jsx ─── */
+.theme-console .live-pill { cursor: pointer; }
+.theme-console .live-pill__dot { background: var(--cortex-teal, #00C0E8); box-shadow: 0 0 6px var(--cortex-teal, #00C0E8); }
+.theme-console .live-pill__label { color: var(--cortex-teal, #00C0E8); }
+
+/* ─── EalRunProgress.jsx ───
+   EalRunProgress is shared: EalConsole (its parent) is used by both App.jsx
+   (legacy) and app/destinations.jsx (console theme), so these are
+   deliberately UNSCOPED to render correctly under either shell. */
+.eal-run-progress__meta-row { display: flex; gap: 12px; }
+.eal-run-progress__error-banner { margin-top: 8px; }
+
+/* ─── EalCampaignBuilder.jsx ─── (same shared-parent reasoning as above) */
+.eal-builder__form-grid { margin-top: 8px; }
+.eal-builder__actions-row { gap: 8px; justify-content: flex-end; }
+
+/* ─── MttdHistogram.jsx (bar height % retained inline — see note below) ─── */
+.theme-console .mttd-histogram__bar-wrap { height: 120px; }
+
+/* ─── LaunchView.jsx ─── */
+.theme-console .launch-edit-btn { margin-left: 8px; }
+
+/* ─── ConsoleRail.jsx ─── */
+.theme-console .plane-item--sm { font-size: 10px; }
+
+/* ─── AppConsole.jsx ───
+   NOTE: these two render as siblings of <AppShell> (ConfirmDialog + the toast
+   div sit in the top-level fragment, not inside AppShell's `.theme-console`
+   wrapper) — unscoped on purpose, unlike every other rule in this pass. */
+.abort-dialog__note { color: var(--c-pending); font-size: 12px; }
+.app-toast {
+  position: fixed; bottom: 48px; right: 20px; z-index: 200;
+  padding: 10px 14px; font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--c-surface-modal); border: 1px solid var(--c-hairline-strong);
+  border-radius: 3px; color: var(--c-detected);
+}
+.toast-error.app-toast { color: var(--c-missed); }
+.toast-warn.app-toast { color: var(--c-pending); }
+
+/* ─── TelemetryStrip.jsx (fill width % retained inline — see note below) ─── */
+
+/* ─── StackCoverageView.jsx ─── */
+.theme-console .stack-coverage__cell-actions { display: flex; gap: 8px; }
+
+/* ─── ScenarioPreflightCard.jsx ─── */
+.theme-console .preflight-verdict { margin-left: 8px; }
+
+/* ─── ScenarioGrid.jsx ─── */
+.theme-console .scenario-grid-empty {
+  padding: 48px; text-align: center; color: var(--c-text-muted);
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.04em;
+}
+
+/* ─── RunDetailView.jsx ─── */
+.theme-console .run-detail__subtabs { margin-bottom: 12px; }
+
+/* ─── PayloadComposer.jsx ─── */
+.theme-console .payload-compose__inline-fetch-chip { margin-left: 6px; }
+
+/* ─── MultiRunCompare.jsx ─── */
+.theme-console .compare-runs__avail-label { margin-bottom: 8px; }
+
+/* ─── CommandPalette.jsx ─── */
+.theme-console .cmd-palette__empty { padding-bottom: 24px; }

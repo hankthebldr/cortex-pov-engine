@@ -65,7 +65,7 @@ export default function ScenarioInspector({
               title="Arm this scenario and continue to the Launch step"
             >
               <span>Continue to Launch</span>
-              <span aria-hidden="true" style={{ marginLeft: 4 }}>▸</span>
+              <span aria-hidden="true" className="insp-launch__arrow">▸</span>
             </button>
           ) : (
             // Fallback (no handoff wired, e.g. isolated render): inline launch
@@ -79,12 +79,7 @@ export default function ScenarioInspector({
             >
               <span>{launch.launching ? 'Launching…' : 'Launch'}</span>
               <span
-                className="kbd"
-                style={{
-                  background: 'rgba(5,10,20,0.25)',
-                  borderColor: 'rgba(5,10,20,0.25)',
-                  color: 'var(--c-void)',
-                }}
+                className="kbd insp-launch__kbd"
               >⌘L</span>
             </button>
           )}
@@ -98,15 +93,9 @@ export default function ScenarioInspector({
 
         {launch.lastRun && (
           <div
-            className="mono"
-            style={{
-              marginTop: 10,
-              fontSize: 10,
-              letterSpacing: '0.04em',
-              color: launch.lastRun.status === 'success'
-                ? 'var(--c-detected)'
-                : 'var(--c-missed)',
-            }}
+            className={'mono insp-launch__status' + (launch.lastRun.status === 'success'
+              ? ' insp-launch__status--success'
+              : ' insp-launch__status--missed')}
           >
             {launch.lastRun.status === 'success' ? '\u2713 ' : '\u2717 '}
             {launch.lastRun.message}
@@ -121,13 +110,7 @@ export default function ScenarioInspector({
       <div className="insp-section insp-section--launch-config">
         <div className="insp-section__title">
           Quick launch
-          <span className="mono" style={{
-            marginLeft: 6,
-            fontSize: 9,
-            color: 'var(--c-text-muted)',
-            letterSpacing: '0.04em',
-            textTransform: 'none',
-          }}>⌘L · advanced</span>
+          <span className="mono insp-section__title-hint">⌘L · advanced</span>
         </div>
         <div className="insp-config">
           {/* Mode */}
@@ -171,11 +154,7 @@ export default function ScenarioInspector({
             <div className="insp-config__row">
               <label className="insp-config__label">Agent</label>
               {launch.agents.length === 0 ? (
-                <span className="mono" style={{
-                  color: 'var(--c-pending)',
-                  fontSize: 10,
-                  letterSpacing: '0.04em',
-                }}>
+                <span className="mono insp-config__no-agents">
                   ! no agents connected
                 </span>
               ) : (
@@ -281,7 +260,7 @@ export default function ScenarioInspector({
           {(scenario.tags && scenario.tags.length > 0) && (
             <>
               <dt>Tags</dt>
-              <dd className="mono" style={{ fontSize: 10, color: 'var(--c-text-secondary)' }}>
+              <dd className="mono insp-tags">
                 {scenario.tags.join(' · ')}
               </dd>
             </>
@@ -316,13 +295,7 @@ export default function ScenarioInspector({
           </div>
         ))}
         {(!scenario.steps || scenario.steps.length === 0) && (
-          <div className="mono" style={{
-            color: 'var(--c-text-muted)',
-            fontSize: 10,
-            letterSpacing: '0.04em',
-            textAlign: 'center',
-            padding: '20px 0',
-          }}>
+          <div className="mono insp-matrix-empty">
             no steps loaded — fetch detail
           </div>
         )}
@@ -415,11 +388,10 @@ function ScenarioToolsSection({ scenario, scenarioId }) {
             <>
               <button
                 type="button"
-                className={r.supply.chipClass}
+                className={r.supply.chipClass + ' insp-tool__chip-btn'}
                 data-testid={`insp-supply-${r.tool.adapter_ref}`}
                 onClick={() => goShelf({ tool: r.tool.adapter_ref })}
                 title={r.supply.egressLabel}
-                style={{ border: 'none', cursor: 'pointer' }}
               >
                 {r.supply.label}
               </button>

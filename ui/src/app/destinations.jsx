@@ -68,7 +68,6 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
   return (
     <div
       className="library-layout"
-      style={{ display: 'grid', gridTemplateColumns: 'var(--w-rail) 1fr', minHeight: 0, height: '100%' }}
     >
       <ConsoleRail
         planes={railPlanes}
@@ -122,14 +121,14 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
   }, [armId])
 
   return (
-    <div className="guided-flow" style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 4 }}>
+    <div className="guided-flow">
       <div className="view-head">
         <div>
           <h1>New POV run</h1>
           <div className="view-head__meta">
             {scenario
               ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>Arm a scenario from the <button className="linklike" onClick={() => onNavigate('library')} style={{ background: 'none', border: 'none', color: 'var(--cortex-teal, #00C0E8)', cursor: 'pointer', padding: 0 }}>Library</button> to begin.</>}
+              : <>Arm a scenario from the <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Library</button> to begin.</>}
           </div>
         </div>
       </div>
@@ -216,7 +215,7 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
 function RunList({ runs = [], onOpen = () => {} }) {
   if (!runs.length) {
     return (
-      <div style={{ padding: 48, textAlign: 'center', color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+      <div className="run-list-empty">
         no runs yet — launch a scenario from the Library
       </div>
     )
@@ -234,24 +233,11 @@ function RunList({ runs = [], onOpen = () => {} }) {
             role="row"
             className="run-list__row"
             onClick={() => onOpen(id)}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto auto',
-              gap: 12, alignItems: 'center', width: '100%',
-              padding: '10px 14px', textAlign: 'left',
-              background: 'var(--c-surface-raised, rgba(255,255,255,0.03))',
-              border: '1px solid var(--c-hairline, rgba(255,255,255,0.08))',
-              borderRadius: 3, marginBottom: 6, color: 'var(--c-text)', cursor: 'pointer',
-            }}
           >
-            <span className="mono" style={{ fontSize: 12 }}>{r.scenario_id || id}</span>
-            <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>{id}</span>
+            <span className="mono run-list__scenario">{r.scenario_id || id}</span>
+            <span className="mono run-list__id">{id}</span>
             <span
-              className="chip"
-              style={{
-                fontSize: 10,
-                color: live ? 'var(--cortex-teal, #00C0E8)' : terminal ? 'var(--c-detected, #6ee7a8)' : 'var(--c-pending, #f5c451)',
-              }}
+              className={'chip run-list__status-chip' + (live ? ' run-list__status-chip--live' : terminal ? ' run-list__status-chip--done' : ' run-list__status-chip--pending')}
             >
               {r.status || 'unknown'}
             </span>

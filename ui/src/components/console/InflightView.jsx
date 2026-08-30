@@ -131,16 +131,9 @@ export default function InflightView({ activeRun, lastRun, onError }) {
 
   if (!targetScenarioId) {
     return (
-      <div className="narrative" style={{ paddingTop: 80 }}>
-        <h1 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 28, fontWeight: 400, color: 'var(--c-text)', marginBottom: 12,
-        }}>No run in progress</h1>
-        <p style={{
-          fontFamily: 'var(--font-narrative)',
-          fontSize: 15, fontWeight: 300,
-          color: 'var(--c-text-secondary)', lineHeight: 1.6, maxWidth: 640,
-        }}>
+      <div className="narrative inflight-empty">
+        <h1 className="inflight-empty__title">No run in progress</h1>
+        <p className="inflight-empty__desc">
           Launch a scenario from the Operations tab. The attack narrative
           timeline will render here as steps execute, and Cortex stitches arrive.
         </p>
@@ -162,14 +155,7 @@ export default function InflightView({ activeRun, lastRun, onError }) {
         </div>
 
         {loading && frames.length === 0 ? (
-          <div style={{
-            padding: 48,
-            textAlign: 'center',
-            color: 'var(--c-text-muted)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            letterSpacing: '0.04em',
-          }}>
+          <div className="inflight-loading-note">
             loading run telemetry…
           </div>
         ) : (
@@ -204,7 +190,7 @@ export default function InflightView({ activeRun, lastRun, onError }) {
             </>
           )}
         </p>
-        <div className="narrative__footer-actions" style={{ display: 'flex', gap: 8 }}>
+        <div className="narrative__footer-actions inflight-footer-actions">
           <button className="btn" onClick={handleScreenshot} disabled={capturing || frames.length === 0}>
             {capturing ? 'Capturing…' : 'Screenshot'}
           </button>

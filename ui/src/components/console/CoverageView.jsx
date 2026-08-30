@@ -114,13 +114,13 @@ export default function CoverageView({ onNavigate } = {}) {
             {data?.summary ? (
               <>
                 <span className="mono">{data.summary.total_techniques}</span> techniques
-                {' · '}<span className="mono" style={{ color: 'var(--c-detected)' }}>
+                {' · '}<span className="mono coverage-color-detected">
                   {data.summary.detected}
                 </span> detected
-                {' · '}<span className="mono" style={{ color: 'var(--c-pending)' }}>
+                {' · '}<span className="mono coverage-color-pending">
                   {data.summary.run_not_detected}
                 </span> run / no detection
-                {' · '}<span className="mono" style={{ color: 'var(--c-text-muted)' }}>
+                {' · '}<span className="mono coverage-color-muted">
                   {data.summary.not_run}
                 </span> staged
               </>
@@ -129,7 +129,7 @@ export default function CoverageView({ onNavigate } = {}) {
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="coverage__header-actions">
           <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
           <button
             className="btn"
@@ -163,7 +163,7 @@ export default function CoverageView({ onNavigate } = {}) {
       {loading && !data ? (
         <div className="coverage__empty mono">loading MITRE coverage…</div>
       ) : error ? (
-        <div className="coverage__empty mono" style={{ color: 'var(--c-missed)' }}>
+        <div className="coverage__empty mono coverage__empty--error">
           {error}
         </div>
       ) : !data || !data.by_tactic || data.by_tactic.length === 0 ? (
@@ -319,7 +319,7 @@ function TechniqueDetailPanel({ technique, onClose, onFilterByTechnique }) {
             <dt>Planes</dt>
             <dd>
               {technique.planes.map((p) => (
-                <span key={p} className="chip" style={{ marginRight: 4 }}>{p}</span>
+                <span key={p} className="chip cov-detail__plane-chip">{p}</span>
               ))}
             </dd>
           </>

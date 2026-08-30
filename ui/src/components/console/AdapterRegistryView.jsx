@@ -184,7 +184,7 @@ function AdapterCard({ plugin, isSelected, onSelect }) {
         {tids.length > 0 && (
           <div className="adapter-card__tids">
             {tids.slice(0, 6).map((t) => (
-              <span key={t} className="chip" style={{ fontSize: 9 }}>{t}</span>
+              <span key={t} className="chip adapter-detail__tag-chip">{t}</span>
             ))}
             {tids.length > 6 && (
               <span className="adapter-card__more mono">+{tids.length - 6}</span>
@@ -242,14 +242,14 @@ function AdapterDetailPanel({ detail, onClose }) {
       {detail.description && (
         <div className="competitive__detail-section">
           <div className="competitive__detail-label">Description</div>
-          <p style={{ whiteSpace: 'pre-line' }}>{detail.description}</p>
+          <p className="adapter-detail__desc">{detail.description}</p>
         </div>
       )}
 
       {detail.mitre_techniques && detail.mitre_techniques.length > 0 && (
         <div className="competitive__detail-section">
           <div className="competitive__detail-label">MITRE techniques</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          <div className="adapter-detail__techniques">
             {detail.mitre_techniques.map((t) => (
               <span key={t} className="chip">{t}</span>
             ))}
@@ -260,7 +260,7 @@ function AdapterDetailPanel({ detail, onClose }) {
       {detail.eal_targets && detail.eal_targets.length > 0 && (
         <div className="competitive__detail-section">
           <div className="competitive__detail-label">EAL targets</div>
-          <div className="mono" style={{ fontSize: 11, color: 'var(--c-text-secondary)' }}>
+          <div className="mono adapter-detail__eal-targets">
             {detail.eal_targets.join(' · ')}
           </div>
         </div>
@@ -269,7 +269,7 @@ function AdapterDetailPanel({ detail, onClose }) {
       <div className="competitive__detail-section">
         <div className="competitive__detail-label">Parameters</div>
         {fields.length === 0 ? (
-          <p className="mono" style={{ color: 'var(--c-text-muted)', fontSize: 11 }}>
+          <p className="mono adapter-detail__no-params">
             no parameters defined
           </p>
         ) : (

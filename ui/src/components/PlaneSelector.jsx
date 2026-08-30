@@ -69,7 +69,7 @@ export default function PlaneSelector({ selectedPlane, onSelectPlane }) {
     <div>
       <p className="section-label">Detection Planes</p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div className="plane-list">
         {PLANES.map(plane => {
           const isActive = selectedPlane === plane.id
           const count = counts[plane.id] || 0
@@ -79,73 +79,27 @@ export default function PlaneSelector({ selectedPlane, onSelectPlane }) {
               key={plane.id}
               onClick={() => onSelectPlane(plane.id)}
               data-testid={`plane-button-${plane.id}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 12px',
-                borderRadius: 'var(--radius-md)',
-                border: isActive
-                  ? '1.5px solid var(--cortex-teal)'
-                  : '1.5px solid transparent',
-                background: isActive
-                  ? 'rgba(0, 192, 232, 0.08)'
-                  : 'transparent',
-                color: isActive ? 'var(--cortex-navy)' : '#3a4f62',
-                cursor: 'pointer',
-                textAlign: 'left',
-                width: '100%',
-                transition: 'all var(--transition-fast)',
-              }}
+              className={'plane-btn' + (isActive ? ' plane-btn--active' : '')}
               aria-pressed={isActive}
               title={plane.description}
             >
               {/* Icon */}
-              <span style={{ fontSize: '18px', lineHeight: 1, flexShrink: 0 }}>
+              <span className="plane-btn__icon">
                 {plane.icon}
               </span>
 
               {/* Text */}
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{
-                  display: 'block',
-                  fontSize: '13px',
-                  fontWeight: isActive ? 600 : 500,
-                  lineHeight: 1.2,
-                }}>
+              <span className="plane-btn__text">
+                <span className={'plane-btn__label' + (isActive ? ' plane-btn__label--active' : '')}>
                   {plane.label}
                 </span>
-                <span style={{
-                  display: 'block',
-                  fontSize: '10px',
-                  color: 'var(--cortex-steel)',
-                  lineHeight: 1.3,
-                  marginTop: '1px',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>
+                <span className="plane-btn__desc">
                   {plane.description}
                 </span>
               </span>
 
               {/* Count badge */}
-              <span style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                minWidth: '20px',
-                height: '20px',
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: isActive
-                  ? 'rgba(0,192,232,0.18)'
-                  : 'var(--cortex-light-bg)',
-                color: isActive ? 'var(--cortex-teal)' : 'var(--cortex-steel)',
-                border: '1px solid var(--cortex-border)',
-                flexShrink: 0,
-              }}>
+              <span className={'plane-btn__count' + (isActive ? ' plane-btn__count--active' : '')}>
                 {loading ? '·' : count}
               </span>
             </button>
@@ -156,9 +110,8 @@ export default function PlaneSelector({ selectedPlane, onSelectPlane }) {
       {/* "All" reset */}
       {selectedPlane && (
         <button
-          className="btn btn-secondary btn-sm btn-full"
+          className="btn btn-secondary btn-sm btn-full plane-clear-btn"
           onClick={() => onSelectPlane(selectedPlane)}  // clicking active plane deselects
-          style={{ marginTop: '12px' }}
         >
           &#x2715; Clear filter
         </button>

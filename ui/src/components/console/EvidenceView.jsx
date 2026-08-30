@@ -62,16 +62,9 @@ export default function EvidenceView({
 
   if (!targetRunId) {
     return (
-      <div className="evidence" style={{ paddingTop: 80 }}>
-        <h1 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 28, fontWeight: 400, color: 'var(--c-text)', marginBottom: 12,
-        }}>No run to validate</h1>
-        <p style={{
-          fontFamily: 'var(--font-narrative)',
-          fontSize: 15, fontWeight: 300,
-          color: 'var(--c-text-secondary)', lineHeight: 1.6, maxWidth: 640,
-        }}>
+      <div className="evidence evidence-empty">
+        <h1 className="evidence-empty__title">No run to validate</h1>
+        <p className="evidence-empty__desc">
           Launch a scenario from the Operations tab. The detection scorecard
           and POV report export will appear here once results begin to arrive.
         </p>
@@ -98,7 +91,7 @@ export default function EvidenceView({
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="evidence-header__actions">
           <div className="lab__segmented" role="tablist" aria-label="Evidence view mode">
             <button
               type="button"
@@ -221,7 +214,7 @@ function Kpi({ label, value, suffix = '', meta = '', valueClass = '' }) {
       <div className={'kpi__value ' + valueClass}>
         {value}
         {suffix && (
-          <span style={{ fontSize: 22, color: 'var(--c-text-muted)' }}>{suffix}</span>
+          <span className="kpi__suffix">{suffix}</span>
         )}
       </div>
       {meta && <div className="kpi__meta">{meta}</div>}
@@ -239,18 +232,11 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
           <div>TID</div>
           <div>Plane</div>
           <div>Alert</div>
-          <div style={{ textAlign: 'right' }}>MTTD</div>
+          <div className="scorecard__head-mttd">MTTD</div>
           <div>Alert ID</div>
           <div>Status</div>
         </div>
-        <div style={{
-          padding: 32,
-          textAlign: 'center',
-          color: 'var(--c-text-muted)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          letterSpacing: '0.04em',
-        }}>
+        <div className="scorecard-empty">
           no results yet — Cortex Data Lake ingestion typically takes 30–120s
         </div>
       </div>
@@ -263,7 +249,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
         <div>TID</div>
         <div>Plane</div>
         <div>Alert</div>
-        <div style={{ textAlign: 'right' }}>MTTD</div>
+        <div className="scorecard__head-mttd">MTTD</div>
         <div>Alert ID</div>
         <div>Status</div>
       </div>
