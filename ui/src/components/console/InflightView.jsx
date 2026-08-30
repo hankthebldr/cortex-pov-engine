@@ -131,7 +131,7 @@ export default function InflightView({ activeRun, lastRun, onError }) {
 
   if (!targetScenarioId) {
     return (
-      <div className="narrative inflight-empty">
+      <div className="narrative inflight-empty" data-theme="dark">
         <h1 className="inflight-empty__title">No run in progress</h1>
         <p className="inflight-empty__desc">
           Launch a scenario from the Operations tab. The attack narrative
@@ -142,10 +142,16 @@ export default function InflightView({ activeRun, lastRun, onError }) {
   }
 
   return (
-    <div className="narrative">
+    // data-theme="dark" pins this subtree to the PANW dark token set — AppConsole's
+    // .theme-console shell never sets [data-theme] itself, so without this the new
+    // --ac/--s1/--tx tokens would resolve to their :root LIGHT values on top of the
+    // console's always-dark void background (same pattern as RunDetailView.jsx).
+    <div className="narrative" data-theme="dark">
       <div className="narrative__capture" ref={captureRef}>
         <div className="narrative__header">
-          <div className="narrative__eyebrow">{eyebrow}</div>
+          <div className={`narrative__eyebrow${isLive ? ' narrative__eyebrow--live' : ''}`}>
+            {eyebrow}
+          </div>
           <h1 className="narrative__title">
             {scenario?.name || 'loading…'}
           </h1>
