@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getScenarios } from '../../api/client.js'
+import '../../styles/destinations/coverage.css'
 
 /**
  * StackCoverageView — PANW stack × MITRE tactic coverage matrix.
@@ -164,12 +165,20 @@ export default function StackCoverageView({ onFilterByCell = () => {} }) {
                   const intensity = maxCount > 0 ? Math.min(1, count / maxCount) : 0
                   const isSelected =
                     selectedCell && selectedCell.product === p.id && selectedCell.tactic === t.id
+                  // Discrete green intensity tiers (the mockup's own stack-
+                  // cell scale) in place of a continuous cyan alpha ramp —
+                  // Cortex green is the accent everywhere in this redesign.
+                  const intensityTier =
+                    count === 0 ? '' : intensity >= 0.75 ? ' stack-coverage__cell--i-high'
+                    : intensity >= 0.4 ? ' stack-coverage__cell--i-mid'
+                    : ' stack-coverage__cell--i-low'
                   return (
                     <button
                       type="button"
                       key={t.id}
                       className={
                         'stack-coverage__cell' +
+                        intensityTier +
                         (count === 0 ? ' stack-coverage__cell--empty' : '') +
                         (isSelected ? ' stack-coverage__cell--selected' : '')
                       }
@@ -178,9 +187,6 @@ export default function StackCoverageView({ onFilterByCell = () => {} }) {
                         const sel = { product: p.id, tactic: t.id, scenarioIds: cellScenarios }
                         setSelectedCell(sel)
                       }}
-                      style={count > 0 ? {
-                        background: `rgba(0, 192, 232, ${0.08 + intensity * 0.40})`,
-                      } : undefined}
                       title={count > 0
                         ? `${p.label} · ${t.label} — ${count} scenario${count === 1 ? '' : 's'}`
                         : `${p.label} · ${t.label} — no coverage`}

@@ -1,0 +1,501 @@
+/* ============================================================
+   Coverage destination — PANW redesign
+   Scope: ui/src/components/console/CoverageView.jsx (`.coverage`)
+          ui/src/components/console/StackCoverageView.jsx (`.stack-coverage`)
+          ui/src/components/MitreHeatmap.jsx (legacy shell — `.coverage-heat-legacy`)
+   Reference: .design-ref/05-coveragetitle.html + 00-tokens.css
+
+   Cortex green (--ac / --ac-str) is the primary accent throughout.
+   PANW orange (--orange) is never used here — the mockup's own tone()
+   mapping for "gap"/"run without detection" reads through --warn /
+   --warn-str, not --orange, and this file follows that exactly.
+   LIGHT is the default theme; DARK is opt-in via [data-theme="dark"]
+   on the root element (cortex-tokens.css).
+   ============================================================ */
+
+/* ── 1. Re-scope onto the new token contract ─────────────────────────
+   `.theme-console` ships its own `--c-*` palette (cortex-console.css)
+   as a FIXED set of hardcoded hex values with no [data-theme] variant.
+   Every existing selector this destination already renders with
+   (.view-head, .lab__segmented, .btn, .coverage__*, .cov-cell*,
+   .cov-detail*, .stack-coverage__*) reads through those `--c-*` names,
+   so redeclaring the same names here — scoped to each destination
+   root only — re-points the whole subtree at the redesign's real
+   light/dark tokens without rewriting or duplicating those rules.
+   Two roots because StackCoverageView is exercised standalone in its
+   own test file, with no ancestor `.coverage`. ─────────────────── */
+.theme-console .coverage,
+.theme-console .stack-coverage {
+  --c-void:            var(--s0);
+  --c-surface:         var(--s1);
+  --c-surface-raised:  var(--s2);
+  --c-hairline:        var(--bd);
+  --c-hairline-strong: var(--bd2);
+
+  --c-action:          var(--ac);
+  --c-action-bright:   var(--ac-str);
+  --c-action-soft:     var(--ac-soft);
+
+  --c-signal:          var(--info);
+  --c-signal-soft:     color-mix(in srgb, var(--info) 14%, transparent);
+  --c-signal-glow:     color-mix(in srgb, var(--info) 45%, transparent);
+
+  --c-detected:        var(--ac);
+  --c-detected-soft:   var(--ac-soft);
+  --c-pending:         var(--warn);
+  --c-pending-soft:    color-mix(in srgb, var(--warn) 14%, transparent);
+  --c-missed:          var(--crit);
+  --c-missed-soft:     color-mix(in srgb, var(--crit) 14%, transparent);
+
+  --c-text:            var(--tx);
+  --c-text-secondary:  var(--tx2);
+  --c-text-muted:      var(--tx3);
+  --c-text-disabled:   var(--tx3);
+
+  color: var(--tx);
+}
+
+/* Ghost buttons (Navigator layer / Refresh / Close) — the shared
+   `.btn` reads `--c-signal` on hover (cyan "info" highlight); the
+   redesign's accent is green, so the hover state follows it here. */
+.theme-console .coverage .btn:hover:not(:disabled),
+.theme-console .stack-coverage .btn:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console .coverage .btn--primary,
+.theme-console .stack-coverage .btn--primary {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-tx);
+}
+.theme-console .coverage .btn--primary:hover:not(:disabled),
+.theme-console .stack-coverage .btn--primary:hover:not(:disabled) {
+  background: var(--ac-str);
+  border-color: var(--ac-str);
+  color: var(--ac-tx);
+}
+
+/* ── 2. Page header — accent bar + eyebrow, matching every other
+   redesigned destination's masthead. `.view-head` itself stays
+   untouched (shared by other destinations); this only decorates
+   the elements inside `.coverage`. ─────────────────────────────── */
+.theme-console .coverage-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.theme-console .coverage-kicker__bar {
+  display: block;
+  width: 56px;
+  height: 4px;
+  flex: none;
+  background: var(--ac-str);
+  border-radius: 2px;
+}
+.theme-console .coverage-kicker__label {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.theme-console .coverage .view-head h1 {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--tx);
+  margin: 0;
+}
+.theme-console .coverage .view-head__meta {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  letter-spacing: normal;
+  line-height: 1.5;
+  color: var(--tx2);
+  margin-top: 7px;
+}
+.theme-console .coverage .view-head__meta strong,
+.theme-console .coverage .view-head__meta .mono {
+  color: var(--tx);
+  font-weight: 500;
+}
+.theme-console .coverage .coverage-color-detected { color: var(--ac); }
+.theme-console .coverage .coverage-color-pending  { color: var(--warn); }
+.theme-console .coverage .coverage-color-muted    { color: var(--tx3); }
+
+/* Mode toggle — the mockup's own inverted "ink" pill rather than the
+   console's default cyan-signal tab highlight, so ATT&CK / Stack /
+   Competitive reads as a neutral state switch, not an accent action. */
+.theme-console .coverage .lab__segmented {
+  border-color: var(--bd2);
+  background: var(--s1);
+  border-radius: 6px;
+  height: 30px;
+}
+.theme-console .coverage .lab__segmented button {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--tx2);
+  padding: 0 13px;
+}
+.theme-console .coverage .lab__segmented button:hover:not(:disabled) {
+  background: var(--s2);
+  color: var(--tx);
+}
+.theme-console .coverage .lab__segmented button.is-active {
+  background: var(--tx);
+  color: var(--s1);
+  font-weight: 700;
+}
+
+/* ── 3. KPI tiles — new, sourced from the same `data.summary` the old
+   segmented bar already used. ────────────────────────────────────── */
+.theme-console .coverage__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.theme-console .coverage__kpi {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--bd2);
+  border-radius: 10px;
+  padding: 15px 16px;
+}
+.theme-console .coverage__kpi--ac   { border-top-color: var(--ac); }
+.theme-console .coverage__kpi--warn { border-top-color: var(--warn-str); }
+.theme-console .coverage__kpi-label {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .coverage__kpi-value {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin-top: 8px;
+  color: var(--tx);
+}
+.theme-console .coverage__kpi-note {
+  font-size: 11px;
+  color: var(--tx2);
+  margin-top: 5px;
+  line-height: 1.4;
+}
+
+/* ── 4. Summary bar + legend ──────────────────────────────────────── */
+.theme-console .coverage .coverage__summary-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--s3);
+  margin-bottom: 16px;
+  gap: 0;
+}
+.theme-console .coverage .coverage__summary-seg { height: 100%; }
+.theme-console .coverage__legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: -8px 0 16px;
+  font-size: 11px;
+  color: var(--tx2);
+}
+.theme-console .coverage__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.theme-console .coverage__legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+
+/* ── 5. ATT&CK matrix — wrap-grid of tactic cards (mockup's covAttack
+   layout) instead of a forced horizontal scroll of columns. ───────── */
+.theme-console .coverage .coverage__matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+  gap: 10px;
+  overflow: visible;
+  padding-bottom: 0;
+  align-items: stretch;
+}
+.theme-console .coverage .coverage__column {
+  min-width: 0;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--tx3);
+  border-radius: 8px;
+  padding: 11px 12px 12px;
+}
+.theme-console .coverage .coverage__column-head {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+}
+.theme-console .coverage .coverage__column-tid {
+  font-family: 'JetBrains Mono', var(--font-mono), monospace;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--tx3);
+}
+.theme-console .coverage .coverage__column-name {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tx);
+  flex: 1;
+  margin-top: 0;
+  line-height: 1.2;
+}
+.theme-console .coverage .coverage__column-count {
+  font-family: 'JetBrains Mono', var(--font-mono), monospace;
+  font-size: 10px;
+  color: var(--tx2);
+  margin-top: 0;
+}
+.theme-console .coverage .coverage__column-cells {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  gap: 3px;
+}
+
+/* Technique cell — pill button, not boxed grid tile */
+.theme-console .coverage .cov-cell {
+  padding: 7px 8px;
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  color: var(--tx);
+}
+.theme-console .coverage .cov-cell:hover {
+  transform: none;
+  filter: brightness(1.05);
+}
+.theme-console .coverage .cov-cell--selected {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 1px var(--ac-soft);
+}
+.theme-console .coverage .cov-cell__tid {
+  font-family: 'JetBrains Mono', var(--font-mono), monospace;
+  font-size: 9px;
+  font-weight: 400;
+  opacity: .75;
+  color: inherit;
+  margin-bottom: 0;
+}
+.theme-console .coverage .cov-cell__name {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  margin-top: 2px;
+  max-width: none;
+  white-space: normal;
+  color: inherit;
+}
+.theme-console .coverage .cov-cell__chip {
+  background: rgba(0, 0, 0, .12);
+  border-color: transparent;
+  color: inherit;
+  opacity: .85;
+}
+
+.theme-console .coverage .cov-cell--detected {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-tx);
+}
+.theme-console .coverage .cov-cell--detected .cov-cell__tid,
+.theme-console .coverage .cov-cell--detected .cov-cell__chip { color: var(--ac-tx); }
+
+.theme-console .coverage .cov-cell--pending {
+  background: var(--warn-str);
+  border-color: var(--warn-str);
+  color: #0A0F0D; /* fixed dark ink — warn-str is bright yellow in both
+                      themes, so this stays legible regardless of theme,
+                      matching the mockup's own literal choice here */
+}
+.theme-console .coverage .cov-cell--pending .cov-cell__tid,
+.theme-console .coverage .cov-cell--pending .cov-cell__chip { color: #0A0F0D; }
+
+.theme-console .coverage .cov-cell--staged {
+  background: var(--s3);
+  border-color: var(--s3);
+  color: var(--tx);
+}
+.theme-console .coverage .cov-cell--staged .cov-cell__tid { color: var(--tx2); }
+
+.theme-console .coverage .cov-cell--empty {
+  background: var(--s2);
+  border-color: var(--bd);
+  opacity: 1;
+}
+.theme-console .coverage .cov-cell--empty .cov-cell__tid,
+.theme-console .coverage .cov-cell--empty .cov-cell__name { color: var(--tx3); }
+
+/* ── 6. Detail panel ───────────────────────────────────────────────── */
+.theme-console .coverage .cov-detail {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 8px;
+}
+.theme-console .coverage .cov-detail__tid { color: var(--ac); }
+.theme-console .coverage .cov-detail__status--detected {
+  color: var(--ac);
+  background: var(--ac-soft);
+  border-color: var(--ac-line);
+}
+.theme-console .coverage .cov-detail__status--run_not_detected {
+  color: #7A5B00;
+  background: color-mix(in srgb, var(--warn-str) 22%, transparent);
+  border-color: var(--warn-str);
+}
+[data-theme="dark"] .theme-console .coverage .cov-detail__status--run_not_detected {
+  color: var(--warn-str);
+}
+.theme-console .coverage .cov-detail__name {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-weight: 700;
+}
+
+/* ── 7. Stack × kill-chain matrix ─────────────────────────────────── */
+.theme-console .stack-coverage .stack-coverage__intro {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 10px;
+}
+.theme-console .stack-coverage .stack-coverage__intro-prose { color: var(--tx2); }
+.theme-console .stack-coverage .stack-coverage__intro-prose strong { color: var(--tx); }
+.theme-console .stack-coverage .stack-coverage__stat-value { color: var(--ac); }
+.theme-console .stack-coverage .stack-coverage__stat-label { color: var(--tx3); }
+
+.theme-console .stack-coverage .stack-coverage__matrix {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.theme-console .stack-coverage .stack-coverage__row--head {
+  background: var(--thead, var(--tx3));
+  color: #fff;
+}
+.theme-console .stack-coverage .stack-coverage__col-head,
+.theme-console .stack-coverage .stack-coverage__product--head {
+  color: #fff;
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.theme-console .stack-coverage .stack-coverage__product-label { color: var(--tx); }
+.theme-console .stack-coverage .stack-coverage__product-sub { color: var(--tx3); }
+
+/* Cell intensity — discrete green tiers (mockup's stack cell scale)
+   instead of a hardcoded cyan alpha ramp. Tier set via className from
+   StackCoverageView.jsx (JS computes the bucket; CSS only draws it). */
+.theme-console .stack-coverage .stack-coverage__cell {
+  background: transparent;
+  border-radius: 4px;
+}
+.theme-console .stack-coverage .stack-coverage__cell--i-low  { background: var(--s3); }
+.theme-console .stack-coverage .stack-coverage__cell--i-mid  { background: var(--ac-soft); }
+.theme-console .stack-coverage .stack-coverage__cell--i-high {
+  background: var(--ac);
+}
+.theme-console .stack-coverage .stack-coverage__cell--i-high .stack-coverage__cell-count {
+  color: var(--ac-tx);
+  font-weight: 700;
+}
+.theme-console .stack-coverage .stack-coverage__cell:not(:disabled):hover {
+  box-shadow: inset 0 0 0 1px var(--ac);
+}
+.theme-console .stack-coverage .stack-coverage__cell--selected {
+  box-shadow: inset 0 0 0 2px var(--ac),
+              inset 0 0 12px color-mix(in srgb, var(--ac) 30%, transparent);
+}
+.theme-console .stack-coverage .stack-coverage__cell--empty { opacity: .5; }
+
+.theme-console .stack-coverage .stack-coverage__panel {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 8px;
+}
+.theme-console .stack-coverage .stack-coverage__panel-eyebrow { color: var(--ac); }
+
+/* ── 8. Legacy MITRE heatmap (App.jsx light shell) ────────────────────
+   Already light-by-default via the cortex-theme.css alias table — no
+   re-scope block needed. Scoped under a new wrapper class added to
+   the component's outer <div className="panel-card"> so these rules
+   win on specificity without editing cortex-console.css. ─────────── */
+.coverage-heat-legacy .panel-card-header {
+  align-items: flex-start;
+}
+.coverage-heat-legacy__bar {
+  display: block;
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ac-str);
+  margin-bottom: 8px;
+}
+.coverage-heat-legacy .mitre-heatmap__cell {
+  border-radius: 6px;
+}
+.coverage-heat-legacy .mitre-heatmap__tactic-col {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--tx3);
+  border-radius: 8px;
+  padding: 8px;
+}
+.coverage-heat-legacy .mitre-heatmap-status--detected {
+  background: var(--cortex-success);
+  color: var(--ac-tx, #fff);
+}
+.coverage-heat-legacy .mitre-heatmap-status--run-not-detected {
+  background: var(--warn-str);
+  color: #0A0F0D;
+}
+.coverage-heat-legacy .mitre-heatmap-status--not-run {
+  background: var(--s3);
+  color: var(--cortex-steel);
+}
+.coverage-heat-legacy .mitre-heatmap-status--no-scenario {
+  background: var(--s2);
+  color: var(--cortex-steel);
+}
+.coverage-heat-legacy .mitre-heatmap__detail {
+  border-left: 3px solid var(--ac-str);
+}
+.coverage-heat-legacy .mitre-heatmap__tactic-head {
+  background: var(--s2);
+}

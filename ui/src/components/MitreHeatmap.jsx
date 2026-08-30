@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getMitreCoverage } from '../api/client.js'
+import '../styles/destinations/coverage.css'
 
 // --- Status colors ---
 // Status → CSS modifier class (see .mitre-heatmap-status--* in cortex-console.css).
@@ -164,9 +165,12 @@ export default function MitreHeatmap() {
   useEffect(() => { refresh() }, [refresh])
 
   return (
-    <div className="panel-card">
+    <div className="panel-card coverage-heat-legacy">
       <div className="panel-card-header">
-        <h3>MITRE ATT&CK Coverage</h3>
+        <div>
+          <div className="coverage-heat-legacy__bar" aria-hidden="true" />
+          <h3>MITRE ATT&CK Coverage</h3>
+        </div>
         <button
           className="btn btn-secondary btn-sm"
           onClick={refresh}
