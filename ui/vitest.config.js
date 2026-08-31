@@ -25,7 +25,7 @@ export default defineConfig({
         /\/styles\/cortex-tokens\.css$/,
         /\/styles\/cortex-theme\.css$/,
         /\/styles\/cortex-console\.css$/,
-        /\/styles\/destinations\/(uctc|ttps|readiness|eal)\.css$/,
+        /\/styles\/destinations\/(uctc|ttps|readiness|eal|adapters)\.css$/,
       ],
     },
     include: ['src/**/__tests__/**/*.test.{js,jsx}'],
