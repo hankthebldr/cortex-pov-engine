@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# dev-up-native.sh — one-command local CortexSim bring-up WITHOUT Docker.
+# dev-up-native.sh — CortexSim bring-up WITHOUT Docker (fallback path).
+#
+# scripts/dev-up.sh (the container path) is the canonical jumpbox entrypoint —
+# the image bakes agent-dist/rust-dist/payloads so it needs no toolchain at
+# all on the host. Use THIS script only when the Docker daemon is unavailable
+# or the image registry is unreachable — e.g. sandboxed CI runners and cloud
+# dev containers where Docker Hub blob pulls are blocked. Because this path
+# runs straight on the host instead of the pre-baked image, it is honest that
+# it starts from LESS than the image has: no agent-dist/ (prebuilt beacons)
+# and no rust-dist/ until you build them yourself — see step 5 below, which
+# reports that as a "degraded" boot rather than either hiding it or timing
+# out as if the app never started.
 #
 # Same contract as scripts/dev-up.sh (generate .env, bring the stack up, poll
-# /api/health), but runs SimCore straight on the host. Use this when the Docker
-# daemon is unavailable or the image registry is unreachable — e.g. sandboxed
-# CI runners and cloud dev containers where Docker Hub blob pulls are blocked.
-#
-# Idempotent + safe to re-run:
+# /api/health):
 #   1. Generate ./.env from .env.example (existing .env is never clobbered).
 #   2. Create ./.venv (Python 3.11) and install core/requirements.txt.
 #   3. Build the React UI and install it into core/static/ (what SimCore mounts
 #      as StaticFiles — the Dockerfile does this via its ui-builder stage).
 #   4. Launch uvicorn in the background, logging to logs/simcore.log.
-#   5. Poll http://localhost:${CORTEXSIM_PORT}/api/health until {"status":"ok"}.
+#   5. Poll http://localhost:${CORTEXSIM_PORT}/api/health until it responds.
+#      {"status":"ok"} prints success; {"status":"degraded"} still counts as
+#      a successful bring-up and prints which component(s) are degraded and
+#      why (e.g. AGENT_DIST_EMPTY — run `make agent-dist` for prebuilt
+#      beacons) instead of silently spinning for 90s and reporting a bare
+#      timeout for a server that came up fine. Only a genuine non-response,
+#      or the uvicorn process dying, is an actual failure here.
 #
 # Usage:  scripts/dev-up-native.sh            # full bring-up
 #         scripts/dev-up-native.sh --skip-ui  # reuse existing core/static/
@@ -44,6 +57,7 @@ for arg in "$@"; do
 done
 
 log() { printf '\033[0;36m[dev-up-native]\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m[dev-up-native]\033[0m %s\n' "$*"; }
 err() { printf '\033[0;31m[dev-up-native] ERROR:\033[0m %s\n' "$*" >&2; }
 
 mkdir -p "${REPO_ROOT}/logs"
@@ -179,18 +193,77 @@ disown "${SIMCORE_PID}" 2>/dev/null || true
 cd "${REPO_ROOT}"
 
 # ---------------------------------------------------------------------------
-# 5. Poll health until ok (timeout ~90s).
+# 5. Poll health until it responds (timeout ~90s). "ok" and "degraded" both
+#    mean the app came up — see the header comment. Only silence, or the
+#    uvicorn process dying, is an actual failure.
 # ---------------------------------------------------------------------------
+
+# Print each degraded component's code + detail from a /api/health body.
+# python3 (exact, key-order-independent) when available; otherwise point the
+# operator at the log/URL rather than guess with fragile text parsing.
+print_degraded_components() {
+  local body="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "${body}" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    for name, comp in (d.get("components") or {}).items():
+        if isinstance(comp, dict) and comp.get("status") == "degraded":
+            print("    - %s: %s -- %s" % (name, comp.get("code", "?"), comp.get("detail", "")))
+except Exception:
+    pass
+' 2>/dev/null || true
+  else
+    log "  (install python3 to see per-component detail, or: curl -s ${HEALTH_URL})"
+  fi
+}
+
+# Extract the top-level "status" field. python3 first (correct regardless of
+# key order); the sed fallback is anchored to the START of the body
+# (`^{"status":...`), not a greedy scan — a plain `.*"status":...` match
+# grabs the LAST "status" key in the blob, which belongs to a nested
+# component, not the top-level field, on any response with more than one
+# component (i.e. every real response). Verified against a live degraded
+# SimCore: the unanchored form reported "ok".
+extract_status() {
+  local body="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "${body}" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("status",""))
+except Exception:
+    pass' 2>/dev/null || true
+  else
+    printf '%s' "${body}" | sed -n 's/^{[[:space:]]*"status"[[:space:]]*:[[:space:]]*"\([a-z_]*\)".*/\1/p' | head -n1
+  fi
+}
+
 HEALTH_URL="http://localhost:${PORT}/api/health"
 log "Waiting for ${HEALTH_URL} ..."
 
 deadline=$(( $(date +%s) + 90 ))
 while :; do
-  if curl -fsS --max-time 3 "${HEALTH_URL}" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
-    log "SimCore is healthy."
-    printf '\n  \033[0;32m✓ CortexSim is up:\033[0m  http://localhost:%s\n' "${PORT}"
-    printf '    logs: %s   stop: scripts/dev-up-native.sh --stop\n\n' "${LOG_FILE}"
-    exit 0
+  BODY="$(curl -fsS --max-time 3 "${HEALTH_URL}" 2>/dev/null || true)"
+  if [[ -n "${BODY}" ]]; then
+    HSTATUS="$(extract_status "${BODY}")"
+    case "${HSTATUS}" in
+      ok)
+        log "SimCore is healthy."
+        printf '\n  \033[0;32m✓ CortexSim is up:\033[0m  http://localhost:%s\n' "${PORT}"
+        printf '    logs: %s   stop: scripts/dev-up-native.sh --stop\n\n' "${LOG_FILE}"
+        exit 0
+        ;;
+      degraded)
+        warn "SimCore booted but reports DEGRADED — this is common on a native"
+        warn "bring-up (e.g. no prebuilt agent-dist/ until you run 'make agent-dist')."
+        print_degraded_components "${BODY}"
+        printf '\n  \033[1;33m⚠ CortexSim is up (degraded):\033[0m  http://localhost:%s\n' "${PORT}"
+        printf '    logs: %s   stop: scripts/dev-up-native.sh --stop\n' "${LOG_FILE}"
+        printf '    Full detail: curl -s %s | python3 -m json.tool\n\n' "${HEALTH_URL}"
+        exit 0
+        ;;
+    esac
   fi
   if ! kill -0 "${SIMCORE_PID}" 2>/dev/null; then
     err "SimCore exited during startup. Last log lines:"

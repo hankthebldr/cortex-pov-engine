@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# CortexSim install.sh — Jumpbox Bootstrap
+# CortexSim install.sh — full source bootstrap (Go/Rust/Node toolchain + build).
 # Version: 1.0
+#
+# This is the DEVELOPER path: it installs a Go/Rust/Node toolchain on the host
+# and builds every component from source. If you just want to RUN CortexSim on
+# a jumpbox, use `scripts/dev-up.sh` instead — it needs only Docker, because
+# the built image already bakes the Go beacon matrix, the Rust tools, and the
+# tool-payload shelf (no toolchain, no git submodules required on the host).
+# Use THIS script when you're building/modifying the toolchain itself.
 #
 # Supported OS: Ubuntu 22.04 LTS+, Debian 12+
 #
@@ -348,6 +355,15 @@ _install_node() {
 # ==============================================================================
 # STEP 3 — Git Submodules
 # ==============================================================================
+
+# Two of the ten registered submodules live in repos that may be private/
+# org-restricted (hankthebldr/CDR, hankthebldr/xsiam-prisma-cdr-lab). Neither
+# is anyone's tier-2 adapter source_path (only atomic-red-team is — see
+# scripts/check-adapter-sources.sh) and nothing this installer runs depends on
+# them; they carry CDR-plane reference content only. A miss on either must
+# degrade to a clear warning, never abort the whole bootstrap.
+OPTIONAL_SUBMODULES=("sources/CDR" "sources/xsiam-prisma-cdr-lab")
+
 init_submodules() {
     log_step "Initializing git submodules"
 
@@ -364,16 +380,68 @@ init_submodules() {
     # source tree for TOOL-ATOMIC-RED-TEAM, the single most-referenced adapter
     # in the catalog (7 scenarios: edr/edr-001..006 + multi_plane/mp-005). Those
     # scenarios cannot detonate without this init.
-    git submodule update --init --recursive \
-        || die "git submodule update failed. Check network access and SSH/token permissions."
+    #
+    # `git submodule update --init --recursive` is NOT atomic — verified: it
+    # attempts every registered submodule and only fails the ones that
+    # actually fail, leaving the rest checked out, but its own exit code is
+    # nonzero if ANY of them failed. Dying on that blanket exit code (as this
+    # used to) meant one private, permission-denied submodule aborted the
+    # ENTIRE bootstrap — including the Go/Rust/UI build steps below, none of
+    # which need it. So: don't die here. Find out what actually failed, and
+    # only escalate past a warning for something this installer needs — which
+    # is exactly what the hard gate below (check-adapter-sources.sh) already
+    # decides, correctly, by checking disk state rather than a git exit code.
+    set +e
+    git submodule update --init --recursive
+    local submodule_rc=$?
+    set -e
 
-    log_ok "All submodules initialized (incl. tier-2 adapter sources, e.g. atomic-red-team)."
+    if [[ $submodule_rc -eq 0 ]]; then
+        log_ok "All submodules initialized (incl. tier-2 adapter sources, e.g. atomic-red-team)."
+    else
+        local uninit=() line path
+        while IFS= read -r line; do
+            [[ "$line" == -* ]] || continue
+            uninit+=("$(awk '{print $2}' <<<"$line")")
+        done < <(git submodule status 2>/dev/null)
+
+        if [[ ${#uninit[@]} -eq 0 ]]; then
+            # Nonzero exit but everything shows initialized on disk — treat
+            # as a transient warning from git itself, not a real miss.
+            log_warn "git submodule update reported a non-zero exit but all submodules show initialized — continuing."
+        else
+            local unexpected=()
+            for path in "${uninit[@]}"; do
+                local is_optional=0 opt
+                for opt in "${OPTIONAL_SUBMODULES[@]}"; do
+                    [[ "$path" == "$opt" ]] && is_optional=1 && break
+                done
+                if [[ $is_optional -eq 1 ]]; then
+                    log_warn "${path} not fetched — this submodule's repo may be private/org-restricted."
+                    log_warn "  Reduced: CDR-plane reference content that lives under ${path}/ is unavailable."
+                    log_warn "  Nothing else in this installer depends on it. Retry once you have access:"
+                    log_warn "    git submodule update --init -- ${path}"
+                else
+                    unexpected+=("$path")
+                fi
+            done
+            if [[ ${#unexpected[@]} -gt 0 ]]; then
+                log_warn "Submodule(s) not fetched: ${unexpected[*]}"
+                log_warn "  Check network access / SSH-or-token permissions, then retry:"
+                log_warn "    git submodule update --init --recursive"
+                log_warn "  (continuing — the hard gate below tells you if anything this installer actually needs is still missing)"
+            fi
+        fi
+    fi
 
     # Hard gate (GAP-ADAPT-01). `git submodule update` is a silent no-op when a
     # submodule is listed in .gitmodules but has no gitlink in the tree — it
     # provisions nothing and returns 0. That failure mode left every tier-2
     # adapter source absent while the install "succeeded". Verify on disk and
     # fail loud here rather than at scenario-detonation time on the target.
+    # This — not the blanket git exit code above — is the real authority on
+    # whether install.sh can proceed: it checks only sources this repo's own
+    # adapter packs actually declare as their tier-2 source_path.
     if [[ -x scripts/check-adapter-sources.sh ]]; then
         log_step "Verifying tier-2 adapter source trees"
         scripts/check-adapter-sources.sh \
