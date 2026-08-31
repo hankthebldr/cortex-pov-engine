@@ -1035,14 +1035,31 @@ func (o runtimeDepOutcome) cleanup() {
 // what makes "a missing runtime dependency must never present as success"
 // true by construction rather than by scenario authors remembering not to
 // write `|| echo done`.
+// runtimeDepsGOOS is resolveRuntimeDeps' view of the host OS. It defaults to
+// runtime.GOOS and exists as a package var — rather than a bare runtime.GOOS
+// reference — solely so a test can flip it to "windows" and prove the
+// no-op-on-windows guard actually fires, without needing to cross-compile or
+// run on a real Windows host. See TestResolveRuntimeDeps_WindowsGOOSIsANoOp
+// in runtime_deps_test.go.
+var runtimeDepsGOOS = runtime.GOOS
+
 func (c *BeaconClient) resolveRuntimeDeps(task *Task, step *Step) runtimeDepOutcome {
-	if len(step.RequiresInterpreters) == 0 || runtime.GOOS == "windows" {
+	if len(step.RequiresInterpreters) == 0 || runtimeDepsGOOS == "windows" {
 		return runtimeDepOutcome{}
 	}
 
 	var notes []string
 	var shims []*executor.InterpreterShim
-	var installCmds []string
+	// installSteps pairs each authorized install command with the logical
+	// name it was meant to supply, so the composed command can re-verify and
+	// shim EACH one individually after its own install runs (C2) rather than
+	// trusting `apt-get install` exit 0 as proof the step's own hardcoded
+	// interpreter name will resolve.
+	type installStep struct {
+		cmd     string
+		logical string
+	}
+	var installSteps []installStep
 
 	for _, logical := range step.RequiresInterpreters {
 		check := executor.ResolveInterpreter(logical)
@@ -1065,9 +1082,11 @@ func (c *BeaconClient) resolveRuntimeDeps(task *Task, step *Step) runtimeDepOutc
 
 		if task.RuntimeInstallAuthorized {
 			if installCmd, ok := executor.InstallPackageCommand(logical); ok {
-				installCmds = append(installCmds, installCmd)
+				installSteps = append(installSteps, installStep{cmd: installCmd, logical: logical})
 				notes = append(notes, fmt.Sprintf(
-					"[cortexsim] RUNTIME_INSTALL_AUTHORIZED: %s missing — attempting %q (operator-authorized, recorded in the run record)",
+					"[cortexsim] RUNTIME_INSTALL_AUTHORIZED: %s missing — attempting %q, then re-verifying (and "+
+						"PATH-shimming if it only landed under an alias) before the step's own command runs "+
+						"(operator-authorized, recorded in the run record)",
 					logical, installCmd))
 				continue
 			}
@@ -1094,12 +1113,26 @@ func (c *BeaconClient) resolveRuntimeDeps(task *Task, step *Step) runtimeDepOutc
 	}
 
 	cmd := step.Command
-	if len(installCmds) > 0 {
-		// `&&` is load-bearing: if the install fails, the original command
-		// (including any `|| echo ...` fallback IT authored) never runs, so an
-		// install failure surfaces as this step's own non-zero exit rather than
-		// being absorbed by the scenario's own masking.
-		cmd = strings.Join(installCmds, " && ") + " && (" + cmd + ")"
+	if len(installSteps) > 0 {
+		// `&&` is load-bearing throughout: if the install fails, or the
+		// post-install verification exits 127 (executor.PostInstallVerifyShim),
+		// the original command — including any `|| echo ...` fallback IT
+		// authored — never runs. An install (or verification) failure must
+		// surface as this step's own non-zero exit, never be absorbed by the
+		// scenario's own masking.
+		//
+		// C2: a bare `apt-get install -y python3` exiting 0 is NOT proof that
+		// the step's own hardcoded `python` will resolve — apt-get installing
+		// the python3 package produces /usr/bin/python3 and no /usr/bin/python.
+		// PostInstallVerifyShim re-resolves the LOGICAL name after its install
+		// ran and, if it only landed under an alias, shims it exactly like the
+		// "already there" branch above — the two branches converge instead of
+		// diverging.
+		parts := make([]string, 0, len(installSteps)*2)
+		for _, is := range installSteps {
+			parts = append(parts, is.cmd, executor.PostInstallVerifyShim(is.logical))
+		}
+		cmd = strings.Join(parts, " && ") + " && (" + cmd + ")"
 	}
 	if len(shims) > 0 {
 		dirs := make([]string, len(shims))

@@ -3,8 +3,8 @@ package beacon
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -141,19 +141,34 @@ func TestResolveRuntimeDeps_NoRequirementIsANoOp(t *testing.T) {
 // PROVIDE A PYTHON PATH: an interpreter present only under an alias gets
 // PATH-shimmed, and the step's real command runs — proving the shim actually
 // works end to end, not just that ResolveInterpreter finds something.
+//
+// The PATH here is built DETERMINISTICALLY — an otherwise-empty temp dir
+// containing only `python3` (never the literal `python`) plus a symlinked
+// `sh` so executor.RunCommand can still launch a shell — rather than
+// prepending to the real, inherited PATH. Prepending to the real PATH meant
+// this test silently proved NOTHING on any host where `python` already
+// resolves (any `python-is-python3` system, which is common): `pre.Exact`
+// would be true, and the pre-fix test's `t.Skipf` made the only end-to-end
+// proof that the shim genuinely works vanish without failing the suite.
 func TestResolveRuntimeDeps_AliasedInterpreter_ShimsAndRunsForReal(t *testing.T) {
+	shPath, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skipf("no sh on this host to drive executor.RunCommand: %v", err)
+	}
+
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "python3")
 	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho ALIAS_SHIM_RAN\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Prepend the fake dir to the REAL PATH so `sh` and other basics the
-	// executor needs are still resolvable — only "python3" is shadowed/added.
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := os.Symlink(shPath, filepath.Join(dir, "sh")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
 
 	pre := executor.ResolveInterpreter("python")
 	if !pre.Found || pre.Exact {
-		t.Skipf("test host PATH does not give the expected aliased-only shape: %+v", pre)
+		t.Fatalf("expected an ALIASED-only python on this deterministic PATH (python3 present, python absent), got %+v", pre)
 	}
 
 	c := New("http://unused.invalid", "a-1", 0)
@@ -215,6 +230,77 @@ func TestResolveRuntimeDeps_AuthorizedInstall_ComposesCommand(t *testing.T) {
 	}
 }
 
+// C2 — the defect this whole file exists to close: an authorized install
+// composing "apt-get install -y python3 && (<original command>)" and
+// stopping there is NOT proof the step's own hardcoded `python` will
+// resolve, because `apt-get install python3` produces /usr/bin/python3 and
+// NEVER /usr/bin/python. The escape hatch (RuntimeInstallAuthorized)
+// reintroduced the exact false-green this feature exists to eliminate:
+// apt-get exits 0, `&&` passes, the step's `python` shells out to nothing,
+// and (if the step carries its own `|| echo` fallback, as SIM-EDR-001's
+// mimipenguin step does) the step reports exit 0 with no signal.
+//
+// This test simulates a REAL install by having the fake `apt-get` write a
+// `python3` script onto PATH at shell-runtime (not at Go-test setup time) —
+// mirroring how a real package manager only makes the binary appear once the
+// composed shell command actually executes on the target — then runs the
+// FULLY composed command for real and asserts the step's bare `python`
+// resolves to the just-installed python3 via the post-install PATH shim
+// (executor.PostInstallVerifyShim).
+func TestResolveRuntimeDeps_AuthorizedInstall_ReResolvesAndShimsAfterInstall(t *testing.T) {
+	dir := t.TempDir()
+	// This deterministic PATH still needs the handful of real POSIX
+	// utilities both the fake apt-get script AND
+	// executor.PostInstallVerifyShim's own shell snippet call out to
+	// (command is a shell builtin; sh/chmod/mktemp/ln are not).
+	for _, tool := range []string{"sh", "chmod", "mktemp", "ln"} {
+		toolPath, err := exec.LookPath(tool)
+		if err != nil {
+			t.Skipf("no %s on this host to drive executor.RunCommand: %v", tool, err)
+		}
+		if err := os.Symlink(toolPath, filepath.Join(dir, tool)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A fake apt-get that, like the real thing, only makes python3 appear
+	// on PATH once IT runs — it deliberately never creates a bare `python`.
+	pyPath := filepath.Join(dir, "python3")
+	aptScript := "#!/bin/sh\n" +
+		"printf '%s\\n%s\\n' '#!/bin/sh' 'echo REAL_PYTHON3_RAN' > '" + pyPath + "'\n" +
+		"chmod +x '" + pyPath + "'\n"
+	if err := os.WriteFile(filepath.Join(dir, "apt-get"), []byte(aptScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir) // deterministic: only sh + apt-get exist up front; no python, no python3 yet
+
+	if pre := executor.ResolveInterpreter("python"); pre.Found {
+		t.Fatalf("expected python to be genuinely absent before the (simulated) install, got %+v", pre)
+	}
+
+	c := New("http://unused.invalid", "a-1", 0)
+	step := &Step{ID: "s", Command: "python", RequiresInterpreters: []string{"python"}}
+	task := &Task{RuntimeInstallAuthorized: true}
+	outcome := c.resolveRuntimeDeps(task, step)
+	defer outcome.cleanup()
+
+	if outcome.blocked {
+		t.Fatalf("expected NOT blocked when install is authorized and a package manager exists, note=%q", outcome.note)
+	}
+
+	stdout, stderr, exitCode, err := executor.RunCommand(step.Command)
+	if err != nil {
+		t.Fatalf("running the composed install+verify+run command failed: %v (stderr=%s)", err, stderr)
+	}
+	if exitCode != 0 {
+		t.Fatalf("composed command exited %d (stdout=%q stderr=%q) — apt-get reporting success is not "+
+			"proof the step's hardcoded `python` resolves; this is the exact C2 regression", exitCode, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "REAL_PYTHON3_RAN") {
+		t.Fatalf("expected the post-install shim to resolve `python` to the freshly-installed python3, got stdout=%q stderr=%q", stdout, stderr)
+	}
+}
+
 // Authorization alone is not a magic wand: if no package manager exists AND no
 // interpreter path exists, the step is still blocked — never silently "ok
 // because the operator said install was fine".
@@ -237,15 +323,33 @@ func TestResolveRuntimeDeps_AuthorizedButNoPackageManager_StillBlocked(t *testin
 }
 
 // Windows is explicitly out of scope for this pass (see
-// docs/design/agent-runtime-dependencies.md): resolveRuntimeDeps checks
-// runtime.GOOS itself, so this only proves the guard exists — it cannot flip
-// GOOS at test time. The cross-compile gate (agent/crosscompile_test.go)
-// covers that the windows build still compiles with this code present.
-func TestResolveRuntimeDeps_DeclaredRequirementIsIgnoredOnNonPOSIXGuardOnly(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("this host IS windows — the no-op branch is exercised directly by every other test on this platform")
+// docs/design/agent-runtime-dependencies.md). Previously this test could not
+// actually prove the guard fires — it could not flip runtime.GOOS, so it
+// asserted nothing beyond "the package builds". resolveRuntimeDeps now reads
+// the host OS through the package var runtimeDepsGOOS (default
+// runtime.GOOS) specifically so this test can override it and prove the
+// no-op branch actually returns a zero-value, untouched outcome even when a
+// requirement IS declared — the one case an unguarded caller could get wrong.
+func TestResolveRuntimeDeps_WindowsGOOSIsANoOp(t *testing.T) {
+	original := runtimeDepsGOOS
+	runtimeDepsGOOS = "windows"
+	defer func() { runtimeDepsGOOS = original }()
+
+	c := New("http://unused.invalid", "a-1", 0)
+	step := &Step{ID: "s", Command: "echo SHOULD_BE_UNCHANGED", RequiresInterpreters: []string{"python"}}
+	outcome := c.resolveRuntimeDeps(&Task{RuntimeInstallAuthorized: true}, step)
+	defer outcome.cleanup()
+
+	if outcome.blocked {
+		t.Fatalf("expected the windows no-op guard to short-circuit before ever blocking, got blocked=true note=%q", outcome.note)
 	}
-	// Nothing to assert beyond "the package still builds and the other tests
-	// above exercised the POSIX branch" — this test exists as a documented
-	// marker for the windows exclusion rather than a runnable cross-OS check.
+	if outcome.note != "" {
+		t.Errorf("expected a zero-value outcome (no note) on windows, got note=%q", outcome.note)
+	}
+	if len(outcome.shims) != 0 {
+		t.Errorf("expected no shims to be created on windows, got %d", len(outcome.shims))
+	}
+	if step.Command != "echo SHOULD_BE_UNCHANGED" {
+		t.Errorf("expected step.Command to be left completely untouched on windows, got %q", step.Command)
+	}
 }

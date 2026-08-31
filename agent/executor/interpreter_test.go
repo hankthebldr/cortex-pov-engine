@@ -68,6 +68,41 @@ func TestResolveInterpreter_UnknownLogicalStillChecksItsOwnName(t *testing.T) {
 	}
 }
 
+// I3 — os.MkdirTemp defaults to 0700, owned by whichever euid the beacon
+// process runs as (root — the systemd unit declares no `User=`). A step that
+// runs as a different, unprivileged identity (runuser -l 'www-data') cannot
+// TRAVERSE a 0700 root-owned directory, so it can never reach the shim even
+// though the step's own output asserts "PATH-shimmed". This is latent on the
+// current corpus (its only `requires_interpreters` declaration is
+// identity: root) but goes live the moment anyone declares it on a non-root
+// step. World execute+read (0755) is what makes the directory traversable
+// and listable by any identity while the symlink inside still only points
+// at a binary that was already resolvable on this host.
+func TestNewInterpreterShim_DirIsWorldTraversable(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "python3")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	shim, err := NewInterpreterShim("python", target)
+	if err != nil {
+		t.Fatalf("NewInterpreterShim: %v", err)
+	}
+	defer shim.Cleanup()
+
+	info, err := os.Stat(shim.Dir)
+	if err != nil {
+		t.Fatalf("stat shim dir: %v", err)
+	}
+	perm := info.Mode().Perm()
+	if perm&0o755 != 0o755 {
+		t.Fatalf("expected shim dir %s to be at least 0755 (world-traversable so a non-root step "+
+			"identity can reach it), got %v (this is the I3 defect: os.MkdirTemp's default 0700 locks "+
+			"out any identity other than the beacon's own euid)", shim.Dir, perm)
+	}
+}
+
 func TestNewInterpreterShim_ExposesBinaryUnderLogicalName(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "python3")
@@ -148,10 +183,47 @@ func TestInstallPackageCommand_DetectsFirstAvailableManager(t *testing.T) {
 	}
 }
 
+// Previously this only compared len(DetectInterpreters()) against
+// len(KnownLogicalInterpreters()) — tautological, since DetectInterpreters is
+// implemented by iterating KnownLogicalInterpreters(): the length can never
+// disagree with itself no matter what ResolveInterpreter actually returns.
+// This version pins a deterministic PATH with exactly one interpreter present
+// (python, and only via its python3 alias) and asserts DetectInterpreters
+// reflects THAT real, specific PATH shape — it fails if DetectInterpreters
+// stops calling ResolveInterpreter, resolves the wrong logical name, or
+// reports something present that genuinely is not.
 func TestDetectInterpreters_CoversKnownRoster(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "python3")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir) // ONLY python3 exists — perl/ruby/node are genuinely absent
+
 	checks := DetectInterpreters()
-	if len(checks) != len(KnownLogicalInterpreters()) {
+	want := KnownLogicalInterpreters()
+	if len(checks) != len(want) {
 		t.Fatalf("DetectInterpreters returned %d entries, want %d (one per known logical name)",
-			len(checks), len(KnownLogicalInterpreters()))
+			len(checks), len(want))
+	}
+
+	byLogical := make(map[string]InterpreterCheck, len(checks))
+	for _, c := range checks {
+		byLogical[c.Logical] = c
+	}
+	for _, logical := range want {
+		if _, ok := byLogical[logical]; !ok {
+			t.Fatalf("DetectInterpreters is missing logical name %q from the known roster: %+v", logical, checks)
+		}
+	}
+
+	python, ok := byLogical["python"]
+	if !ok || !python.Found || python.Exact || python.Resolved != "python3" {
+		t.Errorf("expected python to resolve via the python3 alias on this scoped PATH, got %+v (present=%v)", python, ok)
+	}
+	for _, logical := range []string{"perl", "ruby", "node"} {
+		if c := byLogical[logical]; c.Found {
+			t.Errorf("expected %q to be reported ABSENT on an interpreter-empty PATH, got %+v", logical, c)
+		}
 	}
 }
