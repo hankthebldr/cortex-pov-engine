@@ -1,39 +1,12 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import ConsoleRail from '../components/console/ConsoleRail.jsx'
+import { SurfaceBoundary } from '../components/console/SurfaceError.jsx'
 
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
 import { runIdOf, idMatches } from '../api/ids.js'
-
-/**
- * Destination-level code splitting.
- *
- * The console has 14 destinations and a session typically visits two or
- * three of them, so eagerly bundling every surface into the entry chunk pays
- * — in parse/eval time on every load — for content most sessions never open.
- * Each surface below is a lazy `import()` chunk instead of a static import;
- * `withSuspense` gives every mount site its own tiny loading state so a slow
- * chunk fetch reads as "loading this view", never as a blank pane.
- *
- * `ConsoleRail` stays a static import: it is the Library-scoped plane/pinned
- * filter rail, mounted in the same paint as the default destination, so
- * splitting it out would only add a chunk round-trip with no benefit.
- */
-const OperationsView = lazy(() => import('../components/console/OperationsView.jsx'))
-const LaunchView = lazy(() => import('../components/console/LaunchView.jsx'))
-const TargetsView = lazy(() => import('../components/console/TargetsView.jsx'))
-const RunDetailView = lazy(() => import('../components/console/RunDetailView.jsx'))
-const MultiRunCompare = lazy(() => import('../components/console/MultiRunCompare.jsx'))
-const CoverageView = lazy(() => import('../components/console/CoverageView.jsx'))
-const TtpBrowserView = lazy(() => import('../components/console/TtpBrowserView.jsx'))
-const ToolAdapterCatalog = lazy(() => import('../components/console/ToolAdapterCatalog.jsx'))
-const UcTcIndexView = lazy(() => import('../components/console/UcTcIndexView.jsx'))
-const LabView = lazy(() => import('../components/console/LabView.jsx'))
-const TenantManager = lazy(() => import('../components/console/TenantManager.jsx'))
-const ReadinessView = lazy(() => import('../components/console/ReadinessView.jsx'))
-const EalConsole = lazy(() => import('../components/EalConsole.jsx'))
 
 export function DestinationLoading() {
   return (
@@ -43,16 +16,101 @@ export function DestinationLoading() {
   )
 }
 
-/** Wrap a lazily-loaded surface in its own Suspense boundary, so a mount
- * site never has to know whether the component behind it is lazy. */
-function withSuspense(LazyComponent) {
-  return function SuspendedSurface(props) {
+/**
+ * Tags a rejected `factory()` as a chunk-load failure. The ONLY thing that
+ * can reject this specific promise is the `import()` itself — a 404 on the
+ * hashed chunk URL, a network failure, a parse error in the fetched module
+ * — never a render error from inside the resolved component (that happens
+ * later, outside this try/catch, and is caught by SurfaceBoundary same as
+ * any other throw). That makes the tag exact, unlike sniffing the
+ * browser-specific message text ("Failed to fetch dynamically imported
+ * module" / "error loading dynamically imported module" / "Importing a
+ * module script failed").
+ */
+function lazyRetriable(factory) {
+  return lazy(() =>
+    factory().catch((err) => {
+      const wrapped = err instanceof Error ? err : new Error(String(err))
+      wrapped.isChunkLoadError = true
+      throw wrapped
+    }),
+  )
+}
+
+/**
+ * A lazy destination chunk whose failure is RECOVERABLE, not a dead end.
+ *
+ * React caches a `lazy()` component's outcome — success OR rejection —
+ * forever. Before this, `SurfaceBoundary`'s "Retry" cleared its own local
+ * error state and re-rendered the SAME `lazy()` object; on a rejected
+ * import that replayed the identical cached error every time, since
+ * nothing ever called the import factory again (verified: the loader's
+ * call count stayed at 1 across repeated Retry clicks).
+ *
+ * `attempt` fixes that by forcing `useMemo` to build a brand-new `lazy()` —
+ * and therefore make a brand-new `import()` call — on every retry. The
+ * inner `SurfaceBoundary` sees `isChunkLoadError` and offers "Try again"
+ * (re-invoke the import; recovers a one-off network blip) alongside
+ * "Reload app" (full page reload; the actual fix when this tab's
+ * index.html is stale after a redeploy, which "Try again" alone cannot
+ * repair — the new chunk hash isn't in this tab's manifest at all). An
+ * ordinary render throw from an already-loaded surface still gets the
+ * plain "Retry" copy, unchanged.
+ */
+export function makeLazySurface(loader, title) {
+  return function LazySurfaceMount(props) {
+    const [attempt, setAttempt] = useState(0)
+    const Comp = useMemo(() => lazyRetriable(loader), [attempt])
     return (
-      <Suspense fallback={<DestinationLoading />}>
-        <LazyComponent {...props} />
-      </Suspense>
+      <SurfaceBoundary
+        key={attempt}
+        resetKey={attempt}
+        title={title}
+        onRetryImport={() => setAttempt((a) => a + 1)}
+      >
+        <Suspense fallback={<DestinationLoading />}>
+          <Comp {...props} />
+        </Suspense>
+      </SurfaceBoundary>
     )
   }
+}
+
+/**
+ * Destination-level code splitting.
+ *
+ * The console has 14 destinations and a session typically visits two or
+ * three of them, so eagerly bundling every surface into the entry chunk pays
+ * — in parse/eval time on every load — for content most sessions never open.
+ * Each surface below is a lazy `import()` chunk instead of a static import,
+ * wrapped by `makeLazySurface` so a mount site gets its own loading state
+ * AND a recoverable failure state, without having to know whether the
+ * component behind it is lazy.
+ *
+ * `ConsoleRail` stays a static import: it is the Library-scoped plane/pinned
+ * filter rail, mounted in the same paint as the default destination, so
+ * splitting it out would only add a chunk round-trip with no benefit.
+ */
+const OperationsView = makeLazySurface(() => import('../components/console/OperationsView.jsx'), 'Library')
+const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
+const TargetsView = makeLazySurface(() => import('../components/console/TargetsView.jsx'), 'Targets')
+const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs & Proof')
+const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs & Proof · Compare')
+const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Coverage')
+const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP Cards')
+const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Tools & Payloads')
+const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
+const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Environments')
+const TenantManager = makeLazySurface(() => import('../components/console/TenantManager.jsx'), 'Tenants')
+const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Readiness')
+const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
+
+/** Wrap a lazily-loaded surface in its own Suspense boundary, so a mount
+ * site never has to know whether the component behind it is lazy.
+ * `makeLazySurface` surfaces already carry their own Suspense + retry
+ * boundary, so this is now a passthrough kept for call-site stability. */
+function withSuspense(LazyComponent) {
+  return LazyComponent
 }
 
 /**
