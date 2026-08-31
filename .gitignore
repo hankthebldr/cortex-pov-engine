@@ -103,3 +103,4 @@ dist/agent/
 
 # Generated wiki tree (scripts/gen_wiki.py) — published, never committed
 build/
+ui/coverage/
