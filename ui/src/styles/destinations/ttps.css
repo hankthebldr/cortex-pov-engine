@@ -288,7 +288,11 @@
   gap: 8px;
 }
 .ttpb-detail__eyebrow { font-size: 11px; color: var(--tx2); }
-.ttpb-detail__title {
+/* T2 repair (docs/design/token-aliasing-fixes.md): .theme-console prefix
+   raises this to (0,2,0) so it beats the shared ".theme-console h1,h2,h3"
+   rule's (0,1,1) for font-weight/font-size/line-height/letter-spacing —
+   this h3 is on a <h3>, which the shared rule also targets by tag. */
+.theme-console .ttpb-detail__title {
   margin: 4px 0 0;
   font-size: 17px;
   font-weight: 800;
@@ -496,7 +500,10 @@
   box-shadow: var(--shadow);
 }
 .ttpb-modal__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.ttpb-modal__title { margin: 4px 0 0; font-size: 16px; font-weight: 700; color: var(--tx); }
+/* T2 repair (docs/design/token-aliasing-fixes.md): same .theme-console
+   specificity bump as .ttpb-detail__title above — this h3 was losing
+   font-weight/font-size to the shared ".theme-console h1,h2,h3" rule. */
+.theme-console .ttpb-modal__title { margin: 4px 0 0; font-size: 16px; font-weight: 700; color: var(--tx); }
 .ttpb-modal__table-wrap {
   max-height: 280px;
   overflow-y: auto;

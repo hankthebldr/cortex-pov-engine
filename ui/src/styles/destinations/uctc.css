@@ -63,7 +63,13 @@
   color: var(--tx3);
 }
 
-.uctc__pagehead-title {
+/* T2 repair (docs/design/token-aliasing-fixes.md): prefixed with
+   .theme-console so this (0,2,0) rule beats the shared ".theme-console
+   h1,h2,h3" rule's (0,1,1) for font-weight/font-size/line-height —
+   this destination's title is bigger and heavier than the shared
+   default and was silently losing both. Same technique this file
+   already uses for its other 58 rules. */
+.theme-console .uctc__pagehead-title {
   margin: 6px 0 0;
   font-family: var(--font-display);
   font-weight: 800;

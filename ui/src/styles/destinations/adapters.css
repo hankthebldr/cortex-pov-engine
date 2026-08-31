@@ -33,9 +33,6 @@
   color: var(--tx);
   font-family: var(--font-primary, 'Inter', sans-serif);
 }
-.theme-console .tools-destination .mono {
-  font-family: var(--font-mono);
-}
 
 /* ── Page head ─────────────────────────────────────────────────────── */
 .theme-console .tools-destination__head {

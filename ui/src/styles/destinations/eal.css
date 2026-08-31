@@ -71,9 +71,26 @@
   color: var(--tx2);
 }
 
-.eal-console__title {
+/* T2 repair (docs/design/token-aliasing-fixes.md): prefixed with
+   .theme-console — this destination renders inside the .theme-console
+   shell (AppShell.jsx wraps the whole console), so the shared
+   ".theme-console h1,h2,h3" rule (0,1,1) was winning font-family /
+   font-weight / letter-spacing / line-height / font-size wholesale over
+   this bare-class (0,1,0) selector. (0,2,0) here beats it
+   unconditionally, the same technique already used by adapters.css /
+   agents.css / ttp-detail.css / most of uctc.css. Also expanded out of
+   the `font:` shorthand into its longhand sub-properties, matching the
+   other three destination title rules this same repair touches
+   (uctc.css / ttps.css already write longhand) — a `font-size:`/
+   `font-weight:` cascade check against a shorthand-only declaration is
+   not reliable across every CSSOM implementation, and longhand is the
+   form every other title rule in this codebase already uses. */
+.theme-console .eal-console__title {
   margin: 6px 0 0;
-  font: 800 22px/1.15 'Montserrat', sans-serif;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1.15;
   letter-spacing: -0.02em;
 }
 

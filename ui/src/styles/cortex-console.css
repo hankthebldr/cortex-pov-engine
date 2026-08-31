@@ -26,26 +26,41 @@
 
   /* ── Action (Cortex green — PRIMARY accent: launch, active, brand) ── */
   /* Redesign v2 — see docs/design/console-redesign-v2.md. Green leads,
-     teal is demoted to secondary/info. Exact brand hex tuned on screen. */
-  --c-action:          #6CC24A;
-  --c-action-bright:   #84D85F;
-  --c-action-deep:     #4FA838;
+     teal is demoted to secondary/info. Exact brand hex tuned on screen.
+
+     C1 repair (docs/design/token-aliasing-fixes.md): these 8 foregrounds
+     — action / action-bright / action-deep / signal / detected / missed
+     / pending / stitched — used to be a single hardcoded hex each, tuned
+     only for the old permanently-dark void. --s0..--s3 above got
+     aliased onto the real token layer; these did not, so in light theme
+     (the app default) they measured 1.57-2.50:1 as plain text and down
+     to 1.67:1 composited into their own *-soft chip backgrounds — same
+     defect class as the surface half already fixed, just the foreground
+     half. They now point at --ink-* (cortex-tokens.css), a dedicated
+     light/dark pair verified >=4.5:1 (>=3:1 for action-deep / stitched,
+     which nothing here uses as `color:` — border/decoration only) against
+     every --s0..--s3 surface AND composited into their own soft
+     background at its real alpha, in both themes. Do not re-hardcode a
+     hex here — change --ink-* in the token layer instead. */
+  --c-action:          var(--ink-action);
+  --c-action-bright:   var(--ink-action-bright);
+  --c-action-deep:     var(--ink-action-deep);
   --c-action-soft:     rgba(108, 194, 74, 0.14);
   --c-action-glow:     rgba(108, 194, 74, 0.45);
 
   /* ── Signal (Cortex teal — SECONDARY accent: info, links, stitching) ─ */
-  --c-signal:          #00C0E8;
+  --c-signal:          var(--ink-signal);
   --c-signal-soft:     rgba(0, 192, 232, 0.12);
   --c-signal-glow:     rgba(0, 192, 232, 0.45);
 
   /* ── Detection states ─────────────────────────────────────────────── */
-  --c-detected:        #4FD1A1;
+  --c-detected:        var(--ink-detected);
   --c-detected-soft:   rgba(79, 209, 161, 0.14);
-  --c-missed:          #F97066;
+  --c-missed:          var(--ink-missed);
   --c-missed-soft:     rgba(249, 112, 102, 0.14);
-  --c-pending:         #F5A524;
+  --c-pending:         var(--ink-pending);
   --c-pending-soft:    rgba(245, 165, 36, 0.14);
-  --c-stitched:        #00C0E8;
+  --c-stitched:        var(--ink-stitched);
 
   /* ── Text — aliased onto --tx/--tx2/--tx3 (see Color field note above).
      No fourth text-tier exists on the token layer; --c-text-disabled maps
@@ -158,11 +173,24 @@
 .theme-console h3 { font-size: var(--fs-h2); }
 
 .theme-console code,
-.theme-console kbd,
-.theme-console .mono {
+.theme-console kbd {
   font-family: var(--font-mono);
   font-size: 0.92em;
   letter-spacing: var(--tracking-mono);
+}
+
+/* T1 repair (docs/design/token-aliasing-fixes.md): `.mono` used to be
+   grouped into the rule above, giving it the same (0,2,0) specificity —
+   which discarded font-size/letter-spacing on every destination rule
+   that also styles an element carrying class `mono` in its JSX (e.g.
+   `.ttpb-stat__value { font-size: 20px }` styling
+   `<div class="ttpb-stat__value mono">`, a bare (0,1,0) selector). `code`
+   and `kbd` are native elements with no competing destination rule, so
+   they keep the original family+size+tracking above; `.mono` itself now
+   carries ONLY the font-family — size and tracking belong to whichever
+   rule the destination actually authors for that element. */
+.theme-console .mono {
+  font-family: var(--font-mono);
 }
 
 .theme-console a {
@@ -5780,12 +5808,20 @@
 /* ─────────────────────────────────────────────────────────────────────────
  * EalConsole.jsx — inline-style normalization (design-contract pass)
  * Tokens only (--cortex-navy / --cortex-teal / --cortex-steel, per
- * cortex-theme.css :root). EalConsole renders inside app-main-panel, NOT
- * the .theme-console shell, so these are bare selectors matching the
- * existing .eal-console__* convention in cortex-theme.css — not scoped
- * under .theme-console.
+ * cortex-theme.css :root). Bare selectors matching the existing
+ * .eal-console__* convention in cortex-theme.css.
+ *
+ * T2 repair (docs/design/token-aliasing-fixes.md): the `.eal-console__title
+ * { margin: 0; font-size: 18px; }` rule that used to live here is REMOVED
+ * — it was a dead duplicate of destinations/eal.css's own (now
+ * .theme-console-prefixed, authoritative) `.eal-console__title` rule at
+ * equal-or-lower specificity, and its claim that "EalConsole renders
+ * inside app-main-panel, NOT the .theme-console shell" was stale/wrong:
+ * AppShell.jsx applies `theme-console` at the root shell, so EalConsole
+ * always renders inside it. A second title rule defining a different
+ * font-size (18px vs the authored 22px) at the same file was a landmine,
+ * not a fallback — see the T2 section of the repair doc.
  * ───────────────────────────────────────────────────────────────────────── */
-.eal-console__title { margin: 0; font-size: 18px; }
 .eal-console__title-accent { color: var(--cortex-teal); }
 .eal-console__close { margin-left: auto; }
 .eal-list__toolbar { justify-content: space-between; margin-bottom: 8px; }

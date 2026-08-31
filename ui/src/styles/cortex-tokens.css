@@ -36,3 +36,51 @@
   --ink: #04100A; --ink2: #0A1610; --ink-bd: rgba(255,255,255,.1); --ink-tx2: #9FB0A9;
   --shadow: 0 6px 22px rgba(0,0,0,.55);
 }
+
+/* ============================================================
+   Console state-ink tokens — ADDITIVE (not part of the 25-token
+   contract above; do not fold these in with it or "reconcile" the
+   counts). Added for the C1 repair: cortex-console.css's `.theme-console`
+   block hardcodes 8 foreground colors (--c-action, --c-action-bright,
+   --c-action-deep, --c-signal, --c-detected, --c-missed, --c-pending,
+   --c-stitched) as a SINGLE dark-tuned hex per token, with no
+   [data-theme] variant. In light theme (the app default) those measure
+   1.57–2.50:1 against --s0/--s1/--s2/--s3 as plain text and as low as
+   1.67:1 composited into their own *-soft chip backgrounds — the same
+   defect class as the invisible page titles this token contract was
+   built to prevent, just in the foreground half instead of the surface
+   half. --ac/--warn/--info/--crit themselves are NOT substitutes here:
+   they're tuned as fill colors paired with an on-accent text color
+   (--ac-tx etc.), not as small text sitting directly on --s0..--s3 — at
+   this weight/size they land at 2.4–3.4:1 in light theme, still short of
+   the 4.5:1 text floor. These are dedicated, verified-4.5:1-in-both-
+   themes (>=3:1 for the two border/decoration-only tokens, action-deep
+   and stitched, which no rule anywhere uses as `color:`) variants that
+   keep the same hue family and the traffic-light distinction between
+   action / detected / missed / pending — see
+   docs/design/token-aliasing-fixes.md for the measured contrast table.
+   DARK values are the original cortex-console.css hex, UNCHANGED, except
+   --ink-missed, which is re-pointed at --crit (dark: #FF6A4D vs the
+   original #F97066) because the original value's own composited-chip
+   ratio (~4.46:1 against --s3) fell just short of 4.5:1 once actually
+   measured against every surface + its own chip alpha, not only --s2. */
+:root {
+  --ink-action:        #366622;
+  --ink-action-bright: #316719;
+  --ink-action-deep:   #40882D;
+  --ink-signal:        #00667B;
+  --ink-detected:      #1B674B;
+  --ink-missed:        var(--crit);
+  --ink-pending:       #7E5006;
+  --ink-stitched:      var(--ink-signal);
+}
+[data-theme="dark"] {
+  --ink-action:        #6CC24A;
+  --ink-action-bright: #84D85F;
+  --ink-action-deep:   #4FA838;
+  --ink-signal:        #00C0E8;
+  --ink-detected:      #4FD1A1;
+  --ink-missed:        var(--crit);
+  --ink-pending:       #F5A524;
+  --ink-stitched:      var(--ink-signal);
+}
