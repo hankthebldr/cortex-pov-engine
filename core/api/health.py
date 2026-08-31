@@ -534,10 +534,11 @@ async def probe_task_queue(session_factory) -> dict[str, Any]:
         return _degraded(
             "TASKS_QUEUED_FOR_UNAVAILABLE_AGENT",
             f"{sum(stranded.values())} task(s) are queued for agent(s) that are not "
-            f"online: {listing}. The run will sit in 'pending' until the beacon "
-            f"polls — it is NOT lost (the queue is durable and survives a SimCore "
-            f"restart). Fix: bring the beacon back, or abort the run with "
-            f"POST /api/runs/{{id}}/abort and relaunch against a live agent.",
+            f"online: {listing}. The run's own status stays 'running' with no "
+            f"output until the beacon polls — it does NOT read 'pending' (grepping "
+            f"for 'pending' finds nothing) and it is NOT lost (the queue is durable "
+            f"and survives a SimCore restart). Fix: bring the beacon back, or abort "
+            f"the run with POST /api/runs/{{id}}/abort and relaunch against a live agent.",
             stranded=dict(sorted(stranded.items())), **common,
         )
     return _ok(stranded={}, **common)

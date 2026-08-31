@@ -181,8 +181,9 @@ A real response, captured from this stack mid-lab (trimmed):
     "task_queue": {
       "status": "degraded", "code": "TASKS_QUEUED_FOR_UNAVAILABLE_AGENT",
       "detail": "2 task(s) are queued for agent(s) that are not online:
-                  jumpbox-01 (2). The run will sit in 'pending' until the
-                  beacon polls — it is NOT lost (the queue is durable and
+                  jumpbox-01 (2). The run's own status stays 'running' with
+                  no output until the beacon polls — it does NOT read
+                  'pending' — and it is NOT lost (the queue is durable and
                   survives a SimCore restart)."
     }
   },
