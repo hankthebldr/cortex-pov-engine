@@ -4,8 +4,8 @@ CortexSim generates controlled, high-fidelity attack signal into a Palo Alto
 Networks Cortex environment (XSIAM/XDR) so a Domain Consultant can validate
 detection logic — BIOC, XQL, Analytics, Correlation, IOC, and ABIOC — before a
 customer's own SOC has to. Think "MITRE Caldera's opinionated nephew": not a
-red-team C2, a detection quality-assurance engine. It runs 170 scripted
-scenarios across 15 detection planes via either a pull-model agent or a
+red-team C2, a detection quality-assurance engine. It runs 177 scripted
+scenarios across 16 detection planes via either a pull-model agent or a
 self-contained push bundle, under a realistic per-step identity harness so
 XDR sees real process-causality chains instead of everything running as one
 account. **There is no login and no API key anywhere in this app.** It is
@@ -338,7 +338,7 @@ coverage, adapters, assertions):
 
 | Plane | Cortex engine | Scenarios |
 |---|---|---:|
-| CDR | Cortex Cloud / Prisma Cloud Compute | 26 |
+| CDR | Cortex Cloud / Prisma Cloud Compute | 28 |
 | EDR | Cortex XDR Agent | 22 |
 | Analytics | XSIAM Correlation Engine (multi-plane stitching) | 23 |
 | ITDR | Cortex ITDR | 20 |
@@ -353,9 +353,10 @@ coverage, adapters, assertions):
 | CSPM | Cortex Cloud Posture Management | 5 |
 | AIRS | Cortex AI Runtime Security | 5 |
 | Email | XSIAM / NG-SIEM (3rd-party log ingestion, ITDR-pattern) | 5 |
-| **Total** | | **170** |
+| DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 |
+| **Total** | | **177** |
 
-**170 loadable scenarios · 170 TTP cards · 1,096 step-level expected
+**177 loadable scenarios · 175 TTP cards · 1,096 step-level expected
 detections · 1,777 catalog detection objects** across the `BIOC | XQL |
 Analytics | Correlation | IOC | ABIOC` vocabulary, plus the XDM
 modeling-rule normalization substrate. `make validate` is green

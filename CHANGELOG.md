@@ -52,9 +52,9 @@ has full admin access.
   registry, causality view, and a **Readiness** surface that renders the
   connector ladder (Authored → Configured → Reachable → Verified) so a
   green screen never overstates what has actually been proven.
-- **Detection content corpus** — 170 loadable scenarios across 15 detection
+- **Detection content corpus** — 177 loadable scenarios across 16 detection
   planes (EDR, CDR, NDR, ITDR, CSPM, ASM, TIM, Cloud App, Analytics,
-  AI Access, AIRS, Browser, KOI, AI_SPM, Email), 170 TTP cards, 1,096
+  AI Access, AIRS, Browser, KOI, AI_SPM, Email, DLP), 175 TTP cards, 1,096
   step-level expected detections, and 1,777 catalog detection objects across
   the `BIOC | XQL | Analytics | Correlation | IOC | ABIOC` vocabulary plus
   the XDM modeling-rule substrate.
@@ -137,7 +137,7 @@ note never overstates what has been proven.
   TTPs. The reproduction command and the honest caveat that the true count
   is likely higher (once `|| echo` fallbacks on real commands are counted
   too) live in `docs/reference/lab-runbook.md`.
-- **Only 59 of 170 scenarios declare an MTTD-shaped primary KPI** — the only
+- **Only 59 of 177 scenarios declare an MTTD-shaped primary KPI** — the only
   KPI class the engine measures natively today. The rest declare thresholds
   the engine cannot yet produce a `measured_value` for and score `pending`
   indefinitely; that is a stated gap, not a silent one.
