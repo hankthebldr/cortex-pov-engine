@@ -54,6 +54,17 @@ export default function TourSpotlight({ stop, index, total, onNext, onPrev, onEx
         e.preventDefault()
         onExit()
       } else if (e.key === 'Enter') {
+        // Skip/Back/Next/Done are real <button>s inside the bubble — for a
+        // focused button, activation IS the keydown default, so preventing
+        // it here cancels that button's own click. That used to make Enter
+        // on Skip advance the tour instead of exiting it (I5): every Enter
+        // was unconditionally treated as "next" regardless of what had
+        // focus. Only hijack Enter when focus is on something that has no
+        // activation semantics of its own (the dialog shell itself).
+        const target = e.target
+        const onOwnButton = target instanceof Element && target.tagName === 'BUTTON'
+          && bubbleRef.current && bubbleRef.current.contains(target)
+        if (onOwnButton) return
         e.preventDefault()
         onNext()
       } else if (e.key === 'Tab') {
@@ -73,6 +84,25 @@ export default function TourSpotlight({ stop, index, total, onNext, onPrev, onEx
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [stop, onExit, onNext])
+
+  // Exit the moment the SPOTLIT control itself is activated (C1). The
+  // shutters deliberately leave a `pointer-events: none` hole over the
+  // anchor so a click lands on the real control underneath — but the tour
+  // stays mounted at z-index 900+ above everything else in the app,
+  // including any modal that control opens (e.g. stop 4's "+ Deploy agent"
+  // opens a dialog at a lower z-index). The user has done the thing the
+  // stop was teaching; exiting here is cleaner than trying to out-stack
+  // every app modal, and it is what stop 4 needs to not trap the user
+  // behind four dimmed shutters with no way to reach the one-liner.
+  useEffect(() => {
+    if (!stop) return undefined
+    const onAnchorActivate = (e) => {
+      const el = document.querySelector(`[data-tour-id="${stop.anchor}"]`)
+      if (el && (el === e.target || el.contains(e.target))) onExit()
+    }
+    document.addEventListener('click', onAnchorActivate)
+    return () => document.removeEventListener('click', onAnchorActivate)
+  }, [stop, onExit])
 
   // Mount-scoped: capture the pre-tour focus once, restore it once, on
   // unmount only. NOT keyed on `stop` — see the header comment.

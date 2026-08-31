@@ -87,22 +87,45 @@ export default function AppShell({
   // `onNavigate` reaches AppShell as a prop — its identity is stable when the
   // caller (AppConsole) is wired correctly, but AppShell's own default value
   // (`() => {}`) is a fresh function every render, and nothing here forces a
-  // caller to memoize. useTour's navigate effect lists `onNavigate` in its
-  // dependency array, so an unstable identity re-fires it every render. A
-  // ref-backed wrapper is stable regardless of what the caller passes, so it
-  // is handed to useTour instead of the raw prop.
+  // caller to memoize. useTour's internal callbacks list `onNavigate` in
+  // their dependency arrays, so an unstable identity would recreate them
+  // every render. A ref-backed wrapper is stable regardless of what the
+  // caller passes, so it is handed to useTour instead of the raw prop.
   const onNavigateRef = useRef(onNavigate)
   useEffect(() => { onNavigateRef.current = onNavigate }, [onNavigate])
-  const stableOnNavigate = useCallback((...args) => onNavigateRef.current(...args), [])
+
+  // Tracks the destination the TOUR itself most recently asked for, so the
+  // effect below can tell "the tour navigated" apart from "something else
+  // did" (I4 / spec §6: "Any navigation the tour did not initiate → exit").
+  // The cutout is `pointer-events: none` and stops 1/3/5 spotlight a real
+  // nav button, so a user clicking the highlighted control navigates the
+  // app while the tour is still up — previously nothing noticed, and
+  // Next/Back went on to probe anchors in the wrong destination.
+  const tourNavTargetRef = useRef(null)
+  const tourNavigate = useCallback((destId, ...rest) => {
+    tourNavTargetRef.current = destId
+    onNavigateRef.current(destId, ...rest)
+  }, [])
 
   // First-run tour — appears once per browser (unless the help overlay was
   // already dismissed first), then suppressed. Replaces the old first-run
   // help-overlay auto-open.
   const tour = useTour({
     stops: TOUR_STOPS,
-    onNavigate: stableOnNavigate,
+    onNavigate: tourNavigate,
     autoStart: shouldShowOnFirstRun(),
   })
+
+  // See tourNavTargetRef above: while the tour is active, any change to the
+  // CURRENT destination that the tour did not itself request means the user
+  // navigated on their own (nav rail, ⌘K, a breadcrumb, …) — exit rather
+  // than leave the tour spotlighting a control on a surface it no longer
+  // matches.
+  useEffect(() => {
+    if (!tour.active) return
+    if (tourNavTargetRef.current === null) return
+    if (destination !== tourNavTargetRef.current) tour.exit()
+  }, [destination, tour.active, tour.exit])
 
   // Global ⌘K / ⌘/ / ⌘E handlers (preserved from the stepper shell).
   useEffect(() => {
