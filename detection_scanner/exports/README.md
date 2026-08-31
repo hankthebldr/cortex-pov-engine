@@ -176,4 +176,9 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0174` | Compromise Infrastructure — A Dangling-DNS Subdomain Takeover Weaponized as Allowlisted C2 | [sigma](sigma/TTP-2026-0174.yml), [xql](xql/TTP-2026-0174.xql), [correlation](correlation/TTP-2026-0174.json) |
 | `TTP-2026-0175` | Adversary Capability Development — Phishing-Kit and LLM Prompt-Farm Staging Detected Before Weaponization | [sigma](sigma/TTP-2026-0175.yml), [xql](xql/TTP-2026-0175.xql), [correlation](correlation/TTP-2026-0175.json) |
 | `TTP-2026-0176` | Shelf-Staged Privilege-Escalation Enumeration Under a Service Identity (T1082) | [sigma](sigma/TTP-2026-0176.yml), [xql](xql/TTP-2026-0176.xql), [correlation](correlation/TTP-2026-0176.json) |
+| `TTP-2026-0177` | USB Removable Media Exfiltration of Sensitive Customer Records | [sigma](sigma/TTP-2026-0177.yml), [xql](xql/TTP-2026-0177.xql), [correlation](correlation/TTP-2026-0177.json) |
+| `TTP-2026-0178` | Sensitive Data Local Staging and Password-Protected Archive Compression | [sigma](sigma/TTP-2026-0178.yml), [xql](xql/TTP-2026-0178.xql), [correlation](correlation/TTP-2026-0178.json) |
+| `TTP-2026-0179` | Unsanctioned SaaS Web Upload of Confidential Financial Records | [sigma](sigma/TTP-2026-0179.yml), [xql](xql/TTP-2026-0179.xql), [correlation](correlation/TTP-2026-0179.json) |
+| `TTP-2026-0180` | Cross-Channel DLP: Local SQL Database Staging Correlated to Network Exfiltration | [sigma](sigma/TTP-2026-0180.yml), [xql](xql/TTP-2026-0180.xql), [correlation](correlation/TTP-2026-0180.json) |
+| `TTP-2026-0181` | Clipboard and Local Memory Harvesting of Protected Health Information (PHI) | [sigma](sigma/TTP-2026-0181.yml), [xql](xql/TTP-2026-0181.xql), [correlation](correlation/TTP-2026-0181.json) |
 

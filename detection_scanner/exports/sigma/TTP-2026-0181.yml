@@ -1,0 +1,51 @@
+title: "Clipboard and Local Memory Harvesting of Protected Health Information (PHI) \u2014 Hl7 Phi Data Staging"
+id: ttp-2026-0181-bioc-01
+status: experimental
+description: |
+  Hl7 Phi Data Staging
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'patient_phi' and (action_file_path contains '/tmp/' or action_file_path contains 'AppData')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1115/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1115
+    - attack.t1005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Clipboard and Local Memory Harvesting of Protected Health Information (PHI) \u2014 Phi Clipboard Harvesting"
+id: ttp-2026-0181-bioc-02
+status: experimental
+description: |
+  Phi Clipboard Harvesting
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'clipboard_capture' and action_file_path contains '/tmp/'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1115/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1115
+    - attack.t1005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

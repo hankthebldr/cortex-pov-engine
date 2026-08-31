@@ -1,0 +1,51 @@
+title: "Sensitive Data Local Staging and Password-Protected Archive Compression \u2014 Sensitive Data Staging Tmp"
+id: ttp-2026-0178-bioc-01
+status: experimental
+description: |
+  Sensitive Data Staging Tmp
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'customer_pii' and (action_file_path contains '/tmp/' or action_file_path contains 'AppData')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1560/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1560
+    - attack.t1074
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Sensitive Data Local Staging and Password-Protected Archive Compression \u2014 Archive Password Encryption"
+id: ttp-2026-0178-bioc-02
+status: experimental
+description: |
+  Archive Password Encryption
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data | filter action_process_image_name in ('zip', '7z', '7za', 'rar', 'tar') and (action_process_command_line contains '-p' or action_process_command_line contains '-P' or action_process_command_line contains '--password') | filter action_process_command_line contains 'exfil' or action_process_command_line contains 'archive'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1560/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1560
+    - attack.t1074
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
