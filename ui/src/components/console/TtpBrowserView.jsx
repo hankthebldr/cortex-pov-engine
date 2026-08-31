@@ -505,7 +505,9 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
       )}
 
       {identity.summary && (
-        <p className="ttpb-detail__summary">{identity.summary}</p>
+        <DetailSection label="Summary">
+          <p className="ttpb-detail__summary">{identity.summary}</p>
+        </DetailSection>
       )}
 
       {stats.length > 0 && (
@@ -572,7 +574,7 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
         </DetailSection>
       )}
 
-      <DetailSection label="Detection logic">
+      <DetailSection label="Detection coverage">
         <DetectionsBreakdown detections={detections} />
       </DetailSection>
 
