@@ -19,6 +19,9 @@
  * itself is plain sRGB relative-luminance arithmetic (src/test/contrastRatio.js),
  * no new dependency.
  */
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, resolve as resolvePath } from 'node:path'
 import { describe, it, expect, afterEach } from 'vitest'
 import '../cortex-tokens.css'
 import '../cortex-theme.css'
@@ -27,8 +30,11 @@ import '../destinations/uctc.css'
 import '../destinations/ttps.css'
 import '../destinations/readiness.css'
 import '../destinations/eal.css'
-import { resolveProperty } from '../../test/cssCascade.js'
+import '../destinations/adapters.css'
+import { resolveProperty, resolveValue } from '../../test/cssCascade.js'
 import { contrastRatio, aaFloor, parseColor } from '../../test/contrastRatio.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /** Builds `.theme-console[data-theme?]` > innerHTML, appended to <body>. Returns the shell + a $ query helper. */
 function mountShell(innerHTML, { dark = false } = {}) {
@@ -358,6 +364,163 @@ const AA_LIGHT_REPAIR_FIXTURES = [
   },
 ]
 
+/**
+ * D-1 repair (2026-08-31) — the seven `color: var(--orange)` sites in
+ * destinations/adapters.css, now `color: var(--orange-ink)`. These are
+ * not decorative: `.launch-blockers__item` and `.payload-compose__warn`
+ * render PAYLOAD_NOT_STAGED / compose-not-airgapped — the exact strings
+ * telling a consultant "this tool never reached the target, the step
+ * will run and produce nothing" — and an unreadable warning here is how
+ * a DC ships a POV report showing an absent detection as "Cortex missed
+ * it": a manufactured false negative on the customer's own stack. All
+ * seven measured 2.80-3.23:1 against light --s0..--s3 before the fix
+ * (below the 4.5:1 AA floor); --orange-ink clears 4.52-5.21:1 — see
+ * cortex-tokens.css's --orange-ink block for the full table. Every
+ * fixture is wrapped in `.tools-destination` because every rule in
+ * adapters.css is anchored `.theme-console .tools-destination ...`
+ * (see that file's header comment) — without the wrapper these fixtures
+ * would silently resolve against a DIFFERENT, unscoped rule (or none)
+ * and prove nothing. Two of the seven (`.chip--pending`,
+ * `.launch-blockers__item`/`.payload-compose__warn`) sit on a
+ * TRANSPARENT own-background — adapters.css's `.chip--pending` is a
+ * plain outline chip (`background: transparent`), not the translucent
+ * soft-tint fill `CHIP_FIXTURES` above composites — so these fixtures
+ * read `bgSelector` off the real opaque ANCESTOR directly, same
+ * convention as `AA_LIGHT_REPAIR_FIXTURES`, rather than compositing.
+ * The two `border-color: var(--orange)` sites on the SAME rules
+ * (adapters.css:115,382 as of this writing) are deliberately NOT
+ * touched here or in the source — borders need the 3:1 non-text floor,
+ * which --orange already clears (7.02-7.62:1), and this guard only
+ * ever asserts `color:`.
+ */
+const ADAPTERS_ORANGE_WARN_FIXTURES = [
+  {
+    name: 'Payload shelf banner tag — .payload-banner__tag on .payload-banner (bg: --s1)',
+    html: `<div class="tools-destination"><div class="payload-banner"><span class="payload-banner__tag mono">PAYLOAD SHELF</span></div></div>`,
+    bgSelector: '.payload-banner',
+    textSelector: '.payload-banner__tag',
+  },
+  {
+    name: 'Pending chip — .chip.chip--pending.adapter-card__unpinned on .adapter-card (bg: --s1, chip bg: transparent)',
+    html: `<div class="tools-destination"><div class="adapter-card"><span class="chip chip--pending adapter-card__unpinned">UNPINNED</span></div></div>`,
+    bgSelector: '.adapter-card',
+    textSelector: '.chip--pending',
+  },
+  {
+    name: 'Adapter schema type annotation — .adapter-schema__type on .adapter-schema (bg: --s2)',
+    html: `<div class="tools-destination"><div class="adapter-schema"><div class="adapter-schema__row"><div class="adapter-schema__type mono">string</div></div></div></div>`,
+    bgSelector: '.adapter-schema',
+    textSelector: '.adapter-schema__type',
+  },
+  {
+    name: 'Provenance unpinned warning — .provenance__unpinned on .tools-destination (bg: --s0)',
+    html: `<div class="tools-destination"><div class="provenance"><span class="mono provenance__unpinned">no — upstream can change under you between engagements</span></div></div>`,
+    bgSelector: '.tools-destination',
+    textSelector: '.provenance__unpinned',
+  },
+  {
+    name: 'Stage dialog unpinned warning — .stage-dialog__warn on .confirm-dialog.stage-dialog (bg: --s1)',
+    html: `<div class="tools-destination"><div class="confirm-dialog stage-dialog"><p class="stage-dialog__warn">This pack declares no sha256.</p></div></div>`,
+    bgSelector: '.confirm-dialog',
+    textSelector: '.stage-dialog__warn',
+  },
+  {
+    name: 'Launch blocker — .launch-blockers__item (renders PAYLOAD_NOT_STAGED / a dead-Launch reason) on .tools-destination (bg: --s0)',
+    html: `<div class="tools-destination"><ul class="launch-blockers"><li class="launch-blockers__item">PAYLOAD_NOT_STAGED</li></ul></div>`,
+    bgSelector: '.tools-destination',
+    textSelector: '.launch-blockers__item',
+  },
+  {
+    name: 'Payload composer warning — .payload-compose__warn (renders compose-not-airgapped) on .tools-destination (bg: --s0)',
+    html: `<div class="tools-destination"><div class="payload-compose"><p class="payload-compose__warn">not air-gapped</p></div></div>`,
+    bgSelector: '.tools-destination',
+    textSelector: '.payload-compose__warn',
+  },
+]
+
+/**
+ * D-2 repair (2026-08-31) — the vacuity guard. `vitest.config.js`'s
+ * `css.include` CLAIMS real (non-stubbed) CSS for exactly five
+ * destination stylesheets (uctc/ttps/readiness/eal/adapters); this test
+ * file is the only thing that can make that claim true, by both
+ * importing each one AND actually exercising a rule only that file
+ * defines. `adapters.css` was in the config's claim but never imported
+ * here — the guard's own scope statement was already wrong, silently,
+ * which is the same defect class as everything else this file exists
+ * to catch. The two checks below close both directions of that hole:
+ *
+ *  1. "claims == imports" — parses vitest.config.js's own `css.include`
+ *     regex source and this file's own `import` statements and asserts
+ *     the destination-name sets are IDENTICAL. A future PR that widens
+ *     the config's claim without adding an import (or vice versa) fails
+ *     here instead of shipping a silently-vacuous claim again.
+ *  2. "imports == real CSS" — for each claimed destination, mounts a
+ *     canary selector THAT FILE (and only that file) sets `color:` on,
+ *     and asserts the resolved value is EXACTLY the token that rule
+ *     names — not merely "truthy". Truthy is not enough: `.theme-console`
+ *     itself sets `color: var(--c-text)` (= --tx), so if e.g. adapters.css
+ *     were stubbed to empty, `.adapter-schema__type`'s color would still
+ *     resolve to something non-null (the inherited --tx) and a bare
+ *     `toBeTruthy()` would pass for the wrong reason — silently vacuous,
+ *     same failure shape as the missing import above. Every canary
+ *     below is deliberately picked on a token that ISN'T --tx/--c-text
+ *     (the one thing every element inherits for free) so a stub is
+ *     forced to disagree with the expected value, not coincidentally
+ *     match it.
+ */
+const DESTINATION_CANARIES = {
+  uctc: {
+    html: `<div class="uctc"><div class="uctc__pagehead-eyebrow mono">Analyze</div></div>`,
+    selector: '.uctc__pagehead-eyebrow',
+    expectedVar: '--tx3',
+  },
+  ttps: {
+    html: `<div class="ttpb"><p class="ttpb-intro">intro copy</p></div>`,
+    selector: '.ttpb-intro',
+    expectedVar: '--tx2',
+  },
+  readiness: {
+    html: `<div class="readiness"><span class="readiness__down-tag">DOWN</span></div>`,
+    selector: '.readiness__down-tag',
+    expectedVar: '--crit',
+  },
+  eal: {
+    html: `<section class="eal-console"><div class="eal-console__eyebrow">EAL</div></section>`,
+    selector: '.eal-console__eyebrow',
+    expectedVar: '--tx2',
+  },
+  adapters: {
+    html: `<div class="tools-destination"><div class="adapter-schema"><div class="adapter-schema__row"><div class="adapter-schema__type mono">string</div></div></div></div>`,
+    selector: '.adapter-schema__type',
+    expectedVar: '--orange-ink',
+  },
+}
+
+/** Destination names this test file's own top-level `import "../destinations/<name>.css"` lines actually load. */
+function importedDestinations() {
+  const src = readFileSync(fileURLToPath(import.meta.url), 'utf8')
+  const re = /^import ['"]\.\.\/destinations\/([\w-]+)\.css['"]/gm
+  const out = new Set()
+  let m
+  while ((m = re.exec(src))) out.add(m[1])
+  return out
+}
+
+/** Destination names `vitest.config.js`'s `css.include` regex CLAIMS to give real CSS. */
+function claimedDestinations() {
+  const configPath = resolvePath(__dirname, '../../../vitest.config.js')
+  const src = readFileSync(configPath, 'utf8')
+  const m = src.match(/destinations\\\/\(([^)]+)\)\\\.css\$\//)
+  if (!m) {
+    throw new Error(
+      'console-contrast guard coverage check: could not find the destinations include regex in ' +
+        'vitest.config.js — its shape changed, and this check needs updating alongside it rather ' +
+        'than being silently skipped.'
+    )
+  }
+  return new Set(m[1].split('|'))
+}
+
 describe.each([
   ['light (default — no [data-theme])', false],
   ['dark ([data-theme="dark"])', true],
@@ -531,4 +694,99 @@ describe.each([
       ).toBeGreaterThanOrEqual(floor)
     }
   )
+
+  it.each(ADAPTERS_ORANGE_WARN_FIXTURES.map((f) => [f.name, f]))(
+    'payload-blocker warning contrast clears AA (D-1, --orange-ink): %s',
+    (_n, fixture) => {
+      const { $ } = mountShell(fixture.html, { dark })
+      const textEl = $(fixture.textSelector)
+      expect(textEl, `could not find "${fixture.textSelector}" in the fixture`).not.toBeNull()
+
+      const bgEl = fixture.bgSelector === 'self' ? textEl : $(fixture.bgSelector)
+      expect(bgEl, `could not find background element "${fixture.bgSelector}"`).not.toBeNull()
+
+      const color = resolveProperty(textEl, 'color')
+      const background = resolveProperty(bgEl, 'background') ?? resolveProperty(bgEl, 'background-color')
+      expect(color, `no resolvable color at ${fixture.name}`).toBeTruthy()
+      expect(background, `no resolvable background at ${fixture.name}`).toBeTruthy()
+
+      const ratio = contrastRatio(color, background)
+      const floor = aaFloor({ largeText: isLargeText(textEl) })
+      expect(
+        ratio,
+        `${fixture.name}: color ${color} on background ${background} measures ${ratio.toFixed(2)}:1, ` +
+          `below the WCAG AA floor of ${floor}:1`
+      ).toBeGreaterThanOrEqual(floor)
+    }
+  )
+
+  it.each(Object.entries(DESTINATION_CANARIES))(
+    'D-2 vacuity guard — %s.css is really loaded, not stubbed to empty CSS',
+    (destName, canary) => {
+      const { shell, $ } = mountShell(canary.html, { dark })
+      const el = $(canary.selector)
+      expect(
+        el,
+        `${destName}.css canary: could not find "${canary.selector}" in the fixture markup`
+      ).not.toBeNull()
+
+      const expected = resolveValue(shell, `var(${canary.expectedVar})`)
+      const actual = resolveProperty(el, 'color')
+      expect(
+        actual,
+        `${destName}.css canary: "${canary.selector}" resolved color is ${actual}, expected the ` +
+          `real ${destName}.css rule to set it to ${canary.expectedVar} (${expected}). A mismatch ` +
+          `means ${destName}.css did not actually apply here — it is either not imported or was ` +
+          `stubbed to empty CSS, and this destination's contrast fixtures would be passing for the ` +
+          `wrong reason (or not running at all).`
+      ).toBe(expected)
+    }
+  )
+})
+
+/**
+ * D-2 repair — runs once (not per-theme; it is a static source-file
+ * check, not a rendering one). Asserts vitest.config.js's `css.include`
+ * claim and this test file's own imports name the EXACT same set of
+ * destination stylesheets, and that every claimed/imported destination
+ * also has a DESTINATION_CANARIES entry — so a sheet can be added to
+ * one without the others (silently vacuous) only by failing this test.
+ */
+describe('console contrast — guard coverage integrity (D-2)', () => {
+  it('vitest.config.js css.include and this file\'s imports name the same destinations', () => {
+    const claimed = claimedDestinations()
+    const imported = importedDestinations()
+    const claimedOnly = [...claimed].filter((d) => !imported.has(d)).sort()
+    const importedOnly = [...imported].filter((d) => !claimed.has(d)).sort()
+    expect(
+      claimedOnly,
+      `vitest.config.js's css.include claims real CSS for [${claimedOnly.join(', ')}] but this ` +
+        `test file does not import ${claimedOnly.length === 1 ? 'it' : 'them'} — that destination ` +
+        `would be stubbed to empty CSS and every fixture on it would pass for the wrong reason.`
+    ).toEqual([])
+    expect(
+      importedOnly,
+      `this test file imports [${importedOnly.join(', ')}] but vitest.config.js's css.include does ` +
+        `not claim ${importedOnly.length === 1 ? 'it' : 'them'} — the import is stubbed to empty CSS ` +
+        `by the default css:false config regardless of the import statement being present.`
+    ).toEqual([])
+  })
+
+  it('every claimed/imported destination has a DESTINATION_CANARIES coverage-integrity entry', () => {
+    const claimed = claimedDestinations()
+    const covered = new Set(Object.keys(DESTINATION_CANARIES))
+    const missingCanary = [...claimed].filter((d) => !covered.has(d)).sort()
+    const staleCanary = [...covered].filter((d) => !claimed.has(d)).sort()
+    expect(
+      missingCanary,
+      `destinations [${missingCanary.join(', ')}] are claimed real CSS but have no ` +
+        `DESTINATION_CANARIES entry proving it — add one so a future stub is caught rather than ` +
+        `passing silently.`
+    ).toEqual([])
+    expect(
+      staleCanary,
+      `DESTINATION_CANARIES has an entry for [${staleCanary.join(', ')}], which vitest.config.js no ` +
+        `longer claims real CSS for — remove the stale entry (or restore the claim).`
+    ).toEqual([])
+  })
 })
