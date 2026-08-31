@@ -98,12 +98,20 @@ def test_every_runtime_content_dir_is_copied_into_the_image(label, path):
 
 
 def test_the_identity_spec_resolver_still_points_where_we_copy_it(monkeypatch):
-    """Pin the resolver itself — the COPY above is only correct while it does."""
-    import engine.identity_spec as id_spec
-    from engine.identity_spec import _spec_path
+    """Pin the resolver itself — the COPY above is only correct while it does.
 
-    monkeypatch.setattr(id_spec.settings, "CORTEXSIM_BASE_DIR", IMAGE_BASE)
-    assert _spec_path() == f"{IMAGE_BASE}/spec/identity_harness.json"
+    Patch the settings object the module under test actually holds, not the one
+    this test imports. `config.settings` is a module-level singleton, so the two
+    are normally identical — but reaching through `identity_spec` makes the test
+    independent of how `config` got imported, and `monkeypatch` restores the
+    attribute even when the assertion fails. The earlier form (direct assignment
+    to a separately-imported `settings`, restored in a `finally`) passed in
+    isolation and inside the image, and failed in the full host suite.
+    """
+    from engine import identity_spec
+
+    monkeypatch.setattr(identity_spec.settings, "CORTEXSIM_BASE_DIR", IMAGE_BASE)
+    assert identity_spec._spec_path() == f"{IMAGE_BASE}/spec/identity_harness.json"
 
 
 def test_assertions_dir_is_a_sibling_of_scenarios():

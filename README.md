@@ -564,6 +564,39 @@ make -n ci    # enumerate the local equivalents
 
 ---
 
+## Contributing
+
+Work flows `feature/*` -> `dev` -> `main`. **`main` is never pushed to directly** —
+it is what a Domain Consultant deploys into a customer lab, so it advances only by
+a reviewed merge from `dev`.
+
+```
+  feature/*  fix/*  docs/*  chore/*      one task each, cut from dev
+        |
+        |  PR  ==>  Gate A: 8 CI jobs + author's evidence + review
+        v
+      dev                                 integration trunk, always green
+        |
+        |  PR  ==>  Gate B: release readiness (image parity, counts, CHANGELOG)
+        v
+      main                                releasable, tagged
+```
+
+Two things make this process different from a normal repo, and both come from what
+CortexSim is for: a defect here does not produce a broken build, it produces a
+**false claim about a customer's security coverage** in a document that customer
+is shown.
+
+1. **Every guard must be capable of failing.** PRs state how the author verified
+   the new test goes red without the fix. A test written after the fix and never
+   observed failing is an assumption with good syntax.
+2. **Authored is not proven.** `tenant-verified` is 0 until a run executes against
+   a live Cortex tenant. No PR, doc, or console surface may report authored
+   coverage as proven coverage.
+
+Full model, naming, commit conventions, and both gate checklists:
+**[`CONTRIBUTING.md`](CONTRIBUTING.md)**.
+
 ## Testing
 
 ```bash
