@@ -58,8 +58,9 @@ def test_the_corpus_is_the_expected_size(parsed):
     """A sudden drop would make the ref checks below trivially pass.
 
     169 -> 170 on 2026-08-05: SIM-EDR-022, the payload-shelf EDR scenario.
+    170 -> 177 on 2026-08-28: Cortex Data Security bundle (DDR & DLP scenarios).
     """
-    assert len(parsed) == 170
+    assert len(parsed) == 177
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):

@@ -1,0 +1,95 @@
+scenario_id: "SIM-DLP-001"
+name: "USB Removable Media Exfiltration of Sensitive Customer Records"
+version: "1.0"
+status: "active"
+plane: "DLP"
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: "UCS-DLP-01"
+tc_ref: "TC-DLP-01"
+tc_refs:
+  - "TC-DLP-01"
+uc_name: "Enterprise Data Loss Prevention"
+tc_name: "Validate DLP detects sensitive data exfiltration attempts across USB channels"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1052.001"
+mitre_technique_name: "Exfiltration Over Physical Medium: Exfiltration over USB"
+additional_techniques:
+  - technique: "T1074.001"
+    name: "Data Staged: Local Data Staging"
+
+threat_report: "Unit 42 - Insider Threats & Physical Media Data Theft"
+threat_report_url: "https://unit42.paloaltonetworks.com/insider-threat-report/"
+
+execution_identity:
+  default: "svc-backup"
+  options:
+    - "svc-backup"
+    - "www-data"
+    - "root"
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Content Inspection"
+methodology_family: "F1"
+primary_kpi: "False Positive Rate"
+threshold:
+  kpi: "False Positive Rate"
+  op: "<"
+  value: 2.0
+  unit: "%"
+success_criteria: |
+  Copying structured customer PII/PCI records to a mounted removable storage device
+  triggers a high-fidelity Cortex XDR Endpoint DLP detection and policy enforcement alert.
+moat_tier: "LEAD"
+
+steps:
+  - id: "step-01"
+    name: "Create synthetic confidential customer data file"
+    command: |
+      mkdir -p /tmp/cortex_dlp_usb /tmp/cortex_mock_usb
+      cat << 'EOF' > /tmp/cortex_dlp_usb/confidential_client_pci.csv
+      Customer_ID,Name,Credit_Card_Number,CVV,Exp_Date,SSN,Account_Balance
+      CUST-1001,Johnathan Doe,4532-1100-8877-9912,412,08/29,987-65-4320,$84,200.00
+      CUST-1002,Jane Smith,5412-7500-1122-3344,881,11/28,876-54-3210,$122,450.00
+      CUST-1003,Robert Johnson,3782-822463-10005,921,04/27,765-43-2109,$240,100.00
+      EOF
+    identity: "svc-backup"
+    mitre_technique: "T1074.001"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "PCI and PII data staging in temporary directory"
+        ttp_ref: "TTP-2026-0177"
+        detection_id: "bioc-pci-pii-data-staging"
+
+  - id: "step-02"
+    name: "Simulate file transfer to removable USB storage mount"
+    command: |
+      cp /tmp/cortex_dlp_usb/confidential_client_pci.csv /tmp/cortex_mock_usb/backup_clients.csv
+    identity: "svc-backup"
+    mitre_technique: "T1052.001"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "Unauthorized copying of PCI/PII data to removable media mount point"
+        ttp_ref: "TTP-2026-0177"
+        detection_id: "bioc-usb-media-data-copy"
+      - plane: DLP
+        type: Analytics
+        description: "Behavioral anomaly: Service account copying sensitive financial data to removable storage"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortex_dlp_usb /tmp/cortex_mock_usb"
+
+author: "Henry Reed"

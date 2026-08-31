@@ -1,0 +1,71 @@
+assertion_id: POS-DSPM-004
+name: Data classification accuracy — labeled sensitive data categories categorized with <5% false positive rate
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CSPM
+
+uc_ref: UCS-DSPM-02
+tc_ref: TC-DSPM-02
+tc_refs: [TC-DSPM-02]
+uc_name: "Data Security Posture Management (DSPM)"
+tc_name: "Validate Data Classification Accuracy"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "False Positive Rate"
+threshold:
+  kpi: "False Positive Rate"
+  op: "<"
+  value: 5.0
+  unit: "%"
+  source: index
+success_criteria: |
+  DSPM classification labels (PII, PHI, PCI, Secrets, Public) are accurately applied to
+  planted ground-truth data stores with a false positive rate under 5%.
+
+scope_limitations: >
+  Validates classification accuracy against a curated benchmark corpus of 100 labeled records.
+  It does NOT prove optical character recognition (OCR) on image-based documents or multi-terabyte
+  unindexed data lakes, does NOT prove continuous real-time streaming classification latency,
+  and does NOT prove multi-cloud SaaS lineage. Dataset and field names are convention-named.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/cspm
+  detail: >
+    terraform apply the `cspm` module with labeled data classification fixtures; seed designated
+    test buckets with ground truth files. Wait one DSPM classification scan cycle.
+
+checks:
+  - check_id: chk-01
+    title: Classified data labels match planted ground-truth categories
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = cortex_cloud_posture
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter data_classification_confidence >= 80
+        | filter data_category in ("PII", "PCI", "PHI", "SECRETS")
+        | comp count() as accurate_classifications by data_category
+        | filter accurate_classifications >= 1
+        | fields data_category, accurate_classifications
+      distinct_key: data_category
+    threshold:
+      kpi: accurate classification categories
+      op: ">="
+      value: 4
+      unit: categories
+      source: index
+    negative_control:
+      description: >
+        Classifier fails on specific unstructured formats or confuses benign numbers with credit cards,
+        failing category threshold.
+      measured_value: 1
+
+tags: [posture, dspm, data-classification, precision, ground-truth, planted-fixture]
+author: "Henry Reed"

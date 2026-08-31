@@ -1,0 +1,68 @@
+assertion_id: POS-DSPM-003
+name: Multi-cloud and database discovery — S3, DynamoDB, and RDS data assets discovered
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: CSPM
+
+uc_ref: UCS-DSPM-01
+tc_ref: TC-DSPM-01
+tc_refs: [TC-DSPM-01]
+uc_name: "Data Security Posture Management (DSPM)"
+tc_name: "Validate Data Asset Discovery"
+
+moat_tier: LEAD
+methodology_family: F4
+primary_kpi: "Asset Discovery Coverage"
+success_criteria: |
+  Managed and unmanaged data stores (S3 buckets, DynamoDB tables, RDS instances)
+  are discovered and inventoried across cloud environments with data classification metadata.
+
+scope_limitations: >
+  Proves discovery of heterogeneous AWS data stores (S3 object storage, DynamoDB NoSQL,
+  and RDS relational databases). It does NOT prove discovery on Azure or GCP (no Azure Cosmos DB
+  or GCP BigQuery module exists in this test slice), does NOT prove live streaming ingestion latency
+  benchmarks, and does NOT prove content classification accuracy on table rows — that claim belongs
+  to POS-DSPM-004. Dataset and field names are convention-named.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/cspm
+  detail: >
+    terraform apply the `cspm` module with data store fixtures enabled; the tagged data stores
+    are surfaced in `terraform output findings_summary`. Wait one scan cycle.
+
+checks:
+  - check_id: chk-01
+    title: Multiple data store types (S3, DynamoDB, RDS) appear in data asset inventory
+    probe: xql_distinct
+    primary: true
+    weight: 1.0
+    params:
+      query: |
+        dataset = cortex_cloud_posture
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter cloud_provider = "AWS"
+        | filter resource_type in ("aws_s3_bucket", "aws_dynamodb_table", "aws_rds_instance")
+        | comp count() as stores by resource_type
+        | filter stores >= 1
+        | fields resource_type, stores
+      distinct_key: resource_type
+    threshold:
+      kpi: data store types discovered
+      op: ">="
+      value: 3
+      unit: resource types
+      source: authored_sharpening
+      rationale: >
+        The index scores TC-DSPM-01 "Qualitative pass". Validates that DSPM discovers across
+        three resource categories (object, NoSQL, relational), satisfying TC-DSPM-01 multi-store discovery criteria.
+    negative_control:
+      description: >
+        Only S3 buckets are scanned while database engines are omitted, yielding fewer than 3 resource types.
+      measured_value: 1
+
+tags: [posture, dspm, aws, data-discovery, multi-store, planted-fixture]
+author: "Henry Reed"

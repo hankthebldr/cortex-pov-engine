@@ -1,0 +1,186 @@
+{
+  "id": "TTP-2026-0177",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-28T00:00:00Z",
+    "updated_at": "2026-08-28T00:00:00Z",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "dlp",
+      "usb-exfiltration",
+      "pci-dss",
+      "insider-threat",
+      "endpoint-dlp"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "data-exfil",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 30,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "USB Removable Media Exfiltration of Sensitive Customer Records",
+    "summary": "An insider or compromised account copies files containing unencrypted payment card information (PCI) and personally identifiable information (PII) to an external removable storage volume.",
+    "description": "Removable storage devices remain a major physical exfiltration vector for malicious insiders and rogue operators. Cortex XDR Endpoint DLP inspects file write and copy operations targeting USB mass storage mounts, evaluating content for credit card PANs, SSNs, and sensitive structured data patterns.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Malicious Insider",
+        "aliases": [
+          "Disgruntled Employee"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Insider Data Theft"
+    ],
+    "industries_targeted": [
+      "technology",
+      "financial-services",
+      "healthcare"
+    ],
+    "first_observed": "2015-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1052",
+        "subtechnique_id": "T1052.001",
+        "name": "Exfiltration Over Physical Medium: Exfiltration over USB",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1074",
+        "subtechnique_id": "T1074.001",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "File: File Creation",
+      "File: File Modification"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Endpoint DLP enabled agent."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "mkdir -p /tmp/cortex_dlp_usb /tmp/cortex_mock_usb\ncp /tmp/cortex_dlp_usb/confidential_client_pci.csv /tmp/cortex_mock_usb/backup_clients.csv",
+      "timeout_seconds": 30
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "PCI and PII Data Staging",
+        "logic": "preset = xdr_data | filter event_type = 'FILE_WRITE' and (action_file_name contains 'pci' or action_file_name contains 'pii') and (action_file_path contains '/tmp/' or action_file_path contains 'AppData')",
+        "description": "PCI and PII Data Staging",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1052",
+          "T1074"
+        ]
+      },
+      {
+        "name": "USB Media Data Copy",
+        "logic": "preset = xdr_data | filter event_type = 'FILE_WRITE' and (action_file_device_type = 'REMOVABLE' or action_file_path contains 'mock_usb' or action_file_path contains 'Volumes' or action_file_path contains 'media') and (action_file_name contains '.csv' or action_file_name contains '.xlsx')",
+        "description": "USB Media Data Copy",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1052",
+          "T1074"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "name": "Endpoint DLP Removable Media Transfer",
+        "query": "dataset = xdr_data | filter event_sub_type in ('FILE_CREATED', 'FILE_MODIFIED') | filter action_file_path contains 'usb' or action_file_device_type = 'REMOVABLE' | comp count() as writes by agent_hostname, actor_process_username | filter writes >= 1",
+        "purpose": "hunt"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "rule_id": "CR-DLP-0002",
+        "name": "Sensitive File Staged and Copied to Removable Device",
+        "logic": "Sequence: File Write (PCI CSV) -> File Copy to Removable Storage Mount within 120s by same user"
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "XDR-DLP-USB-BLOCK",
+          "XDR-BIOC-PCI-STAGING"
+        ],
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter action_file_name = 'confidential_client_pci.csv'"
+      },
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-DLP-USB-EXFIL"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_file_name = 'backup_clients.csv'"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 - Defending Against Insider Threat Exfiltration",
+      "url": "https://unit42.paloaltonetworks.com/insider-threat-report/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    }
+  ]
+}
