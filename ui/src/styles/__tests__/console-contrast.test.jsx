@@ -132,6 +132,65 @@ const BODY_TEXT_FIXTURES = [
   },
 ]
 
+/**
+ * Onboarding overlay — TourSpotlight.jsx's bubble, Term.jsx's hover tooltip,
+ * and FirstUseHint.jsx (M7). None of `.tour__*`, `.term__*` or
+ * `.first-use-hint` appeared anywhere in this guard before — a brand-new
+ * full-screen overlay shipping with zero coverage from the very guard this
+ * repo built after invisible page titles hid behind 701 green tests.
+ *
+ * `.tour__bubble` and `.term__tip` both sit on `--cortex-navy` → `--ink`,
+ * the "always-dark chrome" surface (dark in BOTH themes, see the CSS
+ * comment) — markup mirrors TourSpotlight.jsx / Term.jsx exactly, with the
+ * bubble/tip element supplying its own (opaque) background.
+ *
+ * `.first-use-hint` sits on the ordinary THEMED page background instead —
+ * its own `background` is a translucent teal tint (`rgba(0,192,232,.12)`),
+ * which `contrastRatio.js::parseColor` deliberately REFUSES to score
+ * ("cannot score a translucent color without compositing"), so — same as
+ * the bare-`.theme-console` title fixture above — `bgSelector: null` reads
+ * the opaque `--c-void` page background the hint actually composites onto.
+ */
+const TOUR_OVERLAY_FIXTURES = [
+  {
+    name: 'Tour bubble progress — .tour__progress (color: --ink-tx2) on .tour__bubble (bg: --ink)',
+    html: `<div class="tour__bubble">
+      <h2 class="tour__title">Deploy one now</h2>
+      <p class="tour__body">Mint an enrollment token and run the one-liner.</p>
+      <div class="tour__foot"><span class="tour__progress">4 of 5</span></div>
+    </div>`,
+    bgSelector: '.tour__bubble',
+    textSelector: '.tour__progress',
+  },
+  {
+    name: 'Tour bubble body — .tour__body (color: hardcoded #d7e3ec) on .tour__bubble (bg: --ink)',
+    html: `<div class="tour__bubble">
+      <h2 class="tour__title">Deploy one now</h2>
+      <p class="tour__body">Mint an enrollment token and run the one-liner.</p>
+    </div>`,
+    bgSelector: '.tour__bubble',
+    textSelector: '.tour__body',
+  },
+  {
+    name: 'Vocabulary tooltip — .term__tip (color: hardcoded #d7e3ec) on itself (bg: --ink)',
+    html: `<span class="term-wrap">
+      <span class="term" tabindex="0">MTTD</span>
+      <span role="tooltip" class="term__tip">Mean time to detect.</span>
+    </span>`,
+    bgSelector: '.term__tip',
+    textSelector: '.term__tip',
+  },
+  {
+    name: 'First-use hint — .first-use-hint (color: --tx2) on page background (bg: --c-void, bgSelector: null)',
+    html: `<span class="first-use-hint" role="note">
+      Launch fires the armed scenario.
+      <button type="button" class="first-use-hint__x" aria-label="Dismiss hint">×</button>
+    </span>`,
+    bgSelector: null,
+    textSelector: '.first-use-hint',
+  },
+]
+
 describe.each([
   ['light (default — no [data-theme])', false],
   ['dark ([data-theme="dark"])', true],
@@ -167,6 +226,31 @@ describe.each([
 
     const color = resolveProperty(textEl, 'color')
     const background = resolveProperty(bgEl, 'background') ?? resolveProperty(bgEl, 'background-color')
+    const ratio = contrastRatio(color, background)
+    const floor = aaFloor({ largeText: false })
+    expect(
+      ratio,
+      `${fixture.name}: text color ${color} on background ${background} measures ${ratio.toFixed(2)}:1, ` +
+        `below the WCAG AA floor of ${floor}:1`
+    ).toBeGreaterThanOrEqual(floor)
+  })
+
+  it.each(TOUR_OVERLAY_FIXTURES.map((f) => [f.name, f]))('onboarding overlay contrast clears AA: %s', (_n, fixture) => {
+    const { shell, $ } = mountShell(fixture.html, { dark })
+    const textEl = $(fixture.textSelector)
+    expect(textEl, `could not find "${fixture.textSelector}" in the fixture`).not.toBeNull()
+
+    // Same null-means-shell convention as the title fixtures above — needed
+    // here for `.first-use-hint`, whose own background is translucent and
+    // therefore unscoreable directly (see the fixture array's doc comment).
+    const bgEl = fixture.bgSelector ? $(fixture.bgSelector) : shell
+    expect(bgEl, `could not find background element "${fixture.bgSelector}"`).not.toBeNull()
+
+    const color = resolveProperty(textEl, 'color')
+    const background = resolveProperty(bgEl, 'background') ?? resolveProperty(bgEl, 'background-color')
+    expect(color, `no resolvable color at ${fixture.name}`).toBeTruthy()
+    expect(background, `no resolvable background at ${fixture.name}`).toBeTruthy()
+
     const ratio = contrastRatio(color, background)
     const floor = aaFloor({ largeText: false })
     expect(

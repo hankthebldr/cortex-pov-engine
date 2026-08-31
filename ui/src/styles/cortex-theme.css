@@ -1021,7 +1021,15 @@ ul.bullet { margin: 4px 0 0 0; padding-left: 18px; font-size: 12px; }
 .tour__title { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
 .tour__body  { margin: 0 0 12px; font-size: 13px; line-height: 1.5; color: #d7e3ec; }
 .tour__foot  { display: flex; align-items: center; gap: 8px; }
-.tour__progress { margin-left: auto; font-size: 11px; color: var(--cortex-steel, #6B7E8E); }
+/* `.tour__bubble`'s background is `--cortex-navy` → `--ink`, which is the
+   "always-dark chrome" surface — dark in BOTH themes, not theme-relative.
+   `--cortex-steel` (→ `--tx2`) IS theme-relative — in light theme it is a
+   dark gray meant for light surfaces, and on `--ink` that measured 2.93:1
+   (M7), well under the 4.5:1 AA floor for 11px text. `--ink-tx2` is this
+   codebase's existing "muted text over an always-dark ink surface" token
+   (see ttps.css .ttpb-pre, run-detail.css) — the same value in both themes,
+   because the surface it pairs with doesn't change either. */
+.tour__progress { margin-left: auto; font-size: 11px; color: var(--ink-tx2, #9FB0A9); }
 
 /* ── Vocabulary tooltip ────────────────────────────────────────────────── */
 .term-wrap { position: relative; display: inline-block; }
@@ -1038,12 +1046,20 @@ ul.bullet { margin: 4px 0 0 0; padding-left: 18px; font-size: 12px; }
 }
 
 /* ── First-use hints on consequential controls ──────────────────────────── */
+/* Unlike `.tour__bubble`/`.term__tip`, this sits on the ambient THEMED page
+   background (`--c-void`/`--s0`..`--s3`), not the always-dark ink surface —
+   so its text needs a theme-RELATIVE color. `--cortex-teal` (→ `--ac`, the
+   accent green) measures ~2.8:1 on light `--s0`, under the 4.5:1 AA floor
+   for 11px text (M7) — an accent color tuned for large/graphic use, not
+   small body text. The teal-tinted background + border stay as the visual
+   "info" cue; the text itself uses `--tx2`, the same guaranteed-legible
+   secondary-text token the console-contrast guard already trusts. */
 .first-use-hint {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 8px; border-radius: 4px; font-size: 11px;
   background: rgba(0, 192, 232, 0.12);
   border: 1px solid var(--cortex-teal, #00C0E8);
-  color: var(--cortex-teal, #00C0E8);
+  color: var(--tx2, #55605C);
 }
 .first-use-hint__x { background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; }
 
