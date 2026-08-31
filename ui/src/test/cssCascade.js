@@ -30,6 +30,17 @@
  * `:root` / `[data-theme="dark"]` attribute selectors only) and no
  * pseudo-class state (:hover etc. — irrelevant to static contrast). Not a
  * general-purpose CSS engine; scoped precisely to what this guard needs.
+ *
+ * That "no @media evaluation" line used to be aspirational, not real: a
+ * `CSSMediaRule` (and a `CSSSupportsRule`) has no `selectorText` either,
+ * so it fell into the generic "this is a container, recurse into its
+ * children" branch below and its rules were collected UNCONDITIONALLY —
+ * i.e. actually applied on every run, regardless of any condition. A
+ * conditional group rule is the one JS-visible signal for "skip me": it
+ * carries a `conditionText` (both `CSSMediaRule` and `CSSSupportsRule`
+ * define it; a plain nested grouping rule, which this codebase doesn't
+ * use, would not). Skipping those keeps the resolver's behavior matching
+ * this doc comment instead of silently contradicting it.
  */
 
 function collectRules() {
@@ -38,7 +49,7 @@ function collectRules() {
     for (const rule of list) {
       if (rule.selectorText && rule.style) {
         rules.push(rule)
-      } else if (rule.cssRules) {
+      } else if (rule.cssRules && typeof rule.conditionText !== 'string') {
         walk(rule.cssRules)
       }
     }
