@@ -20,9 +20,9 @@ release.
 
 ### What ships in this release
 
-- 170 loadable detection scenarios across 15 planes (EDR, CDR, NDR, ITDR,
+- 177 loadable detection scenarios across 16 planes (EDR, CDR, NDR, ITDR,
   CSPM, ASM, TIM, Cloud App, Analytics, AI Access, AIRS, Browser, KOI,
-  AI_SPM, Email) — 170 TTP cards, 1,096 step-level expected detections,
+  AI_SPM, Email, DLP) — 175 TTP cards, 1,096 step-level expected detections,
   1,777 catalog detection objects.
 - Pull-mode (Go beacon, 5 platform targets incl. Windows) and push-mode
   (self-contained bash/PowerShell bundle) execution, both through a shared
@@ -61,7 +61,7 @@ release.
   placeholders** that declare `expected_detections` without producing real
   signal — staged for content authoring, not yet load-bearing TTPs.
   Reproduce the count with the script in `docs/reference/lab-runbook.md`.
-- **Only 59 of 170 scenarios declare an MTTD-shaped KPI**, the only KPI
+- **Only 59 of 177 scenarios declare an MTTD-shaped KPI**, the only KPI
   class this engine measures natively today; the rest score `pending`.
 
 Full detail: [`CHANGELOG.md`](../../CHANGELOG.md).
