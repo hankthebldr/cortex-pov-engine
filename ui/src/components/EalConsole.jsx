@@ -94,12 +94,6 @@ export default function EalConsole({ onMessage, onClose }) {
             <p className="eal-console__meta">{heroMeta}</p>
           </div>
           <div className="eal-console__actions">
-            <button
-              className={`btn btn-navy eal-console__build-btn ${tab === 'new' ? 'is-active' : ''}`}
-              onClick={() => setTab('new')}
-            >
-              + New Campaign
-            </button>
             {onClose && (
               <button
                 className="btn btn-sm btn-secondary eal-console__close"
@@ -110,10 +104,21 @@ export default function EalConsole({ onMessage, onClose }) {
             )}
           </div>
         </div>
+        {/*
+         * M-8: "+ New Campaign" used to sit OUTSIDE this tablist as a header
+         * action while still driving the same tab state, so when it was
+         * active none of the role="tab" elements had aria-selected="true" —
+         * a screen-reader user was told nothing was selected. It is now a
+         * real tab (still visually distinguished via .eal-console__tab--new)
+         * so exactly one tab is always the selected one, and each tab is
+         * associated to its panel via aria-controls/aria-labelledby.
+         */}
         <nav className="eal-console__tabs" role="tablist" aria-label="EAL views">
           <button
+            id="eal-tab-campaigns"
             role="tab"
             aria-selected={tab === 'campaigns'}
+            aria-controls="eal-panel-campaigns"
             className={`eal-console__tab ${tab === 'campaigns' ? 'is-active' : ''}`}
             onClick={() => setTab('campaigns')}
           >
@@ -121,8 +126,20 @@ export default function EalConsole({ onMessage, onClose }) {
             {campaigns.length > 0 && <span className="badge eal-console__tab-count">{campaigns.length}</span>}
           </button>
           <button
+            id="eal-tab-new"
+            role="tab"
+            aria-selected={tab === 'new'}
+            aria-controls="eal-panel-new"
+            className={`btn btn-navy eal-console__tab--new ${tab === 'new' ? 'is-active' : ''}`}
+            onClick={() => setTab('new')}
+          >
+            + New Campaign
+          </button>
+          <button
+            id="eal-tab-runs"
             role="tab"
             aria-selected={tab === 'runs'}
+            aria-controls="eal-panel-runs"
             className={`eal-console__tab ${tab === 'runs' ? 'is-active' : ''}`}
             onClick={() => setTab('runs')}
           >
@@ -134,28 +151,34 @@ export default function EalConsole({ onMessage, onClose }) {
 
       <div className="eal-console__body">
         {tab === 'campaigns' && (
-          <EalCampaignsList
-            campaigns={campaigns}
-            loading={loadingCampaigns}
-            onLaunch={handleLaunch}
-            onRefresh={refreshCampaigns}
-          />
+          <div id="eal-panel-campaigns" role="tabpanel" aria-labelledby="eal-tab-campaigns">
+            <EalCampaignsList
+              campaigns={campaigns}
+              loading={loadingCampaigns}
+              onLaunch={handleLaunch}
+              onRefresh={refreshCampaigns}
+            />
+          </div>
         )}
         {tab === 'new' && (
-          <EalCampaignBuilder
-            onCreated={handleCampaignCreated}
-            onError={(msg) => onMessage?.(msg, 'error')}
-          />
+          <div id="eal-panel-new" role="tabpanel" aria-labelledby="eal-tab-new">
+            <EalCampaignBuilder
+              onCreated={handleCampaignCreated}
+              onError={(msg) => onMessage?.(msg, 'error')}
+            />
+          </div>
         )}
         {tab === 'runs' && (
-          <EalRunsList
-            runs={runs}
-            loading={loadingRuns}
-            openRunId={openRunId}
-            onOpenRun={setOpenRunId}
-            onRefresh={refreshRuns}
-            onMessage={onMessage}
-          />
+          <div id="eal-panel-runs" role="tabpanel" aria-labelledby="eal-tab-runs">
+            <EalRunsList
+              runs={runs}
+              loading={loadingRuns}
+              openRunId={openRunId}
+              onOpenRun={setOpenRunId}
+              onRefresh={refreshRuns}
+              onMessage={onMessage}
+            />
+          </div>
         )}
       </div>
     </section>
