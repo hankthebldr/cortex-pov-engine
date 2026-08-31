@@ -265,11 +265,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow all origins (jumpbox internal tool)
+# CORS — allow all origins (jumpbox internal tool, no auth exists). Per the
+# CORS spec a wildcard origin cannot carry credentials — browsers reject
+# `allow_origins=["*"]` + `allow_credentials=True` outright — so credentials
+# stay OFF. Nothing here sends them (no auth, no cookies, no session), so this
+# keeps the API fully open while making the config spec-valid. Do not flip
+# allow_credentials back to True without narrowing allow_origins off "*" — the
+# two together are invalid and a browser will refuse the response.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
