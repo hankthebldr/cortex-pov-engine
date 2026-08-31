@@ -53,6 +53,45 @@ const TACTIC_DEFS = [
   { id: 'TA0040', short: 'IM',  label: 'Impact' },
 ]
 
+// Continuous cell-fill ramp — replaces a discrete 3-tier bucket that
+// normalized intensity against the MATRIX-WIDE max count. That scheme
+// had a real collapse: whenever any other cell in the matrix ran busy
+// enough (max >= ~8), a 1-scenario cell and a 3-scenario cell both fell
+// under the same "low" tier (intensity < 0.4) and rendered pixel-
+// identical — the exact "two different states read as the same thing"
+// defect this project exists to catch, just relocated into its own
+// coverage view. `cellFillPercent` is a pure function of the cell's OWN
+// count only, never of the matrix's max, so a given count always paints
+// the same shade no matter how busy any other cell is — the collapse
+// can't recur because nothing here is relative anymore.
+//
+// The numeral inside every non-empty cell (`stack-coverage__cell-count`)
+// stays the primary, always-present carrier of the exact count — the
+// fill is a secondary, at-a-glance density cue, so colour is never the
+// ONLY channel distinguishing two cells (a colour-blind operator still
+// reads the number).
+//
+// FILL_MIN_PCT/FILL_MAX_PCT were chosen by computing the actual mixed
+// color of `color-mix(in srgb, var(--ac-ink) X%, var(--s2))` against
+// `var(--tx)` in both themes: dark-theme text contrast crosses below
+// the 4.5:1 AA floor between X=56 and X=57 (4.545 -> 4.487), so capping
+// at 55 keeps EVERY cell's numeral AA-legible in both themes without
+// ever needing to swap text color per-cell. Light theme has far more
+// headroom (6.4:1+ at X=68) so the dark-theme ceiling is the binding
+// constraint. FILL_MIN_PCT keeps a 1-scenario cell visibly tinted
+// against the (opacity-reduced, colorless) empty-cell background rather
+// than fading toward invisible — the exact failure mode a DC most needs
+// NOT to have on the thin cells.
+const FILL_MIN_PCT = 14
+const FILL_MAX_PCT = 55
+const FILL_SOFTNESS = 2.5 // shapes how quickly the ramp climbs for small counts
+
+export function cellFillPercent(count) {
+  if (!count || count <= 0) return 0
+  const intensity = count / (count + FILL_SOFTNESS) // asymptotic 0..1, strictly increasing in count
+  return Math.round(FILL_MIN_PCT + intensity * (FILL_MAX_PCT - FILL_MIN_PCT))
+}
+
 export default function StackCoverageView({ onFilterByCell = () => {} }) {
   const [scenarios, setScenarios] = useState([])
   const [loading, setLoading]     = useState(true)
@@ -71,17 +110,6 @@ export default function StackCoverageView({ onFilterByCell = () => {} }) {
 
   // Build the (product, tactic) → scenarios map.
   const matrix = useMemo(() => buildMatrix(scenarios), [scenarios])
-
-  // Max count for color-intensity normalization.
-  const maxCount = useMemo(() => {
-    let max = 0
-    for (const row of Object.values(matrix)) {
-      for (const cell of Object.values(row)) {
-        if (cell.length > max) max = cell.length
-      }
-    }
-    return max
-  }, [matrix])
 
   const totalScenarios = scenarios.length
   const coveredProducts = useMemo(
@@ -162,26 +190,21 @@ export default function StackCoverageView({ onFilterByCell = () => {} }) {
                 {TACTIC_DEFS.map((t) => {
                   const cellScenarios = row[t.id] || []
                   const count = cellScenarios.length
-                  const intensity = maxCount > 0 ? Math.min(1, count / maxCount) : 0
+                  const fillPct = cellFillPercent(count)
                   const isSelected =
                     selectedCell && selectedCell.product === p.id && selectedCell.tactic === t.id
-                  // Discrete green intensity tiers (the mockup's own stack-
-                  // cell scale) in place of a continuous cyan alpha ramp —
-                  // Cortex green is the accent everywhere in this redesign.
-                  const intensityTier =
-                    count === 0 ? '' : intensity >= 0.75 ? ' stack-coverage__cell--i-high'
-                    : intensity >= 0.4 ? ' stack-coverage__cell--i-mid'
-                    : ' stack-coverage__cell--i-low'
                   return (
                     <button
                       type="button"
                       key={t.id}
                       className={
                         'stack-coverage__cell' +
-                        intensityTier +
                         (count === 0 ? ' stack-coverage__cell--empty' : '') +
                         (isSelected ? ' stack-coverage__cell--selected' : '')
                       }
+                      style={count > 0
+                        ? { background: `color-mix(in srgb, var(--ac-ink) ${fillPct}%, var(--s2))` }
+                        : undefined}
                       disabled={count === 0}
                       onClick={() => {
                         const sel = { product: p.id, tactic: t.id, scenarioIds: cellScenarios }

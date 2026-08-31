@@ -7,7 +7,7 @@
 import React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import StackCoverageView from '../console/StackCoverageView.jsx'
+import StackCoverageView, { cellFillPercent } from '../console/StackCoverageView.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
 
 void React
@@ -131,5 +131,76 @@ describe('<StackCoverageView />', () => {
     expect(args[0]).toBe('cortex-xdr')
     expect(args[1]).toBe('TA0006')
     expect(args[2]).toContain('SIM-EDR-001')
+  })
+})
+
+/**
+ * Coverage-legibility regression (operator-flagged): "a 1-scenario cell
+ * and a 3-scenario cell can now be visually identical." The prior fix
+ * bucketed cell intensity into 3 discrete tiers, normalized against the
+ * MATRIX-WIDE max count — so whenever any other cell in the matrix ran
+ * high enough (max >= ~8), a count of 1 and a count of 3 both fell under
+ * the same "low" tier (intensity < 0.4) and rendered pixel-identical.
+ * These scenarios build a matrix with a busy cell (8 scenarios in one
+ * product/tactic pair) alongside a 1-scenario cell and a 3-scenario cell
+ * elsewhere, which is exactly the shape that used to collapse.
+ */
+function edrScenario(id, tactic) {
+  return { scenario_id: id, name: id, plane: 'EDR', mitre_tactic: tactic, steps: [] }
+}
+
+const legibilityFixture = {
+  scenarios: [
+    // Busy cell: pushes the old matrix-wide maxCount to 8, which used to
+    // wash out every "low" cell elsewhere into the same visual bucket.
+    ...Array.from({ length: 8 }, (_, i) => edrScenario(`SIM-EDR-BUSY-${i}`, 'TA0001')),
+    // 1-scenario cell.
+    edrScenario('SIM-EDR-LOW', 'TA0002'),
+    // 3-scenario cell.
+    edrScenario('SIM-EDR-MID-1', 'TA0003'),
+    edrScenario('SIM-EDR-MID-2', 'TA0003'),
+    edrScenario('SIM-EDR-MID-3', 'TA0003'),
+  ],
+}
+
+describe('<StackCoverageView /> coverage-cell legibility', () => {
+  it('renders visually distinct fills for a 1-count and a 3-count cell even when another cell in the matrix is much busier', async () => {
+    installRoutes({ 'GET /api/scenarios': legibilityFixture })
+    const { container } = render(<StackCoverageView />)
+    await waitFor(() => {
+      expect(screen.getByText('Cortex XDR')).toBeInTheDocument()
+    })
+
+    const lowCell = container.querySelector('[aria-label*="Cortex XDR Execution"]')
+    const midCell = container.querySelector('[aria-label*="Cortex XDR Persistence"]')
+    expect(lowCell).toBeTruthy()
+    expect(midCell).toBeTruthy()
+    expect(lowCell.getAttribute('aria-label')).toMatch(/1 scenarios/)
+    expect(midCell.getAttribute('aria-label')).toMatch(/3 scenarios/)
+
+    // The count text is always present (never the ONLY carrier of the
+    // distinction — that's the colour-blind-safe channel) — but the
+    // cardinal defect here is that the FILL used to be identical too.
+    // Assert the fill channel itself, independent of maxCount elsewhere.
+    expect(lowCell.style.background).toBeTruthy()
+    expect(midCell.style.background).toBeTruthy()
+    expect(lowCell.style.background).not.toBe(midCell.style.background)
+  })
+
+  it('the low end (count=1) stays perceivably tinted, not collapsed to the empty-cell background', () => {
+    const emptyPct = cellFillPercent(0)
+    const onePct = cellFillPercent(1)
+    expect(emptyPct).toBe(0)
+    // A visible floor — not merely nonzero, but far enough above zero to
+    // read as "present" rather than a rounding artifact.
+    expect(onePct).toBeGreaterThanOrEqual(20)
+  })
+
+  it('cellFillPercent is strictly increasing in count, independent of any matrix-wide max', () => {
+    const counts = [1, 2, 3, 4, 6, 8, 12, 20]
+    const pcts = counts.map(cellFillPercent)
+    for (let i = 1; i < pcts.length; i++) {
+      expect(pcts[i]).toBeGreaterThan(pcts[i - 1])
+    }
   })
 })

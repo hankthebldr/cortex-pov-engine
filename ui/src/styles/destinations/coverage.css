@@ -423,21 +423,20 @@
 .theme-console .stack-coverage .stack-coverage__product-label { color: var(--tx); }
 .theme-console .stack-coverage .stack-coverage__product-sub { color: var(--tx3); }
 
-/* Cell intensity — discrete green tiers (mockup's stack cell scale)
-   instead of a hardcoded cyan alpha ramp. Tier set via className from
-   StackCoverageView.jsx (JS computes the bucket; CSS only draws it). */
+/* Cell intensity — a CONTINUOUS ramp, not a discrete tier bucket.
+   A prior pass here quantized intensity into 3 tiers normalized against
+   the matrix-wide max count, which let a 1-scenario cell and a
+   3-scenario cell render pixel-identical whenever some other cell in
+   the matrix was busy (operator-flagged regression). The fill is now
+   computed per-cell in StackCoverageView.jsx (`cellFillPercent`) as a
+   pure function of that cell's OWN count — never of the matrix max —
+   and applied as an inline `background: color-mix(in srgb, var(--ac-ink)
+   N%, var(--s2))`, so CSS only owns the base shape + the empty/selected
+   states below. Uses Cortex green (--ac-ink) throughout, per the
+   designer's "green is the primary accent" rule — no hardcoded hex. */
 .theme-console .stack-coverage .stack-coverage__cell {
   background: transparent;
   border-radius: 4px;
-}
-.theme-console .stack-coverage .stack-coverage__cell--i-low  { background: var(--s3); }
-.theme-console .stack-coverage .stack-coverage__cell--i-mid  { background: var(--ac-soft); }
-.theme-console .stack-coverage .stack-coverage__cell--i-high {
-  background: var(--ac-ink);
-}
-.theme-console .stack-coverage .stack-coverage__cell--i-high .stack-coverage__cell-count {
-  color: var(--ac-tx);
-  font-weight: 700;
 }
 .theme-console .stack-coverage .stack-coverage__cell:not(:disabled):hover {
   box-shadow: inset 0 0 0 1px var(--ac);
