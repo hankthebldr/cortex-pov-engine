@@ -7,15 +7,15 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Loadable scenarios | 170 |
+| Loadable scenarios | 177 |
 | Scenarios rejected at load | 0 |
-| TTP cards | 170 |
-| Detection planes | 15 |
-| Step-detections | 1096 |
-| Catalog detection objects | 1777 |
-| ABIOC+Analytics share (step-detections) | 15.7% |
-| Correlation share (step-detections) | 10.7% |
-| Distinct MITRE techniques (base) | 205 (117) |
+| TTP cards | 175 |
+| Detection planes | 16 |
+| Step-detections | 1116 |
+| Catalog detection objects | 1797 |
+| ABIOC+Analytics share (step-detections) | 16.0% |
+| Correlation share (step-detections) | 10.6% |
+| Distinct MITRE techniques (base) | 207 (119) |
 | EAL plugins | 21 |
 | AWS IaC modules | 11 |
 
@@ -29,9 +29,10 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | ANALYTICS | 23 |
 | ASM | 6 |
 | BROWSER | 6 |
-| CDR | 26 |
+| CDR | 28 |
 | CLOUD_APP | 10 |
 | CSPM | 5 |
+| DLP | 5 |
 | EDR | 22 |
 | EMAIL | 5 |
 | ITDR | 20 |
@@ -44,9 +45,9 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Type | Count |
 |---|---:|
 | ABIOC | 129 |
-| Analytics | 43 |
-| BIOC | 260 |
-| Correlation | 117 |
+| Analytics | 50 |
+| BIOC | 272 |
+| Correlation | 118 |
 | IOC | 57 |
 | XQL | 490 |
 
@@ -66,8 +67,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Assertion artifacts | 20 |
-| By validation class | `{"AUT": 3, "PLT": 4, "POS": 13}` |
+| Assertion artifacts | 22 |
+| By validation class | `{"AUT": 3, "PLT": 4, "POS": 15}` |
 | Rejected at load (strict) | 0 |
 | Boot-verified (real `AssertionCatalog`) | True |
 
@@ -75,10 +76,10 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Index TCs evidenced by a scenario | 89/266 |
+| Index TCs evidenced by a scenario | 90/266 |
 | DET/HNT TCs evidenced | 70/107 |
-| S-13 tier disagreements | 105 |
-| S-14 posture-class-primary bindings | 13 |
+| S-13 tier disagreements | 110 |
+| S-14 posture-class-primary bindings | 14 |
 | PLT assertions authored | 4/43 rows (4 artifact(s), 0 tenant-proven) |
 | POS assertions authored | 2/110 rows (2 artifact(s), 0 tenant-proven) |
 

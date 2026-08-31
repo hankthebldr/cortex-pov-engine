@@ -25,45 +25,45 @@
     "tier4_undeclared": 0
   },
   "assertions": {
-    "artifacts_total": 20,
+    "artifacts_total": 22,
     "boot_verified": true,
     "by_validation_class": {
       "AUT": 3,
       "PLT": 4,
-      "POS": 13
+      "POS": 15
     },
     "rejected": 0,
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1569,
-    "catalog_detections": 1777,
+    "abioc_analytics_share": 0.1604,
+    "catalog_detections": 1797,
     "catalog_detections_by_kind": {
       "abioc": 134,
       "analytics": 329,
-      "bioc": 262,
-      "correlation": 183,
+      "bioc": 272,
+      "correlation": 188,
       "ioc": 301,
       "modeling": 5,
-      "xql": 563
+      "xql": 568
     },
-    "correlation_share": 0.1068,
-    "detection_planes": 15,
+    "correlation_share": 0.1057,
+    "detection_planes": 16,
     "methodology_family_counts": {
-      "F1": 112,
+      "F1": 118,
       "F10": 2,
       "F2": 24,
       "F3": 9,
       "F4": 9,
       "F5": 5,
-      "F6": 1,
+      "F6": 2,
       "F7": 4,
       "F8": 1,
       "F9": 3
     },
-    "mitre_distinct_base_techniques": 117,
-    "mitre_distinct_techniques": 205,
-    "scenarios_loadable": 170,
+    "mitre_distinct_base_techniques": 119,
+    "mitre_distinct_techniques": 207,
+    "scenarios_loadable": 177,
     "scenarios_per_plane": {
       "AIRS": 5,
       "AI_ACCESS": 6,
@@ -71,9 +71,10 @@
       "ANALYTICS": 23,
       "ASM": 6,
       "BROWSER": 6,
-      "CDR": 26,
+      "CDR": 28,
       "CLOUD_APP": 10,
       "CSPM": 5,
+      "DLP": 5,
       "EDR": 22,
       "EMAIL": 5,
       "ITDR": 20,
@@ -82,16 +83,16 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1096,
+    "step_detections": 1116,
     "step_detections_by_type": {
       "ABIOC": 129,
-      "Analytics": 43,
-      "BIOC": 260,
-      "Correlation": 117,
+      "Analytics": 50,
+      "BIOC": 272,
+      "Correlation": 118,
       "IOC": 57,
       "XQL": 490
     },
-    "ttp_cards": 170
+    "ttp_cards": 175
   },
   "eal_plugins": 21,
   "generated_by": "scripts/generate_ground_truth.py",
@@ -117,7 +118,7 @@
   "uctc_index": {
     "det_hnt_evidenced": 70,
     "det_hnt_total": 107,
-    "payload_resolved": 170,
+    "payload_resolved": 177,
     "payload_unresolved": 0,
     "plt_assertions": {
       "artifacts": 4,
@@ -133,9 +134,9 @@
       "index_rows_total": 110,
       "proven": 0
     },
-    "posture_class_primary_s14": 13,
-    "tc_evidenced": 89,
+    "posture_class_primary_s14": 14,
+    "tc_evidenced": 90,
     "tc_total": 266,
-    "tier_drift_s13": 105
+    "tier_drift_s13": 110
   }
 }

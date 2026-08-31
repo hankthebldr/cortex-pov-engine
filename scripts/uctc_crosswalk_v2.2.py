@@ -168,6 +168,15 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "First-time Kubernetes secret enumeration and access, observed in the audit "
         "log. Runtime access to secrets, not static scanning of files."
 ),
+    "SIM-CDR-027": (["TC-DSPM-04"], REMAP,
+        "RDS PostgreSQL mass dump via a compromised web identity — the scenario's own "
+        "uc_ref/tc_ref already bind TC-DSPM-04, the DDR anomalous-data-access row; "
+        "TC-DSPM-04 is already evidenced (SIM-CDR-008/019/022, SIM-CLOUD-006/008/009/010), "
+        "so this is a second, database-runtime-specific proof, not new index coverage."),
+    "SIM-CDR-028": (["TC-DSPM-04"], REMAP,
+        "DynamoDB NoSQL table scan and exfiltration via an over-permissioned IAM role — "
+        "same TC-DSPM-04 binding as SIM-CDR-027, a second data-store shape (NoSQL vs. "
+        "relational) proving the same DDR claim, not new index coverage."),
 
     # ── NDR ────────────────────────────────────────────────────────────────
     # TC-NDR-03 is the EAL case specifically — these scenarios exist to prove
@@ -558,6 +567,43 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "MCP sampling abuse — server-initiated inference for quota theft and covert tasking."),
     "SIM-KOI-008": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
         "Shai-Hulud self-replicating npm worm — a preinstall hook spawning a detached child."),
+
+    # ── DLP ────────────────────────────────────────────────────────────────
+    # First DLP-plane scenarios. Refs below match each scenario's own authored
+    # uc_ref/tc_ref/tc_refs exactly (verified against the YAML, not pattern-
+    # matched from the id) — all bind DET-class TC-DLP-* rows except SIM-DLP-005,
+    # which the index itself classifies POS (TC-DLP-07). Four of five land on
+    # TC-DLP-01/02/11, already evidenced elsewhere (EDR/NDR/MP/AIACC/BROWSER/
+    # CLOUD_APP) — depth, not breadth. TC-DLP-07 had no scenario or assertion
+    # binding it before this pass; because it is POS-class it does not move the
+    # DET/HNT evidenced count, but it does close a previously-open whole-index row.
+    "SIM-DLP-001": (["TC-DLP-01"], REMAP,
+        "USB mass-storage exfiltration of seeded customer PII — the canonical "
+        "email/web-upload/USB channel case TC-DLP-01 describes. TC-DLP-01 is "
+        "already evidenced (SIM-EDR-009, SIM-NDR-005/006/012, SIM-MP-022, "
+        "SIM-AIACC-001, SIM-BROWSER-001/002/004); this adds a device-channel proof."),
+    "SIM-DLP-002": (["TC-DLP-01", "TC-DLP-02"], REMAP,
+        "Encrypted-archive staging before exfil — bulk copy, compress, encrypt "
+        "mirrors TC-DLP-02's staged-exfiltration correlation case, with TC-DLP-01 "
+        "primary per the scenario's own binding. Both refs are already evidenced "
+        "(TC-DLP-02 by SIM-MP-003/022); this is a second, endpoint-native proof."),
+    "SIM-DLP-003": (["TC-DLP-11"], REMAP,
+        "Unsanctioned SaaS web upload of confidential financial data — the "
+        "sanctioned-vs-shadow-IT SaaS case TC-DLP-11 describes. Already evidenced "
+        "extensively (SIM-CLOUD-001..010, SIM-AIACC-001..006, SIM-BROWSER-*); "
+        "this is a DLP-native depth proof, not new coverage."),
+    "SIM-DLP-004": (["TC-DLP-02"], REMAP,
+        "Cross-channel correlation: endpoint local staging fused with network "
+        "exfiltration — a second, purpose-built instance of TC-DLP-02's staging "
+        "correlation claim alongside SIM-MP-003/022. Depth, not breadth."),
+    "SIM-DLP-005": (["TC-DLP-07"], REMAP,
+        "Clipboard and print-buffer PHI harvesting — the scenario's own tc_ref "
+        "binds TC-DLP-07, the compliance-driven data-controls (HIPAA/PCI/GDPR) "
+        "row, which the index classifies POS (posture/policy assertion, not a "
+        "detection — S-14 applies). TC-DLP-07 had zero prior scenario or "
+        "assertion evidence: this is the first proof reaching it, but because "
+        "it is POS-class it does NOT move the DET/HNT evidenced count — only "
+        "the whole-index open-row count."),
 }
 
 
