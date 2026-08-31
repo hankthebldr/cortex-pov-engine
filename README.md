@@ -195,8 +195,19 @@ checked in:
 curl -s http://localhost:8888/api/agents | python3 -c '
 import sys, json
 for a in json.load(sys.stdin)["agents"]:
-    print(a["agent_id"], a["status"], a["os"])'
+    print(a["agent_id"], a["status"], a["os"], a["last_seen_age_seconds"], "s ago")'
 ```
+
+**Check `last_seen_age_seconds`, not just `status`.** `status` derives from
+`last_seen` age (`online` < 30s / `stale` < 5min / `offline` ≥ 5min), but a
+freshly-enrolled agent gets `last_seen` stamped at enrollment time — before
+its beacon has polled even once. That reads `online` for the first 30
+seconds whether or not a real beacon is actually running: a re-install that
+rewrote a systemd unit without restarting the old process (fixed, but check
+your installer's version) would print `online` for a phantom id the whole
+window. If `last_seen_age_seconds` isn't dropping toward zero on repeat
+calls a few seconds apart, nothing is actually polling — full detail in
+[`docs/reference/agent-deployment.md`](docs/reference/agent-deployment.md) §4.
 
 Full detail — `?mode=` semantics, the loopback trap, the identity-harness
 false-negative it exists to close, and a console discrepancy worth knowing
@@ -229,6 +240,25 @@ No agent, or want a bundle with no SimCore dependency at runtime instead?
 curl -s "http://localhost:8888/api/scenarios/SIM-EDR-001/download?format=auto" \
   -o SIM-EDR-001.sh
 ```
+
+### Run hanging at `running`?
+
+A pull-mode run's own `status` stays `running` — with `completed_at: null`
+and no `output` — for as long as the target agent hasn't polled. That is
+**not** the same as `pending`; grepping a run for `pending` finds nothing.
+Check the queue directly:
+
+```bash
+curl -s http://localhost:8888/api/health | python3 -c '
+import sys, json
+print(json.load(sys.stdin)["components"]["task_queue"])'
+```
+
+A `degraded` / `TASKS_QUEUED_FOR_UNAVAILABLE_AGENT` result names which
+agent(s) the queue is stuck on. It's not lost — the queue is durable and
+survives a SimCore restart — but nothing will collect the task until that
+agent is actually online (see "Confirming the beacon is live" above; check
+`last_seen_age_seconds`, not just `status`).
 
 ### Reading a run honestly
 
