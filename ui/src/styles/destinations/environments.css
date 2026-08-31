@@ -7,16 +7,15 @@
    Cortex green (--ac / --ac-str) is the accent; --orange is reserved
    for warn/gap signal only — never used decoratively here.
 
-   Scope note: LabView renders inside the Mission Ops Console shell
-   (.theme-console), whose chrome (header/nav rail/workspace) is still
-   on the OLD dark-only --c-* palette and doesn't (yet) set
-   [data-theme]. LabView's root pins `data-theme="dark"` (same pattern
-   as RunDetailView/EvidenceView/NarrativeTimeline) so the new
-   --ac/--s1/--tx tokens resolve to their DARK values here, matching
-   the shell's always-dark void background instead of clashing with
-   it. That is a known interim seam, not a contrast bug — see the
-   task handoff notes for the shell-level follow-up (a real theme
-   toggle) this implies.
+   UPDATE (console-redesign-repair, defect 2): LabView renders inside
+   the Mission Ops Console shell (.theme-console), which used to be
+   permanently dark with no [data-theme] of its own, so LabView's root
+   pinned `data-theme="dark"` (same pattern as RunDetailView/
+   EvidenceView/NarrativeTimeline) to make the new --ac/--s1/--tx tokens
+   resolve to DARK values matching the shell. AppShell.jsx now aliases
+   `.theme-console`'s surface/text field onto the real token layer and
+   sets [data-theme] from a real toggle (default light) — the local pin
+   was removed.
    This file is intentionally new — cortex-console.css's superseded
    `.theme-console .lab*` block (and the legacy `.infra-*` rules) are
    left untouched; selectors here share their specificity and win by

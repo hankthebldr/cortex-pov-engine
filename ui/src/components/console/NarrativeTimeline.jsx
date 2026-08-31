@@ -68,9 +68,10 @@ export default function NarrativeTimeline({ frames = [], stitches = [], nowLabel
     frames.length > 1 ? `${Math.max(0, Math.min(100, ((doneCount - 0.5) / (frames.length - 1)) * 100))}%` : '0%'
 
   return (
-    // data-theme="dark" pins the PANW token set to its dark values for this
-    // subtree — see the matching note in RunDetailView.jsx.
-    <div className="narrative__timeline" ref={containerRef} data-theme="dark">
+    // The shell (.theme-console, AppShell.jsx) is theme-aware and sets
+    // [data-theme] on the root, so the PANW token set resolves correctly
+    // here without pinning a local override.
+    <div className="narrative__timeline" ref={containerRef}>
       {nowLabel && (
         <div className="narrative__now-label mono">{nowLabel}</div>
       )}

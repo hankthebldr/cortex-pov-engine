@@ -66,6 +66,23 @@ export default function AppShell({
       return next
     })
   }, [])
+  // Colour theme (light/dark) — same persisted-preference pattern as
+  // railCollapsed/theaterMode above. Defaults to LIGHT: the token layer
+  // (cortex-tokens.css) treats :root as the light theme and [data-theme]
+  // as opt-in, so no attribute at all IS light. Note this is a different
+  // key/concept than `cortexsim.theme` in main.jsx, which picks between
+  // the Mission Ops Console and the legacy shell — this one picks the
+  // colour palette *within* the console shell.
+  const [colorTheme, setColorTheme] = useState(() => {
+    try { return window.localStorage.getItem('cortexsim.colorTheme') === 'dark' ? 'dark' : 'light' } catch { return 'light' }
+  })
+  const toggleColorTheme = useCallback(() => {
+    setColorTheme((v) => {
+      const next = v === 'dark' ? 'light' : 'dark'
+      try { window.localStorage.setItem('cortexsim.colorTheme', next) } catch {}
+      return next
+    })
+  }, [])
 
   // `onNavigate` reaches AppShell as a prop — its identity is stable when the
   // caller (AppConsole) is wired correctly, but AppShell's own default value
@@ -121,7 +138,7 @@ export default function AppShell({
   const themeClass = `theme-console ${theaterMode ? 'theme-console--theater' : ''}`
 
   return (
-    <div className={`${themeClass} ${shellClass}`}>
+    <div className={`${themeClass} ${shellClass}`} data-theme={colorTheme === 'dark' ? 'dark' : undefined}>
       {/* Skip link — keyboard users land here on Tab; jumps past bar/nav to the
           main workspace. Invisible until focused. */}
       <a href="#cortexsim-main" className="skip-link">
@@ -135,6 +152,8 @@ export default function AppShell({
         onNavigate={onNavigate}
         theaterMode={theaterMode}
         onToggleTheater={toggleTheater}
+        colorTheme={colorTheme}
+        onToggleColorTheme={toggleColorTheme}
       />
 
       {activeRun && (

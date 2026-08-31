@@ -63,7 +63,7 @@ export default function EvidenceView({
 
   if (!targetRunId) {
     return (
-      <div className="evidence evidence-empty" data-theme="dark">
+      <div className="evidence evidence-empty">
         <h1 className="evidence-empty__title">No run to validate</h1>
         <p className="evidence-empty__desc">
           Launch a scenario from the Operations tab. The detection scorecard
@@ -74,10 +74,10 @@ export default function EvidenceView({
   }
 
   return (
-    // data-theme="dark" pins the PANW token set (--ac/--s1/--tx/…) to their dark
-    // values — AppConsole is the only shell that mounts this view and never sets
-    // [data-theme] itself; see the matching note in RunDetailView.jsx.
-    <div className="evidence" data-theme="dark">
+    // The shell (.theme-console, AppShell.jsx) is theme-aware and sets
+    // [data-theme] on the root, so the PANW token set (--ac/--s1/--tx/…)
+    // resolves correctly here without pinning a local override.
+    <div className="evidence">
       <div className="view-head">
         <div>
           <h1>Evidence</h1>

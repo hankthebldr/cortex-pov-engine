@@ -270,14 +270,10 @@ export default function LabView({ params: routeParams = {}, onNavigate = () => {
   }, [routeParams.scenario, applyHint])
 
   return (
-    // data-theme="dark" pins this destination's subtree to the PANW dark token
-    // set from cortex-tokens.css — AppConsole is the only shell that ever
-    // mounts LabView and it never sets [data-theme] itself, so without this
-    // the new --ac/--s1/--tx tokens would resolve to their :root LIGHT values
-    // on top of the console's always-dark void background. Same pattern as
-    // RunDetailView/EvidenceView/NarrativeTimeline. See gaps in the task
-    // report for the follow-up once the shell wires a real theme toggle.
-    <div className="lab" data-theme="dark">
+    // The shell (.theme-console, AppShell.jsx) is theme-aware and sets
+    // [data-theme] on the root, so the PANW token set (--ac/--s1/--tx/…)
+    // resolves correctly here without pinning a local override.
+    <div className="lab">
       {/* ── Head ───────────────────────────────────────────────────── */}
       <div className="view-head">
         <div>

@@ -3803,6 +3803,31 @@
   color: var(--c-signal);
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Colour theme toggle (light / dark) — see AppShell.jsx `colorTheme`.
+   Sets [data-theme] on the shell root; :root/no-attribute is light,
+   [data-theme="dark"] is dark (cortex-tokens.css). Same visual
+   treatment as .theater-toggle for a consistent header button family.
+   ═══════════════════════════════════════════════════════════════════ */
+.theme-console .theme-toggle {
+  height: 28px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: var(--tracking-mono);
+  color: var(--c-text-secondary);
+  background: transparent;
+  border: 1px solid var(--c-hairline);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.theme-console .theme-toggle:hover {
+  border-color: var(--c-action);
+  color: var(--c-action);
+}
+.theme-console .theme-toggle__label { margin-left: 6px; }
+
 /* When theater mode is active:
      - Hide debug-y chrome (command strip's keyboard hints stay but the
        synthetic event flag goes away)

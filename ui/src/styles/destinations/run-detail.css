@@ -10,14 +10,15 @@
    (:root light / [data-theme="dark"]); this file only consumes var(--x),
    it never redefines a token.
 
-   AppConsole (the only shell that mounts RunDetailView / EvidenceView /
-   NarrativeTimeline) always renders `.theme-console`, which still paints
-   its own fixed-dark `--c-void` background and never sets [data-theme] —
-   so RunDetailView.jsx, EvidenceView.jsx and NarrativeTimeline.jsx each
-   pin `data-theme="dark"` on their own root element (same pattern as
-   LabView.jsx / environments.css) to resolve the new tokens to their
-   dark values instead of quietly falling through to :root light on top
-   of a dark shell. Every rule below is scoped under one of:
+   UPDATE (console-redesign-repair, defect 2): RunDetailView.jsx,
+   EvidenceView.jsx and NarrativeTimeline.jsx used to each pin
+   `data-theme="dark"` on their own root element because `.theme-console`
+   (AppShell.jsx) painted a fixed-dark `--c-void` background and never set
+   [data-theme] itself. AppShell now aliases `.theme-console`'s surface/text
+   field onto the real token layer and sets [data-theme] from a real toggle
+   (default light) — the three local pins were removed; nothing here needed
+   to change since it already only consumes var(--x). Every rule below is
+   scoped under one of:
      .theme-console .run-detail        (RunDetailView.jsx)
      .theme-console .evidence          (EvidenceView.jsx — also reachable
                                          standalone, e.g. console-smoke.test)

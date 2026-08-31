@@ -85,7 +85,7 @@ export default function RunDetailView({
 
   if (!runId) {
     return (
-      <div className="runs-surface run-detail run-detail--empty" data-theme="dark">
+      <div className="runs-surface run-detail run-detail--empty">
         <div className="view-head">
           <div><h1>Run detail</h1></div>
           <button type="button" className="run-detail__back" onClick={onBack}>← All runs</button>
@@ -96,13 +96,10 @@ export default function RunDetailView({
   }
 
   return (
-    // data-theme="dark" pins this destination's subtree (Live / Evidence / Storyline /
-    // Causality) to the PANW dark token set from cortex-tokens.css — AppConsole is the
-    // only shell that ever mounts this component and it never sets [data-theme] itself,
-    // so without this the new --ac/--s1/--tx tokens would resolve to their :root LIGHT
-    // values on top of the console's always-dark void background. See gaps in the task
-    // report for the follow-up once the shell wires a real theme toggle.
-    <div className="runs-surface run-detail" data-theme="dark">
+    // The shell (.theme-console, AppShell.jsx) is theme-aware and sets
+    // [data-theme] on the root, so the PANW token set (--ac/--s1/--tx/…)
+    // resolves correctly here without pinning a local override.
+    <div className="runs-surface run-detail">
       <button type="button" className="run-detail__back" onClick={onBack}>← All runs</button>
 
       <div className="view-head run-detail__head">

@@ -25,6 +25,8 @@ import AgentSwitcher from './GlobalContextBar/AgentSwitcher.jsx'
  *   userInitials    — string
  *   theaterMode     — boolean
  *   onToggleTheater — () => void
+ *   colorTheme      — 'light' | 'dark'
+ *   onToggleColorTheme — () => void
  */
 export default function ConsoleHeader({
   health = {},
@@ -34,6 +36,8 @@ export default function ConsoleHeader({
   userInitials = 'DC',
   theaterMode = false,
   onToggleTheater = null,
+  colorTheme = 'light',
+  onToggleColorTheme = null,
 }) {
   const hostname = health.hostname || (typeof window !== 'undefined' ? window.location.hostname : 'lab')
   const version  = health.version  || 'v1.0'
@@ -111,6 +115,19 @@ export default function ConsoleHeader({
             title={theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly, hides debug chrome'}
           >
             {theaterMode ? '◼' : '◻'}<span className="theater-toggle__label">Theater</span>
+          </button>
+        )}
+
+        {onToggleColorTheme && (
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={onToggleColorTheme}
+            aria-pressed={colorTheme === 'dark'}
+            aria-label={colorTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            title={colorTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {colorTheme === 'dark' ? '🌙' : '☀'}<span className="theme-toggle__label">{colorTheme === 'dark' ? 'Dark' : 'Light'}</span>
           </button>
         )}
 
