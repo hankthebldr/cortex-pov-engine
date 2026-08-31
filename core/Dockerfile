@@ -25,7 +25,11 @@ RUN pip install --no-cache-dir --prefix=/install -r /tmp/requirements.txt
 # not execute an extensionless binary and core/api/agents.py::_binary_name()
 # appends ".exe" for GOOS=windows, so dropping it yields a silent 404
 # indistinguishable from "not built".
-FROM golang:1.22-alpine AS agent-builder
+# --platform=$BUILDPLATFORM: this stage CROSS-compiles explicitly (GOOS/GOARCH
+# per target, below), so it must run natively on the builder rather than under
+# QEMU for the image's target arch. The beacon matrix it emits is identical
+# either way; emulating it only makes a multi-arch build slow.
+FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS agent-builder
 
 WORKDIR /src
 COPY agent/ ./agent/
@@ -68,7 +72,17 @@ RUN cd agent && \
 # ui-builder hits the npm registry). Adding crates.io changes the build time,
 # not the class of build — and it is what makes `docker build` alone sufficient
 # to produce a servable tool, with no host toolchain anywhere.
-FROM rust:1.90-alpine AS rust-builder
+# --platform=$BUILDPLATFORM, for a subtler reason than the Go stage.
+#
+# These binaries are NOT SimCore runtime code — they are PAYLOADS served to
+# targets (/app/rust-dist; core/api/tools_dist.py hands them out). A lab target
+# is x86_64, so the artifact wanted is x86_64-unknown-linux-musl regardless of
+# whether SimCore itself runs on amd64 or arm64.
+#
+# Without this pin, `docker buildx --platform linux/arm64` runs this stage under
+# QEMU-aarch64 while the cargo target triple below stays x86_64 — which fails
+# outright (exit 101) and takes the whole multi-arch build with it.
+FROM --platform=$BUILDPLATFORM rust:1.90-alpine AS rust-builder
 
 # musl-dev/gcc: the linker cc invokes. openssl-dev + openssl-libs-static: xdrtop
 # depends on reqwest 0.12 WITHOUT `default-features = false`, so it resolves
@@ -278,7 +292,11 @@ RUN set -eu; cd /out; \
     && cat MANIFEST.json
 
 # ---- UI builder stage: produce ui/dist/ for static serving ----
-FROM node:20-alpine AS ui-builder
+# --platform=$BUILDPLATFORM: the UI build emits arch-independent static JS/CSS,
+# so emulating it for arm64 buys nothing and costs a great deal of build time.
+# (python-builder is deliberately NOT pinned — its wheels are arch-specific and
+# must match the runtime arch.)
+FROM --platform=$BUILDPLATFORM node:20-alpine AS ui-builder
 
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json ./
