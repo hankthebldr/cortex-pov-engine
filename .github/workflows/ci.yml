@@ -200,7 +200,7 @@ jobs:
   # would reject it at boot, but nothing in CI would ever watch that happen.
   # ---------------------------------------------------------------------------
   refs:
-    name: refs (UC/TC strict validation over the corpus)
+    name: refs (UC/TC strict validation + ground-truth drift gate)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -220,6 +220,29 @@ jobs:
           CORTEXSIM_ENV: development
           PYTHONPATH: ${{ github.workspace }}/core
         run: pytest tests/engine/test_corpus_refs_strict.py -q
+      # scripts/generate_ground_truth.py runs the two named ground-truth
+      # commands (uctc_crosswalk_v2.2.py --report, coverage_report.py --json)
+      # plus direct filesystem/loader counts, cross-checks every number two
+      # independent ways, and rewrites docs/reference/ground-truth.{json,md}.
+      # This job already has core/requirements.txt installed, so the
+      # "boot-truth" fields (real Pydantic scenario loader, real
+      # AssertionCatalog, the strict-refs result above) are always populated
+      # here — the committed files' shape does not depend on which job
+      # regenerated them.
+      - name: Regenerate ground-truth inventory
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+          CORTEXSIM_ENV: development
+          PYTHONPATH: ${{ github.workspace }}/core
+        run: python3 scripts/generate_ground_truth.py
+      - name: Ground-truth determinism gate (committed inventory must match the corpus)
+        # If this fails, the committed docs/reference/ground-truth.{json,md}
+        # drifted from the corpus (a scenario/card/adapter/plugin/plane count
+        # changed and nobody regenerated): run
+        # `python3 scripts/generate_ground_truth.py` (or `make ground-truth`)
+        # locally and commit the result. This is the gate that keeps a repeat
+        # of the README drifting 30-90% from reality from recurring.
+        run: git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
 
   # ---------------------------------------------------------------------------
   # adapters — tool-adapter source preflight + Rust build-recipe preflight.

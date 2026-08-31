@@ -23,7 +23,8 @@ SECRET      ?= $(shell openssl rand -hex 32)
 .PHONY: help up down build agent-dist test test-backend test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf rust-dist check-rust-recipe \
-        check-rust-shelf check-rust-exec e2e-tierc ci clean
+        check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
+        ci clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -96,7 +97,7 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-adapters check-streamer check-agent-shelf ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf gates
+validate: validate-detection check-refs check-adapters check-streamer check-agent-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + ground-truth gates
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -165,6 +166,23 @@ unscoreable-report: ## regenerate docs/uc_tc_mapping/unscoreable-tcs.md from the
 
 crosswalk-report: ## UC/TC crosswalk reconciliation summary
 	python3 scripts/uctc_crosswalk_v2.2.py --report
+
+# scripts/generate_ground_truth.py runs uctc_crosswalk_v2.2.py --report and
+# coverage_report.py --json (the two named ground-truth commands) plus direct
+# filesystem/loader counts, cross-checks every number two independent ways,
+# and writes docs/reference/ground-truth.{json,md} — deterministic, no
+# timestamps, so a clean regeneration is byte-identical when nothing drifted.
+# Runs INSIDE $(IMAGE) (never the host python) so the "boot-truth" fields
+# (real Pydantic scenario loader, real AssertionCatalog, the strict-refs
+# pytest gate) are always available and the committed file's shape never
+# depends on which machine happened to regenerate it.
+ground-truth: ## Regenerate docs/reference/ground-truth.{json,md} from the corpus (needs `make build`)
+	docker run --rm -v "$(CURDIR):/repo" -w /repo -e CORTEXSIM_BASE_DIR=/repo \
+	  -e CORTEXSIM_ENV=development -e PYTHONPATH=/repo/core $(IMAGE) \
+	  python3 scripts/generate_ground_truth.py
+
+check-ground-truth: ground-truth ## Ground-truth determinism gate (CI step): regenerate and diff against committed files
+	git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
 
 check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh

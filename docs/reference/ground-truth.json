@@ -1,0 +1,141 @@
+{
+  "adapters": {
+    "distinct_adapters_wired": 49,
+    "packs_by_tier": {
+      "1": 3,
+      "2": 1,
+      "3": 20,
+      "4": 56,
+      "5": 11
+    },
+    "packs_total": 91,
+    "scenarios_wiring_adapter": 45,
+    "tier4_exempt": 48,
+    "tier4_exempt_reason_codes": {
+      "ARCHIVE_MEMBER_NOT_SELF_CONTAINED": 1,
+      "ARCHIVE_ONLY_NO_EXTRACTOR": 6,
+      "ARTIFACT_TOO_LARGE": 1,
+      "DISTRO_PACKAGE": 18,
+      "LANGUAGE_PACKAGE_MANAGER": 12,
+      "LICENCE_NO_REDISTRIBUTION": 1,
+      "NEEDS_RUNTIME_DATA": 2,
+      "SOURCE_TREE_REQUIRED": 7
+    },
+    "tier4_staged": 8,
+    "tier4_undeclared": 0
+  },
+  "assertions": {
+    "artifacts_total": 20,
+    "boot_verified": true,
+    "by_validation_class": {
+      "AUT": 3,
+      "PLT": 4,
+      "POS": 13
+    },
+    "rejected": 0,
+    "warnings": 0
+  },
+  "corpus": {
+    "abioc_analytics_share": 0.1569,
+    "catalog_detections": 1777,
+    "catalog_detections_by_kind": {
+      "abioc": 134,
+      "analytics": 329,
+      "bioc": 262,
+      "correlation": 183,
+      "ioc": 301,
+      "modeling": 5,
+      "xql": 563
+    },
+    "correlation_share": 0.1068,
+    "detection_planes": 15,
+    "methodology_family_counts": {
+      "F1": 112,
+      "F10": 2,
+      "F2": 24,
+      "F3": 9,
+      "F4": 9,
+      "F5": 5,
+      "F6": 1,
+      "F7": 4,
+      "F8": 1,
+      "F9": 3
+    },
+    "mitre_distinct_base_techniques": 117,
+    "mitre_distinct_techniques": 205,
+    "scenarios_loadable": 170,
+    "scenarios_per_plane": {
+      "AIRS": 5,
+      "AI_ACCESS": 6,
+      "AI_SPM": 7,
+      "ANALYTICS": 23,
+      "ASM": 6,
+      "BROWSER": 6,
+      "CDR": 26,
+      "CLOUD_APP": 10,
+      "CSPM": 5,
+      "EDR": 22,
+      "EMAIL": 5,
+      "ITDR": 20,
+      "KOI": 8,
+      "NDR": 12,
+      "TIM": 9
+    },
+    "scenarios_rejected": 0,
+    "step_detections": 1096,
+    "step_detections_by_type": {
+      "ABIOC": 129,
+      "Analytics": 43,
+      "BIOC": 260,
+      "Correlation": 117,
+      "IOC": 57,
+      "XQL": 490
+    },
+    "ttp_cards": 170
+  },
+  "eal_plugins": 21,
+  "generated_by": "scripts/generate_ground_truth.py",
+  "http_routes": {
+    "apirouter_instances": 24,
+    "by_method": {
+      "api_route": 1,
+      "delete": 4,
+      "get": 83,
+      "post": 34,
+      "put": 5
+    },
+    "decorator_count": 127,
+    "router_files": 22
+  },
+  "iac_modules_aws": 11,
+  "schema_version": 1,
+  "strict_refs_check": {
+    "passed": 6,
+    "status": "green"
+  },
+  "tenant_verified": 0,
+  "uctc_index": {
+    "det_hnt_evidenced": 70,
+    "det_hnt_total": 107,
+    "payload_resolved": 170,
+    "payload_unresolved": 0,
+    "plt_assertions": {
+      "artifacts": 4,
+      "bound": 4,
+      "documented_non_bindings": 9,
+      "index_rows_total": 43,
+      "proven": 0
+    },
+    "pos_assertions": {
+      "artifacts": 2,
+      "bound": 2,
+      "documented_non_bindings": 4,
+      "index_rows_total": 110,
+      "proven": 0
+    },
+    "posture_class_primary_s14": 13,
+    "tc_evidenced": 89,
+    "tc_total": 266,
+    "tier_drift_s13": 105
+  }
+}
