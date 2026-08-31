@@ -5,6 +5,8 @@ import useShelf from './useShelf.js'
 import { SUPPLY, supplyOf, shortDigest } from './supplyState.js'
 import ScenarioPreflightCard from './ScenarioPreflightCard.jsx'
 import { preflightScenario } from './readiness/scenarioPreflight.js'
+import { useFirstUseHint } from '../onboarding/useFirstUseHint.js'
+import FirstUseHint from '../onboarding/FirstUseHint.jsx'
 
 /**
  * LaunchView — ③ Launch: arm a scenario against a target and fire.
@@ -26,13 +28,28 @@ export default function LaunchView({
   scenario = null,
   selectedTarget = null,
   payloadPlan = null,
+  // True only while a `?plan=` deep link's chunk is still resolving (see
+  // destinations.jsx::useDecodedPlan, I-1). Distinct from "no plan" — a run
+  // launched in this window would silently drop the composed payload plan.
+  payloadPlanResolving = false,
   onRunComplete = () => {},
   onError = () => {},
   onGoLibrary = () => {},
   onGoTargets = () => {},
   onNavigate = null,
 }) {
-  const launch = useLaunchScenario(scenario, { onRunComplete, onError, payloadPlan })
+  const launch = useLaunchScenario(scenario, { onRunComplete, onError, payloadPlan, payloadPlanResolving })
+
+  // First-use hint on Launch (I6 / spec §5) — one of the five named
+  // consequential controls (Arm · Launch · Abort · Reconcile · Export POV).
+  // Clears on USE (the click that actually fires the run), never on the
+  // hint's own dismiss — a dismissal you didn't act on is not evidence you
+  // learned the control. `launchHintDismissed` is separate, SESSION-local
+  // state for the dismiss (×) affordance; see FirstUseHint.jsx's hook-
+  // integration test for why the two must stay independent.
+  const launchHint = useFirstUseHint('launch')
+  const [launchHintDismissed, setLaunchHintDismissed] = useState(false)
+  const handleLaunch = () => { launchHint.onUse(); launch.launch() }
 
   // Derive mode + agent from the chosen target — the operator picks a target,
   // not a transport. agent → pull; push/iac → push bundle.
@@ -219,6 +236,7 @@ export default function LaunchView({
         {/* payload plan — what tooling this run carries, and who fetches it */}
         <PayloadPlanCard
           plan={payloadPlan}
+          resolving={payloadPlanResolving}
           planAccepted={launch.payloadPlanAccepted}
           egressTools={egressTools}
           shelfAvailable={shelf.available}
@@ -328,7 +346,7 @@ export default function LaunchView({
                   className="btn btn--primary btn--lg"
                   disabled={launch.launching || blockers.length > 0}
                   aria-describedby={blockers.length ? blockersId : undefined}
-                  onClick={launch.launch}
+                  onClick={handleLaunch}
                 >
                   {launch.launching ? 'Launching…' : 'Launch run ▸'}
                 </button>
@@ -347,10 +365,17 @@ export default function LaunchView({
                 className="btn btn--primary btn--lg"
                 disabled={launch.launching || blockers.length > 0}
                 aria-describedby={blockers.length ? blockersId : undefined}
-                onClick={launch.launch}
+                onClick={handleLaunch}
               >
                 {launch.launching ? 'Launching…' : 'Launch run ▸'}
               </button>
+            )}
+            {launchHint.show && !launchHintDismissed && (
+              <FirstUseHint
+                show
+                text="Launch fires the armed scenario against the selected target."
+                onDismiss={() => setLaunchHintDismissed(true)}
+              />
             )}
           </div>
 
@@ -384,7 +409,10 @@ export default function LaunchView({
  * PayloadPlanCard — what tooling this run carries and who has to reach the
  * internet for it.
  *
- * Three states, none of them silent:
+ * Four states, none of them silent:
+ *   resolving      → a `?plan=` deep link's chunk is still loading (I-1). This
+ *                    is NOT "no plan" — rendering nothing here would let a
+ *                    consultant launch before the plan ever reached the run.
  *   plan present   → artifact, digest, destination, and whether it was renamed.
  *   no plan, tools → a WARNING that the target will fetch them itself. Launch
  *                    stays enabled: the DC may know egress is fine, and a
@@ -393,10 +421,23 @@ export default function LaunchView({
  *   nothing        → the card does not render.
  */
 function PayloadPlanCard({
-  plan, planAccepted, egressTools, shelfAvailable, onGoShelf, onEdit,
+  plan, resolving = false, planAccepted, egressTools, shelfAvailable, onGoShelf, onEdit,
 }) {
   const artifacts = plan?.artifacts || []
-  if (!artifacts.length && !egressTools.length) return null
+  if (!resolving && !artifacts.length && !egressTools.length) return null
+
+  if (resolving) {
+    return (
+      <section className="launch-card launch-card--payload" data-testid="launch-payload-plan-resolving">
+        <div className="launch-card__kicker">Payload plan</div>
+        <p className="launch-payload__resolving">
+          Resolving the composed payload plan from this link&apos;s{' '}
+          <span className="mono">?plan=</span> parameter — Launch stays disabled until it settles,
+          so the run cannot go out with the plan silently dropped.
+        </p>
+      </section>
+    )
+  }
 
   return (
     <section className="launch-card launch-card--payload" data-testid="launch-payload-plan">

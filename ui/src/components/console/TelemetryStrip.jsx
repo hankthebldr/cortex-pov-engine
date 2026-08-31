@@ -1,4 +1,6 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { useFirstUseHint } from '../onboarding/useFirstUseHint.js'
+import FirstUseHint from '../onboarding/FirstUseHint.jsx'
 
 /**
  * TelemetryStrip — 40px strip showing active run state.
@@ -17,6 +19,13 @@ function fmtElapsed(seconds) {
 }
 
 export default function TelemetryStrip({ run, onAbort }) {
+  // First-use hint on Abort (I6 / spec §5) — hooks must run unconditionally,
+  // ahead of the `!run` early return below. Same "clears on USE, not on
+  // dismiss" contract as Launch's — see LaunchView.jsx's handleLaunch.
+  const abortHint = useFirstUseHint('abort')
+  const [abortHintDismissed, setAbortHintDismissed] = useState(false)
+  const handleAbort = () => { abortHint.onUse(); onAbort() }
+
   if (!run) return null
 
   const progress = run.totalSteps
@@ -68,7 +77,14 @@ export default function TelemetryStrip({ run, onAbort }) {
         </>
       )}
 
-      <button className="btn-abort" onClick={onAbort}>Abort</button>
+      <button className="btn-abort" onClick={handleAbort}>Abort</button>
+      {abortHint.show && !abortHintDismissed && (
+        <FirstUseHint
+          show
+          text="Abort stops the run in place — the beacon kills the in-flight process group."
+          onDismiss={() => setAbortHintDismissed(true)}
+        />
+      )}
     </div>
   )
 }
