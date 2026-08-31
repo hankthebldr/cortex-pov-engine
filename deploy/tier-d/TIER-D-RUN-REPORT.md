@@ -1,4 +1,28 @@
-# Tier-D pull-mode agent-path validation — run report
+# Tier-D pull-mode agent-path validation — run report (2026-08-30, HISTORICAL)
+
+> **HISTORICAL RECORD — DO NOT QUOTE §1.2 OR §2 AS CURRENT BEHAVIOUR.**
+> Flagged by the 2026-08-31 pre-merge whole-branch review: **§1.2 below
+> documents a fix ("added `python3` to `Dockerfile.target`'s apt-get install
+> list") that was deliberately REVERTED the same day it was written.**
+> `deploy/tier-d/Dockerfile.target`'s own header comment says so verbatim —
+> python3 is now *deliberately* absent from that image, because installing it
+> there "makes the lab pass while fixing nothing on a customer host, whose
+> packages this repo does not control." The real fix that replaced it lives in
+> `agent/beacon/client.go::resolveRuntimeDeps` (a step declaring
+> `requires_interpreters` is checked against the target's REAL PATH before it
+> runs, and is refused — never silently masked — when the interpreter is
+> genuinely absent). See `docs/design/agent-runtime-dependencies.md` for that
+> design and `docs/design/tier-d-classifier-fixes.md` for the 2026-08-31 pass
+> that closed the classifier-side gaps this exposed (C1/C2/I1/I2/I3).
+>
+> Consequently **§2's "verbatim" verdict output below is also stale**: it
+> shows step 5 as `exit=0 OK` (from the now-reverted python3-in-the-image
+> state). A genuine post-fix re-run on 2026-08-31 produces step 5 as
+> `exit=127 ENVIRONMENT` (`RUNTIME_DEPENDENCY_MISSING`) instead — see
+> `docs/design/tier-d-classifier-fixes.md` §"Real harness re-run" for that
+> verbatim, current output. Sections 1.1, 1.3, 1.4, 1.5, 3 (steps 1-4), 4, 5,
+> 6 and 7 are unaffected by the revert and remain accurate as a historical
+> record of that day's work.
 
 **Date:** 2026-08-30
 **Scenario:** `SIM-EDR-001` (Credential Dumping — /etc/shadow and Mimipenguin)
