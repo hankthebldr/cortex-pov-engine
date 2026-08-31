@@ -23,6 +23,20 @@
   --c-surface-modal:   var(--s3);
   --c-hairline:        var(--bd);
   --c-hairline-strong: var(--bd2);
+  /* undefined-vars repair (2026-08-31): --c-bg-base / --c-bg-elevated /
+     --c-border were referenced (5 / 6 / 5 call sites below) with no
+     fallback and no definition anywhere under styles/ — an invalid
+     var() at computed-value time, which used to fall to transparent
+     (background) or inherit (color/border-color) rather than error.
+     These are aliases onto the existing surface/hairline tokens right
+     above, not new tokens — --bg-base reads as the base void a popover
+     sits on top of, --bg-elevated as the raised surface a popover/menu/
+     snippet itself paints (every call site pairs it with --c-hairline,
+     matching --c-surface-raised's own usage pattern elsewhere in this
+     file), --border as the existing hairline. */
+  --c-bg-base:         var(--c-void);
+  --c-bg-elevated:     var(--c-surface-raised);
+  --c-border:          var(--c-hairline);
 
   /* ── Action (Cortex green — PRIMARY accent: launch, active, brand) ── */
   /* Redesign v2 — see docs/design/console-redesign-v2.md. Green leads,
@@ -52,6 +66,17 @@
   --c-signal:          var(--ink-signal);
   --c-signal-soft:     rgba(0, 192, 232, 0.12);
   --c-signal-glow:     rgba(0, 192, 232, 0.45);
+  /* undefined-vars repair (2026-08-31): --c-cortex-teal, 12 call sites
+     below, was never defined. NOT aliased to cortex-theme.css's
+     --cortex-teal — that legacy name was deliberately RE-POINTED at
+     --ac (green) in the v2 redesign (see that file's own comment), so
+     `var(--cortex-teal)` now resolves green despite the name. Every
+     --c-cortex-teal call site below (hover highlight, "running" status
+     dot/border, active-segment fill) is a genuine secondary/in-progress
+     accent sitting alongside --c-status-missed / --c-pending siblings —
+     exactly what --c-signal (this block, above) already is. Aliasing to
+     --cortex-teal here would silently repaint every one of those green. */
+  --c-cortex-teal:     var(--c-signal);
 
   /* ── Detection states ─────────────────────────────────────────────── */
   --c-detected:        var(--ink-detected);
@@ -71,6 +96,10 @@
   --c-text-secondary:  var(--tx2);
   --c-text-muted:      var(--tx3);
   --c-text-disabled:   var(--tx3);
+  /* undefined-vars repair (2026-08-31): --c-text-primary, 5 call sites
+     below, was never defined — an alias onto --c-text (this block's own
+     "primary" text tier) directly above, not a new tier. */
+  --c-text-primary:    var(--c-text);
 
   /* ── PANW / accents (use sparingly) ──────────────────────────────── */
   --c-panw-orange:     #FA582D;
@@ -338,42 +367,17 @@
    Buttons
    ═══════════════════════════════════════════════════════════════════ */
 
-.theme-console .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-  height: 32px;
-  padding: 0 var(--s-4);
-  font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  letter-spacing: var(--tracking-mono);
-  text-transform: uppercase;
-  color: var(--c-text);
-  background: transparent;
-  border: 1px solid var(--c-hairline);
-  border-radius: var(--r-input);
-  cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
-}
-.theme-console .btn:hover {
-  border-color: var(--c-action);
-  color: var(--c-action-bright);
-}
-.theme-console .btn--primary {
-  background: var(--c-action);
-  color: var(--c-void);
-  border-color: var(--c-action);
-  font-weight: 600;
-}
-.theme-console .btn--primary:hover {
-  background: var(--c-action-bright);
-  border-color: var(--c-action-bright);
-  color: var(--c-void);
-  box-shadow: 0 0 20px -4px var(--c-action-glow);
-}
+/* .btn / .btn:hover / .btn--primary / .btn--primary:hover used to be defined
+   here too (this file's original 2026-04-24 import). A second, later
+   definition of the same four selectors at equal specificity was added the
+   next day at the "Scenario inspector drawer" section below (now ~line 1030)
+   — the surviving one, since same-specificity + later source order wins,
+   and it additionally qualifies :hover with :not(:disabled). Rendered-style
+   diff confirmed via headless browser before deleting: this copy was fully
+   dead, including `.btn--primary { font-weight: 600 }` — that never won
+   either, because the surviving block's plain `.btn { font-weight: 500 }`
+   sits at the SAME (0,2,0) specificity as this block's `.btn--primary`
+   font-weight and, being later in the file, already beat it pre-deletion. */
 .theme-console .btn--danger:hover {
   border-color: var(--c-missed);
   color: var(--c-missed);
@@ -6655,8 +6659,12 @@
   border: 1px solid var(--cortex-border);
 }
 
-/* ── Section title (shared by Step1/Step2/Step3) ────────────────────── */
-.theme-console .tenant-mgr__section-title { font-size: 13px; font-weight: 700; color: var(--cortex-navy); margin: 0 0 20px; }
+/* ── Section title (shared by Step1/Step2/Step3) ─────────────────────
+   Dead here: destinations/tenants.css defines the same selector at equal
+   specificity (.theme-console .tenant-mgr__section-title) and loads after
+   this file in main.jsx, so it always wins — see that file's own header
+   comment, which already documents overriding this legacy block. Removed
+   rather than left as a silent no-op. */
 
 /* ── Step 2: auth-mode radios ────────────────────────────────────────── */
 .theme-console .tenant-mgr__radio-option {
@@ -6737,7 +6745,9 @@
 /* ── View header ──────────────────────────────────────────────────────── */
 .theme-console .tenant-mgr__header { margin-bottom: 28px; }
 .theme-console .tenant-mgr__header-row { display: flex; align-items: baseline; gap: 12px; }
-.theme-console .tenant-mgr__title { margin: 0; font-size: 16px; font-weight: 800; color: var(--cortex-navy); }
+/* Dead here: destinations/tenants.css defines .theme-console .tenant-mgr__title
+   at equal specificity and loads after this file, so it always wins — same
+   override this file's tenant-mgr__section-title rule above documented. */
 .theme-console .tenant-mgr__subtitle { font-size: 11px; color: var(--cortex-steel); }
 .theme-console .tenant-mgr__scope-line { margin-top: 8px; font-size: 11px; color: var(--cortex-steel); }
 .theme-console .tenant-mgr__scope-value { font-family: var(--font-mono); color: var(--cortex-teal); }
