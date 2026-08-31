@@ -84,7 +84,7 @@
 }
 .theme-console .lab__head-actions .btn:hover:not(:disabled) {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .lab__head-actions .btn:disabled {
   opacity: 0.5;
@@ -129,7 +129,7 @@
   font-family: var(--font-ui);
   font-size: 10px;
   font-weight: 600;
-  color: var(--ac);
+  color: var(--ac-ink);
   background: transparent;
   border: 0;
   padding: 3px 8px;
@@ -261,7 +261,7 @@
 }
 .theme-console .lab__segmented button.is-active {
   background: var(--ac-soft);
-  color: var(--ac);
+  color: var(--ac-ink);
   font-weight: 700;
 }
 .theme-console .lab__segmented button:disabled {
@@ -366,7 +366,7 @@
   letter-spacing: var(--tracking-mono);
 }
 .theme-console .lab-module--checked .lab-module__name {
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .lab-module__deps {
   font-size: 9px;
@@ -409,7 +409,7 @@
 }
 .theme-console [data-testid="scenario-hint-apply"]:hover:not(:disabled) {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console [data-testid="scenario-hint-apply"]:disabled {
   opacity: 0.5;
@@ -422,7 +422,7 @@
 .theme-console .lab__hint-result {
   margin-top: 10px;
   font-size: 11px;
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .lab__hint-warn {
   color: var(--warn);
@@ -437,7 +437,7 @@
 .theme-console .lab__adapter-hint {
   display: inline-block;
   margin-left: 8px;
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .lab__adapter-group {
   margin-bottom: 12px;
@@ -455,7 +455,7 @@
   gap: 6px;
 }
 .theme-console .lab__adapter-chip__check {
-  color: var(--ac);
+  color: var(--ac-ink);
   margin-right: 4px;
 }
 .theme-console .lab__adapter-chip__version {
@@ -483,7 +483,7 @@
 .theme-console .lab__generate-row .btn--primary {
   height: 34px;
   padding: 0 16px;
-  background: var(--ac);
+  background: var(--ac-ink);
   color: var(--ac-tx);
   border: 1px solid var(--ac);
   border-radius: 6px;
@@ -507,7 +507,7 @@
 }
 .theme-console .lab__last-bundle {
   font-size: 11px;
-  color: var(--ac-str);
+  color: var(--ac-ink);
   letter-spacing: var(--tracking-mono);
   display: inline-flex;
   align-items: center;
@@ -533,7 +533,7 @@
 .theme-console .lab__last-bundle-download:hover,
 .theme-console .lab__bundle-row-download:hover {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 
 /* ── Bundle history table ─────────────────────────────────────────── */
@@ -574,7 +574,7 @@
 .theme-console .lab__bundle-id {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--ac);
+  color: var(--ac-ink);
   letter-spacing: var(--tracking-mono);
 }
 .theme-console .lab__bundle-meta {

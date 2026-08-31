@@ -84,7 +84,13 @@ describe('design token contract (cortex-tokens.css)', () => {
     expect(lightTokens.ac).toBe('#00A855') // primary accent, light theme
     expect(lightTokens.tx).toBe('#0A0F0D')
     expect(lightTokens.bd).toBe('#E3E9E6')
-    expect(lightTokens.warn).toBe('#C7961B')
+    // --warn is a recorded WCAG AA deviation (2026-08-31), not the designer's
+    // verbatim #C7961B — that value measured 2.69:1 against --s1, short of
+    // the 4.5:1 text floor at the 9-11px this console renders warn text at
+    // (and even short of the 3:1 non-text floor for its own decorative
+    // fills). Same hue/saturation, darkened only as far as 4.5:1 requires —
+    // see the deviation note atop cortex-tokens.css's :root block.
+    expect(lightTokens.warn).toBe('#896713')
     expect(lightTokens.crit).toBe('#A51B00')
     expect(lightTokens.orange).toBe('#FA582D')
     expect(lightTokens.info).toBe('#0090AA')

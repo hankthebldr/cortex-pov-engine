@@ -90,7 +90,7 @@
 }
 .theme-console .tools-destination .stack-coverage__stat-value {
   font-family: var(--font-mono);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .tools-destination .stack-coverage__stat-label {
   font-family: var(--font-mono);
@@ -164,7 +164,7 @@
   color: var(--tx2);
 }
 .theme-console .tools-destination .adapter-registry__scope strong {
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 
 /* ── Search + filters ──────────────────────────────────────────────── */
@@ -207,7 +207,7 @@
   color: var(--tx);
 }
 .theme-console .tools-destination .competitive__filter.is-active {
-  background: var(--ac);
+  background: var(--ac-ink);
   border-color: var(--ac);
   color: var(--ac-tx);
   font-weight: 700;
@@ -223,13 +223,13 @@
 }
 .theme-console .tools-destination .btn:hover:not(:disabled) {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .tools-destination .btn:disabled {
   opacity: 0.45;
 }
 .theme-console .tools-destination .btn--primary {
-  background: var(--ac);
+  background: var(--ac-ink);
   border-color: var(--ac);
   color: var(--ac-tx);
   font-weight: 700;
@@ -373,7 +373,7 @@
   background: transparent;
 }
 .theme-console .tools-destination .chip--detected {
-  color: var(--ac);
+  color: var(--ac-ink);
   border-color: var(--ac);
   background: transparent;
 }
@@ -391,7 +391,7 @@
   cursor: pointer;
 }
 .theme-console .tools-destination .chip--clickable:hover {
-  color: var(--ac);
+  color: var(--ac-ink);
   border-color: var(--ac);
 }
 .theme-console .tools-destination .tool-adapter-catalog__chip-sm {
@@ -407,7 +407,7 @@
   padding: 20px 22px;
 }
 .theme-console .tools-destination .competitive__detail-eyebrow {
-  color: var(--ac);
+  color: var(--ac-ink);
   font-family: var(--font-mono);
 }
 .theme-console .tools-destination .competitive__detail-title {
@@ -424,7 +424,7 @@
 }
 
 .theme-console .tools-destination .tool-adapter-catalog__repo a {
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .tools-destination .tool-adapter-catalog__repo-meta {
   color: var(--tx3);
@@ -501,7 +501,7 @@
   color: var(--tx3);
 }
 .theme-console .tools-destination .provenance__link {
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .tools-destination .provenance__unpinned {
   color: var(--orange);
@@ -518,7 +518,7 @@
   color: var(--tx2);
 }
 .theme-console .tools-destination .provenance__copy:hover {
-  color: var(--ac);
+  color: var(--ac-ink);
   border-color: var(--ac);
 }
 .theme-console .tools-destination .provenance__hint {
@@ -551,7 +551,7 @@
   color: var(--orange);
 }
 .theme-console .tools-destination .stage-dialog__ok {
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .tools-destination .stage-dialog__fail {
   color: var(--crit);
@@ -592,7 +592,7 @@
   color: var(--orange);
 }
 .theme-console .tools-destination .payload-compose__ok {
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .tools-destination .payload-compose__error {
   color: var(--crit);

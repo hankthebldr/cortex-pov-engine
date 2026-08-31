@@ -102,7 +102,7 @@
 }
 .theme-console .targets__active strong.mono {
   font-family: 'JetBrains Mono', monospace; font-size: 11px;
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .targets__active--none {
   font-style: normal; color: var(--tx3);
@@ -117,7 +117,7 @@
 }
 .theme-console .targets .target-col__count {
   font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;
-  color: var(--ac); background: var(--ac-soft);
+  color: var(--ac-ink); background: var(--ac-soft);
   border: 1px solid var(--ac-line); border-radius: 20px;
   padding: 1px 8px;
 }
@@ -154,12 +154,12 @@
   background: transparent; border-radius: 3px; padding: 3px 7px;
   border: 1px solid currentColor;
 }
-.theme-console .targets .target-card__pill--live { color: var(--ac); }
+.theme-console .targets .target-card__pill--live { color: var(--ac-ink); }
 .theme-console .targets .target-card__pill--stale { color: var(--warn); }
-.theme-console .targets .target-card__pill--ready { color: var(--ac); }
+.theme-console .targets .target-card__pill--ready { color: var(--ac-ink); }
 .theme-console .targets .target-card__pill--unknown { color: var(--tx3); }
 .theme-console .targets .target-card__pill--active {
-  color: var(--ac-str); background: var(--ac-soft); border-color: var(--ac-line);
+  color: var(--ac-ink); background: var(--ac-soft); border-color: var(--ac-line);
 }
 
 /* ── 6. Small ghost actions on the agent card footer ─────────────── */

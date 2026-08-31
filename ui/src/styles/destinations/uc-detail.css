@@ -81,7 +81,7 @@
 .uc-detail .badge-teal {
   background: color-mix(in srgb, var(--ac) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--ac) 32%, transparent);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 
 /* ── Loading state ──────────────────────────────────────────────────── */
@@ -110,7 +110,7 @@
 
 .uc-detail .uctc-uc-header__ref {
   font-weight: 600;
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 
 .uc-detail .uctc-uc-header__name {

@@ -15,15 +15,30 @@
    `--cortex-*` token names onto this vocabulary immediately
    below its own import (see that file's :root block for the
    alias table + the reasoning behind each mapping).
-   ============================================================ */
+
+   TWO DEVIATIONS from VERBATIM below, both light-theme-only, both
+   forced by measured WCAG AA failures at the 9-11px this console
+   actually renders these tokens at (the mockup drew them for
+   44-72px display type — see the 2026-08-30 AA pass notes). Same
+   hue + saturation as the designer's value, lightness reduced only
+   as far as needed to clear 4.5:1 against every light surface:
+     --tx3  #8B958F -> #656F69  (2.77:1 -> 4.67:1 vs --s0; every
+            eyebrow/kicker label reads this directly as `color:`)
+     --warn #C7961B -> #896713  (2.69:1 -> 5.23:1 vs --s1; warn text
+            AND its own decorative dot/pip fills were both already
+            short of the 3:1 non-text floor, so there was no
+            "flatten a fill for no benefit" tradeoff to make — see
+            --warn-str, unchanged, for anything that must stay the
+            bright designer gold)
+   Dark values for both are untouched — already >=4.5:1 as authored. */
 
 /* Cortex green is the primary accent. PANW orange is reserved for warn/gap signal. */
 :root {
   --s0: #F1F3F2; --s1: #FFFFFF; --s2: #F8FAF9; --s3: #EBF0ED;
   --bd: #E3E9E6; --bd2: #C3CCC8; --thead: #999999;
-  --tx: #0A0F0D; --tx2: #55605C; --tx3: #8B958F;
+  --tx: #0A0F0D; --tx2: #55605C; --tx3: #656F69;
   --ac: #00A855; --ac-str: #00CC66; --ac-tx: #FFFFFF; --ac-soft: #E3F6EB; --ac-line: #B4E3C8;
-  --warn: #C7961B; --warn-str: #FFCB06; --crit: #A51B00; --orange: #FA582D; --info: #0090AA;
+  --warn: #896713; --warn-str: #FFCB06; --crit: #A51B00; --orange: #FA582D; --info: #0090AA;
   --ink: #06120C; --ink2: #0D1B14; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #9FB0A9;
   --shadow: 0 4px 14px rgba(10,30,20,.09);
 }
@@ -83,4 +98,33 @@
   --ink-missed:        var(--crit);
   --ink-pending:       #F5A524;
   --ink-stitched:      var(--ink-signal);
+}
+
+/* ============================================================
+   --ac-ink — ADDITIVE (not part of the 25-token contract above).
+   Light-theme text-safe variant of --ac/--ac-str. Same story as
+   the block above, one token for one hue: --ac (#00A855) measures
+   3.12:1 against --s1 and --ac-str (#00CC66) measures 1.90:1
+   against --ac-soft — both short of the 4.5:1 text floor — at the
+   9-11px this console renders "green" text (labels, links, chip
+   text) and button/pill labels (a --ac-tx-on-fill pairing is the
+   SAME arithmetic read the other way: contrast(white, fill) ===
+   contrast(fill, white)). --ac-ink is both colors' hue+saturation,
+   darkened only as far as needed to clear 4.5:1 against every
+   light surface (s0-s3) AND --ac-soft simultaneously, so it is
+   correct wherever --ac/--ac-str paints TEXT (the `color:`
+   property) OR is the solid fill a --ac-tx label sits on top of.
+   Every decorative `border-color:`/non-text `background:` use of
+   --ac/--ac-str is UNCHANGED — those already clear the 3:1
+   non-text floor (3.12:1), and darkening a pure color swatch or a
+   button's own border for a text floor it isn't carrying text
+   against would flatten the design for no accessibility benefit.
+   Dark theme's own --ac (#00CC66) already clears 4.5:1 against
+   every dark surface (7.0-9.2:1) and --ac-tx-on-fill (8.8:1), so
+   --ac-ink there is an alias, not a second color to keep in sync. */
+:root {
+  --ac-ink: #007D3F;
+}
+[data-theme="dark"] {
+  --ac-ink: var(--ac);
 }

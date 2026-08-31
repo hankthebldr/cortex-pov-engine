@@ -111,7 +111,7 @@
   color: var(--tx3);
 }
 .uctc .uctc__tone-detected.stack-coverage__stat-value,
-.uctc .stack-coverage__stat-value.uctc__tone-detected { color: var(--ac); }
+.uctc .stack-coverage__stat-value.uctc__tone-detected { color: var(--ac-ink); }
 .uctc .stack-coverage__stat-value.uctc__tone-pending { color: var(--warn); }
 
 /* ── mode bar / tabs ──────────────────────────────────────── */
@@ -137,12 +137,12 @@
 }
 .theme-console .uctc .lab__segmented button.is-active {
   background: var(--ac-soft);
-  color: var(--ac-str);
+  color: var(--ac-ink);
   font-weight: 600;
 }
 
 .uctc__modebar-meta { color: var(--tx3); }
-.uctc .uctc__link { color: var(--ac); }
+.uctc .uctc__link { color: var(--ac-ink); }
 .uctc .uctc__link:hover { color: var(--tx); }
 .uctc .uctc__link:focus-visible { outline-color: var(--ac); }
 .uctc .uctc__muted { color: var(--tx3); }
@@ -204,12 +204,12 @@
 }
 .theme-console .uctc .competitive__filter:hover {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .uctc .competitive__filter.is-active {
   background: var(--ac-soft);
   border-color: var(--ac-str);
-  color: var(--ac-str);
+  color: var(--ac-ink);
 }
 
 .theme-console .uctc .btn {
@@ -220,12 +220,12 @@
 }
 .theme-console .uctc .btn:hover:not(:disabled) {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .uctc .btn:disabled { opacity: 0.45; }
 .theme-console .uctc .btn--primary,
 .theme-console .uctc .uctc__btn--clear {
-  background: var(--ac);
+  background: var(--ac-ink);
   color: var(--ac-tx);
   border-color: var(--ac);
   font-weight: 700;
@@ -303,8 +303,8 @@
   box-shadow: inset 3px 0 0 var(--ac-str);
 }
 
-.uctc .uctc__idbtn { color: var(--ac); }
-.uctc .uctc__idbtn:hover { color: var(--ac-str); }
+.uctc .uctc__idbtn { color: var(--ac-ink); }
+.uctc .uctc__idbtn:hover { color: var(--ac-ink); }
 .uctc .uctc__idbtn:focus-visible { outline-color: var(--ac); }
 
 .uctc .uctc__cell-kpi { color: var(--tx2); }
@@ -319,12 +319,12 @@
 }
 .theme-console .uctc .chip--signal {
   background: var(--ac-soft);
-  color: var(--ac-str);
+  color: var(--ac-ink);
   border-color: transparent;
 }
 .theme-console .uctc .chip--detected {
   background: var(--ac-soft);
-  color: var(--ac-str);
+  color: var(--ac-ink);
   border-color: transparent;
 }
 .theme-console .uctc .chip--missed {
@@ -339,7 +339,7 @@
 }
 
 .uctc .uctc__tone-detected,
-.uctc .uctc__tone-action { color: var(--ac); }
+.uctc .uctc__tone-action { color: var(--ac-ink); }
 .uctc .uctc__tone-signal { color: var(--info); }
 .uctc .uctc__tone-pending { color: var(--warn); }
 .uctc .uctc__tone-missed { color: var(--crit); }
@@ -348,7 +348,7 @@
 .theme-console .uctc .uctc__chip { color: var(--tx2); border-color: var(--bd2); }
 .theme-console .uctc .uctc__chip.uctc__tone-detected,
 .theme-console .uctc .uctc__chip.uctc__tone-action {
-  color: var(--ac-str);
+  color: var(--ac-ink);
   border-color: var(--ac-line);
   background: var(--ac-soft);
 }
@@ -390,7 +390,7 @@
   border-radius: 10px;
   padding: 18px 20px;
 }
-.theme-console .uctc .competitive__detail-eyebrow { color: var(--ac); }
+.theme-console .uctc .competitive__detail-eyebrow { color: var(--ac-ink); }
 .theme-console .uctc .competitive__detail-title {
   color: var(--tx);
   font-family: var(--font-display);
@@ -450,7 +450,7 @@
   border-left: 2px solid var(--ac-str);
   border-radius: 6px;
 }
-.uctc .uctc__assertcard-id { color: var(--ac); }
+.uctc .uctc__assertcard-id { color: var(--ac-ink); }
 .uctc .uctc__assertcard-name { color: var(--tx); }
 
 /* ── mechanisms mode ──────────────────────────────────────── */
@@ -466,7 +466,7 @@
 .uctc .uctc__mechcard-eyebrow { color: var(--tx3); }
 .uctc .uctc__mechcard-title { color: var(--tx); font-family: var(--font-display); }
 .uctc .uctc__mechcard-proves { color: var(--tx2); }
-.uctc .uctc__mechcard-score-num { color: var(--ac); font-family: var(--font-display); }
+.uctc .uctc__mechcard-score-num { color: var(--ac-ink); font-family: var(--font-display); }
 .uctc .uctc__mechcard-score-den { color: var(--tx3); }
 .uctc .uctc__mechcard-score-label { color: var(--tx3); }
 .uctc .uctc__mechcard-oosprose { color: var(--tx2); }

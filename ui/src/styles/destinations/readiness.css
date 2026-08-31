@@ -337,7 +337,7 @@
 .theme-console .rdy-comp__code { font-size: 10px; letter-spacing: 0.06em; color: var(--tx2); }
 .theme-console .rdy-comp__detail { font-size: 10.5px; color: var(--tx2); line-height: 1.55; }
 .theme-console .rdy-comp__fix { font-size: 11px; color: var(--tx); line-height: 1.6; }
-.theme-console .rdy-comp__fix::before { content: '→ '; color: var(--ac); }
+.theme-console .rdy-comp__fix::before { content: '→ '; color: var(--ac-ink); }
 .theme-console .rdy-comp .btn--xs { margin-top: 2px; }
 
 /* ── Gap list ──────────────────────────────────────────────────────── */
@@ -376,7 +376,7 @@
   border: 1px solid var(--bd2);
 }
 .theme-console .readiness .chip--detected {
-  background: var(--ac);
+  background: var(--ac-ink);
   color: var(--ac-tx);
   border-color: var(--ac);
 }
@@ -406,7 +406,7 @@
 }
 .theme-console .readiness .btn:hover:not(:disabled) {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
   background: transparent;
 }
 .theme-console .readiness .btn:disabled { opacity: 0.55; cursor: not-allowed; }

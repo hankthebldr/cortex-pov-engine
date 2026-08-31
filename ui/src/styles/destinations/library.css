@@ -138,7 +138,7 @@
   cursor: not-allowed;
 }
 .theme-console .library-layout .ops-toolbar .btn--primary {
-  background: var(--ac);
+  background: var(--ac-ink);
   color: var(--ac-tx);
   border-color: var(--ac);
   font-weight: 700;
@@ -170,7 +170,7 @@
   height: auto;
   padding: 4px 8px;
   background: var(--ac-soft);
-  color: var(--ac);
+  color: var(--ac-ink);
   border: 1px solid var(--ac-line);
   border-radius: 4px;
   font-family: var(--font-mono);
@@ -229,7 +229,7 @@
 }
 .theme-console .library-layout .ops-history-strip button.is-active .ops-history-strip__count {
   background: var(--ac-soft);
-  color: var(--ac);
+  color: var(--ac-ink);
   border-color: var(--ac-line);
 }
 
@@ -297,7 +297,7 @@
   gap: 6px;
 }
 .theme-console .library-layout .sc-id__pin-marker {
-  color: var(--ac-str);
+  color: var(--ac-ink);
   font-size: 8px;
 }
 
@@ -331,12 +331,12 @@
   border: 1px solid var(--bd2);
 }
 .theme-console .library-layout .chip--plane-edr {
-  color: var(--ac);
+  color: var(--ac-ink);
   background: transparent;
   border-color: var(--ac);
 }
 .theme-console .library-layout .chip--plane-analytics {
-  color: var(--ac);
+  color: var(--ac-ink);
   background: transparent;
   border-color: var(--ac);
 }
@@ -422,10 +422,10 @@
 }
 .theme-console .library-layout .pin-btn--card:hover {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .library-layout .pin-btn--card.is-pinned {
-  background: var(--ac);
+  background: var(--ac-ink);
   border-color: var(--ac);
   color: var(--ac-tx);
 }
@@ -476,7 +476,7 @@
   background: transparent;
 }
 .theme-console .library-layout .insp-launch .btn--primary {
-  background: var(--ac);
+  background: var(--ac-ink);
   border-color: var(--ac);
   color: var(--ac-tx);
   font-weight: 700;
@@ -495,7 +495,7 @@
   margin-top: 10px;
   font-size: 11px;
 }
-.theme-console .library-layout .insp-launch__status--success { color: var(--ac-str); }
+.theme-console .library-layout .insp-launch__status--success { color: var(--ac-ink); }
 .theme-console .library-layout .insp-launch__status--missed { color: var(--crit); }
 
 .theme-console .library-layout .pin-btn--inspector {
@@ -505,11 +505,11 @@
 }
 .theme-console .library-layout .pin-btn--inspector:hover {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .library-layout .pin-btn--inspector.is-pinned {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
   background: var(--ac-soft);
 }
 
@@ -553,7 +553,7 @@
   font-weight: 600;
 }
 .theme-console .library-layout .insp-segmented button.is-active {
-  background: var(--ac);
+  background: var(--ac-ink);
   color: var(--ac-tx);
 }
 .theme-console .library-layout .insp-segmented button:disabled {
@@ -590,7 +590,7 @@
 }
 .theme-console .library-layout .insp-config__row--actions .btn--xs:hover:not(:disabled) {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 
 .theme-console .library-layout .insp-kv dt {
@@ -684,7 +684,7 @@
 .theme-console .library-layout .insp-history__glyph {
   color: var(--tx3);
 }
-.theme-console .library-layout .insp-history__row--completed .insp-history__glyph { color: var(--ac-str); }
+.theme-console .library-layout .insp-history__row--completed .insp-history__glyph { color: var(--ac-ink); }
 .theme-console .library-layout .insp-history__row--failed    .insp-history__glyph { color: var(--crit); }
 .theme-console .library-layout .insp-history__row--aborted   .insp-history__glyph { color: var(--warn); }
 .theme-console .library-layout .insp-history__row--running   .insp-history__glyph { color: var(--info); }
@@ -700,7 +700,7 @@
 .theme-console .library-layout .insp-history__arrow { color: var(--tx3); }
 .theme-console .library-layout .insp-history__row-btn:hover .insp-history__arrow,
 .theme-console .library-layout .insp-history__row-btn:focus-visible .insp-history__arrow {
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 
 .theme-console .library-layout .insp-footer {

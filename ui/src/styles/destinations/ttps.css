@@ -89,7 +89,7 @@
 .ttpb-btn--xs   { height: 22px; padding: 0 8px; font-size: 10px; }
 .ttpb-btn--copy { height: 20px; padding: 0 8px; font-size: 10px; }
 .ttpb-btn--accent {
-  background: var(--ac);
+  background: var(--ac-ink);
   border-color: var(--ac);
   color: var(--ac-tx);
   font-weight: 600;
@@ -131,7 +131,7 @@
 }
 .ttpb-chip:hover { border-color: var(--ac); color: var(--tx); }
 .ttpb-chip.is-active {
-  background: var(--ac);
+  background: var(--ac-ink);
   border-color: var(--ac);
   color: var(--ac-tx);
   font-weight: 600;
@@ -258,7 +258,7 @@
   font-weight: 600;
   font-size: 9px;
 }
-.ttpb-chip--tag-signal { background: var(--ac-soft); border-color: var(--ac-line); color: var(--ac); }
+.ttpb-chip--tag-signal { background: var(--ac-soft); border-color: var(--ac-line); color: var(--ac-ink); }
 .ttpb-chip--tag-muted  { color: var(--tx3); }
 .ttpb-chip--tag-xs     { font-size: 9px; padding: 1px 6px; }
 
@@ -365,7 +365,7 @@
   font-size: 10px;
   font-weight: 600;
 }
-.ttpb-badge--pass    { background: var(--ac-soft); color: var(--ac); }
+.ttpb-badge--pass    { background: var(--ac-soft); color: var(--ac-ink); }
 .ttpb-badge--fail    { background: color-mix(in srgb, var(--crit) 14%, transparent); color: var(--crit); }
 .ttpb-badge--partial { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 
@@ -428,10 +428,10 @@
   max-height: 220px;
   overflow: auto;
 }
-.ttpb-pre .syn-keyword  { color: var(--ac-str); font-weight: 600; }
+.ttpb-pre .syn-keyword  { color: var(--ac-ink); font-weight: 600; }
 .ttpb-pre .syn-builtin  { color: var(--info); }
 .ttpb-pre .syn-string   { color: var(--warn-str); }
-.ttpb-pre .syn-number   { color: var(--ac); }
+.ttpb-pre .syn-number   { color: var(--ac-ink); }
 .ttpb-pre .syn-operator { color: var(--ink-tx2); opacity: .8; }
 .ttpb-pre .syn-comment  { color: var(--ink-tx2); opacity: .55; font-style: italic; }
 .ttpb-pre .syn-ident,

@@ -134,7 +134,7 @@
 }
 .theme-console .ttp-editor .ttp-editor__saved-msg {
   border-left: 3px solid var(--ac-str);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 
 /* ── 5. Hint paragraph — the mockup's "intent" sub-line under a title. */
@@ -199,7 +199,7 @@
 }
 .theme-console .ttp-editor .ttp-editor__valid-msg {
   border-left: 3px solid var(--ac-str);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .ttp-editor .ttp-editor__validate-path {
   color: var(--tx);

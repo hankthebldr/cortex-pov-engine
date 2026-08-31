@@ -296,6 +296,68 @@ const STATUS_VALUE_FIXTURES = [
   },
 ]
 
+/**
+ * AA light-theme repair (2026-08-31) — the five pairs a manual audit
+ * measured failing in light theme, each pinned to the real selector
+ * that actually carries it in the shipped console (not a synthetic
+ * token pairing). Restricted to the destinations vitest.config.js
+ * already gives real CSS to (uctc/ttps/readiness/eal/adapters — see
+ * that file's `css.include`); a fixture built from any other
+ * destination's stylesheet would resolve against STUBBED (empty) CSS
+ * and pass for the wrong reason no matter what the real rule says:
+ *   - .uctc__link            color: --ac  -> --ac-ink   (was 3.12:1 on --s1)
+ *   - .ttpb-badge--pass      color: --ac -> --ac-ink, on its own
+ *                            --ac-soft fill (the "accent chip" case —
+ *                            same defect family as --ac-str on
+ *                            --ac-soft, measured 1.90:1)
+ *   - .ttpb-row__count       color: --tx3 (cortex-tokens.css deviation:
+ *                            #8B958F -> #656F69)          (was 2.77:1 on --s0)
+ *   - .uctc__tone-pending    color: --warn (cortex-tokens.css deviation:
+ *                            #C7961B -> #896713)          (was 2.69:1 on --s1)
+ *   - .ttpb-btn--accent      color: --ac-tx on a fill that used to be
+ *                            --ac, now --ac-ink            (was 3.12:1)
+ * `bgSelector: 'self'` reads background off the SAME element as the
+ * text (the chip/button paint their own fill) instead of an ancestor.
+ * Dark theme is exercised by the same describe.each this file already
+ * runs everything through: --ac-ink aliases straight to dark's own
+ * --ac (already >=7:1, see cortex-tokens.css), and dark --tx3/--warn
+ * are untouched designer values the operator's audit already found
+ * passing — so this block proves the fix without needing separate
+ * dark fixtures, and a regression in either theme still fails here.
+ */
+const AA_LIGHT_REPAIR_FIXTURES = [
+  {
+    name: 'UC/TC link text — .uctc__link (color: --ac-ink, was --ac) on .uctc (bg: --s0)',
+    html: `<div class="uctc"><a class="uctc__link" href="#">TC-EDR-05</a></div>`,
+    bgSelector: '.uctc',
+    textSelector: '.uctc__link',
+  },
+  {
+    name: 'TTP Cards "pass" accent badge — .ttpb-badge--pass (color: --ac-ink, was --ac) on itself (bg: --ac-soft)',
+    html: `<span class="ttpb-badge--pass">Pass</span>`,
+    bgSelector: 'self',
+    textSelector: '.ttpb-badge--pass',
+  },
+  {
+    name: 'TTP row-count eyebrow — .ttpb-row__count (color: --tx3, darkened) on .ttpb (bg: --s0)',
+    html: `<div class="ttpb"><span class="ttpb-row__count">12</span></div>`,
+    bgSelector: '.ttpb',
+    textSelector: '.ttpb-row__count',
+  },
+  {
+    name: 'UC/TC "pending" tone label — .uctc__tone-pending (color: --warn, darkened) on .uctc (bg: --s0)',
+    html: `<div class="uctc"><span class="uctc__tone-pending">Pending</span></div>`,
+    bgSelector: '.uctc',
+    textSelector: '.uctc__tone-pending',
+  },
+  {
+    name: 'TTP Cards accent button label — .ttpb-btn--accent (color: --ac-tx on a fill that is now --ac-ink, was --ac) on itself',
+    html: `<button class="ttpb-btn--accent">Launch</button>`,
+    bgSelector: 'self',
+    textSelector: '.ttpb-btn--accent',
+  },
+]
+
 describe.each([
   ['light (default — no [data-theme])', false],
   ['dark ([data-theme="dark"])', true],
@@ -444,4 +506,29 @@ describe.each([
         `below the WCAG AA floor of ${floor}:1`
     ).toBeGreaterThanOrEqual(floor)
   })
+
+  it.each(AA_LIGHT_REPAIR_FIXTURES.map((f) => [f.name, f]))(
+    'AA light-theme repair contrast clears AA: %s',
+    (_n, fixture) => {
+      const { shell, $ } = mountShell(fixture.html, { dark })
+      const textEl = $(fixture.textSelector)
+      expect(textEl, `could not find "${fixture.textSelector}" in the fixture`).not.toBeNull()
+
+      const bgEl = fixture.bgSelector === 'self' ? textEl : $(fixture.bgSelector)
+      expect(bgEl, `could not find background element "${fixture.bgSelector}"`).not.toBeNull()
+
+      const color = resolveProperty(textEl, 'color')
+      const background = resolveProperty(bgEl, 'background') ?? resolveProperty(bgEl, 'background-color')
+      expect(color, `no resolvable color at ${fixture.name}`).toBeTruthy()
+      expect(background, `no resolvable background at ${fixture.name}`).toBeTruthy()
+
+      const ratio = contrastRatio(color, background)
+      const floor = aaFloor({ largeText: isLargeText(textEl) })
+      expect(
+        ratio,
+        `${fixture.name}: color ${color} on background ${background} measures ${ratio.toFixed(2)}:1, ` +
+          `below the WCAG AA floor of ${floor}:1`
+      ).toBeGreaterThanOrEqual(floor)
+    }
+  )
 })

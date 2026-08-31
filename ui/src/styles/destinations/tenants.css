@@ -155,11 +155,11 @@
   /* Solid fill (not a pale tint) — the accent text token (--ac-tx) is
      designed for exactly this on-accent pairing; a tinted background
      with --ac text does not clear contrast at this size. */
-  background: var(--ac);
+  background: var(--ac-ink);
   color: var(--ac-tx);
 }
 .theme-console .tenant-mgr__step-circle--active {
-  background: var(--ac);
+  background: var(--ac-ink);
   color: var(--ac-tx);
   box-shadow: 0 0 0 3px var(--ac-soft);
 }

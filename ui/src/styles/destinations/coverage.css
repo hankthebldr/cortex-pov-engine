@@ -66,11 +66,11 @@
 .theme-console .coverage .btn:hover:not(:disabled),
 .theme-console .stack-coverage .btn:hover:not(:disabled) {
   border-color: var(--ac);
-  color: var(--ac);
+  color: var(--ac-ink);
 }
 .theme-console .coverage .btn--primary,
 .theme-console .stack-coverage .btn--primary {
-  background: var(--ac);
+  background: var(--ac-ink);
   border-color: var(--ac);
   color: var(--ac-tx);
 }
@@ -130,7 +130,7 @@
   color: var(--tx);
   font-weight: 500;
 }
-.theme-console .coverage .coverage-color-detected { color: var(--ac); }
+.theme-console .coverage .coverage-color-detected { color: var(--ac-ink); }
 .theme-console .coverage .coverage-color-pending  { color: var(--warn); }
 .theme-console .coverage .coverage-color-muted    { color: var(--tx3); }
 
@@ -332,7 +332,7 @@
 }
 
 .theme-console .coverage .cov-cell--detected {
-  background: var(--ac);
+  background: var(--ac-ink);
   border-color: var(--ac);
   color: var(--ac-tx);
 }
@@ -371,9 +371,9 @@
   border-left: 3px solid var(--ac-str);
   border-radius: 8px;
 }
-.theme-console .coverage .cov-detail__tid { color: var(--ac); }
+.theme-console .coverage .cov-detail__tid { color: var(--ac-ink); }
 .theme-console .coverage .cov-detail__status--detected {
-  color: var(--ac);
+  color: var(--ac-ink);
   background: var(--ac-soft);
   border-color: var(--ac-line);
 }
@@ -399,7 +399,7 @@
 }
 .theme-console .stack-coverage .stack-coverage__intro-prose { color: var(--tx2); }
 .theme-console .stack-coverage .stack-coverage__intro-prose strong { color: var(--tx); }
-.theme-console .stack-coverage .stack-coverage__stat-value { color: var(--ac); }
+.theme-console .stack-coverage .stack-coverage__stat-value { color: var(--ac-ink); }
 .theme-console .stack-coverage .stack-coverage__stat-label { color: var(--tx3); }
 
 .theme-console .stack-coverage .stack-coverage__matrix {
@@ -433,7 +433,7 @@
 .theme-console .stack-coverage .stack-coverage__cell--i-low  { background: var(--s3); }
 .theme-console .stack-coverage .stack-coverage__cell--i-mid  { background: var(--ac-soft); }
 .theme-console .stack-coverage .stack-coverage__cell--i-high {
-  background: var(--ac);
+  background: var(--ac-ink);
 }
 .theme-console .stack-coverage .stack-coverage__cell--i-high .stack-coverage__cell-count {
   color: var(--ac-tx);
@@ -454,7 +454,7 @@
   border-left: 3px solid var(--ac-str);
   border-radius: 8px;
 }
-.theme-console .stack-coverage .stack-coverage__panel-eyebrow { color: var(--ac); }
+.theme-console .stack-coverage .stack-coverage__panel-eyebrow { color: var(--ac-ink); }
 
 /* ── 8. Legacy MITRE heatmap (App.jsx light shell) ────────────────────
    Already light-by-default via the cortex-theme.css alias table — no
