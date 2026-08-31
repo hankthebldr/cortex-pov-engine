@@ -28,7 +28,7 @@ import '../destinations/ttps.css'
 import '../destinations/readiness.css'
 import '../destinations/eal.css'
 import { resolveProperty } from '../../test/cssCascade.js'
-import { contrastRatio, aaFloor } from '../../test/contrastRatio.js'
+import { contrastRatio, aaFloor, parseColor } from '../../test/contrastRatio.js'
 
 /** Builds `.theme-console[data-theme?]` > innerHTML, appended to <body>. Returns the shell + a $ query helper. */
 function mountShell(innerHTML, { dark = false } = {}) {
@@ -46,6 +46,60 @@ function cleanupAll() {
 afterEach(cleanupAll)
 
 /**
+ * I1 repair: the EAL title fixture used to hardcode `largeText: true`
+ * with a comment reasoning from the AUTHORED CSS ("800-weight 22px
+ * clears the WCAG bold-large threshold"), not from what actually
+ * rendered. T2 found the shared ".theme-console h1,h2,h3" rule was
+ * winning over that destination's font-size/font-weight, so the real
+ * resolved text was 20px/500 — NOT large text, and this guard was
+ * applying the 3:1 floor to something that needed 4.5:1. Worse: because
+ * that same shared rule wins `color` on every title fixture (by design —
+ * see that rule's comment), every fixture passed for the same one
+ * reason, so a 6th destination would have added no real coverage.
+ * Deriving largeText from the resolved cascade this file already
+ * computes closes both holes at once.
+ */
+function parsePx(value) {
+  const m = String(value ?? '').trim().match(/^(-?[\d.]+)px$/)
+  return m ? parseFloat(m[1]) : null
+}
+
+/** WCAG 1.4.3: large text is >=24px, or >=18.66px (~14pt) at >=700 weight. */
+function isLargeText(el) {
+  const px = parsePx(resolveProperty(el, 'font-size'))
+  if (px == null) return false
+  const rawWeight = resolveProperty(el, 'font-weight')
+  const weight = rawWeight === 'bold' ? 700 : parseInt(rawWeight, 10) || 400
+  return px >= 24 || (px >= 18.66 && weight >= 700)
+}
+
+/**
+ * I1 repair: chip variants (`.chip--detected` etc.) paint their color as
+ * a TRANSLUCENT tint (e.g. `background: var(--c-detected-soft)` =
+ * `rgba(79,209,161,.14)`) over whatever their ancestor's real opaque
+ * background is — that's the "composited chips are worse" case C1
+ * measured at 1.67:1. `contrastRatio.js::parseColor` deliberately
+ * refuses to score a translucent color directly ("cannot score a
+ * translucent color without compositing"), so this composites it by
+ * hand against a real resolved ancestor background first, then hands an
+ * opaque hex to `contrastRatio` — same "resolve the real cascade, then
+ * plain arithmetic" split the rest of this file uses; `parseColor` is
+ * reused here only for the (already-opaque) ancestor color.
+ */
+function compositeOverAncestor(foreground, ancestorBackground) {
+  const m = String(foreground)
+    .trim()
+    .match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/)
+  if (!m) return foreground // already opaque (hex or rgb()) — nothing to composite
+  const alpha = m[4] == null ? 1 : parseFloat(m[4])
+  if (alpha >= 0.99) return foreground
+  const [ar, ag, ab] = parseColor(ancestorBackground)
+  const blend = (fg, bg) => Math.round(fg * alpha + bg * (1 - alpha))
+  const toHex = (n) => n.toString(16).padStart(2, '0')
+  return `#${toHex(blend(parseFloat(m[1]), ar))}${toHex(blend(parseFloat(m[2]), ag))}${toHex(blend(parseFloat(m[3]), ab))}`.toUpperCase()
+}
+
+/**
  * Fixtures mirror real markup pulled directly from the mounting component's
  * JSX, not simplified/renamed — so a class-name or structure drift between
  * the component and this guard would itself surface as "element not found"
@@ -57,7 +111,6 @@ const TITLE_FIXTURES = [
     html: `<h1>Bare Heading</h1>`,
     bgSelector: null, // background comes from .theme-console itself
     titleSelector: 'h1',
-    largeText: true, // --fs-display-lg (32px)
   },
   {
     name: 'UC / TC Index — UcTcIndexView.jsx h1.uctc__pagehead-title',
@@ -70,7 +123,6 @@ const TITLE_FIXTURES = [
     </div>`,
     bgSelector: '.uctc',
     titleSelector: '.uctc__pagehead-title',
-    largeText: true, // 25px
   },
   {
     name: 'TTP Cards — TtpBrowserView.jsx bare h1 inside .ttpb .view-head',
@@ -79,7 +131,6 @@ const TITLE_FIXTURES = [
     </div>`,
     bgSelector: '.ttpb',
     titleSelector: '.ttpb h1',
-    largeText: true, // .theme-console h1 → --fs-display-lg (32px)
   },
   {
     name: 'Readiness — ReadinessView.jsx bare h1 inside .readiness header.view-head',
@@ -88,7 +139,6 @@ const TITLE_FIXTURES = [
     </div>`,
     bgSelector: '.readiness',
     titleSelector: '.readiness h1',
-    largeText: true, // .theme-console h1 → --fs-display-lg (32px)
   },
   {
     name: 'EAL Traffic Simulator — EalConsole.jsx h2.eal-console__title',
@@ -103,7 +153,6 @@ const TITLE_FIXTURES = [
     </section>`,
     bgSelector: '.eal-console',
     titleSelector: '.eal-console__title',
-    largeText: true, // 800-weight 22px clears the WCAG bold-large threshold (14pt/~18.7px bold)
   },
 ]
 
@@ -191,6 +240,62 @@ const TOUR_OVERLAY_FIXTURES = [
   },
 ]
 
+/**
+ * I1 repair — the C1 blast radius this guard was structurally blind to:
+ * 175 `color:` declarations in cortex-console.css alone read the 8
+ * `--c-*` foregrounds (action / action-bright / action-deep / signal /
+ * detected / missed / pending / stitched) C1 found hardcoded to a
+ * single dark-tuned hex with no [data-theme] variant — measuring
+ * 1.57-2.50:1 in light theme as plain text and down to 1.67:1 for
+ * `.chip--detected` composited into its own soft background. Every
+ * fixture above exercises `color: var(--tx)`/`--tx2` or a hardcoded
+ * `--ink`-surface pairing — NONE of them touch `--c-signal`,
+ * `--c-detected`, `--c-missed`, or `--c-pending`, so this guard could
+ * not have caught C1 even at its strictest. These three groups —
+ * detection-state chips (translucent soft background, needs
+ * `compositeOverAncestor`), links (`.theme-console a`, 69 of the 175),
+ * and status values (`.tel-value--*`, opaque, real telemetry markup) —
+ * close that hole.
+ */
+const CHIP_FIXTURES = [
+  {
+    name: 'Detected chip — .chip.chip--detected on a raised card (TtpBrowserView.jsx .ttpb-stat, bg: --s2)',
+    variant: 'detected',
+  },
+  {
+    name: 'Missed chip — .chip.chip--missed on a raised card (TtpBrowserView.jsx .ttpb-stat, bg: --s2)',
+    variant: 'missed',
+  },
+  {
+    name: 'Pending chip — .chip.chip--pending on a raised card (TtpBrowserView.jsx .ttpb-stat, bg: --s2)',
+    variant: 'pending',
+  },
+]
+
+const LINK_FIXTURES = [
+  {
+    name: 'Console link — .theme-console a (color: --c-signal) inside body copy',
+    html: `<p>See <a href="#">the run detail</a> for more.</p>`,
+    bgSelector: null, // page background (walks up to <body>, same convention as the bare-h1 title fixture)
+    textSelector: 'a',
+  },
+]
+
+const STATUS_VALUE_FIXTURES = [
+  {
+    name: 'Telemetry status — .tel-value--signal (TelemetryStrip.jsx) on .telemetry (bg: --c-surface)',
+    variant: 'signal',
+  },
+  {
+    name: 'Telemetry status — .tel-value--detected (TelemetryStrip.jsx) on .telemetry (bg: --c-surface)',
+    variant: 'detected',
+  },
+  {
+    name: 'Telemetry status — .tel-value--pending (TelemetryStrip.jsx) on .telemetry (bg: --c-surface)',
+    variant: 'pending',
+  },
+]
+
 describe.each([
   ['light (default — no [data-theme])', false],
   ['dark ([data-theme="dark"])', true],
@@ -209,11 +314,13 @@ describe.each([
     expect(background, `no resolvable background at ${fixture.name}`).toBeTruthy()
 
     const ratio = contrastRatio(color, background)
-    const floor = aaFloor({ largeText: fixture.largeText })
+    const large = isLargeText(titleEl)
+    const floor = aaFloor({ largeText: large })
     expect(
       ratio,
       `${fixture.name}: title color ${color} on background ${background} measures ${ratio.toFixed(2)}:1, ` +
-        `below the WCAG AA floor of ${floor}:1 for ${fixture.largeText ? 'large' : 'normal'} text`
+        `below the WCAG AA floor of ${floor}:1 for ${large ? 'large' : 'normal'} text ` +
+        `(resolved font-size=${resolveProperty(titleEl, 'font-size')}, font-weight=${resolveProperty(titleEl, 'font-weight')})`
     ).toBeGreaterThanOrEqual(floor)
   })
 
@@ -256,6 +363,84 @@ describe.each([
     expect(
       ratio,
       `${fixture.name}: text color ${color} on background ${background} measures ${ratio.toFixed(2)}:1, ` +
+        `below the WCAG AA floor of ${floor}:1`
+    ).toBeGreaterThanOrEqual(floor)
+  })
+
+  it.each(CHIP_FIXTURES.map((f) => [f.name, f]))('detection-state chip contrast clears AA: %s', (_n, fixture) => {
+    const { $ } = mountShell(
+      `<div class="ttpb-stat"><span class="chip chip--${fixture.variant}">${fixture.variant}</span></div>`,
+      { dark }
+    )
+    const chipEl = $('.chip')
+    const ancestorEl = $('.ttpb-stat')
+    expect(chipEl, `could not find ".chip--${fixture.variant}" in the fixture`).not.toBeNull()
+    expect(ancestorEl, `could not find ".ttpb-stat" in the fixture`).not.toBeNull()
+
+    const color = resolveProperty(chipEl, 'color')
+    const chipBackground = resolveProperty(chipEl, 'background') ?? resolveProperty(chipEl, 'background-color')
+    const ancestorBackground =
+      resolveProperty(ancestorEl, 'background') ?? resolveProperty(ancestorEl, 'background-color')
+    expect(color, `no resolvable color at ${fixture.name}`).toBeTruthy()
+    expect(chipBackground, `no resolvable chip background at ${fixture.name}`).toBeTruthy()
+    expect(ancestorBackground, `no resolvable ancestor background at ${fixture.name}`).toBeTruthy()
+
+    // The chip's own background is a translucent tint of the SAME variant
+    // color as the text — composited against the ancestor's opaque
+    // surface before scoring, per this file's compositeOverAncestor doc.
+    const opaqueBackground = compositeOverAncestor(chipBackground, ancestorBackground)
+    const ratio = contrastRatio(color, opaqueBackground)
+    const floor = aaFloor({ largeText: isLargeText(chipEl) })
+    expect(
+      ratio,
+      `${fixture.name}: chip text ${color} on composited background ${opaqueBackground} ` +
+        `(chip bg ${chipBackground} over ancestor ${ancestorBackground}) measures ${ratio.toFixed(2)}:1, ` +
+        `below the WCAG AA floor of ${floor}:1`
+    ).toBeGreaterThanOrEqual(floor)
+  })
+
+  it.each(LINK_FIXTURES.map((f) => [f.name, f]))('link contrast clears AA: %s', (_n, fixture) => {
+    const { shell, $ } = mountShell(fixture.html, { dark })
+    const linkEl = $(fixture.textSelector)
+    expect(linkEl, `could not find "${fixture.textSelector}" in the fixture`).not.toBeNull()
+
+    const bgEl = fixture.bgSelector ? $(fixture.bgSelector) : shell
+    expect(bgEl, `could not find background element "${fixture.bgSelector}"`).not.toBeNull()
+
+    const color = resolveProperty(linkEl, 'color')
+    const background = resolveProperty(bgEl, 'background') ?? resolveProperty(bgEl, 'background-color')
+    expect(color, `no resolvable color at ${fixture.name}`).toBeTruthy()
+    expect(background, `no resolvable background at ${fixture.name}`).toBeTruthy()
+
+    const ratio = contrastRatio(color, background)
+    const floor = aaFloor({ largeText: isLargeText(linkEl) })
+    expect(
+      ratio,
+      `${fixture.name}: link color ${color} on background ${background} measures ${ratio.toFixed(2)}:1, ` +
+        `below the WCAG AA floor of ${floor}:1`
+    ).toBeGreaterThanOrEqual(floor)
+  })
+
+  it.each(STATUS_VALUE_FIXTURES.map((f) => [f.name, f]))('status value contrast clears AA: %s', (_n, fixture) => {
+    const { $ } = mountShell(
+      `<div class="telemetry"><span class="tel-value mono tel-value--${fixture.variant}">value</span></div>`,
+      { dark }
+    )
+    const valueEl = $(`.tel-value--${fixture.variant}`)
+    const bgEl = $('.telemetry')
+    expect(valueEl, `could not find ".tel-value--${fixture.variant}" in the fixture`).not.toBeNull()
+    expect(bgEl, `could not find ".telemetry" in the fixture`).not.toBeNull()
+
+    const color = resolveProperty(valueEl, 'color')
+    const background = resolveProperty(bgEl, 'background') ?? resolveProperty(bgEl, 'background-color')
+    expect(color, `no resolvable color at ${fixture.name}`).toBeTruthy()
+    expect(background, `no resolvable background at ${fixture.name}`).toBeTruthy()
+
+    const ratio = contrastRatio(color, background)
+    const floor = aaFloor({ largeText: isLargeText(valueEl) })
+    expect(
+      ratio,
+      `${fixture.name}: status value ${color} on background ${background} measures ${ratio.toFixed(2)}:1, ` +
         `below the WCAG AA floor of ${floor}:1`
     ).toBeGreaterThanOrEqual(floor)
   })
