@@ -65,6 +65,7 @@ PLANE_ENGINE = {
     "KOI": "Agentic endpoint / supply chain",
     "AI_SPM": "Cortex AI Security Posture Management",
     "EMAIL": "XSIAM / NG-SIEM (Proofpoint TAP + M365 ingestion)",
+    "DLP": "Enterprise DLP · DSPM · DDR · Endpoint DLP",
 }
 
 BANNER = (

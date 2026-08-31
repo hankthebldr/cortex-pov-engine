@@ -20,7 +20,7 @@ refuses to report them as one number:
 
 | Term | Meaning | Count |
 |---|---|---|
-| **Authored** | A scenario or assertion exists and loads clean | 170 scenarios · 20 assertions |
+| **Authored** | A scenario or assertion exists and loads clean | 177 scenarios · 22 assertions |
 | **Executed** | It has run end-to-end through a beacon or push bundle | partial (see [`docs/reference/`](docs/reference/README.md)) |
 | **Tenant-verified** | It has run against a **live Cortex tenant** and the result was read back | **0** |
 
@@ -34,17 +34,17 @@ and renders the connector ladder as four never-collapsed rungs —
 
 ## Current state — counted, not estimated
 
-All figures below were re-measured on **2026-08-28** by running the real scenario
+All figures below were re-measured on **2026-08-30** by running the real scenario
 loader (`core/engine/scenario_loader.py`) and the real EAL plugin registry against
 this tree. Where any prose in `docs/` disagrees, **re-run the count and the count wins.**
 
 | Surface | Count |
 |---|---|
-| Loadable scenarios | **170** (0 rejected, 0 dangling refs) |
-| Detection planes | **15**, all `status: active` |
-| Scenario steps · step-detections | **654 · 1096** |
-| TTP detection cards | **170** (`detection_scanner/ttps/*.json`) |
-| Assertion artifacts (POS/PLT/AUT) | **20** (13 · 4 · 3) |
+| Loadable scenarios | **177** (0 rejected, 0 dangling refs) |
+| Detection planes | **16**, all `status: active` |
+| Scenario steps · step-detections | **667 · 1116** |
+| TTP detection cards | **175** (`detection_scanner/ttps/*.json`) |
+| Assertion artifacts (POS/PLT/AUT) | **22** (15 · 4 · 3) |
 | EAL simulator plugins | **21** |
 | Tool-adapter packs | **91** (8 payload-shelf-backed · 48 exemption-declared) |
 | AWS IaC modules | **11** |
@@ -62,11 +62,11 @@ make validate && make check-refs && make coverage-strict
 | Type | Scenarios | |
 |---|---:|---|
 | XQL | 160 | `████████████████████` |
-| Correlation | 114 | `██████████████` |
-| BIOC | 105 | `█████████████` |
+| Correlation | 115 | `██████████████` |
+| BIOC | 112 | `█████████████` |
 | ABIOC | 66 | `████████` |
 | IOC | 40 | `█████` |
-| Analytics | 23 | `███` |
+| Analytics | 30 | `████` |
 
 ABIOC = PANW-authored, auto-tuned behavioral ML with a causality chain. XDM modeling
 rules are a normalization **substrate** (`detections.modeling_rules[]`) — surfaced and
@@ -192,7 +192,7 @@ yield a connected `proc:`-sourced chain.
 
 | Plane | Cortex engine | Scenarios |
 |---|---|---:|
-| **CDR** | Cortex Cloud / Prisma Cloud Compute | 26 |
+| **CDR** | Cortex Cloud / Prisma Cloud Compute | 28 |
 | **ANALYTICS** | XSIAM Correlation Engine (multi-plane stitching) | 23 |
 | **EDR** | Cortex XDR Agent | 22 |
 | **ITDR** | Cortex ITDR | 20 |
@@ -207,14 +207,11 @@ yield a connected `proc:`-sourced chain.
 | **AIRS** | Cortex AI Runtime Security | 5 |
 | **CSPM** | Cortex Cloud Posture Management | 5 |
 | **EMAIL** | XSIAM / NG-SIEM (Proofpoint TAP + M365 ingestion) | 5 |
-| | **Total** | **170** |
+| **DLP** | Enterprise DLP · DSPM · DDR · Endpoint DLP | 5 |
+| | **Total** | **177** |
 
 EMAIL is third-party log ingestion + correlation, **not** a first-party PANW product
 surface. Full inventory: [`docs/reference/scenario-catalog.md`](docs/reference/scenario-catalog.md).
-
-> **In development:** a 16th plane (**DLP**) is being authored. It is *not* included in
-> any count above — its 5 scenarios are currently rejected by the loader (`plane` is not
-> yet in the schema enum) and are not committed.
 
 ---
 
@@ -306,7 +303,7 @@ deliberately **not** flag-gated — gating it would gate honesty, not risk. Tier
 opt-in, quota-disciplined (max attempts, exponential backoff, per-sweep query cap,
 circuit breaker), and a spent budget degrades to `pending`, never `fail`.
 
-> **Quantified limit:** only **59 of 170** scenarios declare an MTTD-shaped primary KPI,
+> **Quantified limit:** only **59 of 177** scenarios declare an MTTD-shaped primary KPI,
 > the only KPI the engine measures natively. The rest declare thresholds nothing
 > produces a `measured_value` for, so `score_run` returns `pending` permanently. Wiring
 > the caller did not create these — it made them visible.
@@ -499,12 +496,12 @@ cortex-pov-engine/
 │   ├── connectors/           optional read-back measurement loop
 │   ├── integrations/xsiam/   ~116 read-only operation packs + Tier-2 XQL
 │   ├── eal_simulator/        EAL traffic simulator + 21 plugins
-│   └── planes/               declarative PlaneDescriptor registry (15 planes)
+│   └── planes/               declarative PlaneDescriptor registry (16 planes)
 ├── agent/                  ← Go pull-model beacon (stdlib only, 5-target matrix)
 ├── ui/                     ← React 18 + Vite console
-├── scenarios/              ← 170 scenario YAMLs, per plane
-├── assertions/{pos,plt,aut}← 20 POS/PLT/AUT artifacts
-├── detection_scanner/ttps/ ← 170 TTP detection cards
+├── scenarios/              ← 177 scenario YAMLs, per plane
+├── assertions/{pos,plt,aut}← 22 POS/PLT/AUT artifacts
+├── detection_scanner/ttps/ ← 175 TTP detection cards
 ├── tools/packs/            ← 91 tool-adapter packs
 ├── payloads/               ← digest-pinned payload shelf (generated manifest)
 ├── infra/modules/aws/      ← 11 Terraform modules
@@ -532,7 +529,7 @@ second layer.
 | `agent` | Go `build` + `vet` + `test -race`, **plus cross-compile for linux / darwin / windows** |
 | `ui` | vitest + `vite build` |
 | `detection` | corpus validator **346 pass / 0 warn / 0 fail** + deterministic export regeneration (`sha256sum -c`) |
-| `refs` | `make check-refs` — all 170 scenarios through the real loader under `CORTEXSIM_STRICT_REFS=true` |
+| `refs` | `make check-refs` — all 177 scenarios through the real loader under `CORTEXSIM_STRICT_REFS=true` |
 | `adapters` | tier-2 source trees must exist on disk; de-hand-rolling gate (a scenario naming a tool that HAS an adapter pack must wire it) |
 | `e2e-isolated` | Tier-C isolated-execution assertion suite |
 
@@ -615,7 +612,9 @@ See [`TESTING.md`](TESTING.md) for the tier model.
 
 ---
 
-## Contributing
+## Engineering invariants
+
+These are the rules the gates in [`CONTRIBUTING.md`](CONTRIBUTING.md) enforce.
 
 - **Scenarios are YAML source-of-truth.** The DB stores run history only.
 - **Schema validation is strict.** Invalid files are rejected at startup, not tolerated.

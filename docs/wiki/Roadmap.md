@@ -8,9 +8,9 @@
 
 | Area | State |
 |---|---|
-| Scenario corpus | **170 scenarios · 15 planes**, 0 rejected, 0 dangling refs |
-| TTP detection cards | **170** cards, all `detection_id` slugs resolve |
-| Assertions (POS/PLT/AUT) | **20** artifacts; load-time guard rejects a check that cannot fail |
+| Scenario corpus | **177 scenarios · 16 planes**, 0 rejected, 0 dangling refs |
+| TTP detection cards | **175** cards, all `detection_id` slugs resolve |
+| Assertions (POS/PLT/AUT) | **22** artifacts; load-time guard rejects a check that cannot fail |
 | EAL simulator | **21** plugins; delivery accounted (2xx only) with a 12-code taxonomy |
 | Tool adapters | **91** packs across 5 tiers; every tier-4 pack declares artifact or exemption |
 | Payload shelf | 8 digest-pinned artifacts; compose-time refusal on mismatch; proven live end-to-end |
@@ -21,15 +21,10 @@
 | Measurement loop | Opt-in read-only alert read-back → evidence-backed MTTD |
 | Scoring | Tier 1 offline (ungated) + Tier 2 tenant XQL (opt-in, quota-disciplined) |
 | Preflight | Staged connector preflight with `queries_issued` on every response |
-| IaC generator | AWS feature-complete — **11 modules** covering every active plane |
+| IaC generator | AWS feature-complete — **11 modules** |
+| DLP plane | Shipped 2026-08-30 — 5 scenarios, 5 cards, 2 POS assertions, plane descriptor, loader enum |
 | Console | React SPA incl. Readiness, UC/TC Index, causality graph, live SSE run view |
 | CI | 7-job matrix + a second test workflow; cross-compile gate for linux/darwin/windows |
-
-## In development
-
-| Item | State |
-|---|---|
-| **DLP plane** | 5 scenarios + 5 cards + 2 assertions authored; **loader rejects all 5** (`plane` not in the schema enum). Excluded from every published count. |
 
 ## Open — known and quantified
 
@@ -38,7 +33,7 @@ These are tracked because quantifying a gap is more useful than hiding it.
 | Gap | Detail |
 |---|---|
 | **tenant-verified = 0** | No run and no assertion has executed against a live Cortex tenant. |
-| KPI coverage | Only **59 of 170** scenarios declare an MTTD-shaped primary KPI — the only KPI the engine measures natively. The rest score `pending` permanently. |
+| KPI coverage | Only **59 of 177** scenarios declare an MTTD-shaped primary KPI — the only KPI the engine measures natively. The rest score `pending` permanently. |
 | Index coverage | 94 of 266 index test cases evidenced; 172 open. Only 91 carry a measurable threshold at all. |
 | Windows execution | A correct PE is served, but **no Windows host has executed** the beacon or the PowerShell installer. |
 | Rust tool delivery | `rust-dist/` is baked into the image but there is no `/api/tools/binary/{tool}` route — `docker cp` is the only way out. |

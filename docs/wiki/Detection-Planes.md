@@ -4,7 +4,7 @@ CortexSim organises scenarios by **detection plane** — the Cortex engine that
 should fire on the simulated TTP. Plane is the primary filter in the console's
 scenario browser and the primary axis in the POV report.
 
-**15 planes carry loadable scenarios.** Per-plane counts, tactic coverage,
+**16 planes carry loadable scenarios.** Per-plane counts, tactic coverage,
 detection-type mix and the full scenario list live on the generated plane
 pages — they are rebuilt from the corpus on every merge, so they cannot drift
 from the YAML.
@@ -13,7 +13,7 @@ from the YAML.
 
 | Plane | Cortex engine | Scenarios | Primary driver |
 |---|---|---:|---|
-| [[Plane-CDR\|CDR]] | Cortex Cloud / Prisma Cloud Compute | 26 | container-runtime exec · K8s manifests |
+| [[Plane-CDR\|CDR]] | Cortex Cloud / Prisma Cloud Compute | 28 | container-runtime exec · K8s manifests |
 | [[Plane-ANALYTICS\|ANALYTICS]] | XSIAM Correlation Engine | 23 | multi-plane stitching |
 | [[Plane-EDR\|EDR]] | Cortex XDR Agent | 22 | identity-harness shell · signalbench |
 | [[Plane-ITDR\|ITDR]] | Cortex ITDR | 20 | AD toolchain · `idp_signin_emulator` |
@@ -28,17 +28,11 @@ from the YAML.
 | [[Plane-AIRS\|AIRS]] | Cortex AI Runtime Security | 5 | `cortex-prompt-attacker` · `airs_prompt_attack` |
 | [[Plane-CSPM\|CSPM]] | Cortex Cloud Posture Management | 5 | `cspm` IaC intentional misconfigs |
 | [[Plane-EMAIL\|EMAIL]] | XSIAM / NG-SIEM ingestion | 5 | `email_emitter` |
-| | **Total** | **170** | |
+| [[Plane-DLP\|DLP]] | Enterprise DLP · DSPM · DDR · Endpoint DLP | 5 | endpoint + cloud data-movement TTPs |
+| | **Total** | **177** | |
 
 `EMAIL` is third-party log ingestion plus correlation — **not** a first-party
 PANW product surface.
-
-## In development
-
-**DLP** would be the 16th plane. Five scenarios are authored but the loader
-rejects all five (`plane` is not yet in the schema enum), so they are excluded
-from every count on this wiki and no pages are generated for them. A scenario
-the engine will not load is a claim the engine cannot back.
 
 ## How signal reaches a plane
 
@@ -65,7 +59,9 @@ conventions, expected detection types and UC prefix. Browse them from the
 ## Adding a new plane
 
 1. Add the enum value in `core/engine/scenario_loader.py` (the `plane`
-   validator) — this is the gate the DLP work is currently sitting behind.
+   validator). Until it is there the loader rejects every scenario on the new
+   plane, and they are correctly excluded from all counts — DLP sat behind this
+   gate until 2026-08-30.
 2. Add a `PlaneDescriptor` module under `core/planes/` and register it.
 3. Document it in `scenarios/_schema.yml`.
 4. Create `scenarios/<plane>/README.md` with the conventions.

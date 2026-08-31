@@ -19,7 +19,7 @@ substrate and cross-plane stitching.
 
 | Term | Meaning | Count |
 |---|---|---|
-| **Authored** | Exists and loads clean under strict validation | 170 scenarios · 20 assertions |
+| **Authored** | Exists and loads clean under strict validation | 177 scenarios · 22 assertions |
 | **Executed** | Has run end-to-end through a beacon or push bundle | partial |
 | **Tenant-verified** | Has run against a **live Cortex tenant**, alert read back | **0** |
 
@@ -30,16 +30,16 @@ four never-collapsed rungs: **AUTHORED · CONFIGURED · REACHABLE · VERIFIED**.
 
 ## Current state — counted, not estimated
 
-Measured **2026-08-28** by running the real scenario loader and the real EAL
+Measured **2026-08-30** by running the real scenario loader and the real EAL
 plugin registry over the tree. Where any prose disagrees, re-run the count and
 the count wins.
 
 | Surface | Count |
 |---|---|
-| Loadable scenarios | **170** across **15 planes** |
-| Steps · step-detections | **654 · 1096** |
-| TTP detection cards | **170** |
-| Assertion artifacts (POS/PLT/AUT) | **20** (13 · 4 · 3) |
+| Loadable scenarios | **177** across **16 planes** |
+| Steps · step-detections | **667 · 1116** |
+| TTP detection cards | **175** |
+| Assertion artifacts (POS/PLT/AUT) | **22** (15 · 4 · 3) |
 | EAL simulator plugins | **21** |
 | Tool-adapter packs | **91** (8 shelf-backed · 48 exemption-declared) |
 | AWS IaC modules | **11** |
@@ -52,7 +52,7 @@ make validate && make check-refs && make coverage-strict
 
 ## The catalog
 
-- **[[Scenario Index]]** — all 170 scenarios, every plane, one table
+- **[[Scenario Index]]** — all 177 scenarios, every plane, one table
 - **[[ATT-CK-Coverage]]** — tactic → technique → scenario matrix
 - **[[Detection Planes]]** — how planes work, and the per-plane pages
 
@@ -80,12 +80,12 @@ core/                  ← SimCore FastAPI app — 133 routes
   connectors/            optional read-back measurement loop
   integrations/xsiam/    ~116 read-only operation packs + Tier-2 XQL
   eal_simulator/         EAL traffic simulator + 21 plugins
-  planes/                declarative PlaneDescriptor registry (15 planes)
+  planes/                declarative PlaneDescriptor registry (16 planes)
 agent/                 ← Go pull-model beacon (5-target build matrix)
 ui/                    ← React 18 + Vite console
-scenarios/             ← 170 scenario YAMLs, per plane
-assertions/            ← 20 POS/PLT/AUT artifacts
-detection_scanner/ttps ← 170 TTP detection cards
+scenarios/             ← 177 scenario YAMLs, per plane
+assertions/            ← 22 POS/PLT/AUT artifacts
+detection_scanner/ttps ← 175 TTP detection cards
 tools/packs/           ← 91 tool-adapter packs
 payloads/              ← digest-pinned payload shelf
 infra/modules/aws/     ← 11 Terraform modules

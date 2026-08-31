@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>CortexSim — Detection Simulation Engine</title>
-<meta name="description" content="Briefing memo: CortexSim drives controlled, high-fidelity signal into Cortex XSIAM/XDR. 170 UC/TC-aligned scenarios across 15 detection planes." />
+<meta name="description" content="Briefing memo: CortexSim drives controlled, high-fidelity signal into Cortex XSIAM/XDR. 177 UC/TC-aligned scenarios across 16 detection planes." />
 <meta name="theme-color" content="#0a0e0b" />
 <meta property="og:title" content="CortexSim — Detection Simulation Engine" />
-<meta property="og:description" content="170 scenarios across 15 Cortex detection planes. Controlled signal generation for XSIAM/XDR detection validation." />
+<meta property="og:description" content="177 scenarios across 16 Cortex detection planes. Controlled signal generation for XSIAM/XDR detection validation." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -232,7 +232,7 @@ footer a{border-bottom:none}
     <dl class="meta">
       <div><dt>For</dt><dd>Cortex Domain Consultants</dd></div>
       <div><dt>From</dt><dd>Henry Reed</dd></div>
-      <div><dt>Counts measured</dt><dd>2026-08-28</dd></div>
+      <div><dt>Counts measured</dt><dd>2026-08-30</dd></div>
       <div><dt>Source</dt><dd><a href="https://github.com/__GH_OWNER__/__GH_REPO__">__GH_OWNER__/__GH_REPO__</a></dd></div>
     </dl>
   </header>
@@ -242,7 +242,7 @@ footer a{border-bottom:none}
     <p>
       CortexSim drives controlled, high-fidelity signal into a customer's XSIAM or
       XDR tenant so a DC can prove detection logic against the same UC/TC the
-      customer is buying — <strong>170 scenarios across 15 detection planes</strong>,
+      customer is buying — <strong>177 scenarios across 16 detection planes</strong>,
       every one a validated foreign key into the FY27 v2.2 index rather than a
       generic atomic test.
     </p>
@@ -285,8 +285,8 @@ footer a{border-bottom:none}
           <!-- corpus -->
           <rect x="1" y="76" width="118" height="66" fill="var(--surface)" stroke="var(--hairline)"/>
           <text x="60" y="101" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="700">CORPUS</text>
-          <text x="60" y="117" text-anchor="middle" fill="var(--ink-muted)">170 scenarios</text>
-          <text x="60" y="130" text-anchor="middle" fill="var(--ink-muted)">170 TTP cards</text>
+          <text x="60" y="117" text-anchor="middle" fill="var(--ink-muted)">177 scenarios</text>
+          <text x="60" y="130" text-anchor="middle" fill="var(--ink-muted)">175 TTP cards</text>
 
           <line x1="119" y1="109" x2="163" y2="109" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
 
@@ -354,128 +354,125 @@ footer a{border-bottom:none}
   <section class="sec">
     <div class="sechead"><span class="sechead__i">02</span><h2>What the corpus covers</h2></div>
     <p class="lede">
-      170 scenarios decompose into 654 executable steps carrying 1096 expected
+      177 scenarios decompose into 667 executable steps carrying 1116 expected
       detections across 14 MITRE ATT&amp;CK tactics.
     </p>
     <p>
       Counts are re-measured by running the engine's own loader over the tree, not
-      estimated from file counts. The two differ: the tree holds 175 scenario YAMLs
-      and the loader accepts 170 — the DLP plane is authored but rejected, and a
-      count that reported 175 would be the exact false-green the loader exists to
-      catch.
+      estimated from file counts — the two are not the same question. A file count
+      reports what was authored; the loader reports what the engine will actually
+      accept under strict validation. They agree today at 177 with zero rejected,
+      but only because the corpus is clean, and the moment they diverge it is the
+      loader that is telling the truth.
     </p>
 
     <figure>
-      <svg viewBox="0 0 720 372" role="img" aria-label="Horizontal bar chart of scenario counts for each of the fifteen active detection planes plus the in-development DLP plane.">
+      <svg viewBox="0 0 720 372" role="img" aria-label="Horizontal bar chart of scenario counts for each of the sixteen active detection planes.">
         <g font-family="var(--font-mono)" font-size="10.5">
-          <!-- rows: label, engine, count, y -->
-          <!-- scale: 26 scenarios = 380px -->
-
           <g>
             <text x="0" y="16" fill="var(--ink)" font-weight="700">CDR</text>
             <text x="112" y="16" fill="var(--ink-muted)" font-size="9.5">Cortex Cloud · Prisma Compute</text>
             <rect x="300" y="6" width="355" height="12" fill="var(--cortex-green)"/>
-            <text x="692" y="16" fill="var(--ink)" text-anchor="end" font-weight="700">26</text>
+            <text x="692" y="16" fill="var(--ink)" text-anchor="end" font-weight="700">28</text>
           </g>
           <g>
             <text x="0" y="38" fill="var(--ink)" font-weight="700">ANALYTICS</text>
             <text x="112" y="38" fill="var(--ink-muted)" font-size="9.5">XSIAM Correlation Engine</text>
-            <rect x="300" y="28" width="314" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="28" width="292" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="38" fill="var(--ink)" text-anchor="end" font-weight="700">23</text>
           </g>
           <g>
             <text x="0" y="60" fill="var(--ink)" font-weight="700">EDR</text>
             <text x="112" y="60" fill="var(--ink-muted)" font-size="9.5">Cortex XDR Agent</text>
-            <rect x="300" y="50" width="300" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="50" width="279" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="60" fill="var(--ink)" text-anchor="end" font-weight="700">22</text>
           </g>
           <g>
             <text x="0" y="82" fill="var(--ink)" font-weight="700">ITDR</text>
             <text x="112" y="82" fill="var(--ink-muted)" font-size="9.5">Cortex ITDR</text>
-            <rect x="300" y="72" width="273" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="72" width="254" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="82" fill="var(--ink)" text-anchor="end" font-weight="700">20</text>
           </g>
           <g>
             <text x="0" y="104" fill="var(--ink)" font-weight="700">NDR</text>
             <text x="112" y="104" fill="var(--ink-muted)" font-size="9.5">Network Security · FW Analytics</text>
-            <rect x="300" y="94" width="164" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="94" width="152" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="104" fill="var(--ink)" text-anchor="end" font-weight="700">12</text>
           </g>
           <g>
             <text x="0" y="126" fill="var(--ink)" font-weight="700">CLOUD_APP</text>
             <text x="112" y="126" fill="var(--ink-muted)" font-size="9.5">Cortex Cloud App Security</text>
-            <rect x="300" y="116" width="137" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="116" width="127" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="126" fill="var(--ink)" text-anchor="end" font-weight="700">10</text>
           </g>
           <g>
             <text x="0" y="148" fill="var(--ink)" font-weight="700">TIM</text>
             <text x="112" y="148" fill="var(--ink-muted)" font-size="9.5">Threat Intel Management</text>
-            <rect x="300" y="138" width="123" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="138" width="114" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="148" fill="var(--ink)" text-anchor="end" font-weight="700">9</text>
           </g>
           <g>
             <text x="0" y="170" fill="var(--ink)" font-weight="700">KOI</text>
             <text x="112" y="170" fill="var(--ink-muted)" font-size="9.5">Agentic endpoint · supply chain</text>
-            <rect x="300" y="160" width="109" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="160" width="101" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="170" fill="var(--ink)" text-anchor="end" font-weight="700">8</text>
           </g>
           <g>
             <text x="0" y="192" fill="var(--ink)" font-weight="700">AI_SPM</text>
             <text x="112" y="192" fill="var(--ink-muted)" font-size="9.5">AI Security Posture Mgmt</text>
-            <rect x="300" y="182" width="96" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="182" width="89" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="192" fill="var(--ink)" text-anchor="end" font-weight="700">7</text>
           </g>
           <g>
             <text x="0" y="214" fill="var(--ink)" font-weight="700">AI_ACCESS</text>
             <text x="112" y="214" fill="var(--ink-muted)" font-size="9.5">Cortex AI Access Security</text>
-            <rect x="300" y="204" width="82" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="204" width="76" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="214" fill="var(--ink)" text-anchor="end" font-weight="700">6</text>
           </g>
           <g>
             <text x="0" y="236" fill="var(--ink)" font-weight="700">ASM</text>
             <text x="112" y="236" fill="var(--ink-muted)" font-size="9.5">Attack Surface Management</text>
-            <rect x="300" y="226" width="82" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="226" width="76" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="236" fill="var(--ink)" text-anchor="end" font-weight="700">6</text>
           </g>
           <g>
             <text x="0" y="258" fill="var(--ink)" font-weight="700">BROWSER</text>
             <text x="112" y="258" fill="var(--ink-muted)" font-size="9.5">Prisma Browser</text>
-            <rect x="300" y="248" width="82" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="248" width="76" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="258" fill="var(--ink)" text-anchor="end" font-weight="700">6</text>
           </g>
           <g>
             <text x="0" y="280" fill="var(--ink)" font-weight="700">AIRS</text>
             <text x="112" y="280" fill="var(--ink-muted)" font-size="9.5">Cortex AI Runtime Security</text>
-            <rect x="300" y="270" width="68" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="270" width="63" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="280" fill="var(--ink)" text-anchor="end" font-weight="700">5</text>
           </g>
           <g>
             <text x="0" y="302" fill="var(--ink)" font-weight="700">CSPM</text>
             <text x="112" y="302" fill="var(--ink-muted)" font-size="9.5">Cloud Posture Management</text>
-            <rect x="300" y="292" width="68" height="12" fill="var(--cortex-green)"/>
+            <rect x="300" y="292" width="63" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="302" fill="var(--ink)" text-anchor="end" font-weight="700">5</text>
           </g>
           <g>
-            <text x="0" y="324" fill="var(--ink)" font-weight="700">EMAIL</text>
-            <text x="112" y="324" fill="var(--ink-muted)" font-size="9.5">XSIAM / NG-SIEM ingestion</text>
-            <rect x="300" y="314" width="68" height="12" fill="var(--cortex-green)"/>
+            <text x="0" y="324" fill="var(--ink)" font-weight="700">DLP</text>
+            <text x="112" y="324" fill="var(--ink-muted)" font-size="9.5">Enterprise DLP · DSPM · DDR</text>
+            <rect x="300" y="314" width="63" height="12" fill="var(--cortex-green)"/>
             <text x="692" y="324" fill="var(--ink)" text-anchor="end" font-weight="700">5</text>
           </g>
-
-          <line x1="0" y1="338" x2="720" y2="338" stroke="var(--hairline)"/>
-
-          <g opacity="0.55">
-            <text x="0" y="358" fill="var(--ink-muted)" font-weight="700">DLP</text>
-            <text x="112" y="358" fill="var(--ink-muted)" font-size="9.5">In development — loader rejects</text>
-            <rect x="300" y="348" width="68" height="12" fill="none" stroke="var(--ink-muted)" stroke-dasharray="3 3"/>
-            <text x="692" y="358" fill="var(--ink-muted)" text-anchor="end" font-weight="700">0</text>
+          <g>
+            <text x="0" y="346" fill="var(--ink)" font-weight="700">EMAIL</text>
+            <text x="112" y="346" fill="var(--ink-muted)" font-size="9.5">XSIAM / NG-SIEM ingestion</text>
+            <rect x="300" y="336" width="63" height="12" fill="var(--cortex-green)"/>
+            <text x="692" y="346" fill="var(--ink)" text-anchor="end" font-weight="700">5</text>
           </g>
+          <line x1="0" y1="368" x2="720" y2="368" stroke="var(--hairline)"/>
         </g>
       </svg>
       <figcaption>
-        <b>Figure 2 — Plane coverage.</b> Fifteen planes carry loadable scenarios.
-        DLP is drawn hollow: five scenarios are authored, the loader rejects all
-        five, and they are excluded from every count on this page.
+        <b>Figure 2 — Plane coverage.</b> Sixteen planes carry loadable scenarios,
+        every one parsed clean under strict validation. DLP is the newest — Enterprise
+        DLP, DSPM, DDR and Endpoint DLP — and lands with five scenarios and its own
+        plane descriptor.
       </figcaption>
     </figure>
 
@@ -485,11 +482,11 @@ footer a{border-bottom:none}
         <thead><tr><th>Type</th><th>What it is</th><th class="n">Scenarios</th></tr></thead>
         <tbody>
           <tr><td class="mono">XQL</td><td>Query-defined detection</td><td class="n">160</td></tr>
-          <tr><td class="mono">Correlation</td><td>Multi-source stitched rule</td><td class="n">114</td></tr>
-          <tr><td class="mono">BIOC</td><td>Behavioral IOC</td><td class="n">105</td></tr>
+          <tr><td class="mono">Correlation</td><td>Multi-source stitched rule</td><td class="n">115</td></tr>
+          <tr><td class="mono">BIOC</td><td>Behavioral IOC</td><td class="n">112</td></tr>
           <tr><td class="mono">ABIOC</td><td>PANW-authored, auto-tuned behavioral ML</td><td class="n">66</td></tr>
           <tr><td class="mono">IOC</td><td>Atomic indicator</td><td class="n">40</td></tr>
-          <tr><td class="mono">Analytics</td><td>Baseline-deviation analytic</td><td class="n">23</td></tr>
+          <tr><td class="mono">Analytics</td><td>Baseline-deviation analytic</td><td class="n">30</td></tr>
         </tbody>
       </table>
     </div>
@@ -515,8 +512,8 @@ footer a{border-bottom:none}
       <table>
         <thead><tr><th>Artifact</th><th>Asks</th><th class="n">Count</th></tr></thead>
         <tbody>
-          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">170</td></tr>
-          <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">13</td></tr>
+          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">177</td></tr>
+          <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">15</td></tr>
           <tr><td class="mono">PLT</td><td>Is a capability present?</td><td class="n">4</td></tr>
           <tr><td class="mono">AUT</td><td>Does an outcome hit its budget?</td><td class="n">3</td></tr>
         </tbody>
@@ -550,7 +547,7 @@ footer a{border-bottom:none}
           <text x="18" y="28" fill="var(--ink)" font-size="12" font-weight="700" letter-spacing=".08em">AUTHORED</text>
           <text x="18" y="45" fill="var(--ink-muted)">exists · loads clean under strict validation</text>
           <text x="470" y="28" fill="var(--ink-muted)" font-size="9.5">does not prove it ever executed</text>
-          <text x="702" y="40" fill="var(--cortex-green-text)" text-anchor="end" font-size="22" font-weight="700">190</text>
+          <text x="702" y="40" fill="var(--cortex-green-text)" text-anchor="end" font-size="22" font-weight="700">199</text>
 
           <!-- rung 2 -->
           <rect x="0" y="64" width="720" height="52" fill="var(--surface)" stroke="var(--hairline)"/>
@@ -576,7 +573,7 @@ footer a{border-bottom:none}
         </g>
       </svg>
       <figcaption>
-        <b>Figure 3 — The evidence ladder.</b> 170 scenarios plus 20 assertions are
+        <b>Figure 3 — The evidence ladder.</b> 177 scenarios plus 22 assertions are
         authored. Zero have executed against a live Cortex tenant. Every preflight
         response carries <code>queries_issued</code> for exactly this reason — so a
         run against a mock transport cannot later be quoted as tenant proof.
