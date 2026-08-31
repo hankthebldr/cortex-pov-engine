@@ -105,7 +105,10 @@ export default function RunDetailView({
       <div className="view-head run-detail__head">
         <div className="run-detail__head-main">
           <div className="run-detail__accent-bar" aria-hidden="true" />
-          <div className="run-detail__eyebrow">Runs &amp; Proof</div>
+          {/* Masthead eyebrow: the nav group alone ("Operate", per this
+              destination's registry entry), matching every other redesigned
+              destination — not the destination's own name (M-4). */}
+          <div className="run-detail__eyebrow">Operate</div>
           <h1 className={scenarioName ? undefined : 'mono'}>
             {scenarioName || descriptor.scenarioId || runId}
           </h1>

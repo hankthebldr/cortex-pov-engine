@@ -446,7 +446,9 @@ export default function UcTcIndexView({
     <div className="adapter-registry uctc" data-testid="uctc-index">
       <div className="uctc__pagehead">
         <div className="uctc__pagehead-bar" aria-hidden="true" />
-        <div className="uctc__pagehead-eyebrow mono">Analyze · UC / TC Index</div>
+        {/* Masthead eyebrow: the nav group alone, matching every other
+            redesigned destination (M-4) — not group+destination-name. */}
+        <div className="uctc__pagehead-eyebrow mono">Analyze</div>
         <h1 className="uctc__pagehead-title">UC / TC Index</h1>
       </div>
       <div className="adapter-registry__intro">

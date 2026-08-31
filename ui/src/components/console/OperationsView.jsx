@@ -222,7 +222,10 @@ export default function OperationsView({
       <div className="view-head">
         <div>
           <div className="ops-accent-bar" aria-hidden="true" />
-          <div className="ops-eyebrow">Operate · Phase 2</div>
+          {/* Masthead eyebrow: the nav group alone, no "· Phase N" — this
+              product has no app-level phase stepper to echo (M-4; mirrors
+              CoverageView's CoverageKicker, the reference for this pattern). */}
+          <div className="ops-eyebrow">Operate</div>
           <h1>Library</h1>
           <div className="view-head__meta">
             Plane: <strong>{headMeta.planeLabel}</strong>
