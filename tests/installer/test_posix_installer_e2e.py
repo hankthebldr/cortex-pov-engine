@@ -200,16 +200,46 @@ def test_install_succeeds_with_no_go_toolchain_on_the_target(simcore, sandbox):
     assert attempts[0]["os"] == expected_os
 
 
-def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox):
+def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox, tmp_path):
     """python:slim has no systemd — the installer must still leave the beacon
     running detached rather than dying with the shell, and must SAY it is
-    unsupervised instead of implying a service was installed."""
-    token = _post(f"{simcore}/api/agents/enroll/tokens", {})["token"]
-    script = _fetch(f"{simcore}/api/agents/install?token={token}")  # service is the default
+    unsupervised instead of implying a service was installed.
 
-    p = _run_installer(script, sandbox)
+    Uses a STAGED stub that actually loops and re-polls /tasks (unlike the
+    plain echo-and-exit stub the download path serves elsewhere) because the
+    installer now verifies a real check-in before declaring success (see
+    test_installer_fails_when_agent_never_checks_in) — a one-shot stub would
+    correctly be reported as AGENT_NEVER_CHECKED_IN, which is not what this
+    test is about."""
+    staged = tmp_path / "polling-agent"
+    staged.write_text(
+        "#!/bin/sh\n"
+        "echo \"beacon-started $*\"\n"
+        "SERVER=\"\"; ID=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  case \"$1\" in\n"
+        "    --server) SERVER=\"$2\"; shift 2 ;;\n"
+        "    --id) ID=\"$2\"; shift 2 ;;\n"
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n"
+        "i=0\n"
+        "while [ \"$i\" -lt 60 ]; do\n"
+        "  curl -sS -m 5 \"$SERVER/api/agents/$ID/tasks\" >/dev/null 2>&1 || true\n"
+        "  sleep 1\n"
+        "  i=$((i + 1))\n"
+        "done\n"
+    )
+    staged.chmod(0o755)
+    sandbox["env"]["CORTEXSIM_BIN"] = str(staged)
+
+    token = _post(f"{simcore}/api/agents/enroll/tokens", {})["token"]
+    script = _fetch(f"{simcore}/api/agents/install?token={token}&interval=2")  # service is the default
+
+    p = _run_installer(script, sandbox, timeout=30)
     assert p.returncode == 0, f"stdout:\n{p.stdout}\nstderr:\n{p.stderr}"
     assert "uninstall:" in p.stdout
+    assert "is live and polling SimCore" in p.stdout
 
     if os.uname().sysname.lower() == "darwin":
         assert "installed launchd job:" in p.stdout
@@ -218,7 +248,12 @@ def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox):
         assert "unsupervised" in p.stdout
 
         attempts = json.loads(_fetch(f"{simcore}/api/agents/install/attempts"))["attempts"]
-        assert attempts[0]["code"] == "DEGRADED_NO_SUPERVISOR"
+        # DEGRADED_NO_SUPERVISOR is still reported when the nohup fallback
+        # fires; OK is reported LAST, once — and only once — the check-in
+        # verification confirms the detached beacon is actually polling.
+        codes = [a["code"] for a in attempts]
+        assert codes[0] == "OK"
+        assert "DEGRADED_NO_SUPERVISOR" in codes
 
 
 def test_pre_staged_binary_needs_no_network_fetch(simcore, sandbox, tmp_path):
@@ -344,3 +379,72 @@ def test_checksum_mismatch_aborts_before_the_binary_is_installed(simcore, sandbo
     assert "TAMPERED" not in p.stdout                  # it was never executed
     assert not sandbox["bin"].exists()                 # nor installed
     assert any(r["code"] == "CHECKSUM_MISMATCH" for r in _TamperingHandler.reports)
+
+
+# ---------------------------------------------------------------------------
+# The MVP blocker: a beacon that never checks in must never print "done".
+#
+# There was NO test asserting this before — the whole reason the re-install
+# defect (a stale unit surviving under an old --id while the newly-printed
+# id never polls) shipped and went unnoticed. Both tests below fail RED
+# against the pre-fix installer: the phantom-agent case used to print "done"
+# unconditionally, and the reinstall case never issued a `systemctl restart`.
+# ---------------------------------------------------------------------------
+
+
+def test_installer_fails_when_agent_never_checks_in(simcore, sandbox):
+    """Self-asserted id, no token → no enrollment, and the stock stub binary
+    (dist_dir's plain `echo beacon-started; exit`) never calls back to
+    SimCore at all. This is the phantom-agent condition from the MVP
+    blocker report in miniature: an id the console will never see check in.
+    The installer must fail loudly instead of printing 'done'."""
+    script = _fetch(f"{simcore}/api/agents/install?id=phantom-agent&mode=service&interval=1")
+    p = _run_installer(script, sandbox, timeout=30)
+
+    assert p.returncode != 0, f"stdout:\n{p.stdout}\nstderr:\n{p.stderr}"
+    assert "code=AGENT_NEVER_CHECKED_IN" in p.stderr
+    assert "done —" not in p.stdout   # the old unconditional success line
+
+    attempts = json.loads(_fetch(f"{simcore}/api/agents/install/attempts"))["attempts"]
+    assert attempts[0]["code"] == "AGENT_NEVER_CHECKED_IN"
+    assert attempts[0]["stage"] == "verify"
+
+
+def test_reinstall_restarts_the_stale_unit_so_the_new_id_takes_over(simcore, sandbox, tmp_path):
+    """The exact MVP blocker, reproduced mechanically: `systemctl enable --now`
+    is a no-op on an already-active unit of the same name, so a re-install
+    used to rewrite the unit file's --id on disk while the OLD process (OLD
+    --id) kept running, never restarted. A fake `systemctl` on PATH makes
+    this deterministic without a real systemd — it always succeeds and logs
+    every call, so 'was restart ever called' is a plain grep instead of a
+    race against a real service manager.
+
+    Runs INSIDE this test's own docker/CI sandbox only: the fake systemctl
+    shadows any real one via PATH, and the unit file it "writes" (root branch
+    of cs_install_systemd, since these tests run as root in the CI image)
+    lives at /etc/systemd/system/cortexsim-agent.service — inside the
+    ephemeral container, never the host."""
+    fakebin = sandbox["env"]["PATH"].split(os.pathsep)[0]
+    syslog = tmp_path / "systemctl.log"
+    with open(os.path.join(fakebin, "systemctl"), "w") as f:
+        f.write(f"#!/bin/sh\necho \"$*\" >> {syslog}\nexit 0\n")
+    os.chmod(os.path.join(fakebin, "systemctl"), 0o755)
+
+    # First install: no unit file exists yet — enable --now only, no restart.
+    tok1 = _post(f"{simcore}/api/agents/enroll/tokens", {})["token"]
+    script1 = _fetch(f"{simcore}/api/agents/install?token={tok1}&interval=1")
+    p1 = _run_installer(script1, sandbox, timeout=30)
+    assert "installed system unit:" in p1.stdout, f"stdout:\n{p1.stdout}\nstderr:\n{p1.stderr}"
+    log_after_first = syslog.read_text()
+    assert "enable --now cortexsim-agent" in log_after_first
+    assert "restart cortexsim-agent" not in log_after_first
+    assert "unit already existed" not in p1.stdout
+
+    # Second install (re-install): the unit file from the first run is still
+    # on disk, so this run must detect it and force a restart.
+    tok2 = _post(f"{simcore}/api/agents/enroll/tokens", {})["token"]
+    script2 = _fetch(f"{simcore}/api/agents/install?token={tok2}&interval=1")
+    p2 = _run_installer(script2, sandbox, timeout=30)
+    assert "installed system unit:" in p2.stdout, f"stdout:\n{p2.stdout}\nstderr:\n{p2.stderr}"
+    assert "unit already existed — restarting" in p2.stdout
+    assert "restart cortexsim-agent" in syslog.read_text()

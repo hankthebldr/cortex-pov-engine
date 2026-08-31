@@ -610,6 +610,15 @@ RestartSec=10
 "
   if [ "$(id -u)" = "0" ]; then
     UNIT="/etc/systemd/system/$SVC.service"
+    # `enable --now` is a no-op on an already-active unit of the SAME name: it
+    # rewrites the file on disk but never signals the running process, which
+    # keeps whatever --id it was launched with. A re-install (the FIRST thing
+    # a stranger does when unsure the first install worked) silently prints
+    # success while the OLD process — with the OLD --id — keeps polling, and
+    # the NEW --id never checks in. Detect that case before overwriting the
+    # unit file and force a restart so the rewritten ExecStart actually takes.
+    UNIT_PREEXISTED=0
+    [ -f "$UNIT" ] && UNIT_PREEXISTED=1
     printf '%s\n[Install]\nWantedBy=multi-user.target\n' "$UNIT_BODY" > "$UNIT"
     systemctl daemon-reload
     if ! systemctl enable --now "$SVC" >/dev/null 2>&1; then
@@ -624,6 +633,11 @@ RestartSec=10
       cs_report install SERVICE_START_FAILED "systemctl enable --now $SVC failed; degrading to nohup"
       return 1
     fi
+    if [ "$UNIT_PREEXISTED" = "1" ]; then
+      cs_say "  unit already existed — restarting so the new --id $AGENT_ID takes over"
+      systemctl restart "$SVC" >/dev/null 2>&1 \
+        || cs_say "WARN: systemctl restart $SVC failed — a stale process on the old --id may still be running"
+    fi
     cs_say "installed system unit: $UNIT"
     cs_say "  status: systemctl status $SVC"
     cs_say "  logs  : journalctl -u $SVC -f"
@@ -634,9 +648,17 @@ RestartSec=10
   systemctl --user show-environment >/dev/null 2>&1 || return 1
   mkdir -p "$HOME/.config/systemd/user"
   UNIT="$HOME/.config/systemd/user/$SVC.service"
+  # Same no-op-on-reinstall trap as the root arm above.
+  UNIT_PREEXISTED=0
+  [ -f "$UNIT" ] && UNIT_PREEXISTED=1
   printf '%s\n[Install]\nWantedBy=default.target\n' "$UNIT_BODY" > "$UNIT"
   systemctl --user daemon-reload
   systemctl --user enable --now "$SVC" >/dev/null 2>&1 || return 1
+  if [ "$UNIT_PREEXISTED" = "1" ]; then
+    cs_say "  unit already existed — restarting so the new --id $AGENT_ID takes over"
+    systemctl --user restart "$SVC" >/dev/null 2>&1 \
+      || cs_say "WARN: systemctl --user restart $SVC failed — a stale process on the old --id may still be running"
+  fi
   cs_say "installed USER unit: $UNIT"
   cs_say "  NOTE: running as $(id -un), not root — identity-harness steps that need"
   cs_say "        'runuser -l www-data' will fail. Re-run as root for full fidelity."
@@ -707,10 +729,68 @@ case "$OS_ID" in
 esac
 if [ "$SUPERVISED" = "0" ]; then cs_install_nohup; fi
 
-if [ "$SUPERVISED" = "1" ]; then cs_report install OK "supervised on $OS_ID/$ARCH_ID"; fi
+# ── stage: verify ────────────────────────────────────────────────────────
+# Every earlier stage exits with a stable code that is both printed and
+# POSTed to telemetry — this stage used to be the one exception. "done"
+# printed unconditionally, whether or not '$AGENT_ID' ever polled SimCore.
+# That is this product's own defining failure mode (something that did not
+# happen presenting as success) wearing the installer's coat: on a
+# re-install, `enable --now` can rewrite the unit file without ever
+# restarting the OLD process, which keeps running under its OLD --id while
+# the NEW id — the one just printed — never checks in.
+#
+# Existence of an /api/agents row is NOT proof of a live beacon: enrollment
+# itself stamps last_seen the moment the token is redeemed, before the
+# binary has even been launched, so a beacon that dies on the spot still
+# shows up with a "recent" last_seen if you only check once. The only real
+# proof is that last_seen ADVANCES past that enrollment stamp — i.e. the
+# beacon polled SimCore again, on its own, after we started watching.
+cs_last_seen() {  # -> last_seen ISO string for $AGENT_ID, or empty if not found
+  curl -sS -m 10 "$SERVER/api/agents" 2>/dev/null \
+    | grep -o "\"agent_id\":\"$AGENT_ID\"[^}]*\"last_seen\":\"[^\"]*\"" \
+    | sed -n 's/.*"last_seen":"\([^"]*\)".*/\1/p' || true
+}
+
+WAIT_TOTAL=$(( INTERVAL * 3 ))
+[ "$WAIT_TOTAL" -lt 6 ] && WAIT_TOTAL=6
+POLL_STEP=$INTERVAL
+[ "$POLL_STEP" -lt 1 ] && POLL_STEP=1
+[ "$POLL_STEP" -gt 5 ] && POLL_STEP=5
 cs_say ""
-cs_say "done — '$AGENT_ID' should appear in the SimCore console within ${INTERVAL}s"
-cs_say "uninstall: curl -fsSL '$SERVER/api/agents/install?uninstall=1' | bash"
+cs_say "verifying '$AGENT_ID' checks in (up to ${WAIT_TOTAL}s)..."
+BASELINE_SEEN="$(cs_last_seen)"
+CHECKED_IN=0
+WAITED=0
+while [ "$WAITED" -lt "$WAIT_TOTAL" ]; do
+  sleep "$POLL_STEP"
+  WAITED=$(( WAITED + POLL_STEP ))
+  SEEN="$(cs_last_seen)"
+  # ISO-8601 timestamps sort lexicographically in step with time, so a plain
+  # string comparison proves an advance without needing a date parser on the
+  # target. Empty BASELINE_SEEN (self-asserted id, never enrolled) means any
+  # observed value at all is an advance.
+  if [ -n "$SEEN" ] && [ "$SEEN" '>' "$BASELINE_SEEN" ]; then
+    CHECKED_IN=1
+    break
+  fi
+done
+
+cs_say ""
+if [ "$CHECKED_IN" = "1" ]; then
+  if [ "$SUPERVISED" = "1" ]; then
+    cs_report install OK "supervised on $OS_ID/$ARCH_ID, checked in after ${WAITED}s"
+  else
+    cs_report install OK "unsupervised on $OS_ID/$ARCH_ID, checked in after ${WAITED}s"
+  fi
+  cs_say "done — '$AGENT_ID' is live and polling SimCore (confirmed after ${WAITED}s)"
+  cs_say "uninstall: curl -fsSL '$SERVER/api/agents/install?uninstall=1' | bash"
+else
+  STATUS_HINT="systemctl status $SVC"
+  [ "$(id -u)" = "0" ] || STATUS_HINT="systemctl --user status $SVC"
+  cs_fail verify AGENT_NEVER_CHECKED_IN \
+    "'$AGENT_ID' never polled $SERVER/api/agents again within ${WAIT_TOTAL}s (last_seen never advanced past '$BASELINE_SEEN')" \
+    "the process may not be running or unable to reach $SERVER — OR, on a re-install, a STALE process on a DIFFERENT --id may still be holding the service. Check: $STATUS_HINT ; ps aux | grep cortexsim-agent ; tail $LOG_FILE — then re-run this installer"
+fi
 """
 
 
